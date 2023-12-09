@@ -1,0 +1,27 @@
+# Required
+model: gpt-3.5-turbo
+context_limit: 4000
+default_input: samplestarter.json
+
+# Optional, only used for printing conversations into the terminal:
+ai_prefix: "AI: "
+
+# Input Transformers
+transformations:
+  - name: cleanup_whitespace
+  # - name: prepend_prefix
+  #   args:
+  #     prefix: "PREFIX - "
+  # - name: append_suffix
+  #   args:
+  #     suffix: " - SUFFIX"
+
+
+# Optional OpenAI parameters with defaults
+max_tokens: 100
+temperature: 1
+top_p: 1
+n: 1
+stop: null
+presence_penalty: 0
+frequency_penalty: 0

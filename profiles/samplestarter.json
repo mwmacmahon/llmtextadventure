@@ -1,0 +1,12 @@
+{
+  "conversation": [
+    {
+      "role": "system",
+      "content": "You are an AI language model capable of answering questions and engaging in conversation."
+    }
+  ],
+  "configuration": {
+    "temperature": 1,
+    "frequency_penalty": 0
+  }
+}
