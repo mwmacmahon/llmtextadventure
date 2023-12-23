@@ -1,0 +1,12 @@
+ChatConfig:
+  type: object
+  properties:
+    llm_config:
+      type: LLMConfig
+      required: true
+    transformation_config:
+      type: TransformationConfig
+      required: true
+    parsing_config:
+      type: ParsingConfig
+      required: true

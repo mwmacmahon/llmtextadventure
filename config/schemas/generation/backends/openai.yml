@@ -1,0 +1,13 @@
+OpenAIBackendConfig:
+  type: object
+  properties:
+    name_of_model:
+      type: str
+      required: true
+      default: "gpt-3.5-turbo"
+    openai_settings:
+      type: dict
+      required: true
+      default:
+        model: "gpt-3.5-turbo"
+        context_limit: 2000

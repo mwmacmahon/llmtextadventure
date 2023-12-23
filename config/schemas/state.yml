@@ -1,0 +1,12 @@
+State:
+  type: object
+  properties:
+    history:
+      type: list
+      required: true
+      default: []
+    raw_history:
+      type: list
+      required: true
+      default: []
+# Additional parameters are only in subclasses

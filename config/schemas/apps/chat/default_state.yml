@@ -1,0 +1,19 @@
+ChatState:
+  type: object
+  properties:
+    history:
+      type: list
+      required: true
+      default: []
+    raw_history:
+      type: list
+      required: true
+      default: []
+    hidden_data:
+      type: object
+      required: true
+      default: {}
+    situational_flags:
+      type: object
+      required: true
+      default: {}

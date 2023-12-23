@@ -1,0 +1,21 @@
+SampleGameBConfig:
+  type: object
+  properties:
+    llm_config:
+      type: LLMConfig
+      required: true
+    transformation_config:
+      type: TransformationConfig
+      required: true
+    parsing_config:
+      type: ParsingConfig
+      required: true
+    scenario_name:
+      type: string
+      required: true
+      default: "Sample Game B: Default Scenario"
+    difficulty:
+      type: string
+      required: true
+      default: easy
+      enum: [easy, normal, hard]

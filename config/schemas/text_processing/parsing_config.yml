@@ -1,0 +1,7 @@
+ParsingConfig:
+  type: object
+  properties:
+    parsing_functions:
+      type: list
+      required: true
+      default: []

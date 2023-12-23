@@ -1,0 +1,15 @@
+TransformationConfig:
+  type: object
+  properties:
+    transformation_functions:
+      type: list
+      required: true
+      default: 
+        - name: "cleanup_whitespace"
+      # - name: prepend_prefix
+      #   args:
+      #     prefix: "PREFIX - "
+      # - name: append_suffix
+      #   args:
+      #     suffix: " - SUFFIX"
+          

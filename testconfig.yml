@@ -1,0 +1,21 @@
+
+app_name: "SampleGameA"  # Specifies the application type
+
+config:
+  llm_config:
+    backend_config_type: "OpenAI"
+    # backend_config:
+    #   api_key: "your-api-key"  # Specific to OpenAI Backend
+    # generation_preset: "alternate"
+    generation_config:
+      temperature: 1.0
+
+  transformation_config:
+    # Transformation-specific settings
+
+  parsing_config:
+    # Parsing-specific settings
+
+state:
+  history: []
+  # Other state-related settings

@@ -1,0 +1,18 @@
+LLMConfig:
+  type: object
+  properties:
+    backend_config_type:
+      type: string
+      required: true
+      default: OpenAI
+      enum: [OpenAI, HFTGI, Oobabooga]
+    backend_config:
+      type: BackendConfig
+      required: true
+    generation_preset:
+      type: string
+      required: false
+      default: default
+    generation_config:
+      type: GenerationConfig
+      required: true

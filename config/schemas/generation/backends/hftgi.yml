@@ -1,0 +1,11 @@
+HFTGIBackendConfig:
+  type: object
+  properties:
+    name_of_model:
+      type: str
+      required: true
+      default: "llama2"
+    hftgi_settings:
+      type: dict
+      required: true
+      default: {"model": "llama2"}

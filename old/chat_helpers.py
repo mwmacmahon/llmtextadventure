@@ -2,12 +2,12 @@ import json
 import os
 import yaml
 from datetime import datetime
-from llmtextadventure.modules.streamingapi import count_tokens
+from modules.old.streamingapi import count_tokens
 
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Union, Any
 
-from llmtextadventure.modules.input_transformers import \
+from modules.old.input_transformers import \
     INPUT_TRANSFORMERS, cast_to_transformer_obj, \
     InputTransformer, InputTransformerArgs
 # , \
@@ -32,42 +32,68 @@ class ChatConfig(BaseModel):
     presence_penalty: Optional[float] = 0
     frequency_penalty: Optional[float] = 0
 
-def get_filepath(args_value: str, prompt: str, default_value: str = None, extension: str = ".json") -> str:
+def get_filepath(
+        args_value: str,
+        prompt: str,
+        default_value: str = None,
+        extension: str = ".json",
+        default_dirs: List[str] = ["profiles", "chat_histories"],
+        is_input: bool = False
+    ) -> str:
     """
-    Retrieve the filepath based on user input or default value.
+    Retrieve the input filepath based on user input or default value.
 
     Parameters:
     - args_value (str): Command line argument for filename.
     - prompt (str): Prompt to ask user for filename.
     - default_value (str): Default filename if user provides none.
+    - default_dirs (list): List of folders to check in order of priority for existing files.
+                           For output files, last folder is assumed to be the default save 
+                           location if the file doesn't already exist. Current working directory
+                           is prepended to this list, i.e. it is always checked first.
     - extension (str): Expected file extension (default is .json).
+    - is_input (bool): If False, skips the check to see if the file already exists.
 
     Returns:
     - str: Full filepath.
     """
-    if args_value:
+    if args_value and not os.path.isabs(args_value):
         filename = args_value
     else:
-        filename = input(prompt) or default_value
+        if default_value:
+            prompt_with_default = f"{prompt} (default: {default_value}): "
+        else:
+            prompt_with_default = f"{prompt}: "
+        filename = input(prompt_with_default) or default_value
 
     # Ensure the filename has the correct extension
     if not filename.endswith(extension):
         filename += extension
 
+    # Check if the user provided an absolute filepath
+    if os.path.isabs(filename):
+        if os.path.exists(filename):
+            return filename
+        elif is_input:
+            raise FileNotFoundError(f"File '{filename}' not found.")
+
     # Define potential file paths
-    current_dir_path = os.path.join(os.getcwd(), filename)
-    profiles_dir_path = os.path.join(os.getcwd(), "profiles", filename)
-    chat_histories_dir_path = os.path.join(os.getcwd(), "chat_histories", filename)
+    file_paths = [
+        os.path.join(os.getcwd(), filename)
+    ] + [
+        os.path.join(os.getcwd(), folder, filename)
+        for folder in default_dirs
+    ]
 
     # Check for the file's existence in the specified paths
-    if os.path.exists(current_dir_path):
-        return current_dir_path
-    elif os.path.exists(profiles_dir_path):
-        return profiles_dir_path
-    elif os.path.exists(chat_histories_dir_path):
-        return chat_histories_dir_path
-    else:
+    for file_path in file_paths:
+        if os.path.exists(file_path):
+            return file_path
+    if is_input:
         raise FileNotFoundError(f"File '{filename}' not found in any of the searched directories.")
+
+    # if file doesn't exist, use the last folder as the default save location
+    return file_paths[-1]
 
 
 def display_chat_history(chat_history: List[Dict[str, str]]) -> None:

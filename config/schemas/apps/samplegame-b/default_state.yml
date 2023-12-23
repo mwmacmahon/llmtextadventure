@@ -1,0 +1,43 @@
+SampleGameBState:
+  type: object
+  properties:
+    history:
+      type: list
+      required: true
+      default: []
+    raw_history:
+      type: list
+      required: true
+      default: []
+    hidden_data:
+      type: object
+      required: true
+      default: {}
+    situational_flags:
+      type: object
+      required: true
+      default: {}
+    time:
+      type: string
+      required: true
+      default: "14:00"
+    resources:
+      type: object
+      required: true
+      default: {}
+    characters:
+      type: object
+      required: true
+      default: {}
+    inventory:
+      type: object
+      required: true
+      default: {}
+    world_state:
+      type: object
+      required: true
+      default: {}
+    other:
+      type: object
+      required: true
+      default: {}

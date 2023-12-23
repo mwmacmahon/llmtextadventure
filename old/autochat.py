@@ -3,7 +3,7 @@
 
 import asyncio
 import json
-import llmtextadventure.modules.interactive_cli_session as interactive_cli_session  # Assuming main.py is in the same directory
+import modules.old.interactive_cli_session as interactive_cli_session  # Assuming main.py is in the same directory
 
 SWITCH_ROLES_PROMPT = "Now please switch roles and tell me what the next item I will say in this conversation will be"
 MAX_ITERATIONS = 4  # Define the number of chat iterations before ending

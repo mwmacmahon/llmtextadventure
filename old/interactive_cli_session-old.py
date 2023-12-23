@@ -6,11 +6,11 @@ import logging
 from datetime import datetime
 from dotenv import load_dotenv
 
-from llmtextadventure.modules.streamingapi import custom_streaming_chat, count_tokens
-from llmtextadventure.modules.chat_helpers import get_filepath, display_chat_history, truncate_chat_history, load_config, convert_to_config_obj
+from modules.old.streamingapi import custom_streaming_chat, count_tokens
+from modules.old.chat_helpers import get_filepath, display_chat_history, truncate_chat_history, load_config, convert_to_config_obj
 
 # Assuming the transform_input function is in input_transformers.py
-from llmtextadventure.modules.input_transformers import cast_to_transformer_obj, transform_input
+from modules.old.input_transformers import cast_to_transformer_obj, transform_input
 
 load_dotenv()
 
@@ -124,6 +124,12 @@ async def interactive_session(api_key: str, chat_history: list, config: dict, in
     """Run an interactive chat session with the assistant, save history, and handle user interactions."""
     context_limit = config.context_limit
     max_tokens = config.max_tokens
+
+    ## Prep the screen
+    os.system('cls' if os.name == 'nt' else 'clear')
+    display_chat_history(chat_history)
+
+    ## Chat loop
     while True:
         try:
             query = input_provider("\n\nYou: ")
@@ -212,9 +218,32 @@ async def interactive_session(api_key: str, chat_history: list, config: dict, in
             print("Exiting program.")
             break
 
-if __name__ == "__main__":
-    os.system('cls' if os.name == 'nt' else 'clear')
-    display_chat_history(chat_history)
 
+def run_interactive_cli_session(input_filepath, output_filepath):
+    """
+    Runs the interactive CLI session for the chat.
+
+    Args:
+        input_filepath (str): Path to the input JSON file containing the chat config / conversation history.
+        output_filepath (str): Path to the output JSON file where the updated chat history will be saved.
+    """
+    ## These are currently handled at the top of the file, but that logic
+    ## should be moved here.
+
+    # # Determine input and output file paths
+    # input_filepath = get_filepath(input_filepath, "Enter the name for the input JSON: ", config.default_input)
+    # output_filepath = get_filepath(output_filepath, "Enter the name for the output JSON (default is timestamp): ", datetime.now().strftime("%Y%m%d%H%M%S"))
+
+    # # Ensure directories exist
+    # os.makedirs("logs", exist_ok=True)
+    # os.makedirs(os.path.dirname(input_filepath), exist_ok=True)
+    # os.makedirs(os.path.dirname(output_filepath), exist_ok=True)
+
+    # Run the interactive chat and game session
     api_key = os.getenv("OPENAI_API_KEY")
+
+    os.system('cls' if os.name == 'nt' else 'clear')
     asyncio.run(interactive_session(api_key, chat_history, config, console_input_provider))
+
+if __name__ == "__main__":
+    run_interactive_cli_session()

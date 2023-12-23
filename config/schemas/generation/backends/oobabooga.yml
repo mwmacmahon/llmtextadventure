@@ -1,0 +1,11 @@
+OobaboogaBackendConfig:
+  type: object
+  properties:
+    name_of_model:
+      type: str
+      required: true
+      default: "llama2-chat"
+    oobabooga_settings:
+      type: dict
+      required: true
+      default: {"model": "llama2-chat"}
