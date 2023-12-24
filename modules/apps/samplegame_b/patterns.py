@@ -55,11 +55,11 @@ class SampleGameBConfig(Config):
     This subclass is for the Sample Game B.
 
     Attributes:
-        [Inherited from Config] llm_config, transformation_config, parsing_config
+        [Inherited from Config] interface_type, interface_config, llm_config, transformation_config, parsing_config
         scenario_name (str): Name of the specific game scenario being run.
         difficulty (str): Difficulty level of the game.
     """
-    # [Inherited from Config] llm_config, transformation_config, parsing_config
+    # [Inherited from Config] interface_type, interface_config, llm_config, transformation_config, parsing_config
     scenario_name: str
     difficulty: str
     

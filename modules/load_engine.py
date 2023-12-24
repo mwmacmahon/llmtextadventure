@@ -8,6 +8,8 @@ from modules.apps.chat.engine import ChatState, ChatEngine
 from modules.apps.samplegame_a.engine import SampleGameAState, SampleGameAEngine
 from modules.apps.samplegame_b.engine import SampleGameBState, SampleGameBEngine
 from modules.utils import load_yaml, load_json
+from modules.interfaces.cli import CLIInterface
+from modules.interfaces.webui import WebInterface
 import os
 
 # Initialize console logging
@@ -15,23 +17,24 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Global mappings from conversation types 
-# to Managers and (optionally) States
-# Left: App Name
-# Right: State Class / Engine Class
+DEFAULT_INTERFACE_TYPE = "cli"
 GAME_STATES = {
-    "Chat": ChatState,
-    "SampleGameA": SampleGameAState,
-    "SampleGameB": SampleGameBState
+    "chat": ChatState,
+    "samplegamea": SampleGameAState,
+    "samplegameb": SampleGameBState
 }
 ENGINES = {
-    "Chat": ChatEngine,
-    "SampleGameA": SampleGameAEngine,
-    "SampleGameB": SampleGameBEngine
+    "chat": ChatEngine,
+    "samplegamea": SampleGameAEngine,
+    "samplegameb": SampleGameBEngine
+}
+INTERFACES = {
+    "cli": CLIInterface,
+    "webui": WebInterface
 }
 from modules.utils import load_yaml, load_json
 
-def load_engine(app_name: str = None, input_path: str = None, output_path: str = None) -> Type[ConversationEngine]:
+def load_engine(app_name: str = None, interface_type: str = None, input_path: str = None, output_path: str = None) -> Type[ConversationEngine]:
 
     if not app_name and not input_path:
         raise ValueError("Must specify at least one of the following to load_engine(): app_name, input_path")
@@ -58,11 +61,26 @@ def load_engine(app_name: str = None, input_path: str = None, output_path: str =
 
     if app_name not in GAME_STATES:
         raise ValueError(f"Invalid app type: {app_name}. Valid values are {GAME_STATES.keys()}")
+    input_data["config"]["app_name"] = app_name  # Add app_name to config
+    
+    if interface_type in input_data:
+        if interface_type is None:
+            interface_type = input_data["interface_type"]
+        else:
+            input_data["interface_type"] = interface_type  # Update interface_type in input_data
+    else:
+        if interface_type is None:
+            interface_type = DEFAULT_INTERFACE_TYPE
+        input_data["interface_type"] = interface_type
+    if interface_type not in INTERFACES:
+        raise ValueError(f"Invalid interface type: {interface_type}. Valid values are {INTERFACES.keys()}")
+    input_data["config"]["interface_type"] = interface_type  # Add interface_type to config
     
     config_data = input_data.get("config", {})
     state_data = input_data.get("state", {})
 
     print(f"App type: {app_name}")
+    print(f"Interface type: {interface_type}")
     print(f"Config data: {config_data}")
     print(f"State data: {state_data}")
     print(f"Output path: {output_path}")
@@ -79,6 +97,6 @@ def load_engine(app_name: str = None, input_path: str = None, output_path: str =
 
 
 # if __name__ == "__main__":
-#     engine = load_engine("Chat", "./testconfig.yml")
-#     # engine = load_engine("Chat")
+#     engine = load_engine("chat", "./testconfig.yml")
+#     # engine = load_engine("chat")
 #     repr(engine)

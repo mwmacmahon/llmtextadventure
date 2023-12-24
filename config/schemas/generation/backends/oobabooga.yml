@@ -5,7 +5,9 @@ OobaboogaBackendConfig:
       type: str
       required: true
       default: "llama2-chat"
-    oobabooga_settings:
+    model_settings:
       type: dict
       required: true
-      default: {"model": "llama2-chat"}
+      default: 
+        model: "llama2-chat"
+        context_limit: 2000

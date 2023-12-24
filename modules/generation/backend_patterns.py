@@ -60,14 +60,10 @@ class BackendConfig(BaseConfig):
         backend_config_type = "OpenAI" # Default
         if parent_data and "backend_config_type" in parent_data:
             backend_config_type = parent_data["backend_config_type"]
-        if backend_config_type == "HFTGI":
-            new_class = BACKEND_CONFIGS["HFTGI"]
-        elif backend_config_type == "Oobabooga":
-            new_class = BACKEND_CONFIGS["Oobabooga"]
-        elif backend_config_type == "OpenAI":
-            new_class = BACKEND_CONFIGS["OpenAI"]
+        if backend_config_type in BACKEND_CONFIGS.keys():
+            new_class = BACKEND_CONFIGS[backend_config_type]
         else:
-            raise ValidationError(
+            raise ValueError(
                 f"Invalid backend type: {backend_config_type}. Valid values are {BACKEND_CONFIGS.keys()}"
             )
         

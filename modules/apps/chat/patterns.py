@@ -18,9 +18,9 @@ class ChatConfig(Config):
     This subclass is for the Chat app.
 
     Attributes:
-        [Inherited from Config] llm_config, transformation_config, parsing_config
+        [Inherited from Config] interface_type, interface_config, llm_config, transformation_config, parsing_config
     """
-    # [Inherited from Config] llm_config, transformation_config, parsing_config
+    # [Inherited from Config] interface_type, interface_config, llm_config, transformation_config, parsing_config
 
     @classmethod
     def get_schema_path(cls, data: Optional[Dict[str, Any]] = None, parent_data: Optional[Dict[str, Any]] = None) -> str:

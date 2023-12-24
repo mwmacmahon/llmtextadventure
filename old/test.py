@@ -229,14 +229,14 @@ class BaseConfig(BaseModel):
 
     # # Can use specific validators in addition to the schema
     # # checking provided by the BaseConfig class.
-    # @field_validator('openai_settings', mode='before')
-    # def validate_openai_settings(cls, value):
+    # @field_validator('model_settings', mode='before')
+    # def validate_model_settings(cls, value):
     #     if isinstance(value, dict):
     #         if 'model' not in value:
-    #             raise ValueError("openai_settings must contain a 'model' key")
+    #             raise ValueError("model_settings must contain a 'model' key")
     #         return value
     #     else:
-    #         raise ValueError("openai_settings must be a dictionary")
+    #         raise ValueError("model_settings must be a dictionary")
 
 
 
@@ -274,11 +274,11 @@ class OpenABackendConfig(BackendConfig):
 
     Attributes:
         name_of_model (str): Name of the model to use.
-        openai_settings (dict): Settings unique to OpenAI (placeholder)
+        model_settings (dict): Settings unique to OpenAI (placeholder)
     """
 
     name_of_model: str
-    openai_settings: dict
+    model_settings: dict
 
     @classmethod
     def get_schema_path(cls, data: Optional[Dict[str, Any]] = None, parent_data: Optional[Dict[str, Any]] = None) -> str:
@@ -294,11 +294,11 @@ class HFTGIBackendConfig(BackendConfig):
 
     Attributes:
         name_of_model (str): Name of the model to use.
-        hftgi_settings (dict): Settings unique to HFTGI (placeholder)
+        model_settings (dict): Settings unique to HFTGI (placeholder)
     """
 
     name_of_model: str
-    hftgi_settings: dict
+    model_settings: dict
 
     @classmethod
     def get_schema_path(cls, data: Optional[Dict[str, Any]] = None, parent_data: Optional[Dict[str, Any]] = None) -> str:
@@ -314,11 +314,11 @@ class OobaboogaBackendConfig(BackendConfig):
 
     Attributes:
         name_of_model (str): Name of the model to use.
-        oobabooga_settings (dict): Settings unique to oobabooga (placeholder)
+        model_settings (dict): Settings unique to oobabooga (placeholder)
     """
 
     name_of_model: str
-    oobabooga_settings: dict
+    model_settings: dict
 
     @classmethod
     def get_schema_path(cls, data: Optional[Dict[str, Any]] = None, parent_data: Optional[Dict[str, Any]] = None) -> str:

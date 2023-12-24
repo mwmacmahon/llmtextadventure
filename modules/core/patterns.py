@@ -7,6 +7,7 @@ from modules.text_processing.transformation_patterns import TransformationConfig
 from modules.text_processing.transformation_manager import TransformationManager  
 from modules.text_processing.parsing_patterns import ParsingConfig
 from modules.text_processing.parsing_manager import ParsingManager
+from modules.interfaces.patterns import Interface, InterfaceConfig
 
 # Initialize console logging
 import logging
@@ -18,12 +19,16 @@ class Config(BaseConfig):
     Top-level configuration class that covers all aspects of the conversation or game.
     This is the tree of configurations:
     - Config: Top-level configuration for the conversation/game.
+        - interface_type: type of interface to instantiate - determines Interface/InterfaceConfig class
+        - InterfaceConfig: Configuration for the interface.
         - LLMConfig: Configuration for the LLM.
             - BackendConfig: Configuration for the LLM backend.
         - TransformationConfig: Configuration for text transformations.
         - ParsingConfig: Configuration for text parsing functions.
     """
 
+    interface_type: str
+    interface_config: InterfaceConfig
     llm_config: LLMConfig
     transformation_config: TransformationConfig
     parsing_config: ParsingConfig
@@ -44,11 +49,11 @@ class State(BaseConfig):
     Do NOT use any attributes whose names start with "model_" or it will cause errors
 
     Attributes:
-        history (list): List of messages in the conversation/game,
+        chat_history (list): List of messages in the conversation/game,
         raw_history (list): List of raw messages with no post-processing
     """
 
-    history: list
+    chat_history: list
     raw_history: list
 
     @classmethod

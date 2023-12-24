@@ -54,11 +54,11 @@ class SampleGameAConfig(Config):
     This is designed to cover the immutable but configurable settings of the app.
     This subclass is for Sample Game A.
     Attributes:
-        [Inherited from Config] llm_config, transformation_config, parsing_config
+        [Inherited from Config] interface_type, interface_config, llm_config, transformation_config, parsing_config
         scenario_name (str): Name of the specific game scenario being run.
         difficulty (str): Difficulty level of the game.
     """
-    # [Inherited from Config] llm_config, transformation_config, parsing_config
+    # [Inherited from Config] interface_type, interface_config, llm_config, transformation_config, parsing_config
     scenario_name: str
     difficulty: str
 

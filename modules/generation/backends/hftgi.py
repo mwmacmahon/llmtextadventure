@@ -18,7 +18,7 @@ class HFTGIBackendConfig(BackendConfig):
     """
 
     name_of_model: str
-    hftgi_settings: dict
+    model_settings: dict
 
     @classmethod
     def get_schema_path(cls, data: Optional[Dict[str, Any]] = None, parent_data: Optional[Dict[str, Any]] = None) -> str:

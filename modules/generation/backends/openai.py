@@ -223,7 +223,7 @@ class OpenAIBackendConfig(BackendConfig):
     """
 
     name_of_model: str
-    openai_settings: dict
+    model_settings: dict
 
     @classmethod
     def get_schema_path(cls, data: Optional[Dict[str, Any]] = None, parent_data: Optional[Dict[str, Any]] = None) -> str:
@@ -270,7 +270,7 @@ class OpenAIBackend(Backend):
 
 
         params_dict["model"] = self.backend_config.name_of_model
-        params_dict["context_limit"] = self.backend_config.openai_settings["context_limit"]
+        params_dict["context_limit"] = self.backend_config.model_settings["context_limit"]
         
         try:
             # chat_coroutine = async_custom_streaming_chat(prompt, params_dict, history_items)

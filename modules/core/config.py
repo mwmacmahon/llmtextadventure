@@ -432,12 +432,12 @@ class BaseConfig(BaseModel):
 
     # # Can use specific validators in addition to the schema
     # # checking provided by the BaseConfig class.
-    # @field_validator('openai_settings', mode='before')
-    # def validate_openai_settings(cls, value):
+    # @field_validator('model_settings', mode='before')
+    # def validate_model_settings(cls, value):
     #     if isinstance(value, dict):
     #         if 'model' not in value:
-    #             raise ValueError("openai_settings must contain a 'model' key")
+    #             raise ValueError("model_settings must contain a 'model' key")
     #         return value
     #     else:
-    #         raise ValueError("openai_settings must be a dictionary")
+    #         raise ValueError("model_settings must be a dictionary")
 

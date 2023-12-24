@@ -18,7 +18,7 @@ class OobaboogaBackendConfig(BackendConfig):
     """
 
     name_of_model: str
-    oobabooga_settings: dict
+    model_settings: dict
 
     @classmethod
     def get_schema_path(cls, data: Optional[Dict[str, Any]] = None, parent_data: Optional[Dict[str, Any]] = None) -> str:

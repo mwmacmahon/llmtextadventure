@@ -5,7 +5,9 @@ HFTGIBackendConfig:
       type: str
       required: true
       default: "llama2"
-    hftgi_settings:
+    model_settings:
       type: dict
       required: true
-      default: {"model": "llama2"}
+      default: 
+        model: "llama2"
+        context_limit: 2000

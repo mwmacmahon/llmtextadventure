@@ -6,6 +6,7 @@ from modules.apps.chat.patterns import ChatConfig, ChatState
 from modules.core.engine import ConversationEngine
 from modules.core.patterns import Config, State
 
+
 # Initialize console logging
 import logging
 logging.basicConfig(level=logging.INFO)

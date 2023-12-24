@@ -1,5 +1,5 @@
 import argparse
-from modules.run_engine import load_engine
+from modules.load_engine import load_engine
 import os
 # from modules.old.interactive_cli_session import run_interactive_cli_session
 # from modules.interactive_cli_game import run_interactive_cli_game
@@ -39,18 +39,24 @@ def main():
             python main.py --mode game --input path/to/app_profile.json --output path/to/app_state.json
     """
     parser = argparse.ArgumentParser(description='Main CLI app for running individual apps')
-    parser.add_argument('--mode', choices=['Chat', 'SampleGameA', 'SampleGameB', 'autochat'], default="Chat", help='Mode of the app to run')
+    parser.add_argument('--mode', choices=['chat', 'samplegamea', 'samplegameb', 'autochat'], default="chat", help='Mode of the app to run')
+    parser.add_argument('--ui', choices=['cli', 'webui', 'SampleGameB', 'autochat'], default="cli", help='Input JSON filename for game profile or chat history.')
     parser.add_argument('--input', required=True, help='Input JSON filename for game profile or chat history.')
     parser.add_argument('--output', required=True, help='Output JSON filename for game state or chat history.')
 
     args = parser.parse_args()
     setup_logging(args.output)
 
-    if args.mode == 'Chat':
-        engine = load_engine(args.mode, args.input, args.output)
+    if args.mode == 'chat':
+        engine = load_engine(
+            app_name=args.mode,
+            interface_type=args.ui,
+            input_path=args.input,
+            output_path=args.output
+        )
         print("Finished loading!")
         engine.print_yaml()
-        engine.process_text("User: What color is the sky?\nAssistant: ")
+        engine.run()
     # elif args.mode == 'game':
     #     run_interactive_cli_game(args.input, args.output)
     else:

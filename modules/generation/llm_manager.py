@@ -3,6 +3,8 @@
 from typing import Type, TypeVar, Optional, Union, Any, Dict, get_args, get_origin, get_type_hints
 from types import NoneType
 from pydantic import BaseModel, ValidationError, model_validator, field_validator, validator
+import tiktoken
+
 from modules.core.config import BaseConfig
 from modules.generation.backend_patterns import Backend, BackendConfig, BACKEND_CLASSES
 from modules.generation.generation_patterns import GenerationConfig
@@ -41,7 +43,7 @@ class LLMManager:
         """
         self.llm_config = llm_config
         if llm_config.backend_config_type not in BACKEND_CLASSES.keys():
-            raise ValidationError(
+            raise ValueError(
                 f"Invalid backend type: {llm_config.backend_config_type}. Valid values are {BACKEND_CLASSES.keys()}"
             )
         try:
@@ -58,6 +60,33 @@ class LLMManager:
             raise Exception(
                 f"Could not create class: {backend_class} with config {llm_config.backend_config}."
             )
+
+
+    def count_tokens_tiktoken(self, text: str, encoding_name: str = "cl100k_base") -> int:
+        """
+        Count the number of tokens in a text string using tiktoken.
+
+        Args:
+            text (str): The text string to count tokens for.
+            encoding_name (str): The encoding name to use with tiktoken.
+
+        Returns:
+            int: The number of tokens in the text.
+        """
+        encoding = tiktoken.get_encoding(encoding_name)
+        return len(encoding.encode(text))
+
+    def count_tokens(self, text: str) -> int:
+        """
+        Count the number of tokens in a text string.
+
+        Args:
+            text (str): The text string to count tokens for.
+
+        Returns:
+            int: The number of tokens in the text.
+        """
+        return self.count_tokens_tiktoken(text)
 
     def generate_response(self, prompt: str, chat_history: list, prefix: str = None):
         """

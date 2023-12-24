@@ -1,7 +1,7 @@
 State:
   type: object
   properties:
-    history:
+    chat_history:
       type: list
       required: true
       default: []

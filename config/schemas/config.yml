@@ -1,6 +1,14 @@
 Config:
   type: object
   properties:
+    interface_type:
+      type: str
+      required: true
+      default: "cli"
+      enum: ["cli", "webui"]
+    interface_config:
+      type: InterfaceConfig
+      required: true
     llm_config:
       type: LLMConfig
       required: true
