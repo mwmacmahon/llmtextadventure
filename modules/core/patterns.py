@@ -4,9 +4,7 @@ from modules.core.config import BaseConfig
 from modules.generation.llm_patterns import LLMConfig
 from modules.generation.llm_manager import LLMManager
 from modules.text_processing.transformation_patterns import TransformationConfig
-from modules.text_processing.transformation_manager import TransformationManager  
 from modules.text_processing.parsing_patterns import ParsingConfig
-from modules.text_processing.parsing_manager import ParsingManager
 from modules.interfaces.patterns import Interface, InterfaceConfig
 
 # Initialize console logging
@@ -50,11 +48,11 @@ class State(BaseConfig):
 
     Attributes:
         chat_history (list): List of messages in the conversation/game,
-        raw_history (list): List of raw messages with no post-processing
+        llm_io_history (list): List of raw messages with no post-processing
     """
 
     chat_history: list
-    raw_history: list
+    llm_io_history: list
 
     @classmethod
     def get_schema_path(cls, data: Optional[Dict[str, Any]] = None, parent_data: Optional[Dict[str, Any]] = None) -> str:

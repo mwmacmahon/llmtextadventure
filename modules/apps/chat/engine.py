@@ -36,15 +36,78 @@ class ChatEngine(ConversationEngine):
     ## Init kept from base class - will use the config and state classes defined above
     ## and as such will use the schemas referenced in those classes
 
-    # # Use base class for now
-    # def process_text(self, text):
-    #     """
-    #     Processes the given text as part of the conversation or game logic.
 
-    #     Args:
-    #         text (str): Text to be processed.
+    # # From parsing manager, for reference only
+    # runtime_kwargs (Optional[dict]): Additional/overriding args to be passed to
+    #     the parsing functions. Should be of form:
+    #     {
+    #         'parsing_name': {
+    #             'arg_name': arg_value
+    #         }
+    #     }
+    #     It will apply to any parsing in the set that has the specified
+    #     name, and will override any arguments specified in the ParsingConfig.
 
-    #     Returns:
-    #         str: Processed text or response.
+
+    # async def process_user_input(self, user_input: str) -> Tuple[State, str]:
     #     """
-    #     pass
+    #     Process the user input, parsing and transforming it based on the Config
+    #     and updating the current state based as dictated by the parsing functions.
+
+    #     This function may be overridden in subclasses to add additional processing,
+    #     such as by overriding kwargs in the parsing and transformation sets.
+    #     """
+    #     extra_parsing_args = {}  # Just to remind that this can be done in subclasses
+    #     new_state = self.parsing_manager.apply_parsing_set(
+    #         "user_input_parsings", user_input, self.state, extra_parsing_args
+    #     )
+
+    #     extra_transform_args = {}
+    #     transformed_input = self.transformation_manager.apply_transformation_set(
+    #         "user_input_transformations", user_input, new_state, extra_transform_args
+    #     )
+
+    #     return new_state, transformed_input
+
+
+    # async def process_llm_output(self, llm_output: str, user_input: str) -> Tuple[State, str]:
+    #     """
+    #     Process the LLM output, parsing and transforming it based on the Config
+    #     and updating the current state based as dictated by the parsing functions.
+    #     The user input is also provided in case it is needed for additional
+    #     logic in the subclasses.
+
+    #     This function may be overridden in subclasses to add additional processing,
+    #     such as by overriding kwargs in the parsing and transformation sets.
+    #     """
+    #     extra_parsing_args = {}  # Just to remind that this can be done in subclasses
+    #     new_state = self.parsing_manager.apply_parsing_set(
+    #         "llm_output_parsings", llm_output, self.state, extra_parsing_args
+    #     )
+
+    #     extra_transform_args = {}
+    #     transformed_output = self.transformation_manager.apply_transformation_set(
+    #         "llm_output_transformations", llm_output, new_state, extra_transform_args
+    #     )
+
+    #     return new_state, transformed_output
+
+    # async def generate_llm_prompt(self, user_input: str) -> str:
+    #     """
+    #     Given the user input, assemble the prompt to send to the LLM.
+
+    #     Will be overridden in subclasses.
+    #     """
+    #     return user_input
+    
+    # async def generate_response(self, llm_output: str, user_input: str) -> str:
+    #     """
+    #     Given the llm response and user input, assemble the final
+    #     message sent back to the user. May use the self.state.___
+    #     in order to display information about the conversation
+    #     in subclasses.
+        
+    #     Will likely be overridden in subclasses.
+    #     """
+    #     return llm_output
+    

@@ -1,7 +1,12 @@
 ParsingConfig:
   type: object
   properties:
-    parsing_functions:
+    user_input_parsings:
       type: list
       required: true
       default: []
+    llm_output_parsings:
+      type: list
+      required: true
+      default: []
+      

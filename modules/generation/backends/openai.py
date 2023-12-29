@@ -21,46 +21,6 @@ openai.util.logger.setLevel(logging.WARNING)
 from dotenv import load_dotenv
 load_dotenv()
 
-# # doesn't work, the call is wrong or something
-# def count_tokens_openai_api(text: str) -> int:
-#     """
-#     Count the number of tokens in a text string using OpenAI API.
-
-#     Args:
-#         text (str): The text string to count tokens for.
-
-#     Returns:
-#         int: The number of tokens in the text.
-#     """
-#     return len(openai.Completion.create(prompt=text, max_tokens=0)["usage"]["total_tokens"])
-
-def count_tokens_tiktoken(text: str, encoding_name: str = "cl100k_base") -> int:
-    """
-    Count the number of tokens in a text string using tiktoken.
-
-    Args:
-        text (str): The text string to count tokens for.
-        encoding_name (str): The encoding name to use with tiktoken.
-
-    Returns:
-        int: The number of tokens in the text.
-    """
-    encoding = tiktoken.get_encoding(encoding_name)
-    return len(encoding.encode(text))
-
-def count_tokens(text: str) -> int:
-    """
-    Count the number of tokens in a text string.
-
-    Args:
-        text (str): The text string to count tokens for.
-
-    Returns:
-        int: The number of tokens in the text.
-    """
-    # return count_tokens_openai_api(text)
-    return count_tokens_tiktoken(text)
-
 def custom_streaming_chat(query: str, config_dict: dict, chat_history: list):
     """
     Initiate a custom streaming chat with OpenAI GPT models and yield real-time responses.
@@ -223,7 +183,7 @@ class OpenAIBackendConfig(BackendConfig):
     """
 
     name_of_model: str
-    model_settings: dict
+    backend_model_settings: dict
 
     @classmethod
     def get_schema_path(cls, data: Optional[Dict[str, Any]] = None, parent_data: Optional[Dict[str, Any]] = None) -> str:
@@ -248,7 +208,7 @@ class OpenAIBackend(Backend):
         """
         super().__init__(backend_config=backend_config)  # Call to the base class initializer
 
-    def generate_response(self, prompt: str, chat_history: list, generation_config: GenerationConfig, prefix: str = None) -> str:
+    async def generate_response(self, prompt: str, chat_history: list, generation_config: GenerationConfig, prefix: str = None) -> str:
         """
         Generates a response from OpenAI based on the given prompt and generation configuration.
 
@@ -270,13 +230,13 @@ class OpenAIBackend(Backend):
 
 
         params_dict["model"] = self.backend_config.name_of_model
-        params_dict["context_limit"] = self.backend_config.model_settings["context_limit"]
+        params_dict["context_limit"] = self.backend_config.backend_model_settings["context_limit"]
         
         try:
-            # chat_coroutine = async_custom_streaming_chat(prompt, params_dict, history_items)
-            # async for chunk in chat_coroutine:
-            chat_coroutine = custom_streaming_chat(prompt, params_dict, history_items)
-            for chunk in chat_coroutine:
+            # chat_coroutine = custom_streaming_chat(prompt, params_dict, history_items)
+            # for chunk in chat_coroutine:
+            chat_coroutine = async_custom_streaming_chat(prompt, params_dict, history_items)
+            async for chunk in chat_coroutine:
                 if isinstance(chunk, dict):
                     if "error" in chunk:
                         print(f"\nError: {chunk['error']}\n")

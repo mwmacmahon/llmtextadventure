@@ -5,7 +5,7 @@ OobaboogaBackendConfig:
       type: str
       required: true
       default: "llama2-chat"
-    model_settings:
+    backend_model_settings:
       type: dict
       required: true
       default: 

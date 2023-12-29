@@ -8,9 +8,15 @@ from modules.apps.chat.engine import ChatState, ChatEngine
 from modules.apps.samplegame_a.engine import SampleGameAState, SampleGameAEngine
 from modules.apps.samplegame_b.engine import SampleGameBState, SampleGameBEngine
 from modules.utils import load_yaml, load_json
+from modules.interfaces.patterns import Interface, INTERFACE_CLASSES
 from modules.interfaces.cli import CLIInterface
 from modules.interfaces.webui import WebInterface
 import os
+
+# All possible interface classes must be imported here
+from modules.interfaces.api import APIInterface
+from modules.interfaces.cli import CLIInterface
+from modules.interfaces.webui import WebInterface
 
 # Initialize console logging
 import logging
@@ -34,7 +40,7 @@ INTERFACES = {
 }
 from modules.utils import load_yaml, load_json
 
-def load_engine(app_name: str = None, interface_type: str = None, input_path: str = None, output_path: str = None) -> Type[ConversationEngine]:
+def run_local(app_name: str = None, interface_type: str = None, input_path: str = None, output_path: str = None) -> Type[ConversationEngine]:
 
     if not app_name and not input_path:
         raise ValueError("Must specify at least one of the following to load_engine(): app_name, input_path")
@@ -76,6 +82,7 @@ def load_engine(app_name: str = None, interface_type: str = None, input_path: st
         raise ValueError(f"Invalid interface type: {interface_type}. Valid values are {INTERFACES.keys()}")
     input_data["config"]["interface_type"] = interface_type  # Add interface_type to config
     
+    interface_config_data = input_data.get("interface_config", {})
     config_data = input_data.get("config", {})
     state_data = input_data.get("state", {})
 
@@ -93,7 +100,9 @@ def load_engine(app_name: str = None, interface_type: str = None, input_path: st
         state_data=state_data,
         output_path=output_path
     )
-    return conversation_engine
+    InterfaceClass = globals()[INTERFACE_CLASSES[interface_type]]
+    interface = InterfaceClass(interface_config_data)
+    interface.run(conversation_engine)
 
 
 # if __name__ == "__main__":

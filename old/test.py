@@ -229,14 +229,14 @@ class BaseConfig(BaseModel):
 
     # # Can use specific validators in addition to the schema
     # # checking provided by the BaseConfig class.
-    # @field_validator('model_settings', mode='before')
-    # def validate_model_settings(cls, value):
+    # @field_validator('backend_model_settings', mode='before')
+    # def validate_backend_model_settings(cls, value):
     #     if isinstance(value, dict):
     #         if 'model' not in value:
-    #             raise ValueError("model_settings must contain a 'model' key")
+    #             raise ValueError("backend_model_settings must contain a 'model' key")
     #         return value
     #     else:
-    #         raise ValueError("model_settings must be a dictionary")
+    #         raise ValueError("backend_model_settings must be a dictionary")
 
 
 
@@ -274,11 +274,11 @@ class OpenABackendConfig(BackendConfig):
 
     Attributes:
         name_of_model (str): Name of the model to use.
-        model_settings (dict): Settings unique to OpenAI (placeholder)
+        backend_model_settings (dict): Settings unique to OpenAI (placeholder)
     """
 
     name_of_model: str
-    model_settings: dict
+    backend_model_settings: dict
 
     @classmethod
     def get_schema_path(cls, data: Optional[Dict[str, Any]] = None, parent_data: Optional[Dict[str, Any]] = None) -> str:
@@ -294,11 +294,11 @@ class HFTGIBackendConfig(BackendConfig):
 
     Attributes:
         name_of_model (str): Name of the model to use.
-        model_settings (dict): Settings unique to HFTGI (placeholder)
+        backend_model_settings (dict): Settings unique to HFTGI (placeholder)
     """
 
     name_of_model: str
-    model_settings: dict
+    backend_model_settings: dict
 
     @classmethod
     def get_schema_path(cls, data: Optional[Dict[str, Any]] = None, parent_data: Optional[Dict[str, Any]] = None) -> str:
@@ -314,11 +314,11 @@ class OobaboogaBackendConfig(BackendConfig):
 
     Attributes:
         name_of_model (str): Name of the model to use.
-        model_settings (dict): Settings unique to oobabooga (placeholder)
+        backend_model_settings (dict): Settings unique to oobabooga (placeholder)
     """
 
     name_of_model: str
-    model_settings: dict
+    backend_model_settings: dict
 
     @classmethod
     def get_schema_path(cls, data: Optional[Dict[str, Any]] = None, parent_data: Optional[Dict[str, Any]] = None) -> str:
@@ -420,12 +420,12 @@ class State(BaseConfig):
 
     Attributes:
         history (list): List of messages in the conversation/game,
-        raw_history (list): List of raw messages with no post-processing
+        llm_io_history (list): List of raw messages with no post-processing
         app_state (State, optional): State object for the game.
     """
 
     history: list
-    raw_history: list
+    llm_io_history: list
     app_state: Optional[State] = None
 
     @classmethod

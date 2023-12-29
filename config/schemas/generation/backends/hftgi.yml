@@ -5,7 +5,7 @@ HFTGIBackendConfig:
       type: str
       required: true
       default: "llama2"
-    model_settings:
+    backend_model_settings:
       type: dict
       required: true
       default: 

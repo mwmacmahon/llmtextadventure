@@ -3,11 +3,13 @@ from typing import Type, TypeVar, Optional, Union, List, Any, Dict, get_args, ge
 from types import NoneType
 from pydantic import BaseModel, ValidationError, model_validator, field_validator
 from typing import Protocol
+import asyncio
 import yaml
 import inspect
 import importlib
 
 from modules.core.config import BaseConfig
+# from modules.core.engine import ConversationEngine
 
 # Initialize console logging
 import logging
@@ -15,20 +17,24 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T', bound='BaseConfig')
+TEngine = TypeVar('TEngine', bound='ConversationEngine')
 
 # Global mappings from interface types 
 # to InterfaceConfig and Interface classes
 # Left: Interface Type
 # Right: Interface Class
 INTERFACE_CLASS_MODULES = {
+    "api": "modules.interfaces.api",
     "cli": "modules.interfaces.cli",
     "webui": "modules.interfaces.webui"
 }
 INTERFACE_CONFIGS= {
+    "api": "APIInterfaceConfig",
     "cli": "CLIInterfaceConfig",
     "webui": "WebInterfaceConfig"
 }
 INTERFACE_CLASSES = {
+    "api": "APIInterface",
     "cli": "CLIInterface",
     "webui": "WebInterface"
 }
@@ -80,9 +86,8 @@ class InterfaceConfig(BaseConfig):
 
 
 
-# Protocol to suggest that a class is a Interface.
-# This is used to type hint ____Interface classes in the LLMManager.
-class Interface(BaseModel):
+# Don't use pydantic for this one, causes headaches
+class Interface:
     """
     Base class for specific interface implementations.
     Subclasses should implement the generate_response method for different interfaces.
@@ -97,8 +102,21 @@ class Interface(BaseModel):
             interface_config (InterfaceConfig): The configuration for the interface.
         """
         ## Use super().__init__ in subclasses to call this
-        super().__init__(interface_config=interface_config)  # Initialize the BaseModel
+        # super().__init__(interface_config=interface_config)  # Initialize the BaseModel (removed)
         self.interface_config = interface_config
+    
+    def run(self, engine: TEngine):
+        """
+        Exists as a passthrough to run_async() via asyncio.run(), 
+        which is the main conversation loop.
+
+        Args:
+            engine (ConversationEngine): The engine managing the conversation logic.
+        """
+        asyncio.run(self.run_async(engine))
+
+    def run_async(self, engine: TEngine):
+        raise NotImplementedError
 
     def read_input(self, input_prompt: str = ""):
         raise NotImplementedError

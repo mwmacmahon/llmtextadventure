@@ -33,11 +33,12 @@ class ChatState(State):
     Manages the state of the chat, from conversation history to current context.
 
     Attributes:
-        [Inherited from State] history, raw_history
+        [Inherited from State] history, llm_io_history
     """
-    # [Inherited from State] history, raw_history
+    # [Inherited from State] history, llm_io_history
 
     @classmethod
     def get_schema_path(cls, data: Optional[Dict[str, Any]] = None, parent_data: Optional[Dict[str, Any]] = None) -> str:
         """Provides the path to the yaml schema for Chat app's state."""
         return "./config/schemas/apps/chat/default_state.yml"
+    

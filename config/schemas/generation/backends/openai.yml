@@ -5,7 +5,7 @@ OpenAIBackendConfig:
       type: str
       required: true
       default: "gpt-3.5-turbo"
-    model_settings:
+    backend_model_settings:
       type: dict
       required: true
       default:

@@ -20,9 +20,12 @@ config:
       top_p: 1.0
     generation_preset: default
   parsing_config:
-    parsing_functions: []
+    llm_output_parsings: []
+    user_input_parsings: []
   transformation_config:
-    transformation_functions:
+    llm_output_transformations:
+    - name: cleanup_whitespace
+    user_input_transformations:
     - name: cleanup_whitespace
 state:
   chat_history:
@@ -62,6 +65,26 @@ state:
     role: assistant
     timestamp: '2023-12-28T23:20:04.798197Z'
     truncated: false
+  - content: hi   lol
+    num_tokens: 3
+    role: user
+    timestamp: '2023-12-29T06:21:55.943843Z'
+    truncated: false
+  - content: Hello! How can I assist you today?
+    num_tokens: 9
+    role: assistant
+    timestamp: '2023-12-29T06:21:56.114659Z'
+    truncated: false
   hidden_data: null
-  llm_io_history: []
+  llm_io_history:
+  - content: hi lol
+    num_tokens: 3
+    role: user
+    timestamp: '2023-12-29T06:21:55.943843Z'
+    truncated: false
+  - content: Hello! How can I assist you today?
+    num_tokens: 9
+    role: assistant
+    timestamp: '2023-12-29T06:21:56.114659Z'
+    truncated: false
   situational_flags: null

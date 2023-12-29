@@ -18,7 +18,7 @@ class OobaboogaBackendConfig(BackendConfig):
     """
 
     name_of_model: str
-    model_settings: dict
+    backend_model_settings: dict
 
     @classmethod
     def get_schema_path(cls, data: Optional[Dict[str, Any]] = None, parent_data: Optional[Dict[str, Any]] = None) -> str:
@@ -43,7 +43,7 @@ class OobaboogaBackend(Backend):
         """
         super().__init__(backend_config=backend_config)  # Call to the base class initializer
 
-    def generate_response(self, prompt: str, generation_config: GenerationConfig) -> str:
+    async def generate_response(self, prompt: str, generation_config: GenerationConfig) -> str:
         """
         Generates a response from Oobabooga based on the given prompt and generation configuration.
 

@@ -40,11 +40,11 @@ class State(BaseConfig):
 
     Attributes:
         history (list): List of messages in the conversation/game,
-        raw_history (list): List of raw messages with no post-processing
+        llm_io_history (list): List of raw messages with no post-processing
     """
 
     history: list
-    raw_history: list
+    llm_io_history: list
 
     @classmethod
     def get_schema_path(cls, data: Optional[Dict[str, Any]] = None, parent_data: Optional[Dict[str, Any]] = None) -> str:

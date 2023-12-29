@@ -118,7 +118,7 @@ class Backend(BaseModel):
         super().__init__(backend_config=backend_config)  # Initialize the BaseModel
         self.backend_config = backend_config
 
-    def generate_response(self, prompt: str, chat_history: list, generation_config: GenerationConfig, prefix: str) -> str:
+    async def generate_response(self, prompt: str, chat_history: list, generation_config: GenerationConfig, prefix: str) -> str:
         """
         Generates a response based on the given prompt and generation configuration.
 

@@ -23,7 +23,7 @@ class SampleGameBState(State):
     miscellaneous data that might be necessary for specific game scenarios.
 
     Attributes:
-        [Inherited from State] history, raw_history
+        [Inherited from State] history, llm_io_history
         time (str): Current in-game time, formatted as a string.
         hidden_data (dict): Data about upcoming events or triggers that are not directly visible to the player.
         situational_flags (dict): Flags for specific events or player actions that can affect game flow.
@@ -33,7 +33,7 @@ class SampleGameBState(State):
         world_state (dict): Environmental or world-specific data, such as weather, location status, etc.
         other (dict): Additional data as required for extending the game's functionality.
     """
-    # [Inherited from State] history, raw_history
+    # [Inherited from State] history, llm_io_history
     time: str
     hidden_data: dict
     situational_flags: dict

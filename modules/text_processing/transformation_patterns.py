@@ -15,7 +15,9 @@ class TransformationConfig(BaseConfig):
     Configuration class for transformation functions, including the list of 
     transformation functions to use and their fixed parameters.
     """
-    transformation_functions: List[Dict[str, Any]]
+
+    user_input_transformations: List[Dict[str, Any]]
+    llm_output_transformations: List[Dict[str, Any]]
 
     @classmethod
     def get_schema_path(cls, data: Optional[Dict[str, Any]] = None, parent_data: Optional[Dict[str, Any]] = None) -> str:

@@ -1,5 +1,5 @@
 import argparse
-from modules.load_engine import load_engine
+from modules.startup import run_local
 import os
 # from modules.old.interactive_cli_session import run_interactive_cli_session
 # from modules.interactive_cli_game import run_interactive_cli_game
@@ -48,15 +48,12 @@ def main():
     setup_logging(args.output)
 
     if args.mode == 'chat':
-        engine = load_engine(
+        run_local(
             app_name=args.mode,
             interface_type=args.ui,
             input_path=args.input,
             output_path=args.output
         )
-        print("Finished loading!")
-        engine.print_yaml()
-        engine.run()
     # elif args.mode == 'game':
     #     run_interactive_cli_game(args.input, args.output)
     else:

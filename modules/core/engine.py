@@ -1,10 +1,11 @@
 
 from pydantic import BaseModel, ValidationError, model_validator, field_validator
-from typing import Type, TypeVar, Optional, Union, Any, List, Dict, get_args, get_origin
+from typing import Type, TypeVar, Optional, Union, Tuple, Any, List, Dict, get_args, get_origin
 from datetime import datetime
 import os
 import copy
 import yaml
+import asyncio
 
 from modules.core.config import BaseConfig
 from modules.core.patterns import Config, State
@@ -14,13 +15,7 @@ from modules.text_processing.transformation_patterns import TransformationConfig
 from modules.text_processing.transformation_manager import TransformationManager  
 from modules.text_processing.parsing_patterns import ParsingConfig
 from modules.text_processing.parsing_manager import ParsingManager
-from modules.interfaces.patterns import Interface, INTERFACE_CLASSES
 from modules.utils import save_yaml, save_json, load_yaml, load_json
-
-# All possible interface classes must be imported here
-from modules.interfaces.patterns import Interface
-from modules.interfaces.cli import CLIInterface
-from modules.interfaces.webui import WebInterface
 
 # Initialize console logging
 import logging
@@ -47,7 +42,6 @@ class ConversationEngine:
         llm_manager (LLMManager): Engine for interfacing with the LLM.
         config (Config): Full configuration/state for the conversation/game.
         state (State) State of the conversation, such as message history, etc.
-        interface (Interface): Interface for the conversation/game.
         transformation_manager (TransformationManager): Manager for text transformations.
         parsing_manager (ParsingManager): Manager for parsing input text.
         output_path (str): Path to the output file where the conversation/game state should be saved.
@@ -57,7 +51,6 @@ class ConversationEngine:
     state_class: Type[State] = State
     config: Config
     state: State
-    interface: Interface
     llm_manager: LLMManager
     transformation_manager: TransformationManager
     parsing_manager: ParsingManager
@@ -92,164 +85,128 @@ class ConversationEngine:
         # Dynamically instantiate Config and State objects, then the Managers
         self.config = self.config_class.create(config_data)
         self.state = self.state_class.create(state_data)        
-        interface_class = globals()[INTERFACE_CLASSES[self.config.interface_type]]
-        self.interface = interface_class(self.config.interface_config)
         self.llm_manager = LLMManager(self.config.llm_config)
         self.transformation_manager = TransformationManager(self.config.transformation_config)
         self.parsing_manager = ParsingManager(self.config.parsing_config)
         # Other managers go here potentially
 
 
-    def run(self):
+    async def query(self, user_input: str):
         """
-        Manages the interactive chat session.
+        Processes the user input, generates the LLM prompt, and updates the conversation history.
+
+        Args:
+            user_input (str): The user input text.
+
+        Yields:
+            Partial or complete responses from the LLM.
         """
-        chat_history = []
-    
-        # FOR REFERENCE, THE OLD LOGIC:
+        # Transform user input, generate a prompt, and send to LLM
+        self.state, processed_user_input = await self.process_user_input(user_input)
+        llm_prompt = await self.generate_llm_prompt(processed_user_input)
 
-    # ## Chat loop
-    # while True:
-    #     try:
-    #         query = input_provider("\n\nYou: ")
-    #         if query is None:
-    #             resp = input("Do you want to cancel and replace the last query? (yes/no): ")
-    #             if resp.lower() == 'yes':
-    #                 chat_history = chat_history[:-2] if len(chat_history) >= 2 else []
-    #                 display_chat_history(chat_history)
-    #                 continue
-    #             else:
-    #                 # In case of 'no' or any other input, just continue to get new input.
-    #                 continue
+        # Send to LLM and get response
+        llm_output = await self.llm_manager.generate_response(llm_prompt, self.state.chat_history, prefix=None)
 
-    #         if transformations:
-    #             query = transform_input(query, transformations)
+        # Process LLM output and generate response
+        llm_output_text = llm_output  # this might not be true in the future, so making this explicit
+        self.state, processed_llm_output =  await self.process_llm_output(llm_output_text, processed_user_input)
+        response =  await self.generate_response(processed_llm_output, processed_user_input)
 
-    #         os.system('cls' if os.name == 'nt' else 'clear')
-    #         display_chat_history(chat_history)
-    #         print(f"\n\nYou: {query}\n")
-    #         print("")
+        # Add both user input and output to chat history
+        await self.add_message_to_history("user", user_input, llm_prompt)
+        await self.add_message_to_history("assistant", response, llm_output_text)
 
-    #         timestamp = datetime.utcnow().isoformat() + 'Z'
-    #         user_message = {
-    #             "role": "user", 
-    #             "content": query, 
-    #             "timestamp": timestamp,
-    #             "num_tokens": count_tokens(query),
-    #             "truncated": False
-    #         }
-    #         chat_history.append(user_message)
-    #         chat_history = truncate_chat_history(chat_history, context_limit, max_tokens)
+        # Truncate the chat history as needed
+        await self.truncate_chat_history()
 
-    #         history_items = [
-    #             item for item in chat_history
-    #             if not item.get('truncated', False) or item.get('protected', False)
-    #         ]
-
-    #         chat_coroutine = custom_streaming_chat(api_key, query, config_dict, history_items, logger)
-    #         complete_response = ""
-    #         ai_prefix = config.ai_prefix
-
-    #         first_message = True
-
-    #         try:
-    #             async for chunk in chat_coroutine:
-    #                 if isinstance(chunk, dict):
-    #                     if "error" in chunk:
-    #                         print(f"\nError: {chunk['error']}\n")
-    #                         chat_history = chat_history[:-1]  # Remove the last user message
-    #                         break  # Exit this try block to re-prompt the user
-    #                     else:
-    #                         complete_response = chunk.get("complete_message", "")
-    #                 else:
-    #                     if first_message:
-    #                         print(f"{ai_prefix}", end="", flush=True)
-    #                         first_message = False
-    #                     print(f"{chunk}", end="", flush=True)
-    #         except KeyboardInterrupt:
-    #             print("Your query has been canceled. You may enter a new one.")
-    #             logger.info("User query canceled.")
-    #             continue
-
-    #         if "error" not in chunk:
-    #             timestamp = datetime.utcnow().isoformat() + 'Z'
-    #             new_response = {
-    #                 "role": "assistant",
-    #                 "content": complete_response,
-    #                 "timestamp": timestamp,
-    #                 "num_tokens": count_tokens(complete_response),
-    #                 "truncated": False
-    #             }
-    #             chat_history.append(new_response)
-    #             chat_history = truncate_chat_history(chat_history, context_limit, max_tokens)
-
-    #             with open(output_filepath, 'w') as f:
-    #                 output_data = {
-    #                     "conversation": chat_history,
-    #                     "configuration": config_dict,
-    #                     "input": input_filepath
-    #                 }
-    #                 output_data["configuration"].pop("default_input", None)
-    #                 json.dump(output_data, f, indent=4)
-
-    #     except KeyboardInterrupt:
-    #         logger.info("User forced exit. Exiting program.")
-    #         print("Exiting program.")
-    #         break
-
-        while True:
-            try:
-
-                ## TODO: find a way to move this logic to the interface,
-                ## because for GUI users it doesn't make sense to couple 
-                ## blank input with something that should be a button press instead.
-                user_input = self.interface.read_input("\n\nYou: ")
-                if user_input == "":
-                    user_decision = self.interface.read_input("Cancel last query? (yes/no): ")
-                    if user_decision.lower() == 'yes':
-                        if len(self.state.chat_history) >= 2:
-                            self.state.chat_history = self.state.chat_history[:-2]
-                        self.interface.display_chat_history(self.state.chat_history)
-                        continue
-                    else:
-                        continue  # Continue to get new input in case of 'no' or other input
-
-                llm_prompt = self.generate_prompt(user_input)
-                self.add_message_to_history("user", llm_prompt)
-                os.system('cls' if os.name == 'nt' else 'clear')
-                self.interface.display_chat_history(self.state.chat_history)
-
-                llm_output = self.llm_manager.generate_response(llm_prompt, chat_history, prefix=None)
-
-                # Insert post-processing, error checking, etc.
-
-                self.add_message_to_history("assistant", llm_output)
-
-
-                self.truncate_chat_history()
-
-            except KeyboardInterrupt:
-                logger.info("User forced exit. Exiting program.")
-                break
-
+        # Save to output file if specified
         if self.output_path:
             if self.output_path.endswith(".json"):
-                self.save_json(self.output_path)
+                await self.save_json(self.output_path)
             elif self.output_path.endswith(".yml"):
-                self.save_yaml(self.output_path)
+                await self.save_yaml(self.output_path)
             else:
                 raise ValueError(f"Invalid output file type: {self.output_path}. Valid values are .json and .yml")
 
-    def generate_prompt(self, user_input: str) -> str:
+        # Return a message signaling the response and processing is complete
+        yield {
+            "status": "finished",
+            "message": llm_output
+        }
+
+
+    async def process_user_input(self, user_input: str) -> Tuple[State, str]:
+        """
+        Process the user input, parsing and transforming it based on the Config
+        and updating the current state based as dictated by the parsing functions.
+
+        This function may be overridden in subclasses to add additional processing,
+        such as by overriding kwargs in the parsing and transformation sets.
+        """
+        extra_parsing_args = {}  # Just to remind that this can be done in subclasses
+        new_state = self.parsing_manager.apply_parsing_set(
+            "user_input_parsings", user_input, self.state, extra_parsing_args
+        )
+
+        extra_transform_args = {}
+        transformed_input = self.transformation_manager.apply_transformation_set(
+            "user_input_transformations", user_input, new_state, extra_transform_args
+        )
+
+        return new_state, transformed_input
+
+
+    async def process_llm_output(self, llm_output: str, user_input: str) -> Tuple[State, str]:
+        """
+        Process the LLM output, parsing and transforming it based on the Config
+        and updating the current state based as dictated by the parsing functions.
+        The user input is also provided in case it is needed for additional
+        logic in the subclasses.
+
+        This function may be overridden in subclasses to add additional processing,
+        such as by overriding kwargs in the parsing and transformation sets.
+        """
+        extra_parsing_args = {}  # Just to remind that this can be done in subclasses
+        new_state = self.parsing_manager.apply_parsing_set(
+            "llm_output_parsings", llm_output, self.state, extra_parsing_args
+        )
+
+        extra_transform_args = {}
+        transformed_output = self.transformation_manager.apply_transformation_set(
+            "llm_output_transformations", llm_output, new_state, extra_transform_args
+        )
+
+        return new_state, transformed_output
+
+    async def generate_llm_prompt(self, user_input: str) -> str:
+        """
+        Given the user input, assemble the prompt to send to the LLM.
+
+        Will be overridden in subclasses.
+        """
         return user_input
     
-    def add_message_to_history(self, role: str, content: str, timestamp: str = None, num_tokens: int = None, truncated: bool = False):
+    async def generate_response(self, llm_output: str, user_input: str) -> str:
+        """
+        Given the llm response and user input, assemble the final
+        message sent back to the user. May use the self.state.___
+        in order to display information about the conversation
+        in subclasses.
+        
+        Will likely be overridden in subclasses.
+        """
+        return llm_output
+    
+    
+    async def add_message_to_history(self, role: str, content: str, llm_io_content: str, timestamp: str = None, num_tokens: int = None, truncated: bool = False):
         """
         Adds a message to the chat history.
 
         Args:
             role (str): The role of the message sender ('user' or 'assistant').
-            content (str): The content of the message.
+            content (str): The user-visible content of the message.
+            llm_io_content (str): The actual, final content of the message sent to or received from LLM.
             timestamp (str, optional): Timestamp of the message. Defaults to current UTC time if not provided.
             num_tokens (int, optional): Number of tokens in the message. Calculated if not provided.
             truncated (bool, optional): Indicates if the message is truncated. Defaults to False.
@@ -257,7 +214,7 @@ class ConversationEngine:
         if not timestamp:
             timestamp = datetime.utcnow().isoformat() + 'Z'
         if num_tokens is None:
-            num_tokens = self.llm_manager.count_tokens(content)
+            num_tokens = await self.llm_manager.count_tokens(content)
 
         self.state.chat_history.append({
             "role": role,
@@ -266,9 +223,16 @@ class ConversationEngine:
             "num_tokens": num_tokens,
             "truncated": truncated
         })
+        self.state.llm_io_history.append({
+            "role": role,
+            "content": llm_io_content,
+            "timestamp": timestamp,
+            "num_tokens": num_tokens,
+            "truncated": truncated
+        })
 
 
-    def truncate_chat_history(self) -> None:
+    async def truncate_chat_history(self) -> None:
         """
         Truncate chat history based on token limits.
 
@@ -281,7 +245,7 @@ class ConversationEngine:
         - list: Potentially truncated chat history.
         """
         # Pull needed data from config files
-        context_limit = self.config.llm_config.backend_config.model_settings.get("context_limit", None)
+        context_limit = self.config.llm_config.backend_config.backend_model_settings.get("context_limit", None)
         if context_limit is None:
             raise ValueError("Context limit not specified in model config.")
         max_tokens = self.config.llm_config.generation_config.max_tokens
@@ -311,20 +275,6 @@ class ConversationEngine:
 
         # No output needed, we modified chat_history in-place
 
-
-    def process_text(self, text):
-        """
-        Processes the given text as part of the conversation or game logic.
-
-        Args:
-            text (str): Text to be processed.
-
-        Returns:
-            str: Processed text or response.
-        """
-        # TODO: implement this logic 
-        pass
-
     def to_dict(self):
         """
         Recursively converts the configuration to a dictionary, including nested configurations.
@@ -339,28 +289,33 @@ class ConversationEngine:
             data["app_name"] = self.app_name
         return data
     
-    def print_yaml(self):
+    async def print_yaml(self):
         """
         Prints configuration and state to the console in YAML format.
         """
-        yaml_string = yaml.dump(self.to_dict(), default_flow_style=False)
+        yaml_string = await asyncio.to_thread(
+            yaml.dump,
+            self.to_dict(), 
+            default_flow_style=False
+        )
         print(yaml_string)
 
-    def save_yaml(self, file_path: str):
+    async def save_yaml(self, file_path: str):
         """
         Saves configuration and state to a single file in YAML format.
 
         Args:
             file_path (str): The file path where the YAML should be saved.
         """
-        save_yaml(self.to_dict(), file_path)
+        await asyncio.to_thread(save_yaml,self.to_dict(), file_path)
 
-    def save_json(self, file_path: str):
+    async def save_json(self, file_path: str):
         """
         Saves configuration and state to a single file in JSON format.
 
         Args:
             file_path (str): The file path where the JSON should be saved.
         """
-        save_json(self.to_dict(), file_path)
+        await asyncio.to_thread(save_json,self.to_dict(), file_path)
+
 

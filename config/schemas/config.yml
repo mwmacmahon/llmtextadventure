@@ -5,7 +5,7 @@ Config:
       type: str
       required: true
       default: "cli"
-      enum: ["cli", "webui"]
+      enum: ["api", "cli", "webui"]
     interface_config:
       type: InterfaceConfig
       required: true

@@ -5,7 +5,7 @@ SampleGameAState:
       type: list
       required: true
       default: []
-    raw_history:
+    llm_io_history:
       type: list
       required: true
       default: []
