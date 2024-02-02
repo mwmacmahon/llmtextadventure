@@ -10,7 +10,7 @@ from typing import List, Optional, Dict, Union, Any, Callable, Type
 
 
 # Initialize console logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 

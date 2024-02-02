@@ -7,6 +7,10 @@ GenerationConfig:
       default: 500
       minimum: 100
       maximum: 1000
+    character:
+      type: str
+      required: false
+      default: null
     temperature:
       type: float
       required: false
@@ -15,20 +19,19 @@ GenerationConfig:
       type: float
       required: false
       default: 1
-    # TEMPORARY, refactor or move
-    openai_n:
+    n:
       type: float
       required: false
       default: 1
-    openai_stop:
+    stop:
       type: list
       required: false
       default: []
-    openai_presence_penalty:
+    presence_penalty:
       type: float
       required: false
       default: 0
-    openai_frequency_penalty:
+    frequency_penalty:
       type: float
       required: false
       default: 0

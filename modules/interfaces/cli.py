@@ -6,14 +6,17 @@ import yaml
 import inspect
 import importlib
 import asyncio
+import os
 
 from modules.interfaces.patterns import Interface, InterfaceConfig
 # from modules.core.engine import ConversationEngine
 
 # Initialize console logging
 import logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
+
+REFRESH_SCREEN_DISABLED = True
 
 TEngine = TypeVar('TEngine', bound='ConversationEngine')
 
@@ -48,6 +51,7 @@ class CLIInterface(Interface):
             engine (ConversationEngine): The engine managing the conversation logic.
         """
 
+        self.display_chat_history(engine.state.chat_history)
         while True:
             try:
                 # Get user input
@@ -85,7 +89,8 @@ class CLIInterface(Interface):
 
                         # Clear the screen and display the final processed chat 
                         # history in case there were changes from the raw output
-                        self.display_chat_history(engine.state.chat_history)
+                        if not REFRESH_SCREEN_DISABLED:
+                            self.display_chat_history(engine.state.chat_history)
                     else:
                         # Custom streaming display logic could go here
                         pass
@@ -101,18 +106,14 @@ class CLIInterface(Interface):
 
     def display_chat_history(self, chat_history: List[Dict[str, str]]) -> None:
         """
-        Render the chat history as if it occurred in real-time.
+        Render the chat history as if it occurred in real-time. Clears existing history.
 
         Parameters:
         - chat_history (list): List of chat interactions.
         """
+        # os.system('cls' if os.name == 'nt' else 'clear')
         for entry in chat_history:
             role = entry.get("role", "")
             content = entry.get("content", "")
-            if role == "system":
-                print(f"System: {content}\n")
-            elif role == "user":
-                print(f"You: {content}\n")
-            elif role == "assistant":
-                print(f"Assistant: {content}\n")
+            print(f"{role}: {content}\n")
         

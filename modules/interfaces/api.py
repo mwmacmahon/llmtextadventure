@@ -11,7 +11,7 @@ from modules.interfaces.patterns import Interface, InterfaceConfig
 
 # Initialize console logging
 import logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 TEngine = TypeVar('TEngine', bound='ConversationEngine')

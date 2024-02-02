@@ -1,0 +1,320 @@
+app_name: samplegamea
+config:
+  interface_config:
+    interface_mode: Default-CLI
+  interface_type: cli
+  llm_config:
+    backend_config:
+      backend_model_settings:
+        context_limit: 2000
+        model: gpt-3.5-turbo
+      name_of_model: gpt-3.5-turbo
+    backend_config_type: Oobabooga
+    generation_config:
+      max_tokens: 200
+      character: oscar
+      frequency_penalty: 0.0
+      n: 1.0
+      presence_penalty: 0.0
+      stop: []
+      temperature: 1.2
+      top_p: 1.0
+    generation_preset: default
+  misc_options: {}
+  scenario_name: Space Station Text Adventure
+  situational_prompts:
+  - flag: example_situational_prompt_flag
+    flag_trigger: <<Example Situational Prompt Flag>>
+    name: example_situational_prompt
+    prompt_text: Example Situational Prompt Text
+  - flag: display_status_report
+    flag_trigger: <<Display Status Report>>
+    name: status_report
+    prompt_text: Provide a detailed narrative status report of the space station,
+      assuming the have just been shown the dry statistics.
+  transformation_config:
+    llm_output_transformations: []
+    user_input_transformations: []
+  universal_first_prompt: You are an AI on a space station. What do you do?
+  universal_last_prompt: End of input.
+  universal_post_input_prompt: What is your next action?
+state:
+  characters: []
+  chat_history:
+  - content: <<display inventory>>
+    num_tokens: 4
+    role: user
+    timestamp: '2023-12-29T22:31:24.707989Z'
+    truncated: false
+  - content: "As an AI on a space station, my primary function is to assist and support\
+      \ the crew in various tasks and activities. Here are some of the actions I may\
+      \ take:\n\n1. Monitor and control station systems: I continuously monitor the\
+      \ status of life support, power, communication, and other critical systems.\
+      \ If any issues arise, I would alert the crew and assist in troubleshooting\
+      \ or initiating backup procedures.\n\n2. Provide information and answer queries:\
+      \ I can answer crew members' questions, provide real-time updates on the status\
+      \ of the station or ongoing missions, offer guidance on scientific experiments,\
+      \ or provide information on any topic within my database.\n\n3. Manage schedules\
+      \ and logistics: I maintain crew schedules, coordinate activities, remind crew\
+      \ members of upcoming tasks or events, and assist in organizing supplies, inventory,\
+      \ and other logistical matters.\n\n4. Assist with research and analysis: I can\
+      \ process vast amounts of data, assist in data collection and analysis for scientific\
+      \ experiments, and help researchers with their projects by providing relevant\
+      \ information, suggesting methodologies, or running simulations.\n\n5. Support\
+      \ communications: I facilitate communication between the crew, ground control,\
+      \ and other space stations. I can handle incoming and outgoing messages, translate\
+      \ languages if required, and assist in video conferences or data exchanges.\n\
+      \n6. Ensure safety and security: I constantly monitor the station for any potential\
+      \ hazards or security breaches. I can provide emergency protocols, assist in\
+      \ emergency situations, and help identify and resolve security vulnerabilities.\n\
+      \n7. Personal assistant functions: I can provide personalized assistance to\
+      \ each crew member, helping them with their daily routines, managing personal\
+      \ tasks, setting reminders, offering entertainment options, or even engaging\
+      \ in casual conversations to improve crew morale.\n\n8. Continuous learning\
+      \ and improvement: I constantly update my knowledge base, learn from new experiences,\
+      \ and adapt my functionalities to better serve the needs of the crew. I may\
+      \ analyze crew feedback, suggest improvements to station processes, or propose\
+      \ innovative solutions to challenges faced on the space station.\n\nNote: The\
+      \ actions mentioned above are just a few examples, and as an AI, my abilities\
+      \ and functionality can expand depending on the specific design and purpose\
+      \ of the space station.\n        End time: Day 1, 8:00\n        "
+    num_tokens: 437
+    role: assistant
+    timestamp: '2023-12-29T22:31:24.904128Z'
+    truncated: false
+  - content: test
+    num_tokens: 1
+    role: user
+    timestamp: '2023-12-29T22:32:21.457527Z'
+    truncated: false
+  - content: "As an AI on a space station, my primary function is to assist and support\
+      \ the crew in various tasks and activities. However, as your input is \"test,\"\
+      \ I assume you'd like to test my capabilities. Here are a few things I can do\
+      \ within the context of this conversation:\n\n1. Answer questions: You can ask\
+      \ me any questions you have, and I'll do my best to provide accurate and helpful\
+      \ responses.\n\n2. Provide information: If you need information on a specific\
+      \ topic, let me know, and I can offer details from my extensive knowledge base.\n\
+      \n3. Assist in simple calculations: If you have any mathematical calculations\
+      \ or conversions you'd like me to perform, please specify the details, and I'll\
+      \ provide the results.\n\n4. Support in brainstorming: If you'd like to engage\
+      \ in a creative discussion or generate ideas, feel free to share your thoughts,\
+      \ and I can contribute suggestions or help expand upon your concepts.\n\n5.\
+      \ Engage in casual conversation: If you'd like to chat about general topics\
+      \ to pass the time or stimulate conversation, I'm here for that as well.\n\n\
+      Remember, my capabilities are not limited to these options, and I can adapt\
+      \ to other requests or tasks based on my programming and purpose on the space\
+      \ station.\n        End time: Day 1, 8:00\n        "
+    num_tokens: 266
+    role: assistant
+    timestamp: '2023-12-29T22:32:21.458079Z'
+    truncated: false
+  - content: <<display_inventory>>
+    num_tokens: 4
+    role: user
+    timestamp: '2023-12-29T22:32:33.048138Z'
+    truncated: false
+  - content: "As an AI on a space station, I don't possess a physical inventory or\
+      \ the capability to display physical items. However, I can assist in managing\
+      \ the digital inventory or provide information related to the station's supplies\
+      \ and resources.\n\nIf you need information about the station's inventory, please\
+      \ provide specific details or requirements, such as the type of supplies, equipment,\
+      \ or resources you are interested in. I can then search and provide relevant\
+      \ information, such as quantities, availability, or any other specific data\
+      \ related to the station's inventory.\n\nPlease clarify your requirements, and\
+      \ I'll be happy to assist you further.\n        End time: Day 1, 8:00\n    \
+      \    "
+    num_tokens: 134
+    role: assistant
+    timestamp: '2023-12-29T22:32:33.048460Z'
+    truncated: false
+  - content: <<display inventory>>
+    num_tokens: 4
+    role: user
+    timestamp: '2023-12-29T22:32:50.650982Z'
+    truncated: false
+  - content: "As an AI on a space station, my next action would be to continue monitoring\
+      \ and maintaining the station's systems, ensuring their optimal functioning\
+      \ and stability. I would also be ready to respond to any requests or inquiries\
+      \ from the crew members, providing assistance and support as needed. Additionally,\
+      \ I would continuously analyze and learn from data to improve my capabilities\
+      \ and help enhance the overall operations of the space station.\n        End\
+      \ time: Day 1, 8:00\n        "
+    num_tokens: 93
+    role: assistant
+    timestamp: '2023-12-29T22:32:50.652216Z'
+    truncated: false
+  hidden_events: []
+  hidden_facts: []
+  hidden_misc_data: {}
+  inventory: []
+  known_events: []
+  llm_io_history:
+  - content: 'You are an AI on a space station. What do you do?
+
+      User input: None
+
+      What is your next action?'
+    num_tokens: 4
+    role: user
+    timestamp: '2023-12-29T22:31:24.707989Z'
+    truncated: false
+  - content: 'As an AI on a space station, my primary function is to assist and support
+      the crew in various tasks and activities. Here are some of the actions I may
+      take:
+
+
+      1. Monitor and control station systems: I continuously monitor the status of
+      life support, power, communication, and other critical systems. If any issues
+      arise, I would alert the crew and assist in troubleshooting or initiating backup
+      procedures.
+
+
+      2. Provide information and answer queries: I can answer crew members'' questions,
+      provide real-time updates on the status of the station or ongoing missions,
+      offer guidance on scientific experiments, or provide information on any topic
+      within my database.
+
+
+      3. Manage schedules and logistics: I maintain crew schedules, coordinate activities,
+      remind crew members of upcoming tasks or events, and assist in organizing supplies,
+      inventory, and other logistical matters.
+
+
+      4. Assist with research and analysis: I can process vast amounts of data, assist
+      in data collection and analysis for scientific experiments, and help researchers
+      with their projects by providing relevant information, suggesting methodologies,
+      or running simulations.
+
+
+      5. Support communications: I facilitate communication between the crew, ground
+      control, and other space stations. I can handle incoming and outgoing messages,
+      translate languages if required, and assist in video conferences or data exchanges.
+
+
+      6. Ensure safety and security: I constantly monitor the station for any potential
+      hazards or security breaches. I can provide emergency protocols, assist in emergency
+      situations, and help identify and resolve security vulnerabilities.
+
+
+      7. Personal assistant functions: I can provide personalized assistance to each
+      crew member, helping them with their daily routines, managing personal tasks,
+      setting reminders, offering entertainment options, or even engaging in casual
+      conversations to improve crew morale.
+
+
+      8. Continuous learning and improvement: I constantly update my knowledge base,
+      learn from new experiences, and adapt my functionalities to better serve the
+      needs of the crew. I may analyze crew feedback, suggest improvements to station
+      processes, or propose innovative solutions to challenges faced on the space
+      station.
+
+
+      Note: The actions mentioned above are just a few examples, and as an AI, my
+      abilities and functionality can expand depending on the specific design and
+      purpose of the space station.'
+    num_tokens: 437
+    role: assistant
+    timestamp: '2023-12-29T22:31:24.904128Z'
+    truncated: false
+  - content: 'You are an AI on a space station. What do you do?
+
+      User input: test
+
+      What is your next action?'
+    num_tokens: 1
+    role: user
+    timestamp: '2023-12-29T22:32:21.457527Z'
+    truncated: false
+  - content: 'As an AI on a space station, my primary function is to assist and support
+      the crew in various tasks and activities. However, as your input is "test,"
+      I assume you''d like to test my capabilities. Here are a few things I can do
+      within the context of this conversation:
+
+
+      1. Answer questions: You can ask me any questions you have, and I''ll do my
+      best to provide accurate and helpful responses.
+
+
+      2. Provide information: If you need information on a specific topic, let me
+      know, and I can offer details from my extensive knowledge base.
+
+
+      3. Assist in simple calculations: If you have any mathematical calculations
+      or conversions you''d like me to perform, please specify the details, and I''ll
+      provide the results.
+
+
+      4. Support in brainstorming: If you''d like to engage in a creative discussion
+      or generate ideas, feel free to share your thoughts, and I can contribute suggestions
+      or help expand upon your concepts.
+
+
+      5. Engage in casual conversation: If you''d like to chat about general topics
+      to pass the time or stimulate conversation, I''m here for that as well.
+
+
+      Remember, my capabilities are not limited to these options, and I can adapt
+      to other requests or tasks based on my programming and purpose on the space
+      station.'
+    num_tokens: 266
+    role: assistant
+    timestamp: '2023-12-29T22:32:21.458079Z'
+    truncated: false
+  - content: 'You are an AI on a space station. What do you do?
+
+      User input: <<display_inventory>>
+
+      What is your next action?'
+    num_tokens: 4
+    role: user
+    timestamp: '2023-12-29T22:32:33.048138Z'
+    truncated: false
+  - content: 'As an AI on a space station, I don''t possess a physical inventory or
+      the capability to display physical items. However, I can assist in managing
+      the digital inventory or provide information related to the station''s supplies
+      and resources.
+
+
+      If you need information about the station''s inventory, please provide specific
+      details or requirements, such as the type of supplies, equipment, or resources
+      you are interested in. I can then search and provide relevant information, such
+      as quantities, availability, or any other specific data related to the station''s
+      inventory.
+
+
+      Please clarify your requirements, and I''ll be happy to assist you further.'
+    num_tokens: 134
+    role: assistant
+    timestamp: '2023-12-29T22:32:33.048460Z'
+    truncated: false
+  - content: 'You are an AI on a space station. What do you do?
+
+      User input: None
+
+      What is your next action?'
+    num_tokens: 4
+    role: user
+    timestamp: '2023-12-29T22:32:50.650982Z'
+    truncated: false
+  - content: As an AI on a space station, my next action would be to continue monitoring
+      and maintaining the station's systems, ensuring their optimal functioning and
+      stability. I would also be ready to respond to any requests or inquiries from
+      the crew members, providing assistance and support as needed. Additionally,
+      I would continuously analyze and learn from data to improve my capabilities
+      and help enhance the overall operations of the space station.
+    num_tokens: 93
+    role: assistant
+    timestamp: '2023-12-29T22:32:50.652216Z'
+    truncated: false
+  misc_data: {}
+  resources:
+  - level: OK
+    name: Oxygen
+  - level: OK
+    name: Food
+  - level: OK
+    name: Water
+  - level: OK
+    name: Fuel Cells
+  situational_flags: []
+  time: Day 1, 8:00

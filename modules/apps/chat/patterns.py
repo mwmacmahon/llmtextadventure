@@ -6,7 +6,7 @@ from modules.core.patterns import Config, State
 
 # Initialize console logging
 import logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # Contains the State, Config, and ConversationEngine classes for Sample Game A

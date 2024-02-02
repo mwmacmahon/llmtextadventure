@@ -15,7 +15,4 @@ Config:
     transformation_config:
       type: TransformationConfig
       required: true
-    parsing_config:
-      type: ParsingConfig
-      required: true
 # Additional parameters are only in subclasses

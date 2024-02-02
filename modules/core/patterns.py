@@ -4,12 +4,11 @@ from modules.core.config import BaseConfig
 from modules.generation.llm_patterns import LLMConfig
 from modules.generation.llm_manager import LLMManager
 from modules.text_processing.transformation_patterns import TransformationConfig
-from modules.text_processing.parsing_patterns import ParsingConfig
 from modules.interfaces.patterns import Interface, InterfaceConfig
 
 # Initialize console logging
 import logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 class Config(BaseConfig):
@@ -22,14 +21,12 @@ class Config(BaseConfig):
         - LLMConfig: Configuration for the LLM.
             - BackendConfig: Configuration for the LLM backend.
         - TransformationConfig: Configuration for text transformations.
-        - ParsingConfig: Configuration for text parsing functions.
     """
 
     interface_type: str
     interface_config: InterfaceConfig
     llm_config: LLMConfig
     transformation_config: TransformationConfig
-    parsing_config: ParsingConfig
 
     @classmethod
     def get_schema_path(cls, data: Optional[Dict[str, Any]] = None, parent_data: Optional[Dict[str, Any]] = None) -> str:

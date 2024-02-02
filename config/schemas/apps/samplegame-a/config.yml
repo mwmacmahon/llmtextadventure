@@ -15,15 +15,44 @@ SampleGameAConfig:
     transformation_config:
       type: TransformationConfig
       required: true
-    parsing_config:
-      type: ParsingConfig
-      required: true
+
     scenario_name:
       type: string
       required: true
-      default: "Sample Game A: Default Scenario"
-    difficulty:
+      default: "Space Station Text Adventure"
+    
+    # Universal First Prompt: Introduces the setting to the LLM
+    universal_first_prompt:
       type: string
       required: true
-      default: normal
-      enum: [easy, normal, hard]
+      default: "The player is an AI controlling various aspects of a space station. Respond to the player's input by narrating the consequences of their actions within the context of the space station environment, crew interactions, and ongoing events. Keep the narrative engaging and consistent with the game's setting and mechanics. Here is the player's text:"
+
+    # Universal Post Input Prompt: Guides the LLM's response after player input
+    universal_post_input_prompt:
+      type: string
+      required: true
+      default: "Narrate the outcomes based on the player's latest decision or command as the AI. Use specific commands like <<Time Passed: HH:MM>> to indicate elapsed time, or <<Resource: Name +/- Amount>> for changes in resources. If clarification is required from the player, use <<Seeking Clarification>>. Ensure the response logically follows from the player's input and respects the game's internal logic and current state."
+
+    # Universal Last Prompt: Ensures a clear endpoint for the LLM's narrative response
+    universal_last_prompt:
+      type: string
+      required: true
+      default: "End your narrative response with a situation or decision point that invites the player's next action, with accompanying text like 'What do you do next?'. Provide clear and relevant details that allow the player to understand their current options within the game's context. Remember that as soon as events reach a point the player would want to react, you should stop the narrative and invite them to react, so as to ensure they have the opportunity to interact and influence the game's progression. Do not proceed with further events or actions without the player's input."
+
+    # Situational Prompts: Specific prompts based on certain game situations or flags
+    situational_prompts:
+      type: list
+      required: true
+      default:
+        - name: "seeking_clarification"
+          flag: "seeking_clarification"
+          prompt_text: "Clarify the player's previous action or decision. Ask for specific details if needed, using the <<Seeking Clarification>> command. Avoid advancing the game state until clarification is provided."
+        - name: "station_report"
+          flag: "display_station_report"
+          prompt_text: "Provide a detailed status report of the space station, including systems, crew status, and resource levels. Use clear and concise indicators for each aspect."
+        # Additional situational prompts as necessary
+
+    misc_options:  # Options not yet refactored into the config items above
+      type: dict
+      required: true
+      default: {}

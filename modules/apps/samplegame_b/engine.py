@@ -8,7 +8,7 @@ from modules.core.patterns import Config, State
 
 # Initialize console logging
 import logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 class SampleGameBEngine(ConversationEngine):
@@ -34,15 +34,3 @@ class SampleGameBEngine(ConversationEngine):
 
     ## Init kept from base class - will use the config and state classes defined above
     ## and as such will use the schemas referenced in those classes
-
-    def process_text(self, text):
-        """
-        Processes the given text as part of the conversation or game logic.
-
-        Args:
-            text (str): Text to be processed.
-
-        Returns:
-            str: Processed text or response.
-        """
-        pass

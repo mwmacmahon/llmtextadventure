@@ -4,15 +4,12 @@ TransformationConfig:
     user_input_transformations:
       type: list
       required: true
-      default: 
-        - name: "cleanup_whitespace"
+      default: []
     llm_output_transformations:
       type: list
       required: true
-      default: 
-        - name: "cleanup_whitespace"
-
-
+      default: []
+      # - name: "cleanup_whitespace"
       # - name: prepend_prefix
       #   args:
       #     prefix: "PREFIX - "

@@ -12,10 +12,10 @@ config:
     backend_config_type: OpenAI
     generation_config:
       max_tokens: 500
-      openai_frequency_penalty: 0.0
-      openai_n: 1.0
-      openai_presence_penalty: 0.0
-      openai_stop: []
+      frequency_penalty: 0.0
+      n: 1.0
+      presence_penalty: 0.0
+      stop: []
       temperature: 1.0
       top_p: 1.0
     generation_preset: default

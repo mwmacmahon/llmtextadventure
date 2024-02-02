@@ -6,7 +6,7 @@ import os
 # import asyncio
 
 import logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 def setup_logging(output_filepath: str):
@@ -39,7 +39,7 @@ def main():
             python main.py --mode game --input path/to/app_profile.json --output path/to/app_state.json
     """
     parser = argparse.ArgumentParser(description='Main CLI app for running individual apps')
-    parser.add_argument('--mode', choices=['chat', 'samplegamea', 'samplegameb', 'autochat'], default="chat", help='Mode of the app to run')
+    parser.add_argument('--mode', choices=['chat', 'samplegamea', 'samplegameb', 'autochat'], help='Mode of the app to run')
     parser.add_argument('--ui', choices=['cli', 'webui', 'SampleGameB', 'autochat'], default="cli", help='Input JSON filename for game profile or chat history.')
     parser.add_argument('--input', required=True, help='Input JSON filename for game profile or chat history.')
     parser.add_argument('--output', required=True, help='Output JSON filename for game state or chat history.')
@@ -47,17 +47,12 @@ def main():
     args = parser.parse_args()
     setup_logging(args.output)
 
-    if args.mode == 'chat':
-        run_local(
-            app_name=args.mode,
-            interface_type=args.ui,
-            input_path=args.input,
-            output_path=args.output
-        )
-    # elif args.mode == 'game':
-    #     run_interactive_cli_game(args.input, args.output)
-    else:
-        print('Invalid mode selected')
+    run_local(
+        app_name=args.mode,
+        interface_type=args.ui,
+        input_path=args.input,
+        output_path=args.output
+    )
 
 if __name__ == '__main__':
     main()

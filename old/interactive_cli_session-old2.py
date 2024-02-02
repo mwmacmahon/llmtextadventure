@@ -13,7 +13,7 @@ from modules.old.chat_helpers import get_filepath, display_chat_history, truncat
 from modules.old.input_transformers import transform_input
 
 # Initialize console logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # Load environment variables

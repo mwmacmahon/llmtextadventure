@@ -12,16 +12,13 @@ config:
     backend_config_type: OpenAI
     generation_config:
       max_tokens: 500
-      openai_frequency_penalty: 0.0
-      openai_n: 1.0
-      openai_presence_penalty: 0.0
-      openai_stop: []
+      frequency_penalty: 0.0
+      n: 1.0
+      presence_penalty: 0.0
+      stop: []
       temperature: 1.0
       top_p: 1.0
     generation_preset: default
-  parsing_config:
-    llm_output_parsings: []
-    user_input_parsings: []
   transformation_config:
     llm_output_transformations:
     - name: cleanup_whitespace
@@ -65,26 +62,61 @@ state:
     role: assistant
     timestamp: '2023-12-28T23:20:04.798197Z'
     truncated: false
-  - content: hi   lol
-    num_tokens: 3
+  - content: more about 2
+    num_tokens: 4
     role: user
-    timestamp: '2023-12-29T06:21:55.943843Z'
+    timestamp: '2023-12-29T06:30:38.347233Z'
     truncated: false
-  - content: Hello! How can I assist you today?
-    num_tokens: 9
+  - content: Regarding language translation, I can translate text from one language
+      to another. Whether you need a single word translated or an entire sentence
+      or paragraph, I can help. My translation capabilities cover a wide range of
+      languages, including but not limited to English, Spanish, French, German, Italian,
+      Chinese, Japanese, Korean, Russian, Portuguese, Arabic, and many more. To use
+      the translation feature, you can simply provide the text you want to translate
+      and specify the source language and target language. For example, you can ask,
+      "Translate 'Hello, how are you?' from English to Spanish." I utilize advanced
+      machine learning algorithms and language models to perform translations, aiming
+      to provide accurate and helpful translations to the best of my abilities. However,
+      please note that while I strive for accuracy, translations may not always be
+      perfect and can sometimes be influenced by context or idiomatic expressions.
+      If you have specific translation requests or need assistance with any language-related
+      queries, feel free to provide the relevant text and language specifications,
+      and I'll do my best to help you!
+    num_tokens: 211
     role: assistant
-    timestamp: '2023-12-29T06:21:56.114659Z'
+    timestamp: '2023-12-29T06:30:38.537914Z'
     truncated: false
   hidden_data: null
   llm_io_history:
-  - content: hi lol
-    num_tokens: 3
+  - content: more about 2
+    num_tokens: 4
     role: user
-    timestamp: '2023-12-29T06:21:55.943843Z'
+    timestamp: '2023-12-29T06:30:38.347233Z'
     truncated: false
-  - content: Hello! How can I assist you today?
-    num_tokens: 9
+  - content: 'Regarding language translation, I can translate text from one language
+      to another. Whether you need a single word translated or an entire sentence
+      or paragraph, I can help. My translation capabilities cover a wide range of
+      languages, including but not limited to English, Spanish, French, German, Italian,
+      Chinese, Japanese, Korean, Russian, Portuguese, Arabic, and many more.
+
+
+      To use the translation feature, you can simply provide the text you want to
+      translate and specify the source language and target language. For example,
+      you can ask, "Translate ''Hello, how are you?'' from English to Spanish."
+
+
+      I utilize advanced machine learning algorithms and language models to perform
+      translations, aiming to provide accurate and helpful translations to the best
+      of my abilities. However, please note that while I strive for accuracy, translations
+      may not always be perfect and can sometimes be influenced by context or idiomatic
+      expressions.
+
+
+      If you have specific translation requests or need assistance with any language-related
+      queries, feel free to provide the relevant text and language specifications,
+      and I''ll do my best to help you!'
+    num_tokens: 211
     role: assistant
-    timestamp: '2023-12-29T06:21:56.114659Z'
+    timestamp: '2023-12-29T06:30:38.537914Z'
     truncated: false
   situational_flags: null

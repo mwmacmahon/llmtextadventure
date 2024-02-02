@@ -10,7 +10,7 @@ from modules.text_processing.parsing_functions import \
 
 # Initialize console logging
 import logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 PARSING_FUNCTIONS = {

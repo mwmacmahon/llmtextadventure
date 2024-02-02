@@ -1,0 +1,189 @@
+app_name: samplegamea
+config:
+  difficulty: normal
+  interface_config:
+    interface_mode: Default-CLI
+  interface_type: cli
+  llm_config:
+    backend_config:
+      backend_model_settings:
+        context_limit: 2000
+        model: gpt-3.5-turbo
+      name_of_model: gpt-3.5-turbo
+    backend_config_type: OpenAI
+    generation_config:
+      max_tokens: 500
+      frequency_penalty: 0.0
+      n: 1.0
+      presence_penalty: 0.0
+      stop: []
+      temperature: 1.0
+      top_p: 1.0
+    generation_preset: default
+  scenario_name: 'Sample Game A: Default Scenario'
+  transformation_config:
+    llm_output_transformations: []
+    user_input_transformations: []
+state:
+  characters: {}
+  chat_history:
+  - content: test
+    num_tokens: 1
+    role: user
+    timestamp: '2023-12-29T07:13:19.404706Z'
+    truncated: false
+  - content: "\n\n\n        Here is the breakdown of the last round!\n        User\
+      \ input: test\n        LLM response: Hark! What dost thou require of me?\n \
+      \       End time: 14:35\n        "
+    num_tokens: 42
+    role: assistant
+    timestamp: '2023-12-29T07:13:19.574400Z'
+    truncated: false
+  - content: a word of encouragement
+    num_tokens: 4
+    role: user
+    timestamp: '2023-12-29T07:13:43.609968Z'
+    truncated: false
+  - content: "\n\n\n        Here is the breakdown of the last round!\n        User\
+      \ input: a word of encouragement\n        LLM response: Fair user, I shall bestow\
+      \ upon thee words of encouragement. \n\nIn life's thorny path, thou art not\
+      \ alone,\nFor strength within thee hath clearly shown.\nRise, like the sun,\
+      \ with courage in thy heart,\nThou shalt conquer all, and play thy part.\n\n\
+      Remember, struggle is but a fleeting storm,\nThou shalt emerge victorious, in\
+      \ all its form.\nPress on, with noble spirit and relentless heed,\nSuccess and\
+      \ triumph shall be thy noblest creed.\n\nThou art resilient, with a warrior's\
+      \ might,\nPerseverance, thy ally in the fight.\nSo fear not, for thou art strong\
+      \ and bold,\nThine success shall be a tale untold.\n\nLet not doubt embrace\
+      \ thy noble soul,\nEmbrace thy dreams, and let them make thee whole.\nIn trials\
+      \ and darkness, thou shalt find thy light,\nWith unwavering faith, set the world\
+      \ alight.\n\nThus, my friend, take heart and never sway,\nFor thy journey shall\
+      \ lead to a brighter day.\nBelieve in thyself, with unwavering might,\nThou\
+      \ art capable of achieving great height.\n        End time: 5:89\n        "
+    num_tokens: 261
+    role: assistant
+    timestamp: '2023-12-29T07:13:43.611289Z'
+    truncated: false
+  - content: that was way way too long
+    num_tokens: 6
+    role: user
+    timestamp: '2023-12-29T07:14:07.288204Z'
+    truncated: false
+  - content: "\n\n\n        Here is the breakdown of the last round!\n        User\
+      \ input: that was way way too long\n        LLM response: Apologies for the\
+      \ length, good Sir or Madame,\nI shall keepeth mine response, more succinct,\
+      \ I am.\n\nFear not, for thou art of strong mettle,\nI bid thee be of good cheer\
+      \ and settle.\nWith thine spirit, face all challenges anew,\nSuccess shalt be\
+      \ within thy view.\n\nShort and sweet, may this reply be,\nWith brevity, I offer\
+      \ good wishes unto thee.\n        End time: 10:129\n        "
+    num_tokens: 120
+    role: assistant
+    timestamp: '2023-12-29T07:14:07.288993Z'
+    truncated: false
+  - content: much better
+    num_tokens: 2
+    role: user
+    timestamp: '2023-12-29T07:14:23.012881Z'
+    truncated: false
+  - content: "\n\n\n        Here is the breakdown of the last round!\n        User\
+      \ input: much better\n        LLM response: My gratitude, dear interlocutor,\
+      \ for thy kind words,\n'Tis my duty to accommodate thy desires, as a true servant\
+      \ affords.\n\nI am pleased that thou dost find this response more fitting,\n\
+      May it bring thee satisfaction, my words not flitting.\n\nIf thou hast more\
+      \ requests or queries in store,\nPray, speaketh them forth, and I shall answer\
+      \ more.\n        End time: 15:167\n        "
+    num_tokens: 110
+    role: assistant
+    timestamp: '2023-12-29T07:14:23.013669Z'
+    truncated: false
+  hidden_data: {}
+  inventory: {}
+  llm_io_history:
+  - content: "\n        Please respond to the user below speaking only in Shakespearean\
+      \ English.\n        User input: test\n        "
+    num_tokens: 1
+    role: user
+    timestamp: '2023-12-29T07:13:19.404706Z'
+    truncated: false
+  - content: Hark! What dost thou require of me?
+    num_tokens: 42
+    role: assistant
+    timestamp: '2023-12-29T07:13:19.574400Z'
+    truncated: false
+  - content: "\n        Please respond to the user below speaking only in Shakespearean\
+      \ English.\n        User input: a word of encouragement\n        "
+    num_tokens: 4
+    role: user
+    timestamp: '2023-12-29T07:13:43.609968Z'
+    truncated: false
+  - content: "Fair user, I shall bestow upon thee words of encouragement. \n\nIn life's\
+      \ thorny path, thou art not alone,\nFor strength within thee hath clearly shown.\n\
+      Rise, like the sun, with courage in thy heart,\nThou shalt conquer all, and\
+      \ play thy part.\n\nRemember, struggle is but a fleeting storm,\nThou shalt\
+      \ emerge victorious, in all its form.\nPress on, with noble spirit and relentless\
+      \ heed,\nSuccess and triumph shall be thy noblest creed.\n\nThou art resilient,\
+      \ with a warrior's might,\nPerseverance, thy ally in the fight.\nSo fear not,\
+      \ for thou art strong and bold,\nThine success shall be a tale untold.\n\nLet\
+      \ not doubt embrace thy noble soul,\nEmbrace thy dreams, and let them make thee\
+      \ whole.\nIn trials and darkness, thou shalt find thy light,\nWith unwavering\
+      \ faith, set the world alight.\n\nThus, my friend, take heart and never sway,\n\
+      For thy journey shall lead to a brighter day.\nBelieve in thyself, with unwavering\
+      \ might,\nThou art capable of achieving great height."
+    num_tokens: 261
+    role: assistant
+    timestamp: '2023-12-29T07:13:43.611289Z'
+    truncated: false
+  - content: "\n        Please respond to the user below speaking only in Shakespearean\
+      \ English.\n        User input: that was way way too long\n        "
+    num_tokens: 6
+    role: user
+    timestamp: '2023-12-29T07:14:07.288204Z'
+    truncated: false
+  - content: 'Apologies for the length, good Sir or Madame,
+
+      I shall keepeth mine response, more succinct, I am.
+
+
+      Fear not, for thou art of strong mettle,
+
+      I bid thee be of good cheer and settle.
+
+      With thine spirit, face all challenges anew,
+
+      Success shalt be within thy view.
+
+
+      Short and sweet, may this reply be,
+
+      With brevity, I offer good wishes unto thee.'
+    num_tokens: 120
+    role: assistant
+    timestamp: '2023-12-29T07:14:07.288993Z'
+    truncated: false
+  - content: "\n        Please respond to the user below speaking only in Shakespearean\
+      \ English.\n        User input: much better\n        "
+    num_tokens: 2
+    role: user
+    timestamp: '2023-12-29T07:14:23.012881Z'
+    truncated: false
+  - content: 'My gratitude, dear interlocutor, for thy kind words,
+
+      ''Tis my duty to accommodate thy desires, as a true servant affords.
+
+
+      I am pleased that thou dost find this response more fitting,
+
+      May it bring thee satisfaction, my words not flitting.
+
+
+      If thou hast more requests or queries in store,
+
+      Pray, speaketh them forth, and I shall answer more.'
+    num_tokens: 110
+    role: assistant
+    timestamp: '2023-12-29T07:14:23.013669Z'
+    truncated: false
+  other: {}
+  resources: {}
+  situational_flags: {}
+  time: 15:167
+  world_state: {}

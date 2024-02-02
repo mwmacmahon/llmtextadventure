@@ -16,7 +16,7 @@ from modules.old.input_transformers import transform_input
 from modules.utils import get_filename_without_extension
 
 # Initialize console logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # Load environment variables

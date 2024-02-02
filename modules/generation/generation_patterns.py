@@ -8,7 +8,7 @@ import os
 
 # Initialize console logging
 import logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 class GenerationConfig(BaseConfig):
@@ -20,11 +20,10 @@ class GenerationConfig(BaseConfig):
     max_tokens: Optional[int] = None
     temperature: Optional[float] = None
     top_p: Optional[float] = None
-    # TEMPORARY, refactor or move
-    openai_n: Optional[float] = None
-    openai_stop: Optional[list] = None
-    openai_presence_penalty: Optional[float] = None
-    openai_frequency_penalty: Optional[float] = None
+    n: Optional[float] = None
+    stop: Optional[list] = None
+    presence_penalty: Optional[float] = None
+    frequency_penalty: Optional[float] = None
 
     @classmethod
     def get_schema_path(cls, data: Optional[Dict[str, Any]] = None, parent_data: Optional[Dict[str, Any]] = None) -> str:

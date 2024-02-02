@@ -17,7 +17,7 @@ from modules.old.input_transformers import cast_to_transformer_obj, transform_in
 load_dotenv()
 
 # Initialize console logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # AppProfile and State classes remain the same as previously defined

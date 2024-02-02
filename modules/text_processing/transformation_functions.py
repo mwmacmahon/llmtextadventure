@@ -5,14 +5,16 @@ from typing import List, Optional, Dict, Union, Any, Callable, Type
 
 
 # Initialize console logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
-
+## Transformations for different types of LLMs (e.g. Alpaca, etc.)
+## should also go here.
 
 def cleanup_whitespace(text: str, state_dict: dict = {}) -> str:
     """
     Clean up consecutive whitespaces in the input text.
+    Note that it also strips newlines in its current form, so watch out.
 
     Args:
         text (str): The original input text.

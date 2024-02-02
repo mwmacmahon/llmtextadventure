@@ -1,4 +1,6 @@
 
+## TODO: needs to be updated to match samplegame_a's engine class
+
 from pydantic import BaseModel, ValidationError, model_validator, field_validator
 from typing import Type, TypeVar, Optional, Union, Tuple, Any, List, Dict, get_args, get_origin
 from datetime import datetime
@@ -13,13 +15,11 @@ from modules.generation.llm_patterns import LLMConfig
 from modules.generation.llm_manager import LLMManager
 from modules.text_processing.transformation_patterns import TransformationConfig
 from modules.text_processing.transformation_manager import TransformationManager  
-from modules.text_processing.parsing_patterns import ParsingConfig
-from modules.text_processing.parsing_manager import ParsingManager
 from modules.utils import save_yaml, save_json, load_yaml, load_json
 
 # Initialize console logging
 import logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 class ConversationEngine:
@@ -42,8 +42,7 @@ class ConversationEngine:
         llm_manager (LLMManager): Engine for interfacing with the LLM.
         config (Config): Full configuration/state for the conversation/game.
         state (State) State of the conversation, such as message history, etc.
-        transformation_manager (TransformationManager): Manager for text transformations.
-        parsing_manager (ParsingManager): Manager for parsing input text.
+        transformation_manager (TransformationManager): Manager for routine text transformations.
         output_path (str): Path to the output file where the conversation/game state should be saved.
     """
     app_name: Optional[str] = None
@@ -53,7 +52,6 @@ class ConversationEngine:
     state: State
     llm_manager: LLMManager
     transformation_manager: TransformationManager
-    parsing_manager: ParsingManager
     # Other managers as needed
     output_path: Optional[str] = None
 
@@ -87,7 +85,6 @@ class ConversationEngine:
         self.state = self.state_class.create(state_data)        
         self.llm_manager = LLMManager(self.config.llm_config)
         self.transformation_manager = TransformationManager(self.config.transformation_config)
-        self.parsing_manager = ParsingManager(self.config.parsing_config)
         # Other managers go here potentially
 
 
@@ -101,12 +98,30 @@ class ConversationEngine:
         Yields:
             Partial or complete responses from the LLM.
         """
-        # Transform user input, generate a prompt, and send to LLM
+        # Process user input and update state
         self.state, processed_user_input = await self.process_user_input(user_input)
-        llm_prompt = await self.generate_llm_prompt(processed_user_input)
+        self.state, user_flag_response = await self.handle_user_flags()
+        # Check for user flags and update state
 
-        # Send to LLM and get response
-        llm_output = await self.llm_manager.generate_response(llm_prompt, self.state.chat_history, prefix=None)
+        if processed_user_input is None:
+            # No actual input to send to the LLM,
+            # so just return the output from processing
+            # the user flags
+            yield {
+                "status": "finished",  # signals that the response is complete
+                "message": user_flag_response
+            }
+        else:
+            # Yield the user response but still send
+            # the remaining user input to the LLM
+            yield {
+                "status": "running",  # signals more response data is coming
+                "message": user_flag_response
+            }
+
+        # Create LLM prompt, then send to LLM and get response
+        llm_prompt = await self.generate_llm_prompt(processed_user_input)
+        llm_output = await self.llm_manager.generate_response(llm_prompt, self.state.llm_io_history, prefix=None)
 
         # Process LLM output and generate response
         llm_output_text = llm_output  # this might not be true in the future, so making this explicit
@@ -144,10 +159,8 @@ class ConversationEngine:
         This function may be overridden in subclasses to add additional processing,
         such as by overriding kwargs in the parsing and transformation sets.
         """
-        extra_parsing_args = {}  # Just to remind that this can be done in subclasses
-        new_state = self.parsing_manager.apply_parsing_set(
-            "user_input_parsings", user_input, self.state, extra_parsing_args
-        )
+
+        new_state = self.state.model_copy(deep=True)
 
         extra_transform_args = {}
         transformed_input = self.transformation_manager.apply_transformation_set(
@@ -167,17 +180,37 @@ class ConversationEngine:
         This function may be overridden in subclasses to add additional processing,
         such as by overriding kwargs in the parsing and transformation sets.
         """
-        extra_parsing_args = {}  # Just to remind that this can be done in subclasses
-        new_state = self.parsing_manager.apply_parsing_set(
-            "llm_output_parsings", llm_output, self.state, extra_parsing_args
-        )
+        new_state = self.state.model_copy(deep=True)
 
+        # Insert updates of state here based on parsing, if needed
+        
         extra_transform_args = {}
         transformed_output = self.transformation_manager.apply_transformation_set(
             "llm_output_transformations", llm_output, new_state, extra_transform_args
         )
 
         return new_state, transformed_output
+
+
+    async def handle_user_flags(self) -> Tuple[State, Optional[str]]:
+        """
+        Process the situational flags, updating the state and generating a response
+        to the user based on the flags. Returns None for a response if
+        no actionable flags are found.
+
+        If it returns None for the response, the ConversationManager should
+        not send anything to the LLM, but instead ask the user for more input.
+
+        Will be overridden in subclasses.
+        """
+        # Copy the current state for modifications
+        new_state = self.state.model_copy(deep=True)
+
+        # If flags found, update state and generate response
+        if False:
+            return new_state, user_flags_response
+        else:
+            return new_state, None  # No flags found, return None for response
 
     async def generate_llm_prompt(self, user_input: str) -> str:
         """

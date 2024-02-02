@@ -1,0 +1,32 @@
+
+app_name: "samplegamea"  # Specifies the application type
+
+config:
+  llm_config:
+    backend_config_type: "OpenAI"
+    # backend_config:
+    # generation_preset: "alternate"
+    generation_config:
+      temperature: 1.0
+
+  transformation_config:
+    # # Can specify transformation sets here to be automatically 
+    # # applied to user input and LLM output, at least with the default Engine.
+    # # Currently only two are supported by the default Engine/TransformationManager:
+    # # user_input_transformations and llm_output_transformations
+    # llm_output_transformations: []
+    # user_input_transformations: []
+
+# WIP
+state:
+  history: []
+  llm_io_history: []
+  # hidden_data: {}
+  # situational_flags: {}
+  # time: "14:00"
+  # resources: {}
+  # characters: {}
+  # inventory: {}
+  # world_state: {}
+  # other: {}
+

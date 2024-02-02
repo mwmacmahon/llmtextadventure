@@ -1,0 +1,7 @@
+APIInterfaceConfig:
+  type: object
+  properties:
+    interface_mode:
+      type: str
+      required: true
+      default: "Default-API"

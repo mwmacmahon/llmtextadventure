@@ -1,6 +1,7 @@
 SampleGameAState:
   type: object
   properties:
+     # Inherited from State
     chat_history:
       type: list
       required: true
@@ -9,35 +10,62 @@ SampleGameAState:
       type: list
       required: true
       default: []
-    hidden_data:
-      type: object
-      required: true
-      default: {}
-    situational_flags:
-      type: object
-      required: true
-      default: {}
-    time:
+
+    ###############
+    # Public data - data that the user can display or access, directly or indirectly
+    ###############
+    time: # Contains the current day and time in the game as "Day #, HH:MM"
       type: string
       required: true
-      default: "14:00"
-    resources:
-      type: object
+      default: "Day 1, 8:00"
+    situational_flags: # Contains a list of flags (strings) that are used to help direct game flow
+      type: list
+      required: true
+      default: []
+    resources: # Contains a list of resources (dicts/objects) that are crucial to the game in some way
+      type: list
+      required: true
+      default:
+      # # TODO: Move this to the input config file
+        - name: "Oxygen"
+          level: "OK"
+        - name: "Food"
+          level: "OK"
+        - name: "Water"
+          level: "OK"
+        - name: "Fuel Cells"
+          level: "OK"
+    inventory: # Contains a list of items (dicts/objects) that the player has or has access to
+      type: list
+      required: true
+      default: []
+    characters: # Contains a list of characters (dicts/objects) that the player has encountered
+      type: list
+      required: true
+      default: []
+    known_events: # List of known events (dicts/objects) that have occurred or will occur
+      type: list
+      required: true
+      default: []
+    ## Other public configuration items should go here
+    misc_data: # Contains key-value pairs that haven't yet been factored out into their own config
+      type: dict
       required: true
       default: {}
-    characters:
-      type: object
+
+    ###############
+    # Hidden data - data that should not be displayed to the user
+    ###############
+    hidden_facts:  # Contains a list of secret facts that may be important
+      type: list
       required: true
-      default: {}
-    inventory:
-      type: object
+      default: []
+    hidden_events: # List of secret events (each a dict) that have occurred or will occur
+      type: list
       required: true
-      default: {}
-    world_state:
-      type: object
-      required: true
-      default: {}
-    other:
-      type: object
+      default: []
+    # Other hidden data goes here
+    hidden_misc_data: # Contains key-value pairs that haven't yet been factored out into their own config
+      type: dict
       required: true
       default: {}

@@ -9,11 +9,12 @@ import openai
 import asyncio
 import logging
 import tiktoken
+import time
 import os
 
 # Initialize console logging
 import logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 openai.util.logger.setLevel(logging.WARNING)
 
@@ -21,12 +22,13 @@ openai.util.logger.setLevel(logging.WARNING)
 from dotenv import load_dotenv
 load_dotenv()
 
+FAKE_OUTPUT = False
+
 def custom_streaming_chat(query: str, config_dict: dict, chat_history: list):
     """
     Initiate a custom streaming chat with OpenAI GPT models and yield real-time responses.
 
     Args:
-        api_key (str): The API key for OpenAI.
         query (str): The user query to send to the chat model.
         config_dict (dict): Configuration dictionary containing parameters like model name, max tokens, etc.
         chat_history (list): Previous chat history to provide as context.
@@ -69,6 +71,8 @@ def custom_streaming_chat(query: str, config_dict: dict, chat_history: list):
             stream=True,
             **filtered_config
         )
+    except KeyboardInterrupt:
+        raise
     except Exception as e:
         # logger.error(f"API call failed: {e}")  # log in main script
         yield {"error": str(e)}
@@ -81,13 +85,24 @@ def custom_streaming_chat(query: str, config_dict: dict, chat_history: list):
             delta = chunk.get("choices")[0].get("delta", {})
             content = delta.get("content", "")
             complete_response += content
-            yield content
+            partial_response = {
+                "message_chunk": content,
+                "complete_message": None,
+                "id": chunk.get("id"),
+                "created": chunk.get("created"),
+                "model": chunk.get("model"),
+                "finish_reason": chunk.get("choices")[0].get("finish_reason")
+            }
+            yield partial_response  # Yield content as it arrives
+    except KeyboardInterrupt:
+        raise
     except Exception as e:
         logger.error(f"API call failed: {e}")
         yield {"error": str(e)}
         return
     
     final_response = {
+        "message_chunk": None,
         "complete_message": complete_response,
         "id": chunk.get("id"),
         "created": chunk.get("created"),
@@ -138,39 +153,75 @@ async def async_custom_streaming_chat(query: str, config_dict: dict, chat_histor
             "content": query
         }
     )
-    
-    try:
-        response = await openai.ChatCompletion.acreate(
-            messages=formatted_chat_history,
-            stream=True,
-            **filtered_config
-        )
-    except Exception as e:
-        # logger.error(f"API call failed: {e}")  # log in main script
-        yield {"error": str(e)}
-        return
 
-    complete_response = ""
+    if FAKE_OUTPUT:
+        try:
+            for i in range(100):
+                await asyncio.sleep(0.2)
+                partial_response = {
+                    "message_chunk": "test",
+                    "complete_message": None,
+                    "id": "test",
+                    "created": time.time(),
+                    # "created": payload.get("created"),
+                    "model": "test",
+                    "finish_reason":"test"
+                }
+                yield partial_response  # Yield content as it arrives
+
+        except KeyboardInterrupt:
+            raise
+        except Exception as e:
+            logger.error(f"LLM API call failed: {e}")
+            raise
+        
+        final_response = {
+            "message_chunk": None,
+            "complete_message": "testest",
+            "id": "test",
+            "created": time.time(),
+            # "created": payload.get("created"),
+            "model": "test",
+            "finish_reason":"test"
+        }
     
-    try:
-        async for chunk in response:
-            delta = chunk.get("choices")[0].get("delta", {})
-            content = delta.get("content", "")
-            complete_response += content
-            yield content
-    except Exception as e:
-        logger.error(f"API call failed: {e}")
-        yield {"error": str(e)}
-        return
+    else:
+
+        try:
+            response = await openai.ChatCompletion.acreate(
+                messages=formatted_chat_history,
+                stream=True,
+                **filtered_config
+            )
+            complete_response = ""
+            async for chunk in response:
+                delta = chunk.get("choices")[0].get("delta", {})
+                content = delta.get("content", "")
+                complete_response += content
+                partial_response = {
+                    "message_chunk": content,
+                    "complete_message": None,
+                    "id": chunk.get("id"),
+                    "created": chunk.get("created"),
+                    "model": chunk.get("model"),
+                    "finish_reason": chunk.get("choices")[0].get("finish_reason")
+                }
+                yield partial_response  # Yield content as it arrives
+        except KeyboardInterrupt:
+            raise
+        except Exception as e:
+            logger.error(f"LLM API call failed: {e}")
+            raise
     
     final_response = {
+        "message_chunk": None,
         "complete_message": complete_response,
         "id": chunk.get("id"),
         "created": chunk.get("created"),
         "model": chunk.get("model"),
         "finish_reason": chunk.get("choices")[0].get("finish_reason")
     }
-    
+
     logger.debug("Yielding final response.")
     yield final_response
 
@@ -193,7 +244,7 @@ class OpenAIBackendConfig(BackendConfig):
 
 class OpenAIBackend(Backend):
     """
-    OpenAI specific Backend implementation.
+    OpenAI-specific Backend implementation.
 
     Attributes:
         backend_config (BackendConfig): Configuration specific to OpenAI.
@@ -237,18 +288,18 @@ class OpenAIBackend(Backend):
             # for chunk in chat_coroutine:
             chat_coroutine = async_custom_streaming_chat(prompt, params_dict, history_items)
             async for chunk in chat_coroutine:
-                if isinstance(chunk, dict):
-                    if "error" in chunk:
-                        print(f"\nError: {chunk['error']}\n")
-                        break  # Exit this try block to re-prompt the user
-                    else:
-                        complete_response = chunk.get("complete_message", "")
-                else:
+                if "error" in chunk:
+                    print(f"\nError: {chunk['error']}\n")
+                    break  # Exit this try block to re-prompt the user
+                elif chunk.get("complete_message", None):
+                    complete_response = chunk.get("complete_message", "")
+                elif chunk.get("message_chunk", None):
+                    message_chunk = chunk.get("message_chunk", "")
                     if first_message:
                         if prefix:
                             print(f"{prefix}", end="", flush=True)
                         first_message = False
-                    print(f"{chunk}", end="", flush=True)
+                    print(f"{message_chunk}", end="", flush=True)
         except KeyboardInterrupt:
             print("Your query has been canceled. You may enter a new one.")
             logger.info("User query canceled.")

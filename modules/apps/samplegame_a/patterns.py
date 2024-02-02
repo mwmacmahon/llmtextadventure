@@ -6,7 +6,7 @@ from modules.core.patterns import Config, State
 
 # Initialize console logging
 import logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # Contains the State, Config, and ConversationEngine classes for Sample Game A
@@ -34,14 +34,20 @@ class SampleGameAState(State):
         other (dict): Additional data as required for extending the game's functionality.
     """
     # [Inherited from State] history, llm_io_history
+
+    # Public data - can be accessed by the user directly or indirectly
     time: str
-    hidden_data: dict
-    situational_flags: dict
-    resources: dict
-    characters: dict
-    inventory: dict
-    world_state: dict
-    other: dict
+    situational_flags: list
+    resources: list
+    inventory: list
+    characters: list
+    known_events: list
+    misc_data: dict
+
+    # Hidden data - cannot be accessed by the user
+    hidden_facts: list
+    hidden_events: list
+    hidden_misc_data: dict
 
     @classmethod
     def get_schema_path(cls, data: Optional[Dict[str, Any]] = None, parent_data: Optional[Dict[str, Any]] = None) -> str:
@@ -60,7 +66,11 @@ class SampleGameAConfig(Config):
     """
     # [Inherited from Config] interface_type, interface_config, llm_config, transformation_config, parsing_config
     scenario_name: str
-    difficulty: str
+    universal_first_prompt: str
+    universal_post_input_prompt: str
+    universal_last_prompt: str
+    situational_prompts: list
+    misc_options: dict
 
     @classmethod
     def get_schema_path(cls, data: Optional[Dict[str, Any]] = None, parent_data: Optional[Dict[str, Any]] = None) -> str:

@@ -20,7 +20,7 @@ from modules.interfaces.webui import WebInterface
 
 # Initialize console logging
 import logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 DEFAULT_INTERFACE_TYPE = "cli"
@@ -45,6 +45,7 @@ def run_local(app_name: str = None, interface_type: str = None, input_path: str 
     if not app_name and not input_path:
         raise ValueError("Must specify at least one of the following to load_engine(): app_name, input_path")
     
+    # Load input data
     if input_path:
         if input_path.endswith(".json"):
             input_data = load_json(input_path)
@@ -54,16 +55,18 @@ def run_local(app_name: str = None, interface_type: str = None, input_path: str 
             raise ValueError(f"Invalid input file type: {input_path}. Valid values are .json and .yml")
     else:
         input_data = {}
-        if app_name:
-            if "app_name" in input_data:
-                if input_data["app_name"] != app_name:
-                    raise ValueError(f"app_name specified in input file ({input_data['app_name']}) does not match app_name specified in load_engine() ({app_name})")
-            else:
-                input_data["app_name"] = app_name  # Add app_name to input_data
+
+    # Check if app_name is specified in input_data
+    if app_name:
+        if "app_name" in input_data:
+            if input_data["app_name"] != app_name:
+                raise ValueError(f"app_name specified in input file ({input_data['app_name']}) does not match app_name specified in load_engine() ({app_name})")
         else:
-            if "app_name" not in input_data:
-                raise ValueError("User must specify app_name manually in load_engine() if input file does not")
-            app_name = input_data.get["app_name"]
+            input_data["app_name"] = app_name  # Add app_name to input_data
+    else:
+        if "app_name" not in input_data:
+            raise ValueError("User must specify app_name manually in load_engine() if input file does not")
+        app_name = input_data.get["app_name"]
 
     if app_name not in GAME_STATES:
         raise ValueError(f"Invalid app type: {app_name}. Valid values are {GAME_STATES.keys()}")
@@ -88,12 +91,13 @@ def run_local(app_name: str = None, interface_type: str = None, input_path: str 
 
     print(f"App type: {app_name}")
     print(f"Interface type: {interface_type}")
-    print(f"Config data: {config_data}")
-    print(f"State data: {state_data}")
+    # print(f"Config data: {config_data}")
+    # print(f"State data: {state_data}")
     print(f"Output path: {output_path}")
 
     # Initialize the appropriate ConversationEngine
     EngineClass = ENGINES[app_name]
+    print(f"Engine class: {EngineClass}")
     conversation_engine = EngineClass(
         app_name=app_name,
         config_data=config_data, 
@@ -101,6 +105,7 @@ def run_local(app_name: str = None, interface_type: str = None, input_path: str 
         output_path=output_path
     )
     InterfaceClass = globals()[INTERFACE_CLASSES[interface_type]]
+    print(f"Interface class: {InterfaceClass}")
     interface = InterfaceClass(interface_config_data)
     interface.run(conversation_engine)
 
