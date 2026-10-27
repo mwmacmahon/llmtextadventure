@@ -14,7 +14,7 @@ web/dist/
 *.local.yml
 
 # Runtime data
-data/
+/data/
 *.sqlite3
 *.db
 
@@ -22,10 +22,14 @@ data/
 notes/
 
 # Legacy on-disk leftovers from the 2023 codebase (kept out of main)
-chat_histories/
-logs/
-conversion_outputs/
-modules/
+/chat_histories/
+/logs/
+/conversion_outputs/
+/modules/
 
 # macOS
 .DS_Store
+
+# Build artifacts
+*.egg-info/
+*.tsbuildinfo

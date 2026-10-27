@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api",
+      "runtimeExecutable": "server/.venv/bin/uvicorn",
+      "runtimeArgs": ["app:app", "--app-dir", "server", "--host", "0.0.0.0", "--port", "8010", "--reload"],
+      "port": 8010
+    },
+    {
+      "name": "api-fake",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["TA_PROVIDER=fake", "server/.venv/bin/uvicorn", "app:app", "--app-dir", "server", "--host", "0.0.0.0", "--port", "8010", "--reload"],
+      "port": 8010
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "web", "run", "dev"],
+      "port": 5173
+    }
+  ]
+}

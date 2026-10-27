@@ -1,0 +1,38 @@
+# Server configuration. Non-secret. Secrets (ANTHROPIC_API_KEY) come from the
+# environment or a .env file at the repo root.
+
+server:
+  host: 0.0.0.0        # bind to LAN
+  port: 8010
+  data_dir: ../data     # sqlite db + usage logs (gitignored)
+  content_root: ../notes/content   # per-game creative content (gitignored for now)
+  web_dist: ../web/dist            # served as static files if present
+
+# Model roles. Each role is configured independently so backends can be mixed.
+# provider: anthropic | fake   (set TA_PROVIDER=fake to force fake everywhere)
+roles:
+  narrator:
+    provider: anthropic
+    model: claude-sonnet-5-5
+    max_tokens: 4096
+    effort: low                 # creative prose doesn't need deep thinking
+    cache_ttl: 1h
+    refusal_fallback: true      # server-side fallback on safety refusal (beta)
+  adjudicator:
+    provider: anthropic
+    model: claude-haiku-5-5
+    max_tokens: 2048
+    effort: medium
+  referee:
+    provider: anthropic
+    model: claude-haiku-5-5
+    max_tokens: 2048
+    effort: medium
+  summarizer:
+    provider: anthropic
+    model: claude-haiku-5-5
+    max_tokens: 2048
+    effort: medium
+
+context:
+  window_turns: 12       # recent turns sent verbatim to the narrator
