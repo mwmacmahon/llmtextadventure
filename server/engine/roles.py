@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from .mechanics import Tier
 from .providers.base import Msg
+from .threads import ThreadClose
 
 # ---- adjudicator ----------------------------------------------------------
 
@@ -78,6 +79,8 @@ class RefereeBase(BaseModel):
     present_entities: list[str] = Field(default_factory=list, description="Ids of entities who appear or act in the narration, exactly as listed.")
     log_line: str = Field(description="One short, player-visible line summarising what just happened, in past tense, for the game's log. No hidden information.")
     flags_set: list[FlagSet] = Field(default_factory=list, description="Flags from the allowed list that the narration clearly established. Omit anything uncertain.")
+    threads_opened: list[str] = Field(default_factory=list, description="New threads the narration introduced that will matter later: a goal the player took on, a promise or cover story (say to whom), a plan an NPC announced, an open question. Short titles, at most two per turn, none for routine moments.")
+    threads_closed: list[ThreadClose] = Field(default_factory=list, description="Open threads (by id, from the list in the game state) that this narration settled.")
     narration_issues: list[str] = Field(default_factory=list, description="Contradictions with the game state, hidden information revealed, or directives not followed. Empty if none.")
     confidence: Literal["low", "medium", "high"] = Field(description="How sure you are of this whole report.")
 
@@ -93,6 +96,7 @@ Rules:
 - Use entity ids, locations and flag names exactly as listed. If the narration moves someone to a place that is not on the list, pick the closest listed place or leave it null.
 - Numeric changes are small nudges; the engine clamps them.
 - narration_issues is for the engine, not the player: note hidden facts revealed, contradictions with the state, or ignored directives.
+- Threads are the story's memory of commitments: open one when the narration creates something that must be remembered later (a lie and who believes it, a promise, a plan, a deadline, a question raised); close one when it is clearly achieved, broken, or moot. Do not open threads for routine actions. Something that opens and settles within this same narration is not a thread: do not open it. Close only threads listed as open in the game state, by their exact id; never close one you are opening now.
 - Be terse. The fields are the output."""
 
 
@@ -102,3 +106,37 @@ def referee_messages(rules: str, state_text: str, directives: list[str], player_
     user = (f"[GAME STATE BEFORE THIS TURN]\n{state_text.strip()}\n\n[DIRECTIVES THE NARRATOR WAS GIVEN]\n{d}\n\n"
             f"[PLAYER INPUT]\n{player_text.strip()}\n\n[NARRATION TO REPORT ON]\n{narration.strip()}")
     return system, [Msg("user", user)]
+
+
+# ---- summarizer -----------------------------------------------------------
+
+SUMMARIZER_INSTRUCTIONS = """You keep the running memory of a text adventure for its narrator. The oldest turns are about to drop out of the narrator's context; fold them into the story so far so nothing that matters is lost.
+
+The game engine already records the hard facts in a state block the narrator sees every turn, so do not repeat those. Record what the state cannot hold:
+- Tone and texture: how the story has felt, running motifs, sensory details that recur, jokes that landed.
+- The player's character: how they have been behaving, their style, what kind of mind they are becoming, what they seem to want.
+- Relationships and dynamics between characters as they have actually played out in the prose, not as the dossier describes them.
+- Every lie, cover story, forged message and promise: what was said, by whom, to whom, and who believes it now.
+- Things said or noticed that may come back: suspicions voiced, favours owed, threats, loose ends.
+- The beats in order, briefly, with enough specificity (names, places, what exactly happened) that the narrator could refer back to any of them.
+
+Write dense prose in past tense: the crew by name, the player as "the player" (the station). No headings, no bullet points, no preamble. Keep every proper name. If a previous summary is given, write a new complete summary that merges it with the new turns; compress the older material a little and keep the new turns in more detail. End with a short paragraph beginning "Most recently," covering the last two or three beats in order. Length: 400 to 800 words."""
+
+
+def summarizer_messages(previous: str | None, turns: list[tuple[int, list[tuple[str, str]]]], captured: str, guidance: str) -> tuple[str, list[Msg]]:
+    """turns: [(turn_no, [(role, text), ...])]. captured: what the state block already records."""
+    system = SUMMARIZER_INSTRUCTIONS
+    if guidance.strip():
+        system += "\n\nGAME-SPECIFIC GUIDANCE\n" + guidance.strip()
+    parts: list[str] = []
+    if previous:
+        parts.append("[PREVIOUS SUMMARY]\n" + previous.strip())
+    parts.append("[WHAT THE GAME STATE ALREADY RECORDS, SO YOU NEED NOT]\n" + captured.strip())
+    body: list[str] = []
+    for t, rows in turns:
+        body.append(f"--- Turn {t} ---")
+        for role, text in rows:
+            body.append(f"[{role.upper()}]\n{text.strip()}")
+    parts.append("[TURNS TO FOLD IN]\n" + "\n\n".join(body))
+    parts.append("Write the story so far now.")
+    return system, [Msg("user", "\n\n".join(parts))]

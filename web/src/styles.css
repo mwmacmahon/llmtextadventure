@@ -92,3 +92,19 @@ ul.log, ul.notes { margin: 0; padding-left: 18px; font-size: 13px; }
 .mechanics { font-size: 12px; color: var(--muted); border-left: 2px solid var(--border); padding-left: 10px; max-width: 72ch; }
 .stage { font-style: italic; }
 .ending { border: 1px solid var(--accent); border-radius: 8px; padding: 10px 14px; max-width: 72ch; }
+
+.msg.command { align-self: flex-end; color: var(--muted); font-size: 13px; }
+.msg.command::before { content: "▸ "; }
+.msg.result { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; background: #0b0d11; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: var(--info); }
+.story-note { max-width: 72ch; font-size: 13px; color: var(--muted); }
+.story-note summary { cursor: pointer; }
+.story-note .note-body { white-space: pre-wrap; margin-top: 6px; border-left: 2px solid var(--border); padding-left: 10px; }
+.commands { display: flex; flex-direction: column; gap: 6px; }
+.command-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; }
+.command-label { min-width: 110px; }
+.command-row select { padding: 2px 6px; font-size: 12px; }
+.command-row .small-btn { margin-left: auto; }
+.props { margin: 4px 0 10px; padding: 10px 14px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
+.props .row-actions { margin-top: 8px; }
+.props table { width: auto; }
+.props td, .props th { padding-right: 14px; }

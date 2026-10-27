@@ -85,3 +85,40 @@ def build_messages(store: Store, instance_id: str, window_turns: int, bulletin: 
 def _latest_summary(rows: list[TranscriptRow], before_turn: int | None) -> TranscriptRow | None:
     cands = [r for r in rows if r.role == "system_note" and (before_turn is None or r.turn < before_turn)]
     return cands[-1] if cands else None
+
+
+@dataclass
+class SummaryPlan:
+    """Which completed turns have dropped out of the window and are not yet folded into a summary."""
+    to_cover: list[int]                           # turn numbers, ascending; empty: nothing to do
+    previous: TranscriptRow | None                # the latest summary, if any
+    rows: list[tuple[int, list[tuple[str, str]]]] = field(default_factory=list)   # [(turn, [(role, text)])]
+
+    @property
+    def needed(self) -> bool:
+        return bool(self.to_cover)
+
+
+def summary_plan(store: Store, instance_id: str, window_turns: int, slide: int) -> SummaryPlan:
+    """The summarizer runs at slide points, over exactly the turns that just left the window.
+    The summary row is stored at the last covered turn, so undo past it drops it and
+    `_latest_summary` picks it up whenever the window starts after it."""
+    rows = store.transcript(instance_id, roles=["player", "narrator", "system_note", "command", "result"])
+    turns: dict[int, dict[str, str]] = {}
+    for r in rows:
+        if r.role in ("player", "narrator"):
+            turns.setdefault(r.turn, {})[r.role] = r.text
+    completed = sorted(t for t, parts in turns.items() if "player" in parts and "narrator" in parts)
+    start = window_start(len(completed), window_turns, slide)
+    dropped = completed[:start]
+    prev = _latest_summary(rows, None)
+    covered = prev.turn if prev else 0
+    to_cover = [t for t in dropped if t > covered]
+    if not to_cover:
+        return SummaryPlan([], prev)
+    lo, hi = covered, to_cover[-1]
+    by_turn: dict[int, list[tuple[str, str]]] = {}
+    for r in rows:
+        if r.role != "system_note" and lo < r.turn <= hi:
+            by_turn.setdefault(r.turn, []).append((r.role, r.text))
+    return SummaryPlan(to_cover, prev, [(t, by_turn[t]) for t in sorted(by_turn)])

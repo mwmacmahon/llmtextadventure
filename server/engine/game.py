@@ -10,6 +10,8 @@ implement: new_instance, load_state, frozen_prefix, render_bulletin, ui.
 """
 from __future__ import annotations
 
+import random
+from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
@@ -95,7 +97,36 @@ class Choices(BaseModel):
     choices: list[Choice]
 
 
-Widget = StatusStrip | Meter | Table | EntityCards | ListPanel | LogPanel | Choices
+class Option(BaseModel):
+    id: str
+    label: str
+
+
+class Param(BaseModel):
+    name: str
+    label: str
+    options: list[Option]
+
+
+class CommandSpec(BaseModel):
+    """A command the player can issue with a click: resolved by the engine alone
+    (`engine`: no model call, a console result) or turned into a synthetic player
+    line plus engine-applied effects that the whole pipeline then narrates
+    (`narrated`)."""
+    id: str
+    label: str
+    mode: Literal["engine", "narrated"] = "engine"
+    params: list[Param] = Field(default_factory=list)
+    hint: str = ""
+
+
+class Commands(BaseModel):
+    type: Literal["commands"] = "commands"
+    title: str | None = None
+    items: list[CommandSpec]
+
+
+Widget = StatusStrip | Meter | Table | EntityCards | ListPanel | LogPanel | Choices | Commands
 
 
 class UISchema(BaseModel):
@@ -125,6 +156,28 @@ class Rejection(BaseModel):
 class ApplyReport(BaseModel):
     applied: list[str] = Field(default_factory=list)      # human-readable "crew.park.mood: anxious -> calm"
     rejected: list[Rejection] = Field(default_factory=list)
+
+
+class CommandResult(BaseModel):
+    ok: bool = True
+    label: str = ""                 # what the player clicked, for the transcript ("Seal Cargo")
+    text: str = ""                  # engine mode: the console's reply. Not-ok: why it did not go through.
+    player_line: str = ""           # narrated mode: the synthetic player input
+    directive: str = ""             # narrated mode: what the narrator must play
+    summary: str = ""               # narrated mode: the adjudication summary
+    minutes: int = 0                # narrated mode: in-game time it takes
+    entities: list[str] = Field(default_factory=list)
+    systems: list[str] = Field(default_factory=list)
+    log_line: str | None = None     # appended to the game log, clock-stamped
+
+
+@dataclass
+class TurnInfo:
+    """What `after_turn` gets to know about the turn that just ran."""
+    turn: int
+    elapsed_minutes: int
+    rng: random.Random
+    applied: list[str] = field(default_factory=list)   # ApplyReport.applied, so drift can avoid fields the referee just set
 
 
 # ---------------------------------------------------------------------------
@@ -161,6 +214,9 @@ class GameBase:
     resolver: str = "dice_d20"                        # key in mechanics.RESOLVERS
     authority: dict[str, Actor] = {}                  # path pattern -> who may write (default engine)
     events_path: str = "hidden.events"                # where Event records live in the state doc
+    spontaneous_path: str | None = None               # where Spontaneous records live; None: no happenings
+    recent_path: str | None = None                    # narrator-only list of recent happenings (clock-stamped)
+    threads_path: str | None = None                   # where Thread records live; None: no threads
     log_path: str = "log"
     skip_adjudication: bool = False                   # purely narrative games may set True
     skip_referee: bool = False
@@ -213,7 +269,20 @@ class GameBase:
         """Validate and apply the referee's report. Default applies nothing but the log line."""
         return state, ApplyReport()
 
-    def after_turn(self, state: BaseModel) -> BaseModel:
+    def summary_guidance(self, state: BaseModel) -> str:
+        """Extra instructions for the summarizer (what this game's state block captures, what to keep)."""
+        return ""
+
+    def commands(self, state: BaseModel) -> list[CommandSpec]:
+        """Commands the UI offers right now. Default: none."""
+        return []
+
+    def run_command(self, state: BaseModel, command_id: str, args: dict[str, Any]) -> tuple[BaseModel, CommandResult]:
+        """Apply a command. Engine mode: mutate state and describe the result. Narrated mode:
+        apply the hard effects here, and return the player line and directive the pipeline narrates."""
+        return state, CommandResult(ok=False, text=f"unknown command {command_id!r}")
+
+    def after_turn(self, state: BaseModel, info: TurnInfo) -> BaseModel:
         """Per-turn drift (moods settle, meters decay). Default: nothing."""
         return state
 

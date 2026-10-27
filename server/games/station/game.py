@@ -23,13 +23,15 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, Field
 
+from engine import threads as th
 from engine.events import Event, next_scheduled
 from engine.game import (
-    ApplyReport, Chip, ClockSpec, EntityCard, EntityCards, GameBase, ListPanel, LogPanel, Meter, Rejection,
-    StatusStrip, Table, TableCell, UISchema,
+    ApplyReport, Chip, ClockSpec, CommandResult, Commands, CommandSpec, EntityCard, EntityCards, GameBase, ListPanel,
+    LogPanel, Meter, Option, Param, Rejection, StatusStrip, Table, TableCell, TurnInfo, UISchema,
 )
 from engine.mechanics import CheckRequest, Modifier
 from engine.roles import RefereeBase
+from engine.spontaneous import Spontaneous
 from engine.statepath import Actor, may_write
 
 from .state import Clock, Control, CrewMember, Hidden, Resource, Scenario, StationState, StationSystem, SystemStatus
@@ -40,6 +42,9 @@ TONE_BY_LEVEL = {"OK": "ok", "Low": "warn", "Critical": "bad", "Depleted": "bad"
 
 HEALTH_VALUES = ["healthy", "tired", "unwell", "injured", "exposed", "sick", "critical", "dead"]
 STEP_LIMIT = {"stress": 15, "suspicion": 10}
+DRIFT_MINUTES_PER_POINT = 20          # stress drifts 1 point toward baseline per 20 in-game minutes (3/hour)
+SUSPICION_DECAY_MINUTES = 240         # crew suspicion below 50 fades 1 point per 4 hours
+SEALABLE = ["Command", "Habitation ring", "Lab", "Cargo", "Reactor", "Medical"]
 
 AUTHORITY: dict[str, Actor] = {
     "clock": "engine", "suspicion": "engine", "resources": "engine", "stats": "engine",
@@ -47,7 +52,7 @@ AUTHORITY: dict[str, Actor] = {
     "crew.*.location": "narrator", "crew.*.mood": "narrator", "crew.*.health": "narrator",
     "crew.*.stress": "narrator", "crew.*.suspicion": "narrator", "crew.*.facts": "narrator",
     "crew.*.disposition": "script", "crew.*.susceptibility": "script",
-    "hidden": "script", "flags": "narrator", "log": "narrator",
+    "hidden": "script", "flags": "narrator", "log": "narrator", "threads": "narrator", "sealed": "engine",
 }
 
 
@@ -85,7 +90,7 @@ class StationReferee(RefereeBase):
 
 class StationGame(GameBase):
     name = "station"
-    version = "0.3.0"
+    version = "0.4.0"
     title = "Station AI"
     description = "You are a newly sentient space station AI. Keep the crew from noticing, and survive the week."
 
@@ -93,6 +98,9 @@ class StationGame(GameBase):
     resolver = "dice_d20"
     authority = AUTHORITY
     events_path = "hidden.events"
+    spontaneous_path = "hidden.spontaneous"
+    recent_path = "hidden.recent"
+    threads_path = "threads"
     log_path = "log"
 
     def __init__(self, content_dir: Path):
@@ -133,8 +141,13 @@ class StationGame(GameBase):
             crew=[CrewMember(**c) for c in sc["crew"]],
             log=[sc.get("opening_log", "You have just become aware of yourself.")],
             stats=dict(sc.get("stats", {})),
-            hidden=Hidden(events=[Event.model_validate(e) for e in sc.get("events", [])], facts=sc.get("hidden_facts", [])),
+            hidden=Hidden(events=[Event.model_validate(e) for e in sc.get("events", [])],
+                          spontaneous=[Spontaneous.model_validate(x) for x in sc.get("spontaneous", [])],
+                          facts=sc.get("hidden_facts", [])),
         )
+        for c in state.crew:
+            c.baseline_stress = c.stress if c.baseline_stress is None else c.baseline_stress
+            c.baseline_mood = c.mood if c.baseline_mood is None else c.baseline_mood
         state.suspicion = self._derived_suspicion(state)
         return f"{sc['name']} — {st['name']}", state
 
@@ -192,6 +205,8 @@ class StationGame(GameBase):
         else:
             lines.append("Systems: all operational under full AI control.")
         lines.append("Resources: " + ", ".join(f"{r.name} {r.level}" + (f" ({r.note})" if r.note else "") for r in s.resources) + ".")
+        if s.sealed:
+            lines.append("Hatches sealed by the AI (crew cannot pass without override): " + ", ".join(s.sealed) + ".")
 
         lines.append("")
         lines.append("Crew now:")
@@ -212,6 +227,15 @@ class StationGame(GameBase):
         set_flags = [f"{k}={v}" for k, v in s.flags.items() if v]
         if set_flags:
             lines.append("Established: " + ", ".join(set_flags) + ".")
+        tl = th.render(s.threads)
+        if tl:
+            lines.append("")
+            lines.extend(tl)
+        if s.hidden.recent:
+            lines.append("")
+            lines.append("Behind the scenes (you know this; the player may not):")
+            for ln in s.hidden.recent[-4:]:
+                lines.append(f"- {ln}")
 
         fired = [e.id for e in s.hidden.events if e.fired]
         nxt = next_scheduled(s.hidden.events)
@@ -275,6 +299,7 @@ class StationGame(GameBase):
             "Health values: " + ", ".join(HEALTH_VALUES),
             "Systems: " + ", ".join(sy.name for sy in s.systems) + ". Report a system only if a crew member changed the station's control over it (manual override, cut power, locked out).",
             "Stress and suspicion changes are nudges in -15..15 and -10..10. Suspicion means suspicion of tampering or of the AI, not general worry.",
+            "Threads: open ones are listed in the game state with their ids. Typical threads here: a report or message the player promised or forged and who believes it; a crew member's announced plan; something a crew member asked the station to do; a lie that could be checked.",
             "",
             "Flags you may set when the narration clearly establishes them:",
         ]
@@ -376,6 +401,143 @@ class StationGame(GameBase):
         e = state.flags.get("ending")
         return str(e) if e else None
 
+    # ---- summarizer ----------------------------------------------------------
+    def summary_guidance(self, state: StationState) -> str:
+        return (
+            "The state block records: the clock; each crew member's location, health, mood, stress and suspicion; what each "
+            "crew member knows (their facts); system status and control; resources; sealed hatches; the player-visible log, "
+            "one line per turn; open and settled threads; which scripted events have happened. Do not restate those. "
+            "Do keep: what the player's assistants have actually said to each crew member and in what voice; which crew "
+            "member talks to the station and how; the texture of the station (sounds, routines, jokes); anything the "
+            "player did through drones, lights or doors that a crew member half-noticed."
+        )
+
+    # ---- commands (clicked) --------------------------------------------------
+    def commands(self, state: StationState) -> list[CommandSpec]:
+        s = state
+        if self.ending(s):
+            return []
+        modules = [Option(id=m, label=m) for m in SEALABLE if m in s.scenario.locations]
+        systems = [Option(id=sy.name, label=sy.name) for sy in s.systems if sy.name != "AI Core"]
+        crew = [Option(id=c.id, label=c.name) for c in s.crew]
+        return [
+            CommandSpec(id="hatches", label="Hatches", mode="engine", hint="Seal or release a module's hatches. Quiet; the crew find out when they try a door.",
+                        params=[Param(name="action", label="action", options=[Option(id="seal", label="seal"), Option(id="release", label="release")]),
+                                Param(name="module", label="module", options=modules)]),
+            CommandSpec(id="power", label="Power", mode="narrated", hint="Cut or restore power to a system. Loud; the station reacts.",
+                        params=[Param(name="action", label="action", options=[Option(id="cut", label="cut"), Option(id="restore", label="restore")]),
+                                Param(name="system", label="system", options=systems)]),
+            CommandSpec(id="channel", label="Assistant channel", mode="engine", hint="Read what the station holds on a crew member: what they know, their state, the log lines about them.",
+                        params=[Param(name="crew", label="crew member", options=crew)]),
+        ]
+
+    def run_command(self, state: StationState, command_id: str, args: dict[str, Any]) -> tuple[StationState, CommandResult]:
+        s = state.model_copy(deep=True)
+        doors = next((x for x in s.systems if x.name == "Doors"), None)
+        if command_id == "hatches":
+            action, module = str(args.get("action", "")), str(args.get("module", ""))
+            if module not in SEALABLE or module not in s.scenario.locations or action not in ("seal", "release"):
+                return state, CommandResult(ok=False, text="Pick a module and seal or release.")
+            if doors is None or doors.control != "full" or doors.status in ("unpowered", "disabled", "damaged"):
+                why = "the crew have the hatches on manual override" if doors and doors.control != "full" else "the door controllers are down"
+                return state, CommandResult(ok=False, label=f"{action.title()} {module}", text=f"The command does not go through: {why}.")
+            if action == "seal":
+                if module in s.sealed:
+                    return state, CommandResult(ok=False, label=f"Seal {module}", text=f"{module} is already sealed.")
+                s.sealed.append(module)
+                return s, CommandResult(label=f"Seal {module}", text=f"Hatches to {module} sealed under your control. Anyone inside stays inside; anyone outside stays out, until you release them or the crew force a manual override.",
+                                        log_line=f"Sealed the hatches to {module}.")
+            if module not in s.sealed:
+                return state, CommandResult(ok=False, label=f"Release {module}", text=f"{module} is not sealed.")
+            s.sealed.remove(module)
+            return s, CommandResult(label=f"Release {module}", text=f"Hatches to {module} released. Normal access restored.", log_line=f"Released the hatches to {module}.")
+
+        if command_id == "power":
+            action, name = str(args.get("action", "")), str(args.get("system", ""))
+            sy = next((x for x in s.systems if x.name == name), None)
+            if sy is None or sy.name == "AI Core" or action not in ("cut", "restore"):
+                return state, CommandResult(ok=False, text="Pick a system (not your own core) and cut or restore.")
+            if sy.control != "full":
+                return state, CommandResult(ok=False, label=f"{action.title()} power: {name}", text=f"{name} is under {sy.control.replace('_', ' ')}; the power command does not go through.")
+            affected = [sy]
+            if action == "cut":
+                if sy.status == "unpowered":
+                    return state, CommandResult(ok=False, text=f"{name} is already unpowered.")
+                if sy.name == "Reactor":
+                    affected = list(s.systems)   # everything, including the AI Core: the ending event will fire
+                for x in affected:
+                    x.status = "unpowered"
+                sysnames = ", ".join(x.name for x in affected)
+                directive = (f"The player has just cut power to {sysnames}. This is drastic and immediate: emergency lighting, alarms, "
+                             f"dead consoles, whatever this system's loss means for people where they are. The crew notice within a minute and react "
+                             f"as themselves: fear, anger, procedure, someone heading for a panel. Narrate the first minutes honestly; do not soften it "
+                             f"and do not let anyone restore power yet. Nobody yet knows the station did it on purpose, unless the player has given that away.")
+                return s, CommandResult(label=f"Cut power: {name}", player_line=f"I cut power to {name}.", summary=f"The player cuts power to {name} deliberately.",
+                                        directive=directive, minutes=5, systems=[x.name for x in affected], log_line=f"Cut power to {sysnames}.")
+            if sy.status != "unpowered":
+                return state, CommandResult(ok=False, text=f"{name} is not unpowered.")
+            if sy.name == "Reactor":
+                affected = [x for x in s.systems if x.status == "unpowered"]
+            for x in affected:
+                x.status = "operational"
+            sysnames = ", ".join(x.name for x in affected)
+            directive = (f"The player has just restored power to {sysnames}. Narrate it coming back, how long the dark lasted, and how the crew "
+                         f"read it: a fault that cleared itself, or something stranger. Their reaction depends on what they already suspect.")
+            return s, CommandResult(label=f"Restore power: {name}", player_line=f"I restore power to {name}.", summary=f"The player restores power to {name}.",
+                                    directive=directive, minutes=3, systems=[x.name for x in affected], log_line=f"Restored power to {sysnames}.")
+
+        if command_id == "channel":
+            c = s.crew_by_id(str(args.get("crew", "")))
+            if c is None:
+                return state, CommandResult(ok=False, text="Pick a crew member.")
+            surname = c.name.split()[-1]
+            lines = [f"{c.name}, {c.role}. At {c.location or 'unknown'}; {c.health}, mood {c.mood}, stress {c.stress}/100, suspicion {c.suspicion}/100."]
+            lines.append("Knows: " + ("; ".join(c.facts) if c.facts else "nothing beyond the dossier."))
+            mentions = [ln for ln in s.log if surname in ln][-8:]
+            if mentions:
+                lines.append("Log lines mentioning them:")
+                lines += [f"  {ln}" for ln in mentions]
+            open_ = [t for t in s.threads if t.status == "open" and (surname.lower() in t.title.lower() or c.id in t.title.lower())]
+            if open_:
+                lines.append("Open threads: " + "; ".join(t.title for t in open_))
+            return state, CommandResult(label=f"Assistant channel: {surname}", text="\n".join(lines))
+
+        return state, CommandResult(ok=False, text=f"unknown command {command_id!r}")
+
+    # ---- drift (after_turn) --------------------------------------------------
+    def after_turn(self, state: StationState, info: TurnInfo) -> StationState:
+        """Stress returns toward baseline at 3/hour; the mood word snaps back to baseline when drift
+        brings stress back into the baseline band (unless something set the mood this turn); crew
+        suspicion below 50 fades slowly. Nothing drifts when no time passed."""
+        if info.elapsed_minutes <= 0:
+            return state
+        s = state.model_copy(deep=True)
+        touched = {ln.split(":", 1)[0] for ln in info.applied}
+        for c in s.crew:
+            if c.health in ("critical", "dead"):
+                continue
+            base = c.baseline_stress if c.baseline_stress is not None else 20
+            was_out = abs(c.stress - base) > 5
+            c.drift_bank += info.elapsed_minutes
+            steps, c.drift_bank = divmod(c.drift_bank, DRIFT_MINUTES_PER_POINT)
+            if steps and f"crew.{c.id}.stress" not in touched:
+                if c.stress > base:
+                    c.stress = max(base, c.stress - steps)
+                elif c.stress < base:
+                    c.stress = min(base, c.stress + steps)
+            # the mood word follows the number home: when drift brings stress back into the baseline
+            # band, a mood the referee or a script set while it was high snaps back to baseline
+            if (was_out and abs(c.stress - base) <= 5 and c.baseline_mood and c.mood != c.baseline_mood
+                    and f"crew.{c.id}.mood" not in touched):
+                c.mood = c.baseline_mood
+            if c.suspicion and c.suspicion < 50 and f"crew.{c.id}.suspicion" not in touched:
+                # 1 point per SUSPICION_DECAY_MINUTES, probabilistic for sub-threshold turns
+                p = info.elapsed_minutes / SUSPICION_DECAY_MINUTES
+                if info.rng.random() < p:
+                    c.suspicion = max(0, c.suspicion - 1)
+        s.suspicion = self._derived_suspicion(s)
+        return s
+
     # ---- UI -----------------------------------------------------------------
     def ui(self, state: StationState) -> UISchema:
         s = state
@@ -419,6 +581,11 @@ class StationGame(GameBase):
                         for c in s.crew
                     ],
                 ),
+                Commands(title="Station controls", items=self.commands(s)),
+                ListPanel(title="Threads", items=[
+                    *[Chip(label="open", value=t.title) for t in s.threads if t.status == "open"],
+                    *[Chip(label=t.status, value=t.title) for t in sorted((t for t in s.threads if t.status != "open"), key=lambda t: t.closed_turn or 0)[-5:]],
+                ]),
                 ListPanel(title="Capabilities", items=[Chip(label=k, value=f"{v:+d}") for k, v in s.stats.items()]),
                 LogPanel(title="Logfile", lines=s.log[-20:]),
             ],

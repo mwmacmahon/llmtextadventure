@@ -99,4 +99,6 @@ class AnthropicProvider:
         resp = await self.client.messages.parse(output_format=schema, **kw)
         if resp.stop_reason == "refusal":
             raise RuntimeError("structured extraction refused")
-        return resp.parsed_output, _usage(resp.usage)
+        usage = _usage(resp.usage)
+        usage.extra["model"] = getattr(resp, "model", None) or role.model
+        return resp.parsed_output, usage

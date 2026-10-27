@@ -48,6 +48,11 @@ class RenameInput(BaseModel):
     title: str
 
 
+class CommandInput(BaseModel):
+    command: str
+    args: dict[str, Any] = {}
+
+
 def _exists(iid: str) -> None:
     if not store.get_instance(iid):
         raise HTTPException(404, "no such instance")
@@ -121,6 +126,12 @@ def fork_instance(iid: str, body: ForkInput | None = None):
     return engine.instance_view(new_id)
 
 
+@app.get("/api/instances/{iid}/usage")
+def get_usage(iid: str):
+    _exists(iid)
+    return engine.usage(iid)
+
+
 @app.get("/api/instances/{iid}/ledger")
 def get_ledger(iid: str, turn: int | None = None):
     return store.ledger(iid, turn)
@@ -133,15 +144,24 @@ def undo(iid: str, body: UndoInput | None = None):
     return engine.instance_view(iid)
 
 
-@app.post("/api/instances/{iid}/turn")
-async def turn(iid: str, body: TurnInput):
-    _exists(iid)
-
+def _sse(gen_events):
     async def gen():
-        async for ev in engine.run_turn(iid, body.text):
+        async for ev in gen_events:
             yield f"event: {ev['event']}\ndata: {json.dumps(ev['data'])}\n\n"
 
     return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.post("/api/instances/{iid}/turn")
+async def turn(iid: str, body: TurnInput):
+    _exists(iid)
+    return _sse(engine.run_turn(iid, body.text))
+
+
+@app.post("/api/instances/{iid}/command")
+async def command(iid: str, body: CommandInput):
+    _exists(iid)
+    return _sse(engine.run_turn(iid, command=(body.command, body.args)))
 
 
 # ---- static frontend (production) ----------------------------------------

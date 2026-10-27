@@ -55,7 +55,7 @@ class FakeProvider:
 
     async def extract(self, role: RoleConfig, system: str, messages: list[Msg], schema: type[T]) -> tuple[T, Usage]:
         last = messages[-1].content if messages else ""
-        usage = Usage(input_tokens=len(json.dumps([m.content for m in messages])) // 4, output_tokens=40)
+        usage = Usage(input_tokens=len(json.dumps([m.content for m in messages])) // 4, output_tokens=40, extra={"model": "fake"})
         queue = self.canned.get(schema.__name__)
         if queue:
             return queue.pop(0), usage  # type: ignore[return-value]

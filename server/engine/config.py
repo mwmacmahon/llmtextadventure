@@ -39,10 +39,27 @@ class ContextConfig(BaseModel):
     window_slide: int = 6       # the window start moves in steps of this many turns (cache stability)
 
 
+class Pricing(BaseModel):
+    """USD per million tokens. cache_write is the rate for the TTL the roles use (1h)."""
+    input: float
+    output: float
+    cache_read: float
+    cache_write: float
+
+
 class Config(BaseModel):
     server: ServerConfig = Field(default_factory=ServerConfig)
     roles: dict[str, RoleConfig]
     context: ContextConfig = Field(default_factory=ContextConfig)
+    pricing: dict[str, Pricing] = Field(default_factory=dict)
+
+    def cost_usd(self, model: str, usage: dict) -> float | None:
+        p = self.pricing.get(model)
+        if not p:
+            return None
+        g = lambda k: float(usage.get(k) or 0)  # noqa: E731
+        return (g("input_tokens") * p.input + g("output_tokens") * p.output
+                + g("cache_read_input_tokens") * p.cache_read + g("cache_creation_input_tokens") * p.cache_write) / 1_000_000
 
     def role(self, name: str) -> RoleConfig:
         return self.roles[name]

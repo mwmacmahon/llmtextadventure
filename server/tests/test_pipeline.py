@@ -104,8 +104,10 @@ async def test_window_slides_stably(engine: Engine):
     # completed before each turn: 0,1,2,3,4,5,6,7 -> start 0,0,0,0,0,2,2,4 -> first turn None,1,1,1,1,3,3,5
     assert firsts == [None, 1, 1, 1, 1, 3, 3, 5]
     req = narrator_request(engine, iid, 8)["messages"]
-    assert req[0]["content"].endswith("turn 5")
-    assert len(req) == 2 * 3 + 1
+    # the summary of the dropped turns leads, then the window, then the bulletin + player text
+    assert req[0]["content"].startswith("[STORY SO FAR]") and req[1]["role"] == "assistant"
+    assert req[2]["content"].endswith("turn 5")
+    assert len(req) == 2 + 2 * 3 + 1
 
 
 async def test_export_import_fork_rename_delete(engine: Engine):

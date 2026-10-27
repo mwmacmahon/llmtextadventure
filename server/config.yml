@@ -29,11 +29,21 @@ roles:
     max_tokens: 1024
     effort: low
   summarizer:
+    # Runs only at window-slide points (every 6 turns), so it can afford the narrator's model:
+    # a rich story-so-far is what keeps long games coherent, and Haiku flattens it.
     provider: anthropic
-    model: claude-haiku-5-5
-    max_tokens: 1024
+    model: claude-sonnet-5-5
+    max_tokens: 2048
     effort: low
 
 context:
   window_turns: 12      # recent turns sent verbatim to the narrator (minimum)
   window_slide: 6       # window start moves in steps of this many turns, so the cache prefix is stable
+
+# List prices, USD per million tokens, for the per-game cost rollup (game properties in the
+# lobby). cache_write is the 1h-TTL rate (2x input). Haiku's cache rates are the standard
+# multiples of its base price (reads 0.1x, 1h writes 2x); Opus 5.5's 1h write is likewise 2x.
+pricing:
+  claude-sonnet-5-5: {input: 2.00, output: 10.00, cache_read: 0.20, cache_write: 4.00}
+  claude-haiku-5-5:  {input: 0.10, output: 0.50,  cache_read: 0.01, cache_write: 0.20}
+  claude-opus-5-5:   {input: 4.00, output: 20.00, cache_read: 0.20, cache_write: 8.00}

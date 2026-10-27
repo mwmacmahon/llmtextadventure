@@ -13,6 +13,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from engine.events import Event
+from engine.spontaneous import Spontaneous
+from engine.threads import Thread
 
 Level = Literal["OK", "Low", "Critical", "Depleted"]
 SystemStatus = Literal["operational", "degraded", "malfunctioning", "disabled", "unpowered", "damaged"]
@@ -60,10 +62,16 @@ class CrewMember(BaseModel):
     facts: list[str] = Field(default_factory=list)                # learned during play
     disposition: Disposition = Field(default_factory=Disposition)
     location: str = ""
+    # drift (engine): stress returns toward baseline at 3/hour; mood snaps back when it gets there
+    baseline_stress: int | None = None
+    baseline_mood: str | None = None
+    drift_bank: int = 0                 # minutes banked toward the next 1-point drift step
 
 
 class Hidden(BaseModel):
     events: list[Event] = Field(default_factory=list)   # engine events (DESIGN §8), status included
+    spontaneous: list[Spontaneous] = Field(default_factory=list)   # unscripted happenings, status included
+    recent: list[str] = Field(default_factory=list)     # narrator-only: recent happenings with their causes
     facts: list[str] = Field(default_factory=list)      # crew secrets, true causes
 
 
@@ -85,6 +93,8 @@ class StationState(BaseModel):
     systems: list[StationSystem] = Field(default_factory=list)
     crew: list[CrewMember] = Field(default_factory=list)
     log: list[str] = Field(default_factory=list)      # visible summary lines
+    threads: list[Thread] = Field(default_factory=list)   # open/settled commitments the referee maintains
+    sealed: list[str] = Field(default_factory=list)   # modules whose hatches the AI has sealed (engine command)
     flags: dict[str, Any] = Field(default_factory=dict)
     stats: dict[str, int] = Field(default_factory=dict)   # the AI's capabilities as check modifiers
     hidden: Hidden = Field(default_factory=Hidden)

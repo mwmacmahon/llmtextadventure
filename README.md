@@ -82,33 +82,49 @@ DELETE /api/instances/{id}
 GET    /api/instances/{id}/export       self-contained JSON (transcript, ledger, snapshots, prefix)
 POST   /api/instances/{id}/fork         {turn?, title?} -> branch copy up to that turn
 POST   /api/instances/{id}/undo         {turn?} rewind (default: one turn)
-GET    /api/instances/{id}/ledger?turn= model calls, later rolls/checks/deltas
-POST   /api/instances/{id}/turn         {text} -> SSE: adjudication, resolution, bulletin, text*, referee, done | error
+GET    /api/instances/{id}/ledger?turn= model calls, checks, events, happenings, verdicts, deltas, drift
+GET    /api/instances/{id}/usage        tokens, seconds and cost per role (game properties in the lobby)
+POST   /api/instances/{id}/turn         {text} -> SSE: adjudication, resolution, [summary], bulletin, text*, referee, done | error
+POST   /api/instances/{id}/command      {command, args} -> SSE: command, then done (engine) or a full turn (narrated)
 ```
 
 ## Engine shape
 
-A turn is `adjudicate → resolve → narrate → referee → apply` (`server/engine/pipeline.py`).
-Only the adjudicator and referee produce structured output, each a single `messages.parse`
-call against a pydantic schema; the narrator sees a flat transcript and never a tool. The
-engine is generic over the state's JSON form:
+A turn is `adjudicate → resolve → [summarize] → narrate → referee → apply`
+(`server/engine/pipeline.py`). Only the adjudicator and referee produce structured output,
+each a single `messages.parse` call against a pydantic schema; the narrator sees a flat
+transcript and never a tool. The summarizer runs on the narrator's model only when the
+transcript window slides (every six turns past twelve) and folds the dropped turns into a
+story-so-far note. The engine is generic over the state's JSON form:
 
-- `engine/statepath.py`   dotted paths into state (`crew.park.stress`), field authority
-- `engine/mechanics.py`   checks: `dice_d20`, `threshold`, `weighted`; RNG seeded per turn
-- `engine/events.py`      scripted events: deterministic triggers, fallbacks, expiry, effects
-- `engine/roles.py`       adjudicator and referee schemas and prompts
-- `engine/game.py`        `GameBase` with default hooks; the UI widget vocabulary
+- `engine/statepath.py`    dotted paths into state (`crew.park.stress`), field authority
+- `engine/mechanics.py`    checks: `dice_d20`, `threshold`, `weighted`; RNG seeded per turn
+- `engine/events.py`       scripted events: deterministic triggers, fallbacks, expiry, effects
+- `engine/spontaneous.py`  unscripted happenings: chance per in-game hour, conditions, cooldowns;
+                           the narrator is always told why, the player only when `visible`
+- `engine/threads.py`      the story's record of commitments (goals, promises, cover stories),
+                           opened and closed by the referee, never flattened by a summary
+- `engine/roles.py`        adjudicator, referee and summarizer schemas and prompts
+- `engine/context.py`      narrator message window, slide points, summary planning
+- `engine/game.py`         `GameBase` with default hooks; the UI widget vocabulary; commands
+
+Commands are clicked, not typed. An `engine` command resolves with no model call (seal a
+hatch, read a crew member's channel); a `narrated` command applies its hard effects in the
+engine and then runs the full pipeline on a synthetic player line with a directive, so the
+world reacts (cut power and the crew notice within a minute).
 
 A game (`server/games/<name>/`) provides a pydantic state model, a frozen prefix, a bulletin
 renderer, a UI, and overrides the hooks it needs (stats, entity ids, locations, narrator
-flags, referee schema, `apply_delta`, modifiers, ending). Scenario content, including events
+flags, referee schema, `apply_delta`, modifiers, commands, `after_turn` drift, summary
+guidance, ending). Scenario content, including scripted events and unscripted happenings
 with their triggers and effects, is YAML under `notes/content/<game>/`.
 
 ## Status
 
-Phase three: the full pipeline runs live (Sonnet narrator, Haiku adjudicator and referee).
-State changes every turn: the clock advances (capped, stopping at scheduled events so they
-fire on time), checks are rolled by the engine and their outcomes dictated to the narrator,
-scripted events fire with fallbacks and expiry, and the referee's report is applied under
-field authority with bounds. Undo to any turn, branching, export/import. Next: summarizer and
-retrieval, mood decay, commands/affordances, then Opus and a replay harness.
+Phase four: on top of the phase-three pipeline (clock, engine-rolled checks, scripted events,
+referee under field authority), games now keep their memory. A Sonnet summarizer writes the
+story so far whenever the window slides; threads record what the story has promised and
+settled; stress drifts back toward each crew member's baseline and moods follow; unscripted
+happenings give the world a pulse; clicked commands resolve in the engine or drive a narrated
+turn; the lobby's game properties show tokens and cost per role. Next: a long playtest, then
+Opus as narrator and a replay harness, logging and docs before the first push.

@@ -1,18 +1,32 @@
 import { useState } from "react";
-import type { EntityCard, Widget } from "../api";
+import type { CommandSpec, EntityCard, Widget } from "../api";
 
-export function Panels({ panels, onChoice }: { panels: Widget[]; onChoice?: (command: string, args: Record<string, unknown>) => void }) {
+type OnCommand = (command: string, args: Record<string, unknown>) => void;
+
+export function Panels({ panels, onChoice, onCommand, busy }: { panels: Widget[]; onChoice?: OnCommand; onCommand?: OnCommand; busy?: boolean }) {
   return (
     <div className="panels">
       {panels.map((w, i) => (
-        <Panel key={i} w={w} onChoice={onChoice} />
+        <Panel key={i} w={w} onChoice={onChoice} onCommand={onCommand} busy={busy} />
       ))}
     </div>
   );
 }
 
-function Panel({ w, onChoice }: { w: Widget; onChoice?: (command: string, args: Record<string, unknown>) => void }) {
+function Panel({ w, onChoice, onCommand, busy }: { w: Widget; onChoice?: OnCommand; onCommand?: OnCommand; busy?: boolean }) {
   switch (w.type) {
+    case "commands":
+      if (!w.items.length) return null;
+      return (
+        <section className="panel">
+          {w.title && <h3>{w.title}</h3>}
+          <div className="commands">
+            {w.items.map((c) => (
+              <CommandRow key={c.id} spec={c} onRun={onCommand} busy={busy} />
+            ))}
+          </div>
+        </section>
+      );
     case "status_strip":
       return (
         <div className="strip">
@@ -116,6 +130,31 @@ function Panel({ w, onChoice }: { w: Widget; onChoice?: (command: string, args: 
         </section>
       );
   }
+}
+
+function CommandRow({ spec, onRun, busy }: { spec: CommandSpec; onRun?: OnCommand; busy?: boolean }) {
+  const [args, setArgs] = useState<Record<string, string>>(() => Object.fromEntries(spec.params.map((p) => [p.name, p.options[0]?.id ?? ""])));
+  const ready = spec.params.every((p) => args[p.name]);
+  return (
+    <div className="command-row" title={spec.hint}>
+      <span className="command-label">
+        {spec.label}
+        {spec.mode === "narrated" && <span className="muted small"> · narrated</span>}
+      </span>
+      {spec.params.map((p) => (
+        <select key={p.name} value={args[p.name] ?? ""} onChange={(e) => setArgs({ ...args, [p.name]: e.target.value })} aria-label={p.label}>
+          {p.options.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      ))}
+      <button className="small-btn" disabled={busy || !ready} onClick={() => onRun?.(spec.id, args)}>
+        run
+      </button>
+    </div>
+  );
 }
 
 function Card({ card }: { card: EntityCard }) {

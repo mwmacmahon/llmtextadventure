@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, streamTurn, type InstanceView, type Mechanics, type TranscriptRow } from "./api";
+import { api, streamCommand, streamTurn, type InstanceView, type Mechanics, type TranscriptRow, type TurnEvent } from "./api";
 import { DebugDrawer } from "./components/DebugDrawer";
 import { Lobby } from "./components/Lobby";
 import { Panels } from "./components/Panels";
@@ -21,6 +21,8 @@ export default function App() {
   return <Game id={id} onExit={() => setId(null)} />;
 }
 
+const SHOWN: TranscriptRow["role"][] = ["player", "narrator", "mechanics", "command", "result", "system_note"];
+
 function Game({ id, onExit }: { id: string; onExit: () => void }) {
   const [view, setView] = useState<InstanceView | null>(null);
   const [input, setInput] = useState("");
@@ -39,26 +41,34 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [view, streaming]);
 
-  async function send(text: string) {
-    if (!view || streaming !== null || !text.trim()) return;
+  /** Drive one SSE stream (typed turn or clicked command) through the stage indicator. */
+  async function run(gen: AsyncGenerator<TurnEvent>, pendingText: string) {
     setErr(null);
-    setPending(text);
-    setInput("");
+    setPending(pendingText);
     setStreaming("");
     setStage("adjudicating…");
     let acc = "";
     try {
-      for await (const ev of streamTurn(id, text)) {
-        if (ev.event === "adjudication") {
+      for await (const ev of gen) {
+        if (ev.event === "command") {
+          if (!ev.data.ok) {
+            setErr(ev.data.text);
+            break;
+          }
+          setPending(ev.data.label ?? pendingText);
+          setStage(ev.data.mode === "engine" ? null : "resolving…");
+        } else if (ev.event === "adjudication") {
           setStage(ev.data.kind === "clarify" || ev.data.kind === "impossible" ? "asking for clarification…" : "resolving…");
         } else if (ev.event === "resolution") {
           setStage("resolving…");
+        } else if (ev.event === "summary") {
+          setStage(ev.data.status === "running" ? `folding turns ${ev.data.turns[0]}–${ev.data.turns[ev.data.turns.length - 1]} into the story so far…` : "narrating…");
+        } else if (ev.event === "bulletin") {
+          setStage("narrating…");
         } else if (ev.event === "text") {
           acc += ev.data.t;
           setStreaming(acc);
           setStage(null);
-        } else if (ev.event === "bulletin") {
-          setStage("narrating…");
         } else if (ev.event === "referee") {
           setStage(null);
         } else if (ev.event === "done") {
@@ -76,6 +86,17 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
       setPending(null);
       await load();
     }
+  }
+
+  function send(text: string) {
+    if (!view || streaming !== null || !text.trim()) return;
+    setInput("");
+    return run(streamTurn(id, text), text);
+  }
+
+  function sendCommand(command: string, args: Record<string, unknown>) {
+    if (!view || streaming !== null) return;
+    return run(streamCommand(id, command, args), command);
   }
 
   async function undo(toTurn?: number) {
@@ -101,7 +122,7 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
 
   if (!view) return <div className="lobby">{err ?? "loading…"}</div>;
 
-  const rows: TranscriptRow[] = view.transcript.filter((r) => r.role === "player" || r.role === "narrator" || r.role === "mechanics");
+  const rows = view.transcript.filter((r) => SHOWN.includes(r.role));
 
   return (
     <div className="layout">
@@ -125,11 +146,9 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
       </header>
       <main>
         <section className="narrative" ref={scrollRef}>
-          {rows.map((r) => (r.role === "mechanics" ? <MechanicsRow key={r.seq} text={r.text} /> : (
-            <div key={r.seq} className={`msg ${r.role}`}>
-              {r.text}
-            </div>
-          )))}
+          {rows.map((r) => (
+            <Row key={r.seq} r={r} />
+          ))}
           {pending && <div className="msg player">{pending}</div>}
           {streaming !== null && streaming && <div className="msg narrator streaming">{streaming}</div>}
           {streaming !== null && stage && <div className="muted small stage">{stage}</div>}
@@ -137,7 +156,7 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
           {err && <div className="error">{err}</div>}
         </section>
         <aside className="side">
-          <Panels panels={view.ui.panels} onChoice={(cmd) => send(cmd)} />
+          <Panels panels={view.ui.panels} onChoice={(cmd) => send(cmd)} onCommand={sendCommand} busy={streaming !== null || !!view.ending} />
         </aside>
       </main>
       <footer>
@@ -178,6 +197,21 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
   );
 }
 
+function Row({ r }: { r: TranscriptRow }) {
+  switch (r.role) {
+    case "mechanics":
+      return <MechanicsRow text={r.text} />;
+    case "system_note":
+      return (
+        <details className="story-note">
+          <summary>Story so far, as folded into the narrator's memory after turn {r.turn}</summary>
+          <div className="note-body">{r.text}</div>
+        </details>
+      );
+    default:
+      return <div className={`msg ${r.role}`}>{r.text}</div>;
+  }
+}
 
 function MechanicsRow({ text }: { text: string }) {
   let m: Mechanics;
@@ -186,12 +220,14 @@ function MechanicsRow({ text }: { text: string }) {
   } catch {
     return null;
   }
+  if (m.kind === "command") return null;
   const bits: string[] = [];
   if (m.kind === "clarify" || m.kind === "impossible") bits.push(m.kind);
   if (m.elapsed) bits.push(`+${m.elapsed} min`);
   for (const c of m.checks) bits.push(`${c.label}: ${c.outcome.replace(/_/g, " ")}${c.roll != null ? ` (d20 ${c.roll}, ${c.total} vs ${c.target})` : ""}`);
   for (const e of m.events) bits.push(`event ${e}`);
   for (const e of m.expired) bits.push(`expired ${e}`);
+  for (const h of m.happenings ?? []) bits.push(`unscripted: ${h.id.replace(/_/g, " ")}${h.reason ? ` (${h.reason})` : ""}`);
   if (m.applied.length) bits.push(`${m.applied.length} change${m.applied.length === 1 ? "" : "s"}`);
   if (m.rejected.length) bits.push(`${m.rejected.length} rejected`);
   if (m.issues.length) bits.push(`${m.issues.length} issue${m.issues.length === 1 ? "" : "s"}`);

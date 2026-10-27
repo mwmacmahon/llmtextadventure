@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { api, type GameInfo, type InstanceSummary } from "../api";
+import { api, type GameInfo, type InstanceSummary, type InstanceUsage } from "../api";
 
 export function Lobby({ onOpen }: { onOpen: (id: string) => void }) {
   const [games, setGames] = useState<GameInfo[]>([]);
   const [instances, setInstances] = useState<InstanceSummary[]>([]);
   const [setup, setSetup] = useState<Record<string, Record<string, string>>>({});
   const [err, setErr] = useState<string | null>(null);
+  const [openProps, setOpenProps] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const refresh = () => api.instances().then(setInstances).catch((e) => setErr(String(e)));
@@ -77,7 +78,7 @@ export function Lobby({ onOpen }: { onOpen: (id: string) => void }) {
       {instances.length === 0 && <p className="muted">No saved games yet.</p>}
       <ul className="instances">
         {instances.map((i) => (
-          <li key={i.id}>
+          <li key={i.id} style={{ flexWrap: "wrap" }}>
             <button className="link" onClick={() => onOpen(i.id)}>
               {i.title}
             </button>
@@ -87,34 +88,97 @@ export function Lobby({ onOpen }: { onOpen: (id: string) => void }) {
               {i.origin.imported && " · imported"}
             </span>
             <span className="spacer" />
-            <span className="row-actions">
-              <button
-                className="link small"
-                onClick={() => {
-                  const t = prompt("Rename game", i.title);
-                  if (t != null && t.trim()) act(() => api.rename(i.id, t));
-                }}
-              >
-                rename
-              </button>
-              <button className="link small" onClick={() => act(() => api.fork(i.id))}>
-                branch
-              </button>
-              <a className="link small" href={api.exportUrl(i.id)} download>
-                export
-              </a>
-              <button
-                className="link small danger"
-                onClick={() => {
-                  if (confirm(`Delete "${i.title}"? This cannot be undone.`)) act(() => api.remove(i.id));
-                }}
-              >
-                delete
-              </button>
-            </span>
+            <button className="link small" onClick={() => setOpenProps(openProps === i.id ? null : i.id)} title="Rename, branch, export, delete, cost">
+              {openProps === i.id ? "close" : "properties"}
+            </button>
+            {openProps === i.id && (
+              <div className="props" style={{ flexBasis: "100%" }}>
+                <Props inst={i} act={act} onDeleted={() => setOpenProps(null)} />
+              </div>
+            )}
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+function Props({ inst, act, onDeleted }: { inst: InstanceSummary; act: (fn: () => Promise<unknown>) => Promise<void>; onDeleted: () => void }) {
+  const [usage, setUsage] = useState<InstanceUsage | null>(null);
+  useEffect(() => {
+    api.usage(inst.id).then(setUsage).catch(() => setUsage(null));
+  }, [inst.id, inst.turn]);
+  const fmt = (n: number) => n.toLocaleString();
+  return (
+    <div>
+      <div className="muted small">
+        {inst.game} v{inst.game_version} · id {inst.id} · created {new Date(inst.created).toLocaleString()}
+        {inst.origin.forked_from && ` · branched from ${inst.origin.forked_from} at turn ${inst.origin.at_turn}`}
+        {inst.origin.imported && ` · imported from ${inst.origin.original_id ?? "?"}`}
+      </div>
+      {usage && (
+        <table style={{ marginTop: 8 }}>
+          <thead>
+            <tr>
+              <th>role</th>
+              <th>model</th>
+              <th>calls</th>
+              <th>input</th>
+              <th>cache read</th>
+              <th>cache write</th>
+              <th>output</th>
+              <th>cost</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.entries(usage.roles).map(([role, r]) => (
+              <tr key={role}>
+                <td>{role}</td>
+                <td className="muted">{r.model ?? "—"}</td>
+                <td>{r.calls}</td>
+                <td>{fmt(r.usage.input_tokens)}</td>
+                <td>{fmt(r.usage.cache_read_input_tokens)}</td>
+                <td>{fmt(r.usage.cache_creation_input_tokens)}</td>
+                <td>{fmt(r.usage.output_tokens)}</td>
+                <td>{r.priced ? `$${r.usd.toFixed(3)}` : "—"}</td>
+              </tr>
+            ))}
+            <tr>
+              <td colSpan={7}>
+                <strong>total</strong> · {usage.calls} calls over {usage.turn} turns
+              </td>
+              <td>
+                <strong>{usage.priced ? `$${usage.usd.toFixed(2)}` : `$${usage.usd.toFixed(2)}+`}</strong>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      )}
+      <div className="row-actions">
+        <button
+          className="link small"
+          onClick={() => {
+            const t = prompt("Rename game", inst.title);
+            if (t != null && t.trim()) act(() => api.rename(inst.id, t));
+          }}
+        >
+          rename
+        </button>
+        <button className="link small" onClick={() => act(() => api.fork(inst.id))}>
+          branch
+        </button>
+        <a className="link small" href={api.exportUrl(inst.id)} download>
+          export
+        </a>
+        <button
+          className="link small danger"
+          onClick={() => {
+            if (confirm(`Delete "${inst.title}"? This cannot be undone.`)) act(() => api.remove(inst.id)).then(onDeleted);
+          }}
+        >
+          delete
+        </button>
+      </div>
     </div>
   );
 }
