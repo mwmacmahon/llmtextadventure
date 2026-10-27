@@ -20,13 +20,24 @@ deliberately not committed yet. `server/config.yml` → `server.content_root` po
 
 ## Run (development)
 
+Prerequisites: [uv](https://docs.astral.sh/uv/) and Node 22 (`brew install uv node`).
+
 ```bash
-cd server && python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
+cd server && uv sync --extra dev      # installs Python 3.13 if needed, creates .venv, honours uv.lock
 cd ../web && npm install
 ```
 
-Credentials: put `ANTHROPIC_API_KEY=...` in a `.env` at the repo root (gitignored), or export
-it. The Anthropic SDK also picks up an `ant auth login` profile.
+Credentials: the recommended way is the Anthropic CLI's OAuth profile, so no key is stored in
+the repo:
+
+```bash
+brew install anthropics/tap/ant
+ant auth login        # browser login; stores a profile under ~/.config/anthropic/
+ant auth status       # shows which credential source is active
+```
+
+The SDK picks the profile up automatically. Do **not** also set `ANTHROPIC_API_KEY`: an API key
+in the environment or in the repo-root `.env` silently outranks the profile.
 
 Two processes:
 
@@ -40,7 +51,7 @@ cd web && npm run dev        # http://localhost:5173, proxies /api to :8010
 
 Offline (no credentials, canned narrator): prefix the server with `TA_PROVIDER=fake`.
 
-Tests: `cd server && .venv/bin/python -m pytest`.
+Tests: `cd server && uv run pytest`.
 
 ## Run (single process)
 
