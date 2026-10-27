@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+
+# Node
+node_modules/
+web/dist/
+
+# Secrets and local config
+.env
+*.local.yml
+
+# Runtime data
+data/
+*.sqlite3
+*.db
+
+# Private notes, living docs, creative/reference material
+notes/
+
+# Legacy on-disk leftovers from the 2023 codebase (kept out of main)
+chat_histories/
+logs/
+conversion_outputs/
+modules/
+
+# macOS
+.DS_Store
