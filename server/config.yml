@@ -7,6 +7,8 @@ server:
   data_dir: ../data     # sqlite db + usage logs (gitignored)
   content_root: ../notes/content   # per-game creative content (gitignored for now)
   web_dist: ../web/dist            # served as static files if present
+  log_dir: ../data/logs            # rotating server.log (5 MB x 5) + console; one line per pipeline step
+  log_level: INFO
 
 # Model roles. Each role is configured independently so backends can be mixed.
 # provider: anthropic | fake   (set TA_PROVIDER=fake to force fake everywhere)

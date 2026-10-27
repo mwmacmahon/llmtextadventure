@@ -120,24 +120,26 @@ async def test_referee_threads_land_in_state_and_bulletin(engine: Engine, fake: 
 
 # ---- happenings -------------------------------------------------------------
 
-def test_happening_roll_chance_cooldown_and_condition():
+def test_happening_roll_chance_cooldown_and_condition(no_happenings):
+    roll = no_happenings          # the real function; conftest stubs spon.roll for pipeline tests
     items = [spon.Spontaneous(id="a", chance_per_hour=1.0, directive="A happens", reason="because", visible=False,
                               effects=[{"add": ["crew.park.stress", 5], "lo": 0, "hi": 100}], cooldown_minutes=120),
              spon.Spontaneous(id="b", chance_per_hour=1.0, when={"flag": "never"}, directive="B happens")]
     doc = {"crew": [{"id": "park", "stress": 10}], "flags": {}, "clock": {"day": 1, "minute": 600}, "log": []}
-    happened, directives = spon.roll(items, doc, random.Random(1), 60, 1, 2040)
+    happened, directives = roll(items, doc, random.Random(1), 60, 1, 2040)
     assert [h.id for h in happened] == ["a"] and doc["crew"][0]["stress"] == 15
     assert "the player cannot see this" in directives[0] and "because" in directives[0]
     assert items[0].count == 1 and items[0].last_fired_at == 2040
-    happened, _ = spon.roll(items, doc, random.Random(2), 60, 2, 2100)      # 60 min later: on cooldown
+    happened, _ = roll(items, doc, random.Random(2), 60, 2, 2100)      # 60 min later: on cooldown
     assert happened == []
-    happened, _ = spon.roll(items, doc, random.Random(3), 60, 3, 2200)      # cooldown over
+    happened, _ = roll(items, doc, random.Random(3), 60, 3, 2200)      # cooldown over
     assert [h.id for h in happened] == ["a"]
     assert spon.per_turn_chance(0.1, 0) == 0 and 0.18 < spon.per_turn_chance(0.1, 120) < 0.2
-    assert spon.roll(items, doc, random.Random(4), 0, 4, 2300)[0] == []     # no time passed
+    assert roll(items, doc, random.Random(4), 0, 4, 2300)[0] == []     # no time passed
 
 
-async def test_happening_in_a_turn_reaches_narrator_and_mechanics(engine: Engine, fake: FakeProvider):
+async def test_happening_in_a_turn_reaches_narrator_and_mechanics(engine: Engine, fake: FakeProvider, no_happenings, monkeypatch):
+    monkeypatch.setattr(spon, "roll", no_happenings)     # this test wants the real roll
     iid = engine.create_instance("station", {})
     doc = engine.store.load_state(iid)
     doc["hidden"]["spontaneous"] = [spon.Spontaneous(id="sure_thing", chance_per_hour=1.0, who=["reyes"], directive="Reyes hums.",

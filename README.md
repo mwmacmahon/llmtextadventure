@@ -10,13 +10,15 @@ Rebooted October 2026. The 2023–24 codebase lives on the `legacy` branch.
 ```
 server/      Python 3.13, FastAPI, SQLite. Engine, providers, games.
 web/         Vite + React + TypeScript. Generic client driven by a UI schema.
-docs/        Non-creative docs (LOCAL_LLM.md, GAME_AUTHORING.md later).
+docs/        ARCHITECTURE.md (how the engine works), GAME_AUTHORING.md, LOCAL_LLM.md.
 notes/       gitignored: design doc, decision log, reference material, game content.
-data/        gitignored: sqlite db.
+data/        gitignored: sqlite db, logs/, evals/.
 ```
 
 Game content (system prompts, scenarios) is loaded from `notes/content/<game>/` and is
 deliberately not committed yet. `server/config.yml` → `server.content_root` points at it.
+**The tests load that content too**, so a clean clone cannot run them until a scenario is
+present at the content root; the content directory is private for now.
 
 ## Run (development)
 
@@ -51,7 +53,12 @@ cd web && npm run dev        # http://localhost:5173, proxies /api to :8010
 
 Offline (no credentials, canned narrator): prefix the server with `TA_PROVIDER=fake`.
 
-Tests: `cd server && uv run pytest`.
+Tests: `cd server && uv run pytest` (offline, fake provider). Live role evaluations that call the
+real models and write a scorecard to `data/evals/`: `TA_LIVE=1 uv run pytest -s tests/live`
+(add `TA_LIVE_MODEL=claude-sonnet-5-5` for a comparison arm).
+
+Logs: `data/logs/server.log` (rotating), one line per pipeline step; the full record of every
+turn is in the SQLite ledger and the in-app GM debug drawer.
 
 ## Run (single process)
 

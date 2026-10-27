@@ -13,15 +13,19 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from engine import logs
 from engine.config import load_config
 from engine.pipeline import Engine
 from engine.registry import load_games
 from engine.store import Store
 
 cfg = load_config()
+log = logs.setup_logging(cfg.resolve(cfg.server.log_dir), cfg.server.log_level)
 store = Store(cfg.resolve(cfg.server.data_dir) / "textadventure.sqlite3")
 games = load_games(cfg.resolve(cfg.server.content_root))
 engine = Engine(cfg, store, games)
+log.info("startup " + logs.kv(db=store.path, content=cfg.resolve(cfg.server.content_root), games=",".join(games),
+                               **{f"role.{k}": f"{v.provider}:{v.model}/{v.effort}" for k, v in cfg.roles.items()}))
 
 app = FastAPI(title="textadventure")
 
@@ -76,6 +80,7 @@ def create_instance(body: NewInstance):
     if body.game not in games:
         raise HTTPException(404, "unknown game")
     iid = engine.create_instance(body.game, body.setup)
+    log.info("instance.create " + logs.kv(iid=iid, game=body.game, setup=json.dumps(body.setup)))
     return engine.instance_view(iid)
 
 
@@ -84,7 +89,9 @@ def import_instance(doc: dict[str, Any]):
     try:
         iid = engine.import_(doc)
     except (ValueError, KeyError) as e:
+        log.warning("instance.import failed " + logs.kv(error=str(e)))
         raise HTTPException(400, f"cannot import: {e}")
+    log.info("instance.import " + logs.kv(iid=iid, original=doc.get("instance", {}).get("id")))
     return engine.instance_view(iid)
 
 
@@ -107,6 +114,7 @@ def rename_instance(iid: str, body: RenameInput):
 def delete_instance(iid: str):
     _exists(iid)
     engine.delete(iid)
+    log.info("instance.delete " + logs.kv(iid=iid))
     return {"ok": True}
 
 
@@ -123,6 +131,7 @@ def fork_instance(iid: str, body: ForkInput | None = None):
     _exists(iid)
     body = body or ForkInput()
     new_id = engine.fork(iid, body.turn, body.title)
+    log.info("instance.fork " + logs.kv(iid=iid, new=new_id, at_turn=body.turn))
     return engine.instance_view(new_id)
 
 
@@ -140,7 +149,8 @@ def get_ledger(iid: str, turn: int | None = None):
 @app.post("/api/instances/{iid}/undo")
 def undo(iid: str, body: UndoInput | None = None):
     _exists(iid)
-    engine.undo(iid, body.turn if body else None)
+    t = engine.undo(iid, body.turn if body else None)
+    log.info("instance.undo " + logs.kv(iid=iid, now_turn=t))
     return engine.instance_view(iid)
 
 

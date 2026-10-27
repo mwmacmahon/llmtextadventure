@@ -28,6 +28,7 @@ from typing import Any, AsyncIterator
 from pydantic import BaseModel
 
 from . import events as ev
+from . import logs
 from . import spontaneous as spon
 from . import statepath as sp
 from . import threads as th
@@ -40,6 +41,7 @@ from .roles import Adjudication, RefereeBase, adjudicator_messages, referee_mess
 from .store import Store
 
 MODEL_CALL_KINDS = {"model_call": None, "adjudication": "adjudicator", "verdict": "referee"}
+log = logs.get("pipeline")
 
 
 class Engine:
@@ -167,6 +169,9 @@ class Engine:
         state: BaseModel = game.load_state(self.store.load_state(iid))
         turn = self.store.latest_turn(iid) + 1
         ledger = lambda kind, payload: self.store.append_ledger(iid, turn, kind, payload)  # noqa: E731
+        t_turn = time.monotonic()
+        log.info("turn.start " + logs.kv(iid=iid, turn=turn, command=command[0] if command else None,
+                                         chars=len(player_text or "")))
 
         # ---- 0. command (clicked) ------------------------------------------
         adj: Adjudication | None = None
@@ -180,6 +185,7 @@ class Engine:
                 return
             state, cmd_result = game.run_command(state, cid, args) if isinstance(game, GameBase) else (state, CommandResult(ok=False, text="no commands"))
             if not cmd_result.ok:
+                log.info("command.refused " + logs.kv(iid=iid, turn=turn, id=cid, why=cmd_result.text))
                 yield {"event": "command", "data": {"ok": False, "text": cmd_result.text, "mode": spec.mode, "label": cmd_result.label or spec.label}}
                 return
             label = cmd_result.label or spec.label
@@ -188,6 +194,7 @@ class Engine:
                 sp.append(doc, getattr(game, "log_path", "log"), f"{_clock_text(game, doc)}{cmd_result.log_line.strip()}")
                 state = game.load_state(doc)
             ledger("command", {"id": cid, "args": args, "mode": spec.mode, **cmd_result.model_dump(mode="json")})
+            log.info("command " + logs.kv(iid=iid, turn=turn, id=cid, mode=spec.mode, args=json.dumps(args)))
             yield {"event": "command", "data": {"ok": True, "text": cmd_result.text, "mode": spec.mode, "label": label, "turn": turn}}
             if spec.mode == "engine":
                 # No model, no clock, no event tick: the state changed and the next narrated turn sees it.
@@ -215,8 +222,12 @@ class Engine:
             try:
                 adj, meta = await self._adjudicate(game, state, iid, player_text)
                 ledger("adjudication", {**adj.model_dump(mode="json"), "_call": meta})
+                log.info("step " + logs.kv(iid=iid, turn=turn, step="adjudicate", model=meta["model"], seconds=meta["seconds"],
+                                           kind=adj.kind, minutes=adj.time_minutes, checks=sum(1 for i in adj.intents if i.check),
+                                           **logs.usage_kv(meta["usage"])))
             except Exception as e:
                 ledger("model_call", {"role": "adjudicator", "error": repr(e)})
+                log.exception("step.failed " + logs.kv(iid=iid, turn=turn, step="adjudicate"))
                 yield {"event": "error", "data": {"message": f"adjudicator failed: {e}", "step": "adjudicate"}}
                 return
         if adj is not None:
@@ -235,6 +246,11 @@ class Engine:
             ledger("happening", h.model_dump(mode="json"))
         if res["elapsed"] or res["clock_note"]:
             ledger("clock", {"elapsed": res["elapsed"], "note": res["clock_note"]})
+        log.info("step " + logs.kv(iid=iid, turn=turn, step="resolve", elapsed=res["elapsed"], clock_note=res["clock_note"] or None,
+                                   checks=",".join(f"{c.label}:{c.outcome}" for c in res["checks"]) or None,
+                                   fired=",".join(f.event_id for f in res["fired"]) or None,
+                                   expired=",".join(x.event_id for x in res["expired"]) or None,
+                                   happened=",".join(h.id for h in res["happened"]) or None, directives=len(res["directives"])))
         yield {"event": "resolution", "data": {
             "checks": [c.model_dump(mode="json") for c in res["checks"]],
             "fired": [f.model_dump(mode="json") for f in res["fired"]],
@@ -251,10 +267,13 @@ class Engine:
                 text, meta = await self._summarize(game, state, plan)
                 self.store.append_transcript(iid, plan.to_cover[-1], "system_note", text)
                 ledger("model_call", {"role": "summarizer", **meta, "covered": plan.to_cover, "previous_turn": plan.previous.turn if plan.previous else None})
+                log.info("step " + logs.kv(iid=iid, turn=turn, step="summarize", model=meta["model"], seconds=meta["seconds"],
+                                           covered=f"{plan.to_cover[0]}-{plan.to_cover[-1]}", chars=len(text), **logs.usage_kv(meta["usage"])))
                 yield {"event": "summary", "data": {"status": "done", "turns": plan.to_cover, "chars": len(text)}}
             except Exception as e:
                 # Not fatal: the narrator just loses the dropped turns until the next slide point.
                 ledger("model_call", {"role": "summarizer", "error": repr(e)})
+                log.exception("step.failed " + logs.kv(iid=iid, turn=turn, step="summarize"))
                 yield {"event": "summary", "data": {"status": "failed", "turns": plan.to_cover, "error": str(e)}}
 
         # ---- 3. narrate -----------------------------------------------------
@@ -279,11 +298,15 @@ class Engine:
                     done = sev
         except Exception as e:
             ledger("model_call", {"role": "narrator", "error": repr(e)})
+            log.exception("step.failed " + logs.kv(iid=iid, turn=turn, step="narrate"))
             yield {"event": "error", "data": {"message": f"narrator failed: {e}", "step": "narrate"}}
             return
         elapsed = time.monotonic() - t0
         assert done is not None
         narration = done.text
+        log.info("step " + logs.kv(iid=iid, turn=turn, step="narrate", model=done.model, seconds=elapsed, stop=done.stop_reason,
+                                   note=done.note, chars=len(narration), window=ctx.window_turns, summary_turn=ctx.summary_turn,
+                                   prefix_chars=len(system), bulletin_chars=len(bulletin), **logs.usage_kv(asdict(done.usage))))
 
         self.store.append_transcript(iid, turn, "narrator", narration)
         ledger("model_call", {
@@ -318,9 +341,17 @@ class Engine:
                     report.rejected.extend(sp_rej(r) for r in rejected)
                 state = game.load_state(doc)
                 ledger("delta", report.model_dump(mode="json"))
+                log.info("step " + logs.kv(iid=iid, turn=turn, step="referee", model=meta["model"], seconds=meta["seconds"],
+                                           applied=len(report.applied), rejected=len(report.rejected), issues=len(delta.narration_issues),
+                                           confidence=delta.confidence, **logs.usage_kv(meta["usage"])))
+                for r in report.rejected:
+                    log.info("referee.rejected " + logs.kv(iid=iid, turn=turn, path=r.path, reason=r.reason))
+                for issue in delta.narration_issues:
+                    log.info("referee.issue " + logs.kv(iid=iid, turn=turn, issue=issue))
                 yield {"event": "referee", "data": {"delta": delta_json, "report": report.model_dump(mode="json")}}
             except Exception as e:
                 ledger("model_call", {"role": "referee", "error": repr(e)})
+                log.exception("step.failed " + logs.kv(iid=iid, turn=turn, step="referee"))
                 yield {"event": "referee", "data": {"delta": None, "error": f"referee failed: {e}"}}
 
         touched = [f"{p}: set by script" for p in res["effect_paths"]]
@@ -331,8 +362,10 @@ class Engine:
             drift_lines = _diff_lines(before, after)
             if drift_lines:
                 ledger("drift", {"changes": drift_lines})
+                log.info("step " + logs.kv(iid=iid, turn=turn, step="drift", changes=len(drift_lines)))
             state = drifted
         self.store.save_snapshot(iid, turn, state.model_dump(mode="json"))
+        log.info("turn.done " + logs.kv(iid=iid, turn=turn, seconds=time.monotonic() - t_turn, ending=_hook(game, "ending", state)))
 
         mechanics = {
             "kind": adj.kind if adj else None, "elapsed": res["elapsed"],

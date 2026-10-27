@@ -32,6 +32,8 @@ class ServerConfig(BaseModel):
     data_dir: Path = Path("../data")
     content_root: Path = Path("../notes/content")
     web_dist: Path = Path("../web/dist")
+    log_dir: Path = Path("../data/logs")
+    log_level: str = "INFO"
 
 
 class ContextConfig(BaseModel):

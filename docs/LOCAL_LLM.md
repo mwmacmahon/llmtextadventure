@@ -36,7 +36,7 @@ The engine was designed so that none of its shape changes.
    ```yaml
    narrator:
      provider: local
-     base_url: http://dadmini.local:8081/v1
+     base_url: http://<mini-hostname>.local:8081/v1
      model: <whatever the proxy exposes>
      max_tokens: 1500
      prompt_variant: local

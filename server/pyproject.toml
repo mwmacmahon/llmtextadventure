@@ -18,6 +18,7 @@ dev = ["pytest>=8", "pytest-asyncio>=0.23", "httpx>=0.27"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = ["live: calls real models and costs money; set TA_LIVE=1 to run (tests/live)"]
 
 [build-system]
 requires = ["setuptools>=68"]

@@ -14,7 +14,7 @@ web/dist/
 *.local.yml
 
 # Runtime data
-/data/
+data/
 *.sqlite3
 *.db
 
