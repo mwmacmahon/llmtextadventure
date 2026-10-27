@@ -28,7 +28,12 @@ select, textarea { background: var(--panel-2); color: var(--text); border: 1px s
 .games { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
 .game { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
 .instances { list-style: none; padding: 0; }
-.instances li { display: flex; gap: 12px; align-items: baseline; padding: 6px 0; }
+.instances li { display: flex; gap: 12px; align-items: baseline; padding: 6px 0; border-top: 1px solid var(--border); }
+.row-actions { display: inline-flex; gap: 10px; }
+.row-actions .link, header a.link { font-size: 13px; }
+.danger { color: var(--bad) !important; }
+.small-btn { font-size: 12px; padding: 2px 8px; margin-left: 12px; vertical-align: middle; }
+a.link { color: var(--accent); text-decoration: none; }
 
 .layout { height: 100%; display: grid; grid-template-rows: auto 1fr auto; }
 header { display: flex; gap: 12px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--panel); }

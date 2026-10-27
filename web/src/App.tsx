@@ -65,9 +65,25 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
     }
   }
 
-  async function undo() {
+  async function undo(toTurn?: number) {
     if (streaming !== null) return;
-    setView(await api.undo(id));
+    setErr(null);
+    try {
+      setView(await api.undo(id, toTurn));
+    } catch (e) {
+      setErr(String(e));
+    }
+  }
+
+  async function branch(atTurn?: number) {
+    if (streaming !== null) return;
+    setErr(null);
+    try {
+      const v = await api.fork(id, atTurn);
+      location.hash = `#/g/${v.id}`;
+    } catch (e) {
+      setErr(String(e));
+    }
   }
 
   if (!view) return <div className="lobby">{err ?? "loading…"}</div>;
@@ -83,9 +99,15 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
         <strong>{view.title}</strong>
         <span className="muted">turn {view.turn}</span>
         <span className="spacer" />
-        <button onClick={undo} disabled={view.turn === 0 || streaming !== null}>
+        <button onClick={() => undo()} disabled={view.turn === 0 || streaming !== null} title="Rewind one turn">
           undo
         </button>
+        <button onClick={() => branch()} disabled={streaming !== null} title="Copy this game as a new branch from here">
+          branch
+        </button>
+        <a className="link small" href={api.exportUrl(id)} download title="Download this game as JSON">
+          export
+        </a>
         <button onClick={() => setDebug(!debug)}>GM debug</button>
       </header>
       <main>
@@ -128,7 +150,15 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
           </button>
         </form>
       </footer>
-      <DebugDrawer instanceId={id} turn={view.turn} transcript={view.transcript} open={debug} onClose={() => setDebug(false)} />
+      <DebugDrawer
+        instanceId={id}
+        turn={view.turn}
+        transcript={view.transcript}
+        open={debug}
+        onClose={() => setDebug(false)}
+        onRewind={(t) => undo(t)}
+        onBranch={(t) => branch(t)}
+      />
     </div>
   );
 }

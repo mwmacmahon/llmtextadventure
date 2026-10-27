@@ -8,7 +8,7 @@ Rebooted October 2026. The 2023–24 codebase lives on the `legacy` branch.
 ## Layout
 
 ```
-server/      Python 3.11+, FastAPI, SQLite. Engine, providers, games.
+server/      Python 3.13, FastAPI, SQLite. Engine, providers, games.
 web/         Vite + React + TypeScript. Generic client driven by a UI schema.
 docs/        Non-creative docs (LOCAL_LLM.md, GAME_AUTHORING.md later).
 notes/       gitignored: design doc, decision log, reference material, game content.
@@ -69,9 +69,28 @@ Roles are configured independently in `server/config.yml` (`narrator`, `adjudica
 `referee`, `summarizer`): provider, model, effort, cache TTL. Defaults: Sonnet narrator,
 Haiku for structured roles. See `docs/LOCAL_LLM.md` for swapping a role to a local model.
 
+## API
+
+```
+GET    /api/games                       games and their setup options
+GET    /api/instances                   saved games (id, title, turn, origin)
+POST   /api/instances                   {game, setup} -> new instance
+POST   /api/instances/import            an export document -> new instance
+GET    /api/instances/{id}              state view: UI schema + transcript
+PATCH  /api/instances/{id}              {title}
+DELETE /api/instances/{id}
+GET    /api/instances/{id}/export       self-contained JSON (transcript, ledger, snapshots, prefix)
+POST   /api/instances/{id}/fork         {turn?, title?} -> branch copy up to that turn
+POST   /api/instances/{id}/undo         {turn?} rewind (default: one turn)
+GET    /api/instances/{id}/ledger?turn= model calls, later rolls/checks/deltas
+POST   /api/instances/{id}/turn         {text} -> SSE: bulletin, text*, done | error
+```
+
 ## Status
 
-Phase one: narrator-only loop. The bulletin (engine-written state block) is injected before
-each player message; transcript, ledger and per-turn snapshots are stored; undo works; the
-GM debug drawer shows the exact request. Verified live against Sonnet with prompt caching. State does not change yet; adjudicator, referee,
-modules and scripted events are phase three.
+Phase two: narrator-only loop with a hardened engine spine. Per-instance frozen prefix (rules +
+scenario briefing, cached) and a small per-turn bulletin; the transcript window slides in steps
+so the cached message prefix stays stable; per-turn snapshots, undo to any turn, branching,
+export/import, rename/delete; GM debug drawer shows the exact request and cache usage. Verified
+live against Sonnet 5.5: ~850 uncached input tokens per turn. State does not change yet;
+adjudicator, referee, modules and scripted events are phase three.

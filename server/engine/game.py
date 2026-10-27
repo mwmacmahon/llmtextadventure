@@ -123,8 +123,11 @@ class Game(Protocol):
 
     def load_state(self, data: dict[str, Any]) -> BaseModel: ...
 
-    def frozen_prefix(self) -> str:
-        """System prompt. Must be byte-stable for a given game version."""
+    def frozen_prefix(self, state: BaseModel) -> str:
+        """System prompt for one instance: game rules plus whatever is fixed for the
+        life of the instance (scenario briefing, hidden truth). Computed once at
+        creation, stored on the instance, and must then never change: it is the
+        cached prefix."""
         ...
 
     def opening(self, state: BaseModel) -> str | None:
@@ -132,7 +135,9 @@ class Game(Protocol):
         ...
 
     def render_bulletin(self, state: BaseModel, player_text: str) -> str:
-        """Engine-written block injected before the newest player message."""
+        """Engine-written block injected before the newest player message. Only
+        what moves between turns belongs here; it is the uncached part of every
+        request, so keep it small."""
         ...
 
     def ui(self, state: BaseModel) -> UISchema: ...

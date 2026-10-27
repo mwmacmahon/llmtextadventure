@@ -35,7 +35,8 @@ class ServerConfig(BaseModel):
 
 
 class ContextConfig(BaseModel):
-    window_turns: int = 12
+    window_turns: int = 12      # minimum number of past turns kept verbatim
+    window_slide: int = 6       # the window start moves in steps of this many turns (cache stability)
 
 
 class Config(BaseModel):

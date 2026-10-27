@@ -35,4 +35,5 @@ roles:
     effort: medium
 
 context:
-  window_turns: 12       # recent turns sent verbatim to the narrator
+  window_turns: 12      # recent turns sent verbatim to the narrator (minimum)
+  window_slide: 6       # window start moves in steps of this many turns, so the cache prefix is stable

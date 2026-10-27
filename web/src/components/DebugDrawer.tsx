@@ -2,7 +2,23 @@ import { useEffect, useState } from "react";
 import { api, type LedgerEntry, type TranscriptRow } from "../api";
 
 /** GM debug drawer: exact bulletin, narrator request, usage, per turn. */
-export function DebugDrawer({ instanceId, turn, transcript, open, onClose }: { instanceId: string; turn: number; transcript: TranscriptRow[]; open: boolean; onClose: () => void }) {
+export function DebugDrawer({
+  instanceId,
+  turn,
+  transcript,
+  open,
+  onClose,
+  onRewind,
+  onBranch,
+}: {
+  instanceId: string;
+  turn: number;
+  transcript: TranscriptRow[];
+  open: boolean;
+  onClose: () => void;
+  onRewind: (turn: number) => void;
+  onBranch: (turn: number) => void;
+}) {
   const [sel, setSel] = useState(turn);
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
 
@@ -30,13 +46,35 @@ export function DebugDrawer({ instanceId, turn, transcript, open, onClose }: { i
             ))}
           </select>
         </label>
+        <button className="link small" onClick={() => onBranch(sel)} title="New game that is a copy of this one up to this turn">
+          branch from here
+        </button>
+        {sel < turn && (
+          <button
+            className="link small danger"
+            onClick={() => {
+              if (confirm(`Rewind to turn ${sel}? Turns ${sel + 1}–${turn} will be deleted.`)) onRewind(sel);
+            }}
+          >
+            rewind to here
+          </button>
+        )}
         <button onClick={onClose}>close</button>
       </div>
       {call && (
         <div className="drawer-meta">
           <span>{call.payload.provider}/{call.payload.model}</span>
           <span>{call.payload.seconds}s</span>
-          <span>in {call.payload.usage?.input_tokens} · cached {call.payload.usage?.cache_read_input_tokens} · out {call.payload.usage?.output_tokens}</span>
+          <span>
+            in {call.payload.usage?.input_tokens} · cache read {call.payload.usage?.cache_read_input_tokens} · cache write {call.payload.usage?.cache_creation_input_tokens} · out{" "}
+            {call.payload.usage?.output_tokens}
+          </span>
+          {call.payload.request?.window && (
+            <span>
+              window {call.payload.request.window.turns} turns from {call.payload.request.window.first_turn ?? "—"} · prefix {call.payload.request.system_chars} chars · bulletin{" "}
+              {call.payload.request.bulletin_chars} chars
+            </span>
+          )}
           {call.payload.note && <span className="warn">{call.payload.note}</span>}
           {call.payload.error && <span className="warn">{call.payload.error}</span>}
         </div>

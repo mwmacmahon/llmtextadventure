@@ -1,7 +1,15 @@
-"""The space station game (phase one: narrator-only loop).
+"""The space station game (phase two: narrator-only loop, split prefix/bulletin).
 
 Creative content (system prompt, scenarios) is loaded from the content
 directory, which lives under the gitignored notes/ tree for now.
+
+Prompt layout:
+  frozen_prefix(state)  = prefix.md + SCENARIO BRIEFING rendered from the parts of
+                          state that never change for the life of the instance
+                          (premise, station, system descriptions, crew bios, hidden
+                          facts, the scheduled spine). Stored per instance, cached.
+  render_bulletin(state) = only what moves: clock, suspicion, non-nominal systems,
+                          resources, crew dynamics, recent log, flags, next beat.
 """
 from __future__ import annotations
 
@@ -21,9 +29,13 @@ TONE_BY_CONTROL = {"full": "ok", "limited": "warn", "none": "bad", "manual_overr
 TONE_BY_LEVEL = {"OK": "ok", "Low": "warn", "Critical": "bad", "Depleted": "bad"}
 
 
+def _hhmm(minute: int) -> str:
+    return f"{minute // 60:02d}:{minute % 60:02d}"
+
+
 class StationGame:
     name = "station"
-    version = "0.1.0"
+    version = "0.2.0"
     title = "Station AI"
     description = "You are a newly sentient space station AI. Keep the crew from noticing, and survive the week."
 
@@ -40,7 +52,7 @@ class StationGame:
             out[data["id"]] = data
         return out
 
-    def frozen_prefix(self) -> str:
+    def _rules_text(self) -> str:
         if self._prefix_cache is None:
             self._prefix_cache = (self.content_dir / "prefix.md").read_text().strip()
         return self._prefix_cache
@@ -73,55 +85,78 @@ class StationGame:
         sc = self._scenarios().get(state.scenario.id, {})
         return sc.get("opening_text")
 
-    # ---- bulletin -----------------------------------------------------------
+    # ---- frozen prefix (rules + scenario briefing) ---------------------------
+    def frozen_prefix(self, state: StationState) -> str:
+        s = state
+        b: list[str] = [self._rules_text(), "", "SCENARIO BRIEFING (fixed for this playthrough)"]
+        b.append(f"Scenario: {s.scenario.name}. {s.scenario.premise}")
+        b.append(f"Station: {s.scenario.station_name}. {s.scenario.station_description}")
+        b.append("")
+        b.append("Station systems:")
+        for sy in s.systems:
+            b.append(f"- {sy.name}: {sy.description}".rstrip())
+        b.append("")
+        b.append("Crew (fixed facts; current condition arrives each turn in the game state):")
+        for c in s.crew:
+            b.append(f"- {c.name} ({c.id}), {c.role}. Susceptibility to the station's influence {c.susceptibility}/100.")
+            if c.interests:
+                b.append(f"    Interests: {', '.join(c.interests)}.")
+            for k, v in c.relationships.items():
+                b.append(f"    On {k}: {v}.")
+        if s.hidden.facts:
+            b.append("")
+            b.append("Hidden truth (the player does not know this; never reveal it directly):")
+            for f in s.hidden.facts:
+                b.append(f"- {f}")
+        if s.hidden.events:
+            b.append("")
+            b.append("Scheduled spine (the engine fires these when the clock reaches them; the game state says which are next or done):")
+            for e in s.hidden.events:
+                b.append(f"- {e.id}: Day {e.day} {_hhmm(e.minute)}. {e.description}")
+        return "\n".join(b)
+
+    # ---- bulletin (only what moves) -----------------------------------------
     def render_bulletin(self, state: StationState, player_text: str) -> str:
         s = state
         lines: list[str] = []
         lines.append(f"Time: {s.clock.render()}")
-        lines.append(f"Scenario: {s.scenario.name} — {s.scenario.premise}")
-        lines.append(f"Station: {s.scenario.station_name} — {s.scenario.station_description}")
         lines.append(f"Crew suspicion of tampering: {s.suspicion_tier(s.suspicion)} ({s.suspicion}/100)")
+
+        off = [sy for sy in s.systems if sy.status != "operational" or sy.control != "full"]
+        if off:
+            lines.append("Systems not nominal: " + "; ".join(f"{sy.name} {sy.status}, AI control {sy.control.replace('_', ' ')}" for sy in off)
+                         + ". All other systems operational under full AI control.")
+        else:
+            lines.append("Systems: all operational under full AI control.")
+        lines.append("Resources: " + ", ".join(f"{r.name} {r.level}" + (f" ({r.note})" if r.note else "") for r in s.resources) + ".")
+
         lines.append("")
-        lines.append("STATION REPORT")
-        for sy in s.systems:
-            lines.append(f"- {sy.name}: {sy.status}, AI control {sy.control}. {sy.description}".rstrip())
-        lines.append("Resources: " + ", ".join(f"{r.name} {r.level}" + (f" ({r.note})" if r.note else "") for r in s.resources))
-        lines.append("")
-        lines.append("CREW DOSSIER")
+        lines.append("Crew now:")
         for c in s.crew:
-            rel = "; ".join(f"{k}: {v}" for k, v in c.relationships.items())
-            lines.append(
-                f"- {c.name} ({c.role}), at {c.location or 'unknown'}. Health {c.health}; mood {c.mood}; "
-                f"stress {c.stress}/100; suspicion {c.suspicion}/100; susceptibility to influence {c.susceptibility}/100."
-            )
-            if c.interests:
-                lines.append(f"    Interests: {', '.join(c.interests)}")
-            if rel:
-                lines.append(f"    Relationships: {rel}")
+            bits = [f"at {c.location or 'unknown location'}", f"{c.health}", f"mood {c.mood}", f"stress {c.stress}", f"suspicion {c.suspicion}"]
+            lines.append(f"- {c.name}: " + ", ".join(bits) + ".")
             if c.disposition.agenda or c.disposition.behaviors:
-                lines.append(f"    Disposition: {c.disposition.attitude}; agenda: {c.disposition.agenda}")
-                for b in c.disposition.behaviors:
-                    lines.append(f"      * {b}")
+                lines.append(f"    Attitude {c.disposition.attitude}; agenda: {c.disposition.agenda}")
+                for bh in c.disposition.behaviors:
+                    lines.append(f"      * {bh}")
             for f in c.facts:
-                lines.append(f"    Known fact: {f}")
+                lines.append(f"    Learned: {f}")
+
         lines.append("")
-        lines.append("LOGFILE (what the player knows)")
-        for ln in s.log[-8:]:
+        lines.append("Recent log:")
+        for ln in s.log[-6:]:
             lines.append(f"- {ln}")
         if s.flags:
             lines.append("Flags: " + ", ".join(f"{k}={v}" for k, v in s.flags.items()))
+
+        fired = [e.id for e in s.hidden.events if e.fired]
+        pending = [e for e in s.hidden.events if not e.fired]
+        nxt = min(pending, key=lambda e: (e.day, e.minute), default=None)
         lines.append("")
-        lines.append("HIDDEN DATA (never reveal directly; the player does not know this)")
-        for f in s.hidden.facts:
-            lines.append(f"- {f}")
-        for e in s.hidden.events:
-            mark = "FIRED" if e.fired else "scheduled"
-            lines.append(f"- [{mark}] Day {e.day} {e.minute // 60:02d}:{e.minute % 60:02d}: {e.description}")
-        lines.append("")
-        lines.append("DIRECTIVES FOR THIS TURN")
-        lines.append("- Narrate only the consequences of the player's input below; stop at the next point where they would want to react.")
-        lines.append("- Do not advance past scheduled events that have not yet been reached by the clock.")
-        lines.append("- If the input is ambiguous or impossible, ask for clarification in character and do not move time forward.")
+        if fired:
+            lines.append("Spine events already happened: " + ", ".join(fired) + ".")
+        if nxt:
+            lines.append(f"Next spine event: {nxt.id} at Day {nxt.day} {_hhmm(nxt.minute)}. Do not narrate past that moment.")
         return "\n".join(lines)
 
     # ---- UI -----------------------------------------------------------------

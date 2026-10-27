@@ -19,8 +19,9 @@ export type UISchema = { phase: string; free_text: boolean; placeholder: string;
 
 export type TranscriptRow = { seq: number; turn: number; role: "player" | "bulletin" | "narrator" | "system_note"; text: string; created: string };
 
-export type InstanceView = { id: string; game: string; title: string; created: string; turn: number; ui: UISchema; transcript: TranscriptRow[] };
-export type InstanceSummary = { id: string; game: string; title: string; created: string; turn: number };
+export type Origin = { forked_from?: string; at_turn?: number; imported?: boolean; original_id?: string; exported?: string };
+export type InstanceSummary = { id: string; game: string; game_version: string; title: string; created: string; turn: number; origin: Origin };
+export type InstanceView = InstanceSummary & { ui: UISchema; transcript: TranscriptRow[] };
 export type GameInfo = { name: string; title: string; description: string; version: string; setup: Record<string, { id: string; name: string }[]> };
 
 export type LedgerEntry = { seq: number; turn: number; kind: string; created: string; payload: Record<string, any> };
@@ -36,7 +37,16 @@ export const api = {
   instance: (id: string) => fetch(`/api/instances/${id}`).then((r) => j<InstanceView>(r)),
   create: (game: string, setup: Record<string, unknown>) =>
     fetch("/api/instances", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ game, setup }) }).then((r) => j<InstanceView>(r)),
-  undo: (id: string) => fetch(`/api/instances/${id}/undo`, { method: "POST" }).then((r) => j<InstanceView>(r)),
+  undo: (id: string, turn?: number) =>
+    fetch(`/api/instances/${id}/undo`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ turn: turn ?? null }) }).then((r) => j<InstanceView>(r)),
+  fork: (id: string, turn?: number, title?: string) =>
+    fetch(`/api/instances/${id}/fork`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ turn: turn ?? null, title: title ?? null }) }).then((r) => j<InstanceView>(r)),
+  rename: (id: string, title: string) =>
+    fetch(`/api/instances/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ title }) }).then((r) => j<InstanceSummary>(r)),
+  remove: (id: string) => fetch(`/api/instances/${id}`, { method: "DELETE" }).then((r) => j<{ ok: boolean }>(r)),
+  exportUrl: (id: string) => `/api/instances/${id}/export`,
+  importDoc: (doc: unknown) =>
+    fetch("/api/instances/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(doc) }).then((r) => j<InstanceView>(r)),
   ledger: (id: string, turn?: number) => fetch(`/api/instances/${id}/ledger${turn != null ? `?turn=${turn}` : ""}`).then((r) => j<LedgerEntry[]>(r)),
 };
 
