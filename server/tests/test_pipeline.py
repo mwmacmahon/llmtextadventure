@@ -42,7 +42,7 @@ async def test_two_turns_and_undo(engine: Engine):
 
     events = await play(engine, iid, "I read the pod manifest and compare it to the bay inventory.")
     kinds = [e["event"] for e in events]
-    assert kinds[0] == "bulletin" and kinds[-1] == "done" and "text" in kinds
+    assert kinds[:3] == ["adjudication", "resolution", "bulletin"] and kinds[-1] == "done" and "text" in kinds
 
     events2 = await play(engine, iid, "I draft a status report for Okafor that omits item 42.")
     assert events2[-1]["data"]["turn"] == 2
@@ -70,13 +70,13 @@ async def test_prefix_holds_static_content_and_bulletin_is_small(engine: Engine)
     assert "Scheduled spine" in prefix
 
     events = await play(engine, iid, "I check the cameras in the cargo bay.")
-    bulletin = events[0]["data"]["text"]
+    bulletin = events[2]["data"]["text"]
     assert "Time: Day 1" in bulletin
     assert "Next spine event" in bulletin
     for static in ("Hidden truth", "Interests:", "Fusion reactor"):
         assert static not in bulletin
     assert len(bulletin) < len(prefix) / 3
-    assert len(bulletin) < 2500  # ~600 tokens; it was ~10k chars before the split
+    assert len(bulletin) < 3500  # ~800 tokens incl. the THIS TURN block; it was ~10k chars before the split
 
 
 def test_window_start_moves_in_steps():
@@ -117,7 +117,7 @@ async def test_export_import_fork_rename_delete(engine: Engine):
     doc = engine.export(iid)
     assert doc["format"] == 1 and doc["instance"]["id"] == iid
     assert [s["turn"] for s in doc["snapshots"]] == [0, 1, 2, 3]
-    assert len(doc["transcript"]) == 1 + 3 * 3   # opening + (player, bulletin, narrator) x3
+    assert len(doc["transcript"]) == 1 + 3 * 4   # opening + (player, bulletin, narrator, mechanics) x3
 
     new_id = engine.import_(doc)
     assert new_id != iid

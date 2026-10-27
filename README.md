@@ -83,14 +83,32 @@ GET    /api/instances/{id}/export       self-contained JSON (transcript, ledger,
 POST   /api/instances/{id}/fork         {turn?, title?} -> branch copy up to that turn
 POST   /api/instances/{id}/undo         {turn?} rewind (default: one turn)
 GET    /api/instances/{id}/ledger?turn= model calls, later rolls/checks/deltas
-POST   /api/instances/{id}/turn         {text} -> SSE: bulletin, text*, done | error
+POST   /api/instances/{id}/turn         {text} -> SSE: adjudication, resolution, bulletin, text*, referee, done | error
 ```
+
+## Engine shape
+
+A turn is `adjudicate → resolve → narrate → referee → apply` (`server/engine/pipeline.py`).
+Only the adjudicator and referee produce structured output, each a single `messages.parse`
+call against a pydantic schema; the narrator sees a flat transcript and never a tool. The
+engine is generic over the state's JSON form:
+
+- `engine/statepath.py`   dotted paths into state (`crew.park.stress`), field authority
+- `engine/mechanics.py`   checks: `dice_d20`, `threshold`, `weighted`; RNG seeded per turn
+- `engine/events.py`      scripted events: deterministic triggers, fallbacks, expiry, effects
+- `engine/roles.py`       adjudicator and referee schemas and prompts
+- `engine/game.py`        `GameBase` with default hooks; the UI widget vocabulary
+
+A game (`server/games/<name>/`) provides a pydantic state model, a frozen prefix, a bulletin
+renderer, a UI, and overrides the hooks it needs (stats, entity ids, locations, narrator
+flags, referee schema, `apply_delta`, modifiers, ending). Scenario content, including events
+with their triggers and effects, is YAML under `notes/content/<game>/`.
 
 ## Status
 
-Phase two: narrator-only loop with a hardened engine spine. Per-instance frozen prefix (rules +
-scenario briefing, cached) and a small per-turn bulletin; the transcript window slides in steps
-so the cached message prefix stays stable; per-turn snapshots, undo to any turn, branching,
-export/import, rename/delete; GM debug drawer shows the exact request and cache usage. Verified
-live against Sonnet 5.5: ~850 uncached input tokens per turn. State does not change yet;
-adjudicator, referee, modules and scripted events are phase three.
+Phase three: the full pipeline runs live (Sonnet narrator, Haiku adjudicator and referee).
+State changes every turn: the clock advances (capped, stopping at scheduled events so they
+fire on time), checks are rolled by the engine and their outcomes dictated to the narrator,
+scripted events fire with fallbacks and expiry, and the referee's report is applied under
+field authority with bounds. Undo to any turn, branching, export/import. Next: summarizer and
+retrieval, mood decay, commands/affordances, then Opus and a replay harness.

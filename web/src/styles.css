@@ -88,3 +88,7 @@ ul.log, ul.notes { margin: 0; padding-left: 18px; font-size: 13px; }
   main { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
   .side { border-left: none; border-top: 1px solid var(--border); max-height: 45vh; }
 }
+
+.mechanics { font-size: 12px; color: var(--muted); border-left: 2px solid var(--border); padding-left: 10px; max-width: 72ch; }
+.stage { font-style: italic; }
+.ending { border: 1px solid var(--accent); border-radius: 8px; padding: 10px 14px; max-width: 72ch; }

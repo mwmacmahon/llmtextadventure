@@ -91,7 +91,19 @@ export function DebugDrawer({
         </details>
       ))}
       <h4>Ledger</h4>
-      <pre>{JSON.stringify(ledger.map(({ payload, ...rest }) => ({ ...rest, kind: rest.kind, keys: Object.keys(payload) })), null, 1)}</pre>
+      {ledger.map((l) => (
+        <details key={l.seq} open={l.kind !== "model_call"}>
+          <summary>
+            {l.kind}
+            {l.kind === "model_call" && ` · ${l.payload.role}`}
+            {l.kind === "check" && ` · ${l.payload.label}: ${l.payload.outcome}`}
+            {(l.kind === "event_fired" || l.kind === "event_expired") && ` · ${l.payload.event_id}`}
+            {l.kind === "adjudication" && ` · ${l.payload.kind}: ${l.payload.summary}`}
+            {l.kind === "delta" && ` · ${l.payload.applied?.length ?? 0} applied, ${l.payload.rejected?.length ?? 0} rejected`}
+          </summary>
+          <pre>{JSON.stringify(l.kind === "model_call" ? { ...l.payload, request: undefined } : l.payload, null, 1)}</pre>
+        </details>
+      ))}
     </aside>
   );
 }

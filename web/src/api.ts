@@ -17,11 +17,23 @@ export type Widget =
 
 export type UISchema = { phase: string; free_text: boolean; placeholder: string; panels: Widget[] };
 
-export type TranscriptRow = { seq: number; turn: number; role: "player" | "bulletin" | "narrator" | "system_note"; text: string; created: string };
+export type TranscriptRow = { seq: number; turn: number; role: "player" | "bulletin" | "narrator" | "system_note" | "mechanics"; text: string; created: string };
+
+export type CheckSummary = { label: string; outcome: string; roll: number | null; total: number; target: number };
+export type Mechanics = {
+  kind: string | null;
+  elapsed: number;
+  checks: CheckSummary[];
+  events: string[];
+  expired: string[];
+  applied: string[];
+  rejected: { path: string; reason: string; value?: unknown }[];
+  issues: string[];
+};
 
 export type Origin = { forked_from?: string; at_turn?: number; imported?: boolean; original_id?: string; exported?: string };
 export type InstanceSummary = { id: string; game: string; game_version: string; title: string; created: string; turn: number; origin: Origin };
-export type InstanceView = InstanceSummary & { ui: UISchema; transcript: TranscriptRow[] };
+export type InstanceView = InstanceSummary & { ui: UISchema; transcript: TranscriptRow[]; ending?: string | null };
 export type GameInfo = { name: string; title: string; description: string; version: string; setup: Record<string, { id: string; name: string }[]> };
 
 export type LedgerEntry = { seq: number; turn: number; kind: string; created: string; payload: Record<string, any> };
@@ -51,10 +63,13 @@ export const api = {
 };
 
 export type TurnEvent =
+  | { event: "adjudication"; data: { kind: string; summary: string; time_minutes: number; clarify_question?: string | null } }
+  | { event: "resolution"; data: { checks: Record<string, any>[]; fired: { event_id: string; variant: string }[]; expired: { event_id: string }[]; elapsed: number; directives: string[] } }
   | { event: "bulletin"; data: { turn: number; text: string } }
   | { event: "text"; data: { t: string } }
-  | { event: "done"; data: { turn: number; text: string; note?: string | null; model: string; usage: Record<string, number>; seconds: number; ui: UISchema } }
-  | { event: "error"; data: { message: string } };
+  | { event: "referee"; data: { delta: Record<string, any> | null; report?: { applied: string[]; rejected: unknown[] }; error?: string } }
+  | { event: "done"; data: { turn: number; text: string; note?: string | null; model: string; usage: Record<string, number>; seconds: number; mechanics: Mechanics; ending?: string | null; ui: UISchema } }
+  | { event: "error"; data: { message: string; step?: string } };
 
 /** POST a turn and stream server-sent events back. */
 export async function* streamTurn(id: string, text: string, signal?: AbortSignal): AsyncGenerator<TurnEvent> {

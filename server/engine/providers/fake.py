@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import AsyncIterator, TypeVar
+from typing import AsyncIterator, Callable, TypeVar
 
 from pydantic import BaseModel
 
@@ -48,10 +48,27 @@ class FakeProvider:
             usage=Usage(input_tokens=approx_in, output_tokens=len(out) // 4),
         )
 
+    # Tests may queue canned extraction results per schema class (consumed in order),
+    # or register a callable (schema, last user message) -> instance.
+    canned: dict[str, list[BaseModel]] = {}
+    hook: "Callable[[type[BaseModel], str], BaseModel | None] | None" = None
+
     async def extract(self, role: RoleConfig, system: str, messages: list[Msg], schema: type[T]) -> tuple[T, Usage]:
-        # Build the schema's default instance where possible; tests override as needed.
+        last = messages[-1].content if messages else ""
+        usage = Usage(input_tokens=len(json.dumps([m.content for m in messages])) // 4, output_tokens=40)
+        queue = self.canned.get(schema.__name__)
+        if queue:
+            return queue.pop(0), usage  # type: ignore[return-value]
+        if self.hook:
+            obj = self.hook(schema, last)
+            if obj is not None:
+                return obj, usage  # type: ignore[return-value]
+        ex = getattr(schema, "example", None)
+        if ex is not None:
+            tail = last.rsplit("]\n", 1)[-1].strip() if "]\n" in last else last
+            return ex(tail), usage
         try:
             obj = schema()  # type: ignore[call-arg]
         except Exception as e:  # pragma: no cover
             raise NotImplementedError(f"FakeProvider cannot construct {schema.__name__}: {e}")
-        return obj, Usage(input_tokens=len(json.dumps([m.content for m in messages])) // 4)
+        return obj, usage

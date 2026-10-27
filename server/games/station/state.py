@@ -2,14 +2,17 @@
 
 The player is a newly sentient station AI. Three player-visible reports
 (Station Report, Crew Dossier, Logfile) plus Hidden Data, as in the 2023
-design doc. Field authority (engine / narrator / script) is declared in
-phase three; the shape is final enough now to build the UI against.
+design doc. Events are engine Event records (status included, so they survive
+snapshots); flags feed triggers; stats feed checks. Field authority lives in
+game.py (AUTHORITY).
 """
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+from engine.events import Event
 
 Level = Literal["OK", "Low", "Critical", "Depleted"]
 SystemStatus = Literal["operational", "degraded", "malfunctioning", "disabled", "unpowered", "damaged"]
@@ -59,17 +62,9 @@ class CrewMember(BaseModel):
     location: str = ""
 
 
-class ScheduledEvent(BaseModel):
-    id: str
-    day: int
-    minute: int
-    description: str
-    fired: bool = False
-
-
 class Hidden(BaseModel):
-    events: list[ScheduledEvent] = Field(default_factory=list)
-    facts: list[str] = Field(default_factory=list)   # crew secrets, true causes
+    events: list[Event] = Field(default_factory=list)   # engine events (DESIGN §8), status included
+    facts: list[str] = Field(default_factory=list)      # crew secrets, true causes
 
 
 class Scenario(BaseModel):
@@ -78,6 +73,8 @@ class Scenario(BaseModel):
     premise: str
     station_name: str
     station_description: str
+    locations: list[str] = Field(default_factory=list)
+    narrator_flags: dict[str, str] = Field(default_factory=dict)   # flag -> meaning (referee may set)
 
 
 class StationState(BaseModel):
@@ -88,7 +85,8 @@ class StationState(BaseModel):
     systems: list[StationSystem] = Field(default_factory=list)
     crew: list[CrewMember] = Field(default_factory=list)
     log: list[str] = Field(default_factory=list)      # visible summary lines
-    flags: dict[str, str] = Field(default_factory=dict)
+    flags: dict[str, Any] = Field(default_factory=dict)
+    stats: dict[str, int] = Field(default_factory=dict)   # the AI's capabilities as check modifiers
     hidden: Hidden = Field(default_factory=Hidden)
 
     # ---- helpers ------------------------------------------------------------

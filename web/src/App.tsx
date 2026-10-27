@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, streamTurn, type InstanceView, type TranscriptRow } from "./api";
+import { api, streamTurn, type InstanceView, type Mechanics, type TranscriptRow } from "./api";
 import { DebugDrawer } from "./components/DebugDrawer";
 import { Lobby } from "./components/Lobby";
 import { Panels } from "./components/Panels";
@@ -25,6 +25,7 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
   const [view, setView] = useState<InstanceView | null>(null);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState<string | null>(null);
+  const [stage, setStage] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [debug, setDebug] = useState(false);
@@ -44,22 +45,34 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
     setPending(text);
     setInput("");
     setStreaming("");
+    setStage("adjudicating…");
     let acc = "";
     try {
       for await (const ev of streamTurn(id, text)) {
-        if (ev.event === "text") {
+        if (ev.event === "adjudication") {
+          setStage(ev.data.kind === "clarify" || ev.data.kind === "impossible" ? "asking for clarification…" : "resolving…");
+        } else if (ev.event === "resolution") {
+          setStage("resolving…");
+        } else if (ev.event === "text") {
           acc += ev.data.t;
           setStreaming(acc);
+          setStage(null);
+        } else if (ev.event === "bulletin") {
+          setStage("narrating…");
+        } else if (ev.event === "referee") {
+          setStage(null);
+        } else if (ev.event === "done") {
+          setStage(null);
+          if (ev.data.note) setErr(ev.data.note);
         } else if (ev.event === "error") {
           setErr(ev.data.message);
-        } else if (ev.event === "done" && ev.data.note) {
-          setErr(ev.data.note);
         }
       }
     } catch (e) {
       setErr(String(e));
     } finally {
       setStreaming(null);
+      setStage(null);
       setPending(null);
       await load();
     }
@@ -88,7 +101,7 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
 
   if (!view) return <div className="lobby">{err ?? "loading…"}</div>;
 
-  const rows: TranscriptRow[] = view.transcript.filter((r) => r.role === "player" || r.role === "narrator");
+  const rows: TranscriptRow[] = view.transcript.filter((r) => r.role === "player" || r.role === "narrator" || r.role === "mechanics");
 
   return (
     <div className="layout">
@@ -112,13 +125,15 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
       </header>
       <main>
         <section className="narrative" ref={scrollRef}>
-          {rows.map((r) => (
+          {rows.map((r) => (r.role === "mechanics" ? <MechanicsRow key={r.seq} text={r.text} /> : (
             <div key={r.seq} className={`msg ${r.role}`}>
               {r.text}
             </div>
-          ))}
+          )))}
           {pending && <div className="msg player">{pending}</div>}
-          {streaming !== null && <div className="msg narrator streaming">{streaming || "…"}</div>}
+          {streaming !== null && streaming && <div className="msg narrator streaming">{streaming}</div>}
+          {streaming !== null && stage && <div className="muted small stage">{stage}</div>}
+          {view.ending && <div className="ending">The End. {view.ending}</div>}
           {err && <div className="error">{err}</div>}
         </section>
         <aside className="side">
@@ -159,6 +174,32 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
         onRewind={(t) => undo(t)}
         onBranch={(t) => branch(t)}
       />
+    </div>
+  );
+}
+
+
+function MechanicsRow({ text }: { text: string }) {
+  let m: Mechanics;
+  try {
+    m = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  const bits: string[] = [];
+  if (m.kind === "clarify" || m.kind === "impossible") bits.push(m.kind);
+  if (m.elapsed) bits.push(`+${m.elapsed} min`);
+  for (const c of m.checks) bits.push(`${c.label}: ${c.outcome.replace(/_/g, " ")}${c.roll != null ? ` (d20 ${c.roll}, ${c.total} vs ${c.target})` : ""}`);
+  for (const e of m.events) bits.push(`event ${e}`);
+  for (const e of m.expired) bits.push(`expired ${e}`);
+  if (m.applied.length) bits.push(`${m.applied.length} change${m.applied.length === 1 ? "" : "s"}`);
+  if (m.rejected.length) bits.push(`${m.rejected.length} rejected`);
+  if (m.issues.length) bits.push(`${m.issues.length} issue${m.issues.length === 1 ? "" : "s"}`);
+  if (!bits.length) return null;
+  const title = [...m.applied, ...m.rejected.map((r) => `rejected ${r.path}: ${r.reason}`), ...m.issues.map((i) => `issue: ${i}`)].join("\n");
+  return (
+    <div className="mechanics" title={title}>
+      {bits.join(" · ")}
     </div>
   );
 }

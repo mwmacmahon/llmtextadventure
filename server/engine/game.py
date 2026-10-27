@@ -1,19 +1,23 @@
-"""The game protocol and the generic UI schema.
+"""The game protocol, a base class with defaults, and the generic UI schema.
 
 A game is a Python package that provides a state model, a frozen prefix
-(system prompt), a renderer that turns state into the per-turn bulletin, and a
-UI description built from the widget vocabulary below. The frontend knows
-nothing about any particular game; it renders UISchema.
+(system prompt), a bulletin renderer, a few mechanics hooks, and a UI built
+from the widget vocabulary below. The frontend knows nothing about any
+particular game; it renders UISchema.
 
-Phase one exposes only what a narrator-only loop needs. Adjudication, referee
-schemas, field authority, modules and phases arrive in phase three (see
-notes/DESIGN.md §6).
+Most hooks have workable defaults in `GameBase`, so a light game only has to
+implement: new_instance, load_state, frozen_prefix, render_bulletin, ui.
 """
 from __future__ import annotations
 
 from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
+
+from .events import Event
+from .mechanics import CheckRequest, Modifier
+from .roles import RefereeBase
+from .statepath import Actor
 
 # ---------------------------------------------------------------------------
 # UI schema vocabulary (notes/DESIGN.md §9)
@@ -102,7 +106,29 @@ class UISchema(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Game protocol (phase-one subset)
+# Mechanics configuration a game declares
+# ---------------------------------------------------------------------------
+
+
+class ClockSpec(BaseModel):
+    path: str = "clock"             # state path of {day, minute}
+    minutes_per_day: int = 1440
+    cap_minutes: int = 240          # the most one turn may advance (the "don't jump 8 hours" rule)
+
+
+class Rejection(BaseModel):
+    path: str
+    reason: str
+    value: Any = None
+
+
+class ApplyReport(BaseModel):
+    applied: list[str] = Field(default_factory=list)      # human-readable "crew.park.mood: anxious -> calm"
+    rejected: list[Rejection] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Game protocol and base
 # ---------------------------------------------------------------------------
 
 
@@ -113,31 +139,83 @@ class Game(Protocol):
     title: str
     description: str
 
-    def setup_options(self) -> dict[str, Any]:
-        """Describe what new_instance accepts (scenarios, character options...)."""
-        ...
-
-    def new_instance(self, setup: dict[str, Any]) -> tuple[str, BaseModel]:
-        """Return (instance title, initial state)."""
-        ...
-
+    def setup_options(self) -> dict[str, Any]: ...
+    def new_instance(self, setup: dict[str, Any]) -> tuple[str, BaseModel]: ...
     def load_state(self, data: dict[str, Any]) -> BaseModel: ...
-
-    def frozen_prefix(self, state: BaseModel) -> str:
-        """System prompt for one instance: game rules plus whatever is fixed for the
-        life of the instance (scenario briefing, hidden truth). Computed once at
-        creation, stored on the instance, and must then never change: it is the
-        cached prefix."""
-        ...
-
-    def opening(self, state: BaseModel) -> str | None:
-        """Optional narrator-free opening text shown before the first turn."""
-        ...
-
-    def render_bulletin(self, state: BaseModel, player_text: str) -> str:
-        """Engine-written block injected before the newest player message. Only
-        what moves between turns belongs here; it is the uncached part of every
-        request, so keep it small."""
-        ...
-
+    def frozen_prefix(self, state: BaseModel) -> str: ...
+    def opening(self, state: BaseModel) -> str | None: ...
+    def render_bulletin(self, state: BaseModel, player_text: str) -> str: ...
     def ui(self, state: BaseModel) -> UISchema: ...
+
+
+class GameBase:
+    """Defaults for the mechanics hooks. Override what the game needs."""
+
+    name = "base"
+    version = "0.0.0"
+    title = "Untitled"
+    description = ""
+
+    # --- declarations -------------------------------------------------------
+    clock: ClockSpec | None = None                    # None: no engine clock
+    resolver: str = "dice_d20"                        # key in mechanics.RESOLVERS
+    authority: dict[str, Actor] = {}                  # path pattern -> who may write (default engine)
+    events_path: str = "hidden.events"                # where Event records live in the state doc
+    log_path: str = "log"
+    skip_adjudication: bool = False                   # purely narrative games may set True
+    skip_referee: bool = False
+
+    # --- optional content hooks ---------------------------------------------
+    def opening(self, state: BaseModel) -> str | None:
+        return None
+
+    def stats(self, state: BaseModel) -> dict[str, int]:
+        """The player's stat block (name -> modifier). Empty: no checks."""
+        return {}
+
+    def entity_ids(self, state: BaseModel) -> list[str]:
+        return []
+
+    def locations(self, state: BaseModel) -> list[str]:
+        return []
+
+    def system_names(self, state: BaseModel) -> list[str]:
+        return []
+
+    def narrator_flags(self, state: BaseModel) -> dict[str, str]:
+        """Flags the referee may set from narration: name -> meaning."""
+        return {}
+
+    def adjudication_rules(self, state: BaseModel) -> str:
+        """Game-specific guidance for the adjudicator: stats, difficulty guidance, what the player can do."""
+        return ""
+
+    def referee_rules(self, state: BaseModel) -> str:
+        return ""
+
+    def referee_schema(self, state: BaseModel) -> type[RefereeBase]:
+        return RefereeBase
+
+    def state_for_models(self, state: BaseModel) -> str:
+        """Compact state text for the structured roles. Defaults to the bulletin without a player line."""
+        return self.render_bulletin(state, "")
+
+    def modifiers(self, state: BaseModel, req: CheckRequest, target_entity: str | None) -> list[Modifier]:
+        """Situational modifiers for a check (conditions, dispositions, equipment)."""
+        return []
+
+    def events(self, state: BaseModel) -> list[Event]:
+        from .statepath import lookup
+        raw = lookup(state.model_dump(mode="json"), self.events_path, []) or []
+        return [Event.model_validate(e) for e in raw]
+
+    def apply_delta(self, state: BaseModel, delta: RefereeBase, present: list[str]) -> tuple[BaseModel, ApplyReport]:
+        """Validate and apply the referee's report. Default applies nothing but the log line."""
+        return state, ApplyReport()
+
+    def after_turn(self, state: BaseModel) -> BaseModel:
+        """Per-turn drift (moods settle, meters decay). Default: nothing."""
+        return state
+
+    def ending(self, state: BaseModel) -> str | None:
+        return None

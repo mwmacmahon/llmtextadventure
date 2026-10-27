@@ -21,18 +21,18 @@ roles:
   adjudicator:
     provider: anthropic
     model: claude-haiku-5-5
-    max_tokens: 2048
-    effort: medium
+    max_tokens: 1024
+    effort: low
   referee:
     provider: anthropic
     model: claude-haiku-5-5
-    max_tokens: 2048
-    effort: medium
+    max_tokens: 1024
+    effort: low
   summarizer:
     provider: anthropic
     model: claude-haiku-5-5
-    max_tokens: 2048
-    effort: medium
+    max_tokens: 1024
+    effort: low
 
 context:
   window_turns: 12      # recent turns sent verbatim to the narrator (minimum)
