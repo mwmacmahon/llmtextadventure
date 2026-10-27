@@ -73,5 +73,5 @@ Haiku for structured roles. See `docs/LOCAL_LLM.md` for swapping a role to a loc
 
 Phase one: narrator-only loop. The bulletin (engine-written state block) is injected before
 each player message; transcript, ledger and per-turn snapshots are stored; undo works; the
-GM debug drawer shows the exact request. State does not change yet; adjudicator, referee,
+GM debug drawer shows the exact request. Verified live against Sonnet with prompt caching. State does not change yet; adjudicator, referee,
 modules and scripted events are phase three.
