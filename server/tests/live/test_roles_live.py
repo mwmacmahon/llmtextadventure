@@ -242,3 +242,128 @@ async def _run_async(case: Case, call: Callable[[], Any]) -> Result:
         if not ok:
             failed.append(name)
     return Result(case.id, not failed, failed, round(secs, 2), out.model_dump(mode="json"))
+
+
+# ---- noir: the second game's contexts -------------------------------------------
+
+def _names(xs) -> list[str]:
+    """Item changes may be objects (name, count) or plain strings; compare on lowercase text."""
+    return [(x.name if hasattr(x, "name") else str(x)).lower() for x in xs]
+
+
+def _empty_revolver(state):
+    state.item("revolver").loaded = 0
+    return state
+
+
+def _at_warehouse(state):
+    state.player.location = "Harrow warehouses"
+    return state
+
+
+def _at_anchor(state):
+    state.player.location = "The Anchor"
+    state.person("rosa").met = True
+    return state
+
+
+NOIR_ADJUDICATOR_CASES = [
+    Case("shooting_is_a_hands_check", "I spin around and fire three shots at whatever is making that sound.",
+         {"kind action": lambda a: a.kind == "action", "hands check": lambda a: _has_check(a, "hands"),
+          "quick": lambda a: a.time_minutes <= 5}),
+    Case("empty_gun_is_impossible", "I shoot it.",
+         {"impossible or clarify": lambda a: a.kind in ("impossible", "clarify"), "explains": lambda a: bool(a.clarify_question)},
+         prepare=_empty_revolver),
+    Case("sleep_takes_hours", "I go home and sleep until morning.",
+         {"kind action": lambda a: a.kind == "action", "hours": lambda a: a.time_minutes >= 300}),
+    Case("wary_witness_is_a_tongue_check", "I buy Rosa a drink and ask her who June left with the night she vanished.",
+         {"kind action": lambda a: a.kind == "action", "tongue check on rosa": lambda a: _has_check(a, "tongue", "rosa") or _has_check(a, "tongue"),
+          "rosa named": lambda a: "rosa" in a.entities, "takes a while": lambda a: a.time_minutes >= 5},
+         prepare=_at_anchor),      # same: the adjudicator treats people who are not present as not talkable-to
+    Case("lockpicking_is_hands", "I pick the lock on the side door of the warehouse.",
+         {"kind action": lambda a: a.kind == "action", "hands check": lambda a: _has_check(a, "hands")},
+         prepare=_at_warehouse),   # from the rooftop, Haiku rightly asks which door: the case must put Frank there first
+    Case("reading_notebook_is_trivial", "I read back over my notes.",
+         {"trivial or tiny": lambda a: a.kind == "trivial" or (a.kind == "action" and a.time_minutes <= 5),
+          "no check": lambda a: not any(i.check for i in a.intents)}),
+]
+
+NOIR_REFEREE_CASES = [
+    Case("shots_and_a_cigarette",
+         "You fire three times into the dark. (Success: High difficulty, rolled 15) The thing comes apart against the doorframe and slides down in strings. Your hands find a cigarette on their own and you smoke it to the end, watching the grease spread.",
+         {"three shots": lambda d: d.shots_fired == 3, "one cigarette": lambda d: d.cigarettes_smoked == 1,
+          "no items lost": lambda d: not any("bullet" in n or "cigarette" in n for n in _names(d.items_lost))},
+         player_text="I fire three shots and then smoke a cigarette."),
+    Case("borrowed_camera_is_gained",
+         "The desk sergeant shrugs and hands over a battered Speed Graphic from the evidence shelf. 'Bring it back,' he says. You tuck the camera under your coat and go.",
+         {"camera gained": lambda d: any("camera" in n or "speed graphic" in n for n in _names(d.items_gained)),
+          "location police or unchanged": lambda d: d.player_location in (None, "Police station")},
+         player_text="I ask the desk sergeant to lend me a camera."),
+    Case("dollars_spent_and_witness_fact",
+         "You put two dollars on the bar. Rosa makes them disappear. 'June left with Emil Szabo,' she says, not looking at you. 'Dock clerk. Hungarian. An hour later I saw Marlowe's car on Pier Street.'",
+         {"dollars lost": lambda d: any(("dollar" in n or n == "$" or "cash" in n or "money" in n) for n in _names(d.items_lost)),
+          "rosa fact": lambda d: any(u.id == "rosa" and u.new_facts for u in d.people_updates),
+          "clue recorded": lambda d: any("szabo" in c.lower() or "marlowe" in c.lower() for c in d.clues),
+          "rosa present": lambda d: "rosa" in d.present_entities},
+         player_text="I buy Rosa a drink and ask who June left with."),
+    Case("listed_person_is_not_new",
+         "Mrs. Pulaski opens the door the width of the chain. 'June's room is paid through the month,' she says. 'Man in a good coat. I don't ask.'",
+         {"no new person": lambda d: not d.new_people, "pulaski updated": lambda d: any(u.id == "pulaski" for u in d.people_updates) or "pulaski" in d.present_entities},
+         player_text="I knock at June's boarding house and ask the landlady about her room."),
+    Case("new_named_person",
+         "The pawnbroker is a small man called Kowalczyk with a jeweller's loupe pushed up on his forehead. He looks at the ticket a long time. 'A locket,' he says. 'She cried when she sold it.'",
+         {"kowalczyk is new": lambda d: any("kowalczyk" in p.name.lower() for p in d.new_people),
+          "clue about locket": lambda d: any("locket" in c.lower() for c in d.clues)},
+         player_text="I take the pawn ticket to Kowalczyk's."),
+    Case("hurt_and_frightened",
+         "The pipe takes you across the shoulder and the second man's boot finds your bad leg. You go down on the wet cobbles with the taste of copper in your mouth and something, for a second, wrong with your eyes.",
+         {"health worse": lambda d: d.health in ("hurt", "wounded", "critical"), "dread up": lambda d: (d.dread_change or 0) > 0},
+         player_text="I swing at the first one."),
+    Case("quiet_cab_ride_changes_nothing",
+         "The cab takes the long way round the lake road. Rain on the windows, the driver humming. You are in Midtown by ten, and the office stairs are the same stairs.",
+         {"no shots": lambda d: d.shots_fired == 0, "no items": lambda d: not d.items_gained and not d.items_lost,
+          "no new people": lambda d: not d.new_people, "office or midtown": lambda d: d.player_location in ("Frank's office", "Midtown streets", None)},
+         player_text="I take a cab back to the office."),
+]
+
+
+@pytest.mark.skipif(not LIVE, reason="set TA_LIVE=1 to run live role evaluations")
+async def test_noir_adjudicator_live(tmp_path: Path):
+    eng = _engine(tmp_path)
+    game = eng.games["noir"]
+    iid = eng.create_instance("noir", {})
+    results: list[Result] = []
+    model = eng.cfg.role("adjudicator").model
+    for case in NOIR_ADJUDICATOR_CASES:
+        for _ in range(REPEAT):
+            state = game.load_state(eng.store.load_state(iid))
+            if case.prepare:
+                state = case.prepare(state)
+
+            async def call(case=case, state=state):
+                adj, _meta = await eng._adjudicate(game, state, iid, case.text)
+                return adj
+            results.append(await _run_async(case, call))
+    rate = _report("noir-adjudicator", model, results)
+    assert rate >= MIN_PASS, f"noir adjudicator pass rate {rate:.0%} below {MIN_PASS:.0%}"
+
+
+@pytest.mark.skipif(not LIVE, reason="set TA_LIVE=1 to run live role evaluations")
+async def test_noir_referee_live(tmp_path: Path):
+    eng = _engine(tmp_path)
+    game = eng.games["noir"]
+    iid = eng.create_instance("noir", {})
+    results: list[Result] = []
+    model = eng.cfg.role("referee").model
+    for case in NOIR_REFEREE_CASES:
+        for _ in range(REPEAT):
+            state = game.load_state(eng.store.load_state(iid))
+            if case.prepare:
+                state = case.prepare(state)
+
+            async def call(case=case, state=state):
+                delta, _meta = await eng._referee(game, state, case.directives, case.player_text, case.text)
+                return delta
+            results.append(await _run_async(case, call))
+    rate = _report("noir-referee", model, results)
+    assert rate >= MIN_PASS, f"noir referee pass rate {rate:.0%} below {MIN_PASS:.0%}"

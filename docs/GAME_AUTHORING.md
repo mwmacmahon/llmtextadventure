@@ -5,7 +5,10 @@ A game is a Python package under `server/games/<name>/` plus a content directory
 management, checks, events, happenings, threads, drift and the UI vocabulary; the game supplies
 its state shape, its prose rules, and the hooks that make its state readable and writable.
 
-This guide reflects the first game. A `_template/` package is planned once a second game exists.
+Two games exist (`games/station`, `games/noir`); read whichever is closer to what you are
+building. `engine/gamekit.py` holds what they share: `Content` (prefix.md + scenarios/*.yml),
+`Clock`, `Writer` (authority-checked writes and bounded nudges into an `ApplyReport`),
+`apply_flags`, `threads_panel`, `hhmm`.
 
 ## 1. Files
 
@@ -29,7 +32,7 @@ at the paths you declare:
 
 | declaration on the game class | what lives there |
 |---|---|
-| `clock = ClockSpec(path, minutes_per_day, cap_minutes)` | `{day, minute}` |
+| `clock = ClockSpec(path, minutes_per_day, cap_minutes)` | `{day, minute}` (`engine.gamekit.Clock`) |
 | `events_path` | `list[engine.events.Event]`, status included |
 | `spontaneous_path` (optional) | `list[engine.spontaneous.Spontaneous]` |
 | `recent_path` (optional) | narrator-only strings about recent happenings |
@@ -51,9 +54,11 @@ AUTHORITY = {
 ```
 
 `*` matches one path segment; the most specific pattern wins; anything unlisted defaults to
-`engine`. `apply_delta` must check `may_write(path, "narrator", self.authority)` before applying a
-referee field. A purely narrative game sets nearly everything to `narrator`; a strict game, to
-`engine`.
+`engine`. `apply_delta` writes through `gamekit.Writer`, which checks
+`may_write(path, "narrator", self.authority)` and records applied and rejected writes. A purely
+narrative game sets nearly everything to `narrator`; a strict game, to `engine`. Narrator
+authority over a field still means engine validation: the noir referee may report that Frank
+fired three rounds, but the engine fires at most what was loaded and rejects the rest.
 
 ## 4. Hooks (`GameBase`)
 
@@ -78,6 +83,11 @@ Optional, with defaults that do nothing:
 | `summary_guidance(state)` | what the state already records (so the summarizer skips it) and what to keep |
 | `commands(state)` / `run_command(state, id, args)` | clicked commands, engine or narrated mode |
 | `ending(state)` | a string when the game is over (the UI locks input) |
+
+Declarations on the class: `clock`, `resolver`, `authority`, `events_path`, `spontaneous_path`,
+`recent_path`, `threads_path`, `log_path`, `skip_adjudication`, `skip_referee`, and
+`narrate_rolls` (the THIS TURN block tells the narrator the die roll and target as well as the
+outcome tier; noir shows the roll in a parenthetical, station does not).
 
 ## 5. The bulletin
 
@@ -140,7 +150,12 @@ spontaneous:
 Rules of thumb:
 
 - Triggers read only tracked fields with known value sets. If it is not in the state, it cannot
-  be in a trigger.
+  be in a trigger. Predicates: `at`, `flag`, `not_flag`, `flag_is`, `eq`/`ne`/`gt`/`gte`/`lt`/`lte`,
+  `in` (value in a list of values), `has` (a list at the path contains the value, or an item whose
+  id or name is the value), `fired`/`not_fired`/`expired`, `turn_gte`, `all`/`any`/`not`.
+- Events fire in priority order within one tick and later events see the effects of earlier
+  ones: a fallback that sets a flag at 23:30 on day 2 is read by a day-3 event evaluated in the
+  same tick if the clock jumped past both.
 - Every windowed event has a `fallback` or an `expires`, so the story has a floor when the player
   goes elsewhere.
 - Flags named in triggers are either set by effects or declared in `narrator_flags`; that list
@@ -184,10 +199,24 @@ class ExampleReferee(RefereeBase):
 ```
 
 Keep schemas flat and free of numeric bounds or dict fields (strict structured output does not
-support them); clamp in `apply_delta`. `RefereeBase` already carries `present_entities`,
+support them); clamp in `apply_delta`. The grammar compiler's cost grows with **optional** and
+**nullable/union** fields, not with property count: the documented caps are 24 optional and 16
+union parameters per request, and "Schema is too complex" arrives well before that (after a
+three-minute compile timeout, so each attempt costs a whole turn's referee). The first noir
+referee had 26 optional and 8 union fields and was refused; the same fields with no defaults and
+no `| None` (empty string, zero or empty list meaning "unchanged") compile in twelve seconds. So:
+every field required, sentinels instead of null, small enums, flat objects. `RefereeBase`
+itself contributes six optional fields; keep a game's own contribution near zero. `RefereeBase` already carries `present_entities`,
 `log_line`, `flags_set`, `threads_opened`, `threads_closed`, `narration_issues` and `confidence`.
 
-## 9. Testing
+## 9. Playing from a terminal
+
+`server/tools/play.py` talks to a running server: `new <game>`, `say <iid> "<text>"`, `cmd <iid>
+<command> k=v`, `state`, `log <iid> <turn>` (the ledger: adjudication, checks, verdict,
+rejections), `transcript`. It prints the narration and a one-line mechanics summary per turn,
+which is what a playtest agent needs to judge whether the state kept up with the prose.
+
+## 10. Testing
 
 Use `TA_PROVIDER=fake`. The fake provider streams a canned narration and returns
 `schema.example(...)` for extractions, or canned instances you queue per schema class

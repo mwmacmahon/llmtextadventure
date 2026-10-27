@@ -20,19 +20,19 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Literal
 
-import yaml
 from pydantic import BaseModel, Field
 
 from engine import threads as th
 from engine.events import Event, next_scheduled
 from engine.game import (
     ApplyReport, Chip, ClockSpec, CommandResult, Commands, CommandSpec, EntityCard, EntityCards, GameBase, ListPanel,
-    LogPanel, Meter, Option, Param, Rejection, StatusStrip, Table, TableCell, TurnInfo, UISchema,
+    LogPanel, Meter, Option, Param, StatusStrip, Table, TableCell, TurnInfo, UISchema,
 )
+from engine.gamekit import Content, Writer, apply_flags, threads_panel
 from engine.mechanics import CheckRequest, Modifier
 from engine.roles import RefereeBase
 from engine.spontaneous import Spontaneous
-from engine.statepath import Actor, may_write
+from engine.statepath import Actor
 
 from .state import Clock, Control, CrewMember, Hidden, Resource, Scenario, StationState, StationSystem, SystemStatus
 
@@ -54,10 +54,6 @@ AUTHORITY: dict[str, Actor] = {
     "crew.*.disposition": "script", "crew.*.susceptibility": "script",
     "hidden": "script", "flags": "narrator", "log": "narrator", "threads": "narrator", "sealed": "engine",
 }
-
-
-def _hhmm(minute: int) -> str:
-    return f"{minute // 60:02d}:{minute % 60:02d}"
 
 
 # ---- referee schema for this game ------------------------------------------
@@ -104,22 +100,14 @@ class StationGame(GameBase):
     log_path = "log"
 
     def __init__(self, content_dir: Path):
-        self.content_dir = content_dir
-        self._prefix_cache: str | None = None
+        self.content = Content(content_dir)
 
     # ---- content ------------------------------------------------------------
     def _scenarios(self) -> dict[str, dict]:
-        out: dict[str, dict] = {}
-        for p in sorted((self.content_dir / "scenarios").glob("*.yml")):
-            with open(p) as f:
-                data = yaml.safe_load(f)
-            out[data["id"]] = data
-        return out
+        return self.content.scenarios()
 
     def _rules_text(self) -> str:
-        if self._prefix_cache is None:
-            self._prefix_cache = (self.content_dir / "prefix.md").read_text().strip()
-        return self._prefix_cache
+        return self.content.prefix()
 
     # ---- protocol -----------------------------------------------------------
     def setup_options(self) -> dict[str, Any]:
@@ -326,26 +314,20 @@ class StationGame(GameBase):
         rep = ApplyReport()
         s = state.model_copy(deep=True)
         locs = set(s.scenario.locations)
-
-        def write(path: str, old: Any, new: Any) -> bool:
-            if not may_write(path, "narrator", self.authority):
-                rep.rejected.append(Rejection(path=path, reason="narrator may not write this field", value=new))
-                return False
-            if old != new:
-                rep.applied.append(f"{path}: {old!r} -> {new!r}")
-            return True
+        w = Writer(self.authority, rep)
+        write = w.set
 
         for u in delta.crew_updates:
             c = s.crew_by_id(u.id)
             if not c:
-                rep.rejected.append(Rejection(path=f"crew.{u.id}", reason="unknown crew id"))
+                w.reject(f"crew.{u.id}", "unknown crew id")
                 continue
             if u.location is not None:
                 if u.location in locs:
                     if write(f"crew.{c.id}.location", c.location, u.location):
                         c.location = u.location
                 else:
-                    rep.rejected.append(Rejection(path=f"crew.{c.id}.location", reason="not a listed place", value=u.location))
+                    w.reject(f"crew.{c.id}.location", "not a listed place", u.location)
             if u.mood and write(f"crew.{c.id}.mood", c.mood, u.mood.strip()[:40]):
                 c.mood = u.mood.strip()[:40]
             if u.health is not None:
@@ -353,15 +335,11 @@ class StationGame(GameBase):
                     if write(f"crew.{c.id}.health", c.health, u.health):
                         c.health = u.health
                 else:
-                    rep.rejected.append(Rejection(path=f"crew.{c.id}.health", reason="not a health value", value=u.health))
+                    w.reject(f"crew.{c.id}.health", "not a health value", u.health)
             for field, change in (("stress", u.stress_change), ("suspicion", u.suspicion_change)):
-                if change:
-                    lim = STEP_LIMIT[field]
-                    step = max(-lim, min(lim, int(change)))
-                    old = getattr(c, field)
-                    new = max(0, min(100, old + step))
-                    if write(f"crew.{c.id}.{field}", old, new):
-                        setattr(c, field, new)
+                new = w.nudge(f"crew.{c.id}.{field}", getattr(c, field), change, STEP_LIMIT[field])
+                if new is not None:
+                    setattr(c, field, new)
             for f in u.new_facts:
                 f = f.strip()
                 if f and f not in c.facts:
@@ -370,18 +348,11 @@ class StationGame(GameBase):
         for su in delta.system_updates:
             sy = next((x for x in s.systems if x.name == su.name), None)
             if not sy:
-                rep.rejected.append(Rejection(path=f"systems.{su.name}", reason="unknown system"))
+                w.reject(f"systems.{su.name}", "unknown system")
                 continue
             if su.control and write(f"systems.{sy.name}.control", sy.control, su.control):
                 sy.control = su.control
-        allowed = s.scenario.narrator_flags
-        for fs in delta.flags_set:
-            if fs.name in allowed:
-                if s.flags.get(fs.name) != fs.value:
-                    rep.applied.append(f"flags.{fs.name}: {s.flags.get(fs.name)!r} -> {fs.value!r}")
-                s.flags[fs.name] = fs.value
-            else:
-                rep.rejected.append(Rejection(path=f"flags.{fs.name}", reason="not a narrator flag", value=fs.value))
+        apply_flags(s.flags, s.scenario.narrator_flags, delta.flags_set, w)
         new_susp = self._derived_suspicion(s)
         if new_susp != s.suspicion:
             rep.applied.append(f"suspicion (derived): {s.suspicion} -> {new_susp}")
@@ -582,10 +553,7 @@ class StationGame(GameBase):
                     ],
                 ),
                 Commands(title="Station controls", items=self.commands(s)),
-                ListPanel(title="Threads", items=[
-                    *[Chip(label="open", value=t.title) for t in s.threads if t.status == "open"],
-                    *[Chip(label=t.status, value=t.title) for t in sorted((t for t in s.threads if t.status != "open"), key=lambda t: t.closed_turn or 0)[-5:]],
-                ]),
+                threads_panel(s.threads),
                 ListPanel(title="Capabilities", items=[Chip(label=k, value=f"{v:+d}") for k, v in s.stats.items()]),
                 LogPanel(title="Logfile", lines=s.log[-20:]),
             ],

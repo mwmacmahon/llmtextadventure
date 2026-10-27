@@ -230,9 +230,9 @@ function MechanicsRow({ text }: { text: string }) {
   for (const h of m.happenings ?? []) bits.push(`unscripted: ${h.id.replace(/_/g, " ")}${h.reason ? ` (${h.reason})` : ""}`);
   if (m.applied.length) bits.push(`${m.applied.length} change${m.applied.length === 1 ? "" : "s"}`);
   if (m.rejected.length) bits.push(`${m.rejected.length} rejected`);
-  if (m.issues.length) bits.push(`${m.issues.length} issue${m.issues.length === 1 ? "" : "s"}`);
+  if (m.drift?.length) bits.push(`${m.drift.length} drifted`);
   if (!bits.length) return null;
-  const title = [...m.applied, ...m.rejected.map((r) => `rejected ${r.path}: ${r.reason}`), ...m.issues.map((i) => `issue: ${i}`)].join("\n");
+  const title = [...m.applied, ...m.rejected.map((r) => `rejected ${r.path}: ${r.reason}`), ...(m.drift ?? []).map((d) => `drift ${d}`)].join("\n");
   return (
     <div className="mechanics" title={title}>
       {bits.join(" · ")}

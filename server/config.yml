@@ -25,11 +25,13 @@ roles:
     model: claude-haiku-5-5
     max_tokens: 1024
     effort: low
+    timeout_seconds: 90
   referee:
     provider: anthropic
     model: claude-haiku-5-5
     max_tokens: 1024
     effort: low
+    timeout_seconds: 90
   summarizer:
     # Runs only at window-slide points (every 6 turns), so it can afford the narrator's model:
     # a rich story-so-far is what keeps long games coherent, and Haiku flattens it.

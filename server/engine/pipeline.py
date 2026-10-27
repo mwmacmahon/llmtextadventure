@@ -168,6 +168,10 @@ class Engine:
         game = self.games[inst.game]
         state: BaseModel = game.load_state(self.store.load_state(iid))
         turn = self.store.latest_turn(iid) + 1
+        over = _hook(game, "ending", state)
+        if over:
+            yield {"event": "error", "data": {"message": f"The story is over: {over} Undo or branch from an earlier turn to keep playing.", "step": "ended"}}
+            return
         ledger = lambda kind, payload: self.store.append_ledger(iid, turn, kind, payload)  # noqa: E731
         t_turn = time.monotonic()
         log.info("turn.start " + logs.kv(iid=iid, turn=turn, command=command[0] if command else None,
@@ -202,7 +206,7 @@ class Engine:
                 self.store.append_transcript(iid, turn, "result", cmd_result.text)
                 self.store.save_snapshot(iid, turn, state.model_dump(mode="json"))
                 mechanics = {"kind": "command", "elapsed": 0, "checks": [], "events": [], "expired": [], "happenings": [],
-                             "applied": [f"command {cid}"], "rejected": [], "issues": []}
+                             "applied": [f"command {cid}"], "rejected": [], "drift": [], "issues": []}
                 self.store.append_transcript(iid, turn, "mechanics", json.dumps(mechanics))
                 yield {"event": "done", "data": {"turn": turn, "text": cmd_result.text, "note": None, "model": None, "usage": {},
                                                  "seconds": 0, "mechanics": mechanics, "ending": _hook(game, "ending", state),
@@ -266,7 +270,7 @@ class Engine:
             try:
                 text, meta = await self._summarize(game, state, plan)
                 self.store.append_transcript(iid, plan.to_cover[-1], "system_note", text)
-                ledger("model_call", {"role": "summarizer", **meta, "covered": plan.to_cover, "previous_turn": plan.previous.turn if plan.previous else None})
+                ledger("model_call", {"role": "summarizer", **meta, "covered": plan.to_cover, "previous_turn": plan.previous.turn if plan.previous else None, "text": text})
                 log.info("step " + logs.kv(iid=iid, turn=turn, step="summarize", model=meta["model"], seconds=meta["seconds"],
                                            covered=f"{plan.to_cover[0]}-{plan.to_cover[-1]}", chars=len(text), **logs.usage_kv(meta["usage"])))
                 yield {"event": "summary", "data": {"status": "done", "turns": plan.to_cover, "chars": len(text)}}
@@ -277,7 +281,7 @@ class Engine:
                 yield {"event": "summary", "data": {"status": "failed", "turns": plan.to_cover, "error": str(e)}}
 
         # ---- 3. narrate -----------------------------------------------------
-        bulletin = game.render_bulletin(state, player_text) + "\n\n" + _this_turn_block(res)
+        bulletin = game.render_bulletin(state, player_text) + "\n\n" + _this_turn_block(res, getattr(game, "narrate_rolls", False))
         yield {"event": "bulletin", "data": {"turn": turn, "text": bulletin}}
         self.store.append_transcript(iid, turn, "bulletin", bulletin)
 
@@ -327,6 +331,9 @@ class Engine:
         if not getattr(game, "skip_referee", False) and adj is not None and adj.kind in ("action", "trivial"):
             try:
                 delta, meta = await self._referee(game, state, res["directives"], player_text, narration)
+                for fname in (cmd_result.referee_skip if cmd_result else []):
+                    if fname in type(delta).model_fields:
+                        setattr(delta, fname, _blank_like(getattr(delta, fname)))
                 delta_json = delta.model_dump(mode="json")
                 ledger("verdict", {**delta_json, "_call": meta})
                 present = [e for e in delta.present_entities if e in _hook(game, "entity_ids", state, default=[])]
@@ -357,6 +364,7 @@ class Engine:
         touched = [f"{p}: set by script" for p in res["effect_paths"]]
         info = TurnInfo(turn=turn, elapsed_minutes=res["elapsed"], rng=rng_for(iid, turn, "drift"), applied=list(report.applied) + touched)
         drifted = _hook(game, "after_turn", state, info, default=state)
+        drift_lines: list[str] = []
         if drifted is not state:
             before, after = state.model_dump(mode="json"), drifted.model_dump(mode="json")
             drift_lines = _diff_lines(before, after)
@@ -374,7 +382,8 @@ class Engine:
             "expired": [x.event_id for x in res["expired"]],
             "happenings": [{"id": h.id, "who": h.who, "reason": h.reason if h.visible else None} for h in res["happened"]],
             "applied": report.applied, "rejected": [r.model_dump() for r in report.rejected],
-            "issues": (delta_json or {}).get("narration_issues", []),
+            "drift": drift_lines,
+            "issues": (delta_json or {}).get("narration_issues", []) + res["notes"],
         }
         self.store.append_transcript(iid, turn, "mechanics", json.dumps(mechanics))
 
@@ -411,6 +420,7 @@ class Engine:
         directives: list[str] = list(extra_directives or [])
         checks: list[CheckResult] = []
         happened: list[spon.Happened] = []
+        notes: list[str] = []
         clock_note = ""
         elapsed = 0
         clock = getattr(game, "clock", None)
@@ -425,12 +435,22 @@ class Engine:
             stats = _hook(game, "stats", state, default={})
             resolver = RESOLVERS[getattr(game, "resolver", "dice_d20")]
             rng = rng_for(iid, turn)
+            fallback = getattr(game, "fallback_stat", None)
             for i, intent in enumerate(adj.intents):
-                if intent.check and intent.check.stat in stats:
-                    req = CheckRequest(id=f"c{i+1}", label=intent.check.label, stat=intent.check.stat,
-                                       difficulty=intent.check.difficulty, base=stats[intent.check.stat])
-                    req.modifiers = _hook(game, "modifiers", state, req, intent.check.target_entity, default=[])
-                    checks.append(resolver(rng, req))
+                if not intent.check:
+                    continue
+                stat = intent.check.stat
+                if stat not in stats:
+                    if fallback and fallback in stats:
+                        notes.append(f"adjudicator named unknown stat {stat!r} for {intent.check.label!r}; rolled {fallback}")
+                        stat = fallback
+                    else:
+                        notes.append(f"adjudicator named unknown stat {stat!r} for {intent.check.label!r}; check dropped")
+                        continue
+                req = CheckRequest(id=f"c{i+1}", label=intent.check.label, stat=stat,
+                                   difficulty=intent.check.difficulty, base=stats[stat])
+                req.modifiers = _hook(game, "modifiers", state, req, intent.check.target_entity, default=[])
+                checks.append(resolver(rng, req))
             # clock, stopping at the next scheduled event so it fires on time
             if clock and adj.time_minutes > 0:
                 want = min(adj.time_minutes, clock.cap_minutes)
@@ -473,7 +493,7 @@ class Engine:
         effect_paths = [p for f in fired for p in _effect_paths(f.effects_applied)] + [p for x in expired for p in _effect_paths(x.effects_applied)] \
             + [p for h in happened for p in _effect_paths(h.effects_applied)]
         return {"state": new_state, "checks": checks, "fired": fired, "expired": expired, "happened": happened, "elapsed": elapsed,
-                "clock_note": clock_note, "directives": directives, "adjudication": adj, "effect_paths": effect_paths}
+                "clock_note": clock_note, "directives": directives, "adjudication": adj, "effect_paths": effect_paths, "notes": notes}
 
     async def _summarize(self, game: Game, state: BaseModel, plan) -> tuple[str, dict]:
         role = self.cfg.role("summarizer")
@@ -512,6 +532,19 @@ def _hook(game: Any, name: str, *args: Any, default: Any = None) -> Any:
     if fn is None:
         return default
     return fn(*args)
+
+
+def _blank_like(value: Any) -> Any:
+    """The 'nothing changed' value of a referee field the engine already applied (sentinel schemas: 0, "", [])."""
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, (int, float)):
+        return 0
+    if isinstance(value, str):
+        return ""
+    if isinstance(value, list):
+        return []
+    return None
 
 
 def sp_rej(reason: str):
@@ -572,7 +605,7 @@ def _diff_lines(before: Any, after: Any, path: str = "") -> list[str]:
     return out
 
 
-def _this_turn_block(res: dict[str, Any]) -> str:
+def _this_turn_block(res: dict[str, Any], narrate_rolls: bool = False) -> str:
     lines = ["THIS TURN (resolved by the engine; narrate these, do not re-decide them)"]
     adj = res.get("adjudication")
     if adj is not None:
@@ -582,7 +615,8 @@ def _this_turn_block(res: dict[str, Any]) -> str:
     elif adj is not None and adj.kind in ("action", "trivial"):
         lines.append("- No appreciable time passes.")
     for c in res["checks"]:
-        lines.append(f"- Check, {c.label} ({c.stat}, {c.difficulty.replace('_', ' ')} difficulty): {c.tier_text().upper()}. Narrate that outcome; do not soften or reverse it.")
+        roll = f" Rolled {c.roll}{c.total - c.roll:+d} = {c.total} against {c.target}." if narrate_rolls and c.roll is not None else ""
+        lines.append(f"- Check, {c.label} ({c.stat}, {c.difficulty.replace('_', ' ')} difficulty): {c.tier_text().upper()}.{roll} Narrate that outcome; do not soften or reverse it.")
     for d in res["directives"]:
         lines.append(f"- {d}")
     if len(lines) == 1:

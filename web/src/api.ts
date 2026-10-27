@@ -39,6 +39,7 @@ export type Mechanics = {
   happenings: { id: string; who: string[]; reason: string | null }[];
   applied: string[];
   rejected: { path: string; reason: string; value?: unknown }[];
+  drift?: string[];
   issues: string[];
 };
 

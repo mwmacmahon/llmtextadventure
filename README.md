@@ -8,7 +8,7 @@ Rebooted October 2026. The 2023–24 codebase lives on the `legacy` branch.
 ## Layout
 
 ```
-server/      Python 3.13, FastAPI, SQLite. Engine, providers, games.
+server/      Python 3.13, FastAPI, SQLite. Engine, providers, games (station, noir), tools/play.py.
 web/         Vite + React + TypeScript. Generic client driven by a UI schema.
 docs/        ARCHITECTURE.md (how the engine works), GAME_AUTHORING.md, LOCAL_LLM.md.
 notes/       gitignored: design doc, decision log, reference material, game content.
@@ -128,10 +128,11 @@ with their triggers and effects, is YAML under `notes/content/<game>/`.
 
 ## Status
 
-Phase four: on top of the phase-three pipeline (clock, engine-rolled checks, scripted events,
-referee under field authority), games now keep their memory. A Sonnet summarizer writes the
-story so far whenever the window slides; threads record what the story has promised and
-settled; stress drifts back toward each crew member's baseline and moods follow; unscripted
-happenings give the world a pulse; clicked commands resolve in the engine or drive a narrated
-turn; the lobby's game properties show tokens and cost per role. Next: a long playtest, then
-Opus as narrator and a replay harness, logging and docs before the first push.
+Two games on one engine. Phase four gave games their memory (Sonnet summarizer at window-slide
+points, threads, drift, unscripted happenings, clicked commands, cost rollup). The second game,
+noir (`games/noir`), added what a body needs: an inventory with counts and a loaded revolver
+the referee updates from prose under engine validation, conditions with check modifiers, a
+nicotine clock, a dread meter that drifts only somewhere safe, a cast that can grow mid-game,
+a notebook, and the d20 roll shown to the narrator. The shared pieces moved to
+`engine/gamekit.py`. `server/tools/play.py` plays either game from a terminal against a
+running server. Next: playtests, then Opus as narrator and a replay harness.

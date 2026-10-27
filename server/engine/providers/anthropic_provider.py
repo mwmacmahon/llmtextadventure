@@ -67,9 +67,9 @@ class AnthropicProvider:
         if role.refusal_fallback:
             kw["betas"] = [FALLBACK_BETA]
             kw["fallbacks"] = "default"
-            ctx = self.client.beta.messages.stream(**kw)
+            ctx = self.client.beta.messages.stream(timeout=role.timeout_seconds, **kw)
         else:
-            ctx = self.client.messages.stream(**kw)
+            ctx = self.client.messages.stream(timeout=role.timeout_seconds, **kw)
 
         text = ""
         async with ctx as stream:
@@ -96,7 +96,7 @@ class AnthropicProvider:
     async def extract(self, role: RoleConfig, system: str, messages: list[Msg], schema: type[T]) -> tuple[T, Usage]:
         kw = self._common(role, system)
         kw["messages"] = _to_api_messages(messages, role.cache_ttl)
-        resp = await self.client.messages.parse(output_format=schema, **kw)
+        resp = await self.client.messages.parse(output_format=schema, timeout=role.timeout_seconds, **kw)
         if resp.stop_reason == "refusal":
             raise RuntimeError("structured extraction refused")
         usage = _usage(resp.usage)

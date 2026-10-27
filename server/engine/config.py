@@ -24,6 +24,7 @@ class RoleConfig(BaseModel):
     cache_ttl: Literal["5m", "1h"] = "1h"
     refusal_fallback: bool = False
     prompt_variant: str = "default"
+    timeout_seconds: float = 180        # per request; the API can take minutes to refuse a bad schema
 
 
 class ServerConfig(BaseModel):

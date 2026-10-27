@@ -85,8 +85,8 @@ function Panel({ w, onChoice, onCommand, busy }: { w: Widget; onChoice?: OnComma
         <section className="panel">
           <h3>{w.title}</h3>
           <ul className="kv">
-            {w.items.map((c) => (
-              <li key={c.label}>
+            {w.items.map((c, i) => (
+              <li key={`${c.label}-${i}`}>
                 <span className="muted">{c.label}</span>
                 <span>{c.value}</span>
               </li>
@@ -167,8 +167,8 @@ function Card({ card }: { card: EntityCard }) {
           {card.subtitle && <div className="muted small">{card.subtitle}</div>}
         </div>
         <div className="badges">
-          {card.badges.map((b) => (
-            <span key={b.label} className="badge" title={b.label}>
+          {card.badges.map((b, i) => (
+            <span key={`${b.label}-${i}`} className="badge" title={b.label}>
               {b.value}
             </span>
           ))}
@@ -177,8 +177,8 @@ function Card({ card }: { card: EntityCard }) {
       {open && (
         <div className="card-body">
           <ul className="kv">
-            {card.details.map((d) => (
-              <li key={d.label}>
+            {card.details.map((d, i) => (
+              <li key={`${d.label}-${i}`}>
                 <span className="muted">{d.label}</span>
                 <span>{d.value}</span>
               </li>

@@ -34,10 +34,13 @@ server/
     events.py            scripted events: predicates, effects, fallbacks, expiry, tick
     spontaneous.py       unscripted happenings with chance per in-game hour
     threads.py           the story's record of commitments
+    gamekit.py           helpers games share: content loading, Clock, authority-checked Writer, flags, threads panel
     store.py             SQLite: instance, transcript, ledger, snapshot; export/import/fork
     logs.py              rotating application log
     providers/           anthropic_provider.py, fake.py, factory.py, base.py (Msg, Usage)
   games/<name>/          state.py (pydantic), game.py (hooks, UI); content loaded from content_root
+                         station: the space-station AI game; noir: a detective with pockets, dice and nerves
+  tools/play.py          terminal client for a running server (humans and playtest agents)
   tests/                 offline tests (fake provider); tests/live: opt-in live role evaluations
 web/                     Vite + React + TypeScript; renders the UI schema, knows no game
 docs/                    this file, GAME_AUTHORING.md, LOCAL_LLM.md

@@ -169,6 +169,7 @@ class CommandResult(BaseModel):
     entities: list[str] = Field(default_factory=list)
     systems: list[str] = Field(default_factory=list)
     log_line: str | None = None     # appended to the game log, clock-stamped
+    referee_skip: list[str] = Field(default_factory=list)   # narrated mode: referee fields the engine already applied (reset to default before apply)
 
 
 @dataclass
@@ -220,6 +221,8 @@ class GameBase:
     log_path: str = "log"
     skip_adjudication: bool = False                   # purely narrative games may set True
     skip_referee: bool = False
+    narrate_rolls: bool = False                       # tell the narrator the die roll and target, not just the tier (noir flavour)
+    fallback_stat: str | None = None                  # when the adjudicator names a stat that does not exist, roll this one instead of dropping the check
 
     # --- optional content hooks ---------------------------------------------
     def opening(self, state: BaseModel) -> str | None:

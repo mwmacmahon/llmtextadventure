@@ -13,20 +13,13 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from engine.events import Event
+from engine.gamekit import Clock  # noqa: F401  (re-exported: games/station imports Clock from here)
 from engine.spontaneous import Spontaneous
 from engine.threads import Thread
 
 Level = Literal["OK", "Low", "Critical", "Depleted"]
 SystemStatus = Literal["operational", "degraded", "malfunctioning", "disabled", "unpowered", "damaged"]
 Control = Literal["full", "limited", "none", "manual_override"]
-
-
-class Clock(BaseModel):
-    day: int = 1
-    minute: int = 8 * 60  # minutes since midnight
-
-    def render(self) -> str:
-        return f"Day {self.day}, {self.minute // 60:02d}:{self.minute % 60:02d}"
 
 
 class Resource(BaseModel):

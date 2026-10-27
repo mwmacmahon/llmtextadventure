@@ -12,6 +12,7 @@ Predicates (JSON/YAML):
   {"eq": ["path", value]}   {"ne": [...]}       path lookup (see statepath)
   {"gte": ["path", n]}      {"lte": ["path", n]} {"gt": ..} {"lt": ..}
   {"in": ["path", [values]]}
+  {"has": ["path", value]}                     list at path contains value (or an item whose id/name is value)
   {"fired": "event_id"}     {"not_fired": "event_id"}   {"expired": "event_id"}
   {"turn_gte": n}
   {"all": [p, ...]}  {"any": [p, ...]}  {"not": p}  true / false
@@ -141,6 +142,9 @@ def evaluate(pred: Any, doc: dict, events: list[Event], turn: int, clock_path: s
             return (sp.lookup(doc, arg[0], 0) or 0) < arg[1]
         case "in":
             return sp.lookup(doc, arg[0], None) in arg[1]
+        case "has":
+            items = sp.lookup(doc, arg[0], None) or []
+            return any(x == arg[1] or (isinstance(x, dict) and arg[1] in (x.get("id"), x.get("name"))) for x in items)
         case "fired":
             return any(e.id == arg and e.fired for e in events)
         case "not_fired":
