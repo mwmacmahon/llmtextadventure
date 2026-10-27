@@ -241,6 +241,7 @@ class OobaboogaBackend(Backend):
                             print(f"{prefix}", end="", flush=True)
                         first_message = False
                     print(f"{message_chunk}", end="", flush=True)
+            print()  # Print a newline after the last message
         except KeyboardInterrupt:
             print("Your query has been canceled. You may enter a new one.")
             logger.info("User query canceled.")

@@ -13,11 +13,11 @@ class AppProfile(BaseModel):
 
     Attributes:
         description (str): A brief description of the game scenario or setting.
-        situational_prompts (dict): A dictionary of prompts that are triggered by specific situations.
+        situational_prompts (list): A list of prompt dictionaries that are triggered by specific situations.
         timed_events (list): A list of events that occur at specified times in the game.
     """
     description: str
-    situational_prompts: dict
+    situational_prompts: list
     timed_events: list
 
 

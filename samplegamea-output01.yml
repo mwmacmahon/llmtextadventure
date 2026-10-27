@@ -22,16 +22,11 @@ config:
     generation_preset: default
   misc_options: {}
   scenario_name: Space Station Text Adventure
-  situational_prompts:
-  - flag: example_situational_prompt_flag
-    flag_trigger: <<Example Situational Prompt Flag>>
-    name: example_situational_prompt
-    prompt_text: Example Situational Prompt Text
-  - flag: display_status_report
-    flag_trigger: <<Display Status Report>>
-    name: status_report
-    prompt_text: Provide a detailed narrative status report of the space station,
-      assuming the have just been shown the dry statistics.
+  situational_prompts: []
+  # - flag: example_situational_prompt_flag
+  #   flag_trigger: <<example situational prompt flag>>
+  #   name: example_situational_prompt
+  #   prompt_text: Example Situational Prompt Text
   transformation_config:
     llm_output_transformations: []
     user_input_transformations: []
@@ -146,7 +141,6 @@ state:
   hidden_events: []
   hidden_facts: []
   hidden_misc_data: {}
-  inventory: []
   known_events: []
   llm_io_history:
   - content: 'You are an AI on a space station. What do you do?
@@ -308,13 +302,22 @@ state:
     truncated: false
   misc_data: {}
   resources:
-  - level: OK
-    name: Oxygen
-  - level: OK
-    name: Food
-  - level: OK
-    name: Water
-  - level: OK
-    name: Fuel Cells
+  - name: Oxygen
+    level: OK
+  - name: Food
+    level: OK
+  - name: Water
+    level: OK
+  - name: Fuel Cells
+    level: OK
+  inventory:
+  - name: item1
+    quantity: 1
+  - name: item2
+    quantity: 2
+  - name: item3
+    quantity: 3
+  - name: item4
+    quantity: 4
   situational_flags: []
   time: Day 1, 8:00

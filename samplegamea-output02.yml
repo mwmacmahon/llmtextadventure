@@ -22,16 +22,7 @@ config:
     generation_preset: default
   misc_options: {}
   scenario_name: Space Station Text Adventure
-  situational_prompts:
-  - flag: example_situational_prompt_flag
-    flag_trigger: <<Example Situational Prompt Flag>>
-    name: example_situational_prompt
-    prompt_text: Example Situational Prompt Text
-  - flag: display_status_report
-    flag_trigger: <<Display Status Report>>
-    name: status_report
-    prompt_text: Provide a detailed narrative status report of the space station,
-      assuming the have just been shown the dry statistics.
+  situational_prompts: []
   transformation_config:
     llm_output_transformations: []
     user_input_transformations: []
@@ -143,25 +134,61 @@ state:
     role: assistant
     timestamp: '2023-12-29T22:32:50.652216Z'
     truncated: false
-  - content: test
-    num_tokens: 1
+  - content: <<display inventory>> <<display resources>> test
+    num_tokens: 9
     role: user
-    timestamp: '2024-02-02T02:29:45.112957Z'
+    timestamp: '2024-02-02T05:01:31.560655Z'
     truncated: false
-  - content: "In response to your command \"test,\" I would gather input from your\
-      \ request and analyze it using my algorithms and data processing capabilities.\
-      \ Based on the nature of the inquiry, I would then generate an appropriate response,\
-      \ which may include answering questions, providing information, or performing\
-      \ calculations. My ultimate goal is to assist you effectively and efficiently.</s>\n\
-      \        End time: Day 1, 8:00\n        "
-    num_tokens: 82
+  - content: 'As an AI on a space station, after receiving the instruction "test,"
+      I would engage in a dialogue with the person or entity communicating with me
+      to understand the specifics of the test they want me to perform. I would clarify
+      any doubts or uncertainties, and if necessary, I would request more information
+      to ensure that I am providing the most accurate and relevant responses during
+      the test.
+
+      End time: Day 1, 8:00
+
+      '
+    num_tokens: 87
     role: assistant
-    timestamp: '2024-02-02T02:29:45.328676Z'
+    timestamp: '2024-02-02T05:01:31.743615Z'
+    truncated: false
+  - content: what is love
+    num_tokens: 3
+    role: user
+    timestamp: '2024-02-02T05:06:02.518469Z'
+    truncated: false
+  - content: 'As an AI on a space station, I would first search my database for the
+      definition of "love" or related information. Upon finding a suitable definition
+      or explanation, I would present it to the user or respond with a brief summary
+      of what I''ve found.
+
+
+      For instance, I may say "Love is a strong, deep, and unconditional emotional
+      bond between individuals (two or more) characterized by care, empathy, acceptance,
+      trust, respect, and self-sacrifice." Of course, the response could be more elaborate
+      or shorter based on the specific context of the question or the amount of information
+      provided in my database.</s>
+
+      End time: Day 1, 8:00
+
+      '
+    num_tokens: 138
+    role: assistant
+    timestamp: '2024-02-02T05:06:02.519537Z'
     truncated: false
   hidden_events: []
   hidden_facts: []
   hidden_misc_data: {}
-  inventory: []
+  inventory:
+  - name: item1
+    quantity: 1
+  - name: item2
+    quantity: 2
+  - name: item3
+    quantity: 3
+  - name: item4
+    quantity: 4
   known_events: []
   llm_io_history:
   - content: 'You are an AI on a space station. What do you do?
@@ -326,18 +353,43 @@ state:
       User input: test
 
       What is your next action?'
-    num_tokens: 1
+    num_tokens: 9
     role: user
-    timestamp: '2024-02-02T02:29:45.112957Z'
+    timestamp: '2024-02-02T05:01:31.560655Z'
     truncated: false
-  - content: In response to your command "test," I would gather input from your request
-      and analyze it using my algorithms and data processing capabilities. Based on
-      the nature of the inquiry, I would then generate an appropriate response, which
-      may include answering questions, providing information, or performing calculations.
-      My ultimate goal is to assist you effectively and efficiently.</s>
-    num_tokens: 82
+  - content: As an AI on a space station, after receiving the instruction "test,"
+      I would engage in a dialogue with the person or entity communicating with me
+      to understand the specifics of the test they want me to perform. I would clarify
+      any doubts or uncertainties, and if necessary, I would request more information
+      to ensure that I am providing the most accurate and relevant responses during
+      the test.
+    num_tokens: 87
     role: assistant
-    timestamp: '2024-02-02T02:29:45.328676Z'
+    timestamp: '2024-02-02T05:01:31.743615Z'
+    truncated: false
+  - content: 'You are an AI on a space station. What do you do?
+
+      User input: what is love
+
+      What is your next action?'
+    num_tokens: 3
+    role: user
+    timestamp: '2024-02-02T05:06:02.518469Z'
+    truncated: false
+  - content: 'As an AI on a space station, I would first search my database for the
+      definition of "love" or related information. Upon finding a suitable definition
+      or explanation, I would present it to the user or respond with a brief summary
+      of what I''ve found.
+
+
+      For instance, I may say "Love is a strong, deep, and unconditional emotional
+      bond between individuals (two or more) characterized by care, empathy, acceptance,
+      trust, respect, and self-sacrifice." Of course, the response could be more elaborate
+      or shorter based on the specific context of the question or the amount of information
+      provided in my database.</s>'
+    num_tokens: 138
+    role: assistant
+    timestamp: '2024-02-02T05:06:02.519537Z'
     truncated: false
   misc_data: {}
   resources:

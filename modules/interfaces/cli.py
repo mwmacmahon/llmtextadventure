@@ -83,14 +83,19 @@ class CLIInterface(Interface):
         # await self.process_user_input(engine, user_input)
         async for output in engine.query(user_input):
             try:
+                if "message" in output:  # Display the message/message snippet
+                    self.write_output(output["message"])
                 if "status" in output:
                     if output["status"] == "finished":
                         # Do any postprocessing needed here
 
                         # Clear the screen and display the final processed chat 
                         # history in case there were changes from the raw output
+                        # TODO: figure out a way to include text not actually part of chat 
+                        # history like inventory/etc in this display
                         if not REFRESH_SCREEN_DISABLED:
                             self.display_chat_history(engine.state.chat_history)
+                        break
                     else:
                         # Custom streaming display logic could go here
                         pass

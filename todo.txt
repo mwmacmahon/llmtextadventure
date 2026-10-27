@@ -1,0 +1,8 @@
+In no particular order and no claim to completion:
+
+0. Refactor llm_manager.generate_response and its implementation to repeatedly yield partial messages which are printed by interface script (no direct printing)
+1. Get all the text parsing code working for different kinds of inputs
+2. Get the CLI code to clear out the streamed input without getting rid of inventory/etc displays
+3. get the prompt segments etc from the configs integrated in 
+4. get the situational prompts from the configs integrated in or remove them 
+5. make a webui

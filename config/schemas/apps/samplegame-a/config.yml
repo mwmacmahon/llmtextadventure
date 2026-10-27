@@ -44,13 +44,10 @@ SampleGameAConfig:
       type: list
       required: true
       default:
-        - name: "seeking_clarification"
-          flag: "seeking_clarification"
-          prompt_text: "Clarify the player's previous action or decision. Ask for specific details if needed, using the <<Seeking Clarification>> command. Avoid advancing the game state until clarification is provided."
-        - name: "station_report"
-          flag: "display_station_report"
-          prompt_text: "Provide a detailed status report of the space station, including systems, crew status, and resource levels. Use clear and concise indicators for each aspect."
-        # Additional situational prompts as necessary
+        - name: "<<UNUSED FLAG>>"
+          flag: "unused_flag"
+          prompt_text: "Text to add to the prompt when this flag is activated."
+       # Additional situational prompts as necessary
 
     misc_options:  # Options not yet refactored into the config items above
       type: dict
