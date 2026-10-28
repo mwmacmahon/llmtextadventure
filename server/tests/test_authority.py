@@ -15,7 +15,7 @@ from engine.providers.fake import FakeProvider  # noqa: E402
 from engine.providers.factory import get_provider  # noqa: E402
 from engine.registry import load_games  # noqa: E402
 from engine.store import Store  # noqa: E402
-from games.station.game import ResourceUpdate, StationReferee, SystemUpdate  # noqa: E402
+from engine.roles import Change, ChangeReport  # noqa: E402
 from tools.authority_audit import audit  # noqa: E402
 
 
@@ -57,8 +57,12 @@ def test_every_engine_owned_field_has_a_writer_or_is_declared_static(engine: Eng
         assert "command:smoke" in rows["inventory.*.count"]["writers"] and "after_turn" in rows["player.dread"]["writers"]
 
 
-def _ref(**kw) -> StationReferee:
-    return StationReferee.example("x").model_copy(update=kw)
+def _ref(*rows: Change) -> ChangeReport:
+    return ChangeReport.of(*rows, log_line="x")
+
+
+def _set(target: str, field: str, value: str) -> Change:
+    return Change(kind="set", target=target, field=field, value=value)
 
 
 async def test_station_referee_status_is_bounded(engine: Engine, fake: FakeProvider):
@@ -67,41 +71,43 @@ async def test_station_referee_status_is_bounded(engine: Engine, fake: FakeProvi
     comms = next(x for x in doc["systems"] if x["name"] == "Comms")
     comms["status"] = "malfunctioning"
     engine.store.save_snapshot(iid, 0, doc)
-    fake.hook = lambda schema, last: _ref(system_updates=[
-        SystemUpdate(name="Comms", status="operational"),                 # a finished repair: allowed
-        SystemUpdate(name="Life Support", status="unpowered"),            # crew cannot cut power under full AI control
-        SystemUpdate(name="AI Core", status="damaged"),                   # the engine's (endings)
-        SystemUpdate(name="Toaster", status="damaged"),                   # unknown
-    ]) if issubclass(schema, StationReferee) else None
+    fake.hook = lambda schema, last: _ref(
+        _set("Comms", "status", "operational"),                 # a finished repair: allowed
+        _set("Life Support", "status", "unpowered"),            # crew cannot cut power under full AI control
+        _set("AI Core", "status", "damaged"),                   # the engine's (endings)
+        _set("Toaster", "status", "damaged"),                   # unknown: neither a system nor a world row
+    ) if schema is ChangeReport else None
     events = await play(engine, iid, "I watch the crew work.")
     st = state_of(engine, iid)
     by = {s.name: s.status for s in st.systems}
     assert by["Comms"] == "operational" and by["Life Support"] == "operational" and by["AI Core"] == "operational"
-    rej = {r["path"]: r["reason"] for r in events[-1]["data"]["mechanics"]["rejected"]}
-    assert "manual override" in rej["systems.Life Support.status"] and "systems.AI Core.status" in rej and "systems.Toaster" in rej
+    rejected = events[-1]["data"]["mechanics"]["rejected"]
+    rej = {r["path"]: r["reason"] for r in rejected}
+    assert "manual override" in rej["systems.Life Support.status"] and "systems.AI Core.status" in rej
+    assert any("Toaster" in str(r.get("value")) for r in rejected)         # unknown target: rejected, never silently dropped
     # under manual override the crew can power a system down
     doc = engine.store.load_state(iid)
     ls = next(x for x in doc["systems"] if x["name"] == "Life Support")
     ls["control"] = "manual_override"
     engine.store.save_snapshot(iid, 1, doc)
-    fake.hook = lambda schema, last: _ref(system_updates=[SystemUpdate(name="Life Support", status="unpowered")]) if issubclass(schema, StationReferee) else None
+    fake.hook = lambda schema, last: _ref(_set("Life Support", "status", "unpowered")) if schema is ChangeReport else None
     await play(engine, iid, "I wait.")
     assert next(s for s in state_of(engine, iid).systems if s.name == "Life Support").status == "unpowered"
 
 
 async def test_station_referee_resources_move_one_step(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("station", {})
-    fake.hook = lambda schema, last: _ref(resource_updates=[
-        ResourceUpdate(name="Oxygen", level="Depleted"),                  # OK -> Low only
-        ResourceUpdate(name="Fuel cells", level="OK"),                    # unchanged
-        ResourceUpdate(name="Gold", level="Low"),                         # unknown
-    ]) if issubclass(schema, StationReferee) else None
+    fake.hook = lambda schema, last: _ref(
+        _set("Oxygen", "level", "Depleted"),                  # OK -> Low only
+        _set("Fuel cells", "level", "OK"),                    # unchanged
+        _set("Gold", "level", "Low"),                         # unknown
+    ) if schema is ChangeReport else None
     events = await play(engine, iid, "I vent the lab.")
     st = state_of(engine, iid)
     assert {r.name: r.level for r in st.resources}["Oxygen"] == "Low"
     mech = events[-1]["data"]["mechanics"]
     assert any("resources.Oxygen.level: 'OK' -> 'Low'" in a for a in mech["applied"])
-    assert any(r["path"] == "resources.Gold" for r in mech["rejected"])
-    fake.hook = lambda schema, last: _ref(resource_updates=[ResourceUpdate(name="Oxygen", level="Depleted")]) if issubclass(schema, StationReferee) else None
+    assert any("Gold" in str(r.get("value")) for r in mech["rejected"])
+    fake.hook = lambda schema, last: _ref(_set("Oxygen", "level", "Depleted")) if schema is ChangeReport else None
     await play(engine, iid, "I wait.")
     assert {r.name: r.level for r in state_of(engine, iid).resources}["Oxygen"] == "Critical"

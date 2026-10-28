@@ -183,7 +183,7 @@ Every tracked quantity changes in exactly one place. Decide which of three kinds
 | the change is decided by | mechanism | examples |
 |---|---|---|
 | **the player, exactly** (they say what they do, the engine knows the result) | a **command**: `run_command` is the only code that changes the field | reload, seal a hatch, cut power, light a cigarette |
-| **the narration** (the prose settles what happened) | a **referee field**, validated and bounded in `apply_delta` against the state | shots fired in a fight, an item found, who got hurt, a mood |
+| **the narration** (the prose settles what happened) | a **referee row** (`engine/changes.py`), validated and bounded by the game's `apply_change` against the state | shots fired in a fight, an item found, who got hurt, a mood |
 | **the engine alone** (nobody reports it) | resolve, event effects, `after_turn` | the clock, dice, drift, withdrawal |
 
 A command reaches `run_command` two ways, and both must work for every command: the player
@@ -252,29 +252,30 @@ model needs `pending: list[Pending]`), appends unseen facts to `recent_path` (th
 NOW or UNSEEN. A game needs nothing else; set the paths to `None` to switch
 it off.
 
-## 8. The referee schema
+## 8. The referee's rows
 
-```python
-class GuestUpdate(BaseModel):
-    id: str
-    location: str | None = None
-    mood: str | None = None
-    stress_change: int | None = None       # the engine clamps
+There is one referee call per turn and one schema for every game, `roles.ChangeReport`: a list of
+`Change` rows `{kind, target, field, value, who, note, minutes, hidden}` plus `present`, `log_line`
+and `confidence`. The kinds are fixed (`set`, `add`, `move`, `new`, `gone`, `learned`, `flag`,
+`thread_open`, `thread_close`, `soon`, `unseen`, `not_done`, `issue`); a game never adds fields. It
+adds **vocabulary and bounds**:
 
-class ExampleReferee(RefereeBase):
-    guest_updates: list[GuestUpdate] = []
-```
+- `referee_rules(state)` lists the targets (ids as the state block shows them), the fields and the
+  values the referee may use, with the recipes that matter ("rounds fired: add revolver.loaded -n").
+- `apply_change(state, change, writer) -> bool` lands one row that names the game's own fields:
+  validate against the vocabulary, clamp through `writer.nudge`, write through `writer.set` (the
+  authority table says who may write each path), `writer.reject` anything else, and return True.
+  Return False for a row that is not the game's: the engine then tries the world (a game with
+  `has_world`, through `land_declarations`) and otherwise rejects it, so nothing is dropped silently.
+- `narrator_flags(state)` names the flags the referee may set; `apply_present` and `after_changes`
+  are the hooks for "mark them met" and "recompute the derived suspicion".
 
-Keep schemas flat and free of numeric bounds or dict fields (strict structured output does not
-support them); clamp in `apply_delta`. The grammar compiler's cost grows with **optional** and
-**nullable/union** fields, not with property count: the documented caps are 24 optional and 16
-union parameters per request, and "Schema is too complex" arrives well before that (after a
-three-minute compile timeout, so each attempt costs a whole turn's referee). The first noir
-referee had 26 optional and 8 union fields and was refused; the same fields with no defaults and
-no `| None` (empty string, zero or empty list meaning "unchanged") compile in twelve seconds. So:
-every field required, sentinels instead of null, small enums, flat objects. `RefereeBase`
-itself contributes six optional fields; keep a game's own contribution near zero. `RefereeBase` already carries `present_entities`,
-`log_line`, `flags_set`, `threads_opened`, `threads_closed`, `narration_issues` and `confidence`.
+The engine lands the engine kinds itself: threads, flags, pendings (`soon`, and `set p3.resolved`),
+unseen facts, lever vetoes (`not_done`), issues. Why one row type: the structured-output compiler
+refuses a schema somewhere around forty properties, and every game's referee schema reached it as
+soon as an engine-level concern was added (the station with the world fields, noir with the pending
+fields). Rows never grow the schema; a new concern is a new kind word in the prompt. Keep the row's
+own schema as it is: no optional or nullable fields, small enums, flat objects.
 
 ## 9. Playing from a terminal
 

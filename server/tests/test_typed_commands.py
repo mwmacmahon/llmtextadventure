@@ -20,7 +20,7 @@ from engine.providers.factory import get_provider  # noqa: E402
 from engine.registry import load_games  # noqa: E402
 from engine.roles import Adjudication, adjudicator_messages  # noqa: E402
 from engine.store import Store  # noqa: E402
-from games.noir.game import NoirReferee  # noqa: E402
+from engine.roles import Change, ChangeReport  # noqa: E402
 
 
 @pytest.fixture
@@ -154,9 +154,9 @@ async def test_the_referee_can_veto_a_lever_the_prose_did_not_complete(engine: E
     seen: dict = {}
 
     def hook(schema, last):
-        if schema is NoirReferee:
+        if schema is ChangeReport:
             seen["referee_saw"] = last
-            return NoirReferee.example("x").model_copy(update={"levers_not_completed": ["reload: the thing in the doorway lunged before Frank got a round in"]})
+            return ChangeReport.of(Change(kind="not_done", target="reload", note="the thing in the doorway lunged before Frank got a round in"), log_line="x")
         return None
     fake.hook = hook
     events = await play(engine, iid, "I reload while I've got the chance.")
@@ -218,13 +218,12 @@ async def test_typed_smoke_is_charged_once_even_if_the_referee_also_reports_it(e
     iid = engine.create_instance("noir", {})
     before = state_of(engine, iid).item("cigarettes").count
     fake.canned["Adjudication"] = [adj("smoke", minutes=5)]
-    fake.hook = lambda schema, last: NoirReferee.example("x").model_copy(update={"cigarettes_smoked": 1}) if schema is NoirReferee else None
+    fake.hook = lambda schema, last: ChangeReport.of(Change(kind="add", target="cigarettes", field="count", value="-1"), log_line="x") if schema is ChangeReport else None
     events = await play(engine, iid, "I light a cigarette.")
     assert events[-1]["event"] == "done"
     st = state_of(engine, iid)
     assert st.item("cigarettes").count == before - 1 and st.player.minutes_since_smoke == 5   # one cigarette, then five minutes of drift
-    verdict = next(l["payload"] for l in engine.store.ledger(iid, 1) if l["kind"] == "verdict")
-    assert verdict["cigarettes_smoked"] == 0                              # blanked by referee_skip before apply
+    assert any("already applied by the lever" in a for a in events[-1]["data"]["mechanics"]["applied"])   # the row is skipped, not counted twice
 
 
 # ---- the structured roles' prefix must not move with the state ---------------

@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 
 from .events import Event
 from .mechanics import CheckRequest, Modifier
-from .roles import Adjudication, RefereeBase
+from .roles import Adjudication
 from .statepath import Actor
 
 # ---------------------------------------------------------------------------
@@ -260,9 +260,6 @@ class GameBase:
         """Ids, places, allowed values, what counts as a thread. Stable across turns, like `adjudication_rules`."""
         return ""
 
-    def referee_schema(self, state: BaseModel) -> type[RefereeBase]:
-        return RefereeBase
-
     def state_for_models(self, state: BaseModel) -> str:
         """Compact state text for the structured roles. Defaults to the bulletin without a player line."""
         return self.render_bulletin(state, "")
@@ -276,22 +273,27 @@ class GameBase:
         raw = lookup(state.model_dump(mode="json"), self.events_path, []) or []
         return [Event.model_validate(e) for e in raw]
 
-    def apply_delta(self, state: BaseModel, delta: RefereeBase, present: list[str], causes: list[str] | None = None) -> tuple[BaseModel, ApplyReport]:
-        """Validate and apply the referee's report. Default applies nothing but the log line.
-        `causes` (2.0): ids this turn's successful rolls, levers or directives let the narrator change (DESIGN2 §6)."""
-        return state, ApplyReport()
+    def apply_change(self, state: BaseModel, change: Any, writer: Any) -> bool:
+        """Land one referee row (engine/changes.py) that names this game's own fields: validate it against the game's
+        vocabulary and bounds, mutate `state` in place through `writer`, and return True. Return False for a row that
+        is not the game's (the engine then tries the world, else rejects it)."""
+        return False
+
+    def apply_present(self, state: BaseModel, present: list[str], writer: Any) -> BaseModel:
+        """The referee's list of people who appeared: a game may mark them met."""
+        return state
+
+    def after_changes(self, state: BaseModel, report: ApplyReport) -> BaseModel:
+        """After every row landed: derived values, syncing (the station's suspicion and world mirror)."""
+        return state
+
+    def land_declarations(self, state: BaseModel, decls: list[Any], report: ApplyReport, causes: list[str] | None) -> BaseModel:
+        """2.0: land typed world rows (engine/brackets.py Declaration) under the world's rules (engine/world.py apply_declarations)."""
+        return state
 
     def has_world(self, state: BaseModel) -> bool:
         """2.0: True when this instance carries a world the world referee should keep."""
         return False
-
-    def world_rules(self, state: BaseModel) -> str:
-        """2.0: game-specific rules for the world referee (what counts as a thing here, what the narrator may add)."""
-        return ""
-
-    def apply_world_report(self, state: BaseModel, report: Any, causes: list[str] | None = None) -> tuple[BaseModel, ApplyReport]:
-        """2.0: land the world referee's report under the world's rules (engine/world.py apply_declarations)."""
-        return state, ApplyReport()
 
     def scene_block(self, state: BaseModel, adj: Any, audience: str) -> str:
         """2.0: the SCENE text built from the game's world (engine/world.py). `audience` is "engine" (ids, for the

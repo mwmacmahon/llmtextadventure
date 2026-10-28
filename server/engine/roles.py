@@ -11,9 +11,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from .mechanics import Tier
-from .pending import PendingNew
 from .providers.base import Msg
-from .threads import ThreadClose
 
 # ---- adjudicator ----------------------------------------------------------
 
@@ -75,60 +73,6 @@ class AdjudicationV2(Adjudication):
         return cls(kind="action", summary=f"The player attempts: {player_text[:80]}", time_minutes=5, intents=[IntentV2(action=player_text[:80])], risk="low")
 
 
-class WorldMove(BaseModel):
-    id: str = Field(description="Who or what moved: a person's or a drone's id from the SCENE block.")
-    to: str = Field(description="Where they ended the narration: a place id from the SCENE block, or its name.")
-
-
-class WorldNewThing(BaseModel):
-    name: str = Field(description="An object the prose introduced that the SCENE block did not list, as the prose names it.")
-    where: str = Field(description="The place id (or name) it is in, 'person:<id>' if someone other than the player holds it, or 'thing:<id>' when inside a listed container.")
-    state: str = Field(default="", description="A few words on its state, if the prose gave any. Empty otherwise.")
-
-
-class WorldThingUpdate(BaseModel):
-    id: str = Field(description="A listed thing's id from the SCENE block.")
-    field: str = Field(description="What changed: state, status, locked or open.")
-    value: str = Field(description="The new value: a few words for state; a status word for status; true or false for locked or open.")
-    by: str = Field(default="", description="Who did it: a person id from the SCENE block, or empty when it was the player or nobody.")
-
-
-class WorldReport(BaseModel):
-    """2.0: the world referee's report (DESIGN2 §5): what moved, what appeared, what changed, what is gone.
-    Separate from the game referee so that neither schema grows past the API's complexity limit."""
-    moves: list[WorldMove] = Field(default_factory=list, description="Everyone and every drone that ended the narration somewhere other than where the SCENE block had them. Empty if none.")
-    new_things: list[WorldNewThing] = Field(default_factory=list, description="Objects the prose introduced that the SCENE block did not list. Empty if none.")
-    thing_updates: list[WorldThingUpdate] = Field(default_factory=list, description="Listed things whose state, status, locked or open the prose plainly changed. Empty if none.")
-    gone: list[str] = Field(default_factory=list, description="Ids of listed things the prose destroyed or removed from play. Empty if none.")
-    confidence: Literal["low", "medium", "high"] = Field(description="How sure you are of this whole report.")
-
-    @classmethod
-    def example(cls, narration: str) -> "WorldReport":
-        return cls(confidence="medium")
-
-
-WORLD_REFEREE_INSTRUCTIONS = """You keep the world record of a text adventure: where every person, drone and thing is, and what state each is in. You read the narrator's latest prose against the SCENE block, which lists what the world held before the prose, with ids in brackets, and you report only what the prose changed.
-
-- moves: anyone or any drone who ended the prose somewhere other than where the SCENE had them. Use the SCENE's ids; a place by id or by its listed name.
-- new_things: objects the prose introduced that the SCENE did not list and that someone could use, take, open or go through. Scenery that nobody will touch is not a thing. Never weapons unless the game's rules allow them.
-- thing_updates: a listed thing whose state, status, locked or open the prose plainly changed, and who did it when a person did.
-- gone: listed things the prose destroyed or removed from play.
-The narrator's notes, when present, are its own statement of what it decided: record them. Do not invent changes the prose does not show; do not report what did not change. Ids come from the SCENE block only."""
-
-
-def world_referee_messages(rules: str, scene_text: str, directives: list[str], player_text: str, narration: str) -> tuple[str, list[Msg]]:
-    system = WORLD_REFEREE_INSTRUCTIONS
-    if rules.strip():
-        system += "\n\nGAME-SPECIFIC RULES\n" + rules.strip()
-    parts = [f"[SCENE BEFORE THE PROSE]\n{scene_text.strip()}"]
-    if directives:
-        parts.append("[WHAT THE ENGINE RESOLVED THIS TURN]\n" + "\n".join(f"- {d}" for d in directives))
-    parts.append(f"[PLAYER INPUT]\n{player_text.strip()}")
-    parts.append(f"[NARRATION]\n{narration.strip()}")
-    parts.append("Report the world changes now.")
-    return system, [Msg("user", "\n\n".join(parts))]
-
-
 NARRATOR_PROTOCOL = """ENGINE PROTOCOL. A few kinds of line are for the engine, each on a line of its own; the player never sees them.
   <<CHECK stat difficulty>>  when the fiction reaches an attempt whose outcome is uncertain. Stop there: the engine rolls and tells you the result, and you continue from exactly where you stopped. Play the result; never decide an uncertain outcome yourself. THIS TURN lists the checks already assessed: call each at its moment, by its stat. Add "vs <name>" only when it would otherwise be unclear who or what it is against. Call other checks when the fiction needs them.
   <<LOOK name>>  for what the game records about a person, thing or place you need and do not have.
@@ -169,40 +113,57 @@ def adjudicator_messages(rules: str, state_text: str, recent: list[Msg], player_
     return system, msgs
 
 
-# ---- referee --------------------------------------------------------------
+# ---- referee: one call, one row type, code types it (DESIGN2 §18 A) -------
 
-class FlagSet(BaseModel):
-    name: str = Field(description="A flag name from the allowed list, exactly.")
-    value: bool = Field(description="Whether the narration established it as true.")
+ChangeKind = Literal["set", "add", "move", "new", "gone", "learned", "flag", "thread_open", "thread_close", "soon", "unseen", "not_done", "issue"]
 
 
-class RefereeBase(BaseModel):
-    """Games extend this with their own narrator-authority fields (DESIGN §4, §6)."""
-    present_entities: list[str] = Field(default_factory=list, description="Ids of entities who appear or act in the narration, exactly as listed.")
+class Change(BaseModel):
+    """One thing the narration established, as a row. The game's rules say which targets, fields and values
+    exist; code validates every row against them, the authority table and the bounds."""
+    kind: ChangeKind = Field(description="set: a field takes a value. add: a number moves by a signed step. move: someone or something is somewhere else. new: a thing, person or place the prose introduced. gone: a listed thing is destroyed or removed. learned: a fact someone now knows (the player: a clue). flag: a scenario flag established. thread_open / thread_close: a commitment the story must remember, or one settled. soon: something set in motion that will happen on its own. unseen: a fact out of the player's sight. not_done: a listed lever the prose did not complete. issue: a contradiction, leak or ignored directive, for the engine.")
+    target: str = Field(default="", description="Who or what, by id as the state lists it: player, a person, a thing, a system or resource name, a place; for new: thing, person or place; for flag: the flag name; for thread_close: the thread id; for not_done: the lever id. Empty when the kind needs none.")
+    field: str = Field(default="", description="set/add: the attribute (location, health, mood, stress, suspicion, dread, attitude, status, control, level, conditions, count, loaded, locked, open, state). new: where it is. Empty otherwise.")
+    value: str = Field(default="", description="The new value; for add a signed step such as +8 or -2; for move the destination id; for new the name; for learned the fact; for thread_open the title; for soon what happens; for unseen the fact; for flag true or false; for issue the text.")
+    who: str = Field(default="", description="The person who did it, by id, when one did (a lock changed by a crew member, a plan that is theirs). Empty otherwise.")
+    note: str = Field(default="", description="A few words: the reason; a new thing's state or a new person's role; what would stop a soon; how a thread ended (resolved or failed); why a lever was not completed.")
+    minutes: int = Field(default=0, description="soon only: about how many in-game minutes until it happens. 0 means at once, next turn.")
+    hidden: bool = Field(default=False, description="soon only: the player cannot see it happen where they are.")
+
+
+class ChangeReport(BaseModel):
+    changes: list[Change] = Field(default_factory=list, description="Every change the narration established, one row each, in the order they happened. Empty when nothing changed.")
+    present: list[str] = Field(default_factory=list, description="Ids of listed people who appear or act in the narration.")
     log_line: str = Field(description="One short, player-visible line summarising what just happened, in past tense, for the game's log. No hidden information.")
-    flags_set: list[FlagSet] = Field(default_factory=list, description="Flags from the allowed list that the narration clearly established. Omit anything uncertain.")
-    threads_opened: list[str] = Field(default_factory=list, description="New threads the narration introduced that will matter later: a goal the player took on, a promise or cover story (say to whom), a plan an NPC announced, an open question. Short titles, at most two per turn, none for routine moments.")
-    threads_closed: list[ThreadClose] = Field(default_factory=list, description="Open threads (by id, from the list in the game state) that this narration settled.")
-    narration_issues: list[str] = Field(default_factory=list, description="Contradictions with the game state, hidden information revealed, or directives not followed. Empty if none.")
-    levers_not_completed: list[str] = Field(default_factory=list, description="Only when a lever listed under LEVERS was interrupted, abandoned or otherwise not completed in the narration: '<lever id>: <reason>'. Empty otherwise.")
     confidence: Literal["low", "medium", "high"] = Field(description="How sure you are of this whole report.")
 
     @classmethod
-    def example(cls, narration: str) -> "RefereeBase":
+    def example(cls, narration: str) -> "ChangeReport":
         return cls(log_line=narration[:60].strip() + "…", confidence="medium")
 
+    @classmethod
+    def of(cls, *changes: Change, log_line: str = "Something happened.", present: list[str] | None = None, confidence: str = "high") -> "ChangeReport":
+        return cls(changes=list(changes), present=list(present or []), log_line=log_line, confidence=confidence)  # type: ignore[arg-type]
 
-REFEREE_INSTRUCTIONS = """You are the referee for a text adventure. You read the narrator's latest prose and report, as structured fields, what it established. You only report what the text says or clearly implies; you never invent, and you never decide what should have happened.
 
-Rules:
-- Change a field only when the narration gives a reason. Leave everything else at null or empty.
-- Use entity ids, locations and flag names exactly as listed. If the narration moves someone to a place that is not on the list, pick the closest listed place or leave it null.
-- Numeric changes are small nudges; the engine clamps them.
-- narration_issues is for the engine, not the player: note hidden facts revealed, contradictions with the state, or ignored directives.
-- Threads are the story's memory of commitments: open one when the narration creates something that must be remembered later (a lie and who believes it, a promise, a plan, a deadline, a question raised); close one when it is clearly achieved, broken, or moot. Do not open threads for routine actions. Something that opens and settles within this same narration is not a thread: do not open it. Close only threads listed as open in the game state, by their exact id; never close one you are opening now.
-- UNSEEN. [[unseen: …]] and [[soon: …]] notes, and anything the prose shows happening where the player cannot perceive it, are not known to the player: never put them in clues, notebook entries, log_line, or any other player-visible field. A separate report records them.
-- LEVERS, when listed, are the player's exact actions (a reload, a seal) that the engine applies by itself right after your report. Do not report their effects in other fields. If the narration shows one was interrupted, abandoned or not completed, list it in levers_not_completed as "<id>: <reason>"; a lever the narration played as done, or did not mention, stays off that list.
-- Be terse. The fields are the output."""
+REFEREE_INSTRUCTIONS = """You are the referee for a text adventure. You read the narrator's latest prose and its notes and report, as rows, what they established. You only report what the text says or clearly implies; you never invent, and you never decide what should have happened. The engine validates every row against the game's rules; an unknown target or an impossible value is rejected, so use the ids and words the state and the rules give you.
+
+Rows:
+- set <target>.<field> = value: a field takes a value (a mood word, a health word, a status, a lock true/false, a condition as +name or -name).
+- add <target>.<field> ±n: a number moves by a step (dread +8, stress -5, a count -3, rounds loaded -2). Steps are nudges; the engine clamps them.
+- move <target> → value: a person, drone or thing ended the prose somewhere else: a place id or name from the state.
+- new <thing|person|place> value=name, field=where, note=state or role: something the prose introduced that could matter again. Never a weapon unless the rules allow it.
+- gone <target>: a listed thing destroyed or removed from play.
+- learned <target> value=fact: what someone now knows or said; target player for a clue the player learned (concrete evidence, not feelings).
+- flag <name> value=true|false: only names the rules list.
+- thread_open value=title / thread_close <thread id> note=resolved|failed: commitments the story must remember (a promise, a lie and who believes it, a plan with a time, a question raised); close only listed open threads, by id; something that opens and settles in the same prose is not a thread.
+- soon value=what happens, who, minutes, hidden, note=what would stop it: anything set in motion that will happen on its own if nothing intervenes: a threat closing in, a plan announced with a time, a timer, someone sent to do something. Every [[soon: …]] note is one. A creature or person described as waiting, watching, hesitating, closing in or about to act is one: give it minutes; waiting for a second turn is not an outcome.
+- unseen value=fact: [[unseen: …]] notes and anything the prose shows happening where the player cannot perceive it. The player does not know these: never put them in a clue, the log line, or anything player-visible.
+- set <pending id>.resolved = reason: IMPENDING items in the state are already in motion; when the prose shows one happened early, was prevented, or no longer applies, resolve it by its id (p1, p2, …).
+- not_done <lever id> note=why: only when a lever listed under LEVERS was interrupted, abandoned or not completed in the prose.
+- issue value=text: for the engine, not the player. Before you finish, always check three things and add an issue row for each that applies: did the narration reveal something the player's character cannot know (a hidden fact, a secret, a true cause the rules or the state mark hidden)? did it contradict the state (a sealed hatch opened, an empty gun fired, someone in two places)? did it ignore a directive it was given?
+LEVERS, when listed, are the player's exact actions the engine applies by itself right after your report; do not report their effects.
+Be terse: one row per change, nothing for what did not change."""
 
 
 def referee_messages(rules: str, state_text: str, directives: list[str], player_text: str, narration: str,
@@ -211,38 +172,8 @@ def referee_messages(rules: str, state_text: str, directives: list[str], player_
     d = "\n".join(f"- {x}" for x in directives) if directives else "- (none)"
     lv = ("\n\n[LEVERS THE ENGINE APPLIES AFTER YOUR REPORT, UNLESS NOT COMPLETED]\n" + "\n".join(f"- {x}" for x in levers)) if levers else ""
     user = (f"[GAME STATE BEFORE THIS TURN]\n{state_text.strip()}\n\n[DIRECTIVES THE NARRATOR WAS GIVEN]\n{d}{lv}\n\n"
-            f"[PLAYER INPUT]\n{player_text.strip()}\n\n[NARRATION TO REPORT ON]\n{narration.strip()}")
+            f"[PLAYER INPUT]\n{player_text.strip()}\n\n[NARRATION AND THE NARRATOR'S NOTES]\n{narration.strip()}")
     return system, [Msg("user", user)]
-
-
-# ---- motion referee: the world does not wait (DESIGN2 §4b) -----------------
-
-class MotionReport(BaseModel):
-    """What the prose and the narrator's notes set in motion or established out of sight. Its own call,
-    concurrent with the game referee, so neither schema grows past the API's complexity limit."""
-    pending_new: list[PendingNew] = Field(default_factory=list, description="Things the narration or the narrator's notes set in motion that will happen on their own if nothing intervenes: a threat closing in, a plan with a time, a timer. Every [[soon: …]] note is one. Empty if none.")
-    pending_resolved: list[str] = Field(default_factory=list, description="Ids of IMPENDING items (from the game state) that this narration settled: it happened early, was prevented, or no longer applies. '<id>: <reason>'. Empty otherwise.")
-    unseen_facts: list[str] = Field(default_factory=list, description="What the narration or an [[unseen: …]] note established out of the player's sight, in plain words, one fact each. Empty if none.")
-    confidence: Literal["low", "medium", "high"] = Field(description="How sure you are of this whole report.")
-
-    @classmethod
-    def example(cls, narration: str) -> "MotionReport":
-        return cls(confidence="medium")
-
-
-MOTION_REFEREE_INSTRUCTIONS = """You keep track of what is in motion in a text adventure's world. The world does not wait for the player: you read the narrator's latest prose and its notes against the game state and report what will happen on its own, what it settled, and what is true out of the player's sight.
-
-- pending_new: anything new the prose or the notes set in motion that will happen on its own if nothing intervenes: a threat closing in (what it does, in about how many minutes), a person who announced a plan with a time, a timer, a thing someone has been sent to do. Every [[soon: …]] note becomes one, with its minutes. A creature or person described as waiting, watching, hesitating, closing in or about to act is a threat in motion: give it a pending with your estimate of the minutes; waiting for a second turn is not an outcome. Mark hidden when the player cannot see it happen where they are; put what would stop it in unless, in plain words. Use ids from the game state for who when it lists one.
-- pending_resolved: the state lists IMPENDING items by id. When the prose shows one happened early, was prevented, or no longer applies, list its id with a short reason. Otherwise leave it.
-- unseen_facts: [[unseen: …]] notes and anything the prose shows happening where the player cannot perceive it, one plain fact each. The player does not know them.
-Do not invent what the prose and notes do not show; do not repeat what is already listed as IMPENDING or UNSEEN SO FAR. Be terse."""
-
-
-def motion_referee_messages(state_text: str, directives: list[str], player_text: str, narration: str) -> tuple[str, list[Msg]]:
-    d = "\n".join(f"- {x}" for x in directives) if directives else "- (none)"
-    user = (f"[GAME STATE BEFORE THIS TURN]\n{state_text.strip()}\n\n[DIRECTIVES THE NARRATOR WAS GIVEN]\n{d}\n\n"
-            f"[PLAYER INPUT]\n{player_text.strip()}\n\n[NARRATION AND THE NARRATOR'S NOTES]\n{narration.strip()}\n\nReport what is in motion now.")
-    return MOTION_REFEREE_INSTRUCTIONS, [Msg("user", user)]
 
 
 # ---- summarizer -----------------------------------------------------------

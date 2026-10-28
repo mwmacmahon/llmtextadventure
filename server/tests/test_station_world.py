@@ -10,9 +10,9 @@ import pytest
 
 from engine.config import load_config
 from engine.registry import load_games
-from engine.roles import AdjudicationV2, Focus
-from engine.roles import WorldMove, WorldNewThing, WorldReport, WorldThingUpdate
-from games.station.game import StationGame, StationReferee, CrewUpdate
+from engine.changes import apply_changes
+from engine.roles import AdjudicationV2, Change, ChangeReport, Focus
+from games.station.game import StationGame
 
 
 @pytest.fixture
@@ -64,18 +64,20 @@ def test_sealing_locks_hatches_and_the_scene_says_so(game):
 
 def test_referee_world_report_lands_under_the_rules(game):
     st = fresh(game)
-    delta = StationReferee(log_line="Reyes went to the Lab; Lindqvist opened the cabinet.", confidence="high",
-                           crew_updates=[CrewUpdate(id="reyes", location="Lab"), CrewUpdate(id="lindqvist", mood="rapt")])
-    st2, rep = game.apply_delta(st, delta, ["reyes", "lindqvist"])
+    delta = ChangeReport.of(Change(kind="move", target="reyes", value="Lab"), Change(kind="set", target="lindqvist", field="mood", value="rapt"),
+                            present=["reyes", "lindqvist"], log_line="Reyes went to the Lab; Lindqvist opened the cabinet.")
+    st2, rep, _ = apply_changes(game, st, delta, present=["reyes", "lindqvist"], causes=[])
     assert st2.crew_by_id("reyes").location == "Lab" and st2.world.person("reyes").location == "lab"      # routed through the world, synced back
     assert st2.world.person("lindqvist").attributes["mood"].value == "rapt"
-    report = WorldReport(confidence="high",
-                         moves=[WorldMove(id="loader_drone", to="lab")],
-                         new_things=[WorldNewThing(name="a maintenance crowbar", where="lab", state="on the deck by the cabinet"), WorldNewThing(name="a pistol", where="cargo")],
-                         thing_updates=[WorldThingUpdate(id="cabinet_lab", field="locked", value="false", by="lindqvist"),
-                                        WorldThingUpdate(id="cabinet_lab", field="open", value="true"),
-                                        WorldThingUpdate(id="drug_cabinet", field="locked", value="false")])    # nobody present who can: refused
-    st3, rep = game.apply_world_report(st2, report)
+    report = ChangeReport.of(
+        Change(kind="move", target="loader_drone", value="lab"),
+        Change(kind="new", target="thing", value="a maintenance crowbar", field="lab", note="on the deck by the cabinet"),
+        Change(kind="new", target="thing", value="a pistol", field="cargo"),
+        Change(kind="set", target="cabinet_lab", field="locked", value="false", who="lindqvist"),
+        Change(kind="set", target="cabinet_lab", field="open", value="true"),
+        Change(kind="set", target="drug_cabinet", field="locked", value="false"),     # nobody present who can: refused
+        log_line="x")
+    st3, rep, _ = apply_changes(game, st2, report, present=[], causes=[])
     w = st3.world
     assert w.thing("loader_drone").location == "place:lab"
     crow = next(t for t in w.things if "crowbar" in t.name)
@@ -88,11 +90,11 @@ def test_referee_world_report_lands_under_the_rules(game):
 def test_a_sealed_hatch_blocks_a_reported_move_unless_a_cause_allows_it(game):
     st = fresh(game)
     st, _ = game.run_command(st, "hatches", {"action": "seal", "module": "Lab"})
-    report = WorldReport(confidence="high", moves=[WorldMove(id="lindqvist", to="cargo")])
-    st2, rep = game.apply_world_report(st, report)
+    report = ChangeReport.of(Change(kind="move", target="lindqvist", value="cargo"), log_line="x")
+    st2, rep, _ = apply_changes(game, st, report, present=[], causes=[])
     assert st2.world.person("lindqvist").location == "lab" and st2.crew_by_id("lindqvist").location == "Lab"
     assert rep.rejected and "contradiction" in rep.rejected[0].reason
-    st3, rep = game.apply_world_report(st, report, causes=["any"])
+    st3, rep, _ = apply_changes(game, st, report, present=[], causes=["any"])
     assert st3.world.person("lindqvist").location == "cargo" and st3.crew_by_id("lindqvist").location == "Cargo"
 
 

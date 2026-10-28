@@ -18,9 +18,8 @@ from engine.pipeline import Engine  # noqa: E402
 from engine.providers.fake import FakeProvider  # noqa: E402
 from engine.providers.factory import get_provider  # noqa: E402
 from engine.registry import load_games  # noqa: E402
-from engine.roles import Adjudication, Intent, MotionReport  # noqa: E402
+from engine.roles import Adjudication, Change, ChangeReport, Intent  # noqa: E402
 from engine.store import Store  # noqa: E402
-from games.noir.game import NoirReferee  # noqa: E402
 
 
 def test_pending_rows_due_tick_resolve_and_lines():
@@ -85,10 +84,10 @@ async def test_the_world_does_not_wait_end_to_end(engine: Engine, fake: FakeProv
         "The pencil squeaks. Behind you, so does something else.")
 
     def referee1(schema, last):
-        if schema is MotionReport:
+        if schema is ChangeReport:
             seen["t1"] = last
-            return MotionReport(confidence="high", pending_new=[PendingNew(what="the creature attacks", in_minutes=3, unless="Frank leaves the shack")],
-                                unseen_facts=["the creature is between Frank and the door"])
+            return ChangeReport.of(Change(kind="soon", value="the creature attacks", minutes=3, note="Frank leaves the shack"),
+                                   Change(kind="unseen", value="the creature is between Frank and the door"), log_line="x")
         return None
     fake.hook = referee1
     events = await play(engine, iid, "I sit down and doodle in my notebook.")
@@ -116,9 +115,9 @@ async def test_the_world_does_not_wait_end_to_end(engine: Engine, fake: FakeProv
     FakeProvider.script = lambda system, messages: "It comes off the wall all at once."
 
     def referee2(schema, last):
-        if schema is MotionReport:
+        if schema is ChangeReport:
             seen["t2"] = last
-            return MotionReport(confidence="high", pending_new=[PendingNew(what="the thing's claws come through the door", in_minutes=8, unless="Frank leaves the roof")])
+            return ChangeReport.of(Change(kind="soon", value="the thing's claws come through the door", minutes=8, note="Frank leaves the roof"), log_line="x")
         return None
     fake.hook = referee2
     events = await play(engine, iid, "I keep drawing.")
@@ -140,9 +139,9 @@ async def test_the_world_does_not_wait_end_to_end(engine: Engine, fake: FakeProv
     FakeProvider.script = lambda system, messages: "You take the fire escape three rungs at a time."
 
     def referee3(schema, last):
-        if schema is MotionReport:
+        if schema is ChangeReport:
             seen["t3"] = last
-            return MotionReport(confidence="high", pending_resolved=["p2: Frank left the roof"])
+            return ChangeReport.of(Change(kind="set", target="p2", field="resolved", value="Frank left the roof"), log_line="x")
         return None
     fake.hook = referee3
     events = await play(engine, iid, "I go down the fire escape.")
@@ -161,16 +160,16 @@ async def test_a_hidden_pending_fires_unseen(engine: Engine, fake: FakeProvider)
     first = {"done": False}
 
     def referee(schema, last):
-        if schema is MotionReport and not first["done"]:
+        if schema is ChangeReport and not first["done"]:
             first["done"] = True
-            return MotionReport(confidence="high", pending_new=[PendingNew(what="Lindqvist opens the cabinet", who="lindqvist", in_minutes=5, hidden=True)])
+            return ChangeReport.of(Change(kind="soon", value="Lindqvist opens the cabinet", who="lindqvist", minutes=5, hidden=True), log_line="x")
         return None
     fake.hook = referee
     await play(engine, iid, "I watch the Lab.")
     seen: dict = {}
 
     def hook2(schema, last):
-        if schema is MotionReport:
+        if schema is ChangeReport:
             seen["referee"] = last
         return None
     fake.hook = hook2

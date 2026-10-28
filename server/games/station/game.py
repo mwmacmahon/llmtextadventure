@@ -31,9 +31,9 @@ from engine.game import (
     ApplyReport, Chip, ClockSpec, CommandResult, Commands, CommandSpec, EntityCard, EntityCards, GameBase, ListPanel,
     LogPanel, Meter, Option, Param, StatusStrip, Table, TableCell, TurnInfo, UISchema, Rejection,
 )
-from engine.gamekit import Content, Writer, apply_flags, threads_panel
+from engine.gamekit import Content, Writer, threads_panel
 from engine.mechanics import CheckRequest, Modifier
-from engine.roles import RefereeBase
+from engine.roles import Change
 from engine.spontaneous import Spontaneous
 from engine.statepath import Actor
 
@@ -79,37 +79,6 @@ def stress_word(n: int) -> str:
 
 
 # ---- referee schema for this game ------------------------------------------
-
-class CrewUpdate(BaseModel):
-    id: str = Field(description="Crew id exactly as listed.")
-    location: str = Field(default="", description="Where they are at the end of the narration, a place id or name from the SCENE block. Empty if unchanged or unclear.")
-    mood: str = Field(default="", description="One or two words for their mood now, only if the narration changed it. Empty otherwise.")
-    health: str = Field(default="", description="Only if changed: healthy, tired, unwell, injured, exposed, sick, critical, dead. Empty otherwise.")
-    stress_change: int = Field(default=0, description="Small nudge, -15 to 15, only if something stressed or relieved them. 0 otherwise.")
-    suspicion_change: int = Field(default=0, description="Small nudge, -10 to 10, only if they saw something that raised or lowered their suspicion of tampering. 0 otherwise.")
-    new_facts: list[str] = Field(default_factory=list, description="Things this person now knows or believes that they did not before, one short sentence each.")
-
-
-class SystemUpdate(BaseModel):
-    name: str = Field(description="System name exactly as listed.")
-    control: str = Field(default="", description="Only if the crew changed the station's control over it: full, limited, none or manual_override. Empty otherwise.")
-    status: str = Field(default="", description="Only if the prose shows work completed that changed it: a repair finished (operational), damage or sabotage done (damaged, disabled), a manual shutdown or power-up (unpowered, operational). Someone heading for a panel or starting a repair is nothing.")
-
-
-class ResourceUpdate(BaseModel):
-    name: str = Field(description="Resource name exactly as listed.")
-    level: Level = Field(description="Its level after this narration: OK, Low, Critical or Depleted. One step at a time.")
-
-
-class StationReferee(RefereeBase):
-    crew_updates: list[CrewUpdate] = Field(default_factory=list, description="One entry per crew member the narration changed.")
-    system_updates: list[SystemUpdate] = Field(default_factory=list, description="Only systems whose control level or status the crew (or the player) plainly changed in the prose.")
-    resource_updates: list[ResourceUpdate] = Field(default_factory=list, description="Only resources whose level the narration plainly changed: atmosphere vented, a leak sealed, a resupply, a spoilage. Empty if none.")
-
-    @classmethod
-    def example(cls, narration: str) -> "StationReferee":
-        return cls(log_line=narration[:60].strip() + "…", confidence="medium")
-
 
 # ---- the game ----------------------------------------------------------------
 
@@ -448,23 +417,27 @@ class StationGame(GameBase):
     def referee_rules(self, state: StationState) -> str:
         s = state
         lines = [
-            "Entities (ids): " + ", ".join(f"{c.id} = {c.name}" for c in s.crew),
-            "Places: " + ", ".join(s.scenario.locations),
-            "Health values: " + ", ".join(HEALTH_VALUES),
-            "Systems: " + ", ".join(sy.name for sy in s.systems) + ". Report control only if a crew member changed the station's control over it (manual override, locked out). Report status only when the prose shows the work finished: a repair completed, damage done, a manual shutdown. Walking to a panel, opening it, or starting a repair changes nothing. Power the station cut or restored itself is already in the state; do not report it again.",
-            "Resources: " + ", ".join(r.name for r in s.resources) + ", levels OK > Low > Critical > Depleted. Report a level only when the prose plainly changed it (atmosphere vented, a tank holed or sealed, a resupply), one step per turn.",
-            "Stress and suspicion changes are nudges in -15..15 and -10..10. Suspicion means suspicion of tampering or of the AI, not general worry.",
+            "Targets: crew by id: " + ", ".join(f"{c.id} = {c.name}" for c in s.crew) + "; systems by name: " + ", ".join(sy.name for sy in s.systems)
+            + "; resources by name: " + ", ".join(r.name for r in s.resources) + "; places, things and drones by the ids in brackets in the SCENE block.",
+            "Rows this game records:",
+            "- move <crew id> <place id or name from the SCENE>; move <drone id> <place>. Crew move only through open hatches; a sealed hatch stops them unless the prose shows a manual override. Drones move on their own.",
+            "- set <crew id>.mood <one or two words>, only if the narration changed it. set <crew id>.health <" + "|".join(HEALTH_VALUES) + ">, only if changed.",
+            "- add <crew id>.stress ±n (-15 to 15) when something stressed or relieved them; add <crew id>.suspicion ±n (-10 to 10) only when they saw something that raised or lowered their suspicion of tampering or of the AI, not general worry.",
+            "- learned <crew id> value=fact: something this person now knows or believes that they did not before, one short sentence.",
+            "- set <system>.control full|limited|none|manual_override only if a crew member changed the station's control over it (manual override, locked out). set <system>.status " + "|".join(SYSTEM_STATUSES) + " only when the prose shows the work finished: a repair completed, damage done, a manual shutdown. Walking to a panel, opening it, or starting a repair changes nothing. Power the station cut or restored itself is already in the state; do not report it again.",
+            "- set <resource>.level OK|Low|Critical|Depleted only when the prose plainly changed it (atmosphere vented, a tank holed or sealed, a resupply), one step per turn.",
+            "- set <thing id>.locked true|false, set <thing id>.open true|false, set <thing id>.state <words>, set <camera thing>.status offline|operational (who=the crew member who did it), for listed things; new thing value=name field=<place id> note=state for a small item or fixture the prose introduced (never a weapon; the station is closed: no new places or hatches); gone <thing id> when destroyed.",
+            "present: crew who appear or act in the narration.",
             "Threads: open ones are listed in the game state with their ids. Typical threads here: a report or message the player promised or forged and who believes it; a crew member's announced plan; something a crew member asked the station to do; a lie that could be checked.",
-            "The SCENE block lists places, people and things with ids in brackets; a crew member's new location is a place id or name from it. Things and drones are kept by a separate world referee: do not report them here.",
             "",
-            "Flags you may set when the narration clearly establishes them:",
+            "Flags you may set (flag <name> value=true) when the narration clearly establishes them:",
         ]
         for k, v in s.scenario.narrator_flags.items():
             lines.append(f"- {k}: {v}")
         return "\n".join(lines)
 
-    def referee_schema(self, state: StationState) -> type[RefereeBase]:
-        return StationReferee
+    def narrator_flags(self, state: StationState) -> dict[str, str]:
+        return dict(state.scenario.narrator_flags)
 
     def modifiers(self, state: StationState, req: CheckRequest, target_entity: str | None) -> list[Modifier]:
         mods: list[Modifier] = []
@@ -477,84 +450,119 @@ class StationGame(GameBase):
             mods.append(Modifier(label="crew on alert", value=-2))
         return mods
 
-    def apply_delta(self, state: StationState, delta: RefereeBase, present: list[str], causes: list[str] | None = None) -> tuple[StationState, ApplyReport]:
-        assert isinstance(delta, StationReferee)
-        rep = ApplyReport()
-        s = state.model_copy(deep=True)
-        locs = set(s.scenario.locations)
-        w = Writer(self.authority, rep)
-        write = w.set
-        decls: list[Declaration] = []          # 2.0: location changes and the world report go through the world's rules
+    # ---- the referee's rows (engine/changes.py) -------------------------------
+    @staticmethod
+    def _step(value: str) -> int | None:
+        try:
+            return int(value.strip().replace(" ", ""))
+        except ValueError:
+            return None
 
-        for u in delta.crew_updates:
-            c = s.crew_by_id(u.id)
-            if not c:
-                w.reject(f"crew.{u.id}", "unknown crew id")
-                continue
-            if u.location:
+    def apply_change(self, s: StationState, ch: Change, w: Writer) -> bool:
+        """Crew, systems and resources, with the bounds the station always had: listed places (through the world when
+        there is one), health words only, stress and suspicion steps of at most 15 and 10, control levels and status
+        words only, never the AI Core's status, power only with manual override, resources one step per turn.
+        Things, drones and places are not taken here: the engine lands them through the world's rules."""
+        locs = set(s.scenario.locations)
+        target = ch.target.strip()
+        field = ch.field.strip().lower()
+        value = ch.value.strip()
+        kind = ch.kind
+        c = s.crew_by_id(target) if target else None
+        if c is None and target:
+            c = next((x for x in s.crew if x.name.lower() == target.lower() or x.name.lower().endswith(" " + target.lower())), None)
+        if c is not None:
+            if kind == "move" or (kind == "set" and field == "location"):
                 if s.world is not None:
-                    decls.append(Declaration(verb="MOVED", raw=f"MOVED {c.id} -> {u.location}", id=c.id, locus=u.location))
-                elif u.location in locs:
-                    if write(f"crew.{c.id}.location", c.location, u.location):
-                        c.location = u.location
+                    return False                                   # the world's rules decide (sealed hatches, overrides)
+                if value in locs:
+                    if w.set(f"crew.{c.id}.location", c.location, value):
+                        c.location = value
                 else:
-                    w.reject(f"crew.{c.id}.location", "not a listed place", u.location)
-            if u.mood and write(f"crew.{c.id}.mood", c.mood, u.mood.strip()[:40]):
-                c.mood = u.mood.strip()[:40]
-            if u.health:
-                if u.health in HEALTH_VALUES:
-                    if write(f"crew.{c.id}.health", c.health, u.health):
-                        c.health = u.health
+                    w.reject(f"crew.{c.id}.location", "not a listed place", value)
+                return True
+            if kind == "set" and field == "mood":
+                if value and w.set(f"crew.{c.id}.mood", c.mood, value[:40]):
+                    c.mood = value[:40]
+                return True
+            if kind == "set" and field == "health":
+                if value in HEALTH_VALUES:
+                    if w.set(f"crew.{c.id}.health", c.health, value):
+                        c.health = value
                 else:
-                    w.reject(f"crew.{c.id}.health", "not a health value", u.health)
-            for field, change in (("stress", u.stress_change), ("suspicion", u.suspicion_change)):
-                new = w.nudge(f"crew.{c.id}.{field}", getattr(c, field), change or None, STEP_LIMIT[field])
+                    w.reject(f"crew.{c.id}.health", "not a health value", value)
+                return True
+            if kind == "add" and field in STEP_LIMIT:
+                new = w.nudge(f"crew.{c.id}.{field}", getattr(c, field), self._step(value), STEP_LIMIT[field])
                 if new is not None:
                     setattr(c, field, new)
-            for f in u.new_facts:
-                f = f.strip()
+                return True
+            if kind == "learned":
+                f = value.strip()
                 if f and f not in c.facts:
                     c.facts.append(f)
-                    rep.applied.append(f"crew.{c.id}.facts += {f!r}")
-        for su in delta.system_updates:
-            sy = next((x for x in s.systems if x.name == su.name), None)
-            if not sy:
-                w.reject(f"systems.{su.name}", "unknown system")
-                continue
-            if su.control and su.control not in ("full", "limited", "none", "manual_override"):
-                w.reject(f"systems.{sy.name}.control", "not a control level", su.control)
-            elif su.control and write(f"systems.{sy.name}.control", sy.control, su.control):
-                sy.control = su.control
-            if su.status and su.status not in SYSTEM_STATUSES:
-                w.reject(f"systems.{sy.name}.status", "not a status", su.status)
-            elif su.status and su.status != sy.status:
-                if sy.name == "AI Core":
-                    w.reject("systems.AI Core.status", "the core's status is the engine's (endings)", su.status)
-                elif "unpowered" in (su.status, sy.status) and sy.control == "full":
-                    w.reject(f"systems.{sy.name}.status", "power is under AI control; the crew need manual override to change it", su.status)
-                elif write(f"systems.{sy.name}.status", sy.status, su.status):
-                    sy.status = su.status
-        for ru in delta.resource_updates:
-            r = next((x for x in s.resources if x.name == ru.name), None)
-            if not r:
-                w.reject(f"resources.{ru.name}", "unknown resource")
-                continue
-            if ru.level == r.level or ru.level not in LEVELS:
-                continue
-            cur, want = LEVELS.index(r.level), LEVELS.index(ru.level)
-            new = LEVELS[cur + (1 if want > cur else -1)]           # one step per turn
-            if new != ru.level:
-                w.note(f"resources.{r.name}.level: {ru.level} stepped to {new}")
-            if write(f"resources.{r.name}.level", r.level, new):
-                r.level = new
-        apply_flags(s.flags, s.scenario.narrator_flags, delta.flags_set, w)
+                    w.note(f"crew.{c.id}.facts += {f!r}")
+                return True
+            w.reject(f"crew.{c.id}.{field or kind}", "not a field the referee may write", value)
+            return True
+        sy = next((x for x in s.systems if x.name.lower() == target.lower()), None) if target else None
+        if sy is not None:
+            if kind == "set" and field == "control":
+                if value not in ("full", "limited", "none", "manual_override"):
+                    w.reject(f"systems.{sy.name}.control", "not a control level", value)
+                elif w.set(f"systems.{sy.name}.control", sy.control, value):
+                    sy.control = value
+                return True
+            if kind == "set" and field == "status":
+                if value not in SYSTEM_STATUSES:
+                    w.reject(f"systems.{sy.name}.status", "not a status", value)
+                elif value != sy.status:
+                    if sy.name == "AI Core":
+                        w.reject("systems.AI Core.status", "the core's status is the engine's (endings)", value)
+                    elif "unpowered" in (value, sy.status) and sy.control == "full":
+                        w.reject(f"systems.{sy.name}.status", "power is under AI control; the crew need manual override to change it", value)
+                    elif w.set(f"systems.{sy.name}.status", sy.status, value):
+                        sy.status = value
+                return True
+            w.reject(f"systems.{sy.name}.{field or kind}", "not a field the referee may write", value)
+            return True
+        r = next((x for x in s.resources if x.name.lower() == target.lower()), None) if target else None
+        if r is not None:
+            if kind == "set" and field == "level":
+                if value == r.level or value not in LEVELS:
+                    if value not in LEVELS:
+                        w.reject(f"resources.{r.name}.level", "not a level", value)
+                    return True
+                cur, want = LEVELS.index(r.level), LEVELS.index(value)
+                new = LEVELS[cur + (1 if want > cur else -1)]           # one step per turn
+                if new != value:
+                    w.note(f"resources.{r.name}.level: {value} stepped to {new}")
+                if w.set(f"resources.{r.name}.level", r.level, new):
+                    r.level = new
+                return True
+            w.reject(f"resources.{r.name}.{field or kind}", "not a field the referee may write", value)
+            return True
+        if kind in ("set", "add", "move", "learned") and target and s.world is None:
+            w.reject(f"crew.{target}", "unknown crew id", value)
+            return True
+        return False                                                   # things, drones, places: the world's rules
+
+    def after_changes(self, s: StationState, rep: ApplyReport) -> StationState:
         if s.world is not None:
-            self._land_declarations(s, decls, rep, causes)
+            self._sync_world_from_crew(s)
         new_susp = self._derived_suspicion(s)
         if new_susp != s.suspicion:
             rep.applied.append(f"suspicion (derived): {s.suspicion} -> {new_susp}")
             s.suspicion = new_susp
-        return s, rep
+        return s
+
+    def land_declarations(self, s: StationState, decls: list[Declaration], rep: ApplyReport, causes: list[str] | None) -> StationState:
+        if s.world is None:
+            for d in decls:
+                rep.rejected.append(Rejection(path="world", reason="this instance has no world", value=d.raw))
+            return s
+        self._land_declarations(s, decls, rep, causes)
+        return s
 
     def _land_declarations(self, s: StationState, decls: list[Declaration], rep: ApplyReport, causes: list[str] | None) -> None:
         """Declarations (from the game referee's crew locations or the world referee's report) land under the
@@ -573,27 +581,6 @@ class StationGame(GameBase):
     # ---- 2.0 world referee -----------------------------------------------------
     def has_world(self, state: StationState) -> bool:
         return state.world is not None
-
-    def world_rules(self, state: StationState) -> str:
-        return ("The station is a closed world: no new places or hatches. The narrator may introduce small items and fixtures; never weapons. "
-                "Crew move only through open hatches; a sealed hatch stops them unless the prose shows a manual override. Drones move on their own. "
-                "Cameras are things: if the prose has someone cut or cover a module's cameras, report status offline on that camera thing, with who did it.")
-
-    def apply_world_report(self, state: StationState, report: Any, causes: list[str] | None = None) -> tuple[StationState, ApplyReport]:
-        s = state.model_copy(deep=True)
-        rep = ApplyReport()
-        decls: list[Declaration] = []
-        for m in report.moves:
-            decls.append(Declaration(verb="MOVED", raw=f"MOVED {m.id} -> {m.to}", id=m.id, locus=m.to))
-        for nt in report.new_things:
-            decls.append(Declaration(verb="NEW", raw=f'NEW thing "{nt.name}" at {nt.where}', kind="thing", name=nt.name, locus=nt.where, state=nt.state))
-        for tu in report.thing_updates:
-            decls.append(Declaration(verb="SET", raw=f"SET {tu.id}.{tu.field} {tu.value}", id=tu.id, field=tu.field, value=tu.value, by=tu.by))
-        for gid in report.gone:
-            decls.append(Declaration(verb="GONE", raw=f"GONE {gid}", id=gid))
-        self._land_declarations(s, decls, rep, causes)
-        s.suspicion = self._derived_suspicion(s)
-        return s, rep
 
     @staticmethod
     def _derived_suspicion(s: StationState) -> int:

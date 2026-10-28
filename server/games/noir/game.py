@@ -26,9 +26,9 @@ from engine.game import (
     ApplyReport, Chip, ClockSpec, CommandResult, Commands, CommandSpec, EntityCard, EntityCards, GameBase, ListPanel,
     LogPanel, Meter, StatusStrip, TurnInfo, UISchema,
 )
-from engine.gamekit import Clock, Content, Writer, apply_flags, threads_panel
+from engine.gamekit import Clock, Content, Writer, threads_panel
 from engine.mechanics import CheckRequest, Modifier
-from engine.roles import AdjudicationV2, RefereeBase
+from engine.roles import AdjudicationV2, Change
 from engine.spontaneous import Spontaneous
 from engine.statepath import Actor
 
@@ -94,46 +94,6 @@ def slug(text: str) -> str:
 # Every field is required and none is nullable: the structured-output grammar's cost grows with
 # optional and union fields (24 optional / 16 union is the hard cap and the compiler gives up well
 # before), so "nothing changed" is an empty string, a zero or an empty list, never null.
-
-class ItemChange(BaseModel):
-    name: str = Field(description="The thing, in a few plain words; use the inventory's own name when it is already listed there.")
-    count: int = Field(description="How many. 1 for a single object.")
-
-
-class PersonUpdate(BaseModel):
-    id: str = Field(description="Person id exactly as listed.")
-    location: str = Field(description="Where they are at the end of the narration, from the places list. Empty string if unchanged or unclear.")
-    attitude_change: int = Field(description="-3 to 3: how this turn moved their attitude toward Frank. 0 if it did not.")
-    status: str = Field(description="Only if changed: alive, dead, missing, unknown. Empty string otherwise.")
-    new_facts: list[str] = Field(description="What they told Frank or what he learned about them, one short sentence each. Empty list if nothing.")
-
-
-class NewPerson(BaseModel):
-    id: str = Field(description="A short lowercase id for them (surname or a word), new, not one already listed.")
-    name: str = Field(description="Their name as the narration gave it.")
-    role: str = Field(description="Who they are, in a few words.")
-
-
-class NoirReferee(RefereeBase):
-    player_location: str = Field(description="Where Frank is at the end of the narration, from the places list. Empty string if unchanged.")
-    health: str = Field(description="Only if the narration changed it: fine, hurt, wounded, critical, dead. Empty string otherwise.")
-    dread_change: int = Field(description="-20 to 20: how much this turn frightened (positive) or steadied (negative) Frank. 0 if neither.")
-    conditions_gained: list[str] = Field(description="Conditions the narration put on Frank (tired, drunk, soaked, shaken, concussed, ...), lowercase, one or two words each. Empty list if none.")
-    conditions_lost: list[str] = Field(description="Conditions the narration clearly removed (he slept: tired; he dried off: soaked), exactly as listed in the game state. Empty list if none.")
-    shots_fired: int = Field(description="Rounds Frank fired from the revolver in this narration. 0 if none.")
-    cigarettes_smoked: int = Field(description="Cigarettes Frank smoked in this narration. 0 if none.")
-    items_gained: list[ItemChange] = Field(description="Things Frank picked up, was given, bought or found and kept. Empty list if none.")
-    items_lost: list[ItemChange] = Field(description="Things Frank handed over, spent, used up, dropped or had taken. Dollars spent go here. Empty list if none.")
-    people_updates: list[PersonUpdate] = Field(description="One entry per listed person the narration changed or who spoke. Empty list if none.")
-    new_people: list[NewPerson] = Field(description="Named people who appeared for the first time and may matter again. At most two. Nobody nameless. Empty list if none.")
-    clues: list[str] = Field(description="Concrete evidence Frank learned this turn: a name, an address, a time, an object, a fact about the creatures. Not feelings, not plans. Empty list if none.")
-
-    @classmethod
-    def example(cls, narration: str) -> "NoirReferee":
-        return cls(log_line=narration[:60].strip() + "…", confidence="medium", player_location="", health="", dread_change=0,
-                   conditions_gained=[], conditions_lost=[], shots_fired=0, cigarettes_smoked=0, items_gained=[], items_lost=[],
-                   people_updates=[], new_people=[], clues=[])
-
 
 # ---- the game ----------------------------------------------------------------
 
@@ -327,30 +287,33 @@ class NoirGame(GameBase):
         return "\n".join(lines)
 
     def referee_rules(self, state: NoirState) -> str:
-        s, p = state, state.player
+        s = state
         lines = [
-            "Entities (ids): " + ", ".join(f"{q.id} = {q.name}" for q in s.people),
-            "Places: " + ", ".join(s.case.locations),
-            "Health values: " + ", ".join(HEALTH_VALUES) + ". Health changes only when the prose says Frank was hurt or treated.",
-            "Conditions with mechanical weight: " + ", ".join(k for k in CONDITION_MODS if k != WITHDRAWAL) + ". Others are allowed as flavour. '" + WITHDRAWAL + "' is the engine's; never add or remove it.",
-            "Frank's current conditions and pockets are in the game state block. Report items_gained / items_lost only when the prose plainly says he took, was given, bought, found and kept, spent, handed over, used up, dropped or lost something; name them as the pockets list does. Dollars spent are items_lost with name 'dollars' and the amount.",
-            "shots_fired: rounds actually fired from the revolver this turn; never also list fired rounds under items_lost. cigarettes_smoked: cigarettes Frank LIT this turn (finishing one lit earlier is 0); never also list them under items_lost. Reloading is a command the engine has already applied: never list rounds under items_lost for a reload. The engine updates the counts.",
-            "dread_change is 0 on an ordinary turn, including successes and calm conversations. Positive (3 to 10) only when something frightened or hurt him: the creature, violence, a threat, a failure under danger, horror. Negative (-3 to -10) when he rests, drinks, smokes, wins clearly, reaches safety, or is treated kindly. A full night's sleep is -10.",
-            "player_location: from the places list, where Frank ends the narration. If the prose puts him somewhere not listed, use that district's streets (Lowtown streets, Midtown streets, Uptown streets) or the empty string; never name a building he is not in. The same for people's locations.",
-            "people_updates only for listed people the prose identifies by name or role. A nameless stranger (a man in a cap, a clerk, a driver) is nobody: never attach him to a listed id, never set a listed person to met because of him. Anyone the prose gives a name (a surname is enough) who is not in the entity list IS a new person: add them with new_people (id from the surname, at most two per turn), even if they only appear once. A new name that is plainly one of the listed people (an alias) is a people_update, not a new person.",
-            "new_facts go on the person who said it (as what they told Frank) and also on the listed person it is about, when there is one. A witness's statement is a fact about the witness first.",
-            "attitude_change is 0 unless Frank did something to that person this turn that would change how they treat him: paid, helped, respected, threatened, insulted, lied and was caught. A tense conversation is not a change. Offering Frank a bribe does not change how the briber feels about him.",
-            "clues are concrete evidence: names, addresses, times, objects, facts about the creatures or the Congregation. One short sentence each, only when new.",
+            "Targets: player (Frank); people by id: " + ", ".join(f"{q.id} = {q.name}" for q in s.people) + "; pockets by name as the game state lists them (revolver, bullets, cigarettes, dollars, matches, notebook, …).",
+            "Places: " + ", ".join(s.case.locations) + ". A move or a location value must be one of these; if the prose puts someone somewhere not listed, use that district's streets (Lowtown streets, Midtown streets, Uptown streets) or report nothing; never name a building he is not in.",
+            "Rows this game records:",
+            "- move player <place>; move <person id> <place>.",
+            "- set player.health <" + "|".join(HEALTH_VALUES) + ">, only when the prose says Frank was hurt or treated.",
+            "- add player.dread ±n: 0 on an ordinary turn, including successes and calm conversations; +3 to +10 only when something frightened or hurt him (the creature, violence, a threat, a failure under danger, horror); -3 to -10 when he rests, drinks, smokes, wins clearly, reaches safety, or is treated kindly; a full night's sleep is -10.",
+            "- set player.conditions +<name> or -<name>: conditions with mechanical weight are " + ", ".join(k for k in CONDITION_MODS if k != WITHDRAWAL) + "; others are allowed as flavour; '" + WITHDRAWAL + "' is the engine's, never add or remove it. Remove only a condition the state lists.",
+            "- add revolver.loaded -n: rounds Frank actually fired this turn (never as a lost item). add cigarettes.count -n: cigarettes Frank LIT this turn (finishing one lit earlier is nothing); the engine handles the rest of smoking. add dollars.count -n: dollars spent. add bullets.count ±n, matches ±n when the prose plainly says so.",
+            "- new thing value=<name> field=player (target thing, field player, always): a thing Frank picked up, was given, bought, borrowed, or found and kept, named as the prose names it (note=count for several). gone <thing>: handed over, used up, dropped or taken; the revolver only on an explicit loss of the revolver. Reloading is a lever the engine applies: never report its rounds.",
+            "- add <person id>.attitude ±n (-3 to 3): only when Frank did something to that person this turn that changes how they treat him: paid, helped, respected, threatened, insulted, lied and was caught. A tense conversation is 0. Being offered a bribe changes nothing.",
+            "- set <person id>.status alive|dead|missing|unknown, only if changed.",
+            "- learned <person id> value=fact: what they told Frank or what he learned about them, one short sentence; a witness's statement is a fact about the witness first, and also about the listed person it concerns when there is one.",
+            "- learned player value=clue: concrete evidence Frank learned: a name, an address, a time, an object, a fact about the creatures or the Congregation. One short sentence, only when new. Never something Frank could not perceive.",
+            "- new person value=name, field=<place>, note=role: anyone the prose gives a name (a surname is enough) who is not a listed person, even if they appear once; at most two per turn. A nameless stranger (a man in a cap, a clerk, a driver) is nobody: never attach him to a listed id and never a new person. A new name that is plainly a listed person (an alias) is that person: use their id.",
+            "present: listed people the prose identifies by name or role; never because of a nameless stranger.",
             "Threads: open ones are listed in the game state with their ids. Typical threads here: a promise to a client or a witness, a lead to follow, a lie Frank told and who believes it, a deadline, a question raised. Close a thread when the prose settles it: 'who was the caller' closes when Frank learns who called; 'check the address' closes when he has searched it; a promise closes when kept or broken.",
             "",
-            "Flags you may set when the narration clearly establishes them:",
+            "Flags you may set (flag <name> value=true) when the narration clearly establishes them:",
         ]
         for k, v in s.case.narrator_flags.items():
             lines.append(f"- {k}: {v}")
         return "\n".join(lines)
 
-    def referee_schema(self, state: NoirState) -> type[RefereeBase]:
-        return NoirReferee
+    def narrator_flags(self, state: NoirState) -> dict[str, str]:
+        return dict(state.case.narrator_flags)
 
     def modifiers(self, state: NoirState, req: CheckRequest, target_entity: str | None) -> list[Modifier]:
         p = state.player
@@ -389,134 +352,195 @@ class NoirGame(GameBase):
                 mods.append(Modifier(label="empty revolver", value=-10))
         return mods
 
-    def apply_delta(self, state: NoirState, delta: RefereeBase, present: list[str], causes: list[str] | None = None) -> tuple[NoirState, ApplyReport]:
-        assert isinstance(delta, NoirReferee)
-        rep = ApplyReport()
-        s = state.model_copy(deep=True)
+    # ---- the referee's rows (engine/changes.py) -------------------------------
+    @staticmethod
+    def _step(value: str) -> int | None:
+        v = value.strip().replace(" ", "")
+        try:
+            return int(v)
+        except ValueError:
+            return None
+
+    def apply_change(self, s: NoirState, ch: Change, w: Writer) -> bool:
+        """Land one row against noir's own fields, with the 1.0 bounds: listed places only, health words only,
+        dread steps of at most 10, at most six narrator conditions, the engine's withdrawal condition untouchable,
+        rounds fired capped by what is loaded, counted pockets by count, the revolver lost only explicitly,
+        attitude steps of at most 3, the cast capped, the notebook capped. Returns False for rows that are not noir's."""
         p = s.player
         locs = set(s.case.locations)
-        w = Writer(self.authority, rep)
+        target = ch.target.strip()
+        field = ch.field.strip().lower()
+        value = ch.value.strip()
+        kind = ch.kind
+        is_player = target.lower() in ("player", "frank", "")
 
-        # Frank
-        if delta.player_location:
-            if delta.player_location in locs:
-                if w.set("player.location", p.location, delta.player_location):
-                    p.location = delta.player_location
+        if kind == "move" and is_player:
+            if value in locs:
+                if w.set("player.location", p.location, value):
+                    p.location = value
             else:
-                w.reject("player.location", "not a listed place", delta.player_location)
-        if delta.health:
-            if delta.health in HEALTH_VALUES:
-                if w.set("player.health", p.health, delta.health):
-                    p.health = delta.health
+                w.reject("player.location", "not a listed place", value)
+            return True
+        if kind == "set" and is_player and field == "location":
+            return self.apply_change(s, ch.model_copy(update={"kind": "move"}), w)
+        if kind == "set" and is_player and field == "health":
+            if value in HEALTH_VALUES:
+                if w.set("player.health", p.health, value):
+                    p.health = value
             else:
-                w.reject("player.health", "not a health value", delta.health)
-        new = w.nudge("player.dread", p.dread, delta.dread_change, DREAD_STEP)
-        if new is not None:
-            p.dread = new
-        for name in delta.conditions_gained:
-            name = name.strip().lower()[:30]
-            if not name or p.has_condition(name):
-                continue
+                w.reject("player.health", "not a health value", value)
+            return True
+        if kind == "add" and is_player and field == "dread":
+            new = w.nudge("player.dread", p.dread, self._step(value), DREAD_STEP)
+            if new is not None:
+                p.dread = new
+            return True
+        if kind == "set" and is_player and field in ("conditions", "condition"):
+            removing = value.startswith("-")
+            name = value.lstrip("+-").strip().lower()[:30]
+            if not name:
+                return True
+            if removing:
+                c = next((c for c in p.conditions if c.name == name), None)
+                if c is None:
+                    w.reject("player.conditions", "not a current condition", name)
+                elif c.source == "engine":
+                    w.reject("player.conditions", "engine condition; only the engine clears it", name)
+                elif w.set("player.conditions", name, None):
+                    p.conditions.remove(c)
+                return True
+            if p.has_condition(name):
+                return True
             if name == WITHDRAWAL:
                 w.reject("player.conditions", "engine condition", name)
-                continue
-            if sum(1 for c in p.conditions if c.source == "narrator") >= MAX_NARRATOR_CONDITIONS:
+            elif sum(1 for c in p.conditions if c.source == "narrator") >= MAX_NARRATOR_CONDITIONS:
                 w.reject("player.conditions", "too many conditions", name)
-                continue
-            if w.set("player.conditions", None, name):
+            elif w.set("player.conditions", None, name):
                 p.conditions.append(Condition(name=name))
-        for name in delta.conditions_lost:
-            name = name.strip().lower()
-            c = next((c for c in p.conditions if c.name == name), None)
-            if c is None:
-                w.reject("player.conditions", "not a current condition", name)
-            elif c.source == "engine":
-                w.reject("player.conditions", "engine condition; only the engine clears it", name)
-            elif w.set("player.conditions", name, None):
-                p.conditions.remove(c)
+            return True
+        if kind == "learned" and is_player:
+            c = value[:200]
+            if c and not any(n.text == c for n in s.notebook):
+                if len(s.notebook) >= MAX_NOTEBOOK:
+                    w.reject("notebook", "notebook is full", c)
+                else:
+                    s.notebook.append(Note(kind="clue", text=c))
+                    w.note(f"notebook += {c[:120]!r}")
+            return True
 
-        # pockets
-        rv = s.item("revolver")
-        if delta.shots_fired and rv is not None:
-            have = rv.loaded or 0
-            n = max(0, int(delta.shots_fired))
-            if n > have:
-                w.reject("inventory.revolver.loaded", f"only {have} rounds were loaded; fired {have}", n)
-                n = have
-            if n and w.set("inventory.revolver.loaded", have, have - n):
-                rv.loaded = have - n
-        if delta.cigarettes_smoked:
-            n = max(0, int(delta.cigarettes_smoked))
-            s, rep2 = self._smoke(s, n, w)
-            p = s.player
-        for ch in delta.items_gained:
-            self._gain(s, ch, w)
-        for ch in delta.items_lost:
-            self._lose(s, ch, w, fired=int(delta.shots_fired or 0), smoked=int(delta.cigarettes_smoked or 0))
+        # pockets: counted things by count, the revolver's rounds, items in and out
+        it = s.item(target) if target else None
+        if it is None and kind in ("add", "gone", "set") and target:
+            k = target.lower()
+            if any(x in k for x in ("round", "shot", "shell", "cartridge", "ammo")) and kind == "add":
+                it = s.item("revolver"); field = "loaded"
+        if it is not None and kind == "add":
+            n = self._step(value) or 0
+            if it.id == "revolver" or field == "loaded":
+                rv = s.item("revolver")
+                if rv is None:
+                    return True
+                have = rv.loaded or 0
+                if n < 0:
+                    fired = -n
+                    if fired > have:
+                        w.reject("inventory.revolver.loaded", f"only {have} rounds were loaded; fired {have}", fired)
+                        fired = have
+                    if fired and w.set("inventory.revolver.loaded", have, have - fired):
+                        rv.loaded = have - fired
+                else:
+                    w.reject("inventory.revolver.loaded", "rounds go in through the reload lever", value)
+                return True
+            if it.id == "cigarettes" and n < 0:
+                s2, _ = self._smoke(s, -n, w)
+                if s2 is not s:
+                    s.__dict__.update(s2.__dict__)
+                return True
+            if n < 0:
+                self._lose(s, it.name, -n, w)
+            elif n > 0:
+                self._gain(s, it.name, n, w)
+            return True
+        if kind == "gone" and target:
+            self._lose(s, target, self._step(ch.note) or self._step(ch.value) or 1, w)
+            return True
+        if kind == "new" and target.lower() in ("thing", "item", "") and value:
+            where = field.lower()
+            if where in ("player", "frank", "pockets", "person:player", "inventory", ""):
+                count = self._step(ch.note) or 1
+                self._gain(s, value, max(1, count), w)
+            else:
+                w.reject("inventory", "a thing is in Frank's pockets only when he takes it; nowhere else is recorded here", value)
+            return True
+        if kind == "new" and target.lower() == "person" and value:
+            self._new_person(s, value, ch.note, w)
+            return True
 
         # people
-        for u in delta.people_updates:
-            q = s.person(u.id)
-            if not q:
-                w.reject(f"people.{u.id}", "unknown person id")
-                continue
+        q = s.person(target) if target else None
+        if q is None and target and kind in ("move", "set", "add", "learned"):
+            q = self._same_person(s, target)
+        if q is not None:
             if not q.met:
                 q.met = True
                 w.note(f"people.{q.id}.met: False -> True")
-            if u.location:
-                if u.location in locs:
-                    if w.set(f"people.{q.id}.location", q.location, u.location):
-                        q.location = u.location
+            if kind == "move" or (kind == "set" and field == "location"):
+                if value in locs:
+                    if w.set(f"people.{q.id}.location", q.location, value):
+                        q.location = value
                 else:
-                    w.reject(f"people.{q.id}.location", "not a listed place", u.location)
-            new = w.nudge(f"people.{q.id}.attitude", q.attitude, u.attitude_change, ATTITUDE_STEP, lo=-5, hi=5)
-            if new is not None:
-                q.attitude = new
-            if u.status:
-                if u.status in ("alive", "dead", "missing", "unknown"):
-                    if w.set(f"people.{q.id}.status", q.status, u.status):
-                        q.status = u.status  # type: ignore[assignment]
+                    w.reject(f"people.{q.id}.location", "not a listed place", value)
+                return True
+            if kind == "add" and field == "attitude":
+                new = w.nudge(f"people.{q.id}.attitude", q.attitude, self._step(value), ATTITUDE_STEP, lo=-5, hi=5)
+                if new is not None:
+                    q.attitude = new
+                return True
+            if kind == "set" and field == "status":
+                if value in ("alive", "dead", "missing", "unknown"):
+                    if w.set(f"people.{q.id}.status", q.status, value):
+                        q.status = value  # type: ignore[assignment]
                 else:
-                    w.reject(f"people.{q.id}.status", "not a status value", u.status)
-            for f in u.new_facts:
-                f = f.strip()
+                    w.reject(f"people.{q.id}.status", "not a status value", value)
+                return True
+            if kind == "learned":
+                f = value.strip()
                 if f and f not in q.facts:
                     q.facts.append(f)
                     w.note(f"people.{q.id}.facts += {f!r}")
+                return True
+            w.reject(f"people.{q.id}.{field or kind}", "not a field the referee may write", value)
+            return True
+        if kind in ("move", "set", "add", "learned") and target and not is_player:
+            w.reject(f"people.{target}", "unknown person id", value)
+            return True
+        return False
+
+    def apply_present(self, s: NoirState, present: list[str], w: Writer) -> NoirState:
         for pid in present:
             q = s.person(pid)
             if q and not q.met:
                 q.met = True
                 w.note(f"people.{q.id}.met: False -> True")
-        for np_ in delta.new_people[:2]:
-            nid = slug(np_.id or np_.name)
-            if s.person(nid) or self._same_person(s, np_.name):
-                q = s.person(nid) or self._same_person(s, np_.name)
-                assert q is not None
-                if not q.met:
-                    q.met = True
-                    w.note(f"people.{q.id}.met: False -> True")
-                continue
-            if len(s.people) >= MAX_PEOPLE:
-                w.reject("people", "cast is full", np_.name)
-                continue
-            loc = p.location if p.location in locs else ""
-            s.people.append(Person(id=nid, name=np_.name.strip()[:40], role=np_.role.strip()[:60], location=loc, met=True))
-            s.notebook.append(Note(kind="contact", text=f"{np_.name.strip()}: {np_.role.strip()}" + (f" ({loc})" if loc else "")))
-            w.note(f"people += {nid} ({np_.name.strip()}, {np_.role.strip()})")
+        return s
 
-        # notebook
-        for c in delta.clues:
-            c = c.strip()
-            if c and not any(n.text == c for n in s.notebook):
-                if len(s.notebook) >= MAX_NOTEBOOK:
-                    w.reject("notebook", "notebook is full", c)
-                    continue
-                s.notebook.append(Note(kind="clue", text=c[:200]))
-                w.note(f"notebook += {c[:120]!r}")
-
-        apply_flags(s.flags, s.case.narrator_flags, delta.flags_set, w)
-        return s, rep
+    def _new_person(self, s: NoirState, name: str, role: str, w: Writer) -> None:
+        p = s.player
+        locs = set(s.case.locations)
+        nid = slug(name)
+        q = s.person(nid) or self._same_person(s, name)
+        if q is not None:
+            if not q.met:
+                q.met = True
+                w.note(f"people.{q.id}.met: False -> True")
+            return
+        if len(s.people) >= MAX_PEOPLE:
+            w.reject("people", "cast is full", name)
+            return
+        loc = p.location if p.location in locs else ""
+        s.people.append(Person(id=nid, name=name.strip()[:40], role=role.strip()[:60], location=loc, met=True))
+        s.notebook.append(Note(kind="contact", text=f"{name.strip()}: {role.strip()}" + (f" ({loc})" if loc else "")))
+        w.note(f"people += {nid} ({name.strip()}, {role.strip()})")
 
     # ---- pocket helpers -----------------------------------------------------
     @staticmethod
@@ -528,48 +552,48 @@ class NoirGame(GameBase):
                 return q
         return None
 
-    def _gain(self, s: NoirState, ch: ItemChange, w: Writer) -> None:
-        n = max(1, int(ch.count))
-        it = s.item(ch.name)
-        if it is not None and (it.id in ("bullets", "cigarettes", "dollars", "matches") or it.count > 1 or n > 1 or it.name.lower() == ch.name.strip().lower()):
+    def _gain(self, s: NoirState, name: str, count: int, w: Writer) -> None:
+        n = max(1, int(count))
+        it = s.item(name)
+        if it is not None and (it.id in ("bullets", "cigarettes", "dollars", "matches") or it.count > 1 or n > 1 or it.name.lower() == name.strip().lower()):
             if it.loaded is not None:
-                w.reject(f"inventory.{it.id}", "already carried", ch.name)
+                w.reject(f"inventory.{it.id}", "already carried", name)
                 return
             if it.id in ("bullets", "cigarettes", "dollars", "matches") or it.count > 1 or n > 1:
                 if w.set(f"inventory.{it.id}.count", it.count, it.count + n):
                     it.count += n
             else:
-                w.reject(f"inventory.{it.id}", "already carried", ch.name)
+                w.reject(f"inventory.{it.id}", "already carried", name)
             return
         if len(s.inventory) >= 30:
-            w.reject("inventory", "pockets are full", ch.name)
+            w.reject("inventory", "pockets are full", name)
             return
-        iid = slug(ch.name)
+        iid = slug(name)
         if s.item(iid) is not None:
             iid = f"{iid}_{len(s.inventory)}"
-        s.inventory.append(Item(id=iid, name=ch.name.strip()[:50], count=n))
-        w.note(f"inventory += {ch.name.strip()!r}" + (f" x{n}" if n > 1 else ""))
+        s.inventory.append(Item(id=iid, name=name.strip()[:50], count=n))
+        w.note(f"inventory += {name.strip()!r}" + (f" x{n}" if n > 1 else ""))
 
-    def _lose(self, s: NoirState, ch: ItemChange, w: Writer, fired: int = 0, smoked: int = 0) -> None:
-        k = ch.name.strip().lower()
+    def _lose(self, s: NoirState, name: str, count: int, w: Writer, fired: int = 0, smoked: int = 0) -> None:
+        k = name.strip().lower()
         ammo_word = any(x in k for x in ("round", "bullet", "shot", "shell", "cartridge", "ammo"))
         if fired and ammo_word:
-            w.reject("inventory", "rounds fired are counted by shots_fired, not as a lost item", ch.name)
+            w.reject("inventory", "rounds fired are counted by shots_fired, not as a lost item", name)
             return
         if smoked and "cigarette" in k:
-            w.reject("inventory", "cigarettes smoked are counted by cigarettes_smoked, not as a lost item", ch.name)
+            w.reject("inventory", "cigarettes smoked are counted by cigarettes_smoked, not as a lost item", name)
             return
-        it = s.item(ch.name)
-        n = max(1, int(ch.count))
+        it = s.item(name)
+        n = max(1, int(count))
         if it is None:
-            w.reject("inventory", "not carried", ch.name)
+            w.reject("inventory", "not carried", name)
             return
         if it.loaded is not None and it.id == "revolver":
             if ammo_word:
-                w.reject("inventory.revolver", "rounds are not the revolver", ch.name)
+                w.reject("inventory.revolver", "rounds are not the revolver", name)
                 return
             if k not in ("revolver", "gun", "pistol", "the revolver", "his revolver", "frank's revolver", ".38"):
-                w.reject("inventory.revolver", "only an explicit loss of the revolver removes it", ch.name)
+                w.reject("inventory.revolver", "only an explicit loss of the revolver removes it", name)
                 return
             if w.set("inventory.revolver", "carried", None):
                 s.inventory.remove(it)
@@ -649,7 +673,7 @@ class NoirGame(GameBase):
                          "about the case, the first drag doing its work and the cough after. Nothing else happens unless the scene already "
                          "had something in motion. Two short paragraphs at most.")
             return s, CommandResult(label="Smoke", player_line="I light a cigarette and take a minute.", summary="Frank smokes a cigarette.",
-                                    directive=directive, minutes=5, referee_skip=["cigarettes_smoked"])
+                                    directive=directive, minutes=5, referee_skip=["cigarettes"])
         if command_id == "reload":
             rv, bl = s.item("revolver"), s.item("bullets")
             if rv is None:

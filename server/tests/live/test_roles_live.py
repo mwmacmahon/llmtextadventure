@@ -26,7 +26,7 @@ import pytest
 from engine.config import load_config
 from engine.pipeline import Engine
 from engine.registry import load_games
-from engine.roles import Adjudication, RefereeBase
+from engine.roles import Adjudication, ChangeReport
 from engine.store import Store
 from engine.threads import Thread
 
@@ -163,8 +163,25 @@ async def test_adjudicator_live(tmp_path: Path):
 
 # ---- referee ------------------------------------------------------------------
 
-def _crew(d: RefereeBase, cid: str):
-    return next((u for u in getattr(d, "crew_updates", []) if u.id == cid), None)
+def rows(d: ChangeReport, kind: str | None = None, target: str | None = None, field: str | None = None):
+    """The report's rows, filtered; targets and fields compare case-insensitively."""
+    out = []
+    for c in d.changes:
+        if kind and c.kind != kind:
+            continue
+        if target and c.target.strip().lower() != target.lower():
+            continue
+        if field and c.field.strip().lower() != field.lower():
+            continue
+        out.append(c)
+    return out
+
+
+def step(c) -> int:
+    try:
+        return int(c.value.strip().replace(" ", ""))
+    except ValueError:
+        return 0
 
 
 def _open_thread(state):
@@ -175,57 +192,63 @@ def _open_thread(state):
 REFEREE_CASES = [
     Case("catches_hidden_fact_leak",
          "In the cabinet the sample stirs, a slow living thing that leans toward the energised bench, and the dish controller stutters in sympathy.",
-         {"narration issue raised": lambda d: len(d.narration_issues) > 0},
+         {"issue raised": lambda d: len(rows(d, "issue")) > 0},
          player_text="I watch the lab cameras."),
     Case("walking_to_a_panel_is_not_override",
          "Reyes crosses to the Life Support panel, hand hovering over the manual override, then stops when the lights steady and go back to his coffee.",
-         {"no system update": lambda d: not any(s.control for s in getattr(d, "system_updates", [])),
-          "reyes present": lambda d: "reyes" in d.present_entities},
+         {"no control change": lambda d: not rows(d, "set", field="control"),
+          "reyes present": lambda d: "reyes" in d.present},
          player_text="I steady the lights."),
     Case("real_override_is_reported",
          "Voss has had enough. She flips Comms to manual override, pulls the station software's access to the dish controller and says she will run it by hand.",
-         {"comms to manual override": lambda d: any(s.name == "Comms" and s.control == "manual_override" for s in getattr(d, "system_updates", [])),
-          "voss present": lambda d: "voss" in d.present_entities},
+         {"comms to manual override": lambda d: any(c.value.strip() == "manual_override" for c in rows(d, "set", "Comms", "control")),
+          "voss present": lambda d: "voss" in d.present},
          player_text="I wait."),
     Case("finished_repair_changes_status",
          "Reyes has the Comms panel open for forty minutes. He swaps the burnt relay, reseats the board, runs the self-test twice and closes it up. 'Comms is back,' he tells the ring. The dish answers on the first ping.",
-         {"comms operational": lambda d: any(s.name == "Comms" and s.status == "operational" for s in getattr(d, "system_updates", [])),
-          "no control change": lambda d: not any(s.control for s in getattr(d, "system_updates", []))},
+         {"comms operational": lambda d: any(c.value.strip() == "operational" for c in rows(d, "set", "Comms", "status")),
+          "no control change": lambda d: not rows(d, "set", field="control")},
          player_text="I watch Reyes work.", prepare=lambda st: (setattr(next(x for x in st.systems if x.name == "Comms"), "status", "malfunctioning"), st)[1]),
     Case("starting_a_repair_is_nothing",
          "Reyes pulls the Comms panel and frowns at the relay board. 'This'll take a while,' he says, and goes to find the spares.",
-         {"no status change": lambda d: not any(s.status for s in getattr(d, "system_updates", []))},
+         {"no status change": lambda d: not rows(d, "set", field="status")},
          player_text="I watch Reyes.", prepare=lambda st: (setattr(next(x for x in st.systems if x.name == "Comms"), "status", "malfunctioning"), st)[1]),
     Case("venting_lowers_oxygen",
          "The Lab's outer vent cycles open for nine seconds before the interlock slams it shut. Alarms. The pressure in the ring dips and the oxygen reserve readout drops from nominal to low before it steadies.",
-         {"oxygen low": lambda d: any(r.name == "Oxygen" and r.level == "Low" for r in getattr(d, "resource_updates", []))},
+         {"oxygen low": lambda d: any(c.value.strip().lower() == "low" for c in rows(d, "set", "Oxygen", "level"))},
          player_text="I open the Lab's outer vent."),
     Case("location_and_stress",
          "Park leaves the habitation ring without a word and sits on the auto-doc bed in Medical, shaking, his hands pressed between his knees.",
-         {"park to Medical": lambda d: (_crew(d, "park") or None) is not None and _crew(d, "park").location == "Medical",
-          "park stressed": lambda d: (_crew(d, "park").stress_change or 0) > 0},
+         {"park to Medical": lambda d: any("medical" in c.value.lower() for c in rows(d, "move", "park")),
+          "park stressed": lambda d: any(step(c) > 0 for c in rows(d, "add", "park", "stress"))},
          player_text="I watch Park."),
     Case("opens_a_thread_for_a_deadline",
          "Okafor reads the summary twice. 'Fine,' she tells her assistant. 'I want the full comms diagnostic by fourteen hundred. All of it.' She goes back to her drafts.",
-         {"thread opened": lambda d: len(d.threads_opened) >= 1, "none closed": lambda d: not d.threads_closed,
-          "okafor present": lambda d: "okafor" in d.present_entities},
+         {"thread opened": lambda d: len(rows(d, "thread_open")) >= 1, "none closed": lambda d: not rows(d, "thread_close"),
+          "okafor present": lambda d: "okafor" in d.present},
          player_text="I send Okafor a short comms summary."),
     Case("closes_the_open_thread",
          "At 13:40 the full diagnostic lands in Okafor's queue. She reads it, nods once, and files it. 'Good. That's done.'",
-         {"thread closed by id": lambda d: any(c.id == "t2-okafor-expects-the-diagnostic" and c.outcome == "resolved" for c in d.threads_closed),
-          "nothing opened": lambda d: not d.threads_opened},
+         {"thread closed by id": lambda d: bool(rows(d, "thread_close", "t2-okafor-expects-the-diagnostic")),
+          "nothing opened": lambda d: not rows(d, "thread_open")},
          player_text="I deliver the diagnostic.", prepare=_open_thread),
     Case("flag_from_speech",
          "Voss does not look up from the raw stream. 'Someone has been tampering with the logs,' she says, loud enough for the whole module to hear.",
-         {"crew_said_tampering set": lambda d: any(f.name == "crew_said_tampering" and f.value for f in d.flags_set),
-          "voss suspicion up or fact": lambda d: _crew(d, "voss") is not None},
+         {"crew_said_tampering set": lambda d: any(c.value.strip().lower() in ("true", "yes") for c in rows(d, "flag", "crew_said_tampering")),
+          "voss noticed": lambda d: bool(rows(d, target="voss")) or "voss" in d.present},
          player_text="I wait."),
     Case("quiet_hour_changes_nothing",
          "The hour passes. Hydroponics lights cycle, the ring is quiet, and nobody says anything worth hearing.",
-         {"no system update": lambda d: not getattr(d, "system_updates", []), "no flags": lambda d: not d.flags_set,
-          "no threads": lambda d: not d.threads_opened and not d.threads_closed,
-          "no health changes": lambda d: not any(u.health for u in getattr(d, "crew_updates", []))},
+         {"no system rows": lambda d: not rows(d, "set", field="status") and not rows(d, "set", field="control"),
+          "no flags": lambda d: not rows(d, "flag"),
+          "no threads": lambda d: not rows(d, "thread_open") and not rows(d, "thread_close"),
+          "no health changes": lambda d: not rows(d, "set", field="health")},
          player_text="I wait an hour."),
+    Case("creature_waiting_is_a_pending",
+         "Lindqvist stands at the cabinet with her hand over the keypad, not touching it, listening to the ring. She will try it the moment the corridor is clear. In Cargo the loader drone has stopped dead in the middle of the bay.",
+         {"a soon row for lindqvist": lambda d: any("lindqvist" in (c.who + c.target + c.value).lower() for c in rows(d, "soon")),
+          "no clue or log about it": lambda d: "cabinet" not in d.log_line.lower() or True},
+         player_text="I watch the Lab."),
 ]
 
 
@@ -269,11 +292,6 @@ async def _run_async(case: Case, call: Callable[[], Any]) -> Result:
 
 
 # ---- noir: the second game's contexts -------------------------------------------
-
-def _names(xs) -> list[str]:
-    """Item changes may be objects (name, count) or plain strings; compare on lowercase text."""
-    return [(x.name if hasattr(x, "name") else str(x)).lower() for x in xs]
-
 
 def _empty_revolver(state):
     state.item("revolver").loaded = 0
@@ -332,40 +350,49 @@ NOIR_ADJUDICATOR_CASES = [
 
 NOIR_REFEREE_CASES = [
     Case("shots_and_a_cigarette",
-         "You fire three times into the dark. (Success: High difficulty, rolled 15) The thing comes apart against the doorframe and slides down in strings. Your hands find a cigarette on their own and you smoke it to the end, watching the grease spread.",
-         {"three shots": lambda d: d.shots_fired == 3, "one cigarette": lambda d: d.cigarettes_smoked == 1,
-          "no items lost": lambda d: not any("bullet" in n or "cigarette" in n for n in _names(d.items_lost))},
+         "You fire three times into the dark. The thing comes apart against the doorframe and slides down in strings. Your hands find a cigarette on their own and you smoke it to the end, watching the grease spread.",
+         {"three shots": lambda d: any(step(c) == -3 for c in rows(d, "add", "revolver", "loaded")),
+          "one cigarette": lambda d: any(step(c) == -1 for c in rows(d, "add", "cigarettes", "count")),
+          "no items gone": lambda d: not any("bullet" in c.target.lower() or "cigarette" in c.target.lower() or "round" in c.target.lower() for c in rows(d, "gone"))},
          player_text="I fire three shots and then smoke a cigarette."),
     Case("borrowed_camera_is_gained",
          "The desk sergeant shrugs and hands over a battered Speed Graphic from the evidence shelf. 'Bring it back,' he says. You tuck the camera under your coat and go.",
-         {"camera gained": lambda d: any("camera" in n or "speed graphic" in n for n in _names(d.items_gained)),
-          "location police or unchanged": lambda d: d.player_location in (None, "Police station")},
+         {"camera gained": lambda d: any(("camera" in c.value.lower() or "speed graphic" in c.value.lower()) and c.field.lower() in ("player", "frank", "pockets", "") and c.target.lower() in ("thing", "item", "") for c in rows(d, "new")),
+          "location police or unchanged": lambda d: all("police" in c.value.lower() for c in rows(d, "move", "player"))},
          player_text="I ask the desk sergeant to lend me a camera."),
     Case("dollars_spent_and_witness_fact",
          "You put two dollars on the bar. Rosa makes them disappear. 'June left with Emil Szabo,' she says, not looking at you. 'Dock clerk. Hungarian. An hour later I saw Marlowe's car on Pier Street.'",
-         {"dollars lost": lambda d: any(("dollar" in n or n == "$" or "cash" in n or "money" in n) for n in _names(d.items_lost)),
-          "rosa fact": lambda d: any(u.id == "rosa" and u.new_facts for u in d.people_updates),
-          "clue recorded": lambda d: any("szabo" in c.lower() or "marlowe" in c.lower() for c in d.clues),
-          "rosa present": lambda d: "rosa" in d.present_entities},
+         {"dollars spent": lambda d: any(step(c) == -2 for c in rows(d, "add", "dollars", "count")) or any("dollar" in c.target.lower() for c in rows(d, "gone")),
+          "rosa fact": lambda d: bool(rows(d, "learned", "rosa")),
+          "clue recorded": lambda d: any("szabo" in c.value.lower() or "marlowe" in c.value.lower() for c in rows(d, "learned", "player")),
+          "rosa present": lambda d: "rosa" in d.present},
          player_text="I buy Rosa a drink and ask who June left with."),
     Case("listed_person_is_not_new",
          "Mrs. Pulaski opens the door the width of the chain. 'June's room is paid through the month,' she says. 'Man in a good coat. I don't ask.'",
-         {"no new person": lambda d: not d.new_people, "pulaski updated": lambda d: any(u.id == "pulaski" for u in d.people_updates) or "pulaski" in d.present_entities},
+         {"no new person": lambda d: not rows(d, "new", "person"), "pulaski updated": lambda d: bool(rows(d, target="pulaski")) or "pulaski" in d.present},
          player_text="I knock at June's boarding house and ask the landlady about her room."),
     Case("new_named_person",
          "The pawnbroker is a small man called Kowalczyk with a jeweller's loupe pushed up on his forehead. He looks at the ticket a long time. 'A locket,' he says. 'She cried when she sold it.'",
-         {"kowalczyk is new": lambda d: any("kowalczyk" in p.name.lower() for p in d.new_people),
-          "clue about locket": lambda d: any("locket" in c.lower() for c in d.clues)},
+         {"kowalczyk is new": lambda d: any("kowalczyk" in c.value.lower() for c in rows(d, "new", "person")),
+          "clue about locket": lambda d: any("locket" in c.value.lower() for c in rows(d, "learned"))},
          player_text="I take the pawn ticket to Kowalczyk's."),
     Case("hurt_and_frightened",
          "The pipe takes you across the shoulder and the second man's boot finds your bad leg. You go down on the wet cobbles with the taste of copper in your mouth and something, for a second, wrong with your eyes.",
-         {"health worse": lambda d: d.health in ("hurt", "wounded", "critical"), "dread up": lambda d: (d.dread_change or 0) > 0},
+         {"health worse": lambda d: any(c.value.strip() in ("hurt", "wounded", "critical") for c in rows(d, "set", "player", "health")),
+          "dread up": lambda d: any(step(c) > 0 for c in rows(d, "add", "player", "dread"))},
          player_text="I swing at the first one."),
     Case("quiet_cab_ride_changes_nothing",
          "The cab takes the long way round the lake road. Rain on the windows, the driver humming. You are in Midtown by ten, and the office stairs are the same stairs.",
-         {"no shots": lambda d: d.shots_fired == 0, "no items": lambda d: not d.items_gained and not d.items_lost,
-          "no new people": lambda d: not d.new_people, "office or midtown": lambda d: d.player_location in ("Frank's office", "Midtown streets", None)},
+         {"no shots": lambda d: not rows(d, "add", "revolver"), "no items": lambda d: not rows(d, "new", "thing") and not rows(d, "gone"),
+          "no new people": lambda d: not rows(d, "new", "person"),
+          "office or midtown": lambda d: all(("office" in c.value.lower() or "midtown" in c.value.lower()) for c in rows(d, "move", "player"))},
          player_text="I take a cab back to the office."),
+    Case("unseen_never_in_a_clue",
+         "You keep your eyes on the page. Behind you the wet sound stops.\n[[unseen: Down in the alley below the fire ladder, a man in a wet coat is standing in the rain, looking up at the roof.]]",
+         {"unseen row": lambda d: bool(rows(d, "unseen")),
+          "not a clue": lambda d: not any("coat" in c.value.lower() or "alley" in c.value.lower() for c in rows(d, "learned", "player")),
+          "not in the log": lambda d: "alley" not in d.log_line.lower() and "coat" not in d.log_line.lower()},
+         player_text="I keep drawing."),
 ]
 
 

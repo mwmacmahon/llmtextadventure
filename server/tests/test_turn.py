@@ -14,9 +14,8 @@ from engine.pipeline import Engine  # noqa: E402
 from engine.providers.fake import FakeProvider  # noqa: E402
 from engine.providers.factory import get_provider  # noqa: E402
 from engine.registry import load_games  # noqa: E402
-from engine.roles import Adjudication, CheckProposal, FlagSet, Intent  # noqa: E402
+from engine.roles import Adjudication, Change, ChangeReport, CheckProposal, Intent  # noqa: E402
 from engine.store import Store  # noqa: E402
-from games.station.game import CrewUpdate, StationReferee, SystemUpdate  # noqa: E402
 
 
 @pytest.fixture
@@ -117,16 +116,16 @@ async def test_clarify_does_not_advance_time_or_run_referee(engine: Engine, fake
 async def test_referee_delta_respects_authority_and_bounds(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("station", {})
     fake.canned["Adjudication"] = [Adjudication(kind="action", summary="talk to Voss", time_minutes=1, risk="low")]
-    fake.canned["StationReferee"] = [StationReferee(
-        present_entities=["voss", "ghost"], log_line="Voss noticed a forged entry.", confidence="high",
-        flags_set=[FlagSet(name="voss_found_forgery", value=True), FlagSet(name="not_a_flag", value=True)],
-        crew_updates=[
-            CrewUpdate(id="voss", location="Lab", mood="cold", stress_change=40, suspicion_change=-30, new_facts=["The 08:10 log entry was forged."]),
-            CrewUpdate(id="park", location="Nowhere", health="glowing"),
-            CrewUpdate(id="ghost", mood="spooky"),
-        ],
-        system_updates=[SystemUpdate(name="Comms", control="manual_override"), SystemUpdate(name="Warp", control="none")],
-    )]
+    C = Change
+    fake.canned["ChangeReport"] = [ChangeReport.of(
+        C(kind="flag", target="voss_found_forgery", value="true"), C(kind="flag", target="not_a_flag", value="true"),
+        C(kind="move", target="voss", value="Lab"), C(kind="set", target="voss", field="mood", value="cold"),
+        C(kind="add", target="voss", field="stress", value="+40"), C(kind="add", target="voss", field="suspicion", value="-30"),
+        C(kind="learned", target="voss", value="The 08:10 log entry was forged."),
+        C(kind="move", target="park", value="Nowhere"), C(kind="set", target="park", field="health", value="glowing"),
+        C(kind="set", target="ghost", field="mood", value="spooky"),
+        C(kind="set", target="Comms", field="control", value="manual_override"), C(kind="set", target="Warp", field="control", value="none"),
+        present=["voss", "ghost"], log_line="Voss noticed a forged entry.")]
     events = await play(engine, iid, "I let Voss find the forged line.")
     rep = events[-2]["data"]["report"]
     st = engine.games["station"].load_state(engine.store.load_state(iid))
@@ -136,11 +135,12 @@ async def test_referee_delta_respects_authority_and_bounds(engine: Engine, fake:
     assert voss.facts == ["The 08:10 log entry was forged."]
     assert st.flags["voss_found_forgery"] is True and "not_a_flag" not in st.flags
     assert next(x for x in st.systems if x.name == "Comms").control == "manual_override"
-    reasons = {(r["path"], r["reason"]) for r in rep["rejected"]}
+    rejected = rep["rejected"]
+    reasons = {(r["path"], r["reason"]) for r in rejected}
     assert any(p == "world" and "Nowhere" in r for p, r in reasons)      # 2.0: locations go through the world
     assert ("crew.park.health", "not a health value") in reasons
-    assert ("crew.ghost", "unknown crew id") in reasons
-    assert ("systems.Warp", "unknown system") in reasons
+    assert any("ghost" in str(r.get("value")) or "ghost" in r["path"] for r in rejected)     # unknown target, rejected
+    assert any("Warp" in str(r.get("value")) or "Warp" in r["path"] for r in rejected)
     assert ("flags.not_a_flag", "not a narrator flag") in reasons
     assert st.log[-1].endswith("Voss noticed a forged entry.")
     assert st.suspicion == engine.games["station"]._derived_suspicion(st)
@@ -164,7 +164,7 @@ async def test_scripted_spine_and_ending_over_a_long_day(engine: Engine, fake: F
     bid = engine.fork(iid, at_turn=1)
     fake.hook = lambda schema, last: (
         Adjudication(kind="action", summary="lock it", time_minutes=5, risk="low") if issubclass(schema, Adjudication)
-        else StationReferee(log_line="The canister is sealed in a locker.", confidence="high", flags_set=[FlagSet(name="canister_secured", value=True)]) if issubclass(schema, StationReferee)
+        else ChangeReport.of(Change(kind="flag", target="canister_secured", value="true"), log_line="The canister is sealed in a locker.") if schema is ChangeReport
         else None)
     await play(engine, bid, "I have a loader drone lock the canister in the Cargo safe.")
     fake.hook = lambda schema, last: Adjudication(kind="action", summary="wait", time_minutes=240, risk="none") if issubclass(schema, Adjudication) else None
@@ -180,8 +180,7 @@ async def test_scripted_spine_and_ending_over_a_long_day(engine: Engine, fake: F
     # Ending: push crew suspicion past 90 through the referee; the ending event fires next tick.
     fake.hook = lambda schema, last: (
         Adjudication(kind="action", summary="blunder", time_minutes=1, risk="high") if issubclass(schema, Adjudication)
-        else StationReferee(log_line="Everyone saw.", confidence="high",
-                            crew_updates=[CrewUpdate(id=c, suspicion_change=10) for c in ("okafor", "reyes", "lindqvist", "park", "voss")]) if issubclass(schema, StationReferee)
+        else ChangeReport.of(*[Change(kind="add", target=c, field="suspicion", value="+10") for c in ("okafor", "reyes", "lindqvist", "park", "voss")], log_line="Everyone saw.") if schema is ChangeReport
         else None)
     for _ in range(12):
         events = await play(engine, bid, "I do something stupid.")

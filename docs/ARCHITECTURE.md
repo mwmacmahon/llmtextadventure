@@ -27,7 +27,8 @@ server/
   engine/
     pipeline.py          the turn: adjudicate → resolve → [summarize] → narrate → referee → apply → drift
     context.py           narrator message window, slide points, summary planning
-    roles.py             adjudicator / referee / summarizer schemas and prompts
+    roles.py             adjudicator / referee (ChangeReport rows) / summarizer schemas and prompts
+    changes.py           lands the referee's rows: engine kinds here, game kinds through apply_change, world kinds through the world
     game.py              Game protocol, GameBase hooks, UI widget vocabulary, commands
     statepath.py         dotted paths into state; field authority
     mechanics.py         checks and resolvers (d20, threshold, weighted), seeded RNG
@@ -58,7 +59,7 @@ One SQLite file, four tables, all keyed by instance:
 |---|---|---|
 | `instance` | id, game, version, title, setup, `prefix_text`, origin | the frozen prefix is stored per instance so it never drifts mid-game |
 | `transcript` | seq, turn, role, text | roles: `player`, `bulletin`, `narrator`, `mechanics` (JSON), `system_note` (story so far), `command`, `result` |
-| `ledger` | seq, turn, kind, payload | kinds: `model_call`, `adjudication`, `check`, `event_fired`, `event_expired`, `happening`, `clock`, `verdict`, `delta`, `drift`, `motion_verdict` (the motion referee's report), `pending` and `unseen` (things set in motion during play and facts out of the player's sight; `engine/pending.py`), `command_preview` (a typed lever as previewed for the narrator), `command` (clicked, or `typed: true` when a lever was committed after the prose, refused, or `not_completed`) |
+| `ledger` | seq, turn, kind, payload | kinds: `model_call`, `adjudication`, `check`, `event_fired`, `event_expired`, `happening`, `clock`, `verdict`, `delta`, `drift`, `pending` and `unseen` (things set in motion during play and facts out of the player's sight; `engine/pending.py`), `command_preview` (a typed lever as previewed for the narrator), `command` (clicked, or `typed: true` when a lever was committed after the prose, refused, or `not_completed`) |
 | `snapshot` | turn, state | full state after every turn; turn 0 is the opening |
 
 Undo truncates all three per-turn tables after a turn. Fork is export truncated at a turn and
@@ -102,7 +103,7 @@ NARRATE      streamed. system = frozen prefix (cached, 1h). messages = [story so
              window of past turns (player text only, no stale bulletins) + bulletin + THIS TURN
              block + player text. Cache breakpoints: the system block and the last assistant message.
   ▼
-REFEREE      Sonnet (was Haiku; see config.yml for the measurements), one messages.parse against the game's RefereeBase subclass
+REFEREE      Sonnet (was Haiku; see config.yml for the measurements), one messages.parse against roles.ChangeReport, the same for every game
              present_entities, log_line, flags_set, threads_opened/closed, narration_issues,
              confidence, plus game fields (entity updates, system control changes…)
   ▼
@@ -242,10 +243,11 @@ Branch `1.0` preserves the first engine; `main` stays there until 2.0 is playabl
   difficulty (a name only when needed); square-bracket lines from the narrator are plain-English notes
   handed to the referee. Code resolves names (`World.find`); the adjudicator's assessed target wins
   over a called name.
-- Two referees run concurrently when a game `has_world`: the game referee (its own schema) and the
-  generic world referee (`roles.WorldReport`: moves, new things, thing updates, gone), landed by the
-  game's `apply_world_report` through `world.apply_declarations`. One combined schema hit the API's
-  "Schema is too complex" limit.
+- One referee, one row type (DESIGN2 §18 A, 2026-10-28): `roles.ChangeReport` for every game; `engine/changes.py`
+  lands the engine's kinds, hands the game its own through `apply_change`, and sends world rows (moves, new
+  things, lock and state changes, gone) through the game's `land_declarations` to `world.apply_declarations`.
+  The earlier three concurrent referees (game, world, motion), each born of a "Schema is too complex"
+  refusal, are gone.
 - The station is on the world: a `world:` section in its scenario (modules with hatches, cameras,
   the cabinet and canister, drones, the pod); `StationState.world`, built on a new instance; crew and
   world kept in sync by code (the world is authoritative for location); sealing a module locks its

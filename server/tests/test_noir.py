@@ -17,9 +17,10 @@ from engine.pipeline import Engine  # noqa: E402
 from engine.providers.fake import FakeProvider  # noqa: E402
 from engine.providers.factory import get_provider  # noqa: E402
 from engine.registry import load_games  # noqa: E402
-from engine.roles import Adjudication, FlagSet  # noqa: E402
+from engine.changes import apply_changes  # noqa: E402
+from engine.roles import Adjudication, Change, ChangeReport  # noqa: E402
 from engine.store import Store  # noqa: E402
-from games.noir.game import WITHDRAWAL, ItemChange, NewPerson, NoirGame, NoirReferee, PersonUpdate  # noqa: E402
+from games.noir.game import WITHDRAWAL, NoirGame  # noqa: E402
 
 
 @pytest.fixture
@@ -62,21 +63,20 @@ def state_of(engine: Engine, iid: str):
     return engine.games["noir"].load_state(engine.store.load_state(iid))
 
 
-def ref(**kw) -> NoirReferee:
-    base = dict(player_location="", health="", dread_change=0, conditions_gained=[], conditions_lost=[], shots_fired=0,
-                cigarettes_smoked=0, items_gained=[], items_lost=[], people_updates=[], new_people=[], clues=[])
-    base.update(kw)
-    return NoirReferee(log_line=base.pop("log_line", "Something happened."), confidence="high", **base)
+C = Change
 
 
-def ic(name: str, count: int = 1) -> ItemChange:
-    return ItemChange(name=name, count=count)
+def ref(*rows: Change, log_line: str = "Something happened.", present: list[str] | None = None) -> ChangeReport:
+    return ChangeReport.of(*rows, log_line=log_line, present=present)
 
 
-def pu(id: str, **kw) -> PersonUpdate:
-    base = dict(location="", attitude_change=0, status="", new_facts=[])
-    base.update(kw)
-    return PersonUpdate(id=id, **base)
+def apply(game: NoirGame, st, report: ChangeReport, present: list[str] | None = None):
+    s, rep, _ = apply_changes(game, st, report, present=list(present or []), causes=[])
+    return s, rep
+
+
+def add(target: str, field: str, step: str) -> Change:
+    return C(kind="add", target=target, field=field, value=step)
 
 
 # ---- instance and prompt ------------------------------------------------------
@@ -99,46 +99,50 @@ def test_new_instance_prefix_and_bulletin(game: NoirGame):
 
 # ---- referee apply: pockets, body, people, notebook ---------------------------
 
-def test_apply_delta_pockets_and_body(game: NoirGame):
+def test_rows_pockets_and_body(game: NoirGame):
     _, st = game.new_instance({})
-    d = ref(player_location="Rooftop shack", dread_change=35, shots_fired=3, conditions_gained=["terrified", WITHDRAWAL], health="hurt",
-            items_lost=[ic("dollars", 5)], items_gained=[ic("borrowed film camera")],
-            clues=["The creature came apart into yellow grease."], flags_set=[FlagSet(name="harrow_knows", value=True), FlagSet(name="bogus", value=True)])
-    s2, rep = game.apply_delta(st, d, [])
+    d = ref(C(kind="move", target="player", value="Rooftop shack"), add("player", "dread", "+35"), add("revolver", "loaded", "-3"),
+            C(kind="set", target="player", field="conditions", value="+terrified"), C(kind="set", target="player", field="conditions", value="+" + WITHDRAWAL),
+            C(kind="set", target="player", field="health", value="hurt"),
+            add("dollars", "count", "-5"), C(kind="new", target="thing", value="borrowed film camera", field="player"),
+            C(kind="learned", target="player", value="The creature came apart into yellow grease."),
+            C(kind="flag", target="harrow_knows", value="true"), C(kind="flag", target="bogus", value="true"))
+    s2, rep = apply(game, st, d)
     assert s2.item("revolver").loaded == 3 and s2.player.dread == 45            # nudge capped at 10
     assert s2.player.health == "hurt" and s2.player.has_condition("terrified") and not s2.player.has_condition(WITHDRAWAL)
     assert s2.item("dollars").count == 9 and s2.item("camera").name == "borrowed film camera"
     assert s2.notebook[-1].kind == "clue" and s2.flags["harrow_knows"] is True
     rejected = {r.path: r.reason for r in rep.rejected}
     assert "engine condition" in rejected["player.conditions"] and "flags.bogus" in rejected
-    # firing more than is loaded fires what is there; losing what you do not have is rejected
-    d = ref(shots_fired=5, items_lost=[ic("umbrella")], items_gained=[ic("bullets", 6)], cigarettes_smoked=2)
-    s3, rep = game.apply_delta(s2, d, [])
+    # firing more than is loaded fires what is there; losing what you do not have is rejected; a negative cigarettes count is smoking
+    d = ref(add("revolver", "loaded", "-5"), C(kind="gone", target="umbrella"), add("bullets", "count", "+6"), add("cigarettes", "count", "-2"))
+    s3, rep = apply(game, s2, d)
     assert s3.item("revolver").loaded == 0 and s3.item("bullets").count == 9 and s3.item("cigarettes").count == 9
     assert s3.player.minutes_since_smoke == 0 and s3.player.dread == 40          # smoke relief
     assert any(r.reason == "not carried" for r in rep.rejected) and any("only 3 rounds" in r.reason for r in rep.rejected)
-    # fired rounds reported as a lost item do not take the revolver with them; only an explicit loss does
-    s3b, rep = game.apply_delta(s3, ref(shots_fired=0, items_lost=[ic("revolver rounds", 3)]), [])
+    # "rounds" as a lost thing does not take the revolver with them; only an explicit loss of the revolver does
+    s3b, rep = apply(game, s3, ref(C(kind="gone", target="revolver rounds", note="3")))
     assert s3b.item("revolver") is not None and s3b.item("bullets").count == 9 and "not the revolver" in rep.rejected[0].reason
-    s3b, rep = game.apply_delta(s3, ref(shots_fired=0, items_lost=[ic("rounds", 3), ic("cigarettes", 1)]), [])
-    assert s3b.item("bullets").count == 6 and s3b.item("cigarettes").count == 8          # dropped, not fired or smoked
-    s3b, rep = game.apply_delta(s3, ref(shots_fired=0, cigarettes_smoked=1, items_lost=[ic("rounds", 3), ic("cigarette", 1)]), [])
-    assert s3b.item("bullets").count == 6 and s3b.item("cigarettes").count == 8 and len(rep.rejected) == 1   # smoked once, not twice
-    s3c, _ = game.apply_delta(s3, ref(items_lost=[ic("revolver")]), [])
+    s3b, rep = apply(game, s3, ref(C(kind="gone", target="bullets", note="3"), C(kind="gone", target="cigarettes", note="1")))
+    assert s3b.item("bullets").count == 6 and s3b.item("cigarettes").count == 8 and s3b.player.minutes_since_smoke == 0   # dropped, not smoked
+    s3c, _ = apply(game, s3, ref(C(kind="gone", target="revolver")))
     assert s3c.item("revolver") is None
-    # a unique thing already carried is not duplicated; an unknown place is rejected
-    d = ref(items_gained=[ic("lockpicks")], player_location="The moon")
-    s4, rep = game.apply_delta(s3, d, [])
-    assert sum(1 for i in s4.inventory if i.id == "lockpicks") == 1 and s4.player.location == "Rooftop shack"
-    assert {r.path for r in rep.rejected} >= {"inventory.lockpicks", "player.location"}
+    # rounds go in only through the reload lever; a unique thing already carried is not duplicated; an unknown place is rejected
+    d = ref(add("revolver", "loaded", "+2"), C(kind="new", target="thing", value="lockpicks", field="player"), C(kind="move", target="player", value="The moon"))
+    s4, rep = apply(game, s3, d)
+    assert s4.item("revolver").loaded == 0 and sum(1 for i in s4.inventory if i.id == "lockpicks") == 1 and s4.player.location == "Rooftop shack"
+    assert {r.path for r in rep.rejected} >= {"inventory.revolver.loaded", "inventory.lockpicks", "player.location"}
+    # a row this game does not record is rejected, never dropped
+    _, rep = apply(game, s3, ref(C(kind="set", target="the weather", field="mood", value="grim")))
+    assert rep.rejected and rep.rejected[0].reason in ("unknown person id", "not something this game records")
 
 
-def test_apply_delta_people_and_new_people(game: NoirGame):
+def test_rows_people_and_new_people(game: NoirGame):
     _, st = game.new_instance({})
-    d = ref(present_entities=["rosa"], people_updates=[pu("dooley", location="The Anchor", attitude_change=5, new_facts=["Saw men with lye."])],
-            new_people=[NewPerson(id="kowalczyk", name="Kowalczyk", role="pawnbroker, Pier Street"),
-                        NewPerson(id="old_lady", name="Mrs. Pulaski", role="landlady")])
-    s2, rep = game.apply_delta(st, d, ["rosa"])
+    d = ref(C(kind="move", target="dooley", value="The Anchor"), add("dooley", "attitude", "+5"), C(kind="learned", target="dooley", value="Saw men with lye."),
+            C(kind="new", target="person", value="Kowalczyk", note="pawnbroker, Pier Street"),
+            C(kind="new", target="person", value="Mrs. Pulaski", note="landlady"), present=["rosa"])
+    s2, rep = apply(game, st, d, ["rosa"])
     assert s2.person("rosa").met and s2.person("dooley").attitude == 5 and s2.person("dooley").location == "The Anchor"   # +3 step on 2
     assert s2.person("dooley").facts[-1] == "Saw men with lye."
     assert s2.person("kowalczyk") and s2.person("kowalczyk").met and s2.person("kowalczyk").location == "Rooftop shack"
@@ -191,7 +195,7 @@ def test_withdrawal_and_dread_drift(game: NoirGame):
     assert game.after_turn(st3, info(60, ["player.dread: 29 -> 40"])).player.dread == 30
     assert game.after_turn(st3, info(0)) is st3
     # smoking clears withdrawal and resets the counter (via the referee)
-    s4, _ = game.apply_delta(st3, ref(cigarettes_smoked=1), [])
+    s4, _ = apply(game, st3, ref(add("cigarettes", "count", "-1")))
     assert not s4.player.has_condition(WITHDRAWAL) and s4.player.minutes_since_smoke == 0 and s4.item("cigarettes").count == 10
 
 
@@ -225,7 +229,7 @@ async def test_smoke_is_a_narrated_command(engine: Engine, fake: FakeProvider):
     assert st.item("cigarettes").count == 10 and st.player.dread == 30 and st.player.minutes_since_smoke == 5
     assert not any("Smoked a cigarette." in ln for ln in st.log)           # the referee's log line stands alone
     # a referee that also reports the cigarette does not charge it twice: the command's referee_skip resets the field
-    fake.hook = lambda schema, last: ref(log_line="Frank smoked.", cigarettes_smoked=1, dread_change=-3) if schema is NoirReferee else None
+    fake.hook = lambda schema, last: ref(add("cigarettes", "count", "-1"), add("player", "dread", "-3"), log_line="Frank smoked.") if schema is ChangeReport else None
     await command(engine, iid, "smoke")
     st = state_of(engine, iid)
     assert st.item("cigarettes").count == 9 and st.player.dread == 22
@@ -244,7 +248,7 @@ async def test_typed_turn_narrator_sees_roll_and_referee_updates_pockets(engine:
     fake.hook = lambda schema, last: (
         Adjudication(kind="action", summary="Frank fires at the creature", time_minutes=1, risk="high",
                      intents=[{"action": "shoot it", "check": {"label": "shoot the creature", "stat": "hands", "difficulty": "low"}}]) if issubclass(schema, Adjudication)
-        else ref(log_line="Frank fired three times.", shots_fired=3, dread_change=10, player_location="Rooftop shack") if schema is NoirReferee
+        else ref(add("revolver", "loaded", "-3"), add("player", "dread", "+10"), C(kind="move", target="player", value="Rooftop shack"), log_line="Frank fired three times.") if schema is ChangeReport
         else None)
     FakeProvider.script = lambda system, messages: ("The shots go where they go." if messages[-1].content.startswith("[ENGINE]")
                                                     else "You spin.\n<<CHECK hands low>>\nNEVER STREAMS")
@@ -301,7 +305,7 @@ async def test_ending_when_june_is_rescued(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("noir", {})
     fake.hook = lambda schema, last: (
         Adjudication(kind="action", summary="get June out", time_minutes=20, risk="high") if issubclass(schema, Adjudication)
-        else ref(log_line="Frank got June out.", flags_set=[FlagSet(name="june_rescued", value=True)]) if schema is NoirReferee
+        else ref(C(kind="flag", target="june_rescued", value="true"), log_line="Frank got June out.") if schema is ChangeReport
         else None)
     await play(engine, iid, "I carry June up the drain and into the cab.")
     fake.hook = lambda schema, last: Adjudication(kind="action", summary="wait", time_minutes=1, risk="none") if issubclass(schema, Adjudication) else None

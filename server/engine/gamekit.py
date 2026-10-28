@@ -15,7 +15,6 @@ from pydantic import BaseModel
 
 from . import threads as th
 from .game import ApplyReport, Chip, ListPanel, Rejection
-from .roles import FlagSet
 from .statepath import Actor, may_write
 
 
@@ -87,17 +86,6 @@ class Writer:
 
     def note(self, line: str) -> None:
         self.report.applied.append(line)
-
-
-def apply_flags(flags: dict[str, Any], allowed: dict[str, str], flags_set: list[FlagSet], writer: Writer) -> None:
-    """Set referee-reported flags that the scenario declared as narrator flags; reject the rest."""
-    for fs in flags_set:
-        if fs.name in allowed:
-            if flags.get(fs.name) != fs.value:
-                writer.note(f"flags.{fs.name}: {flags.get(fs.name)!r} -> {fs.value!r}")
-            flags[fs.name] = fs.value
-        else:
-            writer.reject(f"flags.{fs.name}", "not a narrator flag", fs.value)
 
 
 def threads_panel(threads: list[th.Thread], title: str = "Threads", recent_closed: int = 5) -> ListPanel:

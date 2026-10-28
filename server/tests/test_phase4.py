@@ -21,7 +21,7 @@ from engine.providers.factory import get_provider  # noqa: E402
 from engine.registry import load_games  # noqa: E402
 from engine.roles import Adjudication  # noqa: E402
 from engine.store import Store  # noqa: E402
-from games.station.game import CrewUpdate, StationReferee  # noqa: E402
+from engine.roles import Change, ChangeReport  # noqa: E402
 
 
 @pytest.fixture
@@ -100,15 +100,13 @@ def test_threads_open_close_and_render():
 
 async def test_referee_threads_land_in_state_and_bulletin(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("station", {})
-    fake.canned["StationReferee"] = [StationReferee(log_line="Promised Okafor a report.", confidence="high",
-                                                    threads_opened=["Okafor expects the comms report by noon"])]
+    fake.canned["ChangeReport"] = [ChangeReport.of(Change(kind="thread_open", value="Okafor expects the comms report by noon"), log_line="Promised Okafor a report.")]
     events = await play(engine, iid, "I tell Okafor's assistant the report is coming by noon.")
     st = state_of(engine, iid)
     assert len(st.threads) == 1 and st.threads[0].status == "open"
     tid = st.threads[0].id
     assert any(a.startswith("threads += ") for a in events[-1]["data"]["mechanics"]["applied"])
-    fake.canned["StationReferee"] = [StationReferee(log_line="Sent it.", confidence="high",
-                                                    threads_closed=[th.ThreadClose(id=tid, outcome="resolved", note="sent")])]
+    fake.canned["ChangeReport"] = [ChangeReport.of(Change(kind="thread_close", target=tid, note="sent"), log_line="Sent it.")]
     events = await play(engine, iid, "I send the report.")
     bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
     assert f"- {tid}: Okafor expects" in bulletin           # the referee saw it listed with its id
@@ -248,7 +246,7 @@ async def test_drift_is_applied_and_ledgered_after_a_turn(engine: Engine, fake: 
     iid = engine.create_instance("station", {})
     fake.hook = lambda schema, last: (
         Adjudication(kind="action", summary="wait", time_minutes=120, risk="none") if issubclass(schema, Adjudication)
-        else StationReferee(log_line="Park panicked.", confidence="high", crew_updates=[CrewUpdate(id="park", stress_change=15, mood="panicky")]) if issubclass(schema, StationReferee)
+        else ChangeReport.of(Change(kind="add", target="park", field="stress", value="+15"), Change(kind="set", target="park", field="mood", value="panicky"), log_line="Park panicked.") if schema is ChangeReport
         else None)
     await play(engine, iid, "I wait and watch Park.")
     st = state_of(engine, iid)

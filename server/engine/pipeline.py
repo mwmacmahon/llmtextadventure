@@ -46,9 +46,9 @@ from .narration import (Assessment, CallResult, Mechanic, NarrationDone, Visible
 from .game import ApplyReport, CommandResult, Game, GameBase, TurnInfo
 from .mechanics import RESOLVERS, CheckRequest, CheckResult, rng_for
 from .providers import Msg, StreamDone, TextDelta, get_provider
-from .roles import (Adjudication, RefereeBase, WorldReport, adjudicator_messages, referee_messages, summarizer_messages,
-                    world_referee_messages, NARRATOR_PROTOCOL)
-from .roles import NARRATOR_WORLD, MotionReport, motion_referee_messages
+from .roles import (Adjudication, adjudicator_messages, referee_messages, summarizer_messages, NARRATOR_PROTOCOL)
+from .roles import NARRATOR_WORLD, ChangeReport
+from .changes import apply_changes
 from .store import Store
 
 MODEL_CALL_KINDS = {"model_call": None, "adjudication": "adjudicator", "verdict": "referee"}
@@ -358,7 +358,9 @@ class Engine:
             },
         })
 
-        # ---- 4. referee + apply --------------------------------------------
+        # ---- 4. referee + apply --------------------------------------
+        # One referee, one row type, code types it (DESIGN2 §18 A): the report is rows; engine/changes.py lands the
+        # engine's kinds and hands the game its own; the lever commits before the rows unless the referee said not_done.
         report = ApplyReport()
         delta_json: dict | None = None
         lever_outcome: dict[str, Any] | None = None
@@ -367,95 +369,60 @@ class Engine:
                 for_referee = narration
                 if calls_block.get("notes"):
                     for_referee += "\n\n[NARRATOR'S NOTES: facts it decided, what is happening unseen (unseen:), what it set in motion (soon:)]\n" + "\n".join(f"- {n}" for n in calls_block["notes"])
-                world_task = None
-                if _hook(game, "has_world", state, default=False):
-                    world_task = asyncio.ensure_future(self._world_referee(game, state, res["directives"], player_text, for_referee, adj))
-                motion_task = None
-                if getattr(game, "pending_path", None):
-                    motion_task = asyncio.ensure_future(self._motion_referee(game, state, res["directives"], player_text, for_referee, adj))
                 delta, meta = await self._referee(game, state, res["directives"], player_text, for_referee, adj, levers=_lever_lines(lever))
-                # the lever lands now, before the referee's own changes, unless the prose did not complete it
-                state, lever_outcome = self._commit_lever(game, state, lever, list(getattr(delta, "levers_not_completed", []) or []), iid, turn, ledger)
+                delta_json = delta.model_dump(mode="json")
+                ledger("verdict", {**delta_json, "_call": meta})
+                present = [e for e in delta.present if e in _hook(game, "entity_ids", state, default=[])]
+                causes = list(calls_block.get("causes", [])) + [e for d in res["directives"] for e in (adj.entities if adj else []) if e in d]
+                vetoes = [f"{c.target}: {c.note or c.value}" for c in delta.changes if c.kind == "not_done"]
+                state, lever_outcome = self._commit_lever(game, state, lever, vetoes, iid, turn, ledger)
                 skip = list(cmd_result.referee_skip) if cmd_result else []
                 if lever is not None and lever_outcome and lever_outcome["status"] == "applied":
                     skip += lever.preview.referee_skip
-                for fname in skip:
-                    if fname in type(delta).model_fields:
-                        setattr(delta, fname, _blank_like(getattr(delta, fname)))
-                delta_json = delta.model_dump(mode="json")
-                ledger("verdict", {**delta_json, "_call": meta})
-                present = [e for e in delta.present_entities if e in _hook(game, "entity_ids", state, default=[])]
-                causes = list(calls_block.get("causes", [])) + [e for d in res["directives"] for e in (adj.entities if adj else []) if e in d]
-                state, report = game.apply_delta(state, delta, present, causes) if isinstance(game, GameBase) else (state, report)
-                world_json: dict | None = None
-                if world_task is not None:
-                    try:
-                        wreport, wmeta = await world_task
-                        world_json = wreport.model_dump(mode="json")
-                        ledger("world_verdict", {**world_json, "_call": wmeta})
-                        state, wrep = game.apply_world_report(state, wreport, causes)
-                        report.applied.extend(wrep.applied)
-                        report.rejected.extend(wrep.rejected)
-                        log.info("step " + logs.kv(iid=iid, turn=turn, step="world_referee", model=wmeta["model"], seconds=wmeta["seconds"],
-                                                   moves=len(wreport.moves), new=len(wreport.new_things), updates=len(wreport.thing_updates), **logs.usage_kv(wmeta["usage"])))
-                    except Exception as e:
-                        ledger("model_call", {"role": "world_referee", "error": repr(e)})
-                        log.exception("step.failed " + logs.kv(iid=iid, turn=turn, step="world_referee"))
+                state, report, extras = apply_changes(game, state, delta, present=present, causes=causes, skip=skip)
                 doc = state.model_dump(mode="json")
-                motion: MotionReport | None = None
-                if motion_task is not None:
-                    try:
-                        motion, mmeta = await motion_task
-                        ledger("motion_verdict", {**motion.model_dump(mode="json"), "_call": mmeta})
-                        log.info("step " + logs.kv(iid=iid, turn=turn, step="motion_referee", model=mmeta["model"], seconds=mmeta["seconds"],
-                                                   new=len(motion.pending_new), resolved=len(motion.pending_resolved), unseen=len(motion.unseen_facts), **logs.usage_kv(mmeta["usage"])))
-                    except Exception as e:
-                        ledger("model_call", {"role": "motion_referee", "error": repr(e)})
-                        log.exception("step.failed " + logs.kv(iid=iid, turn=turn, step="motion_referee"))
                 ppath, clock = getattr(game, "pending_path", None), getattr(game, "clock", None)
-                if ppath and clock and motion is not None:
+                if ppath and clock:
                     pitems = pend.load(doc, ppath)
                     clk = sp.lookup(doc, clock.path, None) or {"day": 1, "minute": 0}
                     now_abs = int(clk["day"]) * clock.minutes_per_day + int(clk["minute"])
-                    for new in motion.pending_new:
-                        if not new.what.strip():
-                            continue
+                    for new in extras.pending_new:
                         src = "narrator" if any("soon:" in n.lower() for n in calls_block.get("notes", [])) else "referee"
                         p = pend.add(pitems, new, now_abs=now_abs, minutes_per_day=clock.minutes_per_day, turn=turn, source=src)
                         ledger("pending", {"action": "new", **p.model_dump(mode="json")})
                         report.applied.append(f"set in motion: {p.id}")            # the id only: what is coming is not for the player's eyes
-                    for ref in motion.pending_resolved:
+                    for ref in extras.pending_resolved:
                         for p in pend.resolve(pitems, [ref], turn):
                             ledger("pending", {"action": "resolved", **p.model_dump(mode="json")})
                             report.applied.append(f"settled: {p.id}")
                     pend.save(doc, ppath, pitems)
                 rpath = getattr(game, "recent_path", None)          # unseen facts join the narrator's "behind the scenes" list
-                facts = [f.strip() for f in (motion.unseen_facts if motion is not None else []) if f.strip()]
-                if rpath and facts:
+                if rpath and extras.unseen:
                     seen_list = list(sp.lookup(doc, rpath, []) or [])
-                    for f in facts:
+                    for f in extras.unseen:
                         seen_list.append(f"{_clock_text(game, doc)}{f.rstrip('.')}. (unseen by the player)")
                         ledger("unseen", {"fact": f})
                     sp.assign(doc, rpath, seen_list[-12:])
-                    report.applied.append(f"unseen: {len(facts)} fact{'s' if len(facts) != 1 else ''} recorded")   # never the content
+                    report.applied.append(f"unseen: {len(extras.unseen)} fact{'s' if len(extras.unseen) != 1 else ''} recorded")   # never the content
                 if delta.log_line:
                     sp.append(doc, getattr(game, "log_path", "log"), f"{_clock_text(game, doc)}{delta.log_line.strip()}")
                 tpath = getattr(game, "threads_path", None)
-                if tpath and (delta.threads_opened or delta.threads_closed):
-                    applied, rejected = th.apply_updates(doc, tpath, delta.threads_opened, delta.threads_closed, turn)
+                if tpath and (extras.threads_opened or extras.threads_closed):
+                    applied, rejected = th.apply_updates(doc, tpath, extras.threads_opened, extras.threads_closed, turn)
                     report.applied.extend(applied)
                     report.rejected.extend(sp_rej(r) for r in rejected)
                 state = game.load_state(doc)
+                issues = extras.issues
                 ledger("delta", report.model_dump(mode="json"))
-                log.info("step " + logs.kv(iid=iid, turn=turn, step="referee", model=meta["model"], seconds=meta["seconds"],
-                                           applied=len(report.applied), rejected=len(report.rejected), issues=len(delta.narration_issues),
+                log.info("step " + logs.kv(iid=iid, turn=turn, step="referee", model=meta["model"], seconds=meta["seconds"], rows=len(delta.changes),
+                                           applied=len(report.applied), rejected=len(report.rejected), issues=len(issues),
                                            confidence=delta.confidence, **logs.usage_kv(meta["usage"])))
                 for r in report.rejected:
                     log.info("referee.rejected " + logs.kv(iid=iid, turn=turn, path=r.path, reason=r.reason))
-                for issue in delta.narration_issues:
+                for issue in issues:
                     log.info("referee.issue " + logs.kv(iid=iid, turn=turn, issue=issue))
-                yield {"event": "referee", "data": {"delta": delta_json, "world": world_json, "motion": motion.model_dump(mode="json") if motion is not None else None,
-                                                    "report": report.model_dump(mode="json")}}
+                delta_json["issues"] = issues
+                yield {"event": "referee", "data": {"delta": delta_json, "report": report.model_dump(mode="json")}}
             except Exception as e:
                 ledger("model_call", {"role": "referee", "error": repr(e)})
                 log.exception("step.failed " + logs.kv(iid=iid, turn=turn, step="referee"))
@@ -496,7 +463,7 @@ class Engine:
             "rejected": [r.model_dump() for r in report.rejected],
             "drift": drift_lines,
             "lever": lever_outcome,
-            "issues": (delta_json or {}).get("narration_issues", []) + res["notes"]
+            "issues": (delta_json or {}).get("issues", []) + res["notes"]
                       + ([f"lever {lever.id} not completed: {lever_outcome['text']}"] if lever is not None and lever_outcome and lever_outcome["status"] == "not_completed" else [])
                       + [f"assessed check not called: {a}" for a in calls_block.get("assessed_not_called", [])]
                       + [f"narrator: {p}" for p in calls_block.get("problems", [])],
@@ -757,42 +724,11 @@ class Engine:
         return text, {"provider": provider.name, "model": done.model, "seconds": round(time.monotonic() - t0, 2),
                       "usage": asdict(done.usage), "note": done.note}
 
-    async def _world_referee(self, game: Game, state: BaseModel, directives: list[str], player_text: str, narration: str,
-                             adj: Adjudication | None = None) -> tuple[WorldReport, dict]:
-        """2.0: the world referee runs beside the game referee with its own small schema (DESIGN2 §5, §16)."""
-        role = self.cfg.role("referee")
-        provider = get_provider(role)
-        rules = _hook(game, "world_rules", state, default="")
-        scene_text = _hook(game, "scene_block", state, adj, "engine", default="")
-        system, msgs = world_referee_messages(rules, scene_text, directives, player_text, narration)
-        t0 = time.monotonic()
-        report, usage = await provider.extract(role, system, msgs, WorldReport)
-        return report, {"provider": provider.name, "model": usage.extra.get("model") or role.model, "seconds": round(time.monotonic() - t0, 2), "usage": asdict(usage)}
-
-    async def _motion_referee(self, game: Game, state: BaseModel, directives: list[str], player_text: str, narration: str,
-                              adj: Adjudication | None = None) -> tuple[MotionReport, dict]:
-        """The world does not wait (DESIGN2 §4b): a small concurrent call that types what the prose and the
-        narrator's notes set in motion, settled, or established out of sight."""
-        role = self.cfg.role("referee")
-        provider = get_provider(role)
-        state_text = _hook(game, "state_for_models", state, default=game.render_bulletin(state, ""))
-        scene_text = _hook(game, "scene_block", state, adj, "engine", default="")
-        if scene_text:
-            state_text = scene_text + "\n\n" + state_text
-        world = _pending_block(game, state, "engine")
-        if world:
-            state_text += "\n\n" + world
-        system, msgs = motion_referee_messages(state_text, directives, player_text, narration)
-        t0 = time.monotonic()
-        report, usage = await provider.extract(role, system, msgs, MotionReport)
-        return report, {"provider": provider.name, "model": usage.extra.get("model") or role.model, "seconds": round(time.monotonic() - t0, 2), "usage": asdict(usage)}
-
     async def _referee(self, game: Game, state: BaseModel, directives: list[str], player_text: str, narration: str,
-                       adj: Adjudication | None = None, levers: list[str] | None = None) -> tuple[RefereeBase, dict]:
+                       adj: Adjudication | None = None, levers: list[str] | None = None) -> tuple[ChangeReport, dict]:
         role = self.cfg.role("referee")
         provider = get_provider(role)
         rules = _hook(game, "referee_rules", state, default="")
-        schema = _hook(game, "referee_schema", state, default=RefereeBase)
         state_text = _hook(game, "state_for_models", state, default=game.render_bulletin(state, ""))
         scene_text = _hook(game, "scene_block", state, adj, "engine", default="")
         if scene_text:
@@ -802,7 +738,7 @@ class Engine:
             state_text += "\n\n" + impending
         system, msgs = referee_messages(rules, state_text, directives, player_text, narration, levers=levers)
         t0 = time.monotonic()
-        delta, usage = await provider.extract(role, system, msgs, schema)
+        delta, usage = await provider.extract(role, system, msgs, ChangeReport)
         return delta, {"provider": provider.name, "model": usage.extra.get("model") or role.model, "seconds": round(time.monotonic() - t0, 2), "usage": asdict(usage)}
 
 
@@ -891,19 +827,6 @@ def _parse_command_args(spec: Any, raw: list[str]) -> tuple[dict[str, str], str]
             return args, (f"Which {p.label}? ({choices})" if not v else f"{v!r} is not a {p.label}; the choices are {choices}.")
         args[p.name] = hit
     return args, ""
-
-
-def _blank_like(value: Any) -> Any:
-    """The 'nothing changed' value of a referee field the engine already applied (sentinel schemas: 0, "", [])."""
-    if isinstance(value, bool):
-        return False
-    if isinstance(value, (int, float)):
-        return 0
-    if isinstance(value, str):
-        return ""
-    if isinstance(value, list):
-        return []
-    return None
 
 
 def sp_rej(reason: str):
