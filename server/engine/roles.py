@@ -138,7 +138,8 @@ Lines beginning with § in earlier turns are the engine's mechanics lines; never
 ADJUDICATOR_INSTRUCTIONS = """You are the adjudicator for a text adventure. You read the player's latest input and decide, in the engine's terms, what they are attempting. You do not narrate and you do not decide outcomes: the engine rolls checks and the narrator writes prose.
 
 Rules:
-- kind=action for any real attempt that could change the world or takes time. kind=trivial for looking, recalling, or asking about the interface. kind=clarify when you cannot tell what the player means, or when the input names something that does not exist. kind=impossible when the player's means cannot do it at all (then say why in clarify_question, briefly).
+- kind=action for any real attempt that could change the world or takes time. kind=trivial for looking, recalling, or asking about the interface. kind=impossible when the player's means cannot do it at all (then say why in clarify_question, briefly).
+- Take the most natural reading of the input in its scene and adjudicate that. A terse input means the obvious thing: "turn around" with something behind the player means facing it; "go in" means the door in front of them. kind=clarify is rare: only when the input names something that does not exist, or when two readings would lead to materially different consequences and nothing in the scene favours either. Never clarify a short physical action, and never offer the player a menu of choices the narrator could simply play.
 - Propose a check only when the outcome is uncertain and the stakes matter. Routine use of the player's own abilities needs no check. Use the stats and difficulty tiers exactly as the rules list them.
 - Estimate time honestly. Reading a log is a minute; a conversation is ten; waiting for someone to sleep is hours.
 - Waiting, watching for a while, or otherwise letting time pass is kind=action with time_minutes equal to the time waited, never trivial.

@@ -91,7 +91,8 @@ def _print_turn(events: list[dict], as_json: bool) -> None:
             else:
                 print(line)
     m = d.get("mechanics") or {}
-    bits = [f"turn {d.get('turn')}", f"kind {m.get('kind')}", f"elapsed {m.get('elapsed')}m"]
+    kind = {"clarify": "asked you to clarify, no time passed", "impossible": "not possible, no time passed"}.get(m.get("kind"), f"kind {m.get('kind')}")
+    bits = [f"turn {d.get('turn')}", kind, f"elapsed {m.get('elapsed')}m"]
     for c in m.get("calls", []):
         bits.append(f"call {c['call']}: {c.get('outcome') or 'answered'}")
     if m.get("declarations"):

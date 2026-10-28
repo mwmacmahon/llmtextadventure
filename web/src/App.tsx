@@ -245,7 +245,8 @@ function MechanicsRow({ text }: { text: string }) {
   }
   if (m.kind === "command") return null;
   const bits: string[] = [];
-  if (m.kind === "clarify" || m.kind === "impossible") bits.push(m.kind);
+  if (m.kind === "clarify") bits.push("the engine could not tell what you meant and asked; no time passed");
+  if (m.kind === "impossible") bits.push("not possible with what you have; no time passed");
   if (m.elapsed) bits.push(`+${m.elapsed} min`);
   for (const c of m.checks) bits.push(`${c.label}: ${c.outcome.replace(/_/g, " ")}${c.roll != null ? ` (d20 ${c.roll}, ${c.total} vs ${c.target})` : ""}`);
   for (const e of m.events) bits.push(`event ${e}`);
