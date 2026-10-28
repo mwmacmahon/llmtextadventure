@@ -235,7 +235,7 @@ class NoirGame(GameBase):
         conds = ", ".join(c.name for c in p.conditions) or "none"
         lines.append(f"{p.name}: at {p.location or 'unknown'}; health {p.health}; nerves {p.dread_tier(p.dread)}; conditions: {conds}.")
         lines.append("Pockets: " + ", ".join(it.render() + (f" ({it.note})" if it.note and it.loaded is None and it.id not in ("dollars",) else "") for it in s.inventory) + ".")
-        smoke = "never, this case" if p.minutes_since_smoke == 0 and not any(ln for ln in s.log if "cigarette" in ln) else f"{p.minutes_since_smoke} minutes ago"
+        smoke = "never, this case" if not s.flags.get("smoked") else ("just now" if p.minutes_since_smoke == 0 else f"{p.minutes_since_smoke} minutes ago")
         lines.append(f"Last cigarette: {smoke}.")
 
         met = [q for q in s.people if q.met]
@@ -599,6 +599,7 @@ class NoirGame(GameBase):
         if w.set("inventory.cigarettes.count", cig.count, cig.count - n):
             cig.count -= n
         p.minutes_since_smoke = 0
+        s.flags["smoked"] = True
         wd = next((c for c in p.conditions if c.name == WITHDRAWAL), None)
         if wd:
             p.conditions.remove(wd)
