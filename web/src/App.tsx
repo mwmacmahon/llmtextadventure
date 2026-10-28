@@ -237,6 +237,7 @@ function Prose({ text }: { text: string }) {
 }
 
 function MechanicsRow({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
   let m: Mechanics;
   try {
     m = JSON.parse(text);
@@ -254,12 +255,27 @@ function MechanicsRow({ text }: { text: string }) {
   for (const h of m.happenings ?? []) bits.push(`unscripted: ${h.id.replace(/_/g, " ")}${h.reason ? ` (${h.reason})` : ""}`);
   if (m.applied.length) bits.push(`${m.applied.length} change${m.applied.length === 1 ? "" : "s"}`);
   if (m.rejected.length) bits.push(`${m.rejected.length} rejected`);
+  if (m.lever && m.lever.status !== "applied") bits.push(`${m.lever.id}: ${m.lever.status.replace("_", " ")}`);
   if (m.drift?.length) bits.push(`${m.drift.length} drifted`);
   if (!bits.length) return null;
-  const title = [...m.applied, ...m.rejected.map((r) => `rejected ${r.path}: ${r.reason}`), ...(m.drift ?? []).map((d) => `drift ${d}`)].join("\n");
+  const lines = [
+    ...m.applied,
+    ...m.rejected.map((r) => `rejected ${r.path}: ${r.reason}`),
+    ...(m.drift ?? []).map((d) => `drift ${d}`),
+    ...(m.issues ?? []).map((i) => `issue: ${i}`),
+  ];
+  // The detail used to live in a hover tooltip, which a phone cannot show: tap to open it.
   return (
-    <div className="mechanics" title={title}>
+    <div className={"mechanics" + (open ? " open" : "")} onClick={() => lines.length && setOpen(!open)} role={lines.length ? "button" : undefined}>
       {bits.join(" · ")}
+      {lines.length > 0 && <span className="mechanics-toggle">{open ? " ▾" : " ▸"}</span>}
+      {open && (
+        <ul className="mechanics-detail">
+          {lines.map((l, i) => (
+            <li key={i}>{l}</li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

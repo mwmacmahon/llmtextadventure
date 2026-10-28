@@ -1,6 +1,8 @@
-"""Typed commands: the adjudicator names a command, the engine runs the game's `run_command`
-before resolving (one code path for engine-owned fields, clicked or typed), refusals become
-clarify/impossible turns, and the structured roles' system prompts stay stable across turns."""
+"""Typed commands are levers the player proposes (DESIGN2 §6, LOG §12): the adjudicator names one,
+the engine previews it through the game's own `run_command` and tells the narrator exactly what it
+would do (CLEAR) or why it cannot (BLOCKED), the narrator plays it, and the engine commits it after
+the prose unless the referee reports the attempt was not completed. A missing parameter is still a
+question; clicked commands still apply at once. The structured roles' prompts stay stable across turns."""
 from __future__ import annotations
 
 import os
@@ -80,21 +82,30 @@ def test_commands_text_lists_typeable_commands_with_their_options():
     assert _parse_command_args(specs[1], []) == ({}, "")
 
 
-async def test_typed_engine_command_applies_before_narration(engine: Engine, fake: FakeProvider):
+async def test_typed_lever_is_previewed_for_the_narrator_and_committed_after_the_prose(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("station", {})
     fake.canned["Adjudication"] = [adj("hatches", "action=seal", "module=Cargo")]
     events = await play(engine, iid, "Seal the hatches to Cargo, quietly.")
     kinds = [e["event"] for e in events]
-    assert kinds[0] == "adjudication" and kinds[-1] == "done"
+    assert kinds[0] == "adjudication" and kinds[-1] == "done" and "mechanic" in kinds
     a = events[0]["data"]
     assert a["kind"] == "action" and a["command"] == "hatches" and a["command_args"] == ["action=seal", "module=Cargo"]
-    st = state_of(engine, iid)
-    assert st.sealed == ["Cargo"] and any(ln.endswith("Sealed the hatches to Cargo.") for ln in st.log)   # then the referee's own line
-    cmd_rows = [l["payload"] for l in engine.store.ledger(iid, 1) if l["kind"] == "command"]
-    assert len(cmd_rows) == 1 and cmd_rows[0]["typed"] and cmd_rows[0]["id"] == "hatches" and cmd_rows[0]["args"] == {"action": "seal", "module": "Cargo"}
+    # the narrator is told what it would do, and the state it reads does not show it done yet
     bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
-    assert "Hatches sealed by the AI" in bulletin and "The engine resolved this part of the player's action exactly: Hatches to Cargo sealed" in bulletin
-    assert "command hatches" in events[-1]["data"]["mechanics"]["applied"]
+    assert "Seal Cargo: CLEAR. If it goes through it does exactly this: Hatches to Cargo sealed" in bulletin and "unless the fiction shows it was not completed" in bulletin
+    assert "Hatches sealed by the AI" not in bulletin
+    # committed after the prose: state, log, ledger (a preview row, then the real one), § line, mechanics
+    st = state_of(engine, iid)
+    assert st.sealed == ["Cargo"] and any(ln.endswith("Sealed the hatches to Cargo.") for ln in st.log)
+    rows = engine.store.ledger(iid, 1)
+    assert [l["payload"]["ok"] for l in rows if l["kind"] == "command_preview"] == [True]
+    cmd_rows = [l["payload"] for l in rows if l["kind"] == "command"]
+    assert len(cmd_rows) == 1 and cmd_rows[0]["typed"] and cmd_rows[0]["ok"] and cmd_rows[0]["args"] == {"action": "seal", "module": "Cargo"}
+    mech = next(e for e in events if e["event"] == "mechanic")["data"]
+    assert mech["text"].startswith("Hatches to Cargo sealed") and mech["data"] == {"lever": "hatches", "status": "applied"}
+    done = events[-1]["data"]
+    assert "command hatches" in done["mechanics"]["applied"] and done["mechanics"]["lever"]["status"] == "applied"
+    assert done["text"].endswith("§ " + mech["text"]) and "§ Hatches to Cargo sealed" in engine.store.transcript(iid, roles=["narrator"])[-1].text
     # the player's own words stay the player line; no console rows
     rows = engine.store.transcript(iid)
     assert [r.role for r in rows if r.turn == 1][:2] == ["player", "bulletin"] and rows[0].text != "Seal Cargo"
@@ -107,11 +118,11 @@ async def test_typed_narrated_command_uses_its_directive_and_skips_the_adjudicat
     a = events[0]["data"]
     assert a["time_minutes"] == 5 and a["systems"] == ["Life Support"]      # the command's own minutes and systems win
     bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
-    assert "The player has just cut power to Life Support" in bulletin and "Life Support unpowered" in bulletin
-    assert next(x for x in state_of(engine, iid).systems if x.name == "Life Support").status == "unpowered"
+    assert "The player has just cut power to Life Support" in bulletin and "Life Support unpowered" not in bulletin   # told, not yet done
+    assert next(x for x in state_of(engine, iid).systems if x.name == "Life Support").status == "unpowered"           # done after the prose
 
 
-async def test_refused_typed_command_becomes_an_impossible_turn(engine: Engine, fake: FakeProvider):
+async def test_a_refused_lever_is_played_as_blocked_with_time_passing(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("station", {})
     doc = engine.store.load_state(iid)
     next(x for x in doc["systems"] if x["name"] == "Doors")["control"] = "manual_override"
@@ -119,13 +130,45 @@ async def test_refused_typed_command_becomes_an_impossible_turn(engine: Engine, 
     fake.canned["Adjudication"] = [adj("hatches", "action=seal", "module=Cargo", minutes=3)]
     events = await play(engine, iid, "Seal Cargo.")
     a = events[0]["data"]
-    assert a["kind"] == "impossible" and "manual override" in a["clarify_question"] and a["time_minutes"] == 0 and a["command"] == ""
+    assert a["kind"] == "action" and a["time_minutes"] == 3 and a["command"] == "hatches"     # the attempt is still an action in the fiction
     st = state_of(engine, iid)
-    assert st.sealed == [] and (st.clock.day, st.clock.minute) == (doc["clock"]["day"], doc["clock"]["minute"])
+    assert st.sealed == [] and 0 < st.clock.minute - doc["clock"]["minute"] <= 3      # time passes (the clock may stop at a scheduled event)
     bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
-    assert "CLARIFY" in bulletin and "manual override" in bulletin
+    assert "Seal Cargo: BLOCKED. The command does not go through: the crew have the hatches on manual override." in bulletin and "do not narrate it as done" in bulletin
+    assert "CLARIFY" not in bulletin
+    rows = engine.store.ledger(iid, 1)
+    assert next(l["payload"] for l in rows if l["kind"] == "command_preview")["ok"] is False and not [l for l in rows if l["kind"] == "command"]
+    done = events[-1]["data"]
+    assert done["mechanics"]["lever"]["status"] == "blocked" and "command hatches" not in done["mechanics"]["applied"]
+    assert "§ Seal Cargo: The command does not go through" in done["text"]
+
+
+async def test_the_referee_can_veto_a_lever_the_prose_did_not_complete(engine: Engine, fake: FakeProvider):
+    iid = engine.create_instance("noir", {})
+    doc = engine.store.load_state(iid)
+    rv = next(i for i in doc["inventory"] if i["id"] == "revolver")
+    bl = next(i for i in doc["inventory"] if i["id"] == "bullets")
+    rv["loaded"], bl["count"] = 2, 10
+    engine.store.save_snapshot(iid, 0, doc)
+    fake.canned["Adjudication"] = [adj("reload", minutes=1)]
+    seen: dict = {}
+
+    def hook(schema, last):
+        if schema is NoirReferee:
+            seen["referee_saw"] = last
+            return NoirReferee.example("x").model_copy(update={"levers_not_completed": ["reload: the thing in the doorway lunged before Frank got a round in"]})
+        return None
+    fake.hook = hook
+    events = await play(engine, iid, "I reload while I've got the chance.")
+    assert "[LEVERS THE ENGINE APPLIES AFTER YOUR REPORT, UNLESS NOT COMPLETED]" in seen["referee_saw"] and "reload (Reload): You thumb 4 rounds" in seen["referee_saw"]
+    st = state_of(engine, iid)
+    assert st.item("revolver").loaded == 2 and st.item("bullets").count == 10                      # nothing moved
+    done = events[-1]["data"]
+    assert done["mechanics"]["lever"]["status"] == "not_completed" and "command reload" not in done["mechanics"]["applied"]
+    assert any(i.startswith("lever reload not completed: Reload not completed: the thing in the doorway lunged") for i in done["mechanics"]["issues"])
+    assert done["text"].endswith("§ Reload not completed: the thing in the doorway lunged before Frank got a round in")
     row = next(l["payload"] for l in engine.store.ledger(iid, 1) if l["kind"] == "command")
-    assert row["ok"] is False and row["typed"]
+    assert row["ok"] is False and row["not_completed"]
 
 
 async def test_missing_parameter_becomes_a_clarify_turn(engine: Engine, fake: FakeProvider):
@@ -162,11 +205,13 @@ async def test_typed_reload_moves_bullets_through_the_command(engine: Engine, fa
     assert any(ln.endswith("Reloaded the revolver (6/6).") for ln in st.log)
     bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
     assert "You thumb 4 rounds into the cylinder" in bulletin
-    # already full: the game refuses, the narrator explains, nothing changes
+    # already full: the game refuses, the narrator plays the attempt as blocked, nothing changes
     fake.canned["Adjudication"] = [adj("reload")]
     events = await play(engine, iid, "I reload again.")
-    assert events[0]["data"]["kind"] == "impossible" and "already full" in events[0]["data"]["clarify_question"]
-    assert state_of(engine, iid).item("bullets").count == 6
+    assert events[0]["data"]["kind"] == "action"
+    bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
+    assert "Reload: BLOCKED. The revolver is already full (6/6)." in bulletin
+    assert state_of(engine, iid).item("bullets").count == 6 and events[-1]["data"]["mechanics"]["lever"]["status"] == "blocked"
 
 
 async def test_typed_smoke_is_charged_once_even_if_the_referee_also_reports_it(engine: Engine, fake: FakeProvider):

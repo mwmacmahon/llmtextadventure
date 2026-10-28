@@ -145,7 +145,7 @@ Rules:
 - Waiting, watching for a while, or otherwise letting time pass is kind=action with time_minutes equal to the time waited, never trivial.
 - Name entities and systems only from the lists given, by id or name exactly.
 - kind=action always carries at least one intent, each with its check when the outcome is uncertain. Never return an empty intents list for an action.
-- Engine commands: if the input plainly asks for one of the listed commands (the player's exact, deliberate use of their own means), set `command` to its id and `command_args` to its parameters; the engine applies it exactly before the narrator writes. The rest of the input, if any, is adjudicated as usual (kind, time, intents). Do not set a command for a vague or partial match, and never for something merely similar; when nothing matches, leave command empty and adjudicate the attempt as usual, with its check.
+- Engine commands: if the input plainly asks for one of the listed commands (the player's exact, deliberate use of their own means), set `command` to its id and `command_args` to its parameters; the engine applies it exactly before the narrator writes. The rest of the input, if any, is adjudicated as usual (kind, time, intents). Do not set a command for a vague or partial match, and never for something merely similar; when nothing matches, leave command empty and adjudicate the attempt as usual, with its check. Set the command even when you believe it cannot go through (a full cylinder, an empty pack): the engine checks that itself and the narrator plays the refusal in the fiction; never rule a listed command impossible yourself.
 - Be terse. The fields are the output; do not write prose."""
 
 
@@ -177,6 +177,7 @@ class RefereeBase(BaseModel):
     threads_opened: list[str] = Field(default_factory=list, description="New threads the narration introduced that will matter later: a goal the player took on, a promise or cover story (say to whom), a plan an NPC announced, an open question. Short titles, at most two per turn, none for routine moments.")
     threads_closed: list[ThreadClose] = Field(default_factory=list, description="Open threads (by id, from the list in the game state) that this narration settled.")
     narration_issues: list[str] = Field(default_factory=list, description="Contradictions with the game state, hidden information revealed, or directives not followed. Empty if none.")
+    levers_not_completed: list[str] = Field(default_factory=list, description="Only when a lever listed under LEVERS was interrupted, abandoned or otherwise not completed in the narration: '<lever id>: <reason>'. Empty otherwise.")
     confidence: Literal["low", "medium", "high"] = Field(description="How sure you are of this whole report.")
 
     @classmethod
@@ -192,13 +193,16 @@ Rules:
 - Numeric changes are small nudges; the engine clamps them.
 - narration_issues is for the engine, not the player: note hidden facts revealed, contradictions with the state, or ignored directives.
 - Threads are the story's memory of commitments: open one when the narration creates something that must be remembered later (a lie and who believes it, a promise, a plan, a deadline, a question raised); close one when it is clearly achieved, broken, or moot. Do not open threads for routine actions. Something that opens and settles within this same narration is not a thread: do not open it. Close only threads listed as open in the game state, by their exact id; never close one you are opening now.
+- LEVERS, when listed, are the player's exact actions (a reload, a seal) that the engine applies by itself right after your report. Do not report their effects in other fields. If the narration shows one was interrupted, abandoned or not completed, list it in levers_not_completed as "<id>: <reason>"; a lever the narration played as done, or did not mention, stays off that list.
 - Be terse. The fields are the output."""
 
 
-def referee_messages(rules: str, state_text: str, directives: list[str], player_text: str, narration: str) -> tuple[str, list[Msg]]:
+def referee_messages(rules: str, state_text: str, directives: list[str], player_text: str, narration: str,
+                     levers: list[str] | None = None) -> tuple[str, list[Msg]]:
     system = REFEREE_INSTRUCTIONS + "\n\nGAME RULES FOR THE REFEREE\n" + rules.strip()
     d = "\n".join(f"- {x}" for x in directives) if directives else "- (none)"
-    user = (f"[GAME STATE BEFORE THIS TURN]\n{state_text.strip()}\n\n[DIRECTIVES THE NARRATOR WAS GIVEN]\n{d}\n\n"
+    lv = ("\n\n[LEVERS THE ENGINE APPLIES AFTER YOUR REPORT, UNLESS NOT COMPLETED]\n" + "\n".join(f"- {x}" for x in levers)) if levers else ""
+    user = (f"[GAME STATE BEFORE THIS TURN]\n{state_text.strip()}\n\n[DIRECTIVES THE NARRATOR WAS GIVEN]\n{d}{lv}\n\n"
             f"[PLAYER INPUT]\n{player_text.strip()}\n\n[NARRATION TO REPORT ON]\n{narration.strip()}")
     return system, [Msg("user", user)]
 

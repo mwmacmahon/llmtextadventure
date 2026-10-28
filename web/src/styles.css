@@ -90,6 +90,10 @@ ul.log, ul.notes { margin: 0; padding-left: 18px; font-size: 13px; }
 }
 
 .mechanics { font-size: 12px; color: var(--muted); border-left: 2px solid var(--border); padding-left: 10px; max-width: 72ch; }
+.mechanics[role=button] { cursor: pointer; }
+.mechanics-toggle { opacity: 0.7; }
+.mechanics-detail { margin: 6px 0 0; padding-left: 16px; }
+.mechanics-detail li { margin: 2px 0; }
 .msg.narrator p { margin: 0 0 0.75em; white-space: pre-wrap; }
 .msg.narrator p:last-child { margin-bottom: 0; }
 .mechanic-line { font-style: italic; font-size: 13px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; border-left: 2px solid var(--border); padding-left: 10px; margin: 0.5em 0 0.75em; }

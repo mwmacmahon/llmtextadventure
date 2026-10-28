@@ -189,11 +189,16 @@ Every tracked quantity changes in exactly one place. Decide which of three kinds
 A command reaches `run_command` two ways, and both must work for every command: the player
 **clicks** it in the side panel, or **types** it. The adjudicator is shown `commands(state)`
 (id, parameters with their options, hint) and sets `Adjudication.command` and `command_args`
-when the input plainly asks for one; the pipeline runs `run_command` before resolving, so the
-narrator describes a change the engine has already made. A refused command (`ok=False`) turns
-the typed turn into clarify/impossible and the narrator explains in character using your
-`text`; a missing or invalid parameter asks "Which module? (Lab, Cargo)". Mark console-only
-commands `typed=False` (notebook, assistant channel) so prose never maps onto them.
+when the input plainly asks for one. A **clicked** command applies at once. A **typed** one is a
+lever the player proposes: the pipeline runs `run_command` on a copy first and tells the narrator
+exactly what it would do (your `text`, as "CLEAR. If it goes through it does exactly this: …") or
+why it cannot (`ok=False`, your `text`, as "BLOCKED … play the attempt and the player finding out
+why"); the narrator plays it with time passing; after the prose the pipeline runs `run_command`
+for real, unless the referee listed the lever in `levers_not_completed` because the prose shows it
+was interrupted. The player sees the result as a § mechanics line. So write `text` for both uses:
+as a promise before the prose and as the engine's line after it. A missing or invalid parameter
+still asks "Which module? (Lab, Cargo)". Mark console-only commands `typed=False` (notebook,
+assistant channel) so prose never maps onto them.
 
 ```python
 def commands(self, state):
@@ -210,10 +215,12 @@ def run_command(self, state, cid, args):
 ```
 
 Engine mode, clicked: no model call, no clock movement, no event tick; the next narrated turn
-sees the change in the bulletin. Engine mode, typed: the result `text` becomes a narrator
-directive and the turn is narrated as usual. Narrated mode: apply the hard effects here, return
-`player_line`, `directive`, `minutes`, `summary`; the pipeline narrates it and runs the referee
-(the command's `minutes`, `entities` and `systems` win over the adjudicator's when typed).
+sees the change in the bulletin. Engine mode, typed: the result `text` is previewed to the
+narrator and the command is committed after the prose. Narrated mode: apply the hard effects
+here, return `player_line`, `directive`, `minutes`, `summary`; clicked, the pipeline applies them
+and narrates; typed, the `directive` is given with the "unless not completed" clause and the
+effects are committed after the prose (the command's `minutes`, `entities` and `systems` win over
+the adjudicator's when typed).
 
 When a command's effect is something the narration could also report (smoking has both a Smoke
 command and a `cigarettes_smoked` referee field, because the narrator may have Frank light one
@@ -225,9 +232,12 @@ command ("never list rounds under items_lost for a reload").
 Checklist for a new tracked quantity: (1) pick its row in the table; (2) a command gets a
 `CommandSpec` with a `hint` the adjudicator can match and a `run_command` branch that refuses
 with a sentence the narrator can say; (3) a referee field is required-with-sentinel (§8) and
-bounded in `apply_delta`; (4) add a preconditions line to `adjudication_rules` only if the
-adjudicator must rule it impossible before the command runs (an empty gun); (5) a test for the
-clicked path, the typed path and the refusal; a live eval case if the mapping is subtle.
+bounded in `apply_delta`; (4) never pre-rule a command's preconditions in `adjudication_rules`
+(the command refuses and the narrator plays it blocked; tell the adjudicator to set the command
+anyway); a preconditions line is for attempts that are not commands (shooting with an empty
+gun); (5) a test for the
+clicked path, the typed path (preview, then commit), the blocked lever and the referee's veto; a
+live eval case if the mapping is subtle.
 
 ## 8. The referee schema
 
