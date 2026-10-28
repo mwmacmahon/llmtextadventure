@@ -224,6 +224,7 @@ class GameBase:
     skip_referee: bool = False
     narrate_rolls: bool = False                       # tell the narrator the die roll and target, not just the tier (noir flavour)
     fallback_stat: str | None = None                  # when the adjudicator names a stat that does not exist, roll this one instead of dropping the check
+    static_paths: list[str] = []                      # engine-owned paths set at instance creation and never written again (tools/authority_audit.py skips them)
 
     # --- optional content hooks ---------------------------------------------
     def opening(self, state: BaseModel) -> str | None:
@@ -294,3 +295,8 @@ class GameBase:
 
     def ending(self, state: BaseModel) -> str | None:
         return None
+
+    def audit_probes(self, state: BaseModel) -> list[BaseModel]:
+        """Extra starting states for tools/authority_audit.py when a fresh instance cannot reach a
+        writer (noir: dread drifts only somewhere safe, and the case opens on a rooftop)."""
+        return []

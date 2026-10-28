@@ -23,13 +23,16 @@ roles:
   adjudicator:
     provider: anthropic
     model: claude-haiku-5-5
-    max_tokens: 1024
+    max_tokens: 2048
     effort: low
     timeout_seconds: 90
   referee:
+    # The referee is the gate that keeps story and state aligned. Measured 2026-10-27 (3 repeats per
+    # case): Haiku low 26/33 station, 17/21 noir; Haiku medium 29/33 / 17/21; Sonnet low 33/33 / 18/21
+    # at the same latency (~2.5 s). Sonnet costs roughly $0.006 more per turn with the prefix cached.
     provider: anthropic
-    model: claude-haiku-5-5
-    max_tokens: 1024
+    model: claude-sonnet-5-5
+    max_tokens: 2048
     effort: low
     timeout_seconds: 90
   summarizer:

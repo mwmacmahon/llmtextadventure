@@ -153,6 +153,7 @@ class NoirGame(GameBase):
     log_path = "log"
     narrate_rolls = True
     fallback_stat = "nerve"
+    static_paths = ["case", "player.name", "player.description", "player.stats", "player.proficiencies", "player.weaknesses", "player.baseline_dread"]
 
     def __init__(self, content_dir: Path):
         self.content = Content(content_dir)
@@ -243,8 +244,6 @@ class NoirGame(GameBase):
             lines.append("People Frank has dealt with:")
             for q in met:
                 bits = [f"{q.status}" if q.status != "alive" else "", f"at {q.location or 'unknown'}", f"{q.attitude_word} toward Frank"]
-                if q.mood:
-                    bits.append(f"mood {q.mood}")
                 lines.append(f"- {q.name}: " + ", ".join(x for x in bits if x) + ".")
                 for f in q.facts[-4:]:
                     lines.append(f"    {f}")
@@ -337,7 +336,8 @@ class NoirGame(GameBase):
             "shots_fired: rounds actually fired from the revolver this turn; never also list fired rounds under items_lost. cigarettes_smoked: cigarettes Frank LIT this turn (finishing one lit earlier is 0); never also list them under items_lost. Reloading is a command the engine has already applied: never list rounds under items_lost for a reload. The engine updates the counts.",
             "dread_change is 0 on an ordinary turn, including successes and calm conversations. Positive (3 to 10) only when something frightened or hurt him: the creature, violence, a threat, a failure under danger, horror. Negative (-3 to -10) when he rests, drinks, smokes, wins clearly, reaches safety, or is treated kindly. A full night's sleep is -10.",
             "player_location: from the places list, where Frank ends the narration. If the prose puts him somewhere not listed, use that district's streets (Lowtown streets, Midtown streets, Uptown streets) or the empty string; never name a building he is not in. The same for people's locations.",
-            "people_updates only for listed people the prose identifies by name or role. An unnamed stranger (a man in a cap, a clerk, a driver) is nobody: never attach him to a listed id, never set a listed person to met because of him. If he recurs and gets a name, add him with new_people (at most two per turn). A new person who is actually one of the listed people (another name for them) is a people_update, not a new person.",
+            "people_updates only for listed people the prose identifies by name or role. A nameless stranger (a man in a cap, a clerk, a driver) is nobody: never attach him to a listed id, never set a listed person to met because of him. Anyone the prose gives a name (a surname is enough) who is not in the entity list IS a new person: add them with new_people (id from the surname, at most two per turn), even if they only appear once. A new name that is plainly one of the listed people (an alias) is a people_update, not a new person.",
+            "new_facts go on the person who said it (as what they told Frank) and also on the listed person it is about, when there is one. A witness's statement is a fact about the witness first.",
             "attitude_change is 0 unless Frank did something to that person this turn that would change how they treat him: paid, helped, respected, threatened, insulted, lied and was caught. A tense conversation is not a change. Offering Frank a bribe does not change how the briber feels about him.",
             "clues are concrete evidence: names, addresses, times, objects, facts about the creatures or the Congregation. One short sentence each, only when new.",
             "Threads: open ones are listed in the game state with their ids. Typical threads here: a promise to a client or a witness, a lead to follow, a lie Frank told and who believes it, a deadline, a question raised. Close a thread when the prose settles it: 'who was the caller' closes when Frank learns who called; 'check the address' closes when he has searched it; a promise closes when kept or broken.",
@@ -684,6 +684,14 @@ class NoirGame(GameBase):
             return state, CommandResult(label="Notebook", text="\n".join(lines))
         return state, CommandResult(ok=False, text=f"unknown command {command_id!r}")
 
+    def audit_probes(self, state: NoirState) -> list[NoirState]:
+        if not state.case.safe_locations:
+            return []
+        s = state.model_copy(deep=True)
+        s.player.location = state.case.safe_locations[0]
+        s.player.dread = min(100, s.player.baseline_dread + 30)
+        return [s]
+
     # ---- drift (after_turn) --------------------------------------------------
     def after_turn(self, state: NoirState, info: TurnInfo) -> NoirState:
         """Nicotine: the counter runs with the clock; after three hours without, withdrawal (an engine
@@ -768,7 +776,7 @@ class NoirGame(GameBase):
                             id=q.id, title=q.name, subtitle=f"{q.role} · {q.location or 'unknown'}",
                             badges=[Chip(label="attitude", value=q.attitude_word), *([Chip(label="status", value=q.status)] if q.status != "alive" else [])],
                             details=[Chip(label="Location", value=q.location or "unknown"), Chip(label="Attitude", value=f"{q.attitude_word} ({q.attitude:+d})"),
-                                     *([Chip(label="Mood", value=q.mood)] if q.mood else [])],
+                                     ],
                             notes=q.facts,
                         )
                         for q in met

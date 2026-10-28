@@ -52,7 +52,6 @@ class Person(BaseModel):
     description: str = ""           # fixed; the prefix
     location: str = ""
     attitude: int = 0               # -5..5 toward Frank
-    mood: str = ""
     status: PersonStatus = "alive"
     met: bool = False
     facts: list[str] = Field(default_factory=list)      # what Frank knows / what they said

@@ -74,7 +74,7 @@ on the LAN.
 
 Roles are configured independently in `server/config.yml` (`narrator`, `adjudicator`,
 `referee`, `summarizer`): provider, model, effort, cache TTL. Defaults: Sonnet narrator,
-Haiku for structured roles. See `docs/LOCAL_LLM.md` for swapping a role to a local model.
+Haiku for the adjudicator, Sonnet for the referee (measured: Haiku missed a fifth of the referee's judgment cases). See `docs/LOCAL_LLM.md` for swapping a role to a local model.
 
 ## API
 

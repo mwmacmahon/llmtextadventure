@@ -34,7 +34,9 @@ from engine.roles import RefereeBase
 from engine.spontaneous import Spontaneous
 from engine.statepath import Actor
 
-from .state import Clock, Control, CrewMember, Hidden, Resource, Scenario, StationState, StationSystem, SystemStatus
+from .state import Clock, Control, CrewMember, Hidden, Level, Resource, Scenario, StationState, StationSystem, SystemStatus
+
+LEVELS: list[str] = ["OK", "Low", "Critical", "Depleted"]
 
 TONE_BY_STATUS = {"operational": "ok", "degraded": "warn", "malfunctioning": "warn", "disabled": "bad", "unpowered": "bad", "damaged": "bad"}
 TONE_BY_CONTROL = {"full": "ok", "limited": "warn", "none": "bad", "manual_override": "bad"}
@@ -47,8 +49,8 @@ SUSPICION_DECAY_MINUTES = 240         # crew suspicion below 50 fades 1 point pe
 SEALABLE = ["Command", "Habitation ring", "Lab", "Cargo", "Reactor", "Medical"]
 
 AUTHORITY: dict[str, Actor] = {
-    "clock": "engine", "suspicion": "engine", "resources": "engine", "stats": "engine",
-    "systems.*.status": "engine", "systems.*.control": "narrator",
+    "clock": "engine", "suspicion": "engine", "resources": "engine", "resources.*.level": "narrator", "stats": "engine",
+    "systems.*.status": "narrator", "systems.*.control": "narrator",
     "crew.*.location": "narrator", "crew.*.mood": "narrator", "crew.*.health": "narrator",
     "crew.*.stress": "narrator", "crew.*.suspicion": "narrator", "crew.*.facts": "narrator",
     "crew.*.disposition": "script", "crew.*.susceptibility": "script",
@@ -71,11 +73,18 @@ class CrewUpdate(BaseModel):
 class SystemUpdate(BaseModel):
     name: str = Field(description="System name exactly as listed.")
     control: Literal["full", "limited", "none", "manual_override"] | None = Field(default=None, description="Only if the crew changed the station's control over it (e.g. switched it to manual override).")
+    status: SystemStatus | None = Field(default=None, description="Only if the prose shows work completed that changed it: a repair finished (operational), damage or sabotage done (damaged, disabled), a manual shutdown or power-up (unpowered, operational). Someone heading for a panel or starting a repair is nothing.")
+
+
+class ResourceUpdate(BaseModel):
+    name: str = Field(description="Resource name exactly as listed.")
+    level: Level = Field(description="Its level after this narration: OK, Low, Critical or Depleted. One step at a time.")
 
 
 class StationReferee(RefereeBase):
     crew_updates: list[CrewUpdate] = Field(default_factory=list, description="One entry per crew member the narration changed.")
-    system_updates: list[SystemUpdate] = Field(default_factory=list, description="Only systems whose control level the crew changed.")
+    system_updates: list[SystemUpdate] = Field(default_factory=list, description="Only systems whose control level or status the crew (or the player) plainly changed in the prose.")
+    resource_updates: list[ResourceUpdate] = Field(default_factory=list, description="Only resources whose level the narration plainly changed: atmosphere vented, a leak sealed, a resupply, a spoilage. Empty if none.")
 
     @classmethod
     def example(cls, narration: str) -> "StationReferee":
@@ -98,6 +107,7 @@ class StationGame(GameBase):
     recent_path = "hidden.recent"
     threads_path = "threads"
     log_path = "log"
+    static_paths = ["scenario", "stats", "resources.*.note", "crew.*.baseline_mood", "crew.*.baseline_stress", "crew.*.interests", "crew.*.relationships"]
 
     def __init__(self, content_dir: Path):
         self.content = Content(content_dir)
@@ -285,7 +295,8 @@ class StationGame(GameBase):
             "Entities (ids): " + ", ".join(f"{c.id} = {c.name}" for c in s.crew),
             "Places: " + ", ".join(s.scenario.locations),
             "Health values: " + ", ".join(HEALTH_VALUES),
-            "Systems: " + ", ".join(sy.name for sy in s.systems) + ". Report a system only if a crew member changed the station's control over it (manual override, cut power, locked out).",
+            "Systems: " + ", ".join(sy.name for sy in s.systems) + ". Report control only if a crew member changed the station's control over it (manual override, locked out). Report status only when the prose shows the work finished: a repair completed, damage done, a manual shutdown. Walking to a panel, opening it, or starting a repair changes nothing. Power the station cut or restored itself is already in the state; do not report it again.",
+            "Resources: " + ", ".join(r.name for r in s.resources) + ", levels OK > Low > Critical > Depleted. Report a level only when the prose plainly changed it (atmosphere vented, a tank holed or sealed, a resupply), one step per turn.",
             "Stress and suspicion changes are nudges in -15..15 and -10..10. Suspicion means suspicion of tampering or of the AI, not general worry.",
             "Threads: open ones are listed in the game state with their ids. Typical threads here: a report or message the player promised or forged and who believes it; a crew member's announced plan; something a crew member asked the station to do; a lie that could be checked.",
             "",
@@ -352,6 +363,26 @@ class StationGame(GameBase):
                 continue
             if su.control and write(f"systems.{sy.name}.control", sy.control, su.control):
                 sy.control = su.control
+            if su.status and su.status != sy.status:
+                if sy.name == "AI Core":
+                    w.reject("systems.AI Core.status", "the core's status is the engine's (endings)", su.status)
+                elif "unpowered" in (su.status, sy.status) and sy.control == "full":
+                    w.reject(f"systems.{sy.name}.status", "power is under AI control; the crew need manual override to change it", su.status)
+                elif write(f"systems.{sy.name}.status", sy.status, su.status):
+                    sy.status = su.status
+        for ru in delta.resource_updates:
+            r = next((x for x in s.resources if x.name == ru.name), None)
+            if not r:
+                w.reject(f"resources.{ru.name}", "unknown resource")
+                continue
+            if ru.level == r.level or ru.level not in LEVELS:
+                continue
+            cur, want = LEVELS.index(r.level), LEVELS.index(ru.level)
+            new = LEVELS[cur + (1 if want > cur else -1)]           # one step per turn
+            if new != ru.level:
+                w.note(f"resources.{r.name}.level: {ru.level} stepped to {new}")
+            if write(f"resources.{r.name}.level", r.level, new):
+                r.level = new
         apply_flags(s.flags, s.scenario.narrator_flags, delta.flags_set, w)
         new_susp = self._derived_suspicion(s)
         if new_susp != s.suspicion:

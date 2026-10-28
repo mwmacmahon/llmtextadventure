@@ -99,6 +99,8 @@ class AnthropicProvider:
         resp = await self.client.messages.parse(output_format=schema, timeout=role.timeout_seconds, **kw)
         if resp.stop_reason == "refusal":
             raise RuntimeError("structured extraction refused")
+        if resp.stop_reason == "max_tokens":
+            raise RuntimeError(f"structured extraction truncated at max_tokens={role.max_tokens}")
         usage = _usage(resp.usage)
         usage.extra["model"] = getattr(resp, "model", None) or role.model
         return resp.parsed_output, usage

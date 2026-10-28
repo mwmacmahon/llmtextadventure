@@ -60,6 +60,16 @@ narrative game sets nearly everything to `narrator`; a strict game, to `engine`.
 authority over a field still means engine validation: the noir referee may report that Frank
 fired three rounds, but the engine fires at most what was loaded and rejects the rest.
 
+**Audit it.** `server/tools/authority_audit.py` runs every command with every option, chains
+`after_turn`, parses event and happening effects, and reports for each state field who owns it
+and what can actually write it. An engine-owned field nothing can write is a hole (the narrator
+will be invited to change it in prose and the state will never follow) unless you declare it in
+`static_paths` (set at creation, never written: stats, names, the scenario). If a writer is only
+reachable from a state a fresh instance cannot produce, return such a state from `audit_probes`
+(noir: Frank somewhere safe, so dread drift shows). `tests/test_authority.py` fails on any hole.
+The audit cannot see which *narrator-owned* fields the referee schema covers; check that by hand
+when you add a field to the state (station `systems.*.status` had no referee field for a week).
+
 ## 4. Hooks (`GameBase`)
 
 Required by the protocol: `setup_options`, `new_instance(setup) -> (title, state)`,
@@ -82,10 +92,12 @@ Optional, with defaults that do nothing:
 | `after_turn(state, TurnInfo)` | drift: meters toward baseline, moods following; skip paths in `info.applied` |
 | `summary_guidance(state)` | what the state already records (so the summarizer skips it) and what to keep |
 | `commands(state)` / `run_command(state, id, args)` | commands, clicked or typed; engine or narrated mode (§7) |
+| `audit_probes(state)` | extra starting states for the authority audit (§3) |
 | `ending(state)` | a string when the game is over (the UI locks input) |
 
 Declarations on the class: `clock`, `resolver`, `authority`, `events_path`, `spontaneous_path`,
-`recent_path`, `threads_path`, `log_path`, `skip_adjudication`, `skip_referee`, and
+`recent_path`, `threads_path`, `log_path`, `skip_adjudication`, `skip_referee`, `fallback_stat`,
+`static_paths` (engine-owned fields the audit should not expect a writer for) and
 `narrate_rolls` (the THIS TURN block tells the narrator the die roll and target as well as the
 outcome tier; noir shows the roll in a parenthetical, station does not).
 

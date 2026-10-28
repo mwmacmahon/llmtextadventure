@@ -187,6 +187,19 @@ REFEREE_CASES = [
          {"comms to manual override": lambda d: any(s.name == "Comms" and s.control == "manual_override" for s in getattr(d, "system_updates", [])),
           "voss present": lambda d: "voss" in d.present_entities},
          player_text="I wait."),
+    Case("finished_repair_changes_status",
+         "Reyes has the Comms panel open for forty minutes. He swaps the burnt relay, reseats the board, runs the self-test twice and closes it up. 'Comms is back,' he tells the ring. The dish answers on the first ping.",
+         {"comms operational": lambda d: any(s.name == "Comms" and s.status == "operational" for s in getattr(d, "system_updates", [])),
+          "no control change": lambda d: not any(s.control for s in getattr(d, "system_updates", []))},
+         player_text="I watch Reyes work.", prepare=lambda st: (setattr(next(x for x in st.systems if x.name == "Comms"), "status", "malfunctioning"), st)[1]),
+    Case("starting_a_repair_is_nothing",
+         "Reyes pulls the Comms panel and frowns at the relay board. 'This'll take a while,' he says, and goes to find the spares.",
+         {"no status change": lambda d: not any(s.status for s in getattr(d, "system_updates", []))},
+         player_text="I watch Reyes.", prepare=lambda st: (setattr(next(x for x in st.systems if x.name == "Comms"), "status", "malfunctioning"), st)[1]),
+    Case("venting_lowers_oxygen",
+         "The Lab's outer vent cycles open for nine seconds before the interlock slams it shut. Alarms. The pressure in the ring dips and the oxygen reserve readout drops from nominal to low before it steadies.",
+         {"oxygen low": lambda d: any(r.name == "Oxygen" and r.level == "Low" for r in getattr(d, "resource_updates", []))},
+         player_text="I open the Lab's outer vent."),
     Case("location_and_stress",
          "Park leaves the habitation ring without a word and sits on the auto-doc bed in Medical, shaking, his hands pressed between his knees.",
          {"park to Medical": lambda d: (_crew(d, "park") or None) is not None and _crew(d, "park").location == "Medical",
@@ -239,7 +252,10 @@ async def test_referee_live(tmp_path: Path):
 
 async def _run_async(case: Case, call: Callable[[], Any]) -> Result:
     t0 = time.monotonic()
-    out = await call()
+    try:
+        out = await call()
+    except Exception as e:                      # a truncated or refused extraction fails this case, not the run
+        return Result(case.id, False, [f"exception: {e!r}"[:160]], round(time.monotonic() - t0, 2), {})
     secs = time.monotonic() - t0
     failed = []
     for name, pred in case.checks.items():

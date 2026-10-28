@@ -41,6 +41,7 @@ server/
   games/<name>/          state.py (pydantic), game.py (hooks, UI); content loaded from content_root
                          station: the space-station AI game; noir: a detective with pockets, dice and nerves
   tools/play.py          terminal client for a running server (humans and playtest agents)
+  tools/authority_audit.py  who owns each state field and what can write it; fails on engine-owned holes
   tests/                 offline tests (fake provider); tests/live: opt-in live role evaluations
 web/                     Vite + React + TypeScript; renders the UI schema, knows no game
 docs/                    this file, GAME_AUTHORING.md, LOCAL_LLM.md
@@ -99,7 +100,7 @@ NARRATE      streamed. system = frozen prefix (cached, 1h). messages = [story so
              window of past turns (player text only, no stale bulletins) + bulletin + THIS TURN
              block + player text. Cache breakpoints: the system block and the last assistant message.
   ▼
-REFEREE      Haiku, one messages.parse against the game's RefereeBase subclass
+REFEREE      Sonnet (was Haiku; see config.yml for the measurements), one messages.parse against the game's RefereeBase subclass
              present_entities, log_line, flags_set, threads_opened/closed, narration_issues,
              confidence, plus game fields (entity updates, system control changes…)
   ▼
