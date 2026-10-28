@@ -243,7 +243,7 @@ async def test_typed_turn_narrator_sees_roll_and_referee_updates_pockets(engine:
     iid = engine.create_instance("noir", {})
     fake.hook = lambda schema, last: (
         Adjudication(kind="action", summary="Frank fires at the creature", time_minutes=1, risk="high",
-                     intents=[{"action": "shoot it", "check": {"label": "shoot the creature", "stat": "hands", "difficulty": "low"}}]) if schema is Adjudication
+                     intents=[{"action": "shoot it", "check": {"label": "shoot the creature", "stat": "hands", "difficulty": "low"}}]) if issubclass(schema, Adjudication)
         else ref(log_line="Frank fired three times.", shots_fired=3, dread_change=10, player_location="Rooftop shack") if schema is NoirReferee
         else None)
     events = await play(engine, iid, "I spin and fire three shots at its head.")
@@ -296,11 +296,11 @@ def test_has_predicate_and_anchor_meeting_fallback(game: NoirGame):
 async def test_ending_when_june_is_rescued(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("noir", {})
     fake.hook = lambda schema, last: (
-        Adjudication(kind="action", summary="get June out", time_minutes=20, risk="high") if schema is Adjudication
+        Adjudication(kind="action", summary="get June out", time_minutes=20, risk="high") if issubclass(schema, Adjudication)
         else ref(log_line="Frank got June out.", flags_set=[FlagSet(name="june_rescued", value=True)]) if schema is NoirReferee
         else None)
     await play(engine, iid, "I carry June up the drain and into the cab.")
-    fake.hook = lambda schema, last: Adjudication(kind="action", summary="wait", time_minutes=1, risk="none") if schema is Adjudication else None
+    fake.hook = lambda schema, last: Adjudication(kind="action", summary="wait", time_minutes=1, risk="none") if issubclass(schema, Adjudication) else None
     events = await play(engine, iid, "I light a cigarette.")
     assert events[-1]["data"]["ending"].startswith("You got June Kessler out")
     bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
@@ -340,7 +340,7 @@ async def test_ended_game_refuses_turns_and_nerves_end_in_two_stages(engine: Eng
     doc = engine.store.load_state(iid)
     doc["player"]["dread"] = 96
     engine.store.save_snapshot(iid, 0, doc)
-    fake.hook = lambda schema, last: Adjudication(kind="action", summary="wait", time_minutes=1, risk="none") if schema is Adjudication else None
+    fake.hook = lambda schema, last: Adjudication(kind="action", summary="wait", time_minutes=1, risk="none") if issubclass(schema, Adjudication) else None
     events = await play(engine, iid, "I stand there.")
     mech = events[-1]["data"]["mechanics"]
     assert mech["events"] == ["breaking_point"] and events[-1]["data"]["ending"] is None

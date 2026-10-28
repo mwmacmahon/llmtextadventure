@@ -69,9 +69,12 @@ class FakeProvider:
     async def extract(self, role: RoleConfig, system: str, messages: list[Msg], schema: type[T]) -> tuple[T, Usage]:
         last = messages[-1].content if messages else ""
         usage = Usage(input_tokens=len(json.dumps([m.content for m in messages])) // 4, output_tokens=40, extra={"model": "fake"})
-        queue = self.canned.get(schema.__name__)
+        queue = next((self.canned[c.__name__] for c in schema.__mro__ if self.canned.get(c.__name__)), None)
         if queue:
-            return queue.pop(0), usage  # type: ignore[return-value]
+            obj = queue.pop(0)
+            if not isinstance(obj, schema):                       # a canned base-class object serves a subclass schema
+                obj = schema.model_validate(obj.model_dump())
+            return obj, usage  # type: ignore[return-value]
         if self.hook:
             obj = self.hook(schema, last)
             if obj is not None:

@@ -24,6 +24,7 @@ generic; the game's pydantic model validates it at the boundaries.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from dataclasses import asdict
@@ -44,7 +45,8 @@ from .narration import (Assessment, CallResult, Mechanic, NarrationDone, Visible
 from .game import ApplyReport, CommandResult, Game, GameBase, TurnInfo
 from .mechanics import RESOLVERS, CheckRequest, CheckResult, rng_for
 from .providers import Msg, StreamDone, TextDelta, get_provider
-from .roles import Adjudication, RefereeBase, adjudicator_messages, referee_messages, summarizer_messages, NARRATOR_PROTOCOL
+from .roles import (Adjudication, RefereeBase, WorldReport, adjudicator_messages, referee_messages, summarizer_messages,
+                    world_referee_messages, NARRATOR_PROTOCOL)
 from .store import Store
 
 MODEL_CALL_KINDS = {"model_call": None, "adjudication": "adjudicator", "verdict": "referee"}
@@ -295,7 +297,8 @@ class Engine:
                 yield {"event": "summary", "data": {"status": "failed", "turns": plan.to_cover, "error": str(e)}}
 
         # ---- 3. narrate -----------------------------------------------------
-        bulletin = game.render_bulletin(state, player_text) + "\n\n" + _this_turn_block(res, getattr(game, "narrate_rolls", False))
+        scene_text = _hook(game, "scene_block", state, adj, "narrator", default="")
+        bulletin = ((scene_text + "\n\n") if scene_text else "") + game.render_bulletin(state, player_text) + "\n\n" + _this_turn_block(res, getattr(game, "narrate_rolls", False))
         yield {"event": "bulletin", "data": {"turn": turn, "text": bulletin}}
         self.store.append_transcript(iid, turn, "bulletin", bulletin)
 
@@ -369,14 +372,32 @@ class Engine:
                 for_referee = narration
                 if calls_block.get("notes"):
                     for_referee += "\n\n[NARRATOR'S NOTES: facts it decided, in its own words]\n" + "\n".join(f"- {n}" for n in calls_block["notes"])
-                delta, meta = await self._referee(game, state, res["directives"], player_text, for_referee)
+                world_task = None
+                if _hook(game, "has_world", state, default=False):
+                    world_task = asyncio.ensure_future(self._world_referee(game, state, res["directives"], player_text, for_referee, adj))
+                delta, meta = await self._referee(game, state, res["directives"], player_text, for_referee, adj)
                 for fname in (cmd_result.referee_skip if cmd_result else []):
                     if fname in type(delta).model_fields:
                         setattr(delta, fname, _blank_like(getattr(delta, fname)))
                 delta_json = delta.model_dump(mode="json")
                 ledger("verdict", {**delta_json, "_call": meta})
                 present = [e for e in delta.present_entities if e in _hook(game, "entity_ids", state, default=[])]
-                state, report = game.apply_delta(state, delta, present) if isinstance(game, GameBase) else (state, report)
+                causes = list(calls_block.get("causes", [])) + [e for d in res["directives"] for e in (adj.entities if adj else []) if e in d]
+                state, report = game.apply_delta(state, delta, present, causes) if isinstance(game, GameBase) else (state, report)
+                world_json: dict | None = None
+                if world_task is not None:
+                    try:
+                        wreport, wmeta = await world_task
+                        world_json = wreport.model_dump(mode="json")
+                        ledger("world_verdict", {**world_json, "_call": wmeta})
+                        state, wrep = game.apply_world_report(state, wreport, causes)
+                        report.applied.extend(wrep.applied)
+                        report.rejected.extend(wrep.rejected)
+                        log.info("step " + logs.kv(iid=iid, turn=turn, step="world_referee", model=wmeta["model"], seconds=wmeta["seconds"],
+                                                   moves=len(wreport.moves), new=len(wreport.new_things), updates=len(wreport.thing_updates), **logs.usage_kv(wmeta["usage"])))
+                    except Exception as e:
+                        ledger("model_call", {"role": "world_referee", "error": repr(e)})
+                        log.exception("step.failed " + logs.kv(iid=iid, turn=turn, step="world_referee"))
                 doc = state.model_dump(mode="json")
                 if delta.log_line:
                     sp.append(doc, getattr(game, "log_path", "log"), f"{_clock_text(game, doc)}{delta.log_line.strip()}")
@@ -394,7 +415,7 @@ class Engine:
                     log.info("referee.rejected " + logs.kv(iid=iid, turn=turn, path=r.path, reason=r.reason))
                 for issue in delta.narration_issues:
                     log.info("referee.issue " + logs.kv(iid=iid, turn=turn, issue=issue))
-                yield {"event": "referee", "data": {"delta": delta_json, "report": report.model_dump(mode="json")}}
+                yield {"event": "referee", "data": {"delta": delta_json, "world": world_json, "report": report.model_dump(mode="json")}}
             except Exception as e:
                 ledger("model_call", {"role": "referee", "error": repr(e)})
                 log.exception("step.failed " + logs.kv(iid=iid, turn=turn, step="referee"))
@@ -448,6 +469,9 @@ class Engine:
         provider = get_provider(role)
         rules = _hook(game, "adjudication_rules", state, default="")
         state_text = _hook(game, "state_for_models", state, default=game.render_bulletin(state, ""))
+        scene_text = _hook(game, "scene_block", state, None, "engine", default="")
+        if scene_text:
+            state_text = scene_text + "\n\n" + state_text
         recent = _recent_prose(self.store, iid, turns=2)
         system, msgs = adjudicator_messages(rules, state_text, recent, player_text, _commands_text(_hook(game, "commands", state, default=[])))
         t0 = time.monotonic()
@@ -631,12 +655,28 @@ class Engine:
         return text, {"provider": provider.name, "model": done.model, "seconds": round(time.monotonic() - t0, 2),
                       "usage": asdict(done.usage), "note": done.note}
 
-    async def _referee(self, game: Game, state: BaseModel, directives: list[str], player_text: str, narration: str) -> tuple[RefereeBase, dict]:
+    async def _world_referee(self, game: Game, state: BaseModel, directives: list[str], player_text: str, narration: str,
+                             adj: Adjudication | None = None) -> tuple[WorldReport, dict]:
+        """2.0: the world referee runs beside the game referee with its own small schema (DESIGN2 §5, §16)."""
+        role = self.cfg.role("referee")
+        provider = get_provider(role)
+        rules = _hook(game, "world_rules", state, default="")
+        scene_text = _hook(game, "scene_block", state, adj, "engine", default="")
+        system, msgs = world_referee_messages(rules, scene_text, directives, player_text, narration)
+        t0 = time.monotonic()
+        report, usage = await provider.extract(role, system, msgs, WorldReport)
+        return report, {"provider": provider.name, "model": usage.extra.get("model") or role.model, "seconds": round(time.monotonic() - t0, 2), "usage": asdict(usage)}
+
+    async def _referee(self, game: Game, state: BaseModel, directives: list[str], player_text: str, narration: str,
+                       adj: Adjudication | None = None) -> tuple[RefereeBase, dict]:
         role = self.cfg.role("referee")
         provider = get_provider(role)
         rules = _hook(game, "referee_rules", state, default="")
         schema = _hook(game, "referee_schema", state, default=RefereeBase)
         state_text = _hook(game, "state_for_models", state, default=game.render_bulletin(state, ""))
+        scene_text = _hook(game, "scene_block", state, adj, "engine", default="")
+        if scene_text:
+            state_text = scene_text + "\n\n" + state_text
         system, msgs = referee_messages(rules, state_text, directives, player_text, narration)
         t0 = time.monotonic()
         delta, usage = await provider.extract(role, system, msgs, schema)

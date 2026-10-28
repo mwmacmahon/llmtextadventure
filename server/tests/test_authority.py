@@ -72,7 +72,7 @@ async def test_station_referee_status_is_bounded(engine: Engine, fake: FakeProvi
         SystemUpdate(name="Life Support", status="unpowered"),            # crew cannot cut power under full AI control
         SystemUpdate(name="AI Core", status="damaged"),                   # the engine's (endings)
         SystemUpdate(name="Toaster", status="damaged"),                   # unknown
-    ]) if schema is StationReferee else None
+    ]) if issubclass(schema, StationReferee) else None
     events = await play(engine, iid, "I watch the crew work.")
     st = state_of(engine, iid)
     by = {s.name: s.status for s in st.systems}
@@ -84,7 +84,7 @@ async def test_station_referee_status_is_bounded(engine: Engine, fake: FakeProvi
     ls = next(x for x in doc["systems"] if x["name"] == "Life Support")
     ls["control"] = "manual_override"
     engine.store.save_snapshot(iid, 1, doc)
-    fake.hook = lambda schema, last: _ref(system_updates=[SystemUpdate(name="Life Support", status="unpowered")]) if schema is StationReferee else None
+    fake.hook = lambda schema, last: _ref(system_updates=[SystemUpdate(name="Life Support", status="unpowered")]) if issubclass(schema, StationReferee) else None
     await play(engine, iid, "I wait.")
     assert next(s for s in state_of(engine, iid).systems if s.name == "Life Support").status == "unpowered"
 
@@ -95,13 +95,13 @@ async def test_station_referee_resources_move_one_step(engine: Engine, fake: Fak
         ResourceUpdate(name="Oxygen", level="Depleted"),                  # OK -> Low only
         ResourceUpdate(name="Fuel cells", level="OK"),                    # unchanged
         ResourceUpdate(name="Gold", level="Low"),                         # unknown
-    ]) if schema is StationReferee else None
+    ]) if issubclass(schema, StationReferee) else None
     events = await play(engine, iid, "I vent the lab.")
     st = state_of(engine, iid)
     assert {r.name: r.level for r in st.resources}["Oxygen"] == "Low"
     mech = events[-1]["data"]["mechanics"]
     assert any("resources.Oxygen.level: 'OK' -> 'Low'" in a for a in mech["applied"])
     assert any(r["path"] == "resources.Gold" for r in mech["rejected"])
-    fake.hook = lambda schema, last: _ref(resource_updates=[ResourceUpdate(name="Oxygen", level="Depleted")]) if schema is StationReferee else None
+    fake.hook = lambda schema, last: _ref(resource_updates=[ResourceUpdate(name="Oxygen", level="Depleted")]) if issubclass(schema, StationReferee) else None
     await play(engine, iid, "I wait.")
     assert {r.name: r.level for r in state_of(engine, iid).resources}["Oxygen"] == "Critical"

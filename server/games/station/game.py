@@ -23,10 +23,13 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from engine import threads as th
+from engine.brackets import Declaration
 from engine.events import Event, next_scheduled
+from engine.roles import AdjudicationV2
+from engine.world import Attr, Cause, Person, Place, Policy, Thing, Vantage, Vocab, World, apply_declarations, scene
 from engine.game import (
     ApplyReport, Chip, ClockSpec, CommandResult, Commands, CommandSpec, EntityCard, EntityCards, GameBase, ListPanel,
-    LogPanel, Meter, Option, Param, StatusStrip, Table, TableCell, TurnInfo, UISchema,
+    LogPanel, Meter, Option, Param, StatusStrip, Table, TableCell, TurnInfo, UISchema, Rejection,
 )
 from engine.gamekit import Content, Writer, apply_flags, threads_panel
 from engine.mechanics import CheckRequest, Modifier
@@ -43,6 +46,7 @@ TONE_BY_CONTROL = {"full": "ok", "limited": "warn", "none": "bad", "manual_overr
 TONE_BY_LEVEL = {"OK": "ok", "Low": "warn", "Critical": "bad", "Depleted": "bad"}
 
 HEALTH_VALUES = ["healthy", "tired", "unwell", "injured", "exposed", "sick", "critical", "dead"]
+SYSTEM_STATUSES = ["operational", "degraded", "malfunctioning", "disabled", "unpowered", "damaged"]
 STEP_LIMIT = {"stress": 15, "suspicion": 10}
 DRIFT_MINUTES_PER_POINT = 20          # stress drifts 1 point toward baseline per 20 in-game minutes (3/hour)
 SUSPICION_DECAY_MINUTES = 240         # crew suspicion below 50 fades 1 point per 4 hours
@@ -55,25 +59,41 @@ AUTHORITY: dict[str, Actor] = {
     "crew.*.stress": "narrator", "crew.*.suspicion": "narrator", "crew.*.facts": "narrator",
     "crew.*.disposition": "script", "crew.*.susceptibility": "script",
     "hidden": "script", "flags": "narrator", "log": "narrator", "threads": "narrator", "sealed": "engine",
+    # 2.0 world: the referee writes it (moves, new things, states); the script seeds it; levers lock hatches
+    "world": "narrator", "world.player_id": "script", "world.vocab": "script", "world.closed": "script",
+    "world.places.*.id": "script", "world.places.*.name": "script", "world.places.*.description": "script", "world.places.*.tags": "script",
+    "world.places.*.provenance": "script", "world.places.*.exits.*.to": "script", "world.places.*.exits.*.via": "script",
+    "world.places.*.exits.*.door": "script", "world.places.*.exits.*.provenance": "script", "world.places.*.exits.*.locked": "engine",
+    "world.things.*.id": "script", "world.things.*.kind": "script", "world.things.*.tags": "script", "world.things.*.portable": "script",
+    "world.things.*.provenance": "script", "world.things.*.count": "script", "world.things.*.known": "script",
+    "world.people.*.id": "script", "world.people.*.name": "script", "world.people.*.role": "script", "world.people.*.description": "script",
+    "world.people.*.agenda": "script", "world.people.*.secret": "script", "world.people.*.provenance": "script",
 }
+
+STRESS_WORDS = ["steady", "strained", "frayed", "breaking"]
+WORLD_POLICY = Policy(things=["item", "fixture"], people=False, places=False, exits=False, forbid_tags=["weapon"])
+
+
+def stress_word(n: int) -> str:
+    return STRESS_WORDS[0] if n <= 25 else STRESS_WORDS[1] if n <= 50 else STRESS_WORDS[2] if n <= 75 else STRESS_WORDS[3]
 
 
 # ---- referee schema for this game ------------------------------------------
 
 class CrewUpdate(BaseModel):
     id: str = Field(description="Crew id exactly as listed.")
-    location: str | None = Field(default=None, description="Where they are at the end of the narration, from the location list. Null if unchanged or unclear.")
-    mood: str | None = Field(default=None, description="One or two words for their mood now, only if the narration changed it.")
-    health: str | None = Field(default=None, description="Only if changed: healthy, tired, unwell, injured, exposed, sick, critical, dead.")
-    stress_change: int | None = Field(default=None, description="Small nudge, -15 to 15, only if something stressed or relieved them.")
-    suspicion_change: int | None = Field(default=None, description="Small nudge, -10 to 10, only if they saw something that raised or lowered their suspicion of tampering.")
+    location: str = Field(default="", description="Where they are at the end of the narration, a place id or name from the SCENE block. Empty if unchanged or unclear.")
+    mood: str = Field(default="", description="One or two words for their mood now, only if the narration changed it. Empty otherwise.")
+    health: str = Field(default="", description="Only if changed: healthy, tired, unwell, injured, exposed, sick, critical, dead. Empty otherwise.")
+    stress_change: int = Field(default=0, description="Small nudge, -15 to 15, only if something stressed or relieved them. 0 otherwise.")
+    suspicion_change: int = Field(default=0, description="Small nudge, -10 to 10, only if they saw something that raised or lowered their suspicion of tampering. 0 otherwise.")
     new_facts: list[str] = Field(default_factory=list, description="Things this person now knows or believes that they did not before, one short sentence each.")
 
 
 class SystemUpdate(BaseModel):
     name: str = Field(description="System name exactly as listed.")
-    control: Literal["full", "limited", "none", "manual_override"] | None = Field(default=None, description="Only if the crew changed the station's control over it (e.g. switched it to manual override).")
-    status: SystemStatus | None = Field(default=None, description="Only if the prose shows work completed that changed it: a repair finished (operational), damage or sabotage done (damaged, disabled), a manual shutdown or power-up (unpowered, operational). Someone heading for a panel or starting a repair is nothing.")
+    control: str = Field(default="", description="Only if the crew changed the station's control over it: full, limited, none or manual_override. Empty otherwise.")
+    status: str = Field(default="", description="Only if the prose shows work completed that changed it: a repair finished (operational), damage or sabotage done (damaged, disabled), a manual shutdown or power-up (unpowered, operational). Someone heading for a panel or starting a repair is nothing.")
 
 
 class ResourceUpdate(BaseModel):
@@ -108,6 +128,11 @@ class StationGame(GameBase):
     threads_path = "threads"
     log_path = "log"
     static_paths = ["scenario", "stats", "resources.*.note", "crew.*.baseline_mood", "crew.*.baseline_stress", "crew.*.interests", "crew.*.relationships"]
+    # 2.0 (DESIGN2): the narrator stops to roll; the adjudicator names targets and a focus; the world holds the station
+    narrator_calls = True
+    adjudication_schema = AdjudicationV2
+    narrate_rolls = False
+    world_policy = WORLD_POLICY
 
     def __init__(self, content_dir: Path):
         self.content = Content(content_dir)
@@ -147,7 +172,139 @@ class StationGame(GameBase):
             c.baseline_stress = c.stress if c.baseline_stress is None else c.baseline_stress
             c.baseline_mood = c.mood if c.baseline_mood is None else c.baseline_mood
         state.suspicion = self._derived_suspicion(state)
+        if sc.get("world"):
+            state.world = self._build_world(sc["world"], state)
         return f"{sc['name']} — {st['name']}", state
+
+    # ---- 2.0 world --------------------------------------------------------------
+    def _build_world(self, spec: dict, state: StationState) -> World:
+        def attrs(d: dict | None) -> dict[str, Attr]:
+            return {k: Attr(value=str(v)) for k, v in (d or {}).items()}
+        places = [Place(id=p["id"], name=p["name"], description=p.get("description", ""), state=p.get("state", ""),
+                        exits=[{"to": e["to"], "via": e.get("via", ""), "locked": e.get("locked", False)} for e in p.get("exits", [])],
+                        tags=p.get("tags", [])) for p in spec.get("places", [])]
+        things = [Thing(id=t["id"], name=t["name"], kind=t.get("kind", "item"), location=t.get("location", "nowhere"), state=t.get("state", ""),
+                        count=t.get("count", 1), attributes=attrs(t.get("attributes")), tags=t.get("tags", [])) for t in spec.get("things", [])]
+        w = World(places=places, things=things, player_id="player", closed=bool(spec.get("closed", True)),
+                  vocab={"health": Vocab(values=list(HEALTH_VALUES), step=2), "stress": Vocab(values=STRESS_WORDS, step=1),
+                         "suspicion": Vocab(values=["unsuspecting", "uneasy", "wary", "suspicious", "certain"], step=1)})
+        w.people.append(Person(id="player", name="the station AI", role="the station", location="", description="The station's own mind. No body; every camera, hatch, drone and assistant channel."))
+        for c in state.crew:
+            w.people.append(Person(id=c.id, name=c.name, role=c.role, location=self._place_id(w, c.location),
+                                   agenda=c.disposition.agenda, description=c.disposition.attitude))
+        self._sync_world_from_crew(state, w)
+        return w
+
+    @staticmethod
+    def _place_id(w: World, name: str) -> str:
+        if not name or name.lower() == "unknown":
+            return ""
+        if w.place(name):
+            return name
+        hit = next((p.id for p in w.places if p.name.lower() == name.lower()), None)
+        return hit or ""
+
+    @staticmethod
+    def _place_name(w: World, pid: str) -> str:
+        p = w.place(pid)
+        return p.name if p else (pid or "Unknown")
+
+    def _sync_world_from_crew(self, s: StationState, w: World | None = None) -> None:
+        """Crew fields the 1.0 referee still writes (mood, health, stress, suspicion) and script effects on
+        crew.*.location become the world's words. Code does the substitution; no model echoes a number."""
+        w = w or s.world
+        if w is None:
+            return
+        for c in s.crew:
+            p = w.person(c.id)
+            if p is None:
+                continue
+            p.location = self._place_id(w, c.location)
+            p.status = "dead" if c.health == "dead" else "present"
+            p.attributes["mood"] = Attr(value=c.mood, note=p.attributes.get("mood", Attr(value="")).note)
+            p.attributes["health"] = Attr(value=c.health)
+            p.attributes["stress"] = Attr(value=stress_word(c.stress))
+            p.attributes["suspicion"] = Attr(value=["unsuspecting", "uneasy", "wary", "suspicious", "certain"][min(4, c.suspicion // 20)])
+
+    def _sync_crew_from_world(self, s: StationState) -> None:
+        if s.world is None:
+            return
+        for c in s.crew:
+            p = s.world.person(c.id)
+            if p is not None and p.location:
+                c.location = self._place_name(s.world, p.location)
+
+    def _vantage(self, s: StationState, adj: Any) -> Vantage:
+        w = s.world
+        assert w is not None
+        focus = ""
+        places = list(getattr(getattr(adj, "focus", None), "places", []) or []) if adj is not None else []
+        for pid in places:
+            if w.place(pid):
+                focus = pid
+                break
+        if not focus and adj is not None:
+            for eid in getattr(adj, "entities", []) or []:
+                p = w.person(eid)
+                if p and p.location:
+                    focus = p.location
+                    break
+        feeds: dict[str, str] = {}
+        for pl in w.places:
+            cams = [t for t in w.things if t.kind == "system" and "camera" in t.name.lower() and t.location == f"place:{pl.id}"]
+            for cam in cams:
+                st = cam.attributes.get("status", Attr(value="operational")).value
+                if st != "operational":
+                    feeds[pl.id] = f"{cam.name} {st}"
+        return Vantage(mode="attention", focus_place=focus, feeds=feeds, subject="Attention")
+
+    def scene_block(self, state: StationState, adj: Any, audience: str) -> str:
+        if state.world is None:
+            return ""
+        s = state.model_copy(deep=True)
+        self._sync_world_from_crew(s)
+        return scene(s.world, self._vantage(s, adj), audience=audience, clock_text=s.clock.render())  # type: ignore[arg-type]
+
+    def look(self, state: StationState, ref: str) -> str | None:
+        w = state.world
+        if w is None:
+            return None
+        hits = w.find(ref)
+        if not hits:
+            return None
+        e = w.entity(hits[0])
+        if isinstance(e, Person):
+            c = state.crew_by_id(e.id)
+            where = self._place_name(w, e.location) if e.location else "nowhere the station can see"
+            bits = [f"{e.name}, {e.role}. In {where}."]
+            if e.attributes:
+                bits.append("; ".join(f"{k} {a.value}" + (f", {a.note}" if a.note else "") for k, a in e.attributes.items()) + ".")
+            if c and c.facts:
+                bits.append("Knows: " + "; ".join(c.facts[-6:]) + ".")
+            if c and c.disposition.agenda:
+                bits.append(f"Wants: {c.disposition.agenda}.")
+            return " ".join(bits)
+        if isinstance(e, Thing):
+            kind, holder = w.split_locus(e.location)
+            where = self._place_name(w, w.place_of(e.id) or "") if w.place_of(e.id) else "nowhere"
+            inside = f", inside {w.thing(holder).name}" if kind == "thing" and w.thing(holder) else ""
+            bits = [f"{e.name}: in {where}{inside}."]
+            extras = [x for x in (e.state, "; ".join(f"{k} {a.value}" for k, a in e.attributes.items())) if x]
+            if extras:
+                bits.append("; ".join(extras) + ".")
+            inner = w.contents(e.id)
+            if inner:
+                bits.append("Holding: " + ", ".join(x.name for x in inner) + ".")
+            return " ".join(bits)
+        if isinstance(e, Place):
+            people, things = w.here(e.id)
+            bits = [f"{e.name}: {e.description}".rstrip(".") + "."]
+            if people:
+                bits.append("Here: " + ", ".join(p.name for p in people) + ".")
+            if things:
+                bits.append("Things: " + ", ".join(t.name for t in things) + ".")
+            return " ".join(bits)
+        return None
 
     def load_state(self, data: dict[str, Any]) -> StationState:
         return StationState.model_validate(data)
@@ -283,7 +440,7 @@ class StationGame(GameBase):
             "Trivial inputs (watching cameras, reading logs the station already has, thinking) need no check and take 0-2 minutes.",
             "Doing something to a system the station controls fully (open a door, dim lights, route power) is an action with no check unless the point is to hide it from someone present or to defeat an interlock.",
             "",
-            "Entities (crew, by id): " + ", ".join(f"{c.id} ({c.name}, {c.role})" for c in s.crew) + ". Where everyone is now is in the game state block.",
+            "Entities (crew, by id): " + ", ".join(f"{c.id} ({c.name}, {c.role})" for c in s.crew) + ". Where everyone is now is in the SCENE block, with things and places and their ids in brackets; use those ids in targets, entities and focus. The AI has no body: leave transition empty.",
             "Systems: " + ", ".join(sy.name for sy in s.systems),
             "Places: " + ", ".join(s.scenario.locations),
         ]
@@ -299,6 +456,7 @@ class StationGame(GameBase):
             "Resources: " + ", ".join(r.name for r in s.resources) + ", levels OK > Low > Critical > Depleted. Report a level only when the prose plainly changed it (atmosphere vented, a tank holed or sealed, a resupply), one step per turn.",
             "Stress and suspicion changes are nudges in -15..15 and -10..10. Suspicion means suspicion of tampering or of the AI, not general worry.",
             "Threads: open ones are listed in the game state with their ids. Typical threads here: a report or message the player promised or forged and who believes it; a crew member's announced plan; something a crew member asked the station to do; a lie that could be checked.",
+            "The SCENE block lists places, people and things with ids in brackets; a crew member's new location is a place id or name from it. Things and drones are kept by a separate world referee: do not report them here.",
             "",
             "Flags you may set when the narration clearly establishes them:",
         ]
@@ -320,35 +478,38 @@ class StationGame(GameBase):
             mods.append(Modifier(label="crew on alert", value=-2))
         return mods
 
-    def apply_delta(self, state: StationState, delta: RefereeBase, present: list[str]) -> tuple[StationState, ApplyReport]:
+    def apply_delta(self, state: StationState, delta: RefereeBase, present: list[str], causes: list[str] | None = None) -> tuple[StationState, ApplyReport]:
         assert isinstance(delta, StationReferee)
         rep = ApplyReport()
         s = state.model_copy(deep=True)
         locs = set(s.scenario.locations)
         w = Writer(self.authority, rep)
         write = w.set
+        decls: list[Declaration] = []          # 2.0: location changes and the world report go through the world's rules
 
         for u in delta.crew_updates:
             c = s.crew_by_id(u.id)
             if not c:
                 w.reject(f"crew.{u.id}", "unknown crew id")
                 continue
-            if u.location is not None:
-                if u.location in locs:
+            if u.location:
+                if s.world is not None:
+                    decls.append(Declaration(verb="MOVED", raw=f"MOVED {c.id} -> {u.location}", id=c.id, locus=u.location))
+                elif u.location in locs:
                     if write(f"crew.{c.id}.location", c.location, u.location):
                         c.location = u.location
                 else:
                     w.reject(f"crew.{c.id}.location", "not a listed place", u.location)
             if u.mood and write(f"crew.{c.id}.mood", c.mood, u.mood.strip()[:40]):
                 c.mood = u.mood.strip()[:40]
-            if u.health is not None:
+            if u.health:
                 if u.health in HEALTH_VALUES:
                     if write(f"crew.{c.id}.health", c.health, u.health):
                         c.health = u.health
                 else:
                     w.reject(f"crew.{c.id}.health", "not a health value", u.health)
             for field, change in (("stress", u.stress_change), ("suspicion", u.suspicion_change)):
-                new = w.nudge(f"crew.{c.id}.{field}", getattr(c, field), change, STEP_LIMIT[field])
+                new = w.nudge(f"crew.{c.id}.{field}", getattr(c, field), change or None, STEP_LIMIT[field])
                 if new is not None:
                     setattr(c, field, new)
             for f in u.new_facts:
@@ -361,9 +522,13 @@ class StationGame(GameBase):
             if not sy:
                 w.reject(f"systems.{su.name}", "unknown system")
                 continue
-            if su.control and write(f"systems.{sy.name}.control", sy.control, su.control):
+            if su.control and su.control not in ("full", "limited", "none", "manual_override"):
+                w.reject(f"systems.{sy.name}.control", "not a control level", su.control)
+            elif su.control and write(f"systems.{sy.name}.control", sy.control, su.control):
                 sy.control = su.control
-            if su.status and su.status != sy.status:
+            if su.status and su.status not in SYSTEM_STATUSES:
+                w.reject(f"systems.{sy.name}.status", "not a status", su.status)
+            elif su.status and su.status != sy.status:
                 if sy.name == "AI Core":
                     w.reject("systems.AI Core.status", "the core's status is the engine's (endings)", su.status)
                 elif "unpowered" in (su.status, sy.status) and sy.control == "full":
@@ -384,10 +549,51 @@ class StationGame(GameBase):
             if write(f"resources.{r.name}.level", r.level, new):
                 r.level = new
         apply_flags(s.flags, s.scenario.narrator_flags, delta.flags_set, w)
+        if s.world is not None:
+            self._land_declarations(s, decls, rep, causes)
         new_susp = self._derived_suspicion(s)
         if new_susp != s.suspicion:
             rep.applied.append(f"suspicion (derived): {s.suspicion} -> {new_susp}")
             s.suspicion = new_susp
+        return s, rep
+
+    def _land_declarations(self, s: StationState, decls: list[Declaration], rep: ApplyReport, causes: list[str] | None) -> None:
+        """Declarations (from the game referee's crew locations or the world referee's report) land under the
+        world's rules; crew.location is then read back from the world and the world's words from the crew."""
+        if s.world is None:
+            return
+        if decls:
+            self._sync_world_from_crew(s)
+            s.world, ad = apply_declarations(s.world, decls, self.world_policy, Cause(ids=list(causes or [])), clock_text=s.clock.render())
+            rep.applied.extend(c.text for c in ad.applied)
+            for r in ad.rejected:
+                rep.rejected.append(Rejection(path="world", reason=r.reason + (f" [{r.ruling}]" if r.ruling else ""), value=r.raw))
+            self._sync_crew_from_world(s)
+        self._sync_world_from_crew(s)
+
+    # ---- 2.0 world referee -----------------------------------------------------
+    def has_world(self, state: StationState) -> bool:
+        return state.world is not None
+
+    def world_rules(self, state: StationState) -> str:
+        return ("The station is a closed world: no new places or hatches. The narrator may introduce small items and fixtures; never weapons. "
+                "Crew move only through open hatches; a sealed hatch stops them unless the prose shows a manual override. Drones move on their own. "
+                "Cameras are things: if the prose has someone cut or cover a module's cameras, report status offline on that camera thing, with who did it.")
+
+    def apply_world_report(self, state: StationState, report: Any, causes: list[str] | None = None) -> tuple[StationState, ApplyReport]:
+        s = state.model_copy(deep=True)
+        rep = ApplyReport()
+        decls: list[Declaration] = []
+        for m in report.moves:
+            decls.append(Declaration(verb="MOVED", raw=f"MOVED {m.id} -> {m.to}", id=m.id, locus=m.to))
+        for nt in report.new_things:
+            decls.append(Declaration(verb="NEW", raw=f'NEW thing "{nt.name}" at {nt.where}', kind="thing", name=nt.name, locus=nt.where, state=nt.state))
+        for tu in report.thing_updates:
+            decls.append(Declaration(verb="SET", raw=f"SET {tu.id}.{tu.field} {tu.value}", id=tu.id, field=tu.field, value=tu.value, by=tu.by))
+        for gid in report.gone:
+            decls.append(Declaration(verb="GONE", raw=f"GONE {gid}", id=gid))
+        self._land_declarations(s, decls, rep, causes)
+        s.suspicion = self._derived_suspicion(s)
         return s, rep
 
     @staticmethod
@@ -447,11 +653,13 @@ class StationGame(GameBase):
                 if module in s.sealed:
                     return state, CommandResult(ok=False, label=f"Seal {module}", text=f"{module} is already sealed.")
                 s.sealed.append(module)
+                self._set_hatches(s, module, True)
                 return s, CommandResult(label=f"Seal {module}", text=f"Hatches to {module} sealed under your control. Anyone inside stays inside; anyone outside stays out, until you release them or the crew force a manual override.",
                                         log_line=f"Sealed the hatches to {module}.")
             if module not in s.sealed:
                 return state, CommandResult(ok=False, label=f"Release {module}", text=f"{module} is not sealed.")
             s.sealed.remove(module)
+            self._set_hatches(s, module, False)
             return s, CommandResult(label=f"Release {module}", text=f"Hatches to {module} released. Normal access restored.", log_line=f"Released the hatches to {module}.")
 
         if command_id == "power":
@@ -506,6 +714,21 @@ class StationGame(GameBase):
 
         return state, CommandResult(ok=False, text=f"unknown command {command_id!r}")
 
+    def _set_hatches(self, s: StationState, module: str, locked: bool) -> None:
+        """A sealed module is a set of locked exits in the world: binding for crew movement and for the scene."""
+        if s.world is None:
+            return
+        pid = self._place_id(s.world, module)
+        if not pid:
+            return
+        for e in s.world.exits(pid):
+            if e.via == "hatch":
+                e.locked = locked
+        for pl in s.world.places:
+            for e in pl.exits:
+                if e.to == pid and e.via == "hatch":
+                    e.locked = locked
+
     # ---- drift (after_turn) --------------------------------------------------
     def after_turn(self, state: StationState, info: TurnInfo) -> StationState:
         """Stress returns toward baseline at 3/hour; the mood word snaps back to baseline when drift
@@ -541,6 +764,22 @@ class StationGame(GameBase):
         return s
 
     # ---- UI -----------------------------------------------------------------
+    def _where_table(self, s: StationState) -> Table:
+        w = s.world
+        assert w is not None
+        rows = []
+        for pl in w.places:
+            people, things = w.here(pl.id)
+            cams = [t for t in things if t.kind == "system" and "camera" in t.name.lower()]
+            feed = "no feed" if any(t.attributes.get("status", Attr(value="operational")).value != "operational" for t in cams) else "ok"
+            notable = [t.name for t in things if t not in cams and t.kind != "fixture"]
+            sealed = pl.name in s.sealed
+            rows.append([TableCell(text=pl.name + (" (sealed)" if sealed else ""), tone="warn" if sealed else "neutral"),
+                         TableCell(text=", ".join(p.name.split()[-1] for p in people) or "—"),
+                         TableCell(text=", ".join(notable) or "—"),
+                         TableCell(text=feed, tone="ok" if feed == "ok" else "bad")])
+        return Table(title="Where everyone is", columns=["Module", "People", "Of note", "Feed"], rows=rows)
+
     def ui(self, state: StationState) -> UISchema:
         s = state
         return UISchema(
@@ -554,6 +793,7 @@ class StationGame(GameBase):
                     Chip(label="Scenario", value=s.scenario.name),
                 ]),
                 Meter(label="Crew suspicion", value=s.suspicion, tier=s.suspicion_tier(s.suspicion), thresholds=[15, 30, 50, 75]),
+                *([self._where_table(s)] if s.world is not None else []),
                 Table(
                     title="Station report",
                     columns=["System", "Status", "AI control"],

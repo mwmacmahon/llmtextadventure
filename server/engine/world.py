@@ -420,7 +420,8 @@ def _thing_text(w: World, t: Thing, audience: Audience, depth: int = 0) -> str:
     s = _ref(t, audience)
     if t.count != 1:
         s += f" ({t.count})" if audience == "narrator" else f" ×{t.count}"
-    extras = [x for x in (t.state, _attrs_text(t, audience)) if x]
+    attrs = _attrs_text(t, audience)
+    extras = [x for x in (t.state if t.state.lower() not in attrs.lower().split("; ") else "", attrs) if x]
     if extras:
         s += " (" + "; ".join(extras) + ")"
     inner = w.contents(t.id)
@@ -542,6 +543,13 @@ class Policy(BaseModel):
     places: bool = False
     exits: bool = False                 # discoverable exits
     forbid_tags: list[str] = Field(default_factory=lambda: ["weapon"])
+    forbid_names: list[str] = Field(default_factory=lambda: ["weapon", "gun", "pistol", "revolver", "rifle", "shotgun", "knife", "blade",
+                                                            "grenade", "launcher", "explosive", "bomb"])   # a code backstop: no model is trusted to tag a pistol
+
+    def forbids_name(self, name: str) -> str | None:
+        words = set(re.findall(r"[a-z]+", name.lower()))
+        hit = sorted(words & set(self.forbid_names))
+        return hit[0] if hit else None
 
     def text(self) -> str:
         parts = []
@@ -690,10 +698,12 @@ def annotate(w: World, tr: Transition, policy: Policy) -> Annotation:
             c = w.thing(holder)
             if c is not None:
                 locked, opened = c.tri("locked"), c.tri("open")
-                if locked is True or opened is False:
-                    return Annotation(verdict="blocked", facts=[f"{t.name} is inside {c.name}, which is {'locked' if locked else 'closed'}."], transition=tr)
-                if locked is None and opened is None:
-                    return Annotation(verdict="undecided", facts=[f"{t.name} is inside {c.name}; whether it is open or locked has not been decided."], transition=tr)
+                if locked is True:
+                    return Annotation(verdict="blocked", facts=[f"{t.name} is inside {c.name}, which is locked."], transition=tr)
+                if locked is None:
+                    return Annotation(verdict="undecided", facts=[f"{t.name} is inside {c.name}; whether it is locked has not been decided."], transition=tr)
+                if opened is False:
+                    return Annotation(verdict="clear", facts=[f"{t.name} is inside {c.name}, which is closed but not locked."], transition=tr)
         return Annotation(verdict="clear", facts=[f"{t.name} is here" + (f" ({t.state})" if t.state else "") + ", portable. Nothing known stands in the way."], transition=tr)
 
     if tr.kind in ("drop", "give", "put"):
@@ -716,9 +726,9 @@ def annotate(w: World, tr: Transition, policy: Policy) -> Annotation:
             return Annotation(verdict="impossible", facts=[f"'{tr.to}' is not a container."], transition=tr)
         if w.place_of(c.id) != here:
             return Annotation(verdict="blocked", facts=[f"{c.name} is not here."], transition=tr)
-        if c.tri("locked") is True or c.tri("open") is False:
-            return Annotation(verdict="blocked", facts=[f"{c.name} is {'locked' if c.tri('locked') else 'closed'}."], transition=tr)
-        return Annotation(verdict="clear", facts=[f"{c.name} is here and open."], transition=tr)
+        if c.tri("locked") is True:
+            return Annotation(verdict="blocked", facts=[f"{c.name} is locked."], transition=tr)
+        return Annotation(verdict="clear", facts=[f"{c.name} is here" + (", closed but not locked" if c.tri("open") is False else "") + "."], transition=tr)
 
     # open / close
     if t_place != here and not w.holds(me.id, t.id):
@@ -819,6 +829,10 @@ def _apply_new(w: World, d: Declaration, policy: Policy, out: AppliedDeclaration
     if bad_tags:
         reject(d, f"the narrator may not add {', '.join(bad_tags)}", "unauthorized_addition")
         return
+    bad_name = policy.forbids_name(d.name)
+    if bad_name and d.kind == "thing":
+        reject(d, f"the narrator may not add a {bad_name}", "unauthorized_addition")
+        return
     if d.kind == "thing":
         kind_guess: ThingKind = "item"
         for k in ("container", "fixture", "system", "vehicle", "drone"):
@@ -890,6 +904,10 @@ def _apply_moved(w: World, d: Declaration, cause: Cause, out: AppliedDeclaration
         reject(d, f"unknown destination {d.locus!r}")
         return
     dk, di = w.split_locus(dest)
+    if isinstance(e, Thing) and e.location == dest:
+        return                                              # already there: not a change
+    if isinstance(e, Person) and dk == "place" and e.location == di:
+        return
     if isinstance(e, Thing):
         src_place = w.place_of(e.id)
         dst_place = di if dk == "place" else w.place_of(di)
@@ -903,11 +921,15 @@ def _apply_moved(w: World, d: Declaration, cause: Cause, out: AppliedDeclaration
                 return
             if holder_kind == "thing":
                 c = w.thing(holder)
-                if c is not None and (c.tri("locked") is True or c.tri("open") is False) and not cause.covers(c.id, e.id):
-                    reject(d, f"{e.name} is inside {c.name}, which is {'locked' if c.tri('locked') else 'closed'}", "contradiction")
+                if c is not None and c.tri("locked") is True and not cause.covers(c.id, e.id):
+                    reject(d, f"{e.name} is inside {c.name}, which is locked", "contradiction")
                     return
         elif holder_kind == "person" and holder == me_id and dk != "person":
             pass  # dropping or putting is always allowed
+        elif e.kind in ("drone", "vehicle") and dk == "place" and src_place is not None and src_place != di:
+            if not w.reachable(src_place, di) and not cause.covers(e.id, "any"):
+                reject(d, f"{e.name} cannot get from {src_place} to {di}: no open way", "contradiction")
+                return
         elif src_place is not None and dst_place is not None and src_place != dst_place and dk != "person" and not cause.covers(e.id, "any"):
             reject(d, f"{e.name} cannot move from {src_place} to {dst_place} on its own; someone carries it (MOVED it to that person first)", "contradiction")
             return
@@ -960,6 +982,8 @@ def _apply_set(w: World, d: Declaration, cause: Cause, out: AppliedDeclarations,
         return
     if field == "state" and not isinstance(e, Person):
         old = e.state
+        if old == d.value:
+            return
         e.state = d.value
         out.applied.append(Change(path=f"world.{'places' if isinstance(e, Place) else 'things'}.{e.id}.state", text=f"{e.name} state: {old!r} -> {d.value!r}"))
         return
@@ -974,6 +998,8 @@ def _apply_set(w: World, d: Declaration, cause: Cause, out: AppliedDeclarations,
     vocab = w.vocab.get(field)
     old = e.attributes.get(field)
     value = d.value
+    if old is not None and old.value.lower() == value.lower() and (not d.note or d.note == old.note):
+        return                                              # already so: not a change
     if vocab is not None:
         if not vocab.has(value):
             reject(d, f"{field} must be one of {', '.join(vocab.values)}, not {value!r}")
@@ -988,9 +1014,12 @@ def _apply_set(w: World, d: Declaration, cause: Cause, out: AppliedDeclarations,
                     out.applied.append(Change(path=f"world.{e.id}.{field}", text=f"{e.name} {field}: stepped to {value} (one step per turn)"))
     else:
         # booleans and free attributes: hard -> changed needs a cause
-        if old is not None and old.value != "" and old.value.lower() != value.lower() and field in ("locked", "open", "status", "control"):
-            if not cause.covers(e.id, "any"):
-                reject(d, f"{e.name}.{field} is {old.value!r}, a hard fact; changing it needs a cause from this turn", "contradiction")
+        if old is not None and old.value != "" and old.value.lower() != value.lower() and field == "locked":
+            agent_id, _ = _resolve(w, d.by) if d.by else (None, [])
+            agent = w.person(agent_id) if agent_id else None
+            agent_can = bool(agent) and agent.id != w.player_id and agent.location and agent.location == w.place_of(e.id)
+            if not agent_can and not cause.covers(e.id, "any"):
+                reject(d, f"{e.name} is {'locked' if old.value.lower() == 'true' else 'unlocked'}, a hard fact; changing it needs a cause from this turn (a roll, a key, a lever) or someone present who can", "contradiction")
                 return
     if old is None or old.value == "":
         out.hardened.append(f"{e.id}.{field} = {value}")

@@ -86,6 +86,7 @@ class Declaration(BaseModel):
     note: str = ""              # SET: text after the colon
     fact: str = ""              # LEARNED
     why: str = ""               # GONE
+    by: str = ""                # SET: who did it (a person id or name); a present non-player agent may change a lock
 
 
 Item = Call | Declaration | Note

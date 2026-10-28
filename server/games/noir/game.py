@@ -388,7 +388,7 @@ class NoirGame(GameBase):
                 mods.append(Modifier(label="empty revolver", value=-10))
         return mods
 
-    def apply_delta(self, state: NoirState, delta: RefereeBase, present: list[str]) -> tuple[NoirState, ApplyReport]:
+    def apply_delta(self, state: NoirState, delta: RefereeBase, present: list[str], causes: list[str] | None = None) -> tuple[NoirState, ApplyReport]:
         assert isinstance(delta, NoirReferee)
         rep = ApplyReport()
         s = state.model_copy(deep=True)

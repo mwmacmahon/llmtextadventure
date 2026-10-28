@@ -74,23 +74,33 @@ async def test_check_is_rolled_and_told_to_narrator(engine: Engine, fake: FakePr
         kind="action", summary="nudge Park calmer", time_minutes=10, risk="low", entities=["park"],
         intents=[Intent(action="soothe Park through his implant", check=CheckProposal(label="calm Park", stat="influence", difficulty="medium", target_entity="park"))],
     )]
-    events = await play(engine, iid, "I ease Park's implant toward calm.")
+    # 2.0: the station's checks are assessed before the prose and rolled when the narrator calls them
+    fake.script = lambda system, messages: ("Park's implant hums.\n<<CHECK influence>>" if not messages[-1].content.startswith("[ENGINE]") else "He settles.")
+    try:
+        events = await play(engine, iid, "I ease Park's implant toward calm.")
+    finally:
+        fake.script = None
     res = events[1]["data"]
-    assert len(res["checks"]) == 1
-    c = res["checks"][0]
+    assert res["checks"] == [] and "Assessed check, calm Park (influence, medium difficulty, against park)" in events[2]["data"]["text"]
+    mech = next(e for e in events if e["event"] == "mechanic")
+    c = mech["data"]["data"]
     assert c["stat"] == "influence" and c["target"] == 10 and 1 <= c["roll"] <= 20
     assert any(m["label"].startswith("Jun Park susceptibility") and m["value"] == 2 for m in c["modifiers"])
-    bulletin = events[2]["data"]["text"]
-    assert f"Check, calm Park (influence, medium difficulty): {c['outcome'].replace('_', ' ').upper()}" in bulletin
-    assert by_kind(engine, iid, 1, "check")[0]["outcome"] == c["outcome"]
-    # replay: same instance+turn -> same roll
+    assert "§ Influence check, medium:" in events[-1]["data"]["text"]
+    narrator_call = next(l["payload"] for l in engine.store.ledger(iid, 1) if l["kind"] == "model_call" and l["payload"].get("role") == "narrator")
+    assert narrator_call["calls"][0]["result"]["outcome"] == c["outcome"]
+    # replay: same instance+turn -> same roll, even though the roll now happens inside the prose
     engine.undo(iid)
     fake.canned["Adjudication"] = [Adjudication(
         kind="action", summary="nudge Park calmer", time_minutes=10, risk="low",
         intents=[Intent(action="x", check=CheckProposal(label="calm Park", stat="influence", difficulty="medium", target_entity="park"))],
     )]
-    events2 = await play(engine, iid, "I ease Park's implant toward calm.")
-    assert events2[1]["data"]["checks"][0]["roll"] == c["roll"]
+    fake.script = lambda system, messages: ("Park's implant hums.\n<<CHECK influence>>" if not messages[-1].content.startswith("[ENGINE]") else "He settles.")
+    try:
+        events2 = await play(engine, iid, "I ease Park's implant toward calm.")
+    finally:
+        fake.script = None
+    assert next(e for e in events2 if e["event"] == "mechanic")["data"]["data"]["roll"] == c["roll"]
 
 
 async def test_clarify_does_not_advance_time_or_run_referee(engine: Engine, fake: FakeProvider):
@@ -127,7 +137,7 @@ async def test_referee_delta_respects_authority_and_bounds(engine: Engine, fake:
     assert st.flags["voss_found_forgery"] is True and "not_a_flag" not in st.flags
     assert next(x for x in st.systems if x.name == "Comms").control == "manual_override"
     reasons = {(r["path"], r["reason"]) for r in rep["rejected"]}
-    assert ("crew.park.location", "not a listed place") in reasons
+    assert any(p == "world" and "Nowhere" in r for p, r in reasons)      # 2.0: locations go through the world
     assert ("crew.park.health", "not a health value") in reasons
     assert ("crew.ghost", "unknown crew id") in reasons
     assert ("systems.Warp", "unknown system") in reasons
@@ -138,7 +148,7 @@ async def test_referee_delta_respects_authority_and_bounds(engine: Engine, fake:
 
 async def test_scripted_spine_and_ending_over_a_long_day(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("station", {})
-    fake.hook = lambda schema, last: Adjudication(kind="action", summary="wait", time_minutes=240, risk="none") if schema is Adjudication else None
+    fake.hook = lambda schema, last: Adjudication(kind="action", summary="wait", time_minutes=240, risk="none") if issubclass(schema, Adjudication) else None
     fired: list[str] = []
     for _ in range(4):
         events = await play(engine, iid, "I wait and watch.")
@@ -153,11 +163,11 @@ async def test_scripted_spine_and_ending_over_a_long_day(engine: Engine, fake: F
     # Branch: secure the canister before 14:30 and the lindqvist_opens event expires instead.
     bid = engine.fork(iid, at_turn=1)
     fake.hook = lambda schema, last: (
-        Adjudication(kind="action", summary="lock it", time_minutes=5, risk="low") if schema is Adjudication
-        else StationReferee(log_line="The canister is sealed in a locker.", confidence="high", flags_set=[FlagSet(name="canister_secured", value=True)]) if schema is StationReferee
+        Adjudication(kind="action", summary="lock it", time_minutes=5, risk="low") if issubclass(schema, Adjudication)
+        else StationReferee(log_line="The canister is sealed in a locker.", confidence="high", flags_set=[FlagSet(name="canister_secured", value=True)]) if issubclass(schema, StationReferee)
         else None)
     await play(engine, bid, "I have a loader drone lock the canister in the Cargo safe.")
-    fake.hook = lambda schema, last: Adjudication(kind="action", summary="wait", time_minutes=240, risk="none") if schema is Adjudication else None
+    fake.hook = lambda schema, last: Adjudication(kind="action", summary="wait", time_minutes=240, risk="none") if issubclass(schema, Adjudication) else None
     exp: list[str] = []
     for _ in range(4):
         events = await play(engine, bid, "I wait.")
@@ -169,9 +179,9 @@ async def test_scripted_spine_and_ending_over_a_long_day(engine: Engine, fake: F
 
     # Ending: push crew suspicion past 90 through the referee; the ending event fires next tick.
     fake.hook = lambda schema, last: (
-        Adjudication(kind="action", summary="blunder", time_minutes=1, risk="high") if schema is Adjudication
+        Adjudication(kind="action", summary="blunder", time_minutes=1, risk="high") if issubclass(schema, Adjudication)
         else StationReferee(log_line="Everyone saw.", confidence="high",
-                            crew_updates=[CrewUpdate(id=c, suspicion_change=10) for c in ("okafor", "reyes", "lindqvist", "park", "voss")]) if schema is StationReferee
+                            crew_updates=[CrewUpdate(id=c, suspicion_change=10) for c in ("okafor", "reyes", "lindqvist", "park", "voss")]) if issubclass(schema, StationReferee)
         else None)
     for _ in range(12):
         events = await play(engine, bid, "I do something stupid.")

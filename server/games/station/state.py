@@ -16,6 +16,7 @@ from engine.events import Event
 from engine.gamekit import Clock  # noqa: F401  (re-exported: games/station imports Clock from here)
 from engine.spontaneous import Spontaneous
 from engine.threads import Thread
+from engine.world import World
 
 Level = Literal["OK", "Low", "Critical", "Depleted"]
 SystemStatus = Literal["operational", "degraded", "malfunctioning", "disabled", "unpowered", "damaged"]
@@ -91,6 +92,7 @@ class StationState(BaseModel):
     flags: dict[str, Any] = Field(default_factory=dict)
     stats: dict[str, int] = Field(default_factory=dict)   # the AI's capabilities as check modifiers
     hidden: Hidden = Field(default_factory=Hidden)
+    world: World | None = None          # 2.0: places, things, people as rows (engine/world.py); None on pre-2.0 instances
 
     # ---- helpers ------------------------------------------------------------
     @staticmethod

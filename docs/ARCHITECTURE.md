@@ -237,6 +237,20 @@ Branch `1.0` preserves the first engine; `main` stays there until 2.0 is playabl
   `tests/test_narrator_loop.py` (the loop end to end through the fake provider, which now honours stop
   sequences and can be scripted).
 
-Next: the station on the world model (scenario `world:` section, sensor vantage, schedules, the referee's
-world report, scene in every role, map and scene panels), then focus and story for the structured roles,
-then rulings and the guard, then noir.
+- The narrator is never asked for ids: `scene(audience="narrator")` is prose; calls take a stat and a
+  difficulty (a name only when needed); square-bracket lines from the narrator are plain-English notes
+  handed to the referee. Code resolves names (`World.find`); the adjudicator's assessed target wins
+  over a called name.
+- Two referees run concurrently when a game `has_world`: the game referee (its own schema) and the
+  generic world referee (`roles.WorldReport`: moves, new things, thing updates, gone), landed by the
+  game's `apply_world_report` through `world.apply_declarations`. One combined schema hit the API's
+  "Schema is too complex" limit.
+- The station is on the world: a `world:` section in its scenario (modules with hatches, cameras,
+  the cabinet and canister, drones, the pod); `StationState.world`, built on a new instance; crew and
+  world kept in sync by code (the world is authoritative for location); sealing a module locks its
+  hatches in the world; `scene_block`, `look`, `world_rules`, `apply_world_report`; a "Where everyone
+  is" panel; `narrator_calls = True`, `adjudication_schema = AdjudicationV2`. Older instances load
+  with no world and play as 1.0. Noir is untouched.
+
+Next: focus and story for the structured roles, rulings and the guard, crew schedules, decision D's
+meters, then noir on the world.

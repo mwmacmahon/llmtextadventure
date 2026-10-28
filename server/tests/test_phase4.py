@@ -247,13 +247,13 @@ def test_stress_and_mood_drift_toward_baseline(engine: Engine):
 async def test_drift_is_applied_and_ledgered_after_a_turn(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("station", {})
     fake.hook = lambda schema, last: (
-        Adjudication(kind="action", summary="wait", time_minutes=120, risk="none") if schema is Adjudication
-        else StationReferee(log_line="Park panicked.", confidence="high", crew_updates=[CrewUpdate(id="park", stress_change=15, mood="panicky")]) if schema is StationReferee
+        Adjudication(kind="action", summary="wait", time_minutes=120, risk="none") if issubclass(schema, Adjudication)
+        else StationReferee(log_line="Park panicked.", confidence="high", crew_updates=[CrewUpdate(id="park", stress_change=15, mood="panicky")]) if issubclass(schema, StationReferee)
         else None)
     await play(engine, iid, "I wait and watch Park.")
     st = state_of(engine, iid)
     assert st.crew_by_id("park").stress == 70 and st.crew_by_id("park").mood == "panicky"   # referee's write wins this turn
-    fake.hook = lambda schema, last: Adjudication(kind="action", summary="wait", time_minutes=120, risk="none") if schema is Adjudication else None
+    fake.hook = lambda schema, last: Adjudication(kind="action", summary="wait", time_minutes=120, risk="none") if issubclass(schema, Adjudication) else None
     events = await play(engine, iid, "I wait.")
     st = state_of(engine, iid)
     assert st.crew_by_id("park").stress == 64

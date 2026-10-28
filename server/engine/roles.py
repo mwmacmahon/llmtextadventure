@@ -69,6 +69,64 @@ class AdjudicationV2(Adjudication):
     intents: list[IntentV2] = Field(default_factory=list, description="The concrete attempts, usually one, at most three. For each uncertain one, assess the check (stat, difficulty, target); the narrator calls it at the right moment.")
     focus: Focus = Field(default_factory=Focus, description="What the narrator should have in front of it for this input.")
 
+    @classmethod
+    def example(cls, player_text: str) -> "AdjudicationV2":
+        return cls(kind="action", summary=f"The player attempts: {player_text[:80]}", time_minutes=5, intents=[IntentV2(action=player_text[:80])], risk="low")
+
+
+class WorldMove(BaseModel):
+    id: str = Field(description="Who or what moved: a person's or a drone's id from the SCENE block.")
+    to: str = Field(description="Where they ended the narration: a place id from the SCENE block, or its name.")
+
+
+class WorldNewThing(BaseModel):
+    name: str = Field(description="An object the prose introduced that the SCENE block did not list, as the prose names it.")
+    where: str = Field(description="The place id (or name) it is in, 'person:<id>' if someone other than the player holds it, or 'thing:<id>' when inside a listed container.")
+    state: str = Field(default="", description="A few words on its state, if the prose gave any. Empty otherwise.")
+
+
+class WorldThingUpdate(BaseModel):
+    id: str = Field(description="A listed thing's id from the SCENE block.")
+    field: str = Field(description="What changed: state, status, locked or open.")
+    value: str = Field(description="The new value: a few words for state; a status word for status; true or false for locked or open.")
+    by: str = Field(default="", description="Who did it: a person id from the SCENE block, or empty when it was the player or nobody.")
+
+
+class WorldReport(BaseModel):
+    """2.0: the world referee's report (DESIGN2 §5): what moved, what appeared, what changed, what is gone.
+    Separate from the game referee so that neither schema grows past the API's complexity limit."""
+    moves: list[WorldMove] = Field(default_factory=list, description="Everyone and every drone that ended the narration somewhere other than where the SCENE block had them. Empty if none.")
+    new_things: list[WorldNewThing] = Field(default_factory=list, description="Objects the prose introduced that the SCENE block did not list. Empty if none.")
+    thing_updates: list[WorldThingUpdate] = Field(default_factory=list, description="Listed things whose state, status, locked or open the prose plainly changed. Empty if none.")
+    gone: list[str] = Field(default_factory=list, description="Ids of listed things the prose destroyed or removed from play. Empty if none.")
+    confidence: Literal["low", "medium", "high"] = Field(description="How sure you are of this whole report.")
+
+    @classmethod
+    def example(cls, narration: str) -> "WorldReport":
+        return cls(confidence="medium")
+
+
+WORLD_REFEREE_INSTRUCTIONS = """You keep the world record of a text adventure: where every person, drone and thing is, and what state each is in. You read the narrator's latest prose against the SCENE block, which lists what the world held before the prose, with ids in brackets, and you report only what the prose changed.
+
+- moves: anyone or any drone who ended the prose somewhere other than where the SCENE had them. Use the SCENE's ids; a place by id or by its listed name.
+- new_things: objects the prose introduced that the SCENE did not list and that someone could use, take, open or go through. Scenery that nobody will touch is not a thing. Never weapons unless the game's rules allow them.
+- thing_updates: a listed thing whose state, status, locked or open the prose plainly changed, and who did it when a person did.
+- gone: listed things the prose destroyed or removed from play.
+The narrator's notes, when present, are its own statement of what it decided: record them. Do not invent changes the prose does not show; do not report what did not change. Ids come from the SCENE block only."""
+
+
+def world_referee_messages(rules: str, scene_text: str, directives: list[str], player_text: str, narration: str) -> tuple[str, list[Msg]]:
+    system = WORLD_REFEREE_INSTRUCTIONS
+    if rules.strip():
+        system += "\n\nGAME-SPECIFIC RULES\n" + rules.strip()
+    parts = [f"[SCENE BEFORE THE PROSE]\n{scene_text.strip()}"]
+    if directives:
+        parts.append("[WHAT THE ENGINE RESOLVED THIS TURN]\n" + "\n".join(f"- {d}" for d in directives))
+    parts.append(f"[PLAYER INPUT]\n{player_text.strip()}")
+    parts.append(f"[NARRATION]\n{narration.strip()}")
+    parts.append("Report the world changes now.")
+    return system, [Msg("user", "\n\n".join(parts))]
+
 
 NARRATOR_PROTOCOL = """ENGINE PROTOCOL. A few kinds of line are for the engine, each on a line of its own; the player never sees them.
   <<CHECK stat difficulty>>  when the fiction reaches an attempt whose outcome is uncertain. Stop there: the engine rolls and tells you the result, and you continue from exactly where you stopped. Play the result; never decide an uncertain outcome yourself. THIS TURN lists the checks already assessed: call each at its moment, by its stat. Add "vs <name>" only when it would otherwise be unclear who or what it is against. Call other checks when the fiction needs them.

@@ -276,9 +276,28 @@ class GameBase:
         raw = lookup(state.model_dump(mode="json"), self.events_path, []) or []
         return [Event.model_validate(e) for e in raw]
 
-    def apply_delta(self, state: BaseModel, delta: RefereeBase, present: list[str]) -> tuple[BaseModel, ApplyReport]:
-        """Validate and apply the referee's report. Default applies nothing but the log line."""
+    def apply_delta(self, state: BaseModel, delta: RefereeBase, present: list[str], causes: list[str] | None = None) -> tuple[BaseModel, ApplyReport]:
+        """Validate and apply the referee's report. Default applies nothing but the log line.
+        `causes` (2.0): ids this turn's successful rolls, levers or directives let the narrator change (DESIGN2 §6)."""
         return state, ApplyReport()
+
+    def has_world(self, state: BaseModel) -> bool:
+        """2.0: True when this instance carries a world the world referee should keep."""
+        return False
+
+    def world_rules(self, state: BaseModel) -> str:
+        """2.0: game-specific rules for the world referee (what counts as a thing here, what the narrator may add)."""
+        return ""
+
+    def apply_world_report(self, state: BaseModel, report: Any, causes: list[str] | None = None) -> tuple[BaseModel, ApplyReport]:
+        """2.0: land the world referee's report under the world's rules (engine/world.py apply_declarations)."""
+        return state, ApplyReport()
+
+    def scene_block(self, state: BaseModel, adj: Any, audience: str) -> str:
+        """2.0: the SCENE text built from the game's world (engine/world.py). `audience` is "engine" (ids, for the
+        adjudicator and referee) or "narrator" (prose). `adj` is the adjudication when one exists, for the vantage.
+        Empty string: the game has no world."""
+        return ""
 
     def summary_guidance(self, state: BaseModel) -> str:
         """Extra instructions for the summarizer (what this game's state block captures, what to keep)."""
