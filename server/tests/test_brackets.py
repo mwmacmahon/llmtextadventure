@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from engine.brackets import (Call, Declaration, StreamFilter, BracketError, extract, parse_call, parse_declaration,
+from engine.brackets import (Call, Declaration, Note, StreamFilter, BracketError, extract, parse_call, parse_declaration,
                              pending_call, with_mechanic, is_mechanic_line)
 
 
@@ -15,6 +15,8 @@ def test_check_call_forms():
     assert (c.stat, c.difficulty) == ("hands", "very_high")
     c = parse_call("<<CHECK influence medium vs park")      # unterminated: the stop sequence ate '>>'
     assert (c.stat, c.difficulty, c.target) == ("influence", "medium", "park")
+    c = parse_call("CHECK tongue medium vs the man in the grey coat.")   # a name; code resolves it
+    assert c.target == "the man in the grey coat"
     with pytest.raises(BracketError):
         parse_call("CHECK hands impossible")
     with pytest.raises(BracketError):
@@ -59,13 +61,14 @@ def test_other_declarations():
 
 
 def test_extract_orders_items_and_strips_prose():
-    text = ('The crowbar is cold.\n[[MOVED crowbar -> person:player]]\nYou lean harder.\n'
-            '<<CHECK hands hard vs trapdoor_anchor>>\nThe hasp holds.\n[[SET rosa.trust neutral: saw it]]\n[[BOGUS line]]\n')
+    text = ('The crowbar is cold.\n[[a crowbar lies by the trapdoor]]\nYou lean harder.\n'
+            '<<CHECK hands hard vs trapdoor_anchor>>\nThe hasp holds.\n[[SET rosa.trust neutral: saw it]]\n[[SET nothing]]\n')
     visible, items, problems = extract(text)
     assert visible == "The crowbar is cold.\nYou lean harder.\nThe hasp holds."
-    assert [type(i).__name__ for i in items] == ["Declaration", "Call", "Declaration"]
+    assert [type(i).__name__ for i in items] == ["Note", "Call", "Declaration"]
+    assert isinstance(items[0], Note) and items[0].text == "a crowbar lies by the trapdoor"
     assert isinstance(items[1], Call) and items[1].stat == "hands"
-    assert len(problems) == 1 and "BOGUS" in problems[0]
+    assert len(problems) == 1 and "SET nothing" in problems[0]
 
 
 def test_pending_call_detects_a_stopped_stream():

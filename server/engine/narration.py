@@ -18,7 +18,7 @@ import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, AsyncIterator, Awaitable, Callable
 
-from .brackets import (CLOSE_CALL, BracketError, Call, Declaration, StreamFilter, extract, pending_call,
+from .brackets import (CLOSE_CALL, BracketError, Call, Declaration, Note, StreamFilter, extract, pending_call,
                        with_mechanic)
 from .config import RoleConfig
 from .mechanics import CheckRequest, CheckResult, Modifier, TIER_ORDER, Tier
@@ -55,6 +55,7 @@ class NarrationDone:
     prose: str                                  # flat: visible prose with § mechanics lines, for the transcript
     raw: str                                    # the whole exchange: model text, calls closed, engine answers
     declarations: list[Declaration]
+    notes: list[str]                            # the narrator's plain-English bracket lines, for the referee
     calls: list[dict]
     mechanics: list[str]
     problems: list[str]
@@ -150,8 +151,9 @@ async def narrate(provider: Provider, role: RoleConfig, system: str, messages: l
 
     visible, items, extract_problems = extract(raw)
     declarations = [i for i in items if isinstance(i, Declaration)]
+    notes = [i.text for i in items if isinstance(i, Note)]
     problems.extend(extract_problems)
-    yield NarrationDone(prose=prose.strip(), raw=raw, declarations=declarations, calls=calls, mechanics=mechanics,
+    yield NarrationDone(prose=prose.strip(), raw=raw, declarations=declarations, notes=notes, calls=calls, mechanics=mechanics,
                         problems=problems, causes=causes, usage=usage, model=model, stop_reason=stop_reason, note=note,
                         seconds=round(time.monotonic() - t0, 2), requests=requests)
 
@@ -176,7 +178,8 @@ def match_assessment(call: Call, assessments: list[Assessment]) -> Assessment | 
     """The uncalled assessment this call answers: same stat, and the same target when the call names one."""
     cands = [a for a in assessments if not a.called and a.stat == call.stat]
     if call.target:
-        exact = [a for a in cands if a.target == call.target]
+        want = call.target.lower().replace(" ", "_")
+        exact = [a for a in cands if a.target.lower() in (call.target.lower(), want)]
         if exact:
             return exact[0]
     return cands[0] if cands else None
@@ -197,7 +200,7 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
         difficulty: Tier = harder(a.difficulty, call.difficulty) if call.difficulty else a.difficulty
     else:
         difficulty = call.difficulty or "medium"  # type: ignore[assignment]
-    target = call.target or (a.target if a else "")
+    target = (a.target or call.target) if a else call.target        # the assessment's id wins over a called name
     label = (a.label if a and a.label else f"{stat} check" + (f" against {target}" if target else ""))
     req = CheckRequest(id=f"n{n}", label=label, stat=stat, difficulty=difficulty, base=stats[stat])
     req.modifiers = modifiers(req, target or None)

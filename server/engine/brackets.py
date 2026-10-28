@@ -6,17 +6,22 @@ Two kinds, told apart by their brackets so that only one of them needs to stop t
   <<LOOK rosa>>                                so generation ends at the call; the engine answers and
   <<ODDS 1 in 3>>                              the narrator continues from where it stopped.
 
-  [[NEW thing "a maintenance crowbar" [crowbar] at place:lab "on the deck" tags tool]]
-  [[NEW place "back office" [office_anchor] from anchor via "the door behind the bar"]]
-  [[MOVED park -> place:habitation]]           a DECLARATION. Parsed in place, never stops the stream,
-  [[SET reyes.mood uneasy: believed it]]       hidden from the player, applied after the prose.
-  [[LEARNED rosa: the cellar is padlocked]]
-  [[GONE dockers: left by the side door]]
+  [[the trapdoor is padlocked from the far side]]   a NOTE: a plain sentence, no ids, no field names.
+  [[a crowbar lies by the trapdoor]]                 Parsed in place, never stops the stream, hidden
+                                                     from the player, handed to the referee, which
+                                                     records it by id. Optional: the referee reads the
+                                                     prose anyway; a note states a decision plainly.
+
+  [[MOVED park -> place:habitation]]      a typed DECLARATION. Same brackets, a verb first (NEW, MOVED,
+  [[SET reyes.mood uneasy: believed it]]  SET, LEARNED, GONE). The narrator is not asked to write these
+                                          (ids and fields are the structured roles' job); the referee's
+                                          world report and tests use the shape. A verb that is present
+                                          but malformed is a problem; any other content is a note.
 
 Angle brackets ask and wait; square brackets tell and go on. Nothing inside either is prose: the
 StreamFilter removes both from what the player sees. Mechanics lines the engine writes into the
 transcript start with MECHANIC_MARK, so a renderer can style them and the narrator can tell them
-from its own prose.
+from its own prose. Names are resolved to ids by code (World.find); a model never has to echo an id.
 """
 from __future__ import annotations
 
@@ -57,6 +62,15 @@ class Call(BaseModel):
     den: int = 0
 
 
+class Note(BaseModel):
+    """A plain-English bracket line from the narrator, for the referee."""
+    text: str
+    raw: str
+
+
+DECL_VERBS = ("NEW", "MOVED", "SET", "LEARNED", "GONE")
+
+
 class Declaration(BaseModel):
     verb: DeclVerb
     raw: str
@@ -74,7 +88,7 @@ class Declaration(BaseModel):
     why: str = ""               # GONE
 
 
-Item = Call | Declaration
+Item = Call | Declaration | Note
 
 
 # ---- tokenising -------------------------------------------------------------
@@ -143,7 +157,7 @@ def _parse_check(rest: str, raw: str) -> Call:
     target = ""
     if " vs " in f" {body} ":
         before, _, after = f" {body} ".partition(" vs ")
-        body, target = before.strip(), after.strip().split()[0] if after.strip() else ""
+        body, target = before.strip(), after.strip().strip('"').rstrip(".").strip()   # an id or a name; code resolves names
     words = body.split()
     if not words:
         raise BracketError("CHECK needs a stat")
@@ -264,7 +278,15 @@ def extract(text: str) -> tuple[str, list[Item], list[str]]:
             return ""
         return regex.sub(sub, src)
 
-    visible = take(_DECL_RE, parse_declaration, text)
+    def decl_or_note(inner: str) -> Item:
+        verb = inner.strip().split(" ", 1)[0].upper().rstrip(":") if inner.strip() else ""
+        if verb in DECL_VERBS:
+            return parse_declaration(inner)
+        if not inner.strip():
+            raise BracketError("empty note")
+        return Note(text=inner.strip(), raw=inner.strip())
+
+    visible = take(_DECL_RE, decl_or_note, text)
     visible = take(_CALL_RE, parse_call, visible)
     visible = re.sub(r"\n{3,}", "\n\n", visible).strip()
     items.sort(key=lambda t: t[0])

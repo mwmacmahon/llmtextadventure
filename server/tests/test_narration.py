@@ -37,7 +37,7 @@ async def test_a_call_stops_the_stream_and_the_narration_continues():
     fp = FakeProvider(delay=0)
     fp.script = scripted([
         'The crowbar is cold.\n[[MOVED crowbar -> person:player]]\nYou lean harder.\n<<CHECK hands hard vs trapdoor_anchor>>\nTHIS SHOULD NOT APPEAR',
-        'The hasp holds.\n[[SET rosa.trust neutral: saw it]]',
+        'The hasp holds.\n[[Rosa saw him try the lock and did not call anyone]]',
     ])
     seen: list[Call] = []
 
@@ -53,7 +53,7 @@ async def test_a_call_stops_the_stream_and_the_narration_continues():
     done = events[-1]
     assert isinstance(done, NarrationDone)
     assert done.prose == "The crowbar is cold.\nYou lean harder.\n\n§ Hands, hard. 6 + 2 = 8 against 14. Failure.\n\nThe hasp holds."
-    assert [d.verb for d in done.declarations] == ["MOVED", "SET"]
+    assert [d.verb for d in done.declarations] == ["MOVED"] and done.notes == ["Rosa saw him try the lock and did not call anyone"]
     assert len(seen) == 1 and seen[0].stat == "hands" and seen[0].target == "trapdoor_anchor"
     assert done.requests == 2 and done.calls[0]["result"] == {"outcome": "failure"} and not done.problems
     assert "<<CHECK hands hard vs trapdoor_anchor>>" in done.raw and "[ENGINE] Check" in done.raw
@@ -110,6 +110,9 @@ def test_run_check_merges_difficulty_and_marks_the_assessment():
                   assessments, lambda req, tgt: [], lambda res: default_mechanic_line(res))
     assert r.data["difficulty"] == "medium" and assessments[0].called       # the assessment is the floor
     assert r.text.startswith("[ENGINE] Check: hands, medium difficulty, against trapdoor_anchor. Rolled ")
+    by_name = [Assessment(stat="hands", difficulty="high", target="trapdoor_anchor")]
+    rn = run_check(Call(verb="CHECK", raw="", stat="hands", target="the trapdoor"), 5, stats, dice_d20, rng, by_name, lambda req, tgt: [], default_mechanic_line)
+    assert "against trapdoor_anchor" in rn.text and by_name[0].called          # a called name resolves to the assessed id
     r2 = run_check(Call(verb="CHECK", raw="", stat="hands", difficulty="very_high"), 2, stats, dice_d20, rng, [], lambda req, tgt: [], default_mechanic_line)
     assert r2.data["difficulty"] == "very_high"
     r3 = run_check(Call(verb="CHECK", raw="", stat="luck"), 3, stats, dice_d20, rng, [], lambda req, tgt: [], default_mechanic_line)

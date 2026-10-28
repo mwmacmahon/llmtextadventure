@@ -377,6 +377,11 @@ def predicate(op: str, arg: Any, world_doc: dict | None) -> bool:
 
 # ---- the scene ---------------------------------------------------------------------------
 
+Audience = Literal["engine", "narrator"]
+# The engine's readers (adjudicator, referee) get ids in brackets and attribute words verbatim, so they
+# can name things exactly. The narrator gets prose: names, states, notes, no ids, no field names. Ids
+# are the job of the models before and after the narrator (DESIGN2 §5).
+
 
 class Vantage(BaseModel):
     mode: Literal["body", "attention"] = "body"
@@ -385,57 +390,80 @@ class Vantage(BaseModel):
     subject: str = ""                                   # attention: how to name the viewer ("the station AI")
 
 
-def _attrs_text(e: Person | Thing) -> str:
+def _ref(e: Place | Thing | Person, audience: Audience) -> str:
+    return e.name if audience == "narrator" else f"{e.name} [{e.id}]"
+
+
+_BOOL_WORDS = {"locked": ("locked", "unlocked"), "open": ("open", "closed"), "lit": ("lit", "dark"), "sealed": ("sealed", "unsealed")}
+
+
+def _attrs_text(e: Person | Thing, audience: Audience) -> str:
     bits = []
     for name, a in e.attributes.items():
-        s = f"{name} {a.value}" if a.value else name
-        if a.note:
-            s += f' "{a.note}"'
+        if audience == "narrator":
+            if name in _BOOL_WORDS and isinstance(e, Thing):
+                tri = e.tri(name)
+                bits.append(f"{name} not decided" if tri is None else _BOOL_WORDS[name][0 if tri else 1])
+                continue
+            s = f"{name} {a.value}" if a.value else f"{name} not decided"
+            if a.note:
+                s += f", {a.note}"
+        else:
+            s = f"{name} {a.value}" if a.value else name
+            if a.note:
+                s += f' "{a.note}"'
         bits.append(s)
     return "; ".join(bits)
 
 
-def _thing_text(w: World, t: Thing, depth: int = 0) -> str:
-    s = f"{t.name} [{t.id}]"
+def _thing_text(w: World, t: Thing, audience: Audience, depth: int = 0) -> str:
+    s = _ref(t, audience)
     if t.count != 1:
-        s += f" ×{t.count}"
-    extras = [x for x in (t.state, _attrs_text(t)) if x]
+        s += f" ({t.count})" if audience == "narrator" else f" ×{t.count}"
+    extras = [x for x in (t.state, _attrs_text(t, audience)) if x]
     if extras:
         s += " (" + "; ".join(extras) + ")"
     inner = w.contents(t.id)
     if inner and depth < 2:
-        s += " holding: " + ", ".join(_thing_text(w, x, depth + 1) for x in inner)
+        s += " holding: " + ", ".join(_thing_text(w, x, audience, depth + 1) for x in inner)
     return s
 
 
-def _person_text(p: Person) -> str:
-    s = f"{p.name} [{p.id}]"
+def _person_text(p: Person, audience: Audience) -> str:
+    s = _ref(p, audience)
     if p.role:
         s += f", {p.role}"
-    a = _attrs_text(p)
+    a = _attrs_text(p, audience)
     if a:
-        s += " — " + a
+        s += (": " if audience == "narrator" else " — ") + a
     if p.status != "present":
         s += f" ({p.status})"
     return s
 
 
-def _exits_text(w: World, place_id: str) -> str:
+def _exits_text(w: World, place_id: str, audience: Audience) -> str:
     out = []
     for e in w.exits(place_id):
         dest = w.place(e.to)
         name = dest.name if dest else e.to
         state = w.exit_locked(e)
-        tag = "locked" if state is True else "open" if state is False else "lock undecided"
-        via = f"{e.via}, " if e.via else ""
-        out.append(f"{name} [{e.to}] ({via}{tag})")
+        if audience == "narrator":
+            tag = "locked" if state is True else "open" if state is False else "whether it is locked is not decided"
+            via = f"{e.via}, " if e.via else ""
+            out.append(f"{name} ({via}{tag})")
+        else:
+            tag = "locked" if state is True else "open" if state is False else "lock undecided"
+            via = f"{e.via}, " if e.via else ""
+            out.append(f"{name} [{e.to}] ({via}{tag})")
     return "; ".join(out) if out else "none recorded"
 
 
-def scene(w: World, vantage: Vantage | None = None, *, clock_text: str = "", corrections: list[str] | None = None) -> str:
-    """The scene block: built by code from the world, for every role. Ids in brackets so that calls,
-    declarations and the structured roles can name things exactly."""
+def scene(w: World, vantage: Vantage | None = None, *, audience: Audience = "engine", clock_text: str = "",
+          corrections: list[str] | None = None) -> str:
+    """The scene block, built by code from the world. `audience="engine"` carries ids for the structured
+    roles; `audience="narrator"` is prose with names only."""
     v = vantage or Vantage()
+    n = audience == "narrator"
     lines: list[str] = ["SCENE" + (f"  {clock_text}" if clock_text else "")]
     if v.mode == "body":
         me = w.player
@@ -444,52 +472,53 @@ def scene(w: World, vantage: Vantage | None = None, *, clock_text: str = "", cor
         if place is None:
             lines.append(f"{me.name} is nowhere recorded.")
         else:
-            head = f"{me.name} is in {place.name} [{place.id}]."
+            head = f"{me.name} is in {_ref(place, audience)}."
             if place.state:
-                head += f" {place.state.rstrip('.')}."
+                head += f" {place.state[0].upper() + place.state[1:].rstrip('.')}." if n else f" {place.state.rstrip('.')}."
             if not place.furnished:
-                head += " Nothing recorded here yet; you may furnish it."
+                head += " Nothing recorded here yet; you may furnish it." if n else " Unfurnished: nothing recorded here yet."
             lines.append(head)
-            lines.append("Exits: " + _exits_text(w, place.id) + ".")
+            lines.append(("Ways out: " if n else "Exits: ") + _exits_text(w, place.id, audience) + ".")
             people, things = w.here(place.id)
             if people:
-                lines.append("  Here: " + " · ".join(_person_text(p) for p in people) + ".")
+                lines.append(("Here: " if n else "  Here: ") + ("; " if n else " · ").join(_person_text(p, audience) for p in people) + ".")
             if things:
-                lines.append("  Things: " + "; ".join(_thing_text(w, t) for t in things) + ".")
+                lines.append(("Things here: " if n else "  Things: ") + "; ".join(_thing_text(w, t, audience) for t in things) + ".")
         inv = w.inventory()
-        lines.append("Carrying: " + ("; ".join(_thing_text(w, t) for t in inv) if inv else "nothing") + ".")
+        lines.append((f"{me.name} carries: " if n else "Carrying: ") + ("; ".join(_thing_text(w, t, audience) for t in inv) if inv else "nothing") + ".")
         seen = [p for p in w.people if p.id != me.id and p.location != here_id and p.last_seen]
         if seen:
-            lines.append("Last seen: " + "; ".join(f"{p.name} [{p.id}] at {w.place(p.last_seen.place).name if w.place(p.last_seen.place) else p.last_seen.place}"
-                                                   + (f" ({p.last_seen.at})" if p.last_seen.at else "") for p in seen) + ".")
+            lines.append("Last seen: " + "; ".join(
+                f"{_ref(p, audience)} at {w.place(p.last_seen.place).name if w.place(p.last_seen.place) else p.last_seen.place}"
+                + (f" ({p.last_seen.at})" if p.last_seen.at else "") for p in seen) + ".")
     else:
         focus = w.place(v.focus_place) if v.focus_place else None
         subject = v.subject or "Attention"
         dark = [pid for pid, why in v.feeds.items() if why]
         feeds = "all nominal" if not dark else "no feed from " + ", ".join(
             f"{(w.place(pid).name if w.place(pid) else pid)} ({v.feeds[pid]})" for pid in dark)
-        lines.append(f"{subject}: {focus.name + ' [' + focus.id + ']' if focus else 'nowhere in particular'}. Sensor feeds: {feeds}.")
+        lines.append(f"{subject}: {_ref(focus, audience) if focus else 'nowhere in particular'}. Sensor feeds: {feeds}.")
         if focus is not None:
             if v.feeds.get(focus.id):
-                lines.append(f"{focus.name} [{focus.id}] — NO FEED ({v.feeds[focus.id]}). Only what is heard or reported.")
+                lines.append(f"{_ref(focus, audience)} — NO FEED ({v.feeds[focus.id]}). Only what is heard or reported.")
             else:
-                head = f"{focus.name} [{focus.id}]"
+                head = _ref(focus, audience)
                 if focus.state:
                     head += f" — {focus.state.rstrip('.')}."
                 lines.append(head)
-                lines.append("  Hatches: " + _exits_text(w, focus.id) + ".")
+                lines.append(("Hatches: " if n else "  Hatches: ") + _exits_text(w, focus.id, audience) + ".")
                 people, things = w.here(focus.id)
                 if people:
-                    lines.append("  Here: " + " · ".join(_person_text(p) for p in people) + ".")
+                    lines.append(("Here: " if n else "  Here: ") + ("; " if n else " · ").join(_person_text(p, audience) for p in people) + ".")
                 if things:
-                    lines.append("  Things: " + "; ".join(_thing_text(w, t) for t in things) + ".")
+                    lines.append(("Things here: " if n else "  Things: ") + "; ".join(_thing_text(w, t, audience) for t in things) + ".")
         elsewhere = []
         for pl in w.places:
             if focus is not None and pl.id == focus.id:
                 continue
             people, things = w.here(pl.id)
-            who = ", ".join(f"{p.name} [{p.id}]" + (f" ({p.status})" if p.status != "present" else "") for p in people)
-            drones = ", ".join(f"{t.name} [{t.id}]" for t in things if t.kind == "drone")
+            who = ", ".join(_ref(p, audience) + (f" ({p.status})" if p.status != "present" else "") for p in people)
+            drones = ", ".join(_ref(t, audience) for t in things if t.kind == "drone")
             bits = [b for b in (who, drones) if b]
             feed = v.feeds.get(pl.id, "")
             if feed:

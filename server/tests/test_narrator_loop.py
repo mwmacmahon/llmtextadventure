@@ -56,9 +56,9 @@ async def test_a_called_check_is_rolled_and_shown(engine: Engine, calls_on, monk
         last = messages[-1].content
         if last.startswith("[ENGINE]"):
             assert "Rolled" in last and "Continue the narration" in last
-            return "Park sighs and goes.\n[[SET park.mood uneasy: did not like being asked]]"
-        assert "Assessed check, talk Park into it (influence, medium difficulty)" in last
-        return "You put it to Park gently.\n<<CHECK influence low vs park>>\nTHIS NEVER STREAMS"
+            return "Park sighs and goes.\n[[Park did not like being asked]]"
+        assert "Assessed check, talk Park into it (influence, medium difficulty, against park)" in last and "write <<CHECK influence medium>>" in last
+        return "You put it to Park gently.\n<<CHECK influence low vs Park>>\nTHIS NEVER STREAMS"
     FakeProvider.script = script
 
     events = await _turn(engine, iid, "I ask Park to check on Lindqvist.")
@@ -70,7 +70,7 @@ async def test_a_called_check_is_rolled_and_shown(engine: Engine, calls_on, monk
     assert mech["data"]["text"].startswith("Influence, medium.") and mech["data"]["data"]["difficulty"] == "medium"   # the assessment is the floor
     done = events[-1]["data"]
     assert "§ Influence, medium." in done["text"] and done["mechanics"]["calls"][0]["outcome"] in ("failure", "success", "huge_failure", "huge_success", "critical_failure", "critical_success")
-    assert done["mechanics"]["declarations"] == ["SET park.mood uneasy: did not like being asked"]
+    assert done["mechanics"]["declarations"] == [] and done["mechanics"]["notes"] == ["Park did not like being asked"]
     assert not [i for i in done["mechanics"]["issues"] if "assessed check not called" in i]
     rows = engine.store.transcript(iid, roles=["narrator"])
     assert rows and "§ Influence, medium." in rows[-1].text and "[[" not in rows[-1].text
@@ -78,7 +78,7 @@ async def test_a_called_check_is_rolled_and_shown(engine: Engine, calls_on, monk
     ledger = engine.store.ledger(iid)
     model_call = next(r for r in ledger if r["kind"] == "model_call" and r["payload"].get("role") == "narrator")
     assert model_call["payload"]["requests"] == 2 and model_call["payload"]["calls"][0]["call"]["stat"] == "influence"
-    assert "<<CHECK influence low vs park>>" in model_call["payload"]["raw"]
+    assert "<<CHECK influence low vs Park>>" in model_call["payload"]["raw"] and model_call["payload"]["notes"] == ["Park did not like being asked"]
 
 
 async def test_an_assessed_check_never_called_is_flagged(engine: Engine, calls_on):

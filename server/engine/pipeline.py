@@ -327,6 +327,7 @@ class Engine:
                 assert ndone is not None
                 done = StreamDone(text=ndone.prose, stop_reason=ndone.stop_reason, model=ndone.model, usage=ndone.usage, note=ndone.note)
                 calls_block = {"requests": ndone.requests, "calls": ndone.calls, "declarations": [d.model_dump(mode="json") for d in ndone.declarations],
+                               "notes": ndone.notes,
                                "problems": ndone.problems, "causes": ndone.causes, "raw": ndone.raw,
                                "assessed_not_called": [a.label for a in res["assessments"] if not a.called]}
             else:
@@ -365,7 +366,10 @@ class Engine:
         delta_json: dict | None = None
         if not getattr(game, "skip_referee", False) and adj is not None and adj.kind in ("action", "trivial"):
             try:
-                delta, meta = await self._referee(game, state, res["directives"], player_text, narration)
+                for_referee = narration
+                if calls_block.get("notes"):
+                    for_referee += "\n\n[NARRATOR'S NOTES: facts it decided, in its own words]\n" + "\n".join(f"- {n}" for n in calls_block["notes"])
+                delta, meta = await self._referee(game, state, res["directives"], player_text, for_referee)
                 for fname in (cmd_result.referee_skip if cmd_result else []):
                     if fname in type(delta).model_fields:
                         setattr(delta, fname, _blank_like(getattr(delta, fname)))
@@ -423,6 +427,7 @@ class Engine:
                       + [f"narrator: {p}" for p in calls_block.get("problems", [])],
             "calls": [{"call": c["call"].get("raw"), "mechanic": c.get("mechanic"), "outcome": (c.get("result") or {}).get("outcome")} for c in calls_block.get("calls", [])],
             "declarations": [d.get("raw") for d in calls_block.get("declarations", [])],
+            "notes": calls_block.get("notes", []),
         }
         self.store.append_transcript(iid, turn, "mechanics", json.dumps(mechanics))
 
@@ -763,8 +768,8 @@ def _this_turn_block(res: dict[str, Any], narrate_rolls: bool = False) -> str:
         lines.append(f"- Check, {c.label} ({c.stat}, {c.difficulty.replace('_', ' ')} difficulty): {c.tier_text().upper()}.{roll} Narrate that outcome; do not soften or reverse it.")
     for a in res.get("assessments", []):
         vs = f" vs {a.target}" if a.target else ""
-        lines.append(f"- Assessed check, {a.label} ({a.stat}, {a.difficulty.replace('_', ' ')} difficulty): when the fiction reaches this attempt, "
-                     f"write <<CHECK {a.stat} {a.difficulty}{vs}>> on its own line and wait for the result. Do not decide it yourself.")
+        lines.append(f"- Assessed check, {a.label} ({a.stat}, {a.difficulty.replace('_', ' ')} difficulty{', against ' + a.target if a.target else ''}): "
+                     f"when the fiction reaches this attempt, write <<CHECK {a.stat} {a.difficulty.replace('_', ' ')}>> on its own line and wait for the result. Do not decide it yourself.")
     for d in res["directives"]:
         lines.append(f"- {d}")
     if len(lines) == 1:

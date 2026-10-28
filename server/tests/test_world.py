@@ -110,6 +110,19 @@ def test_body_scene_lists_what_matters():
     assert "Last seen: Ada Kessler [ada] at The docks (yesterday)." in s
 
 
+def test_narrator_scene_is_prose_without_ids():
+    s = scene(noir_world(), Vantage(mode="body"), audience="narrator", clock_text="day 1, 23:52")
+    assert "[" not in s and "]" not in s
+    assert "Frank is in The Anchor. The back room is lit." in s
+    assert "Ways out: Pier Street (door, open); The cellar (trapdoor, whether it is locked is not decided)." in s
+    assert "Here: Rosa, bartender: trust wary, still watching the door." in s
+    assert "the office safe (locked) holding: Harrow's ledger" in s
+    assert "Frank carries: revolver (3/6 rounds); loose bullets (9)." in s
+    st = scene(station_world(), Vantage(mode="attention", focus_place="lab", feeds={"cargo": "camera offline"}), audience="narrator")
+    assert "[" not in st and "Ana Reyes, engineer: mood anxious, keeps checking the hatch seals" in st
+    assert "Hatches: Habitation ring (hatch, open); Cargo (hatch, locked)." in st
+
+
 def test_attention_scene_with_a_dark_module():
     w = station_world()
     s = scene(w, Vantage(mode="attention", focus_place="lab", subject="Attention", feeds={"cargo": "camera offline since 08:10"}))

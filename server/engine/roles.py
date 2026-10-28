@@ -70,14 +70,11 @@ class AdjudicationV2(Adjudication):
     focus: Focus = Field(default_factory=Focus, description="What the narrator should have in front of it for this input.")
 
 
-NARRATOR_PROTOCOL = """ENGINE PROTOCOL. Bracket lines, each on a line of its own; the player never sees them.
-Ask and wait, with angle brackets: the stream stops, the engine answers, and you continue from exactly where you stopped.
-  <<CHECK stat difficulty vs id>>  when the fiction reaches an attempt whose outcome is uncertain. The engine rolls and tells you the result; play it. Never decide an uncertain outcome yourself. THIS TURN lists the checks already assessed: call each at its moment, and call others when the fiction needs them.
-  <<LOOK id>>  for the full record of a person, thing or place you need and do not have.
-Tell and go on, with square brackets, where the decision happens. What you declare becomes fact; what you do not declare did not happen.
-  [[NEW thing "name" [id] at place_id "state" tags a,b]]   [[NEW person "name" [id] at place_id]]   [[NEW place "name" [id] from place_id via "how it reads"]]
-  [[MOVED id -> place_id]]   [[MOVED thing_id -> person:id]]   [[SET id.field value: note]]   [[LEARNED person_id: fact]]   [[GONE id: why]]
-A new thing goes into the scene, never straight into a pocket. Lines beginning with § in earlier turns are the engine's mechanics lines; never write them yourself. Nothing inside brackets is prose; use brackets for nothing else."""
+NARRATOR_PROTOCOL = """ENGINE PROTOCOL. A few kinds of line are for the engine, each on a line of its own; the player never sees them.
+  <<CHECK stat difficulty>>  when the fiction reaches an attempt whose outcome is uncertain. Stop there: the engine rolls and tells you the result, and you continue from exactly where you stopped. Play the result; never decide an uncertain outcome yourself. THIS TURN lists the checks already assessed: call each at its moment, by its stat. Add "vs <name>" only when it would otherwise be unclear who or what it is against. Call other checks when the fiction needs them.
+  <<LOOK name>>  for what the game records about a person, thing or place you need and do not have.
+  [[a plain sentence]]  optional: a fact you decided that the prose states only obliquely, such as [[the trapdoor is padlocked from the far side]] or [[a crowbar lies by the trapdoor]]. Plain words, no ids, no field names; the referee records it.
+Lines beginning with § in earlier turns are the engine's mechanics lines; never write them yourself. Use brackets for nothing else."""
 
 
 ADJUDICATOR_INSTRUCTIONS = """You are the adjudicator for a text adventure. You read the player's latest input and decide, in the engine's terms, what they are attempting. You do not narrate and you do not decide outcomes: the engine rolls checks and the narrator writes prose.
