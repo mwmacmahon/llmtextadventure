@@ -223,11 +223,10 @@ class GameBase:
     log_path: str = "log"
     skip_adjudication: bool = False                   # purely narrative games may set True
     skip_referee: bool = False
-    narrate_rolls: bool = False                       # tell the narrator the die roll and target, not just the tier (noir flavour)
+    mechanic_numbers: bool = True                     # the § line shows the die and target (noir flavour); False shows the tier only (station)
     fallback_stat: str | None = None                  # when the adjudicator names a stat that does not exist, roll this one instead of dropping the check
     static_paths: list[str] = []                      # engine-owned paths set at instance creation and never written again (tools/authority_audit.py skips them)
     # --- 2.0 (DESIGN2 §4-§5) ----------------------------------------------
-    narrator_calls: bool = False                      # the narrator may stop to roll (<<CHECK>>), look up (<<LOOK>>) and declare ([[...]]); dice move from resolve into the prose
     adjudication_schema: type[Adjudication] = Adjudication   # AdjudicationV2 for games with proposals and focus
     max_calls: int = 3                                # stops per turn before the engine answers "no more calls"
 

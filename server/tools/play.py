@@ -99,8 +99,6 @@ def _print_turn(events: list[dict], as_json: bool) -> None:
         bits.append(f"lever {m['lever']['id']}: {m['lever']['status'].replace('_', ' ')}")
     if m.get("declarations"):
         bits.append("declared " + " | ".join(m["declarations"]))
-    for c in m.get("checks", []):
-        bits.append(f"check {c['label']}: {c['outcome']} (roll {c['roll']}, total {c['total']} vs {c['target']})")
     if m.get("events"):
         bits.append("events " + ",".join(m["events"]))
     if m.get("happenings"):

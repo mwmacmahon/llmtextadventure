@@ -249,7 +249,7 @@ function MechanicsRow({ text }: { text: string }) {
   if (m.kind === "clarify") bits.push("the engine could not tell what you meant and asked; no time passed");
   if (m.kind === "impossible") bits.push("not possible with what you have; no time passed");
   if (m.elapsed) bits.push(`+${m.elapsed} min`);
-  for (const c of m.checks) bits.push(`${c.label}: ${c.outcome.replace(/_/g, " ")}${c.roll != null ? ` (d20 ${c.roll}, ${c.total} vs ${c.target})` : ""}`);
+  for (const c of m.calls ?? []) bits.push(c.outcome ? `${c.call}: ${c.outcome.replace(/_/g, " ")}` : `${c.call}`);
   for (const e of m.events) bits.push(`event ${e}`);
   for (const e of m.expired) bits.push(`expired ${e}`);
   for (const h of m.happenings ?? []) bits.push(`unscripted: ${h.id.replace(/_/g, " ")}${h.reason ? ` (${h.reason})` : ""}`);

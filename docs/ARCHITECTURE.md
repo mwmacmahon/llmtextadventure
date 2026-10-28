@@ -226,11 +226,12 @@ Branch `1.0` preserves the first engine; `main` stays there until 2.0 is playabl
   send one more request (history + the prose so far + the result + "continue from where you stopped");
   at most `GameBase.max_calls` stops per turn. `run_check` rolls with the adjudicator's assessment as the
   floor (the harder of assessment and call).
-- Pipeline switches on `GameBase.narrator_calls`: resolve assesses instead of rolling, THIS TURN lists
-  the assessed checks as calls to make, the system prompt gains `roles.NARRATOR_PROTOCOL`, the SSE
-  stream gains `mechanic` events, the transcript's narrator row is flat (prose plus `§` lines), and the
-  ledger's narrator `model_call` carries `requests`, `calls`, `declarations`, `problems` and `raw`.
-  Hooks: `look(state, ref)`, `render_mechanic(state, result)`. Neither shipped game opts in yet.
+- One narration path (the 1.0 path, dice rolled before the prose, was deleted 2026-10-28): resolve
+  assesses instead of rolling, THIS TURN lists the assessed checks as calls to make, the system prompt
+  carries `roles.NARRATOR_WORLD` and `roles.NARRATOR_PROTOCOL`, the SSE stream has `mechanic` events, the
+  transcript's narrator row is flat (prose plus `§` lines), and the ledger's narrator `model_call`
+  carries `requests`, `calls`, `declarations`, `notes`, `problems` and `raw`. Hooks: `look(state, ref)`,
+  `render_mechanic(state, result)`; `GameBase.mechanic_numbers` picks die-and-target or tier-only lines.
 - Clients: the web app renders `mechanic` events and `§` paragraphs in a mechanics style; `play.py`
   dims them and lists calls and declarations in the turn summary.
 - Tests: `tests/test_brackets.py`, `tests/test_world.py`, `tests/test_narration.py`,
@@ -249,8 +250,8 @@ Branch `1.0` preserves the first engine; `main` stays there until 2.0 is playabl
   the cabinet and canister, drones, the pod); `StationState.world`, built on a new instance; crew and
   world kept in sync by code (the world is authoritative for location); sealing a module locks its
   hatches in the world; `scene_block`, `look`, `world_rules`, `apply_world_report`; a "Where everyone
-  is" panel; `narrator_calls = True`, `adjudication_schema = AdjudicationV2`. Older instances load
-  with no world and play as 1.0. Noir is untouched.
+  is" panel; `adjudication_schema = AdjudicationV2`. Older instances load with no world. Noir runs the
+  same narration path with `AdjudicationV2` and no world yet (its transitions stay empty).
 
 Next: focus and story for the structured roles, rulings and the guard, crew schedules, decision D's
 meters, then noir on the world.

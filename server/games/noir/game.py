@@ -28,7 +28,7 @@ from engine.game import (
 )
 from engine.gamekit import Clock, Content, Writer, apply_flags, threads_panel
 from engine.mechanics import CheckRequest, Modifier
-from engine.roles import RefereeBase
+from engine.roles import AdjudicationV2, RefereeBase
 from engine.spontaneous import Spontaneous
 from engine.statepath import Actor
 
@@ -151,7 +151,8 @@ class NoirGame(GameBase):
     recent_path = "hidden.recent"
     threads_path = "threads"
     log_path = "log"
-    narrate_rolls = True
+    mechanic_numbers = True                 # the § line shows the die: "Hands, low. 14 + 2 = 16 against 6. Success."
+    adjudication_schema = AdjudicationV2    # targets and proposals; transitions stay empty until noir has a world
     fallback_stat = "nerve"
     static_paths = ["case", "player.name", "player.description", "player.stats", "player.proficiencies", "player.weaknesses", "player.baseline_dread"]
 

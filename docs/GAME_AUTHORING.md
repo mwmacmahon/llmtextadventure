@@ -98,8 +98,8 @@ Optional, with defaults that do nothing:
 Declarations on the class: `clock`, `resolver`, `authority`, `events_path`, `spontaneous_path`,
 `recent_path`, `threads_path`, `log_path`, `skip_adjudication`, `skip_referee`, `fallback_stat`,
 `static_paths` (engine-owned fields the audit should not expect a writer for) and
-`narrate_rolls` (the THIS TURN block tells the narrator the die roll and target as well as the
-outcome tier; noir shows the roll in a parenthetical, station does not).
+`mechanic_numbers` (the engine's § line shows the die and the target, as noir does, or the tier
+only, as the station does; the narrator never writes numbers on either).
 
 ## 5. The bulletin
 

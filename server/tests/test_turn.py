@@ -81,7 +81,7 @@ async def test_check_is_rolled_and_told_to_narrator(engine: Engine, fake: FakePr
     finally:
         fake.script = None
     res = events[1]["data"]
-    assert res["checks"] == [] and "Assessed check, calm Park (influence, medium difficulty, against park)" in events[2]["data"]["text"]
+    assert res["assessed"] and "Assessed check, calm Park (influence, medium difficulty, against park)" in events[2]["data"]["text"]
     mech = next(e for e in events if e["event"] == "mechanic")
     c = mech["data"]["data"]
     assert c["stat"] == "influence" and c["target"] == 10 and 1 <= c["roll"] <= 20

@@ -33,7 +33,7 @@ export type CheckSummary = { label: string; outcome: string; roll: number | null
 export type Mechanics = {
   kind: string | null;
   elapsed: number;
-  checks: CheckSummary[];
+  calls: { call: string | null; mechanic: string | null; outcome: string | null }[];
   events: string[];
   expired: string[];
   happenings: { id: string; who: string[]; reason: string | null }[];
@@ -85,7 +85,7 @@ export type TurnEvent =
   | { event: "command"; data: { ok: boolean; text: string; mode: "engine" | "narrated" | null; label?: string; turn?: number } }
   | { event: "summary"; data: { status: "running" | "done" | "failed"; turns: number[]; chars?: number; error?: string } }
   | { event: "adjudication"; data: { kind: string; summary: string; time_minutes: number; clarify_question?: string | null } }
-  | { event: "resolution"; data: { checks: Record<string, any>[]; fired: { event_id: string; variant: string }[]; expired: { event_id: string }[]; elapsed: number; directives: string[] } }
+  | { event: "resolution"; data: { assessed: { label: string; stat: string; difficulty: string; target: string }[]; fired: { event_id: string; variant: string }[]; expired: { event_id: string }[]; elapsed: number; directives: string[] } }
   | { event: "bulletin"; data: { turn: number; text: string } }
   | { event: "text"; data: { t: string } }
   | { event: "mechanic"; data: { turn: number; text: string; data: Record<string, any> } }

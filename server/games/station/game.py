@@ -129,9 +129,8 @@ class StationGame(GameBase):
     log_path = "log"
     static_paths = ["scenario", "stats", "resources.*.note", "crew.*.baseline_mood", "crew.*.baseline_stress", "crew.*.interests", "crew.*.relationships"]
     # 2.0 (DESIGN2): the narrator stops to roll; the adjudicator names targets and a focus; the world holds the station
-    narrator_calls = True
     adjudication_schema = AdjudicationV2
-    narrate_rolls = False
+    mechanic_numbers = False               # the § line gives the tier only: "Influence check, high: huge failure."
     world_policy = WORLD_POLICY
 
     def __init__(self, content_dir: Path):

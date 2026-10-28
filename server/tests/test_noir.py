@@ -246,11 +246,15 @@ async def test_typed_turn_narrator_sees_roll_and_referee_updates_pockets(engine:
                      intents=[{"action": "shoot it", "check": {"label": "shoot the creature", "stat": "hands", "difficulty": "low"}}]) if issubclass(schema, Adjudication)
         else ref(log_line="Frank fired three times.", shots_fired=3, dread_change=10, player_location="Rooftop shack") if schema is NoirReferee
         else None)
+    FakeProvider.script = lambda system, messages: ("The shots go where they go." if messages[-1].content.startswith("[ENGINE]")
+                                                    else "You spin.\n<<CHECK hands low>>\nNEVER STREAMS")
     events = await play(engine, iid, "I spin and fire three shots at its head.")
+    FakeProvider.script = None
     bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
-    assert "- Check, shoot the creature (hands, low difficulty):" in bulletin and " Rolled " in bulletin and " against 6." in bulletin
+    assert "Assessed check, shoot the creature (hands, low difficulty): when the fiction reaches this attempt, write <<CHECK hands low>>" in bulletin and "Rolled" not in bulletin
     mech = events[-1]["data"]["mechanics"]
-    assert mech["checks"][0]["roll"] is not None and mech["elapsed"] == 1
+    assert mech["calls"][0]["outcome"] is not None and mech["elapsed"] == 1
+    assert "§ Hands, low." in events[-1]["data"]["text"] and "against 6." in events[-1]["data"]["text"]       # noir's § line shows the die
     st = state_of(engine, iid)
     assert st.item("revolver").loaded == 3 and st.player.dread == 45
     assert "inventory.revolver.loaded: 6 -> 3" in mech["applied"]
@@ -331,7 +335,7 @@ async def test_unknown_stat_falls_back_and_is_noted(engine: Engine, fake: FakePr
                                                 intents=[{"action": "run", "check": {"label": "get through the door", "stat": "muzzle", "difficulty": "medium"}}])]
     events = await play(engine, iid, "I scramble through the door.")
     mech = events[-1]["data"]["mechanics"]
-    assert len(mech["checks"]) == 1 and any("unknown stat 'muzzle'" in i and "rolled nerve" in i for i in mech["issues"])
+    assert any("unknown stat 'muzzle'" in i and "assessed nerve" in i for i in mech["issues"])
     assert "drift" in mech
 
 

@@ -33,8 +33,7 @@ def engine(tmp_path: Path) -> Engine:
 @pytest.fixture
 def calls_on(engine: Engine, monkeypatch):
     game = engine.games["station"]
-    monkeypatch.setattr(type(game), "narrator_calls", True, raising=False)
-    monkeypatch.setattr(type(game), "narrate_rolls", True, raising=False)
+    monkeypatch.setattr(type(game), "mechanic_numbers", True, raising=False)
     yield game
     FakeProvider.script = None
     FakeProvider.canned.clear()
@@ -90,12 +89,3 @@ async def test_an_assessed_check_never_called_is_flagged(engine: Engine, calls_o
     events = await _turn(engine, iid, "I forge a message from Earth.")
     done = events[-1]["data"]
     assert any("assessed check not called: forge the message" in i for i in done["mechanics"]["issues"])
-    assert done["mechanics"]["checks"] == []            # nothing was pre-rolled
-
-
-async def test_games_without_calls_are_unchanged(engine: Engine):
-    iid = engine.create_instance("station", {})
-    events = await _turn(engine, iid, "I look around.")
-    assert [e["event"] for e in events][-1] == "done" and "mechanic" not in [e["event"] for e in events]
-    done = events[-1]["data"]
-    assert done["mechanics"]["calls"] == [] and "§" not in done["text"]
