@@ -37,7 +37,7 @@ class Extras:
 
 def to_declaration(ch: Change) -> Declaration | None:
     """A game row the game did not take, as the world's typed shape."""
-    if ch.kind == "move" and ch.target and ch.value:
+    if (ch.kind == "move" or (ch.kind == "set" and ch.field.strip().lower() == "location")) and ch.target and ch.value:
         return Declaration(verb="MOVED", raw=f"MOVED {ch.target} -> {ch.value}", id=ch.target, locus=ch.value)
     if ch.kind == "new" and ch.value:
         kind = ch.target.strip().lower() if ch.target.strip().lower() in ("thing", "person", "place") else "thing"

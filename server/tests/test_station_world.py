@@ -87,6 +87,18 @@ def test_referee_world_report_lands_under_the_rules(game):
     assert w.thing("drug_cabinet").tri("locked") is True and any("drug cabinet" in (r.value or "") or "hard fact" in r.reason for r in rep.rejected)
 
 
+def test_a_set_location_row_is_a_move_and_a_no_op_is_not_a_rejection(game):
+    """The referee sometimes writes a crew location as `set x.location y`; the world takes only MOVED, so
+    changes.to_declaration maps it. Already there is not a change and not a rejection (live, 2026-10-28)."""
+    st = fresh(game)
+    report = ChangeReport.of(Change(kind="set", target="park", field="location", value="habitation_ring", note="still at the hatch"), log_line="x")
+    st2, rep, _ = apply_changes(game, st, report, present=[], causes=[])
+    assert not rep.rejected and st2.crew_by_id("park").location == "Habitation ring"
+    report = ChangeReport.of(Change(kind="set", target="park", field="location", value="lab"), log_line="x")
+    st3, rep, _ = apply_changes(game, st, report, present=[], causes=[])
+    assert not rep.rejected and st3.world.person("park").location == "lab" and st3.crew_by_id("park").location == "Lab"
+
+
 def test_a_sealed_hatch_blocks_a_reported_move_unless_a_cause_allows_it(game):
     st = fresh(game)
     st, _ = game.run_command(st, "hatches", {"action": "seal", "module": "Lab"})

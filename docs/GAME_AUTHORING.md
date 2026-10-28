@@ -194,7 +194,7 @@ lever the player proposes: the pipeline runs `run_command` on a copy first and t
 exactly what it would do (your `text`, as "CLEAR. If it goes through it does exactly this: …") or
 why it cannot (`ok=False`, your `text`, as "BLOCKED … play the attempt and the player finding out
 why"); the narrator plays it with time passing; after the prose the pipeline runs `run_command`
-for real, unless the referee listed the lever in `levers_not_completed` because the prose shows it
+for real, unless the referee reported a `not_done` row for the lever because the prose shows it
 was interrupted. The player sees the result as a § mechanics line. So write `text` for both uses:
 as a promise before the prose and as the engine's line after it. A missing or invalid parameter
 still asks "Which module? (Lab, Cargo)". Mark console-only commands `typed=False` (notebook,

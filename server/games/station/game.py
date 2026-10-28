@@ -420,7 +420,7 @@ class StationGame(GameBase):
             "Targets: crew by id: " + ", ".join(f"{c.id} = {c.name}" for c in s.crew) + "; systems by name: " + ", ".join(sy.name for sy in s.systems)
             + "; resources by name: " + ", ".join(r.name for r in s.resources) + "; places, things and drones by the ids in brackets in the SCENE block.",
             "Rows this game records:",
-            "- move <crew id> <place id or name from the SCENE>; move <drone id> <place>. Crew move only through open hatches; a sealed hatch stops them unless the prose shows a manual override. Drones move on their own.",
+            "- move <crew id> <place id or name from the SCENE>; move <drone id> <place>, only when the prose shows them arrive there. Someone or something still on the way is not a move: it is a soon row with the minutes until they arrive, and the move is reported on the turn they do. Crew move only through open hatches; a sealed hatch stops them unless the prose shows a manual override. Drones move on their own.",
             "- set <crew id>.mood <one or two words>, only if the narration changed it. set <crew id>.health <" + "|".join(HEALTH_VALUES) + ">, only if changed.",
             "- add <crew id>.stress ±n (-15 to 15) when something stressed or relieved them: a crew member shown shaking, crying, snapping at someone, sweating, hiding, or going quiet and still is stressed (+5 to +15); one shown resting, laughing or reassured is relieved. add <crew id>.suspicion ±n (-10 to 10) only when they saw something that raised or lowered their suspicion of tampering or of the AI, not general worry.",
             "- learned <crew id> value=fact: something this person now knows or believes that they did not before, one short sentence.",
