@@ -41,6 +41,7 @@ export type Mechanics = {
   rejected: { path: string; reason: string; value?: unknown }[];
   drift?: string[];
   lever?: { id: string; status: "applied" | "blocked" | "not_completed"; text: string } | null;
+  pending?: { fired: string[]; new: string[]; resolved: string[] };
   issues: string[];
 };
 

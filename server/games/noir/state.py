@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from engine.events import Event
 from engine.gamekit import Clock
+from engine.pending import Pending
 from engine.spontaneous import Spontaneous
 from engine.threads import Thread
 
@@ -115,6 +116,8 @@ class Case(BaseModel):
 class Hidden(BaseModel):
     events: list[Event] = Field(default_factory=list)
     spontaneous: list[Spontaneous] = Field(default_factory=list)
+    pending: list[Pending] = Field(default_factory=list)   # things set in motion during play, due on the clock (engine/pending.py)
+    unseen: list[str] = Field(default_factory=list)        # clock-stamped facts established out of the player's sight; the narrator sees them, the player never
     recent: list[str] = Field(default_factory=list)
     facts: list[str] = Field(default_factory=list)
 

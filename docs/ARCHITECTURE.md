@@ -58,7 +58,7 @@ One SQLite file, four tables, all keyed by instance:
 |---|---|---|
 | `instance` | id, game, version, title, setup, `prefix_text`, origin | the frozen prefix is stored per instance so it never drifts mid-game |
 | `transcript` | seq, turn, role, text | roles: `player`, `bulletin`, `narrator`, `mechanics` (JSON), `system_note` (story so far), `command`, `result` |
-| `ledger` | seq, turn, kind, payload | kinds: `model_call`, `adjudication`, `check`, `event_fired`, `event_expired`, `happening`, `clock`, `verdict`, `delta`, `drift`, `command_preview` (a typed lever as previewed for the narrator), `command` (clicked, or `typed: true` when a lever was committed after the prose, refused, or `not_completed`) |
+| `ledger` | seq, turn, kind, payload | kinds: `model_call`, `adjudication`, `check`, `event_fired`, `event_expired`, `happening`, `clock`, `verdict`, `delta`, `drift`, `motion_verdict` (the motion referee's report), `pending` and `unseen` (things set in motion during play and facts out of the player's sight; `engine/pending.py`), `command_preview` (a typed lever as previewed for the narrator), `command` (clicked, or `typed: true` when a lever was committed after the prose, refused, or `not_completed`) |
 | `snapshot` | turn, state | full state after every turn; turn 0 is the opening |
 
 Undo truncates all three per-turn tables after a turn. Fork is export truncated at a turn and

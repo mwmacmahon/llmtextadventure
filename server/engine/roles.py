@@ -11,6 +11,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from .mechanics import Tier
+from .pending import PendingNew
 from .providers.base import Msg
 from .threads import ThreadClose
 
@@ -131,8 +132,14 @@ def world_referee_messages(rules: str, scene_text: str, directives: list[str], p
 NARRATOR_PROTOCOL = """ENGINE PROTOCOL. A few kinds of line are for the engine, each on a line of its own; the player never sees them.
   <<CHECK stat difficulty>>  when the fiction reaches an attempt whose outcome is uncertain. Stop there: the engine rolls and tells you the result, and you continue from exactly where you stopped. Play the result; never decide an uncertain outcome yourself. THIS TURN lists the checks already assessed: call each at its moment, by its stat. Add "vs <name>" only when it would otherwise be unclear who or what it is against. Call other checks when the fiction needs them.
   <<LOOK name>>  for what the game records about a person, thing or place you need and do not have.
-  [[a plain sentence]]  optional: a fact you decided that the prose states only obliquely, such as [[the trapdoor is padlocked from the far side]] or [[a crowbar lies by the trapdoor]]. Plain words, no ids, no field names; the referee records it.
+  [[a plain sentence]]  a fact you decided that the prose states only obliquely, such as [[the trapdoor is padlocked from the far side]]; and the unseen: and soon: lines described under THE WORLD DOES NOT WAIT. Plain words, no ids, no field names; the referee records it.
 Lines beginning with § in earlier turns are the engine's mechanics lines; never write them yourself. Use brackets for nothing else."""
+
+
+NARRATOR_WORLD = """THE WORLD DOES NOT WAIT. Every turn you narrate two things: what the player perceives, and what is happening out of their sight. Time passes for everyone. People act on their reasons whether or not the player is watching; a threat that was closing in arrives; a plan that was brewing comes due; time spent costs something. Nothing happens only because the player did something, and nothing holds still because they did nothing. You are strongly encouraged to add new details and occurrences, in the scene and beyond it; the referee records them, and the engine keeps the clock on what you set in motion. Waiting is not an occurrence: if something in the scene was about to act last turn, it acts this turn, or you write a soon: line with the minute it will. Whenever more than a few minutes pass, something changes that the player did not cause: in the prose if they can perceive it, in an unseen: line if not. COMING, in the state, lists what is already in motion; THIS TURN tells you when one is due, and you play it whatever the player is doing.
+Two lines are for the engine, each on a line of its own in plain words; the player never sees them:
+  [[unseen: …]]  something happening now out of the player's sight: where, who, what. One or two per turn when the world is moving elsewhere.
+  [[soon: …]]    something you set in motion that will happen on its own: what, roughly when, and what would stop it, such as [[soon: in about three minutes the creature attacks unless Frank leaves the shack]]. The engine tells you when it is due."""
 
 
 ADJUDICATOR_INSTRUCTIONS = """You are the adjudicator for a text adventure. You read the player's latest input and decide, in the engine's terms, what they are attempting. You do not narrate and you do not decide outcomes: the engine rolls checks and the narrator writes prose.
@@ -141,7 +148,7 @@ Rules:
 - kind=action for any real attempt that could change the world or takes time. kind=trivial for looking, recalling, or asking about the interface. kind=impossible when the player's means cannot do it at all (then say why in clarify_question, briefly).
 - Take the most natural reading of the input in its scene and adjudicate that. A terse input means the obvious thing: "turn around" with something behind the player means facing it; "go in" means the door in front of them. kind=clarify is rare: only when the input names something that does not exist, or when two readings would lead to materially different consequences and nothing in the scene favours either. Never clarify a short physical action, and never offer the player a menu of choices the narrator could simply play.
 - Propose a check only when the outcome is uncertain and the stakes matter. Routine use of the player's own abilities needs no check. Use the stats and difficulty tiers exactly as the rules list them.
-- Estimate time honestly. Reading a log is a minute; a conversation is ten; waiting for someone to sleep is hours.
+- Estimate time honestly. Reading a log is a minute; a conversation is ten; waiting for someone to sleep is hours. The state may list IMPENDING things due at a time; they fire on their own and the engine stops the clock at the first one that falls due, so never shorten an estimate to dodge one.
 - Waiting, watching for a while, or otherwise letting time pass is kind=action with time_minutes equal to the time waited, never trivial.
 - Name entities and systems only from the lists given, by id or name exactly.
 - kind=action always carries at least one intent, each with its check when the outcome is uncertain. Never return an empty intents list for an action.
@@ -193,6 +200,7 @@ Rules:
 - Numeric changes are small nudges; the engine clamps them.
 - narration_issues is for the engine, not the player: note hidden facts revealed, contradictions with the state, or ignored directives.
 - Threads are the story's memory of commitments: open one when the narration creates something that must be remembered later (a lie and who believes it, a promise, a plan, a deadline, a question raised); close one when it is clearly achieved, broken, or moot. Do not open threads for routine actions. Something that opens and settles within this same narration is not a thread: do not open it. Close only threads listed as open in the game state, by their exact id; never close one you are opening now.
+- UNSEEN. [[unseen: …]] and [[soon: …]] notes, and anything the prose shows happening where the player cannot perceive it, are not known to the player: never put them in clues, notebook entries, log_line, or any other player-visible field. A separate report records them.
 - LEVERS, when listed, are the player's exact actions (a reload, a seal) that the engine applies by itself right after your report. Do not report their effects in other fields. If the narration shows one was interrupted, abandoned or not completed, list it in levers_not_completed as "<id>: <reason>"; a lever the narration played as done, or did not mention, stays off that list.
 - Be terse. The fields are the output."""
 
@@ -205,6 +213,36 @@ def referee_messages(rules: str, state_text: str, directives: list[str], player_
     user = (f"[GAME STATE BEFORE THIS TURN]\n{state_text.strip()}\n\n[DIRECTIVES THE NARRATOR WAS GIVEN]\n{d}{lv}\n\n"
             f"[PLAYER INPUT]\n{player_text.strip()}\n\n[NARRATION TO REPORT ON]\n{narration.strip()}")
     return system, [Msg("user", user)]
+
+
+# ---- motion referee: the world does not wait (DESIGN2 §4b) -----------------
+
+class MotionReport(BaseModel):
+    """What the prose and the narrator's notes set in motion or established out of sight. Its own call,
+    concurrent with the game referee, so neither schema grows past the API's complexity limit."""
+    pending_new: list[PendingNew] = Field(default_factory=list, description="Things the narration or the narrator's notes set in motion that will happen on their own if nothing intervenes: a threat closing in, a plan with a time, a timer. Every [[soon: …]] note is one. Empty if none.")
+    pending_resolved: list[str] = Field(default_factory=list, description="Ids of IMPENDING items (from the game state) that this narration settled: it happened early, was prevented, or no longer applies. '<id>: <reason>'. Empty otherwise.")
+    unseen_facts: list[str] = Field(default_factory=list, description="What the narration or an [[unseen: …]] note established out of the player's sight, in plain words, one fact each. Empty if none.")
+    confidence: Literal["low", "medium", "high"] = Field(description="How sure you are of this whole report.")
+
+    @classmethod
+    def example(cls, narration: str) -> "MotionReport":
+        return cls(confidence="medium")
+
+
+MOTION_REFEREE_INSTRUCTIONS = """You keep track of what is in motion in a text adventure's world. The world does not wait for the player: you read the narrator's latest prose and its notes against the game state and report what will happen on its own, what it settled, and what is true out of the player's sight.
+
+- pending_new: anything new the prose or the notes set in motion that will happen on its own if nothing intervenes: a threat closing in (what it does, in about how many minutes), a person who announced a plan with a time, a timer, a thing someone has been sent to do. Every [[soon: …]] note becomes one, with its minutes. A creature or person described as waiting, watching, hesitating, closing in or about to act is a threat in motion: give it a pending with your estimate of the minutes; waiting for a second turn is not an outcome. Mark hidden when the player cannot see it happen where they are; put what would stop it in unless, in plain words. Use ids from the game state for who when it lists one.
+- pending_resolved: the state lists IMPENDING items by id. When the prose shows one happened early, was prevented, or no longer applies, list its id with a short reason. Otherwise leave it.
+- unseen_facts: [[unseen: …]] notes and anything the prose shows happening where the player cannot perceive it, one plain fact each. The player does not know them.
+Do not invent what the prose and notes do not show; do not repeat what is already listed as IMPENDING or UNSEEN SO FAR. Be terse."""
+
+
+def motion_referee_messages(state_text: str, directives: list[str], player_text: str, narration: str) -> tuple[str, list[Msg]]:
+    d = "\n".join(f"- {x}" for x in directives) if directives else "- (none)"
+    user = (f"[GAME STATE BEFORE THIS TURN]\n{state_text.strip()}\n\n[DIRECTIVES THE NARRATOR WAS GIVEN]\n{d}\n\n"
+            f"[PLAYER INPUT]\n{player_text.strip()}\n\n[NARRATION AND THE NARRATOR'S NOTES]\n{narration.strip()}\n\nReport what is in motion now.")
+    return MOTION_REFEREE_INSTRUCTIONS, [Msg("user", user)]
 
 
 # ---- summarizer -----------------------------------------------------------

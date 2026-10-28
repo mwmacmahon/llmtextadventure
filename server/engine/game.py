@@ -219,6 +219,8 @@ class GameBase:
     spontaneous_path: str | None = None               # where Spontaneous records live; None: no happenings
     recent_path: str | None = None                    # narrator-only list of recent happenings (clock-stamped)
     threads_path: str | None = None                   # where Thread records live; None: no threads
+    pending_path: str | None = "hidden.pending"       # where Pending records live (engine/pending.py: the world does not wait); None: off
+    unseen_path: str | None = "hidden.unseen"         # clock-stamped facts established out of the player's sight (the referee's unseen_facts)
     log_path: str = "log"
     skip_adjudication: bool = False                   # purely narrative games may set True
     skip_referee: bool = False

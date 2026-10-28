@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from engine.events import Event
 from engine.gamekit import Clock  # noqa: F401  (re-exported: games/station imports Clock from here)
+from engine.pending import Pending
 from engine.spontaneous import Spontaneous
 from engine.threads import Thread
 from engine.world import World
@@ -65,6 +66,8 @@ class CrewMember(BaseModel):
 class Hidden(BaseModel):
     events: list[Event] = Field(default_factory=list)   # engine events (DESIGN §8), status included
     spontaneous: list[Spontaneous] = Field(default_factory=list)   # unscripted happenings, status included
+    pending: list[Pending] = Field(default_factory=list)   # things set in motion during play, due on the clock (engine/pending.py)
+    unseen: list[str] = Field(default_factory=list)        # clock-stamped facts established out of the player's sight; the narrator sees them, the player never
     recent: list[str] = Field(default_factory=list)     # narrator-only: recent happenings with their causes
     facts: list[str] = Field(default_factory=list)      # crew secrets, true causes
 

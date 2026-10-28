@@ -34,11 +34,12 @@ from pydantic import BaseModel
 
 from . import events as ev
 from . import logs
+from . import pending as pend
 from . import spontaneous as spon
 from . import statepath as sp
 from . import threads as th
 from .config import Config
-from .brackets import STOP_SEQUENCES, with_mechanic
+from .brackets import STOP_SEQUENCES, Note, StreamFilter, extract, with_mechanic
 from .context import build_messages, summary_plan
 from .narration import (Assessment, CallResult, Mechanic, NarrationDone, Visible, default_mechanic_line, narrate,
                         run_check)
@@ -47,6 +48,7 @@ from .mechanics import RESOLVERS, CheckRequest, CheckResult, rng_for
 from .providers import Msg, StreamDone, TextDelta, get_provider
 from .roles import (Adjudication, RefereeBase, WorldReport, adjudicator_messages, referee_messages, summarizer_messages,
                     world_referee_messages, NARRATOR_PROTOCOL)
+from .roles import NARRATOR_WORLD, MotionReport, motion_referee_messages
 from .store import Store
 
 MODEL_CALL_KINDS = {"model_call": None, "adjudication": "adjudicator", "verdict": "referee"}
@@ -298,13 +300,15 @@ class Engine:
 
         # ---- 3. narrate -----------------------------------------------------
         scene_text = _hook(game, "scene_block", state, adj, "narrator", default="")
-        bulletin = ((scene_text + "\n\n") if scene_text else "") + game.render_bulletin(state, player_text) + "\n\n" + _this_turn_block(res, getattr(game, "narrate_rolls", False))
+        coming = _pending_block(game, state, "narrator")
+        bulletin = (((scene_text + "\n\n") if scene_text else "") + game.render_bulletin(state, player_text)
+                    + ((("\n\n" + coming) if coming else "")) + "\n\n" + _this_turn_block(res, getattr(game, "narrate_rolls", False)))
         yield {"event": "bulletin", "data": {"turn": turn, "text": bulletin}}
         self.store.append_transcript(iid, turn, "bulletin", bulletin)
 
         role = self.cfg.role("narrator")
         provider = get_provider(role)
-        system = inst.prefix_text or game.frozen_prefix(state)
+        system = (inst.prefix_text or game.frozen_prefix(state)) + "\n\n" + NARRATOR_WORLD
         ctx = build_messages(self.store, iid, self.cfg.context.window_turns, bulletin, player_text,
                              slide=self.cfg.context.window_slide)
         messages = ctx.messages
@@ -334,11 +338,23 @@ class Engine:
                                "problems": ndone.problems, "causes": ndone.causes, "raw": ndone.raw,
                                "assessed_not_called": [a.label for a in res["assessments"] if not a.called]}
             else:
+                # 1.0 narration, but the narrator's [[…]] notes (unseen:, soon:, decided facts) are for the engine: hide them
+                # from the stream and hand them to the referee
+                filt = StreamFilter()
                 async for sev in provider.stream(role, system, messages):
                     if isinstance(sev, TextDelta):
-                        yield {"event": "text", "data": {"t": sev.text}}
+                        out = filt.feed(sev.text)
+                        if out:
+                            yield {"event": "text", "data": {"t": out}}
                     elif isinstance(sev, StreamDone):
                         done = sev
+                tail = filt.end()
+                if tail:
+                    yield {"event": "text", "data": {"t": tail}}
+                assert done is not None
+                visible, items, problems = extract(done.text)
+                calls_block = {"notes": [i.text for i in items if isinstance(i, Note)], "problems": problems, "raw": done.text}
+                done = StreamDone(text=visible, stop_reason=done.stop_reason, model=done.model, usage=done.usage, note=done.note)
         except Exception as e:
             ledger("model_call", {"role": "narrator", "error": repr(e)})
             log.exception("step.failed " + logs.kv(iid=iid, turn=turn, step="narrate"))
@@ -371,10 +387,13 @@ class Engine:
             try:
                 for_referee = narration
                 if calls_block.get("notes"):
-                    for_referee += "\n\n[NARRATOR'S NOTES: facts it decided, in its own words]\n" + "\n".join(f"- {n}" for n in calls_block["notes"])
+                    for_referee += "\n\n[NARRATOR'S NOTES: facts it decided, what is happening unseen (unseen:), what it set in motion (soon:)]\n" + "\n".join(f"- {n}" for n in calls_block["notes"])
                 world_task = None
                 if _hook(game, "has_world", state, default=False):
                     world_task = asyncio.ensure_future(self._world_referee(game, state, res["directives"], player_text, for_referee, adj))
+                motion_task = None
+                if getattr(game, "pending_path", None):
+                    motion_task = asyncio.ensure_future(self._motion_referee(game, state, res["directives"], player_text, for_referee, adj))
                 delta, meta = await self._referee(game, state, res["directives"], player_text, for_referee, adj, levers=_lever_lines(lever))
                 # the lever lands now, before the referee's own changes, unless the prose did not complete it
                 state, lever_outcome = self._commit_lever(game, state, lever, list(getattr(delta, "levers_not_completed", []) or []), iid, turn, ledger)
@@ -404,6 +423,42 @@ class Engine:
                         ledger("model_call", {"role": "world_referee", "error": repr(e)})
                         log.exception("step.failed " + logs.kv(iid=iid, turn=turn, step="world_referee"))
                 doc = state.model_dump(mode="json")
+                motion: MotionReport | None = None
+                if motion_task is not None:
+                    try:
+                        motion, mmeta = await motion_task
+                        ledger("motion_verdict", {**motion.model_dump(mode="json"), "_call": mmeta})
+                        log.info("step " + logs.kv(iid=iid, turn=turn, step="motion_referee", model=mmeta["model"], seconds=mmeta["seconds"],
+                                                   new=len(motion.pending_new), resolved=len(motion.pending_resolved), unseen=len(motion.unseen_facts), **logs.usage_kv(mmeta["usage"])))
+                    except Exception as e:
+                        ledger("model_call", {"role": "motion_referee", "error": repr(e)})
+                        log.exception("step.failed " + logs.kv(iid=iid, turn=turn, step="motion_referee"))
+                ppath, clock = getattr(game, "pending_path", None), getattr(game, "clock", None)
+                if ppath and clock and motion is not None:
+                    pitems = pend.load(doc, ppath)
+                    clk = sp.lookup(doc, clock.path, None) or {"day": 1, "minute": 0}
+                    now_abs = int(clk["day"]) * clock.minutes_per_day + int(clk["minute"])
+                    for new in motion.pending_new:
+                        if not new.what.strip():
+                            continue
+                        src = "narrator" if any("soon:" in n.lower() for n in calls_block.get("notes", [])) else "referee"
+                        p = pend.add(pitems, new, now_abs=now_abs, minutes_per_day=clock.minutes_per_day, turn=turn, source=src)
+                        ledger("pending", {"action": "new", **p.model_dump(mode="json")})
+                        report.applied.append(f"set in motion: {p.id}")            # the id only: what is coming is not for the player's eyes
+                    for ref in motion.pending_resolved:
+                        for p in pend.resolve(pitems, [ref], turn):
+                            ledger("pending", {"action": "resolved", **p.model_dump(mode="json")})
+                            report.applied.append(f"settled: {p.id}")
+                    pend.save(doc, ppath, pitems)
+                upath = getattr(game, "unseen_path", None)
+                facts = [f.strip() for f in (motion.unseen_facts if motion is not None else []) if f.strip()]
+                if upath and facts:
+                    seen_list = list(sp.lookup(doc, upath, []) or [])
+                    for f in facts:
+                        seen_list.append(f"{_clock_text(game, doc)}{f.rstrip('.')}.")
+                        ledger("unseen", {"fact": f})
+                    sp.assign(doc, upath, seen_list[-40:])
+                    report.applied.append(f"unseen: {len(facts)} fact{'s' if len(facts) != 1 else ''} recorded")   # never the content
                 if delta.log_line:
                     sp.append(doc, getattr(game, "log_path", "log"), f"{_clock_text(game, doc)}{delta.log_line.strip()}")
                 tpath = getattr(game, "threads_path", None)
@@ -420,7 +475,8 @@ class Engine:
                     log.info("referee.rejected " + logs.kv(iid=iid, turn=turn, path=r.path, reason=r.reason))
                 for issue in delta.narration_issues:
                     log.info("referee.issue " + logs.kv(iid=iid, turn=turn, issue=issue))
-                yield {"event": "referee", "data": {"delta": delta_json, "world": world_json, "report": report.model_dump(mode="json")}}
+                yield {"event": "referee", "data": {"delta": delta_json, "world": world_json, "motion": motion.model_dump(mode="json") if motion is not None else None,
+                                                    "report": report.model_dump(mode="json")}}
             except Exception as e:
                 ledger("model_call", {"role": "referee", "error": repr(e)})
                 log.exception("step.failed " + logs.kv(iid=iid, turn=turn, step="referee"))
@@ -451,7 +507,11 @@ class Engine:
         mechanics = {
             "kind": adj.kind if adj else None, "elapsed": res["elapsed"],
             "checks": [{"label": c.label, "outcome": c.outcome, "roll": c.roll, "total": c.total, "target": c.target} for c in res["checks"]],
-            "events": [f.event_id + ("" if f.variant == "trigger" else " (fallback)") for f in res["fired"]],
+            "events": [f.event_id + ("" if f.variant == "trigger" else " (fallback)") for f in res["fired"]]
+                      + [("something happened off-screen" if p.hidden else f"due: {p.what}") for p in res.get("pending_fired", [])],
+            "pending": {"fired": [p.id for p in res.get("pending_fired", [])],
+                        "new": [a.split(": ", 1)[1] for a in report.applied if a.startswith("set in motion: ")],
+                        "resolved": [a.split(": ", 1)[1] for a in report.applied if a.startswith("settled: ")]},
             "expired": [x.event_id for x in res["expired"]],
             "happenings": [{"id": h.id, "who": h.who, "reason": h.reason if h.visible else None} for h in res["happened"]],
             "applied": ([f"command {lever.id}"] if lever is not None and lever_outcome and lever_outcome["status"] == "applied" else []) + report.applied,
@@ -488,6 +548,9 @@ class Engine:
         scene_text = _hook(game, "scene_block", state, None, "engine", default="")
         if scene_text:
             state_text = scene_text + "\n\n" + state_text
+        impending = _pending_block(game, state, "engine")
+        if impending:
+            state_text += "\n\n" + impending
         recent = _recent_prose(self.store, iid, turns=2)
         system, msgs = adjudicator_messages(rules, state_text, recent, player_text, _commands_text(_hook(game, "commands", state, default=[])))
         t0 = time.monotonic()
@@ -628,6 +691,13 @@ class Engine:
                     if now < at <= now + want:
                         want = at - now
                         clock_note = (clock_note + "; " if clock_note else "") + f"stopped at scheduled event {nxt.id}"
+                ppath = getattr(game, "pending_path", None)
+                nxt_p = pend.next_due(pend.load(doc, ppath), clock.minutes_per_day) if ppath else None
+                if nxt_p is not None:
+                    at = nxt_p.due_abs(clock.minutes_per_day)
+                    if now < at <= now + want:          # the world does not wait: the clock stops where something falls due
+                        want = at - now
+                        clock_note = (clock_note + "; " if clock_note else "") + f"stopped at pending {nxt_p.id}"
                 elapsed = want
                 total = now + want
                 clk["day"], clk["minute"] = total // clock.minutes_per_day, total % clock.minutes_per_day
@@ -636,6 +706,17 @@ class Engine:
         fired, expired, ev_directives = ev.tick(events, doc, turn, clock_path, log_path)
         sp.assign(doc, getattr(game, "events_path", "hidden.events"), [e.model_dump(mode="json") for e in events])
         directives.extend(ev_directives)
+        # pendings that have come due (engine/pending.py); not on a clarify turn, where nothing is narrated
+        pending_fired: list[pend.Pending] = []
+        ppath = getattr(game, "pending_path", None)
+        if ppath and clock and (adj is None or adj.kind in ("action", "trivial")):
+            pitems = pend.load(doc, ppath)
+            if pitems:
+                clk = sp.lookup(doc, clock_path, {}) or {}
+                now_abs = int(clk.get("day", 1)) * clock.minutes_per_day + int(clk.get("minute", 0))
+                pending_fired = pend.tick(pitems, now_abs, clock.minutes_per_day, turn)
+                pend.save(doc, ppath, pitems)
+                directives.extend(pend.directive(p, clock.minutes_per_day) for p in pending_fired)
         # unscripted happenings, only when time passed
         spath = getattr(game, "spontaneous_path", None)
         if spath and elapsed > 0:
@@ -658,7 +739,7 @@ class Engine:
             + [p for h in happened for p in _effect_paths(h.effects_applied)]
         return {"state": new_state, "checks": checks, "assessments": assessments, "fired": fired, "expired": expired, "happened": happened,
                 "elapsed": elapsed, "clock_note": clock_note, "directives": directives, "adjudication": adj, "effect_paths": effect_paths,
-                "notes": notes}
+                "notes": notes, "pending_fired": pending_fired}
 
     def _call_handler(self, game: Game, state: BaseModel, iid: str, turn: int, assessments: list[Assessment]):
         """Turn the narrator's calls into results (DESIGN2 §5): CHECK rolls with the assessment as the floor,
@@ -720,6 +801,24 @@ class Engine:
         report, usage = await provider.extract(role, system, msgs, WorldReport)
         return report, {"provider": provider.name, "model": usage.extra.get("model") or role.model, "seconds": round(time.monotonic() - t0, 2), "usage": asdict(usage)}
 
+    async def _motion_referee(self, game: Game, state: BaseModel, directives: list[str], player_text: str, narration: str,
+                              adj: Adjudication | None = None) -> tuple[MotionReport, dict]:
+        """The world does not wait (DESIGN2 §4b): a small concurrent call that types what the prose and the
+        narrator's notes set in motion, settled, or established out of sight."""
+        role = self.cfg.role("referee")
+        provider = get_provider(role)
+        state_text = _hook(game, "state_for_models", state, default=game.render_bulletin(state, ""))
+        scene_text = _hook(game, "scene_block", state, adj, "engine", default="")
+        if scene_text:
+            state_text = scene_text + "\n\n" + state_text
+        world = _pending_block(game, state, "engine")
+        if world:
+            state_text += "\n\n" + world
+        system, msgs = motion_referee_messages(state_text, directives, player_text, narration)
+        t0 = time.monotonic()
+        report, usage = await provider.extract(role, system, msgs, MotionReport)
+        return report, {"provider": provider.name, "model": usage.extra.get("model") or role.model, "seconds": round(time.monotonic() - t0, 2), "usage": asdict(usage)}
+
     async def _referee(self, game: Game, state: BaseModel, directives: list[str], player_text: str, narration: str,
                        adj: Adjudication | None = None, levers: list[str] | None = None) -> tuple[RefereeBase, dict]:
         role = self.cfg.role("referee")
@@ -730,6 +829,9 @@ class Engine:
         scene_text = _hook(game, "scene_block", state, adj, "engine", default="")
         if scene_text:
             state_text = scene_text + "\n\n" + state_text
+        impending = _pending_block(game, state, "engine")
+        if impending:
+            state_text += "\n\n" + impending
         system, msgs = referee_messages(rules, state_text, directives, player_text, narration, levers=levers)
         t0 = time.monotonic()
         delta, usage = await provider.extract(role, system, msgs, schema)
@@ -749,6 +851,32 @@ class PendingLever:
     preview: CommandResult
     directive: str
     blocked: bool = False
+
+
+def _pending_block(game: Any, state: BaseModel, audience: str) -> str:
+    """What is in motion, for a role's context (engine/pending.py): COMING for the narrator, IMPENDING with ids for the structured roles."""
+    ppath, clock = getattr(game, "pending_path", None), getattr(game, "clock", None)
+    if not ppath or not clock:
+        return ""
+    doc = state.model_dump(mode="json")
+    items = pend.load(doc, ppath)
+    clk = sp.lookup(doc, clock.path, None)
+    if not clk:
+        return ""
+    now_abs = int(clk["day"]) * clock.minutes_per_day + int(clk["minute"])
+    parts: list[str] = []
+    ls = pend.lines(items, now_abs, clock.minutes_per_day, audience)
+    if ls:
+        head = ("COMING (already in motion; each happens on its own when due, whatever the player does; THIS TURN says when):"
+                if audience == "narrator" else "IMPENDING (fire on their own at their time; resolve by id when the prose settles one):")
+        parts.append(head + "\n" + "\n".join(ls))
+    upath = getattr(game, "unseen_path", None)
+    unseen = list(sp.lookup(doc, upath, []) or []) if upath else []
+    if unseen:
+        head = ("UNSEEN SO FAR (true, and the player does not know; keep it so until they could):" if audience == "narrator"
+                else "UNSEEN SO FAR (already recorded; the player does not know):")
+        parts.append(head + "\n" + "\n".join(f"- {u}" for u in unseen[-8:]))
+    return "\n\n".join(parts)
 
 
 def _lever_lines(lever: "PendingLever | None") -> list[str]:
@@ -888,6 +1016,8 @@ def _this_turn_block(res: dict[str, Any], narrate_rolls: bool = False) -> str:
                      f"when the fiction reaches this attempt, write <<CHECK {a.stat} {a.difficulty.replace('_', ' ')}>> on its own line and wait for the result. Do not decide it yourself.")
     for d in res["directives"]:
         lines.append(f"- {d}")
-    if len(lines) == 1:
-        lines.append("- Nothing scripted happens. Narrate the consequences of the player's input and stop at the next reaction point.")
+    if not (res["checks"] or res.get("assessments") or res["directives"]):     # a quiet turn: say what quiet means
+        lines.append("- Nothing scripted is due. The world does not wait: anyone with a reason to act acts, a threat that was closing in arrives, "
+                     "time spent costs something. Narrate what the player perceives and, in an [[unseen: …]] line, what is happening beyond it; "
+                     "stop at the next reaction point.")
     return "\n".join(lines)
