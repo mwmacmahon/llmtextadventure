@@ -10,8 +10,9 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-API_PORT=8010
-WEB_PORT=5173
+API_PORT="${API_PORT:-8010}"
+WEB_PORT="${WEB_PORT:-5173}"
+export API_PORT                       # vite.config.ts proxies /api to this port
 
 free_port() {
   local pids
@@ -40,9 +41,19 @@ fi
 mkdir -p data/logs
 ( cd server && exec .venv/bin/uvicorn app:app --host 0.0.0.0 --port "$API_PORT" --reload ) &
 API_PID=$!
+trap 'kill $API_PID ${WEB_PID:-} 2>/dev/null; wait $API_PID ${WEB_PID:-} 2>/dev/null' EXIT INT TERM
+
+# The API takes a few seconds to import; the web server is up in under one. Start the web
+# server only once the API answers, so a page opened straight away never sees a proxy error.
+for _ in $(seq 1 60); do
+  curl -sf -m 1 -o /dev/null "http://127.0.0.1:$API_PORT/api/games" && break
+  kill -0 "$API_PID" 2>/dev/null || { echo "api exited; see the output above" >&2; exit 1; }
+  sleep 0.5
+done
+curl -sf -m 1 -o /dev/null "http://127.0.0.1:$API_PORT/api/games" || { echo "api did not answer on :$API_PORT within 30s" >&2; exit 1; }
+
 ( cd web && exec npm run dev -- --port "$WEB_PORT" ) &
 WEB_PID=$!
-trap 'kill $API_PID $WEB_PID 2>/dev/null; wait $API_PID $WEB_PID 2>/dev/null' EXIT INT TERM
 
 echo
 echo "  web  http://localhost:$WEB_PORT   (dev, proxies /api to :$API_PORT)"

@@ -11,8 +11,30 @@ export function Lobby({ onOpen }: { onOpen: (id: string) => void }) {
 
   const refresh = () => api.instances().then(setInstances).catch((e) => setErr(String(e)));
   useEffect(() => {
-    api.games().then(setGames).catch((e) => setErr(String(e)));
-    refresh();
+    // The dev server is up before the API on a fresh start; keep trying for a while
+    // instead of pinning a proxy error to the page.
+    let cancelled = false;
+    const load = async (attempt: number) => {
+      try {
+        const [g, i] = await Promise.all([api.games(), api.instances()]);
+        if (cancelled) return;
+        setGames(g);
+        setInstances(i);
+        setErr(null);
+      } catch (e) {
+        if (cancelled) return;
+        if (attempt < 20) {
+          setErr(`waiting for the server… (${String(e)})`);
+          setTimeout(() => load(attempt + 1), 1000);
+        } else {
+          setErr(String(e));
+        }
+      }
+    };
+    load(0);
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function start(g: GameInfo) {

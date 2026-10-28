@@ -55,7 +55,7 @@ export type RoleUsage = { calls: number; model: string | null; seconds: number; 
 export type InstanceUsage = { id: string; turn: number; roles: Record<string, RoleUsage>; usd: number; priced: boolean; calls: number };
 
 async function j<T>(r: Response): Promise<T> {
-  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+  if (!r.ok) throw new Error(`${r.status} ${(await r.text()) || r.statusText}`);
   return r.json();
 }
 
