@@ -72,6 +72,10 @@ on the LAN.
 
 ## Models
 
+Branch `2.0` carries the structured-world engine (design in the gitignored `notes/DESIGN2.md`; summary in
+`docs/ARCHITECTURE.md` under "2.0"); branch `1.0` preserves the first engine; `main` stays at 1.0 until
+2.0 is playable.
+
 Roles are configured independently in `server/config.yml` (`narrator`, `adjudicator`,
 `referee`, `summarizer`): provider, model, effort, cache TTL. Defaults: Sonnet narrator,
 Sonnet for the adjudicator and referee as well, both measured against Haiku (the numbers are in `server/config.yml`): Haiku at low effort missed a fifth of the referee's judgment cases and, as adjudicator, reloaded a revolver that was already full. See `docs/LOCAL_LLM.md` for swapping a role to a local model.

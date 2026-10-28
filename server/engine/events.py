@@ -31,6 +31,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from .world import WORLD_OPS, predicate as world_predicate
+
 from . import statepath as sp
 
 Strictness = Literal["scripted", "guided", "advisory"]
@@ -153,6 +155,8 @@ def evaluate(pred: Any, doc: dict, events: list[Event], turn: int, clock_path: s
             return any(e.id == arg and e.expired for e in events)
         case "turn_gte":
             return turn >= int(arg)
+        case _ if op in WORLD_OPS:
+            return world_predicate(op, arg, doc.get("world"))
     raise ValueError(f"unknown predicate op {op!r}")
 
 

@@ -86,6 +86,7 @@ export type TurnEvent =
   | { event: "resolution"; data: { checks: Record<string, any>[]; fired: { event_id: string; variant: string }[]; expired: { event_id: string }[]; elapsed: number; directives: string[] } }
   | { event: "bulletin"; data: { turn: number; text: string } }
   | { event: "text"; data: { t: string } }
+  | { event: "mechanic"; data: { turn: number; text: string; data: Record<string, any> } }
   | { event: "referee"; data: { delta: Record<string, any> | null; report?: { applied: string[]; rejected: unknown[] }; error?: string } }
   | { event: "done"; data: { turn: number; text: string; note?: string | null; model: string; usage: Record<string, number>; seconds: number; mechanics: Mechanics; ending?: string | null; ui: UISchema } }
   | { event: "error"; data: { message: string; step?: string } };

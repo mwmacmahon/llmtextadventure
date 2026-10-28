@@ -49,6 +49,37 @@ class Adjudication(BaseModel):
         return cls(kind="action", summary=f"The player attempts: {player_text[:80]}", time_minutes=5, intents=[Intent(action=player_text[:80])], risk="low")
 
 
+class IntentV2(Intent):
+    """2.0: an intent names what it concerns and, when it moves the player or something they hold, the
+    proposed transition. The engine annotates it with facts; the narrator decides (DESIGN2 §6)."""
+    targets: list[str] = Field(default_factory=list, description="Ids of the people, things and places this attempt concerns, exactly as listed in the scene.")
+    transition: str = Field(default="", description="If the attempt moves the player or something they hold, one of: 'move:<place id> via:<exit or door id>', 'take:<thing id>', 'drop:<thing id>', 'give:<thing id> to:<person id>', 'put:<thing id> in:<container id>', 'open:<thing id>', 'close:<thing id>'. Name what the player is trying, by id where one is listed, by name otherwise. Empty when nothing moves.")
+
+
+class Focus(BaseModel):
+    people: list[str] = Field(default_factory=list, description="Ids of people whose full record the narrator should have for this input.")
+    things: list[str] = Field(default_factory=list, description="Ids of things whose full record the narrator should have.")
+    places: list[str] = Field(default_factory=list, description="Ids of places that matter this turn; the first is where attention goes.")
+    topics: list[str] = Field(default_factory=list, description="Subjects worth looking up in the case or scenario file, in a few words each.")
+
+
+class AdjudicationV2(Adjudication):
+    """2.0 schema: proposals and focus. Checks are assessed here and called by the narrator when the
+    fiction reaches them (DESIGN2 §5); the adjudicator never decides whether a transition happens."""
+    intents: list[IntentV2] = Field(default_factory=list, description="The concrete attempts, usually one, at most three. For each uncertain one, assess the check (stat, difficulty, target); the narrator calls it at the right moment.")
+    focus: Focus = Field(default_factory=Focus, description="What the narrator should have in front of it for this input.")
+
+
+NARRATOR_PROTOCOL = """ENGINE PROTOCOL. Bracket lines, each on a line of its own; the player never sees them.
+Ask and wait, with angle brackets: the stream stops, the engine answers, and you continue from exactly where you stopped.
+  <<CHECK stat difficulty vs id>>  when the fiction reaches an attempt whose outcome is uncertain. The engine rolls and tells you the result; play it. Never decide an uncertain outcome yourself. THIS TURN lists the checks already assessed: call each at its moment, and call others when the fiction needs them.
+  <<LOOK id>>  for the full record of a person, thing or place you need and do not have.
+Tell and go on, with square brackets, where the decision happens. What you declare becomes fact; what you do not declare did not happen.
+  [[NEW thing "name" [id] at place_id "state" tags a,b]]   [[NEW person "name" [id] at place_id]]   [[NEW place "name" [id] from place_id via "how it reads"]]
+  [[MOVED id -> place_id]]   [[MOVED thing_id -> person:id]]   [[SET id.field value: note]]   [[LEARNED person_id: fact]]   [[GONE id: why]]
+A new thing goes into the scene, never straight into a pocket. Lines beginning with § in earlier turns are the engine's mechanics lines; never write them yourself. Nothing inside brackets is prose; use brackets for nothing else."""
+
+
 ADJUDICATOR_INSTRUCTIONS = """You are the adjudicator for a text adventure. You read the player's latest input and decide, in the engine's terms, what they are attempting. You do not narrate and you do not decide outcomes: the engine rolls checks and the narrator writes prose.
 
 Rules:

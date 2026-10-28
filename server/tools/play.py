@@ -84,9 +84,18 @@ def _print_turn(events: list[dict], as_json: bool) -> None:
         return
     d = done["data"]
     if d.get("text") and d.get("model"):
-        print(d["text"].strip())
+        italic = sys.stdout.isatty()
+        for line in d["text"].strip().splitlines():
+            if line.startswith("§ ") and italic:
+                print(f"\x1b[3;2m{line}\x1b[0m")      # the engine's mechanics line, dim italic
+            else:
+                print(line)
     m = d.get("mechanics") or {}
     bits = [f"turn {d.get('turn')}", f"kind {m.get('kind')}", f"elapsed {m.get('elapsed')}m"]
+    for c in m.get("calls", []):
+        bits.append(f"call {c['call']}: {c.get('outcome') or 'answered'}")
+    if m.get("declarations"):
+        bits.append("declared " + " | ".join(m["declarations"]))
     for c in m.get("checks", []):
         bits.append(f"check {c['label']}: {c['outcome']} (roll {c['roll']}, total {c['total']} vs {c['target']})")
     if m.get("events"):

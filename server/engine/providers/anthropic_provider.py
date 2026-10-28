@@ -58,6 +58,8 @@ class AnthropicProvider:
         }
         if role.effort:
             kw["output_config"] = {"effort": role.effort}
+        if role.stop_sequences:
+            kw["stop_sequences"] = list(role.stop_sequences)
         return kw
 
     async def stream(self, role: RoleConfig, system: str, messages: list[Msg]) -> AsyncIterator[StreamEvent]:

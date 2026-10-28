@@ -37,11 +37,14 @@ from . import spontaneous as spon
 from . import statepath as sp
 from . import threads as th
 from .config import Config
+from .brackets import STOP_SEQUENCES
 from .context import build_messages, summary_plan
+from .narration import (Assessment, CallResult, Mechanic, NarrationDone, Visible, default_mechanic_line, narrate,
+                        run_check)
 from .game import ApplyReport, CommandResult, Game, GameBase, TurnInfo
 from .mechanics import RESOLVERS, CheckRequest, CheckResult, rng_for
 from .providers import Msg, StreamDone, TextDelta, get_provider
-from .roles import Adjudication, RefereeBase, adjudicator_messages, referee_messages, summarizer_messages
+from .roles import Adjudication, RefereeBase, adjudicator_messages, referee_messages, summarizer_messages, NARRATOR_PROTOCOL
 from .store import Store
 
 MODEL_CALL_KINDS = {"model_call": None, "adjudication": "adjudicator", "verdict": "referee"}
@@ -305,12 +308,33 @@ class Engine:
 
         t0 = time.monotonic()
         done: StreamDone | None = None
+        ndone: NarrationDone | None = None
+        calls_block: dict[str, Any] = {}
         try:
-            async for sev in provider.stream(role, system, messages):
-                if isinstance(sev, TextDelta):
-                    yield {"event": "text", "data": {"t": sev.text}}
-                elif isinstance(sev, StreamDone):
-                    done = sev
+            if getattr(game, "narrator_calls", False):
+                # 2.0: the narrator may stop to roll or look up, and declares what it changed (DESIGN2 §5)
+                system = system + "\n\n" + NARRATOR_PROTOCOL
+                if not role.stop_sequences:
+                    role = role.model_copy(update={"stop_sequences": list(STOP_SEQUENCES)})
+                handler = self._call_handler(game, state, iid, turn, res["assessments"])
+                async for nev in narrate(provider, role, system, messages, handler, max_calls=getattr(game, "max_calls", 3)):
+                    if isinstance(nev, Visible):
+                        yield {"event": "text", "data": {"t": nev.text}}
+                    elif isinstance(nev, Mechanic):
+                        yield {"event": "mechanic", "data": {"turn": turn, "text": nev.text, "data": nev.data}}
+                    else:
+                        ndone = nev
+                assert ndone is not None
+                done = StreamDone(text=ndone.prose, stop_reason=ndone.stop_reason, model=ndone.model, usage=ndone.usage, note=ndone.note)
+                calls_block = {"requests": ndone.requests, "calls": ndone.calls, "declarations": [d.model_dump(mode="json") for d in ndone.declarations],
+                               "problems": ndone.problems, "causes": ndone.causes, "raw": ndone.raw,
+                               "assessed_not_called": [a.label for a in res["assessments"] if not a.called]}
+            else:
+                async for sev in provider.stream(role, system, messages):
+                    if isinstance(sev, TextDelta):
+                        yield {"event": "text", "data": {"t": sev.text}}
+                    elif isinstance(sev, StreamDone):
+                        done = sev
         except Exception as e:
             ledger("model_call", {"role": "narrator", "error": repr(e)})
             log.exception("step.failed " + logs.kv(iid=iid, turn=turn, step="narrate"))
@@ -327,7 +351,7 @@ class Engine:
         ledger("model_call", {
             "role": "narrator", "provider": provider.name, "model": done.model,
             "stop_reason": done.stop_reason, "note": done.note, "seconds": round(elapsed, 2),
-            "usage": asdict(done.usage),
+            "usage": asdict(done.usage), **calls_block,
             "request": {
                 "system_chars": len(system), "bulletin_chars": len(bulletin),
                 "window": {"first_turn": ctx.window_first_turn, "turns": ctx.window_turns,
@@ -394,7 +418,11 @@ class Engine:
             "happenings": [{"id": h.id, "who": h.who, "reason": h.reason if h.visible else None} for h in res["happened"]],
             "applied": ([f"command {typed_cmd}"] if typed_cmd else []) + report.applied, "rejected": [r.model_dump() for r in report.rejected],
             "drift": drift_lines,
-            "issues": (delta_json or {}).get("narration_issues", []) + res["notes"],
+            "issues": (delta_json or {}).get("narration_issues", []) + res["notes"]
+                      + [f"assessed check not called: {a}" for a in calls_block.get("assessed_not_called", [])]
+                      + [f"narrator: {p}" for p in calls_block.get("problems", [])],
+            "calls": [{"call": c["call"].get("raw"), "mechanic": c.get("mechanic"), "outcome": (c.get("result") or {}).get("outcome")} for c in calls_block.get("calls", [])],
+            "declarations": [d.get("raw") for d in calls_block.get("declarations", [])],
         }
         self.store.append_transcript(iid, turn, "mechanics", json.dumps(mechanics))
 
@@ -418,7 +446,8 @@ class Engine:
         recent = _recent_prose(self.store, iid, turns=2)
         system, msgs = adjudicator_messages(rules, state_text, recent, player_text, _commands_text(_hook(game, "commands", state, default=[])))
         t0 = time.monotonic()
-        adj, usage = await provider.extract(role, system, msgs, Adjudication)
+        schema = getattr(game, "adjudication_schema", Adjudication)
+        adj, usage = await provider.extract(role, system, msgs, schema)
         adj.time_minutes = max(0, int(adj.time_minutes))
         if adj.kind in ("clarify", "impossible", "trivial"):
             adj.time_minutes = 0
@@ -466,6 +495,7 @@ class Engine:
         doc = state.model_dump(mode="json")
         directives: list[str] = list(extra_directives or [])
         checks: list[CheckResult] = []
+        assessments: list[Assessment] = []
         happened: list[spon.Happened] = []
         notes: list[str] = []
         clock_note = ""
@@ -494,6 +524,11 @@ class Engine:
                     else:
                         notes.append(f"adjudicator named unknown stat {stat!r} for {intent.check.label!r}; check dropped")
                         continue
+                if getattr(game, "narrator_calls", False):
+                    # 2.0: the adjudicator assesses; the narrator calls the check when the fiction reaches it (DESIGN2 §5)
+                    assessments.append(Assessment(stat=stat, difficulty=intent.check.difficulty, target=intent.check.target_entity or "",
+                                                  label=intent.check.label))
+                    continue
                 req = CheckRequest(id=f"c{i+1}", label=intent.check.label, stat=stat,
                                    difficulty=intent.check.difficulty, base=stats[stat])
                 req.modifiers = _hook(game, "modifiers", state, req, intent.check.target_entity, default=[])
@@ -539,8 +574,39 @@ class Engine:
         new_state = game.load_state(doc)
         effect_paths = [p for f in fired for p in _effect_paths(f.effects_applied)] + [p for x in expired for p in _effect_paths(x.effects_applied)] \
             + [p for h in happened for p in _effect_paths(h.effects_applied)]
-        return {"state": new_state, "checks": checks, "fired": fired, "expired": expired, "happened": happened, "elapsed": elapsed,
-                "clock_note": clock_note, "directives": directives, "adjudication": adj, "effect_paths": effect_paths, "notes": notes}
+        return {"state": new_state, "checks": checks, "assessments": assessments, "fired": fired, "expired": expired, "happened": happened,
+                "elapsed": elapsed, "clock_note": clock_note, "directives": directives, "adjudication": adj, "effect_paths": effect_paths,
+                "notes": notes}
+
+    def _call_handler(self, game: Game, state: BaseModel, iid: str, turn: int, assessments: list[Assessment]):
+        """Turn the narrator's calls into results (DESIGN2 §5): CHECK rolls with the assessment as the floor,
+        LOOK asks the game for a record, ODDS is an oracle. Dice are seeded per turn, so a rewrite of the
+        same turn rolls the same numbers in the same order."""
+        stats = _hook(game, "stats", state, default={})
+        resolver = RESOLVERS[getattr(game, "resolver", "dice_d20")]
+        rng = rng_for(iid, turn, "calls")
+        show_numbers = bool(getattr(game, "narrate_rolls", False))
+
+        def modifiers(req: CheckRequest, target: str | None) -> list:
+            return _hook(game, "modifiers", state, req, target, default=[])
+
+        def render(res: CheckResult) -> str:
+            line = _hook(game, "render_mechanic", state, res, default=None)
+            return line or default_mechanic_line(res, show_numbers=show_numbers)
+
+        def handler(call, n: int) -> CallResult:
+            if call.verb == "CHECK":
+                return run_check(call, n, stats, resolver, rng, assessments, modifiers, render,
+                                 fallback_stat=getattr(game, "fallback_stat", None))
+            if call.verb == "LOOK":
+                text = _hook(game, "look", state, call.ref, default=None)
+                if not text:
+                    text = f"Nothing is recorded for {call.ref!r}. If it exists, it is undecided: decide, and declare what you decide."
+                return CallResult(text="[ENGINE] " + text.strip(), data={"ref": call.ref, "found": bool(_hook(game, "look", state, call.ref, default=None))})
+            yes = rng.random() * call.den < call.num
+            return CallResult(text=f"[ENGINE] Odds of {call.num} in {call.den}: {'YES' if yes else 'NO'}. Play it.",
+                              data={"odds": [call.num, call.den], "yes": yes})
+        return handler
 
     async def _summarize(self, game: Game, state: BaseModel, plan) -> tuple[str, dict]:
         role = self.cfg.role("summarizer")
@@ -695,6 +761,10 @@ def _this_turn_block(res: dict[str, Any], narrate_rolls: bool = False) -> str:
     for c in res["checks"]:
         roll = f" Rolled {c.roll}{c.total - c.roll:+d} = {c.total} against {c.target}." if narrate_rolls and c.roll is not None else ""
         lines.append(f"- Check, {c.label} ({c.stat}, {c.difficulty.replace('_', ' ')} difficulty): {c.tier_text().upper()}.{roll} Narrate that outcome; do not soften or reverse it.")
+    for a in res.get("assessments", []):
+        vs = f" vs {a.target}" if a.target else ""
+        lines.append(f"- Assessed check, {a.label} ({a.stat}, {a.difficulty.replace('_', ' ')} difficulty): when the fiction reaches this attempt, "
+                     f"write <<CHECK {a.stat} {a.difficulty}{vs}>> on its own line and wait for the result. Do not decide it yourself.")
     for d in res["directives"]:
         lines.append(f"- {d}")
     if len(lines) == 1:

@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 
 from .events import Event
 from .mechanics import CheckRequest, Modifier
-from .roles import RefereeBase
+from .roles import Adjudication, RefereeBase
 from .statepath import Actor
 
 # ---------------------------------------------------------------------------
@@ -225,6 +225,10 @@ class GameBase:
     narrate_rolls: bool = False                       # tell the narrator the die roll and target, not just the tier (noir flavour)
     fallback_stat: str | None = None                  # when the adjudicator names a stat that does not exist, roll this one instead of dropping the check
     static_paths: list[str] = []                      # engine-owned paths set at instance creation and never written again (tools/authority_audit.py skips them)
+    # --- 2.0 (DESIGN2 §4-§5) ----------------------------------------------
+    narrator_calls: bool = False                      # the narrator may stop to roll (<<CHECK>>), look up (<<LOOK>>) and declare ([[...]]); dice move from resolve into the prose
+    adjudication_schema: type[Adjudication] = Adjudication   # AdjudicationV2 for games with proposals and focus
+    max_calls: int = 3                                # stops per turn before the engine answers "no more calls"
 
     # --- optional content hooks ---------------------------------------------
     def opening(self, state: BaseModel) -> str | None:
@@ -294,6 +298,14 @@ class GameBase:
         return state
 
     def ending(self, state: BaseModel) -> str | None:
+        return None
+
+    def look(self, state: BaseModel, ref: str) -> str | None:
+        """What <<LOOK ref>> returns to the narrator: the record of a person, thing or place. None: nothing recorded."""
+        return None
+
+    def render_mechanic(self, state: BaseModel, result: Any) -> str | None:
+        """The player-facing mechanics line for a check the narrator called. None: the engine's default line."""
         return None
 
     def audit_probes(self, state: BaseModel) -> list[BaseModel]:

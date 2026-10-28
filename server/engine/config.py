@@ -25,6 +25,7 @@ class RoleConfig(BaseModel):
     refusal_fallback: bool = False
     prompt_variant: str = "default"
     timeout_seconds: float = 180        # per request; the API can take minutes to refuse a bad schema
+    stop_sequences: list[str] = Field(default_factory=list)   # the narrator's call closer (engine/brackets.py)
 
 
 class ServerConfig(BaseModel):

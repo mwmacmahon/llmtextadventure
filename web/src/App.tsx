@@ -69,6 +69,11 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
           acc += ev.data.t;
           setStreaming(acc);
           setStage(null);
+        } else if (ev.event === "mechanic") {
+          // the engine answered a narrator call: the mechanics line goes inline, where it happened
+          acc = (acc.trim() ? acc.replace(/\s+$/, "") + "\n\n" : "") + "§ " + ev.data.text + "\n\n";
+          setStreaming(acc);
+          setStage("narrating…");
         } else if (ev.event === "referee") {
           setStage(null);
         } else if (ev.event === "done") {
@@ -150,7 +155,7 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
             <Row key={r.seq} r={r} />
           ))}
           {pending && <div className="msg player">{pending}</div>}
-          {streaming !== null && streaming && <div className="msg narrator streaming">{streaming}</div>}
+          {streaming !== null && streaming && <div className="msg narrator streaming"><Prose text={streaming} /></div>}
           {streaming !== null && stage && <div className="muted small stage">{stage}</div>}
           {view.ending && <div className="ending">The End. {view.ending}</div>}
           {err && <div className="error">{err}</div>}
@@ -208,9 +213,27 @@ function Row({ r }: { r: TranscriptRow }) {
           <div className="note-body">{r.text}</div>
         </details>
       );
+    case "narrator":
+      return <div className="msg narrator"><Prose text={r.text} /></div>;
     default:
       return <div className={`msg ${r.role}`}>{r.text}</div>;
   }
+}
+
+/** Narrator prose with the engine's mechanics lines (lines starting with "§ ") set apart. */
+function Prose({ text }: { text: string }) {
+  const blocks = text.split(/\n{2,}/);
+  return (
+    <>
+      {blocks.map((b, i) =>
+        b.startsWith("§ ") ? (
+          <div key={i} className="mechanic-line">{b.slice(2)}</div>
+        ) : (
+          <p key={i}>{b}</p>
+        ),
+      )}
+    </>
+  );
 }
 
 function MechanicsRow({ text }: { text: string }) {

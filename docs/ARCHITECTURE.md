@@ -72,7 +72,9 @@ player text  ─or─  clicked command
   │                  engine mode: game resolves it, no model; command + result rows; snapshot. Done.
   │                  narrated mode: game applies hard effects, supplies a player line + directive
   ▼
-ADJUDICATE   Sonnet (was Haiku; see config.yml for the measurements), one messages.parse against `Adjudication`
+ADJUDICATE   Sonnet (was Haiku; see config.yml for the measurements), one messages.parse
+             2.0 games (`adjudication_schema = AdjudicationV2`): intents carry targets and a proposed transition,
+             checks are assessed here and called by the narrator, and a focus names what the narrator should see against `Adjudication`
              kind (action | trivial | clarify | impossible), summary, time_minutes,
              intents[{action, check?{stat, difficulty, target_entity}}], entities, systems, risk,
              command + command_args when the prose plainly asks for a listed engine command
@@ -203,3 +205,38 @@ record; the log is for watching a session and for post-mortems.
 `tests/live/` holds opt-in evaluations that call the real models with a scorecard of contexts
 per role (`TA_LIVE=1`), writing results to `data/evals/` so prompt and model changes can be
 compared.
+
+
+## 2.0 (branch `2.0`, in progress; design in `notes/DESIGN2.md`)
+
+Branch `1.0` preserves the first engine; `main` stays there until 2.0 is playable. What has landed on `2.0`:
+
+- `engine/world.py`: places, things and people as rows with ids; ordered vocabularies (`Vocab`) with a
+  free note per attribute; queries (`where`, `here`, `inventory`, `path`, `find`); `scene()` for a body
+  or a sensor vantage; `annotate()` that states facts about a proposed transition with one verdict word
+  (clear, undecided, uncertain, blocked, impossible) and never decides; `apply_declarations()` with the
+  hardening rules (undecided → decided is free; a hard fact changes only with a cause from this turn; a
+  new thing never lands straight in the player's hands) and an addition `Policy` per game. World
+  predicates (`where`, `holds`, `inside`, `locked`, `attr_gte`, ...) plug into `events.evaluate`.
+- `engine/brackets.py`: the narrator's channel. `<<CHECK stat difficulty vs id>>`, `<<LOOK id>>` and
+  `<<ODDS n in m>>` are calls (the closing `>>` is a stop sequence); `[[NEW ...]]`, `[[MOVED ...]]`,
+  `[[SET ...]]`, `[[LEARNED ...]]`, `[[GONE ...]]` are declarations parsed in place. `StreamFilter`
+  hides both from the player; `§ ` marks a mechanics line in the stored transcript.
+- `engine/narration.py`: the narrator loop. Stream; on a call, stop, run it, show a mechanics line,
+  send one more request (history + the prose so far + the result + "continue from where you stopped");
+  at most `GameBase.max_calls` stops per turn. `run_check` rolls with the adjudicator's assessment as the
+  floor (the harder of assessment and call).
+- Pipeline switches on `GameBase.narrator_calls`: resolve assesses instead of rolling, THIS TURN lists
+  the assessed checks as calls to make, the system prompt gains `roles.NARRATOR_PROTOCOL`, the SSE
+  stream gains `mechanic` events, the transcript's narrator row is flat (prose plus `§` lines), and the
+  ledger's narrator `model_call` carries `requests`, `calls`, `declarations`, `problems` and `raw`.
+  Hooks: `look(state, ref)`, `render_mechanic(state, result)`. Neither shipped game opts in yet.
+- Clients: the web app renders `mechanic` events and `§` paragraphs in a mechanics style; `play.py`
+  dims them and lists calls and declarations in the turn summary.
+- Tests: `tests/test_brackets.py`, `tests/test_world.py`, `tests/test_narration.py`,
+  `tests/test_narrator_loop.py` (the loop end to end through the fake provider, which now honours stop
+  sequences and can be scripted).
+
+Next: the station on the world model (scenario `world:` section, sensor vantage, schedules, the referee's
+world report, scene in every role, map and scene panels), then focus and story for the structured roles,
+then rulings and the guard, then noir.
