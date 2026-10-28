@@ -389,7 +389,7 @@ class StationGame(GameBase):
         if s.hidden.recent:
             lines.append("")
             lines.append("Behind the scenes (you know this; the player may not):")
-            for ln in s.hidden.recent[-4:]:
+            for ln in s.hidden.recent[-8:]:
                 lines.append(f"- {ln}")
 
         fired = [e.id for e in s.hidden.events if e.fired]

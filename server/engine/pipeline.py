@@ -450,14 +450,14 @@ class Engine:
                             ledger("pending", {"action": "resolved", **p.model_dump(mode="json")})
                             report.applied.append(f"settled: {p.id}")
                     pend.save(doc, ppath, pitems)
-                upath = getattr(game, "unseen_path", None)
+                rpath = getattr(game, "recent_path", None)          # unseen facts join the narrator's "behind the scenes" list
                 facts = [f.strip() for f in (motion.unseen_facts if motion is not None else []) if f.strip()]
-                if upath and facts:
-                    seen_list = list(sp.lookup(doc, upath, []) or [])
+                if rpath and facts:
+                    seen_list = list(sp.lookup(doc, rpath, []) or [])
                     for f in facts:
-                        seen_list.append(f"{_clock_text(game, doc)}{f.rstrip('.')}.")
+                        seen_list.append(f"{_clock_text(game, doc)}{f.rstrip('.')}. (unseen by the player)")
                         ledger("unseen", {"fact": f})
-                    sp.assign(doc, upath, seen_list[-40:])
+                    sp.assign(doc, rpath, seen_list[-12:])
                     report.applied.append(f"unseen: {len(facts)} fact{'s' if len(facts) != 1 else ''} recorded")   # never the content
                 if delta.log_line:
                     sp.append(doc, getattr(game, "log_path", "log"), f"{_clock_text(game, doc)}{delta.log_line.strip()}")
@@ -732,8 +732,8 @@ class Engine:
                     for h in happened:
                         sp.append(doc, rpath, f"{_clock_text(game, doc)}{h.directive.strip()}" + (f" (why: {h.reason.strip()})" if h.reason else ""))
                     recent = sp.lookup(doc, rpath, [])
-                    if isinstance(recent, list) and len(recent) > 8:
-                        sp.assign(doc, rpath, recent[-8:])
+                    if isinstance(recent, list) and len(recent) > 12:
+                        sp.assign(doc, rpath, recent[-12:])
         new_state = game.load_state(doc)
         effect_paths = [p for f in fired for p in _effect_paths(f.effects_applied)] + [p for x in expired for p in _effect_paths(x.effects_applied)] \
             + [p for h in happened for p in _effect_paths(h.effects_applied)]
@@ -870,12 +870,10 @@ def _pending_block(game: Any, state: BaseModel, audience: str) -> str:
         head = ("COMING (already in motion; each happens on its own when due, whatever the player does; THIS TURN says when):"
                 if audience == "narrator" else "IMPENDING (fire on their own at their time; resolve by id when the prose settles one):")
         parts.append(head + "\n" + "\n".join(ls))
-    upath = getattr(game, "unseen_path", None)
-    unseen = list(sp.lookup(doc, upath, []) or []) if upath else []
-    if unseen:
-        head = ("UNSEEN SO FAR (true, and the player does not know; keep it so until they could):" if audience == "narrator"
-                else "UNSEEN SO FAR (already recorded; the player does not know):")
-        parts.append(head + "\n" + "\n".join(f"- {u}" for u in unseen[-8:]))
+    rpath = getattr(game, "recent_path", None)
+    recent = list(sp.lookup(doc, rpath, []) or []) if rpath else []
+    if recent and audience != "narrator":                   # the narrator's bulletin already shows these as "behind the scenes"
+        parts.append("BEHIND THE SCENES (already recorded; the player does not know):\n" + "\n".join(f"- {u}" for u in recent[-8:]))
     return "\n\n".join(parts)
 
 

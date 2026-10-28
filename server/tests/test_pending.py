@@ -102,7 +102,7 @@ async def test_the_world_does_not_wait_end_to_end(engine: Engine, fake: FakeProv
     done = events[-1]["data"]
     assert done["mechanics"]["applied"] == ["set in motion: p1", "unseen: 1 fact recorded"] and done["mechanics"]["pending"]["new"] == ["p1"]
     assert "creature" not in " ".join(done["mechanics"]["applied"] + done["mechanics"]["issues"])          # what is coming is not for the player
-    assert engine.store.load_state(iid)["hidden"]["unseen"][-1].endswith("the creature is between Frank and the door.")
+    assert engine.store.load_state(iid)["hidden"]["recent"][-1].endswith("the creature is between Frank and the door. (unseen by the player)")
     doc = engine.store.load_state(iid)
     items = pend.load(doc, "hidden.pending")
     assert len(items) == 1 and items[0].what == "the creature attacks" and items[0].source == "narrator" and items[0].live
@@ -127,7 +127,7 @@ async def test_the_world_does_not_wait_end_to_end(engine: Engine, fake: FakeProv
     assert "stopped at pending p1" in next(l for l in engine.store.ledger(iid, 2) if l["kind"] == "clock")["payload"]["note"]
     bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
     assert "DUE NOW, at Day 1" in bulletin and "the creature attacks. This happens this turn whatever the player is doing" in bulletin
-    assert "UNSEEN SO FAR (true, and the player does not know" in bulletin and "the creature is between Frank and the door." in bulletin
+    assert "Behind the scenes" in bulletin and "the creature is between Frank and the door. (unseen by the player)" in bulletin
     assert "COMING" not in bulletin                                          # it fired this turn, so it is no longer listed as coming
     assert "IMPENDING" not in seen["t2"]                                      # fired is terminal: the referee has nothing to settle
     done = events[-1]["data"]
@@ -190,6 +190,7 @@ async def test_pre_pending_instances_still_load_and_run(engine: Engine, fake: Fa
     iid = engine.create_instance("noir", {})
     doc = engine.store.load_state(iid)
     doc["hidden"].pop("pending", None)
+    doc["hidden"].pop("recent", None)
     engine.store.save_snapshot(iid, 0, doc)
     fake.canned["Adjudication"] = [action("Frank looks around.", 2)]
     FakeProvider.script = lambda system, messages: "Rain."

@@ -246,10 +246,10 @@ what is happening out of sight, and writes `[[unseen: …]]` and `[[soon: …]]`
 sees. A separate motion referee (`MotionReport`, its own concurrent call so your referee schema stays
 small) turns them into pendings (`pending_new`: what, who, in_minutes, hidden, unless), settles
 listed ones (`pending_resolved`) and records unseen facts (`unseen_facts`); your game referee must
-never put unseen things in a player-visible field. The engine keeps them at `GameBase.pending_path` and
-`unseen_path` (defaults `hidden.pending`, `hidden.unseen`; your hidden-state model needs
-`pending: list[Pending]` and `unseen: list[str]`), stops the clock where a pending falls due, and
-hands the narrator DUE NOW or UNSEEN. A game needs nothing else; set the paths to `None` to switch
+never put unseen things in a player-visible field. The engine keeps pendings at `GameBase.pending_path` (default `hidden.pending`; your hidden-state
+model needs `pending: list[Pending]`), appends unseen facts to `recent_path` (the narrator's
+"behind the scenes" list), stops the clock where a pending falls due, and hands the narrator DUE
+NOW or UNSEEN. A game needs nothing else; set the paths to `None` to switch
 it off.
 
 ## 8. The referee schema
