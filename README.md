@@ -41,7 +41,14 @@ ant auth status       # shows which credential source is active
 The SDK picks the profile up automatically. Do **not** also set `ANTHROPIC_API_KEY`: an API key
 in the environment or in the repo-root `.env` silently outranks the profile.
 
-Two processes:
+One script starts both processes and stops any stale server on the two ports first:
+
+```bash
+./dev.sh          # api on :8010, web on http://localhost:5173 (proxies /api); Ctrl-C stops both
+```
+
+Offline (no credentials, canned narrator): `./dev.sh fake`. `./dev.sh stop` only clears the ports.
+The two processes by hand, if you prefer separate terminals:
 
 ```bash
 cd server && .venv/bin/uvicorn app:app --host 0.0.0.0 --port 8010 --reload
@@ -50,8 +57,6 @@ cd server && .venv/bin/uvicorn app:app --host 0.0.0.0 --port 8010 --reload
 ```bash
 cd web && npm run dev        # http://localhost:5173, proxies /api to :8010
 ```
-
-Offline (no credentials, canned narrator): prefix the server with `TA_PROVIDER=fake`.
 
 Tests: `cd server && uv run pytest` (offline, fake provider). Live role evaluations that call the
 real models and write a scorecard to `data/evals/`: `TA_LIVE=1 uv run pytest -s tests/live`
