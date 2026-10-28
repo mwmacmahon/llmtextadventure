@@ -74,7 +74,7 @@ on the LAN.
 
 Roles are configured independently in `server/config.yml` (`narrator`, `adjudicator`,
 `referee`, `summarizer`): provider, model, effort, cache TTL. Defaults: Sonnet narrator,
-Haiku for the adjudicator, Sonnet for the referee (measured: Haiku missed a fifth of the referee's judgment cases). See `docs/LOCAL_LLM.md` for swapping a role to a local model.
+Sonnet for the adjudicator and referee as well, both measured against Haiku (the numbers are in `server/config.yml`): Haiku at low effort missed a fifth of the referee's judgment cases and, as adjudicator, reloaded a revolver that was already full. See `docs/LOCAL_LLM.md` for swapping a role to a local model.
 
 ## API
 

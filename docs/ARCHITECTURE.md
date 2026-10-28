@@ -72,7 +72,7 @@ player text  ─or─  clicked command
   │                  engine mode: game resolves it, no model; command + result rows; snapshot. Done.
   │                  narrated mode: game applies hard effects, supplies a player line + directive
   ▼
-ADJUDICATE   Haiku, one messages.parse against `Adjudication`
+ADJUDICATE   Sonnet (was Haiku; see config.yml for the measurements), one messages.parse against `Adjudication`
              kind (action | trivial | clarify | impossible), summary, time_minutes,
              intents[{action, check?{stat, difficulty, target_entity}}], entities, systems, risk,
              command + command_args when the prose plainly asks for a listed engine command

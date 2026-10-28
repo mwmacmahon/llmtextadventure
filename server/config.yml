@@ -21,8 +21,12 @@ roles:
     cache_ttl: 1h
     refusal_fallback: true      # server-side fallback on safety refusal (beta)
   adjudicator:
+    # The only gate that can refuse an action, so it must read the state block. Measured 2026-10-28
+    # (3 repeats per case): Haiku low 11/11 station, 10/10 noir but blind to state (reloads a full gun);
+    # Sonnet low 32/33 / 28/30 where the misses were it refusing a reload the fixture had made
+    # pointless. ~2.6 s vs ~2.0 s per call; about $0.007 vs $0.0004 per turn with the cached rules.
     provider: anthropic
-    model: claude-haiku-5-5
+    model: claude-sonnet-5-5
     max_tokens: 2048
     effort: low
     timeout_seconds: 90

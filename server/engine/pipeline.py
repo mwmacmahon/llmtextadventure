@@ -597,8 +597,8 @@ def _parse_command_args(spec: Any, raw: list[str]) -> tuple[dict[str, str], str]
     label case-insensitively. Returns (args, problem): a non-empty problem is the question to ask."""
     given: dict[str, str] = {}
     for item in raw:
-        name, _, value = str(item).partition("=")
-        if name.strip():
+        name, sep, value = str(item).partition("=")
+        if sep and name.strip():            # a bare "," or "" from the model is noise, not an argument
             given[name.strip()] = value.strip()
     args: dict[str, str] = {}
     for p in spec.params:

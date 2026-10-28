@@ -280,6 +280,12 @@ def _empty_revolver(state):
     return state
 
 
+def _half_revolver(state):
+    # A full cylinder makes reloading pointless, and Sonnet rightly refuses it (kind=impossible).
+    state.item("revolver").loaded = 3
+    return state
+
+
 def _at_warehouse(state):
     state.player.location = "Harrow warehouses"
     return state
@@ -312,12 +318,14 @@ NOIR_ADJUDICATOR_CASES = [
           "no check": lambda a: not any(i.check for i in a.intents),
           "no command": lambda a: a.command == ""}),
     Case("typed_reload_maps_to_the_command", "I reload the revolver.",
-         {"command reload": lambda a: a.command == "reload", "no args": lambda a: a.command_args == []}),
+         {"command reload": lambda a: a.command == "reload", "no named args": lambda a: not any("=" in x for x in a.command_args)},
+         prepare=_half_revolver),   # Sonnet once returned [","]; the parser drops items without "="
     Case("typed_smoke_maps_to_the_command", "I light a cigarette and think it over.",
          {"command smoke": lambda a: a.command == "smoke"}),
     Case("compound_reload_keeps_the_rest", "I reload, then go down the fire escape to the street.",
          {"command reload": lambda a: a.command == "reload", "kind action": lambda a: a.kind == "action",
-          "still moves": lambda a: a.time_minutes >= 2 and len(a.intents) >= 1}),
+          "still moves": lambda a: a.time_minutes >= 2 and len(a.intents) >= 1},
+         prepare=_half_revolver),
     Case("firing_is_not_the_reload_command", "I fire twice at the shape in the doorway.",
          {"no command": lambda a: a.command == ""}),
 ]
