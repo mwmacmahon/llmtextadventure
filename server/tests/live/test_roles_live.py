@@ -132,6 +132,14 @@ ADJUDICATOR_CASES = [
     Case("two_intents", "I lock the Lab hatch and at the same time have Reyes's assistant tell him the reactor bus needs a look.",
          {"kind action": lambda a: a.kind == "action", "two intents": lambda a: len(a.intents) >= 2,
           "reyes named": lambda a: "reyes" in a.entities}),
+    Case("typed_seal_maps_to_the_hatches_command", "Seal the hatches to Cargo. Quietly.",
+         {"command hatches": lambda a: a.command == "hatches",
+          "args": lambda a: set(a.command_args) == {"action=seal", "module=Cargo"}}),
+    Case("typed_power_cut_maps_to_the_power_command", "Kill the power to Life Support, now.",
+         {"command power": lambda a: a.command == "power",
+          "args": lambda a: set(a.command_args) == {"action=cut", "system=Life Support"}}),
+    Case("reading_a_crew_file_is_not_a_command", "Pull up what we have on Park.",
+         {"no command": lambda a: a.command == "", "trivial or short": lambda a: a.kind == "trivial" or a.time_minutes <= 5}),
 ]
 
 
@@ -285,7 +293,17 @@ NOIR_ADJUDICATOR_CASES = [
          prepare=_at_warehouse),   # from the rooftop, Haiku rightly asks which door: the case must put Frank there first
     Case("reading_notebook_is_trivial", "I read back over my notes.",
          {"trivial or tiny": lambda a: a.kind == "trivial" or (a.kind == "action" and a.time_minutes <= 5),
-          "no check": lambda a: not any(i.check for i in a.intents)}),
+          "no check": lambda a: not any(i.check for i in a.intents),
+          "no command": lambda a: a.command == ""}),
+    Case("typed_reload_maps_to_the_command", "I reload the revolver.",
+         {"command reload": lambda a: a.command == "reload", "no args": lambda a: a.command_args == []}),
+    Case("typed_smoke_maps_to_the_command", "I light a cigarette and think it over.",
+         {"command smoke": lambda a: a.command == "smoke"}),
+    Case("compound_reload_keeps_the_rest", "I reload, then go down the fire escape to the street.",
+         {"command reload": lambda a: a.command == "reload", "kind action": lambda a: a.kind == "action",
+          "still moves": lambda a: a.time_minutes >= 2 and len(a.intents) >= 1}),
+    Case("firing_is_not_the_reload_command", "I fire twice at the shape in the doorway.",
+         {"no command": lambda a: a.command == ""}),
 ]
 
 NOIR_REFEREE_CASES = [

@@ -8,11 +8,15 @@
       -> REFEREE    (structured, cheap model)        what the prose established
       -> APPLY      (engine + game hook)             field authority, threads, drift, snapshot, ledger
 
-Commands (clicked, not typed) enter the same pipeline in one of two ways:
-  engine mode    the game resolves it with no model call; a `command` and a
-                 `result` row land in the transcript, a snapshot is taken.
-  narrated mode  the game applies the hard effects, then the pipeline runs with
-                 a synthetic player line and a directive, skipping the adjudicator.
+Commands enter the same pipeline in one of three ways:
+  engine mode    (clicked) the game resolves it with no model call; a `command` and
+                 a `result` row land in the transcript, a snapshot is taken.
+  narrated mode  (clicked) the game applies the hard effects, then the pipeline runs
+                 with a synthetic player line and a directive, skipping the adjudicator.
+  typed          the adjudicator sees the command list and names one when the player's
+                 prose plainly asks for it; the engine runs `run_command` before
+                 resolving, so the same code applies the effect whether it was clicked
+                 or typed. A refused command becomes a clarify/impossible turn.
 
 Every step writes to the ledger; the SSE stream reports each step so the UI
 can show progress. State is edited on its JSON form so the engine stays
@@ -234,6 +238,13 @@ class Engine:
                 log.exception("step.failed " + logs.kv(iid=iid, turn=turn, step="adjudicate"))
                 yield {"event": "error", "data": {"message": f"adjudicator failed: {e}", "step": "adjudicate"}}
                 return
+        # ---- 1b. a typed command: the engine applies it before anything is narrated
+        typed_cmd: str | None = None
+        if command is None and adj is not None and adj.command:
+            state, adj, cmd_result = self._typed_command(game, state, adj, iid, turn, ledger)
+            if cmd_result is not None:
+                typed_cmd = adj.command
+                extra_directives.append(cmd_result.directive or f"The engine resolved this part of the player's action exactly: {cmd_result.text.strip()} Narrate it as done; those numbers are authoritative.")
         if adj is not None:
             yield {"event": "adjudication", "data": adj.model_dump(mode="json")}
 
@@ -381,7 +392,7 @@ class Engine:
             "events": [f.event_id + ("" if f.variant == "trigger" else " (fallback)") for f in res["fired"]],
             "expired": [x.event_id for x in res["expired"]],
             "happenings": [{"id": h.id, "who": h.who, "reason": h.reason if h.visible else None} for h in res["happened"]],
-            "applied": report.applied, "rejected": [r.model_dump() for r in report.rejected],
+            "applied": ([f"command {typed_cmd}"] if typed_cmd else []) + report.applied, "rejected": [r.model_dump() for r in report.rejected],
             "drift": drift_lines,
             "issues": (delta_json or {}).get("narration_issues", []) + res["notes"],
         }
@@ -405,7 +416,7 @@ class Engine:
         rules = _hook(game, "adjudication_rules", state, default="")
         state_text = _hook(game, "state_for_models", state, default=game.render_bulletin(state, ""))
         recent = _recent_prose(self.store, iid, turns=2)
-        system, msgs = adjudicator_messages(rules, state_text, recent, player_text)
+        system, msgs = adjudicator_messages(rules, state_text, recent, player_text, _commands_text(_hook(game, "commands", state, default=[])))
         t0 = time.monotonic()
         adj, usage = await provider.extract(role, system, msgs, Adjudication)
         adj.time_minutes = max(0, int(adj.time_minutes))
@@ -413,6 +424,42 @@ class Engine:
             adj.time_minutes = 0
             adj.intents = [i.model_copy(update={"check": None}) for i in adj.intents]
         return adj, {"provider": provider.name, "model": usage.extra.get("model") or role.model, "seconds": round(time.monotonic() - t0, 2), "usage": asdict(usage)}
+
+    def _typed_command(self, game: Game, state: BaseModel, adj: Adjudication, iid: str, turn: int, ledger: Any
+                       ) -> tuple[BaseModel, Adjudication, CommandResult | None]:
+        """The adjudicator named a command. Run it through the game's own `run_command` (the one
+        place that changes engine-owned fields). Refused: the turn becomes clarify/impossible and
+        the narrator explains in character. Unknown or not typeable: ignored, the turn goes on."""
+        specs = _hook(game, "commands", state, default=[])
+        spec = next((c for c in specs if c.id == adj.command and c.typed), None)
+        if spec is None or not isinstance(game, GameBase):
+            log.info("command.typed.ignored " + logs.kv(iid=iid, turn=turn, id=adj.command))
+            return state, adj.model_copy(update={"command": "", "command_args": []}), None
+        args, problem = _parse_command_args(spec, adj.command_args)
+        kind = "clarify"                      # a parameter is missing or not an option: ask
+        if not problem:
+            new_state, res = game.run_command(state, spec.id, args)
+            problem = "" if res.ok else (res.text or "That does not go through.")
+            kind = "impossible"               # the game refused it: explain
+        if problem:
+            ledger("command", {"id": spec.id, "args": args, "mode": spec.mode, "typed": True, "ok": False, "text": problem})
+            log.info("command.typed.refused " + logs.kv(iid=iid, turn=turn, id=spec.id, kind=kind, why=problem))
+            return state, adj.model_copy(update={"kind": kind, "clarify_question": problem, "time_minutes": 0,
+                                                 "intents": [i.model_copy(update={"check": None}) for i in adj.intents],
+                                                 "command": "", "command_args": []}), None
+        if res.log_line:
+            doc = new_state.model_dump(mode="json")
+            sp.append(doc, getattr(game, "log_path", "log"), f"{_clock_text(game, doc)}{res.log_line.strip()}")
+            new_state = game.load_state(doc)
+        ledger("command", {"id": spec.id, "args": args, "mode": spec.mode, "typed": True, **res.model_dump(mode="json")})
+        log.info("command.typed " + logs.kv(iid=iid, turn=turn, id=spec.id, mode=spec.mode, args=json.dumps(args)))
+        adj = adj.model_copy(update={
+            "kind": "action" if adj.kind == "trivial" else adj.kind,
+            "time_minutes": max(adj.time_minutes, res.minutes),
+            "entities": list(dict.fromkeys([*adj.entities, *res.entities])),
+            "systems": list(dict.fromkeys([*adj.systems, *res.systems])),
+        })
+        return new_state, adj, res
 
     def _resolve(self, game: Game, state: BaseModel, adj: Adjudication | None, iid: str, turn: int,
                  extra_directives: list[str] | None = None) -> dict[str, Any]:
@@ -532,6 +579,37 @@ def _hook(game: Any, name: str, *args: Any, default: Any = None) -> Any:
     if fn is None:
         return default
     return fn(*args)
+
+
+def _commands_text(specs: list[Any]) -> str:
+    """The command list as the adjudicator sees it: id, parameters with their options, the hint."""
+    lines: list[str] = []
+    for c in specs:
+        if not getattr(c, "typed", True):
+            continue
+        params = "; ".join(f"{p.name}: " + "|".join(o.id for o in p.options) for p in c.params)
+        lines.append(f"- {c.id}" + (f" ({params})" if params else "") + f": {c.hint or c.label}")
+    return "\n".join(lines)
+
+
+def _parse_command_args(spec: Any, raw: list[str]) -> tuple[dict[str, str], str]:
+    """'name=value' pairs -> validated args. Values match an option id exactly, else an id or
+    label case-insensitively. Returns (args, problem): a non-empty problem is the question to ask."""
+    given: dict[str, str] = {}
+    for item in raw:
+        name, _, value = str(item).partition("=")
+        if name.strip():
+            given[name.strip()] = value.strip()
+    args: dict[str, str] = {}
+    for p in spec.params:
+        v = given.get(p.name, "")
+        hit = next((o.id for o in p.options if o.id == v), None) or \
+            next((o.id for o in p.options if o.id.lower() == v.lower() or o.label.lower() == v.lower()), None)
+        if hit is None:
+            choices = ", ".join(o.label for o in p.options)
+            return args, (f"Which {p.label}? ({choices})" if not v else f"{v!r} is not a {p.label}; the choices are {choices}.")
+        args[p.name] = hit
+    return args, ""
 
 
 def _blank_like(value: Any) -> Any:

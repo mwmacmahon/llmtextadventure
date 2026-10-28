@@ -118,6 +118,7 @@ class CommandSpec(BaseModel):
     mode: Literal["engine", "narrated"] = "engine"
     params: list[Param] = Field(default_factory=list)
     hint: str = ""
+    typed: bool = True              # the adjudicator may map typed input onto it; False for read-only console commands
 
 
 class Commands(BaseModel):
@@ -246,10 +247,12 @@ class GameBase:
         return {}
 
     def adjudication_rules(self, state: BaseModel) -> str:
-        """Game-specific guidance for the adjudicator: stats, difficulty guidance, what the player can do."""
+        """Game-specific guidance for the adjudicator: stats, difficulty guidance, what the player can do.
+        Keep it stable across turns (it is the cached prefix); moving state belongs in `state_for_models`."""
         return ""
 
     def referee_rules(self, state: BaseModel) -> str:
+        """Ids, places, allowed values, what counts as a thread. Stable across turns, like `adjudication_rules`."""
         return ""
 
     def referee_schema(self, state: BaseModel) -> type[RefereeBase]:

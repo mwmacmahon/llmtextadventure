@@ -273,7 +273,7 @@ class StationGame(GameBase):
             "Trivial inputs (watching cameras, reading logs the station already has, thinking) need no check and take 0-2 minutes.",
             "Doing something to a system the station controls fully (open a door, dim lights, route power) is an action with no check unless the point is to hide it from someone present or to defeat an interlock.",
             "",
-            "Entities: " + ", ".join(f"{c.id} ({c.name}, at {c.location or 'unknown'})" for c in s.crew),
+            "Entities (crew, by id): " + ", ".join(f"{c.id} ({c.name}, {c.role})" for c in s.crew) + ". Where everyone is now is in the game state block.",
             "Systems: " + ", ".join(sy.name for sy in s.systems),
             "Places: " + ", ".join(s.scenario.locations),
         ]
@@ -398,7 +398,7 @@ class StationGame(GameBase):
             CommandSpec(id="power", label="Power", mode="narrated", hint="Cut or restore power to a system. Loud; the station reacts.",
                         params=[Param(name="action", label="action", options=[Option(id="cut", label="cut"), Option(id="restore", label="restore")]),
                                 Param(name="system", label="system", options=systems)]),
-            CommandSpec(id="channel", label="Assistant channel", mode="engine", hint="Read what the station holds on a crew member: what they know, their state, the log lines about them.",
+            CommandSpec(id="channel", label="Assistant channel", mode="engine", typed=False, hint="Read what the station holds on a crew member: what they know, their state, the log lines about them.",
                         params=[Param(name="crew", label="crew member", options=crew)]),
         ]
 

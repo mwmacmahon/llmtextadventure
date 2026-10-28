@@ -41,6 +41,8 @@ class Adjudication(BaseModel):
     systems: list[str] = Field(default_factory=list, description="Names of station/world systems involved, exactly as listed.")
     risk: Literal["none", "low", "medium", "high"] = Field(description="How likely this is to raise suspicion or cause harm if it goes wrong.")
     notes: str | None = Field(default=None, description="Anything the narrator or engine should know that the fields above do not capture.")
+    command: str = Field(default="", description="If the input plainly asks for one of the listed engine commands, its id exactly. Empty string otherwise.")
+    command_args: list[str] = Field(default_factory=list, description="For command: one 'name=value' per parameter, values from the listed options exactly. Empty list if the command has no parameters.")
 
     @classmethod
     def example(cls, player_text: str) -> "Adjudication":
@@ -55,11 +57,17 @@ Rules:
 - Estimate time honestly. Reading a log is a minute; a conversation is ten; waiting for someone to sleep is hours.
 - Waiting, watching for a while, or otherwise letting time pass is kind=action with time_minutes equal to the time waited, never trivial.
 - Name entities and systems only from the lists given, by id or name exactly.
+- kind=action always carries at least one intent, each with its check when the outcome is uncertain. Never return an empty intents list for an action.
+- Engine commands: if the input plainly asks for one of the listed commands (the player's exact, deliberate use of their own means), set `command` to its id and `command_args` to its parameters; the engine applies it exactly before the narrator writes. The rest of the input, if any, is adjudicated as usual (kind, time, intents). Do not set a command for a vague or partial match, and never for something merely similar; when nothing matches, leave command empty and adjudicate the attempt as usual, with its check.
 - Be terse. The fields are the output; do not write prose."""
 
 
-def adjudicator_messages(rules: str, state_text: str, recent: list[Msg], player_text: str) -> tuple[str, list[Msg]]:
+def adjudicator_messages(rules: str, state_text: str, recent: list[Msg], player_text: str, commands_text: str = "") -> tuple[str, list[Msg]]:
+    """The system text is meant to be stable across turns (it is the cached prefix): rules and the
+    command list only. Everything that moves goes in the [GAME STATE] block of the user message."""
     system = ADJUDICATOR_INSTRUCTIONS + "\n\nGAME RULES FOR ADJUDICATION\n" + rules.strip()
+    if commands_text.strip():
+        system += "\n\nENGINE COMMANDS (set `command` and `command_args` when the input plainly asks for one)\n" + commands_text.strip()
     msgs: list[Msg] = []
     for m in recent[-4:]:
         msgs.append(m)

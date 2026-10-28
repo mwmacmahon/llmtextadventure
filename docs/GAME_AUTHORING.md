@@ -73,15 +73,15 @@ Optional, with defaults that do nothing:
 | `stats(state)` | the player's stat block, `name -> modifier`; empty means no checks |
 | `entity_ids`, `locations`, `system_names` | the vocabularies the adjudicator and referee must use exactly |
 | `narrator_flags(state)` | `name -> meaning`: flags the referee may set; triggers read them |
-| `adjudication_rules(state)` | what the player can do, stat meanings, difficulty guidance |
-| `referee_rules(state)` | ids, places, allowed values, what counts as a thread here |
+| `adjudication_rules(state)` | what the player can do, stat meanings, difficulty guidance. **Stable across turns** (it is the cached prefix); moving state goes in `state_for_models` |
+| `referee_rules(state)` | ids, places, allowed values, what counts as a thread here. Stable across turns, same reason |
 | `referee_schema(state)` | a `RefereeBase` subclass with the game's narrator-authority fields |
 | `state_for_models(state)` | compact state text for the structured roles (default: the bulletin) |
 | `modifiers(state, req, target_entity)` | situational check modifiers |
 | `apply_delta(state, delta, present)` | validate and apply the referee's report; return `ApplyReport` |
 | `after_turn(state, TurnInfo)` | drift: meters toward baseline, moods following; skip paths in `info.applied` |
 | `summary_guidance(state)` | what the state already records (so the summarizer skips it) and what to keep |
-| `commands(state)` / `run_command(state, id, args)` | clicked commands, engine or narrated mode |
+| `commands(state)` / `run_command(state, id, args)` | commands, clicked or typed; engine or narrated mode (§7) |
 | `ending(state)` | a string when the game is over (the UI locks input) |
 
 Declarations on the class: `clock`, `resolver`, `authority`, `events_path`, `spontaneous_path`,
@@ -164,11 +164,28 @@ Rules of thumb:
 - Endings: conditional events with no `at`, `reveal: never`, negative priority, setting
   `flags.ending`; `ending(state)` reads it.
 
-## 7. Commands
+## 7. Commands, and who changes what
+
+Every tracked quantity changes in exactly one place. Decide which of three kinds each one is:
+
+| the change is decided by | mechanism | examples |
+|---|---|---|
+| **the player, exactly** (they say what they do, the engine knows the result) | a **command**: `run_command` is the only code that changes the field | reload, seal a hatch, cut power, light a cigarette |
+| **the narration** (the prose settles what happened) | a **referee field**, validated and bounded in `apply_delta` against the state | shots fired in a fight, an item found, who got hurt, a mood |
+| **the engine alone** (nobody reports it) | resolve, event effects, `after_turn` | the clock, dice, drift, withdrawal |
+
+A command reaches `run_command` two ways, and both must work for every command: the player
+**clicks** it in the side panel, or **types** it. The adjudicator is shown `commands(state)`
+(id, parameters with their options, hint) and sets `Adjudication.command` and `command_args`
+when the input plainly asks for one; the pipeline runs `run_command` before resolving, so the
+narrator describes a change the engine has already made. A refused command (`ok=False`) turns
+the typed turn into clarify/impossible and the narrator explains in character using your
+`text`; a missing or invalid parameter asks "Which module? (Lab, Cargo)". Mark console-only
+commands `typed=False` (notebook, assistant channel) so prose never maps onto them.
 
 ```python
 def commands(self, state):
-    return [CommandSpec(id="lamp", label="Lamp", mode="engine",
+    return [CommandSpec(id="lamp", label="Lamp", mode="engine", hint="Switch the lamp.",
                         params=[Param(name="action", label="action",
                                       options=[Option(id="on", label="on"), Option(id="off", label="off")])])]
 
@@ -180,10 +197,25 @@ def run_command(self, state, cid, args):
     return state, CommandResult(ok=False, text="unknown command")
 ```
 
-Engine mode: no model call, no clock movement, no event tick; the next narrated turn sees the
-change in the bulletin. Narrated mode: apply the hard effects here, return `player_line`,
-`directive`, `minutes`, `summary`; the pipeline narrates it and runs the referee. Return
-`ok=False` to refuse without creating a turn.
+Engine mode, clicked: no model call, no clock movement, no event tick; the next narrated turn
+sees the change in the bulletin. Engine mode, typed: the result `text` becomes a narrator
+directive and the turn is narrated as usual. Narrated mode: apply the hard effects here, return
+`player_line`, `directive`, `minutes`, `summary`; the pipeline narrates it and runs the referee
+(the command's `minutes`, `entities` and `systems` win over the adjudicator's when typed).
+
+When a command's effect is something the narration could also report (smoking has both a Smoke
+command and a `cigarettes_smoked` referee field, because the narrator may have Frank light one
+in a scene), set `referee_skip=["cigarettes_smoked"]` on the `CommandResult`: the pipeline
+blanks that field after extraction so the effect is charged once. Keep the validation in one
+helper (`_smoke`) called from both paths. Give the referee a rule that the engine handles the
+command ("never list rounds under items_lost for a reload").
+
+Checklist for a new tracked quantity: (1) pick its row in the table; (2) a command gets a
+`CommandSpec` with a `hint` the adjudicator can match and a `run_command` branch that refuses
+with a sentence the narrator can say; (3) a referee field is required-with-sentinel (§8) and
+bounded in `apply_delta`; (4) add a preconditions line to `adjudication_rules` only if the
+adjudicator must rule it impossible before the command runs (an empty gun); (5) a test for the
+clicked path, the typed path and the refusal; a live eval case if the mapping is subtle.
 
 ## 8. The referee schema
 
@@ -222,5 +254,8 @@ Use `TA_PROVIDER=fake`. The fake provider streams a canned narration and returns
 `schema.example(...)` for extractions, or canned instances you queue per schema class
 (`FakeProvider.canned["Adjudication"] = [...]`), or a `hook(schema, last_user_message)`.
 Drive turns with `Engine.run_turn(iid, text)` or `run_turn(iid, command=(id, args))` and assert on
-the SSE events, the state snapshot and the ledger. Live role evaluations (real models, opt-in,
+the SSE events, the state snapshot and the ledger. A typed command is a canned `Adjudication`
+with `command` and `command_args` set (`tests/test_typed_commands.py`). `test_role_rules_are_
+stable_across_turns` fails if a game's `adjudication_rules` or `referee_rules` change with the
+state, which would break the structured roles' prompt cache. Live role evaluations (real models, opt-in,
 `TA_LIVE=1`) live under `server/tests/live/` and write scorecards to `data/evals/`.

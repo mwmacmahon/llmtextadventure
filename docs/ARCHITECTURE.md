@@ -57,7 +57,7 @@ One SQLite file, four tables, all keyed by instance:
 |---|---|---|
 | `instance` | id, game, version, title, setup, `prefix_text`, origin | the frozen prefix is stored per instance so it never drifts mid-game |
 | `transcript` | seq, turn, role, text | roles: `player`, `bulletin`, `narrator`, `mechanics` (JSON), `system_note` (story so far), `command`, `result` |
-| `ledger` | seq, turn, kind, payload | kinds: `model_call`, `adjudication`, `check`, `event_fired`, `event_expired`, `happening`, `clock`, `verdict`, `delta`, `drift`, `command` |
+| `ledger` | seq, turn, kind, payload | kinds: `model_call`, `adjudication`, `check`, `event_fired`, `event_expired`, `happening`, `clock`, `verdict`, `delta`, `drift`, `command` (clicked, or `typed: true` when the adjudicator mapped prose onto it) |
 | `snapshot` | turn, state | full state after every turn; turn 0 is the opening |
 
 Undo truncates all three per-turn tables after a turn. Fork is export truncated at a turn and
@@ -73,8 +73,14 @@ player text  ─or─  clicked command
   ▼
 ADJUDICATE   Haiku, one messages.parse against `Adjudication`
              kind (action | trivial | clarify | impossible), summary, time_minutes,
-             intents[{action, check?{stat, difficulty, target_entity}}], entities, systems, risk
+             intents[{action, check?{stat, difficulty, target_entity}}], entities, systems, risk,
+             command + command_args when the prose plainly asks for a listed engine command
              (skipped for narrated commands: the command already knows)
+             system prompt = instructions + game rules + command list, stable per instance (cached);
+             the moving state is the [GAME STATE] block in the user message
+  ▼
+TYPED CMD    if the adjudicator named a command: game.run_command before anything else, same
+             code as a click; refused → the turn becomes clarify/impossible, narrator explains
   ▼
 RESOLVE      engine, deterministic
              - checks: resolver(rng seeded by instance+turn, CheckRequest + game modifiers) → tier

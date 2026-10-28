@@ -313,16 +313,15 @@ class NoirGame(GameBase):
         lines += [
             "",
             "Difficulty guidance: very_low = a competent man rarely fails; low = a careful try usually works; medium = a real chance of failing; high = against a locked door, a hostile man, a wary witness, or at a run on a bad leg; very_high = nearly impossible without an edge.",
-            "Checks: one per real risk. Talking to a cooperative person needs none; getting something out of a wary or hostile one is a tongue check against them (name them in target_entity). Searching a scene for something hidden is eye. Shooting is hands; fighting hand to hand is muscle; facing something that should not exist is nerve.",
+            "Checks: one per real risk. Talking to a friend or a client needs none; getting anything about the case out of a witness, a stranger, a neutral or a hostile person is a tongue check against them, even over a bought drink (name them in target_entity). Searching a scene for something hidden is eye. Picking a lock is always a hands check (high against a serious door). Shooting is hands; fighting hand to hand is muscle; facing something that should not exist is nerve.",
             "Firing the revolver is impossible if it holds 0 rounds; reloading with no bullets is impossible. Smoking with no cigarettes is impossible; paying more dollars than he carries is impossible. Say so in clarify_question.",
             "target_entity only for a listed person the player names or the scene identifies; an unnamed stranger has no id, so leave target_entity null for him.",
             "Stats are exactly the six listed; never invent one.",
             "Time: a look around is 2 minutes; a search 15-30; a conversation 10-20; walking across a district 10; Midtown to Lowtown or Uptown 30 (10 by cab); sleeping 6-8 hours; waiting is however long he waits.",
             "",
-            "Pockets: " + ", ".join(it.render() for it in s.inventory) + ".",
-            "Conditions: " + (", ".join(c.name for c in p.conditions) or "none") + f". Health {p.health}.",
-            "Entities (people, by id): " + ", ".join(f"{q.id} ({q.name}, {q.role}{', not yet met' if not q.met else ''})" for q in s.people),
-            "Places: " + ", ".join(s.case.locations) + f". Frank is at {p.location}.",
+            "What Frank carries (pockets, rounds loaded), his conditions and health, and where he is are in the game state block; read them there before ruling something impossible.",
+            "Entities (people, by id): " + ", ".join(f"{q.id} ({q.name}, {q.role})" for q in s.people) + ". People Frank has dealt with are listed in the game state; the others he has not met yet.",
+            "Places: " + ", ".join(s.case.locations) + ".",
             "There are no systems in this game; leave `systems` empty.",
         ]
         return "\n".join(lines)
@@ -334,9 +333,8 @@ class NoirGame(GameBase):
             "Places: " + ", ".join(s.case.locations),
             "Health values: " + ", ".join(HEALTH_VALUES) + ". Health changes only when the prose says Frank was hurt or treated.",
             "Conditions with mechanical weight: " + ", ".join(k for k in CONDITION_MODS if k != WITHDRAWAL) + ". Others are allowed as flavour. '" + WITHDRAWAL + "' is the engine's; never add or remove it.",
-            "Frank's current conditions: " + (", ".join(c.name for c in p.conditions) or "none") + ".",
-            "Pockets now: " + ", ".join(it.render() for it in s.inventory) + ". Report items_gained / items_lost only when the prose plainly says he took, was given, bought, found and kept, spent, handed over, used up, dropped or lost something; name them as the pockets list does. Dollars spent are items_lost with name 'dollars' and the amount.",
-            "shots_fired: rounds actually fired from the revolver this turn; never also list fired rounds under items_lost. cigarettes_smoked: cigarettes Frank LIT this turn (finishing one lit earlier is 0); never also list them under items_lost. The engine updates the counts.",
+            "Frank's current conditions and pockets are in the game state block. Report items_gained / items_lost only when the prose plainly says he took, was given, bought, found and kept, spent, handed over, used up, dropped or lost something; name them as the pockets list does. Dollars spent are items_lost with name 'dollars' and the amount.",
+            "shots_fired: rounds actually fired from the revolver this turn; never also list fired rounds under items_lost. cigarettes_smoked: cigarettes Frank LIT this turn (finishing one lit earlier is 0); never also list them under items_lost. Reloading is a command the engine has already applied: never list rounds under items_lost for a reload. The engine updates the counts.",
             "dread_change is 0 on an ordinary turn, including successes and calm conversations. Positive (3 to 10) only when something frightened or hurt him: the creature, violence, a threat, a failure under danger, horror. Negative (-3 to -10) when he rests, drinks, smokes, wins clearly, reaches safety, or is treated kindly. A full night's sleep is -10.",
             "player_location: from the places list, where Frank ends the narration. If the prose puts him somewhere not listed, use that district's streets (Lowtown streets, Midtown streets, Uptown streets) or the empty string; never name a building he is not in. The same for people's locations.",
             "people_updates only for listed people the prose identifies by name or role. An unnamed stranger (a man in a cap, a clerk, a driver) is nobody: never attach him to a listed id, never set a listed person to met because of him. If he recurs and gets a name, add him with new_people (at most two per turn). A new person who is actually one of the listed people (another name for them) is a people_update, not a new person.",
@@ -633,7 +631,7 @@ class NoirGame(GameBase):
         return [
             CommandSpec(id="smoke", label="Smoke", mode="narrated", hint="Light a cigarette. Five minutes; nerves ease; the pack is lighter."),
             CommandSpec(id="reload", label="Reload", mode="engine", hint="Fill the revolver from the loose bullets. No model call."),
-            CommandSpec(id="notebook", label="Notebook", mode="engine", hint="Read everything Frank has written down: clues, contacts, open threads."),
+            CommandSpec(id="notebook", label="Notebook", mode="engine", typed=False, hint="Read everything Frank has written down: clues, contacts, open threads."),
         ]
 
     def run_command(self, state: NoirState, command_id: str, args: dict[str, Any]) -> tuple[NoirState, CommandResult]:
