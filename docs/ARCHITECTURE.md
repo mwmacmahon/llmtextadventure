@@ -104,11 +104,11 @@ NARRATE      streamed. system = frozen prefix (cached, 1h). messages = [story so
              block + player text. Cache breakpoints: the system block and the last assistant message.
   ▼
 REFEREE      Sonnet (was Haiku; see config.yml for the measurements), one messages.parse against roles.ChangeReport, the same for every game
-             present_entities, log_line, flags_set, threads_opened/closed, narration_issues,
-             confidence, plus game fields (entity updates, system control changes…)
+             rows {kind, target, field, value, who, note, minutes, hidden} + present, log_line, confidence
   ▼
-APPLY        game.apply_delta under field authority with step bounds; log line (clock-stamped);
-             threads; ledger `delta`
+APPLY        engine/changes.py: engine kinds (threads, flags, pendings, unseen, lever vetoes, issues),
+             game kinds through game.apply_change under field authority with step bounds, world kinds
+             through the world's rules; log line (clock-stamped); ledger `delta`
   ▼
 DRIFT        game.after_turn(state, TurnInfo{turn, elapsed, rng, applied}) → ledger `drift`
   ▼
@@ -122,7 +122,7 @@ SSE events, in order: `command?`, `adjudication`, `resolution`, `summary?`, `bul
 
 Each game maps path patterns to an owner: `engine` (resolution and commands only), `narrator`
 (referee-extracted, then validated and clamped) or `script` (events only). Most specific pattern
-wins; the engine may write anything. `statepath.may_write` enforces it in `apply_delta`.
+wins; the engine may write anything. `statepath.may_write` enforces it through `gamekit.Writer` in each game's `apply_change`.
 
 ### Clarification
 
@@ -251,7 +251,7 @@ Branch `1.0` preserves the first engine; `main` stays there until 2.0 is playabl
 - The station is on the world: a `world:` section in its scenario (modules with hatches, cameras,
   the cabinet and canister, drones, the pod); `StationState.world`, built on a new instance; crew and
   world kept in sync by code (the world is authoritative for location); sealing a module locks its
-  hatches in the world; `scene_block`, `look`, `world_rules`, `apply_world_report`; a "Where everyone
+  hatches in the world; `scene_block`, `look`, `land_declarations`; a "Where everyone
   is" panel; `adjudication_schema = AdjudicationV2`. Older instances load with no world. Noir runs the
   same narration path with `AdjudicationV2` and no world yet (its transitions stay empty).
 

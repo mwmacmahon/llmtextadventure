@@ -131,7 +131,7 @@ world reacts (cut power and the crew notice within a minute).
 
 A game (`server/games/<name>/`) provides a pydantic state model, a frozen prefix, a bulletin
 renderer, a UI, and overrides the hooks it needs (stats, entity ids, locations, narrator
-flags, referee schema, `apply_delta`, modifiers, commands, `after_turn` drift, summary
+flags, referee vocabulary and `apply_change`, modifiers, commands, `after_turn` drift, summary
 guidance, ending). Scenario content, including scripted events and unscripted happenings
 with their triggers and effects, is YAML under `notes/content/<game>/`.
 

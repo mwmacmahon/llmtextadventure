@@ -54,7 +54,7 @@ AUTHORITY = {
 ```
 
 `*` matches one path segment; the most specific pattern wins; anything unlisted defaults to
-`engine`. `apply_delta` writes through `gamekit.Writer`, which checks
+`engine`. `apply_change` writes through `gamekit.Writer`, which checks
 `may_write(path, "narrator", self.authority)` and records applied and rejected writes. A purely
 narrative game sets nearly everything to `narrator`; a strict game, to `engine`. Narrator
 authority over a field still means engine validation: the noir referee may report that Frank
@@ -85,10 +85,10 @@ Optional, with defaults that do nothing:
 | `narrator_flags(state)` | `name -> meaning`: flags the referee may set; triggers read them |
 | `adjudication_rules(state)` | what the player can do, stat meanings, difficulty guidance. **Stable across turns** (it is the cached prefix); moving state goes in `state_for_models` |
 | `referee_rules(state)` | ids, places, allowed values, what counts as a thread here. Stable across turns, same reason |
-| `referee_schema(state)` | a `RefereeBase` subclass with the game's narrator-authority fields |
 | `state_for_models(state)` | compact state text for the structured roles (default: the bulletin) |
 | `modifiers(state, req, target_entity)` | situational check modifiers |
-| `apply_delta(state, delta, present)` | validate and apply the referee's report; return `ApplyReport` |
+| `apply_change(state, change, writer)` | land one referee row that names the game's fields (validate, clamp, write); False for rows that are not the game's (§8) |
+| `narrator_flags`, `apply_present`, `after_changes`, `land_declarations` | the flags the referee may set; mark present people; derived values after the rows; world rows (§8) |
 | `after_turn(state, TurnInfo)` | drift: meters toward baseline, moods following; skip paths in `info.applied` |
 | `summary_guidance(state)` | what the state already records (so the summarizer skips it) and what to keep |
 | `commands(state)` / `run_command(state, id, args)` | commands, clicked or typed; engine or narrated mode (§7) |
@@ -232,7 +232,7 @@ command ("never list rounds under items_lost for a reload").
 Checklist for a new tracked quantity: (1) pick its row in the table; (2) a command gets a
 `CommandSpec` with a `hint` the adjudicator can match and a `run_command` branch that refuses
 with a sentence the narrator can say; (3) a referee field is required-with-sentinel (§8) and
-bounded in `apply_delta`; (4) never pre-rule a command's preconditions in `adjudication_rules`
+bounded in `apply_change`; (4) never pre-rule a command's preconditions in `adjudication_rules`
 (the command refuses and the narrator plays it blocked; tell the adjudicator to set the command
 anyway); a preconditions line is for attempts that are not commands (shooting with an empty
 gun); (5) a test for the
@@ -243,10 +243,9 @@ live eval case if the mapping is subtle.
 
 Every narrator prompt carries `NARRATOR_WORLD`: the narrator narrates what the player perceives and
 what is happening out of sight, and writes `[[unseen: …]]` and `[[soon: …]]` lines the player never
-sees. A separate motion referee (`MotionReport`, its own concurrent call so your referee schema stays
-small) turns them into pendings (`pending_new`: what, who, in_minutes, hidden, unless), settles
-listed ones (`pending_resolved`) and records unseen facts (`unseen_facts`); your game referee must
-never put unseen things in a player-visible field. The engine keeps pendings at `GameBase.pending_path` (default `hidden.pending`; your hidden-state
+sees. The referee turns them into `soon` rows (what, who, minutes, hidden, note=what would stop it), settles
+listed pendings with `set p3.resolved`, and records `unseen` rows; the engine lands all of these
+(§8). Your rules must say that unseen things never go in a clue, the log line or any player-visible field. The engine keeps pendings at `GameBase.pending_path` (default `hidden.pending`; your hidden-state
 model needs `pending: list[Pending]`), appends unseen facts to `recent_path` (the narrator's
 "behind the scenes" list), stops the clock where a pending falls due, and hands the narrator DUE
 NOW or UNSEEN. A game needs nothing else; set the paths to `None` to switch
