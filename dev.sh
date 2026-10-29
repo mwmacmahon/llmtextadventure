@@ -3,7 +3,7 @@
 #
 #   ./dev.sh            real models (the ant auth profile)
 #   ./dev.sh fake       offline, canned narrator
-#   ./dev.sh local      every role on a local llama-server (config.llamacpp.yml; TA_LLAMA_URL=http://host:8080)
+#   ./dev.sh local      every role on a local llama-server (config.llamacpp.yml; TA_LLAMA_URL=http://host:8280)
 #   ./dev.sh stop       stop anything still holding the two ports
 #
 # Any process already listening on 8010 or 5173 is stopped first, so a stale

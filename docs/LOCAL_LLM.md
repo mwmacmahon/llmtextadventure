@@ -41,36 +41,52 @@ latency and the stop sequence does not apply inside the thinking block.
 
 ## Running it
 
-1. Start the server with slots. On gumbo, through bruba's `llm-manager` (`GPU_HOST` is its LAN
-   address; the manager binds the LAN address only):
+The game has its own llama-server on the GPU box, separate from bruba's `llm-manager` (which stays
+untouched): `server/tools/gumbo/llama-game.sh` and the optional user unit
+`textadventure-llm.service`. It listens on **8280** (bruba's manager and servers use 8080–8092,
+ComfyUI 8188, ollama 11434), binds all interfaces so the game can reach it from the MacBook now and
+from the Mac mini later, and runs the Qwen3.5-35B-A3B Q4 file with three slots, thinking off,
+q8_0 KV cache, flash attention, the model's rope base, and Qwen's recommended sampling (the game's
+roles send their own temperature per request). Before loading, it asks a running ComfyUI for its
+VRAM through ComfyUI's own `/free` endpoint; the ComfyUI process stays up and reloads on its next
+prompt. Nothing else on the box is touched.
+
+1. Copy the two files to the GPU box, from this repo:
 
    ```bash
-   curl -s -X PATCH http://GPU_HOST:8090/config/q35-a3b-q4 -H 'content-type: application/json' -d '{"parallel": 3, "n_ctx": 98304, "enable_thinking": false}'
+   ssh gumbo 'mkdir -p ~/textadventure' && scp server/tools/gumbo/llama-game.sh server/tools/gumbo/textadventure-llm.service gumbo:~/textadventure/
    ```
+
+2. On the GPU box, run it in the foreground the first time (Ctrl-C stops it and frees the VRAM):
 
    ```bash
-   curl -s -X POST http://GPU_HOST:8090/models/start -H 'content-type: application/json' -d '{"model": "q35-a3b-q4"}'
+   ~/textadventure/llama-game.sh
    ```
 
-   The manager asks every registered `GPU_SERVICES` entry to release its VRAM first (ComfyUI through
-   its `/free` endpoint; the process stays up). `curl http://GPU_HOST:8080/health` answers once the
-   model is loaded.
+   Or as a service, so it survives the terminal:
 
-2. Check cache survival before playing. The smoke tool rebuilds each role's real input from a stored
+   ```bash
+   cp ~/textadventure/textadventure-llm.service ~/.config/systemd/user/ && systemctl --user daemon-reload && systemctl --user enable --now textadventure-llm && sleep 20 && curl -s http://127.0.0.1:8280/health
+   ```
+
+   `curl http://GPU_HOST:8280/health` answers `{"status":"ok"}` once the model is loaded (about
+   half a minute). `systemctl --user stop textadventure-llm` gives the VRAM back.
+
+3. Check cache survival before playing. The smoke tool rebuilds each role's real input from a stored
    instance (`--instance` is a title prefix) and runs the roles in turn order for a few rounds:
 
    ```bash
-   cd server && .venv/bin/python tools/local_smoke.py --url http://GPU_HOST:8080 --rounds 3
+   cd server && .venv/bin/python tools/local_smoke.py --url http://GPU_HOST:8280 --rounds 3
    ```
 
    Round 1 pays the prompt; from round 2 each role's `cached` should equal its prompt size, with
    `prompt` near zero. If the cache is lost between roles, the slots are not pinned (check `slot`
-   in the config and `--parallel` on the server).
+   in the config and `PARALLEL` in the script).
 
-3. Play:
+4. Play:
 
    ```bash
-   TA_LLAMA_URL=http://GPU_HOST:8080 ./dev.sh local
+   TA_LLAMA_URL=http://GPU_HOST:8280 ./dev.sh local
    ```
 
    `TA_CONFIG=<file>` picks another config under `server/`; `base_url` per role overrides the URL.

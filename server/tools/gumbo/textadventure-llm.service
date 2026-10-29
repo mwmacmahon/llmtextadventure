@@ -1,0 +1,22 @@
+# systemd user unit for the game's llama-server on the GPU box. Install:
+#   mkdir -p ~/.config/systemd/user && cp textadventure-llm.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now textadventure-llm
+# Then: systemctl --user status textadventure-llm; journalctl --user -u textadventure-llm -f
+# Stop it (and give the VRAM back): systemctl --user stop textadventure-llm
+# It is not started at boot unless you also `loginctl enable-linger gus`.
+[Unit]
+Description=Text adventure llama-server (one slot per role)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/textadventure
+ExecStart=%h/textadventure/llama-game.sh
+Restart=on-failure
+RestartSec=5
+# Override the script's defaults here if needed, e.g.:
+# Environment=PORT=8280
+# Environment=CTX=98304
+
+[Install]
+WantedBy=default.target
