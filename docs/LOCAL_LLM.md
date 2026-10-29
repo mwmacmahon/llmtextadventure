@@ -218,11 +218,15 @@ checkpoints across three slots; about 26 GB worst case on the 32 GB card. The 27
 to the A3B's 10 and 48 linear to its 30, so expect about 21 GB of weights, 1.6 GB of KV, and a checkpoint
 near 100 MiB: up to 9.4 GB of checkpoints, and a worst case around 33 GB, which does not fit. Levers, in
 order: `CKPT=2048` (halves the checkpoint count per 32k slot: a cached prefix then rewinds in 2k steps,
-which costs a little re-prompting, nothing else), then `CTX=65536` (about 21k a slot; the narrator's
-window is bounded in turns, 12–17, so measure its prompt in the log first), and only as a last resort the
+which costs a little re-prompting, nothing else), then `CTX=65536` (about 21k a slot; lower the
+narrator's `max_prompt_tokens` to 18000 with it), and only as a last resort the
 second card (`CUDA_VISIBLE_DEVICES=0,1` with `--tensor-split`: the 3060 is slow and the split costs
 bandwidth). An over-long prompt never spills VRAM: with `--no-context-shift` the server refuses it and the
-turn fails with an error in the log; a token budget on the narrator's window is an open item (ISSUES §6).
+turn fails with an error in the log. The narrator's `max_prompt_tokens` (28000 in `config.llamacpp.yml`, for a
+32k slot) keeps it from getting there: the request is estimated at 3.5 characters a token and the window
+gives up its oldest turns in slide steps until it fits (`narrator.window_trimmed` in the log; `trimmed` and
+`est_tokens` in the ledger's request). Trimmed turns return through the summary once the window's own start
+passes them.
 
 ## Not built
 

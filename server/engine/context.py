@@ -14,6 +14,11 @@ first message every turn once the game is longer than K, which invalidates
 the cached message prefix every turn. Instead the window start only moves in
 steps of `slide` turns: the window holds between K and K+slide-1 turns, and
 the cache prefix is stable for `slide` consecutive requests.
+
+Token budget. A role may set `max_prompt_tokens` (a local slot is a fixed size, and llama-server refuses a
+prompt longer than it). The request is estimated at CHARS_PER_TOKEN and, while it is over, the window start
+moves on by whole slide steps, keeping at least the newest turn. The turns trimmed this way are not lost
+for good: they come back through the summary once the window's own start passes them.
 """
 from __future__ import annotations
 
@@ -24,6 +29,11 @@ from .store import Store, TranscriptRow
 
 BULLETIN_TAG = "[GAME STATE]"
 PLAYER_TAG = "[PLAYER]"
+CHARS_PER_TOKEN = 3.5      # English prose runs nearer 4; the lower figure leaves a margin
+
+
+def estimate_tokens(chars: int) -> int:
+    return int(chars / CHARS_PER_TOKEN) + 1
 
 
 def compose_user_message(bulletin: str, player_text: str) -> str:
@@ -47,6 +57,9 @@ class BuiltContext:
     window_turns: int = 0
     summary_turn: int | None = None        # the system_note turn used as story-so-far, if any
     dropped_turns: list[int] = field(default_factory=list)  # completed turns older than the window
+    trimmed_turns: list[int] = field(default_factory=list)  # of those, the ones left out only to fit the token budget
+    est_tokens: int = 0                                      # the whole request, fixed parts included
+    over_budget: bool = False                                # still over with only the newest turn kept
 
 
 MECHANIC_PREFIX = "§ "
@@ -86,7 +99,9 @@ def _merge(msgs: list[Msg]) -> list[Msg]:
 
 
 def build_messages(store: Store, instance_id: str, window_turns: int, bulletin: str, player_text: str, slide: int = 1,
-                   exchanges: dict[int, dict] | None = None) -> BuiltContext:
+                   exchanges: dict[int, dict] | None = None, max_tokens: int | None = None, fixed_chars: int = 0) -> BuiltContext:
+    """`max_tokens`: the budget for the whole request; `fixed_chars`: what the request carries besides these
+    messages (the system prompt, a reminder appended to the last message)."""
     rows = store.transcript(instance_id, roles=["player", "narrator", "system_note"])
     turns: dict[int, dict[str, str]] = {}
     for r in rows:
@@ -94,28 +109,40 @@ def build_messages(store: Store, instance_id: str, window_turns: int, bulletin: 
 
     completed = sorted(t for t, parts in turns.items() if "player" in parts and "narrator" in parts)
     start = window_start(len(completed), window_turns, slide)
+    base = start
+    msgs = _window_messages(rows, turns, completed[start:], bulletin, player_text, exchanges)
+    est = estimate_tokens(fixed_chars + sum(len(m.content) for m in msgs))
+    while max_tokens and est > max_tokens and start < len(completed) - 1:
+        start = min(start + max(1, slide), len(completed) - 1)
+        msgs = _window_messages(rows, turns, completed[start:], bulletin, player_text, exchanges)
+        est = estimate_tokens(fixed_chars + sum(len(m.content) for m in msgs))
     window = completed[start:]
-    dropped = completed[:start]
+    summary = _latest_summary(rows, before_turn=window[0] if window else None)
+    return BuiltContext(
+        messages=msgs,
+        window_first_turn=window[0] if window else None,
+        window_turns=len(window),
+        summary_turn=summary.turn if summary else None,
+        dropped_turns=completed[:start],
+        trimmed_turns=completed[base:start],
+        est_tokens=est,
+        over_budget=bool(max_tokens and est > max_tokens),
+    )
 
+
+def _window_messages(rows: list[TranscriptRow], turns: dict[int, dict[str, str]], window: list[int], bulletin: str,
+                     player_text: str, exchanges: dict[int, dict] | None) -> list[Msg]:
     msgs: list[Msg] = []
     # The most recent summary (if any) that precedes the window goes first.
     summary = _latest_summary(rows, before_turn=window[0] if window else None)
     if summary:
         msgs.append(Msg("user", f"[STORY SO FAR]\n{summary.text}"))
         msgs.append(Msg("assistant", "Understood. I will continue the story from here."))
-
     for t in window:
         parts = turns[t]
         msgs.extend(history_turn(parts["player"], parts["narrator"], (exchanges or {}).get(t)))
-
     msgs.append(Msg("user", compose_user_message(bulletin, player_text)))
-    return BuiltContext(
-        messages=_merge(msgs),
-        window_first_turn=window[0] if window else None,
-        window_turns=len(window),
-        summary_turn=summary.turn if summary else None,
-        dropped_turns=dropped,
-    )
+    return _merge(msgs)
 
 
 def _latest_summary(rows: list[TranscriptRow], before_turn: int | None) -> TranscriptRow | None:

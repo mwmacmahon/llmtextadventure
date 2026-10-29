@@ -436,10 +436,14 @@ class Engine:
 
         provider = get_provider(role)
         system = (inst.prefix_text or game.frozen_prefix(state)) + "\n\n" + NARRATOR_WORLD
-        ctx = build_messages(self.store, iid, self.cfg.context.window_turns, bulletin, player_text,
-                             slide=self.cfg.context.window_slide, exchanges=self._exchanges(iid))
-        messages = ctx.messages
         reminder = _check_reminder(res, told)
+        ctx = build_messages(self.store, iid, self.cfg.context.window_turns, bulletin, player_text,
+                             slide=self.cfg.context.window_slide, exchanges=self._exchanges(iid),
+                             max_tokens=role.max_prompt_tokens, fixed_chars=len(system) + len(NARRATOR_PROTOCOL) + len(reminder or "") + 4)
+        if ctx.trimmed_turns or ctx.over_budget:
+            log.warning("narrator.window_trimmed " + logs.kv(iid=iid, turn=turn, trimmed=len(ctx.trimmed_turns), kept=ctx.window_turns,
+                                                              est_tokens=ctx.est_tokens, budget=role.max_prompt_tokens, over=ctx.over_budget or None))
+        messages = ctx.messages
         if reminder:                                # the last thing the narrator reads before it writes
             messages = messages[:-1] + [Msg("user", messages[-1].content + "\n\n" + reminder)]
 
@@ -499,7 +503,8 @@ class Engine:
             "request": {
                 "system_chars": len(system), "bulletin_chars": len(bulletin),
                 "window": {"first_turn": ctx.window_first_turn, "turns": ctx.window_turns,
-                           "summary_turn": ctx.summary_turn, "dropped": len(ctx.dropped_turns)},
+                           "summary_turn": ctx.summary_turn, "dropped": len(ctx.dropped_turns),
+                           "trimmed": len(ctx.trimmed_turns), "est_tokens": ctx.est_tokens, "over_budget": ctx.over_budget},
                 "messages": [{"role": m.role, "content": m.content} for m in messages],
             },
         })

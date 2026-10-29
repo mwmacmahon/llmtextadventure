@@ -37,6 +37,7 @@ class RoleConfig(BaseModel):
     # structured roles only: think first in a free call (thinking on, no grammar), then a second call turns
     # that answer into the schema under the grammar. A grammar over a thinking model constrains the thoughts,
     # so the two cannot share one call. Costs a call and the thinking tokens; `two_pass_max_tokens` bounds them.
+    max_prompt_tokens: int | None = None   # narrator: the window shrinks by slide steps to fit (engine/context.py); unset, no limit
     two_pass: bool = False
     two_pass_max_tokens: int = 3072
     temperature: float | None = None

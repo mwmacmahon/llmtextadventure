@@ -71,6 +71,23 @@ def _content_words(text: str) -> set[str]:
     return {w.rstrip("s") for w in re.findall(r"[a-z]+", text.lower()) if len(w) >= 4 and w not in _STOP}
 
 
+# A row whose own note takes it back ("gone trench coat", note "not lost; ignore"): the referee reasoning aloud
+# in the note, not reporting a change. Narrow on purpose: the instruction at the start or end of the note,
+# and for a gone row a note saying the thing is still there.
+_TAKES_BACK = re.compile(r"(^|[;,.:]\s*)(ignore|disregard|skip|no change|not a change)( (this|it|this row|that))?\s*[.!]?\s*$"
+                         r"|^\s*(ignore|disregard|no change|not a change)\b", re.I)
+_STILL_THERE = re.compile(r"\bnot (actually |really )?(lost|gone|taken|dropped|removed|destroyed|discarded)\b"
+                          r"|\bstill (has|have|holds?|holding|carries|carrying|wears|wearing|in (his|her|their) (pockets?|hands?))\b", re.I)
+
+
+def takes_itself_back(ch: Change) -> bool:
+    """True for a game row (set, add, move, new, gone, learned) whose note says not to apply it."""
+    note = (ch.note or "").strip()
+    if not note or ch.kind not in ("set", "add", "move", "new", "gone", "learned"):
+        return False
+    return bool(_TAKES_BACK.search(note)) or (ch.kind == "gone" and bool(_STILL_THERE.search(note)))
+
+
 def screen_unseen_clues(report: ChangeReport, prose: str, notes: list[str]) -> list[Rejection]:
     """A clue is what the player perceived. A `learned player` row whose words come from an unseen note (the
     narrator's [[unseen: …]] lines or the referee's own unseen rows) and not from the prose is the referee
@@ -159,6 +176,8 @@ def apply_changes(game: Any, state: BaseModel, report: ChangeReport, *, present:
                 w.reject(f"flags.{name}", "not a narrator flag", ch.value)
         elif k == "set" and is_pending_id(ch.target) and ch.field.strip().lower() == "resolved":
             ex.pending_resolved.append(f"{ch.target.strip().lower()}: {ch.value or ch.note}")
+        elif takes_itself_back(ch):
+            w.reject(f"{k} {ch.target}" + (f".{ch.field}" if ch.field else ""), "the row's own note takes it back", ch.note)
         else:
             if bool(_hook(game, "apply_change", s, ch, w, default=False)):
                 continue

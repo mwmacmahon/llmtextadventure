@@ -9,7 +9,7 @@ import pytest
 os.environ["TA_PROVIDER"] = "fake"
 
 from engine.config import load_config  # noqa: E402
-from engine.context import BULLETIN_TAG, window_start  # noqa: E402
+from engine.context import BULLETIN_TAG, build_messages, estimate_tokens, window_start  # noqa: E402
 from engine.pipeline import Engine  # noqa: E402
 from engine.registry import load_games  # noqa: E402
 from engine.store import Store  # noqa: E402
@@ -90,6 +90,22 @@ def test_window_start_moves_in_steps():
     # The window never holds fewer than 12 turns once 12 exist.
     assert all(c - window_start(c, 12, 6) >= 12 for c in range(12, 60))
     assert window_start(5, 0, 6) == 5        # window_turns=0 -> nothing verbatim
+
+
+def test_window_shrinks_by_slide_steps_to_fit_the_token_budget(tmp_path: Path):
+    store = Store(tmp_path / "w.sqlite3")
+    iid = "w"
+    for t in range(1, 21):                                   # 20 turns of about 1000 tokens each
+        store.append_transcript(iid, t, "player", f"turn {t}")
+        store.append_transcript(iid, t, "narrator", "x" * 3500)
+    full = build_messages(store, iid, 12, "bulletin", "go on", slide=6)
+    assert full.window_first_turn == 7 and full.trimmed_turns == [] and not full.over_budget
+    fit = build_messages(store, iid, 12, "bulletin", "go on", slide=6, max_tokens=9500, fixed_chars=3500)
+    assert fit.window_first_turn == 13 and fit.trimmed_turns == list(range(7, 13)) and fit.est_tokens <= 9500
+    assert fit.dropped_turns == list(range(1, 13))
+    tight = build_messages(store, iid, 12, "bulletin", "go on", slide=6, max_tokens=500)
+    assert tight.window_turns == 1 and tight.window_first_turn == 20 and tight.over_budget     # the newest turn always stays
+    assert estimate_tokens(3500) == 1001
 
 
 async def test_window_slides_stably(engine: Engine):

@@ -223,3 +223,16 @@ def test_a_timer_restated_by_the_narrator_is_not_added_twice():
     assert duplicate_of([p1], again) is p1 and duplicate_of([p1], other) is None
     p1.fired = True
     assert duplicate_of([p1], again) is None                       # once it has fired, a new one is a new event
+
+
+def test_a_row_whose_own_note_takes_it_back_is_not_applied(engine: Engine):
+    from engine.changes import takes_itself_back
+    game = engine.games["noir"]
+    state = game.load_state(engine.store.load_state(engine.create_instance("noir", {})))
+    s2, rep, _ = apply_changes(game, state, ChangeReport.of(Change(kind="gone", target="trench coat", note="not lost; ignore"), log_line="x"),
+                               present=[], causes=[])
+    assert any(i.id == "trench_coat" for i in s2.inventory) and rep.rejected[0].reason == "the row's own note takes it back"
+    back = lambda kind, note: takes_itself_back(Change(kind=kind, target="x", note=note))   # noqa: E731
+    assert back("gone", "Frank still has it in his pocket") and back("set", "no change") and back("add", "already counted, ignore this")
+    assert not back("learned", "Szabo ignored the question") and not back("new", "a man still holding a knife")
+    assert not back("gone", "dropped in the river") and not back("soon", "ignore")
