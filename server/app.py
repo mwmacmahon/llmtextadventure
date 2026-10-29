@@ -40,7 +40,12 @@ class TurnInput(BaseModel):
 
 
 class RewriteInput(BaseModel):
-    hint: str
+    hint: str = ""
+
+
+class SettingsInput(BaseModel):
+    guard: dict[str, Any] | None = None
+    progress: dict[str, Any] | None = None
 
 
 class UndoInput(BaseModel):
@@ -169,20 +174,34 @@ def _sse(gen_events):
 @app.post("/api/instances/{iid}/turn")
 async def turn(iid: str, body: TurnInput):
     _exists(iid)
-    return _sse(engine.run_turn(iid, body.text))
+    return _sse(engine.play(iid, body.text))
 
 
 @app.post("/api/instances/{iid}/command")
 async def command(iid: str, body: CommandInput):
     _exists(iid)
-    return _sse(engine.run_turn(iid, command=(body.command, body.args)))
+    return _sse(engine.play(iid, command=(body.command, body.args)))
 
 
 @app.post("/api/instances/{iid}/rewrite")
 async def rewrite(iid: str, body: RewriteInput):
-    """Tell the last turn again with the player's ruling as a directive: same adjudication, levers and dice."""
+    """Tell the last turn again under the player's ruling (or just again, when the hint is empty): same
+    adjudication, levers and dice; the referee reads it again; the guard applies as on any turn."""
     _exists(iid)
-    return _sse(engine.rewrite_turn(iid, body.hint))
+    return _sse(engine.play(iid, rewrite=True, hint=body.hint))
+
+
+@app.get("/api/settings")
+def settings():
+    return engine.get_settings()
+
+
+@app.patch("/api/settings")
+def update_settings(body: SettingsInput):
+    try:
+        return engine.update_settings(body.model_dump(exclude_none=True))
+    except ValueError as e:
+        raise HTTPException(422, str(e))
 
 
 # ---- static frontend (production) ----------------------------------------

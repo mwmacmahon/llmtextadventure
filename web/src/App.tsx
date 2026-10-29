@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, streamCommand, streamRewrite, streamTurn, type InstanceView, type Mechanics, type TranscriptRow, type TurnEvent } from "./api";
+import { api, streamCommand, streamRewrite, streamTurn, type InstanceView, type Mechanics, type Settings, type TranscriptRow, type TurnEvent } from "./api";
 import { DebugDrawer } from "./components/DebugDrawer";
 import { Lobby } from "./components/Lobby";
 import { Panels } from "./components/Panels";
@@ -31,6 +31,7 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
   const [pending, setPending] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [debug, setDebug] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(() => api.instance(id).then(setView).catch((e) => setErr(String(e))), [id]);
@@ -58,7 +59,19 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
           setPending(ev.data.label ?? pendingText);
           setStage(ev.data.mode === "engine" ? null : "resolving…");
         } else if (ev.event === "rewrite") {
-          setStage(`retelling turn ${ev.data.turn}…`);
+          acc = "";
+          setStreaming("");
+          setStage(ev.data.by === "referee" ? `retelling turn ${ev.data.turn} after a ruling…` : `retelling turn ${ev.data.turn}…`);
+        } else if (ev.event === "retell") {
+          // the referee ruled the telling out of line; under the guard the engine tells it again before (gate) or after (rewrite) showing it
+          acc = "";
+          setStreaming("");
+          setStage(`rewriting… (${ev.data.rulings.map((r) => r.rule.replace(/_/g, " ")).join(", ")})`);
+        } else if (ev.event === "progress") {
+          // the prose may be held back (gate): a share of the usual length, then "checking…"
+          if (ev.data.stage === "checking") setStage("checking…");
+          else if (ev.data.slow) setStage("writing… taking longer than usual");
+          else if (!acc) setStage(`writing… (est ~${ev.data.pct}%)`);
         } else if (ev.event === "adjudication") {
           setStage(ev.data.kind === "clarify" || ev.data.kind === "impossible" ? "asking for clarification…" : "resolving…");
         } else if (ev.event === "resolution") {
@@ -106,13 +119,14 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
     return run(streamCommand(id, command, args), command);
   }
 
-  /** "You're out of line": the last turn is told again with the player's ruling, same facts, same dice. */
+  /** "You're out of line": the last turn is told again, same facts, same dice. Whatever is in the text box is the
+   * ruling or the instructions; an empty box just asks for it told again. The referee's writes are undone with the turn. */
   function rewrite() {
     if (!view || streaming !== null || view.turn === 0) return;
-    const hint = window.prompt("What was out of line? The narrator tells the last turn again under this ruling, with the same dice.");
-    if (!hint || !hint.trim()) return;
+    const hint = input.trim();
+    setInput("");
     const last = [...view.transcript].reverse().find((r) => r.role === "player");
-    return run(streamRewrite(id, hint.trim()), last ? `${last.text}  ↺ ${hint.trim()}` : `↺ ${hint.trim()}`);
+    return run(streamRewrite(id, hint), `${last ? last.text : ""}  ↺ ${hint || "tell it again"}`.trim());
   }
 
   async function undo(toTurn?: number) {
@@ -152,9 +166,10 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
         <button onClick={() => undo()} disabled={view.turn === 0 || streaming !== null} title="Rewind one turn">
           undo
         </button>
-        <button onClick={() => rewrite()} disabled={view.turn === 0 || streaming !== null} title="Tell the last turn again under a ruling of yours: same facts, same dice, only the words change">
+        <button onClick={() => rewrite()} disabled={view.turn === 0 || streaming !== null} title="Request a rewrite of the last turn: same facts, same dice, the referee's changes undone. Whatever is in the text box is your explanation or instructions; empty just tells it again.">
           rewrite
         </button>
+        <button onClick={() => setSettingsOpen(!settingsOpen)} title="The narrator guard and the models in use">settings</button>
         <button onClick={() => branch()} disabled={streaming !== null} title="Copy this game as a new branch from here">
           branch
         </button>
@@ -163,6 +178,7 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
         </a>
         <button onClick={() => setDebug(!debug)}>GM debug</button>
       </header>
+      {settingsOpen && <SettingsMenu onClose={() => setSettingsOpen(false)} />}
       <main>
         <section className="narrative" ref={scrollRef}>
           {rows.map((r) => (
@@ -271,10 +287,12 @@ function MechanicsRow({ text }: { text: string }) {
   if (m.rejected.length) bits.push(`${m.rejected.length} rejected`);
   for (const lv of m.levers ?? []) if (lv.status !== "applied") bits.push(`${lv.id}: ${lv.status.replace("_", " ")}`);
   if (m.drift?.length) bits.push(`${m.drift.length} drifted`);
-  if (m.rewritten) bits.push(`retold${m.rewritten.attempt > 1 ? ` (${m.rewritten.attempt}×)` : ""}`);
+  if (m.rewritten) bits.push(`retold${m.rewritten.by === "referee" ? " by the referee" : ""}${m.rewritten.attempt > 1 ? ` (${m.rewritten.attempt}×)` : ""}`);
+  for (const r of m.rulings ?? []) bits.push(`${r.serious ? "ruling" : "note"}: ${r.rule.replace(/_/g, " ")}`);
   if (!bits.length) return null;
   const lines = [
-    ...(m.rewritten ? [`ruling: ${m.rewritten.hint}`] : []),
+    ...(m.rewritten ? [`${m.rewritten.by === "referee" ? "referee's" : "your"} ruling: ${m.rewritten.hint || "(tell it again)"}`] : []),
+    ...(m.rulings ?? []).map((r) => `${r.serious ? "ruling" : "note"} ${r.rule.replace(/_/g, " ")}: ${r.what}${r.fix && r.fix !== r.what ? ` → ${r.fix}` : ""}`),
     ...(m.levers ?? []).map((lv) => `lever ${lv.id} ${lv.status.replace("_", " ")}: ${lv.text}`),
     ...m.applied,
     ...m.rejected.map((r) => `rejected ${r.path}: ${r.reason}`),
@@ -296,3 +314,43 @@ function MechanicsRow({ text }: { text: string }) {
     </div>
   );
 }
+
+/** The settings menu: the narrator guard (changeable) and the roles' backends (shown; swapping them is a todo). */
+function SettingsMenu({ onClose }: { onClose: () => void }) {
+  const [s, setS] = useState<Settings | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    api.settings().then(setS).catch((e) => setErr(String(e)));
+  }, []);
+  async function setMode(mode: string) {
+    try {
+      setS(await api.updateSettings({ guard: { mode } }));
+    } catch (e) {
+      setErr(String(e));
+    }
+  }
+  if (!s) return <div className="settings muted small">{err ?? "loading settings…"}</div>;
+  return (
+    <div className="settings">
+      <div className="settings-row">
+        <strong>Narrator guard</strong>
+        <select value={s.guard.mode} onChange={(e) => setMode(e.target.value)}>
+          {Object.keys(s.modes).map((m) => (
+            <option key={m} value={m}>{m}</option>
+          ))}
+        </select>
+        <span className="muted small">{s.modes[s.guard.mode]}</span>
+      </div>
+      <div className="settings-row muted small">
+        <strong>Backends</strong>
+        {Object.entries(s.roles).map(([role, r]) => (
+          <span key={role}>{role}: {r.provider}:{r.model}{r.effort ? `/${r.effort}` : ""}</span>
+        ))}
+        <span>(swapping backends from here: todo; set in config.yml or TA_CONFIG for now)</span>
+      </div>
+      {err && <div className="error small">{err}</div>}
+      <button className="link small" onClick={onClose}>close</button>
+    </div>
+  );
+}
+

@@ -43,7 +43,15 @@ export type Mechanics = {
   levers?: { id: string; status: "applied" | "blocked" | "not_completed"; text: string }[];
   pending?: { fired: string[]; new: string[]; resolved: string[] };
   issues: string[];
-  rewritten?: { hint: string; attempt: number } | null;
+  rewritten?: { hint: string; attempt: number; by?: string } | null;
+  rulings?: { rule: string; what: string; fix: string; serious: boolean }[];
+};
+
+export type Settings = {
+  guard: { mode: string; max_retells: number };
+  modes: Record<string, string>;
+  progress: { default_chars: number };
+  roles: Record<string, { provider: string; model: string; effort: string | null }>;
 };
 
 export type Origin = { forked_from?: string; at_turn?: number; imported?: boolean; original_id?: string; exported?: string };
@@ -80,6 +88,9 @@ export const api = {
     fetch("/api/instances/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(doc) }).then((r) => j<InstanceView>(r)),
   ledger: (id: string, turn?: number) => fetch(`/api/instances/${id}/ledger${turn != null ? `?turn=${turn}` : ""}`).then((r) => j<LedgerEntry[]>(r)),
   usage: (id: string) => fetch(`/api/instances/${id}/usage`).then((r) => j<InstanceUsage>(r)),
+  settings: () => fetch("/api/settings").then((r) => j<Settings>(r)),
+  updateSettings: (patch: { guard?: Partial<Settings["guard"]>; progress?: Partial<Settings["progress"]> }) =>
+    fetch("/api/settings", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) }).then((r) => j<Settings>(r)),
 };
 
 export type TurnEvent =
@@ -88,7 +99,9 @@ export type TurnEvent =
   | { event: "adjudication"; data: { kind: string; summary: string; time_minutes: number; clarify_question?: string | null } }
   | { event: "resolution"; data: { assessed: { label: string; stat: string; difficulty: string; target: string }[]; fired: { event_id: string; variant: string }[]; expired: { event_id: string }[]; elapsed: number; directives: string[] } }
   | { event: "bulletin"; data: { turn: number; text: string } }
-  | { event: "rewrite"; data: { turn: number; hint: string; attempt: number } }
+  | { event: "rewrite"; data: { turn: number; hint: string; attempt: number; by?: string } }
+  | { event: "retell"; data: { turn: number; attempt: number; rulings: { rule: string; what: string; fix: string }[]; hint: string } }
+  | { event: "progress"; data: { stage: string; chars: number; expected: number; pct: number; slow: boolean } }
   | { event: "text"; data: { t: string } }
   | { event: "mechanic"; data: { turn: number; text: string; data: Record<string, any> } }
   | { event: "referee"; data: { delta: Record<string, any> | null; report?: { applied: string[]; rejected: unknown[] }; error?: string } }
@@ -100,7 +113,7 @@ export function streamTurn(id: string, text: string, signal?: AbortSignal): Asyn
   return streamSse(`/api/instances/${id}/turn`, { text }, signal);
 }
 
-/** POST a ruling on the last turn: the narrator tells it again from the same facts and dice, the referee reads it again. */
+/** POST a ruling on the last turn (or none: just tell it again): same facts and dice, the referee reads it again. */
 export function streamRewrite(id: string, hint: string, signal?: AbortSignal): AsyncGenerator<TurnEvent> {
   return streamSse(`/api/instances/${id}/rewrite`, { hint }, signal);
 }

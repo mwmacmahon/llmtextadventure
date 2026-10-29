@@ -109,8 +109,10 @@ DELETE /api/instances/{id}
 GET    /api/instances/{id}/export       self-contained JSON (transcript, ledger, snapshots, prefix)
 POST   /api/instances/{id}/fork         {turn?, title?} -> branch copy up to that turn
 POST   /api/instances/{id}/undo         {turn?} rewind (default: one turn)
-POST   /api/instances/{id}/rewrite      {hint} tell the last turn again under the player's ruling: same adjudication,
-                                        levers and dice, the narrator and referee run again (SSE, as /turn)
+POST   /api/instances/{id}/rewrite      {hint?} tell the last turn again under the player's ruling (or just again): same
+                                        adjudication, levers and dice, the narrator and referee run again (SSE, as /turn)
+GET    /api/settings                    the narrator guard (log | rewrite | gate), its modes, the roles' backends
+PATCH  /api/settings                    {guard: {mode}} switch the guard; persisted in data/settings.json
 GET    /api/instances/{id}/ledger?turn= model calls, checks, events, happenings, verdicts, deltas, drift
 GET    /api/instances/{id}/usage        tokens, seconds and cost per role (game properties in the lobby)
 POST   /api/instances/{id}/turn         {text} -> SSE: adjudication, resolution, [summary], bulletin, text*, referee, done | error

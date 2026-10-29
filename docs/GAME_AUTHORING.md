@@ -202,6 +202,11 @@ as a promise before the prose and as the engine's line after it. A missing or in
 still asks "Which module? (Lab, Cargo)". Mark console-only commands `typed=False` (notebook,
 assistant channel) so prose never maps onto them.
 
+The referee also files `ruling` rows (field = the rule broken, value = what happened, note = how a
+retelling fixes it). They land in the mechanics row as `rulings`, and under the gate or rewrite guard a
+serious one has the turn retold before (gate) or after (rewrite) the player sees it; the game's
+`referee_rules` need say nothing about them, the engine's instructions carry the table.
+
 ```python
 def commands(self, state):
     return [CommandSpec(id="lamp", label="Lamp", mode="engine", hint="Switch the lamp.",

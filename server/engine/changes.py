@@ -1,6 +1,6 @@
 """Apply the referee's change rows (DESIGN2 §18 A): one row type, typed and bounded by code.
 
-Engine kinds (soon, unseen, not_done, issue, thread_open, thread_close, flag, and `set <pending>.resolved`)
+Engine kinds (soon, unseen, not_done, issue, ruling, thread_open, thread_close, flag, and `set <pending>.resolved`)
 are collected here for the pipeline; game kinds (set, add, move, new, gone, learned) go to the game's
 `apply_change(state, change, writer) -> bool`, which validates against its own vocabulary and bounds, and,
 when the game has a world and did not take the row, to the world's rules as a Declaration landed by the
@@ -17,7 +17,7 @@ from .brackets import Declaration
 from .game import ApplyReport
 from .gamekit import Writer
 from .pending import PendingNew
-from .roles import Change, ChangeReport
+from .roles import RULES, SERIOUS_RULES, Change, ChangeReport
 from .threads import ThreadClose
 
 TRUE_WORDS = {"true", "yes", "on", "1", "set"}
@@ -31,6 +31,7 @@ class Extras:
     unseen: list[str] = field(default_factory=list)
     not_done: list[str] = field(default_factory=list)
     issues: list[str] = field(default_factory=list)
+    rulings: list[dict] = field(default_factory=list)   # {rule, what, fix, serious}; the guard acts on the serious ones
     threads_opened: list[str] = field(default_factory=list)
     threads_closed: list[ThreadClose] = field(default_factory=list)
 
@@ -87,6 +88,12 @@ def apply_changes(game: Any, state: BaseModel, report: ChangeReport, *, present:
             ex.not_done.append(f"{ch.target}: {ch.note or ch.value}")
         elif k == "issue":
             ex.issues.append((ch.value or ch.note).strip())
+        elif k == "ruling":
+            rule = (ch.field or ch.target).strip().lower().replace(" ", "_") or "issue"
+            if rule not in RULES:                      # a rule the table does not know is an observation, not a verdict
+                ex.issues.append(f"{rule}: {(ch.value or ch.note).strip()}")
+            else:
+                ex.rulings.append({"rule": rule, "what": (ch.value or ch.note).strip(), "fix": (ch.note or ch.value).strip(), "serious": rule in SERIOUS_RULES})
         elif k == "thread_open":
             if (ch.value or ch.note).strip():
                 ex.threads_opened.append((ch.value or ch.note).strip())

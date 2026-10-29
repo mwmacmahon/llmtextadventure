@@ -115,3 +115,8 @@ ul.log, ul.notes { margin: 0; padding-left: 18px; font-size: 13px; }
 .props .row-actions { margin-top: 8px; }
 .props table { width: auto; }
 .props td, .props th { padding-right: 14px; }
+
+/* the settings menu under the header: the guard and the backends */
+.settings { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin: 8px 0; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.settings-row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.settings select { font: inherit; }

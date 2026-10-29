@@ -85,7 +85,7 @@ async def test_rewrite_retells_the_last_turn_with_the_ruling_same_facts_same_dic
                                              else "He makes the ladder with the gun still cold in his hand.")
     assert "fires twice" in seen["referee_saw"]
     second = await events_of(engine.rewrite_turn(iid, "Frank never fired; the gun stayed in his hand."))
-    assert second[0]["event"] == "rewrite" and second[0]["data"] == {"turn": 1, "hint": "Frank never fired; the gun stayed in his hand.", "attempt": 1}
+    assert second[0]["event"] == "rewrite" and second[0]["data"] == {"turn": 1, "hint": "Frank never fired; the gun stayed in his hand.", "attempt": 1, "by": "player"}
     assert second[-1]["event"] == "done" and second[-1]["data"]["turn"] == 1 and engine.store.latest_turn(iid) == 1
     roll_after = next(e["data"]["text"] for e in second if e["event"] == "mechanic" and "muscle" in e["data"]["text"].lower())
     assert roll_after == roll_before                                                   # same seed, same dice
@@ -103,7 +103,7 @@ async def test_rewrite_retells_the_last_turn_with_the_ruling_same_facts_same_dic
     prose = engine.store.transcript(iid, roles=["narrator"])[-1].text
     assert "gun still cold" in prose and "fires twice" not in prose
     mech = json.loads(engine.store.transcript(iid, roles=["mechanics"])[-1].text)
-    assert mech["rewritten"] == {"hint": "Frank never fired; the gun stayed in his hand.", "attempt": 1}
+    assert mech["rewritten"] == {"hint": "Frank never fired; the gun stayed in his hand.", "attempt": 1, "by": "player"}
     assert engine.games["noir"].load_state(engine.store.load_state(iid)).item("revolver").loaded == 6       # the lever landed again, once
     assert [r.role for r in engine.store.transcript(iid) if r.turn == 1].count("player") == 1
 
@@ -124,5 +124,5 @@ async def test_rewrite_refuses_what_it_cannot_retell(engine: Engine, fake: FakeP
         assert out["event"] == "error" and "clicked" in out["data"]["message"]
     fake.canned["Adjudication"] = [Adjudication(kind="trivial", summary="looks", time_minutes=0, risk="none")]
     await events_of(engine.run_turn(iid, "I look around."))
-    out = (await events_of(engine.rewrite_turn(iid, "   ")))[0]
-    assert out["event"] == "error" and "out of line" in out["data"]["message"]
+    out = await events_of(engine.rewrite_turn(iid, "   "))                # an empty ruling is allowed: just tell it again
+    assert out[0]["event"] == "rewrite" and out[0]["data"]["hint"] == "" and out[-1]["event"] == "done"

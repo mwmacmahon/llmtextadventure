@@ -28,6 +28,7 @@ import asyncio
 import json
 import time
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any, AsyncIterator
 
 from pydantic import BaseModel
@@ -56,11 +57,61 @@ MODEL_CALL_KINDS = {"model_call": None, "adjudication": "adjudicator", "verdict"
 log = logs.get("pipeline")
 
 
+GUARD_MODES = {
+    "log": "the prose shows as it is written; rulings are recorded",
+    "rewrite": "the prose shows as it is written, then is retold once if the referee rules it out of line",
+    "gate": "nothing shows until the referee has read it; a serious ruling has it retold once first (no streaming)",
+}
+
+
 class Engine:
     def __init__(self, cfg: Config, store: Store, games: dict[str, Game]):
         self.cfg = cfg
         self.store = store
         self.games = games
+        # Runtime settings the UI can change (the guard mode, the progress estimate); persisted beside the store.
+        self.settings_path = Path(store.path).parent / "settings.json" if getattr(store, "path", None) else None
+        self.settings: dict[str, Any] = {"guard": {"mode": cfg.guard.mode, "max_retells": cfg.guard.max_retells},
+                                         "progress": {"default_chars": cfg.guard.default_chars}}
+        if self.settings_path and self.settings_path.exists():
+            try:
+                saved = json.loads(self.settings_path.read_text())
+                for k in ("guard", "progress"):
+                    self.settings[k].update({kk: vv for kk, vv in (saved.get(k) or {}).items() if kk in self.settings[k]})
+            except Exception:
+                log.exception("settings.load_failed " + logs.kv(path=str(self.settings_path)))
+        if self.settings["guard"]["mode"] not in GUARD_MODES:
+            self.settings["guard"]["mode"] = "log"
+
+    # ---- settings ------------------------------------------------------------
+    def get_settings(self) -> dict[str, Any]:
+        """What the settings menu shows: the guard and its modes, the roles' backends (read-only for now)."""
+        return {
+            "guard": dict(self.settings["guard"]), "modes": GUARD_MODES, "progress": dict(self.settings["progress"]),
+            "roles": {name: {"provider": r.provider, "model": r.model, "effort": r.effort} for name, r in self.cfg.roles.items()},
+        }
+
+    def update_settings(self, patch: dict[str, Any]) -> dict[str, Any]:
+        g = patch.get("guard") or {}
+        if "mode" in g:
+            if g["mode"] not in GUARD_MODES:
+                raise ValueError(f"guard mode must be one of {', '.join(GUARD_MODES)}")
+            self.settings["guard"]["mode"] = g["mode"]
+        if "max_retells" in g:
+            self.settings["guard"]["max_retells"] = max(0, min(int(g["max_retells"]), 3))
+        pr = patch.get("progress") or {}
+        if "default_chars" in pr:
+            self.settings["progress"]["default_chars"] = max(200, int(pr["default_chars"]))
+        if self.settings_path:
+            self.settings_path.parent.mkdir(parents=True, exist_ok=True)
+            self.settings_path.write_text(json.dumps(self.settings, indent=1))
+        log.info("settings.updated " + logs.kv(**{f"guard.{k}": v for k, v in self.settings["guard"].items()}))
+        return self.get_settings()
+
+    def expected_chars(self, iid: str) -> int:
+        """The progress estimate: a running average of this instance's last narrations, else the default."""
+        lens = [len(r.text.split("\n§ ")[0]) for r in self.store.transcript(iid, roles=["narrator"]) if r.turn > 0][-8:]
+        return int(sum(lens) / len(lens)) if lens else int(self.settings["progress"]["default_chars"])
 
     # ---- instances --------------------------------------------------------
     def create_instance(self, game_name: str, setup: dict[str, Any]) -> str:
@@ -165,6 +216,38 @@ class Engine:
         self.store.rename_instance(iid, title.strip() or "untitled")
 
     # ---- turn -------------------------------------------------------------
+    async def play(self, iid: str, player_text: str | None = None, command: tuple[str, dict[str, Any]] | None = None,
+                   *, rewrite: bool = False, hint: str = "") -> AsyncIterator[dict[str, Any]]:
+        """A turn under the guard (DESIGN2 §8). Runs `run_turn` (or, for a player's rewrite, `rewrite_turn`)
+        and, when the referee returns a serious ruling, retells the turn through `rewrite_turn` with the
+        ruling's fix as the instruction, up to `max_retells` times. Mode `log` never retells; `rewrite`
+        streams the first telling and then replaces it; `gate` holds the prose (and the § lines) back
+        until the referee has passed it, sending `progress` events instead, and shows only the final one."""
+        mode = self.settings["guard"]["mode"]
+        max_retells = int(self.settings["guard"]["max_retells"])
+        gen = self.rewrite_turn(iid, hint, by="player") if rewrite else self.run_turn(iid, player_text, command)
+        retells = 0
+        while True:
+            held: list[dict[str, Any]] = []
+            done: dict[str, Any] | None = None
+            async for ev in gen:
+                if ev["event"] == "done":
+                    done = ev["data"]
+                if mode == "gate" and ev["event"] in ("text", "mechanic", "done"):
+                    held.append(ev)
+                else:
+                    yield ev
+            serious = [r for r in ((done or {}).get("mechanics") or {}).get("rulings", []) if r.get("serious")] if done else []
+            if serious and mode != "log" and retells < max_retells and (done or {}).get("mechanics", {}).get("kind") != "command":
+                retells += 1
+                fix = " ".join((r.get("fix") or r.get("what") or "").strip() for r in serious).strip()
+                yield {"event": "retell", "data": {"turn": done["turn"], "attempt": retells, "rulings": serious, "hint": fix}}
+                gen = self.rewrite_turn(iid, fix, by="referee")
+                continue
+            for ev in held:
+                yield ev
+            return
+
     async def run_turn(self, iid: str, player_text: str | None = None,
                        command: tuple[str, dict[str, Any]] | None = None,
                        replay: Replay | None = None) -> AsyncIterator[dict[str, Any]]:
@@ -235,9 +318,9 @@ class Engine:
         assert player_text is not None
         self.store.append_transcript(iid, turn, "player", player_text)
         if replay is not None:
-            ledger("rewrite", {"hint": replay.hint, "attempt": replay.attempt, "history": replay.history})
-            log.info("turn.rewrite " + logs.kv(iid=iid, turn=turn, attempt=replay.attempt, hint_chars=len(replay.hint)))
-            yield {"event": "rewrite", "data": {"turn": turn, "hint": replay.hint, "attempt": replay.attempt}}
+            ledger("rewrite", {"hint": replay.hint, "attempt": replay.attempt, "by": replay.by, "history": replay.history})
+            log.info("turn.rewrite " + logs.kv(iid=iid, turn=turn, attempt=replay.attempt, by=replay.by, hint_chars=len(replay.hint)))
+            yield {"event": "rewrite", "data": {"turn": turn, "hint": replay.hint, "attempt": replay.attempt, "by": replay.by}}
             adj = replay.adjudication
             ledger("adjudication", {**adj.model_dump(mode="json"), "_call": {
                 "provider": replay.call.get("provider"), "model": replay.call.get("model"), "seconds": 0, "usage": asdict(Usage()),
@@ -263,9 +346,15 @@ class Engine:
             adj, levers = self._preview_levers(game, state, adj, iid, turn, ledger)
             extra_directives.extend(lv.directive for lv in levers)
         if replay is not None:
-            extra_directives.append(
-                f"RULING from the player on your previous telling of this turn: {replay.hint.strip()} That telling was set aside. "
-                "Tell this turn again from the same facts above, keeping to the ruling. Do not mention the ruling or that this is a retelling.")
+            who = "the referee" if replay.by == "referee" else "the player"
+            if replay.hint:
+                extra_directives.append(
+                    f"RULING from {who} on your previous telling of this turn: {replay.hint.strip()} That telling was set aside. "
+                    "Tell this turn again from the same facts above, keeping to the ruling. Do not mention the ruling or that this is a retelling.")
+            else:
+                extra_directives.append(
+                    "The player asked for this turn to be told again. That telling was set aside: tell it again from the same facts above, "
+                    "differently, and do not mention that this is a retelling.")
         if adj is not None:
             yield {"event": "adjudication", "data": adj.model_dump(mode="json")}
 
@@ -335,9 +424,17 @@ class Engine:
             if not role.stop_sequences:
                 role = role.model_copy(update={"stop_sequences": list(STOP_SEQUENCES)})
             handler = self._call_handler(game, state, iid, turn, res["assessments"])
+            expected = self.expected_chars(iid)
+            written = 0
+            last_progress = 0
+            yield {"event": "progress", "data": _progress("writing", 0, expected)}
             async for nev in narrate(provider, role, system, messages, handler, max_calls=getattr(game, "max_calls", 3)):
                 if isinstance(nev, Visible):
                     yield {"event": "text", "data": {"t": nev.text}}
+                    written += len(nev.text)
+                    if written - last_progress >= 80:
+                        last_progress = written
+                        yield {"event": "progress", "data": _progress("writing", written, expected)}
                 elif isinstance(nev, Mechanic):
                     yield {"event": "mechanic", "data": {"turn": turn, "text": nev.text, "data": nev.data}}
                 else:
@@ -379,6 +476,7 @@ class Engine:
         delta_json: dict | None = None
         lever_outcomes: list[dict[str, Any]] | None = None
         if not getattr(game, "skip_referee", False) and adj is not None and adj.kind in ("action", "trivial"):
+            yield {"event": "progress", "data": _progress("checking", len(narration), max(len(narration), 1))}
             try:
                 for_referee = narration
                 if calls_block.get("notes"):
@@ -437,6 +535,9 @@ class Engine:
                 for issue in issues:
                     log.info("referee.issue " + logs.kv(iid=iid, turn=turn, issue=issue))
                 delta_json["issues"] = issues
+                delta_json["rulings"] = extras.rulings
+                for r in extras.rulings:
+                    log.info("referee.ruling " + logs.kv(iid=iid, turn=turn, rule=r["rule"], serious=r["serious"], what=r["what"]))
                 yield {"event": "referee", "data": {"delta": delta_json, "report": report.model_dump(mode="json")}}
             except Exception as e:
                 ledger("model_call", {"role": "referee", "error": repr(e)})
@@ -479,7 +580,9 @@ class Engine:
             "rejected": [r.model_dump() for r in report.rejected],
             "drift": drift_lines,
             "levers": lever_outcomes,
+            "rulings": (delta_json or {}).get("rulings", []),
             "issues": (delta_json or {}).get("issues", []) + res["notes"]
+                      + [f"ruling {r['rule']}{' (serious)' if r['serious'] else ''}: {r['what']}" for r in (delta_json or {}).get("rulings", [])]
                       + [f"lever {o['id']} not completed: {o['text']}" for o in lever_outcomes if o["status"] == "not_completed"]
                       + [f"assessed check not called: {a}" for a in calls_block.get("assessed_not_called", [])]
                       + [f"narrator: {p}" for p in calls_block.get("problems", [])],
@@ -488,7 +591,7 @@ class Engine:
             "notes": calls_block.get("notes", []),
         }
         if replay is not None:
-            mechanics["rewritten"] = {"hint": replay.hint, "attempt": replay.attempt}
+            mechanics["rewritten"] = {"hint": replay.hint, "attempt": replay.attempt, "by": replay.by}
         self.store.append_transcript(iid, turn, "mechanics", json.dumps(mechanics))
 
         yield {
@@ -502,7 +605,7 @@ class Engine:
             },
         }
 
-    async def rewrite_turn(self, iid: str, hint: str) -> AsyncIterator[dict[str, Any]]:
+    async def rewrite_turn(self, iid: str, hint: str, by: str = "player") -> AsyncIterator[dict[str, Any]]:
         """"You're out of line": tell the last turn again. The turn is rewound and replayed with its stored
         adjudication, the same levers and the same dice seed, with the player's ruling as a directive; the
         narrator and the referee run again and this telling replaces the last one. The earlier tellings stay
@@ -511,10 +614,7 @@ class Engine:
         if not inst:
             yield {"event": "error", "data": {"message": "no such instance"}}
             return
-        hint = (hint or "").strip()
-        if not hint:
-            yield {"event": "error", "data": {"message": "say what was out of line", "step": "rewrite"}}
-            return
+        hint = (hint or "").strip()             # empty: the player just wants it told again
         turn = self.store.latest_turn(iid)
         if turn < 1:
             yield {"event": "error", "data": {"message": "nothing to rewrite yet", "step": "rewrite"}}
@@ -545,7 +645,7 @@ class Engine:
         if not call.get("model"):                 # the row came from an earlier rewrite that kept no call meta
             role = self.cfg.role("adjudicator")
             call = {"provider": role.provider, "model": role.model}
-        async for ev in self.run_turn(iid, player_text, replay=Replay(adjudication=adj, hint=hint, attempt=attempt, history=history, call=call)):
+        async for ev in self.run_turn(iid, player_text, replay=Replay(adjudication=adj, hint=hint, attempt=attempt, history=history, call=call, by=by)):
             yield ev
 
     # ---- steps -------------------------------------------------------------
@@ -857,6 +957,7 @@ class Replay:
     attempt: int                      # 1 for the first rewrite of a turn
     history: list[dict[str, Any]]     # every earlier telling of this turn: {attempt, hint, narration, mechanics}
     call: dict[str, Any]              # the original adjudicator call's meta (provider, model); its usage is not counted again
+    by: str = "player"                # who asked: the player (the rewrite button) or the referee (a serious ruling under the guard)
 
 
 @dataclass
@@ -1002,6 +1103,13 @@ def _diff_lines(before: Any, after: Any, path: str = "") -> list[str]:
     elif before != after:
         out.append(f"{path}: {before!r} -> {after!r}")
     return out
+
+
+def _progress(stage: str, chars: int, expected: int) -> dict[str, Any]:
+    """What the stage bar shows while the prose is held back: a share of the usual length, capped at 90%,
+    and "taking longer than usual" past 120%."""
+    ratio = chars / expected if expected > 0 else 0.0
+    return {"stage": stage, "chars": chars, "expected": expected, "pct": min(90, int(ratio * 100)), "slow": ratio > 1.2}
 
 
 def _this_turn_block(res: dict[str, Any]) -> str:
