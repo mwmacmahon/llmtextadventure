@@ -408,3 +408,32 @@ def test_people_tell_piece_by_piece_and_the_engine_gates_some(game: NoirGame):
     st.player.location = "Lowtown streets"
     s4, rep = apply(game, st, ref(C(kind="set", target="szabo", field="told", value="szabo_inside")))
     assert s4.person("szabo").tells[1].told and any("before its condition" in a for a in rep.applied)
+
+
+def test_hearing_about_someone_is_not_meeting_them(game: NoirGame):
+    _, st = game.new_instance({})
+    s2, _ = apply(game, st, ref(C(kind="learned", target="szabo", value="A Hungarian dock clerk who left with June the night she vanished.")))
+    assert not s2.person("szabo").met and "Szabo" not in game.render_bulletin(s2, "").split("Recent log")[0]
+    s3, _ = apply(game, s2, ref(C(kind="move", target="szabo", value="The Anchor")))
+    assert s3.person("szabo").met
+
+
+def test_an_attitude_word_is_a_step_toward_it(game: NoirGame):
+    _, st = game.new_instance({})
+    s2, rep = apply(game, st, ref(C(kind="set", target="rosa", field="attitude", value="guarded"), C(kind="set", target="dooley", field="attitude", value="hostile"),
+                                  C(kind="set", target="ada", field="attitude", value="baffled")))
+    assert s2.person("rosa").attitude == -1 and s2.person("dooley").attitude == -1          # 2 toward -4, at most 3 a turn
+    assert rep.rejected[0].path == "people.ada.attitude"
+
+
+def test_a_thing_set_to_a_location_is_a_move(game: NoirGame):
+    _, st = game.new_instance({})
+    s2, _ = apply(game, st, ref(C(kind="set", target="notebook", field="location", value="Rooftop shack")))
+    assert s2.item("notebook") is None and s2.thing("notebook").place == "Rooftop shack"
+
+
+def test_more_shapes_read_broadly(game: NoirGame):
+    _, st = game.new_instance({})
+    s2, rep = apply(game, st, ref(C(kind="add", target="player", field="conditions", value="+burned hand"),
+                                  C(kind="new", target="notebook", field="Rooftop shack", note="lying on the floor")))
+    assert s2.player.has_condition("burned hand") and s2.thing("notebook").place == "Rooftop shack"

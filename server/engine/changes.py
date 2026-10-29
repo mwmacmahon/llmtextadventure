@@ -74,16 +74,17 @@ def _content_words(text: str) -> set[str]:
 # A row whose own note takes it back ("gone trench coat", note "not lost; ignore"): the referee reasoning aloud
 # in the note, not reporting a change. Narrow on purpose: the instruction at the start or end of the note,
 # and for a gone row a note saying the thing is still there.
-_TAKES_BACK = re.compile(r"(^|[;,.:]\s*)(ignore|disregard|skip|no change|not a change)( (this|it|this row|that))?\s*[.!]?\s*$"
-                         r"|^\s*(ignore|disregard|no change|not a change)\b", re.I)
+_TAKES_BACK = re.compile(r"(^|[;,.:]\s*)(ignore|disregard|skip|omit|no change|not a change)( (this|it|this row|that))?\s*[.!]?\s*$"
+                         r"|^\s*(ignore|disregard|omit|no change|not a change)\b", re.I)
 _STILL_THERE = re.compile(r"\bnot (actually |really )?(lost|gone|taken|dropped|removed|destroyed|discarded)\b"
                           r"|\bstill (has|have|holds?|holding|carries|carrying|wears|wearing|in (his|her|their) (pockets?|hands?))\b", re.I)
 
 
 def takes_itself_back(ch: Change) -> bool:
-    """True for a game row (set, add, move, new, gone, learned) whose note says not to apply it."""
+    """True for a game row (set, add, move, new, gone, learned), an unseen fact or a thread opened, whose note
+    says not to apply it. Never a soon: its note is what would stop it."""
     note = (ch.note or "").strip()
-    if not note or ch.kind not in ("set", "add", "move", "new", "gone", "learned"):
+    if not note or ch.kind not in ("set", "add", "move", "new", "gone", "learned", "unseen", "thread_open"):
         return False
     return bool(_TAKES_BACK.search(note)) or (ch.kind == "gone" and bool(_STILL_THERE.search(note)))
 
@@ -177,6 +178,8 @@ def apply_changes(game: Any, state: BaseModel, report: ChangeReport, *, present:
             what = (ch.value or ch.note).strip()
             if what:
                 ex.pending_new.append(PendingNew(what=what, who=ch.who or ch.target, in_minutes=ch.minutes, hidden=ch.hidden, unless=ch.note if ch.value else ""))
+        elif k in ("unseen", "thread_open") and takes_itself_back(ch):
+            w.reject(f"{k}", "the row's own note takes it back", ch.value)
         elif k == "unseen":
             if (ch.value or ch.note).strip():
                 ex.unseen.append((ch.value or ch.note).strip())

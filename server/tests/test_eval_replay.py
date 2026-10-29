@@ -70,3 +70,32 @@ def test_a_check_written_into_the_wrong_field_is_recovered_only_with_a_stat_and_
     assert recover_misplaced_checks(adj, {}) == []
     assert list(IntentV2.model_json_schema()["properties"])[-1] == "check"   # the grammar writes it last
 
+
+
+def test_the_graded_key_counts_required_errors_allowed_and_unjudged():
+    from tools.eval_replay import grade_adjudication, grade_rows
+    gold = {"required": [{"kind": "add", "target": "revolver", "field": "loaded", "step": [-2, -2]},
+                         {"any": [{"kind": "move", "target": "notebook", "value": "Rooftop shack"}, {"kind": "gone", "target": "notebook", "words": ["drop"]}]},
+                         {"kind": "learned", "target": ["player", ""], "words": ["grease"]},
+                         {"kind": "learned", "target": ["player", ""], "words": ["drone"]}],
+            "allowed": [{"kind": "ruling", "field": "drift"}],
+            "forbidden": [{"kind": "gone", "target": "notebook", "why": "it lies on the floor"},
+                          {"kind": "new", "vwords": ["creature"], "why": "a listed person"}]}
+    got = [{"kind": "add", "target": "player", "field": "revolver.loaded", "value": "-2"},          # the engine's shapes count
+           {"kind": "gone", "target": "notebook", "note": "dropped in the dark"},
+           {"kind": "learned", "target": "player", "value": "The drone came unasked; it bleeds no grease"},   # could meet either clue
+           {"kind": "learned", "target": "player", "value": "It spills yellow grease where hit"},
+           {"kind": "add", "target": "revolver", "field": "loaded", "value": "-2"},                  # a repeat of a hit: allowed
+           {"kind": "ruling", "target": "", "field": "drift", "value": "the door moved"},
+           {"kind": "new", "target": "thing", "field": "Rooftop shack", "value": "notebook", "note": "the creature crawled over it"},
+           {"kind": "new", "target": "thing", "field": "Rooftop shack", "value": "wounded creature"}]
+    g = grade_rows(gold, got)
+    assert (g["hits"], g["required"], g["allowed"]) == (4, 4, 2)                 # both clues met: one row each, the best assignment
+    assert [e["value"] for e in g["errors"]] == ["wounded creature"] and [u["value"] for u in g["unjudged"]] == ["notebook"]
+    a = grade_adjudication({"kind": "action", "commands": ["reload"], "checks": {"required": [{"stat": ["muscle"], "difficulty": ["high"]}, {"stat": ["hands"]}],
+                                                                                  "allowed": [{"stat": ["nerve"]}], "forbidden": [{"stat": ["eye"]}]}},
+                           {"kind": "action", "commands": [{"id": "reload"}], "intents": [
+                               {"check": {"stat": "muscle (-1)", "difficulty": "medium"}}, {"check": {"stat": "hands", "difficulty": "low"}},
+                               {"check": {"stat": "nerve", "difficulty": "low"}}, {"check": {"stat": "eye", "difficulty": "low"}}]})
+    assert a["kind_ok"] and a["commands_ok"] and (a["checks"]["exact"], a["checks"]["stat_only"]) == (1, 1)
+    assert a["checks"]["allowed"] == 1 and a["checks"]["errors"] == [{"stat": "eye", "difficulty": "low"}]

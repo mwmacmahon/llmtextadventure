@@ -219,6 +219,13 @@ Rules of thumb:
 - Things (noir): what the player drops, leaves or hands over lands in `things` from the referee's
   `move <thing> <place|person|player>` rows (a `gone` row whose note says it was dropped is read the same
   way), and comes back to the pockets as it was. Counted things (dollars, bullets, cigarettes) go by `add`.
+  Read the same way: `set <thing>.location <place>`, `new <pocket thing> field=<place>`, and a `gone` whose
+  note says it was dropped, lies or lying somewhere, or was let go.
+- People (noir): a `learned <person>` row is what Frank heard about them, never a meeting; any other row
+  about them (a move, a set, being present) marks them met. An attitude written as a word ("guarded",
+  "friendly") is a step toward that word, within the usual step.
+- Timers: a soon row that restates a timer in motion, or an event the scenario has scheduled (the
+  engine fires it itself), is refused; the meeting at nine is the event's, not a referee timer's.
 
 ## 7. Commands, and who changes what
 

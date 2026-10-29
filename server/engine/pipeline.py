@@ -554,6 +554,10 @@ class Engine:
                         if dup is not None:
                             report.rejected.append(Rejection(path="pending", reason=f"already in motion as {dup.id}", value=new.what))
                             continue
+                        sched = pend.scheduled_as(_events_of(game, doc), new)
+                        if sched is not None:
+                            report.rejected.append(Rejection(path="pending", reason=f"the engine has it scheduled ({sched})", value=new.what))
+                            continue
                         src = "narrator" if any("soon:" in n.lower() for n in calls_block.get("notes", [])) else "referee"
                         p = pend.add(pitems, new, now_abs=now_abs, minutes_per_day=clock.minutes_per_day, turn=turn, source=src)
                         ledger("pending", {"action": "new", **p.model_dump(mode="json")})

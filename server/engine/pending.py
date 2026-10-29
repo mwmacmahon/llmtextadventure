@@ -17,7 +17,6 @@ export. Ids are p1, p2, … per instance.
 from __future__ import annotations
 
 import re
-
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -99,6 +98,23 @@ def duplicate_of(items: list[Pending], new: PendingNew) -> Pending | None:
         pw = _words(p.what)
         if same_who and pw and len(nw & pw) / min(len(nw), len(pw)) >= 0.6:
             return p
+    return None
+
+
+def scheduled_as(events: list[Any], new: PendingNew) -> str | None:
+    """The id of a scheduled event the new timer restates: one not yet fired or expired whose description
+    shares most of the timer's words. The engine fires that event at its own time; a timer for it would play
+    it early, and twice (noir: "the caller arrives at nine" brought Szabo in at 20:45, before the booth)."""
+    nw = _words(new.what)
+    if len(nw) < 3:
+        return None
+    for e in events:
+        if getattr(e, "fired", False) or getattr(e, "expired", False) or getattr(e, "reveal", "") == "never" or not getattr(e, "description", ""):
+            continue
+        ew = _words(e.description)
+        shared = nw & ew
+        if len(shared) >= 4 or (len(shared) >= 3 and len(shared) / min(len(nw), len(ew)) >= 0.4):
+            return e.id
     return None
 
 

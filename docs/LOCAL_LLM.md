@@ -175,6 +175,33 @@ TA_CONFIG=config.llamacpp.yml TA_LLAMA_URL=http://192.168.0.215:8280 TA_LLAMA_PR
 … run ../notes/eval/corpus/sonnet.jsonl --role referee --opt two_pass=true --tag a3b-two-pass
 ```
 
+**The graded key.** A strong model's own rows are an answer it can only agree with: Opus scored level with
+Sonnet against Sonnet's rows while being right more often where they disagreed. `notes/eval/gold.yml`
+judges each corpus turn by hand against the rules as they stand: `required` rows (the state must carry
+them; alternatives in `any:`), `allowed` rows (a fair call either way), `forbidden` rows (wrong, with
+why), and for the adjudicator the required checks as accepted stats and difficulty ranges. A reported row
+is a hit, an error, allowed, or unjudged (graded by nobody yet: add it to the key). Rows are compared as
+the engine reads them ("add player.revolver.loaded -1" is "add revolver.loaded -1"), required items are
+met by the best assignment, a repeat of a hit is a duplicate. `run` grades against the key as it goes;
+`grade <run.json …> [-v]` re-grades stored runs for nothing. Corpus `notes/eval/corpus/v2.jsonl`: 24
+turns (18 old Sonnet turns, 6 new ones that exercise tells and things outside the pockets).
+
+Graded (2026-10-29 night; the old 18 turns carry 75 required rows and 19 checks, v2's 24 turns 90 and 24):
+
+| run | referee required | errors | adjudicator checks | errors |
+|---|---|---|---|---|
+| Sonnet, one call (four runs) | 57–62 / 75 | 5–8 | 16–17 / 17–19 | 0 |
+| Sonnet, split referee (three runs) | 68–70 / 75 | 4–11 | | |
+| Sonnet, split, v2 (the configured build) | 85 / 90 | 9 | 21 / 22, then 24 / 24 | 0 |
+| Opus, one call | 70–72 / 75 | 7–9 | 18 / 19 | 0 |
+| Opus, split, v2 | 90 / 90 | 5 | 20 / 22, 22 / 24 | 0 |
+| A3B (Q4, thinking off) | 35 / 75 | 30–34 | 8 / 19, then **18 / 19** with check last | 0 |
+| A3B two-pass | 40 / 75 | 37 | 8 / 19 | 0 |
+
+The A3B adjudicator with `check` last is as good as either hosted model; its referee is the weak part
+(half the required rows, about two errors a turn). The key was written by Opus from every run's rows, so
+read a close Opus–Sonnet gap with that in mind.
+
 **Field order is a prompt.** Under a grammar a model writes the fields in schema order and cannot go
 back. With `check` second in an intent, the A3B committed to null before describing the attempt and then
 wrote "hands check (medium)" into `transition`; with `check` last it assesses the right stat as often as

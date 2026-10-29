@@ -18,6 +18,10 @@ Scores (per role, over the corpus):
   referee      rows by (kind, target, field, value) with word-overlap for the text kinds; the applied
                list after apply_changes by path and by exact line; rejections and their reasons
 Runs are written to ../notes/eval/runs/<tag>.json with every turn's diff.
+
+The graded key: those scores agree with the strong model, which is not the same as being right. Turns in
+notes/eval/gold.yml are judged by hand (required / allowed / forbidden rows and checks); `run` grades against
+it too, and `grade <run.json …>` re-grades stored runs with no model calls. See "the graded key" below.
 """
 from __future__ import annotations
 
@@ -44,6 +48,7 @@ from engine.store import Store  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 TEXT_KINDS = {"soon", "unseen", "learned", "thread_open", "ruling", "issue"}
+GOLD = ROOT / "notes" / "eval" / "gold.yml"
 NOTES_HEAD = "\n\n[NARRATOR'S NOTES: facts it decided, what is happening unseen (unseen:), what it set in motion (soon:)]\n"
 
 
@@ -193,6 +198,153 @@ def score_adjudication(expected: dict, got: dict) -> dict:
     }
 
 
+# ---- the graded key (gold) ----------------------------------------------------
+# A strong model's own rows are an answer key it can only agree with. The gold key is judged by hand, turn by
+# turn (notes/eval/gold.yml, keyed "iid:turn"): rows that must be reported, rows that are a fair call either
+# way, rows that are wrong. A reported row is a hit (it meets a required pattern), an error (it meets a
+# forbidden one), allowed, or unjudged: a row nobody has graded yet, listed so the key can grow.
+#
+#   referee:
+#     required:  [pattern | {any: [pattern, ...]}, ...]
+#     allowed:   [pattern, ...]
+#     forbidden: [pattern + {why: ...}, ...]
+#   adjudicator:
+#     kind: action | [action, trivial]
+#     checks: {required: [{stat: [...], difficulty: [...]}], allowed: [...], forbidden: [...]}
+#     commands: [reload]          (as a set; omitted: not graded)
+#
+# A pattern names any of kind, target, field, value (a string or a list of accepted ones, compared lowercased,
+# "the " and underscores ignored), words (each must appear in value or note), step ([lo, hi] for a signed
+# number in value), vwords (each must appear in value alone). A key it does not name matches anything. A
+# row that repeats a hit's kind, target and field is a duplicate: allowed, never an error.
+def _canon(v: Any) -> str:
+    return re.sub(r"^the ", "", _norm(v).replace("_", " "))
+
+
+def shape(row: dict) -> dict:
+    """A row as the engine reads it: "player.revolver" + "loaded", "player" + "revolver.loaded" and "revolver" +
+    "loaded" are one row; "player.dread" stays the player's; a ruling's rule in `field` stays there."""
+    t, f = _canon(row.get("target")), _canon(row.get("field"))
+    if _norm(row.get("kind")) == "ruling" and not f and not t:          # "check_skipped: the prose …": the rule written into value
+        m = re.match(r"\s*([a-z_]+)\s*:", str(row.get("value", "")).lower())
+        if m:
+            f = m.group(1)
+    if "." not in t and "." not in f:
+        return {**row, "target": t, "field": f}
+    parts = [x for x in t.split(".") + f.split(".") if x]
+    if len(parts) >= 2 and parts[-1] == parts[-2]:                      # "park.stress" + "stress"
+        parts = parts[:-1]
+    if len(parts) >= 3 and parts[0] in ("player", "frank"):
+        parts = parts[1:]
+    return {**row, "target": ".".join(parts[:-1]) if len(parts) > 1 else parts[0], "field": parts[-1] if len(parts) > 1 else ""}
+
+
+def matches(pat: dict, row: dict) -> bool:
+    row = shape(row)
+    for k in ("kind", "target", "field", "value"):
+        if k in pat:
+            want = pat[k] if isinstance(pat[k], list) else [pat[k]]
+            if _canon(row.get(k)) not in {_canon(x) for x in want}:
+                return False
+    text = f"{row.get('value', '')} {row.get('note', '')}".lower()
+    if any(str(w).lower() not in text for w in pat.get("words", [])):
+        return False
+    if any(str(w).lower() not in str(row.get("value", "")).lower() for w in pat.get("vwords", [])):
+        return False
+    if "step" in pat:
+        m = re.search(r"[+-]?\d+", str(row.get("value", "")))
+        if not m or not (pat["step"][0] <= int(m.group()) <= pat["step"][1]):
+            return False
+    return True
+
+
+def _alts(item: dict) -> list[dict]:
+    return item["any"] if "any" in item else [item]
+
+
+def grade_rows(gold: dict, got: list[dict]) -> dict:
+    """Required patterns first (each met by its own reported row, the most that can be), then every other row
+    as error, allowed or unjudged.
+    `issue` rows are the engine's notes, never graded."""
+    rows = [dict(c) for c in got if c.get("kind") != "issue"]
+    req = gold.get("required", [])
+    fits = [[j for j, r in enumerate(rows) if any(matches(a, r) for a in _alts(item))] for item in req]
+    owner: dict[int, int] = {}                     # row -> required item: the most items met, one row each (augmenting paths)
+
+    def assign(i: int, seen: set[int]) -> bool:
+        for j in fits[i]:
+            if j not in seen:
+                seen.add(j)
+                if j not in owner or assign(owner[j], seen):
+                    owner[j] = i
+                    return True
+        return False
+
+    for i in range(len(req)):
+        assign(i, set())
+    met = set(owner.values())
+    missed = [item for i, item in enumerate(req) if i not in met]
+    hits = len(met)
+    hit_keys = {(_norm(shape(rows[j]).get("kind")), shape(rows[j])["target"], shape(rows[j])["field"]) for j in owner}
+    rem = [r for j, r in enumerate(rows) if j not in owner]
+    errors, allowed, unjudged = [], [], []
+    for r in rem:
+        sr = shape(r)
+        bad = next((f for f in gold.get("forbidden", []) if matches(f, r)), None)
+        if (_norm(sr.get("kind")), sr["target"], sr["field"]) in hit_keys and sr["target"] and _norm(sr.get("kind")) not in TEXT_KINDS:
+            allowed.append(r)
+        elif bad is not None:
+            errors.append({**r, "why": bad.get("why", "")})
+        elif any(matches(a, r) for a in gold.get("allowed", [])):
+            allowed.append(r)
+        else:
+            unjudged.append(r)
+    return {"required": len(gold.get("required", [])), "hits": hits, "missed": missed, "errors": errors, "allowed": len(allowed), "unjudged": unjudged}
+
+
+def grade_adjudication(gold: dict, got: dict) -> dict:
+    def stat(i: dict) -> str:
+        return re.sub(r"\s*\(.*?\)\s*$", "", _norm(i["check"].get("stat")))
+    checks = [{"stat": stat(i), "difficulty": _norm(i["check"].get("difficulty")).replace(" ", "_")} for i in got.get("intents", []) if i.get("check")]
+    g = gold.get("checks", {})
+    rem = list(checks)
+    exact = stat_only = 0
+    missed: list[dict] = []
+    for want in g.get("required", []):
+        ok_stat = [c for c in rem if c["stat"] in want.get("stat", [c["stat"]])]
+        best = next((c for c in ok_stat if c["difficulty"] in want.get("difficulty", [c["difficulty"]])), None)
+        if best is not None:
+            exact += 1; rem.remove(best)
+        elif ok_stat:
+            stat_only += 1; rem.remove(ok_stat[0])
+        else:
+            missed.append(want)
+    def fits(p: dict, c: dict) -> bool:
+        return c["stat"] in p.get("stat", [c["stat"]]) and c["difficulty"] in p.get("difficulty", [c["difficulty"]])
+    errors = [c for c in rem if any(fits(f, c) for f in g.get("forbidden", []))]
+    allowed = [c for c in rem if c not in errors and any(fits(a, c) for a in g.get("allowed", []))]
+    unjudged = [c for c in rem if c not in errors and c not in allowed]
+    kinds = gold.get("kind")
+    out = {"kind_ok": kinds is None or _norm(got.get("kind")) in {_norm(k) for k in (kinds if isinstance(kinds, list) else [kinds])},
+           "checks": {"required": len(g.get("required", [])), "exact": exact, "stat_only": stat_only, "missed": missed,
+                      "errors": errors, "allowed": len(allowed), "unjudged": unjudged}}
+    if "commands" in gold:
+        out["commands_ok"] = {_norm(c.get("id")) for c in got.get("commands", []) or []} == {_norm(c) for c in gold["commands"]}
+    return out
+
+
+def load_gold(path: Path) -> dict[str, dict]:
+    """Turns by "iid:turn"; the `_all` entry's referee lists join every turn's."""
+    import yaml
+    raw = {str(k): v for k, v in (yaml.safe_load(path.read_text()) or {}).items()} if path.exists() else {}
+    common = (raw.pop("_all", None) or {}).get("referee", {})
+    for g in raw.values():
+        ref = g.setdefault("referee", {})
+        for k in ("allowed", "forbidden"):
+            ref[k] = list(ref.get(k, [])) + list(common.get(k, []))
+    return raw
+
+
 # ---- replay ------------------------------------------------------------------
 def _role_with(cfg, name: str, opts: dict[str, str]):
     role = cfg.role(name)
@@ -217,7 +369,7 @@ async def replay_turn(rec: dict, games: dict, cfg, roles: set[str], opts: dict[s
     state = game.load_state(rec["snapshot"])
     exp = rec["expected"]
     res: dict[str, Any] = {"iid": rec["iid"], "turn": rec["turn"], "game": rec["game"]}
-    if "adjudicator" in roles and not exp.get("adjudication_unreliable"):
+    if "adjudicator" in roles:                              # graded by the key; scored against the old answer only where it is sound
         role = _role_with(cfg, "adjudicator", opts)
         provider = get_provider(role)
         recent = [Msg(**m) for m in rec["recent"]]
@@ -226,8 +378,9 @@ async def replay_turn(rec: dict, games: dict, cfg, roles: set[str], opts: dict[s
         try:
             adj, usage, retry, recovered = await extract_adjudication(provider, role, system, msgs, schema, _hook(game, "stats", state, default={}))
             got = adj.model_dump(mode="json")
-            res["adjudicator"] = {"seconds": round(time.monotonic() - t0, 1), "got": got, "retry": retry, "recovered": recovered,
-                                  "score": score_adjudication(exp["adjudication"], got), "usage": asdict(usage)}
+            res["adjudicator"] = {"seconds": round(time.monotonic() - t0, 1), "got": got, "retry": retry, "recovered": recovered, "usage": asdict(usage)}
+            if not exp.get("adjudication_unreliable"):
+                res["adjudicator"]["score"] = score_adjudication(exp["adjudication"], got)
         except Exception as e:                                  # a refused prompt, a truncated extract: counted, not fatal
             res["adjudicator"] = {"seconds": round(time.monotonic() - t0, 1), "error": f"{type(e).__name__}: {e}"[:300]}
     if "referee" in roles:
@@ -269,9 +422,10 @@ def summarize(results: list[dict]) -> dict:
     adj = [r["adjudicator"] for r in results if "adjudicator" in r]
     if adj:
         ok = [a for a in adj if "score" in a]
+        failed = [a for a in adj if "error" in a]
         ch_hits = sum(a["score"]["checks"]["hits"] for a in ok); ch_exp = sum(a["score"]["checks"]["expected"] for a in ok)
         ch_extra = sum(len(a["score"]["checks"]["extra"]) for a in ok)
-        s["adjudicator"] = {"n": len(adj), "errors": len(adj) - len(ok),
+        s["adjudicator"] = {"n": len(ok), "errors": len(failed),
                             "kind_ok": sum(a["score"]["kind_ok"] for a in ok), "time_ok": sum(a["score"]["time_ok"] for a in ok),
                             "commands_ok": sum(a["score"]["commands_ok"] for a in ok),
                             "checks_recall": f"{ch_hits}/{ch_exp}", "checks_extra": ch_extra,
@@ -292,12 +446,64 @@ def summarize(results: list[dict]) -> dict:
     return s
 
 
+def grade_results(results: list[dict], gold: dict[str, dict]) -> None:
+    """Grade each replayed turn the key covers, in place (r["gold"])."""
+    for r in results:
+        g = gold.get(f"{r['iid']}:{r['turn']}")
+        if not g:
+            continue
+        r["gold"] = {}
+        if "got" in r.get("referee", {}) and "referee" in g:
+            r["gold"]["referee"] = grade_rows(g["referee"], r["referee"]["got"])
+        if "got" in r.get("adjudicator", {}) and "adjudicator" in g:
+            r["gold"]["adjudicator"] = grade_adjudication(g["adjudicator"], r["adjudicator"]["got"])
+
+
+def summarize_gold(results: list[dict]) -> dict:
+    ref = [r["gold"]["referee"] for r in results if "referee" in r.get("gold", {})]
+    adj = [r["gold"]["adjudicator"] for r in results if "adjudicator" in r.get("gold", {})]
+    out: dict[str, Any] = {}
+    if ref:
+        out["referee"] = {"turns": len(ref), "required": f"{sum(x['hits'] for x in ref)}/{sum(x['required'] for x in ref)}",
+                          "errors": sum(len(x["errors"]) for x in ref), "allowed": sum(x["allowed"] for x in ref),
+                          "unjudged": sum(len(x["unjudged"]) for x in ref)}
+    if adj:
+        c = [x["checks"] for x in adj]
+        out["adjudicator"] = {"turns": len(adj), "kind_ok": sum(x["kind_ok"] for x in adj),
+                              "checks": f"{sum(x['exact'] for x in c)} exact + {sum(x['stat_only'] for x in c)} right stat / {sum(x['required'] for x in c)}",
+                              "errors": sum(len(x["errors"]) for x in c), "allowed": sum(x["allowed"] for x in c),
+                              "unjudged": sum(len(x["unjudged"]) for x in c),
+                              "commands_ok": f"{sum(x['commands_ok'] for x in adj if 'commands_ok' in x)}/{sum(1 for x in adj if 'commands_ok' in x)}"}
+    return out
+
+
+def _print_gold(r: dict) -> None:
+    g = r.get("gold") or {}
+    head = f"[{r['iid']} t{r['turn']}] gold"
+    if "referee" in g:
+        x = g["referee"]
+        print(f"{head} referee {x['hits']}/{x['required']} required, {len(x['errors'])} errors, {x['allowed']} allowed, {len(x['unjudged'])} unjudged")
+        for m in x["missed"]:
+            print(f"    MISSED  {json.dumps(m, ensure_ascii=False)[:150]}")
+        for e in x["errors"]:
+            print(f"    ERROR   {e.get('kind')} {e.get('target')}.{e.get('field')} = {str(e.get('value'))[:60]}  ({e['why'][:60]})")
+        for u in x["unjudged"]:
+            print(f"    ?       {u.get('kind')} {u.get('target')}.{u.get('field')} = {str(u.get('value'))[:70]}  ({str(u.get('note'))[:40]})")
+    if "adjudicator" in g:
+        x = g["adjudicator"]; c = x["checks"]
+        print(f"{head} adjudicator {c['exact']}+{c['stat_only']}/{c['required']} checks, {len(c['errors'])} errors, {len(c['unjudged'])} unjudged"
+              + ("" if x["kind_ok"] else "  WRONG KIND") + ("" if x.get("commands_ok", True) else "  WRONG COMMANDS")
+              + (f"  missed {c['missed']}" if c["missed"] else "") + (f"  errors {c['errors']}" if c["errors"] else "") + (f"  ? {c['unjudged']}" if c["unjudged"] else ""))
+
+
 def _print_turn(r: dict) -> None:
     head = f"[{r['iid']} t{r['turn']}]"
     if "adjudicator" in r:
         a = r["adjudicator"]
         if "error" in a:
             print(f"{head} adjudicator ERROR {a['error']}")
+        elif "score" not in a:
+            print(f"{head} adjudicator {a['seconds']}s  (the old answer is unsound here; the key grades it)")
         else:
             sc = a["score"]
             flags = ("kind " if not sc["kind_ok"] else "") + ("time " if not sc["time_ok"] else "") + ("commands " if not sc["commands_ok"] else "")
@@ -344,6 +550,13 @@ async def run(args: argparse.Namespace) -> None:
         if args.verbose:
             _print_turn(r)
     summary = summarize(results)
+    gold = load_gold(Path(args.gold))
+    if gold:
+        grade_results(results, gold)
+        summary["gold"] = summarize_gold(results)
+        if args.verbose:
+            for r in results:
+                _print_gold(r)
     summary["wall_seconds"] = round(time.monotonic() - t0)
     print(json.dumps(summary, indent=1))
     tag = args.tag or time.strftime("run-%Y%m%d-%H%M%S")
@@ -372,6 +585,11 @@ def main() -> None:
     rn.add_argument("--limit", type=int)
     rn.add_argument("--tag")
     rn.add_argument("-v", "--verbose", action="store_true")
+    rn.add_argument("--gold", default=str(GOLD), help="the graded key (default notes/eval/gold.yml)")
+    gr = sub.add_parser("grade", help="grade stored runs against the graded key, with no model calls")
+    gr.add_argument("runs", nargs="+")
+    gr.add_argument("--gold", default=str(GOLD))
+    gr.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
     if args.cmd == "export":
         cfg = load_config()
@@ -386,6 +604,15 @@ def main() -> None:
                 f.write(json.dumps(r, ensure_ascii=False) + "\n")
         by = Counter((r["game"], r["source_model"]) for r in recs)
         print(f"{len(recs)} turns -> {out}", dict(by))
+    elif args.cmd == "grade":
+        gold = load_gold(Path(args.gold))
+        for path in args.runs:
+            d = json.loads(Path(path).read_text())
+            grade_results(d["turns"], gold)
+            if args.verbose:
+                for r in d["turns"]:
+                    _print_gold(r)
+            print(json.dumps({"run": d.get("tag") or path, **summarize_gold(d["turns"])}, ensure_ascii=False))
     else:
         asyncio.run(run(args))
 

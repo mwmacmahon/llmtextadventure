@@ -214,3 +214,14 @@ async def test_pre_pending_instances_still_load_and_run(engine: Engine, fake: Fa
     FakeProvider.script = lambda system, messages: "Rain."
     events = await play(engine, iid, "I look around.")
     assert events[-1]["event"] == "done" and events[-1]["data"]["mechanics"]["pending"] == {"fired": [], "new": [], "resolved": []}
+
+
+def test_a_timer_that_restates_a_scheduled_event_is_the_engines():
+    from engine.events import Event
+    from engine.pending import PendingNew, scheduled_as
+    booth = Event(id="anchor_meeting", description="Szabo meets Frank in the back booth at The Anchor at nine, tells him what he can, gives him a brass key, and runs.")
+    caller = PendingNew(what="The caller arrives at The Anchor's back booth at nine, expecting Frank alone with something that shows the thing", who="", in_minutes=60)
+    other = PendingNew(what="Rosa will serve the dockhand down the bar if Frank keeps silent", who="Rosa", in_minutes=2)
+    assert scheduled_as([booth], caller) == "anchor_meeting" and scheduled_as([booth], other) is None
+    booth.fired = True
+    assert scheduled_as([booth], caller) is None

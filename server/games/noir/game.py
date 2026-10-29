@@ -88,8 +88,10 @@ AUTHORITY: dict[str, Actor] = {
 }
 
 
+ATTITUDE_WORDS = {"hostile": -4, "angry": -3, "suspicious": -1, "guarded": -1, "wary": -1, "cold": -1, "neutral": 0, "indifferent": 0,
+                  "friendly": 2, "warm": 2, "trusting": 3, "loyal": 4}
 MAX_THINGS = 20
-DROPPED = re.compile(r"\b(drop(s|ped)?|left (it |behind)|fell|falls|set (it )?down|put (it )?down|knocked (out of|from))\b", re.I)
+DROPPED = re.compile(r"\b(drop(s|ped)?|left (it |behind)|fell|falls|lies|lying|set (it )?down|put (it )?down|knocked (out of|from)|let go)\b", re.I)
 REVOLVER_WORDS = {"revolver", "gun", "pistol", "the revolver", "his revolver", "frank's revolver", ".38"}
 _STOP = {"that", "this", "with", "from", "into", "their", "there", "they", "were", "have", "been", "about", "frank", "said",
          "will", "what", "when", "where", "which", "while", "just", "them", "then", "than", "over", "under", "told", "says"}
@@ -541,6 +543,8 @@ class NoirGame(GameBase):
             if new is not None:
                 p.dread = new
             return True
+        if kind == "add" and is_player and field in ("conditions", "condition") and value[:1] in "+-":   # "add player.conditions +burned hand"
+            kind = "set"
         if kind == "set" and is_player and field in ("conditions", "condition"):
             removing = value.startswith("-")
             name = value.lstrip("+-").strip().lower()[:30]
@@ -611,12 +615,15 @@ class NoirGame(GameBase):
             elif n > 0:
                 self._gain(s, it.name, n, w)
             return True
-        if kind == "move" and target and not is_player and s.person(target) is None:
+        if (kind == "move" or (kind == "set" and field == "location")) and target and not is_player and s.person(target) is None:
             it = s.item(target)
             lying = None if it is not None else s.thing(target)
             if it is not None or lying is not None:
                 self._relocate(s, it or lying, it is not None, target, ch.value, w)      # type: ignore[arg-type]
                 return True
+        if kind == "new" and target.lower() not in ("thing", "item", "person", "place", "") and s.item(target) is not None and self._place(s, ch.field):
+            self._relocate(s, s.item(target), True, target, ch.field, w)    # "new revolver at Rooftop shack": his own thing, lying there
+            return True
         if kind == "gone" and target and s.item(target) is None and s.thing(target) is not None:
             t = s.thing(target)
             if t is not None and w.set(f"things.{t.id}", self._thing_line(s, t), None):
@@ -689,7 +696,7 @@ class NoirGame(GameBase):
         if q is None and target and kind in ("move", "set", "add", "learned"):
             q = self._same_person(s, target)
         if q is not None:
-            if not q.met:
+            if not q.met and kind != "learned":                # hearing about someone is not meeting them (a witness's word about Szabo)
                 q.met = True
                 w.note(f"people.{q.id}.met: False -> True")
             if kind == "move" or (kind == "set" and field == "location"):
@@ -699,6 +706,12 @@ class NoirGame(GameBase):
                 else:
                     w.reject(f"people.{q.id}.location", "not a listed place", value)
                 return True
+            if kind == "set" and field == "attitude":                  # a word where the number goes: a step toward it
+                aim = ATTITUDE_WORDS.get(value.lower().strip(" .")) if self._step(value) is None else q.attitude + (self._step(value) or 0)
+                if aim is None:
+                    w.reject(f"people.{q.id}.attitude", "attitude moves by add ±n", value)
+                    return True
+                kind, value = "add", f"{aim - q.attitude:+d}"
             if kind == "add" and field == "attitude":
                 new = w.nudge(f"people.{q.id}.attitude", q.attitude, self._step(value), ATTITUDE_STEP, lo=-5, hi=5)
                 if new is not None:

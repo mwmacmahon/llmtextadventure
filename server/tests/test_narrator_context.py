@@ -235,7 +235,7 @@ def test_a_row_whose_own_note_takes_it_back_is_not_applied(engine: Engine):
     back = lambda kind, note: takes_itself_back(Change(kind=kind, target="x", note=note))   # noqa: E731
     assert back("gone", "Frank still has it in his pocket") and back("set", "no change") and back("add", "already counted, ignore this")
     assert not back("learned", "Szabo ignored the question") and not back("new", "a man still holding a knife")
-    assert not back("gone", "dropped in the river") and not back("soon", "ignore")
+    assert not back("gone", "dropped in the river") and not back("soon", "ignore") and back("unseen", "omit")
 
 
 async def test_a_split_referee_asks_three_smaller_questions_over_one_cached_prompt():
