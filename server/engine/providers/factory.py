@@ -16,6 +16,10 @@ def _instance(kind: str) -> Provider:
         from .anthropic_provider import AnthropicProvider
 
         return AnthropicProvider()
+    if kind == "llamacpp":
+        from .llamacpp_provider import LlamaCppProvider
+
+        return LlamaCppProvider()
     raise ValueError(f"unknown provider {kind!r}")
 
 

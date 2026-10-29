@@ -48,6 +48,17 @@ One script starts both processes and stops any stale server on the two ports fir
 ```
 
 Offline (no credentials, canned narrator): `./dev.sh fake`. `./dev.sh stop` only clears the ports.
+
+Every role on a local `llama-server` instead (`server/config.llamacpp.yml`, one server slot per role so
+each role's context survives between turns; see `docs/ARCHITECTURE.md` §7):
+
+```bash
+TA_LLAMA_URL=http://GPU_HOST:8080 ./dev.sh local
+```
+
+Before playing, `cd server && .venv/bin/python tools/local_smoke.py --url http://GPU_HOST:8080`
+rebuilds each role's real input from a stored instance and runs the roles in turn order for a few
+rounds, printing prompt, cached and output tokens per call, so you can see the cache hold.
 The two processes by hand, if you prefer separate terminals:
 
 ```bash

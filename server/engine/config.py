@@ -17,7 +17,7 @@ load_dotenv(REPO_DIR / ".env")
 
 
 class RoleConfig(BaseModel):
-    provider: Literal["anthropic", "fake"] = "anthropic"
+    provider: Literal["anthropic", "fake", "llamacpp"] = "anthropic"
     model: str
     max_tokens: int = 4096
     effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
@@ -26,6 +26,13 @@ class RoleConfig(BaseModel):
     prompt_variant: str = "default"
     timeout_seconds: float = 180        # per request; the API can take minutes to refuse a bad schema
     stop_sequences: list[str] = Field(default_factory=list)   # the narrator's call closer (engine/brackets.py)
+    # llamacpp only (engine/providers/llamacpp_provider.py): the server, the slot this role is pinned to so its
+    # cache stays resident beside the other roles', whether the model may think, sampling temperature, auth.
+    base_url: str = Field(default_factory=lambda: os.environ.get("TA_LLAMA_URL", "http://127.0.0.1:8080"))
+    slot: int | None = None
+    thinking: bool = False
+    temperature: float | None = None
+    api_key_env: str | None = None
 
 
 class ServerConfig(BaseModel):
@@ -73,14 +80,19 @@ class Config(BaseModel):
 
 
 def load_config(path: Path | None = None) -> Config:
-    path = path or SERVER_DIR / "config.yml"
+    # TA_CONFIG picks another file (config.llamacpp.yml puts every role on a local llama-server).
+    env_path = os.environ.get("TA_CONFIG")
+    path = path or (SERVER_DIR / env_path if env_path else SERVER_DIR / "config.yml")
     with open(path) as f:
         raw = yaml.safe_load(f)
     cfg = Config.model_validate(raw)
 
-    # TA_PROVIDER=fake forces every role onto the fake provider (offline dev/tests).
+    # TA_PROVIDER=fake forces every role onto the fake provider (offline dev/tests); TA_PROVIDER=llamacpp onto the
+    # local server at TA_LLAMA_URL, one slot per role in config order so each keeps its own cache.
     forced = os.environ.get("TA_PROVIDER")
     if forced:
-        for r in cfg.roles.values():
+        for i, r in enumerate(cfg.roles.values()):
             r.provider = forced  # type: ignore[assignment]
+            if forced == "llamacpp" and r.slot is None:
+                r.slot = i
     return cfg

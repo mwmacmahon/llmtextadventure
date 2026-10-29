@@ -3,6 +3,7 @@
 #
 #   ./dev.sh            real models (the ant auth profile)
 #   ./dev.sh fake       offline, canned narrator
+#   ./dev.sh local      every role on a local llama-server (config.llamacpp.yml; TA_LLAMA_URL=http://host:8080)
 #   ./dev.sh stop       stop anything still holding the two ports
 #
 # Any process already listening on 8010 or 5173 is stopped first, so a stale
@@ -31,6 +32,9 @@ free_port "$WEB_PORT"
 if [ "${1:-}" = "fake" ]; then
   export TA_PROVIDER=fake
   echo "offline: TA_PROVIDER=fake"
+elif [ "${1:-}" = "local" ]; then
+  export TA_CONFIG="${TA_CONFIG:-config.llamacpp.yml}"
+  echo "local models: TA_CONFIG=$TA_CONFIG, llama-server at ${TA_LLAMA_URL:-http://127.0.0.1:8080}"
 elif [ -n "${ANTHROPIC_API_KEY:-}" ]; then
   echo "warning: ANTHROPIC_API_KEY is set and outranks the ant auth profile" >&2
 fi

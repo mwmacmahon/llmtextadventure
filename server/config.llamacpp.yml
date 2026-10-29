@@ -1,0 +1,50 @@
+# Every role on one local llama-server (llama.cpp), started with --parallel 3 so each role is pinned to its
+# own slot and keeps its own KV cache / recurrent state resident between turns. Use it with
+#   TA_CONFIG=config.local.yml TA_LLAMA_URL=http://<gpu-host>:8080 ./dev.sh
+# or ./dev.sh local. Thinking is off: the structured roles run under a JSON-schema grammar, and the narrator
+# needs time-to-first-token, not deliberation. The model name is informational; the server serves what it loaded.
+
+server:
+  host: 0.0.0.0
+  port: 8010
+  data_dir: ../data
+  content_root: ../notes/content
+  web_dist: ../web/dist
+  log_dir: ../data/logs
+  log_level: INFO
+
+roles:
+  narrator:
+    provider: llamacpp
+    model: qwen3.5-35b-a3b
+    slot: 0
+    max_tokens: 2048
+    temperature: 0.7
+    timeout_seconds: 240
+  adjudicator:
+    provider: llamacpp
+    model: qwen3.5-35b-a3b
+    slot: 1
+    max_tokens: 1024
+    temperature: 0.2
+    timeout_seconds: 120
+  referee:
+    provider: llamacpp
+    model: qwen3.5-35b-a3b
+    slot: 2
+    max_tokens: 1536
+    temperature: 0.2
+    timeout_seconds: 120
+  summarizer:
+    provider: llamacpp
+    model: qwen3.5-35b-a3b
+    slot: 0                     # shares the narrator's slot: it runs only every six turns, between narrations
+    max_tokens: 1024
+    temperature: 0.4
+    timeout_seconds: 180
+
+context:
+  window_turns: 12
+  window_slide: 6
+
+pricing: {}

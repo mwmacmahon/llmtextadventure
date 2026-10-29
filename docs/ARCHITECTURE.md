@@ -38,7 +38,7 @@ server/
     gamekit.py           helpers games share: content loading, Clock, authority-checked Writer, flags, threads panel
     store.py             SQLite: instance, transcript, ledger, snapshot; export/import/fork
     logs.py              rotating application log
-    providers/           anthropic_provider.py, fake.py, factory.py, base.py (Msg, Usage)
+    providers/           anthropic_provider.py, llamacpp_provider.py, fake.py, factory.py, base.py (Msg, Usage)
   games/<name>/          state.py (pydantic), game.py (hooks, UI); content loaded from content_root
                          station: the space-station AI game; noir: a detective with pockets, dice and nerves
   tools/play.py          terminal client for a running server (humans and playtest agents)
@@ -187,7 +187,21 @@ messages, schema)` for structured output. Roles (`narrator`, `adjudicator`, `ref
 refusal fallback. The Anthropic provider uses `messages.parse(output_format=schema)` for
 extraction and places cache breakpoints on the system block and the last assistant message.
 `TA_PROVIDER=fake` forces every role onto the offline provider, which also accepts canned
-extraction results for tests. See `LOCAL_LLM.md` for a local backend.
+extraction results for tests.
+
+`provider: llamacpp` puts a role on a llama.cpp `llama-server` (`base_url`, default
+`TA_LLAMA_URL`). The server is started with `--parallel N` and each role is pinned to its own slot
+(`slot` in the role config; `TA_PROVIDER=llamacpp` alone assigns slots 0..n in config order), so
+with `cache_prompt` every role's KV/recurrent state survives between turns: the narrator's frozen
+prefix on its slot, the structured roles' stable system prompts on theirs. Generation is never
+concurrent; the pipeline is sequential and one slot generates while the others hold their prefix.
+`stream` uses the role's stop sequences and reads llama.cpp's `timings` into `Usage` (`prompt_n`,
+`cache_n`, `predicted_n`); `extract` sends the pydantic schema as `response_format: json_schema`,
+which the server compiles to a grammar, so the JSON is valid by construction and a truncated answer
+(`finish_reason: length`) raises. `thinking` per role goes through `chat_template_kwargs`.
+`server/config.llamacpp.yml` is the whole-game version (`./dev.sh local`, or `TA_CONFIG=<file>`);
+`tools/local_smoke.py` checks cache survival against a real server before playing. `docs/LOCAL_LLM.md`
+has the run book.
 
 Usage per call is ledgered; `Engine.usage(iid)` rolls it up per role and prices it from
 `config.yml` → `pricing`.
