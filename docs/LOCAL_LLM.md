@@ -200,6 +200,9 @@ Graded (2026-10-29 night; the old 18 turns carry 75 required rows and 19 checks,
 | 27B (Q6_K), no fields required, v2 | 67 / 90 | 13 | 2 / 23 (stopped before `intents`) | 2 |
 | 27B, every field required (d6a75fe), v2 | 43 / 74 (22 turns) | 9 | 23 / 23 | 8 |
 | 27B, list/object fields required (bd12e7d), v2 | 66 / 90 | 23 | 23 / 24, commands 21 / 24 | 2 |
+| 27B i1-Q4_K_M, same rule, v2 | 66 / 90 | 19 | 23 / 24, commands 20 / 24 | 3 |
+| Qwen3-32B Q4_K_M (full attention, 16k a slot), v2 | 56 / 88 | 20 | 18 + 3 right stat / 24, commands 17 / 24 | 6 |
+| A3B (Q4, check last), v2 | 45 / 90 | 15 | 18 + 1 / 24, commands 17 / 24 | 0 |
 
 **Seconds a call (2026-10-29 evening; the referee runs after the narration, so the player waits for it):**
 Sonnet 3.4–3.9 one call, 5.6 split; Opus 5.0 and 7.9; A3B 3.3–3.5 (it decodes at 116–129 tokens a second,
@@ -211,6 +214,15 @@ tokens against ~350, mostly the `who` and `note` sentences), and prefill is 0.3�
 in the last run against 13 are the same families as before (an `unseen` row for something in plain sight, a
 move reported a turn early, a ruling that a rolled check was ignored) with fewer rows left unjudged (40
 against 52); one run each at temperature 0.2, so the gap is within the noise until the unjudged rows are keyed.
+
+**Every local model once on the v2 key (2026-10-29, 18:30–18:46, same prompts, same sampling 0.2/0.5/20/1.05):**
+seconds a call referee / adjudicator, then tokens a second: 27B Q6_K 13.7 / 8.3 at 50; 27B Q4_K_M 12.0 / 6.9 at
+59; Qwen3-32B 9.7 / 6.1 at 55 (it writes a third less); A3B 3.5 / 3.2 at 131. The Q4 scores the same as the Q6
+(66/90, 23/24 checks) 18% faster and 5 GB smaller (21.2 GB loaded), so it is the dense model to tune. The 32B is
+the fastest dense model and the weakest judge of the three (an older generation; full attention bought nothing
+at these prompt sizes). The A3B is four times faster than any of them and half the referee (45/90), with the
+adjudicator at 18 of 24. Hosted, for scale: Sonnet split 5.6 / 4.0 s at 85/90 and 24/24; Opus 7.9 / 5.4 s at
+90/90 and 22/24. One run each; the hosted runs leave no row unjudged because the key was written from them.
 
 The A3B adjudicator with `check` last is as good as either hosted model; its referee is the weak part
 (half the required rows, about two errors a turn). The key was written by Opus from every run's rows, so
