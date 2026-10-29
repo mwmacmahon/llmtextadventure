@@ -197,6 +197,20 @@ Graded (2026-10-29 night; the old 18 turns carry 75 required rows and 19 checks,
 | Opus, split, v2 | 90 / 90 | 5 | 20 / 22, 22 / 24 | 0 |
 | A3B (Q4, thinking off) | 35 / 75 | 30–34 | 8 / 19, then **18 / 19** with check last | 0 |
 | A3B two-pass | 40 / 75 | 37 | 8 / 19 | 0 |
+| 27B (Q6_K), no fields required, v2 | 67 / 90 | 13 | 2 / 23 (stopped before `intents`) | 2 |
+| 27B, every field required (d6a75fe), v2 | 43 / 74 (22 turns) | 9 | 23 / 23 | 8 |
+| 27B, list/object fields required (bd12e7d), v2 | 66 / 90 | 23 | 23 / 24, commands 21 / 24 | 2 |
+
+**Seconds a call (2026-10-29 evening; the referee runs after the narration, so the player waits for it):**
+Sonnet 3.4–3.9 one call, 5.6 split; Opus 5.0 and 7.9; A3B 3.3–3.5 (it decodes at 116–129 tokens a second,
+3B active parameters); the 27B 13.7–14.6 one call at 46–50 tokens a second, 21.3 with every field required
+and 35.9 split under that rule (three passes in turn on one slot; the single call is the local baseline).
+Adjudicator: Sonnet 4.0, Opus 5.4, A3B 2.2–2.5, 27B 6.0 (before it wrote `intents`) to 8.3. The 27B
+referee is about four times Sonnet per call, not twenty; it writes about twice Sonnet's output (620–670
+tokens against ~350, mostly the `who` and `note` sentences), and prefill is 0.3–1.1 s. The 27B's 23 errors
+in the last run against 13 are the same families as before (an `unseen` row for something in plain sight, a
+move reported a turn early, a ruling that a rolled check was ignored) with fewer rows left unjudged (40
+against 52); one run each at temperature 0.2, so the gap is within the noise until the unjudged rows are keyed.
 
 The A3B adjudicator with `check` last is as good as either hosted model; its referee is the weak part
 (half the required rows, about two errors a turn). The key was written by Opus from every run's rows, so
@@ -241,7 +255,7 @@ $0.023 against $0.014 a turn, the uncached input down from 48k to 7.5k tokens. O
 ## Swapping the model
 
 The model is a profile on the box: `~/textadventure/profiles/<name>.env` (from `server/tools/gumbo/profiles/`),
-a few lines of `MODEL=`, `CTX=`, `CKPT=` (any of `llama-game.sh`'s values). The active one is named in
+a few lines of `MODEL=`, `CTX=`, `CKPT=`, `KV=` (any of `llama-game.sh`'s values; `KV=f16` is the full attention cache, `q8_0` the default half-size one). The active one is named in
 `profiles/ACTIVE`; with none, the script's defaults (the A3B). From the game's machine:
 
 ```
@@ -281,8 +295,9 @@ step up that keeps the three slots is the dense Qwen3.5-27B, the same hybrid lay
 four hold a fixed-size recurrent state, one in four a KV cache), so the per-slot memory stays small while
 all 27B of weight work on every token. Expect roughly a third of the A3B's tokens per second: turns of
 15–20 s instead of 5–7, Sonnet territory. Build in use: `Huihui-Qwen3.5-27B-abliterated.i1-Q6_K.gguf`
-(20.6 GiB, `mradermacher/Huihui-Qwen3.5-27B-abliterated-i1-GGUF`), copied to the GPU box over ssh; swap
-it in with `MODEL=` in the unit's environment (the user runs that).
+(20.6 GiB, `mradermacher/Huihui-Qwen3.5-27B-abliterated-i1-GGUF`), copied to the GPU box over ssh; profile
+`qwen27b` (`tools/llm.py use qwen27b`). Also on hand: `qwen27b-q4` (i1-Q4_K_M, 16.5 GB, downloaded, not yet
+copied), `qwen27b-kv16` (f16 attention cache) and `qwen3-32b` (full attention, 16k a slot: see the profile).
 
 **VRAM is allocated at load, not during play.** `llama-server` sizes the KV and recurrent-state buffers for
 the whole `CTX` up front; a long prompt grows nothing. What grows at runtime is the context checkpoints a
