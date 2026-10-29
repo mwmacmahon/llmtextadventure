@@ -119,6 +119,7 @@ class Hidden(BaseModel):
     pending: list[Pending] = Field(default_factory=list)   # things set in motion during play, due on the clock (engine/pending.py)
     recent: list[str] = Field(default_factory=list)
     facts: list[str] = Field(default_factory=list)
+    terms: list[str] = Field(default_factory=list)       # the hidden truth's own vocabulary; see NoirGame.leaked_terms
 
 
 class NoirState(BaseModel):

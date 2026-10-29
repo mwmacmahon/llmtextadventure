@@ -93,6 +93,7 @@ def test_new_instance_prefix_and_bulletin(game: NoirGame):
     assert "Pockets: trench coat, revolver (6/6 rounds), 3 bullets, 11 cigarettes" in b and "$14" in b
     assert "People Frank has dealt with:" in b and "Ada Kessler" in b and "Szabo" not in b.split("Recent log")[0]   # not met yet
     assert "Do not narrate past Day 2 09:30" in b and "szabo_calls_again" not in b
+    assert "The thing in the shack: at Rooftop shack, hostile" in b                      # the opening is a turn like any other
     assert game.ui(st).panels[2].type == "commands" and game.ui(st).phase == "narrate"
     assert game.opening(st) and "fish and burnt sugar" in game.opening(st)
 
@@ -148,7 +149,7 @@ def test_rows_people_and_new_people(game: NoirGame):
     assert s2.person("kowalczyk") and s2.person("kowalczyk").met and s2.person("kowalczyk").location == "Rooftop shack"
     assert s2.notebook[-1].kind == "contact" and "Kowalczyk" in s2.notebook[-1].text
     assert s2.person("old_lady") is None and s2.person("pulaski").met          # matched the listed landlady instead
-    assert len(s2.people) == 11
+    assert len(s2.people) == 12
     assert any(a.startswith("people += kowalczyk") for a in rep.applied)
     b = game.render_bulletin(s2, "")
     assert "Kowalczyk" in b and "Rosa" in b
@@ -226,7 +227,7 @@ async def test_smoke_is_a_narrated_command(engine: Engine, fake: FakeProvider):
     bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
     assert "10 cigarettes" in bulletin and "Frank lights a cigarette" in bulletin
     st = state_of(engine, iid)
-    assert st.item("cigarettes").count == 10 and st.player.dread == 30 and st.player.minutes_since_smoke == 5
+    assert st.item("cigarettes").count == 10 and st.player.dread == 30 and st.player.minutes_since_smoke == 3   # the clock stops at the opening timer, 23:33
     assert not any("Smoked a cigarette." in ln for ln in st.log)           # the referee's log line stands alone
     # a referee that also reports the cigarette does not charge it twice: the command's referee_skip resets the field
     fake.hook = lambda schema, last: ref(add("cigarettes", "count", "-1"), add("player", "dread", "-3"), log_line="Frank smoked.") if schema is ChangeReport else None

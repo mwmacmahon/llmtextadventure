@@ -14,6 +14,8 @@ export. Ids are p1, p2, … per instance.
 """
 from __future__ import annotations
 
+import re
+
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -76,6 +78,26 @@ def add(items: list[Pending], new: PendingNew, *, now_abs: int, minutes_per_day:
     return p
 
 
+def _words(text: str) -> set[str]:
+    return {w.rstrip("s") for w in re.findall(r"[a-z]+", text.lower()) if len(w) > 3 and w not in ("frank", "player", "about", "minute", "unless", "will", "that", "this", "with", "into", "toward", "towards")}
+
+
+def duplicate_of(items: list[Pending], new: PendingNew) -> Pending | None:
+    """An open timer the new one restates: the same actor (or none named) and mostly the same words. A narrator
+    re-announcing what COMING already lists would otherwise make the same event due two or three times."""
+    nw = _words(new.what)
+    if not nw:
+        return None
+    for p in items:
+        if not p.live:
+            continue
+        same_who = not new.who.strip() or not p.who or new.who.strip().lower() == p.who.strip().lower()
+        pw = _words(p.what)
+        if same_who and pw and len(nw & pw) / min(len(nw), len(pw)) >= 0.6:
+            return p
+    return None
+
+
 def next_due(items: list[Pending], minutes_per_day: int) -> Pending | None:
     live = [p for p in items if p.live]
     return min(live, key=lambda p: p.due_abs(minutes_per_day)) if live else None
@@ -108,6 +130,11 @@ def directive(p: Pending, minutes_per_day: int) -> str:
     if p.hidden:
         return (f"UNSEEN BY THE PLAYER, at {when}: {p.what}{who}. It has happened; do not show it. Let its consequences surface "
                 f"where and when the player would meet them, and write what changed out of sight in an [[unseen: …]] line.")
+    if p.source in ("narrator", "referee"):     # set in motion in play: real, but the player may still fight it
+        stop = f" It does not happen if {p.unless}." if p.unless else ""
+        return (f"DUE NOW, at {when}: {p.what}{who}. It was set in motion and comes due now.{stop} If the player's action this turn "
+                f"is an attempt to stop or escape it, that attempt decides it: play the check THIS TURN gives for it, or, with none, "
+                f"what the attempt plainly achieves. Otherwise it happens; play it with its consequences.")
     return (f"DUE NOW, at {when}: {p.what}{who}. This happens this turn whatever the player is doing; play it, with its consequences, "
             f"and do not let the player's action pre-empt it.")
 

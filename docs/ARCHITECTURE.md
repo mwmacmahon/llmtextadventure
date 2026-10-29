@@ -77,7 +77,11 @@ drift is minor) and carry a fix as their note; code decides severity. A row with
 the referee: when it assessed checks, listed them in THIS TURN, and the narrator called none of them,
 `check_skipped` (serious, `by: engine`) with a fix naming the checks, because a weak referee does not
 catch this and the engine already knows. A referee call that fails (a truncated grammar answer, a
-timeout) records nothing that turn and says so in the mechanics row's issues. Mode `log` shows the prose as it
+timeout) records nothing that turn and says so in the mechanics row's issues. A second engine ruling: a
+word from the game's secret vocabulary (`leaked_terms` hook; noir's `secret_terms`) in the narration's own
+voice, outside dialogue, before anything the player has contains it, is a serious `leak` (`by: engine`),
+and the word is kept out of the notebook. The referee's own `check_skipped` is dismissed to an issue when
+no assessed check went uncalled, and `check_ignored` when nothing was rolled. Mode `log` shows the prose as it
 is written and records the ruling; `rewrite` shows it, then retells once through the Rewrite path with
 the referee's fix as the instruction; `gate` holds the text and § lines back, sends `progress` events
 instead (a share of the instance's running-average narration length, capped at 90%, "slow" past
@@ -125,8 +129,12 @@ SUMMARIZE    only when the window slides (context.summary_plan): the narrator's 
              system_note at the last covered turn
   ▼
 NARRATE      streamed. system = frozen prefix (cached, 1h). messages = [story so far]* +
-             window of past turns (player text only, no stale bulletins) + bulletin + THIS TURN
-             block + player text. Cache breakpoints: the system block and the last assistant message.
+             window of past turns (no stale bulletins) + bulletin + THIS TURN block + player text
+             + a closing [ENGINE] line when the turn has checks. Cache breakpoints: the system
+             block and the last assistant message. Checks either way, per narrator role
+             (`checks`): called, the narrator stops at <<CHECK …>> and the result comes back as a
+             user message; told, the engine rolls the assessed checks first (same seed and order)
+             and THIS TURN gives the results, for a model that writes outcomes before calling.
   ▼
 REFEREE      Sonnet (was Haiku; see config.yml for the measurements), one messages.parse against roles.ChangeReport, the same for every game
              rows {kind, target, field, value, who, note, minutes, hidden} + present, log_line, confidence
@@ -160,7 +168,7 @@ move, no referee runs, and nothing is applied.
 |---|---|---|
 | system | rules + scenario briefing (fixed facts, hidden truth, scheduled spine) | yes, per instance, 1h |
 | story so far | latest `system_note` before the window, as a user message + ack | moves at slide points |
-| window | the last 12–17 completed turns, player text + narration | moves at slide points |
+| window | the last 12–17 completed turns, player text + narration; the engine's § lines never in the narrator's voice: a called check replays as the exchange that happened (prose to the call, the call, the engine's answer as a user message, the rest), told rolls and lever results go in that turn's user message as `[ENGINE]` lines | moves at slide points |
 | bulletin | only what moves: clock, meters, non-nominal systems, entity condition, recent log, flags, threads, recent happenings, next scheduled event, THIS TURN block | never |
 
 **Window slide.** The window start moves in steps of `window_slide` (6) once more than

@@ -28,6 +28,7 @@ from engine.game import (
 )
 from engine.gamekit import Clock, Content, Writer, threads_panel
 from engine.mechanics import CheckRequest, Modifier
+from engine.pending import Pending
 from engine.roles import AdjudicationV2, Change
 from engine.spontaneous import Spontaneous
 from engine.statepath import Actor
@@ -97,6 +98,13 @@ def slug(text: str) -> str:
 
 # ---- the game ----------------------------------------------------------------
 
+def part_of_day(minute: int) -> str:
+    """What the sky is doing, for a narrator that otherwise writes dawn at a quarter to midnight."""
+    h = (minute // 60) % 24
+    return ("the dead of night, dark" if h < 5 else "before dawn, still dark" if h < 7 else "morning" if h < 12
+            else "afternoon" if h < 17 else "evening" if h < 20 else "night, dark")
+
+
 class NoirGame(GameBase):
     name = "noir"
     version = "0.1.0"
@@ -147,7 +155,8 @@ class NoirGame(GameBase):
             threads=[th.Thread(id=t["id"], title=t["title"], opened_turn=0) for t in sc.get("threads", [])],
             hidden=Hidden(events=[Event.model_validate(e) for e in sc.get("events", [])],
                           spontaneous=[Spontaneous.model_validate(x) for x in sc.get("spontaneous", [])],
-                          facts=sc.get("hidden_facts", [])),
+                          pending=[Pending.model_validate(x) for x in sc.get("pending", [])],   # already in motion when the case opens
+                          facts=sc.get("hidden_facts", []), terms=sc.get("secret_terms", [])),
         )
         return f"{sc['name']} — {player.name}", state
 
@@ -189,10 +198,61 @@ class NoirGame(GameBase):
                 b.append(f"- {e.id} ({e.when_text}): {e.description}")
         return "\n".join(b)
 
+    def entity_names(self, state: NoirState) -> dict[str, str]:
+        return {q.id: q.name for q in state.people}
+
+    def _place(self, s: NoirState, name: str) -> str | None:
+        """A place as the prose names it, resolved to a listed one: exact, any case, the scenario's aliases
+        (streets and landmarks inside a listed place), then a listed name inside the text or the text inside it."""
+        k = name.strip().lower().removeprefix("the ").strip()
+        if not k:
+            return None
+        locs = list(s.case.locations)
+        for l in locs:
+            if l.lower().removeprefix("the ") == k:
+                return l
+        for l in sorted(locs, key=len, reverse=True):
+            if l.lower().removeprefix("the ") in k:
+                return l
+        aliases = {a.lower(): b for a, b in (self.content.scenarios().get(s.case.id, {}).get("place_aliases") or {}).items()}
+        for a, b in aliases.items():
+            if a in k and b in locs:
+                return b
+        for l in locs:
+            if k in l.lower():
+                return l
+        return None
+
+    def leaked_terms(self, state: NoirState, prose: str, player_text: str) -> list[str]:
+        """Secret words the narration uses in Frank's own voice before he has learned them. Known: anywhere in
+        what Frank has (notebook, log, thread titles, what met people said) or in the player's own words.
+        Dialogue is not scanned: a character may say a word aloud, and pacing that is the narrator's job."""
+        if not state.hidden.terms:
+            return []
+        voice = re.sub(r'"[^"]*"|“[^”]*”', " ", prose)
+        known = " ".join([n.text for n in state.notebook] + list(state.log) + [t.title for t in state.threads]
+                         + [f for q in state.people if q.met for f in q.facts] + [player_text]).lower()
+        out = []
+        for term in state.hidden.terms:
+            pat = r"\b" + re.escape(term.lower()) + r"(s|es)?\b"
+            if re.search(pat, voice.lower()) and not re.search(pat, known):
+                out.append(term)
+        return out
+
+    def not_carried(self, state: NoirState, name: str) -> str | None:
+        """The adjudicator's `carried` list checked against the pockets: what is not there is a directive."""
+        key = re.sub(r"\(.*?\)", "", name).strip().lower()           # as the pockets render it: "revolver (6/6 rounds)", "3 bullets", "$14"
+        key = re.sub(r"^\$\s*\d+$", "dollars", key)
+        key = re.sub(r"^(a|an|the|my|his|some|\d+)\s+", "", key).strip()
+        if not key or state.item(key) is not None:
+            return None
+        return (f"{state.player.name} is not carrying {name.strip()}: it is not in his pockets. When he reaches for it, it is not there; "
+                "play that, and the rest of the attempt without it.")
+
     # ---- bulletin (only what moves) -----------------------------------------
     def render_bulletin(self, state: NoirState, player_text: str) -> str:
         s, p = state, state.player
-        lines: list[str] = [f"Time: {s.clock.render()}"]
+        lines: list[str] = [f"Time: {s.clock.render()}, {part_of_day(s.clock.minute)}"]
         conds = ", ".join(c.name for c in p.conditions) or "none"
         lines.append(f"{p.name}: at {p.location or 'unknown'}; health {p.health}; nerves {p.dread_tier(p.dread)}; conditions: {conds}.")
         lines.append("Pockets: " + ", ".join(it.render() + (f" ({it.note})" if it.note and it.loaded is None and it.id not in ("dollars",) else "") for it in s.inventory) + ".")
@@ -374,6 +434,12 @@ class NoirGame(GameBase):
         kind = ch.kind
         is_player = target.lower() in ("player", "frank", "")
 
+        if kind in ("move", "set") and (kind == "move" or field == "location"):
+            value = self._place(s, value) or value          # "Pier Street", "the anchor" → the listed place
+        gate = (self.content.scenarios().get(s.case.id, {}).get("gated_places") or {}).get(value) if kind in ("move", "set") else None
+        if gate and is_player and (kind == "move" or field == "location") and not s.flags.get(gate):
+            w.reject("player.location", f"reachable only once the way in is found ({gate})", value)
+            return True
         if kind == "move" and is_player:
             if value in locs:
                 if w.set("player.location", p.location, value):
@@ -464,11 +530,24 @@ class NoirGame(GameBase):
             elif n > 0:
                 self._gain(s, it.name, n, w)
             return True
+        if kind == "gone" and target and s.item(target) is None and (s.person(target) or self._same_person(s, target)):
+            q = s.person(target) or self._same_person(s, target)    # a person "gone" from the story: killed or destroyed
+            if q is not None and q.status != "dead" and w.set(f"people.{q.id}.status", q.status, "dead"):
+                q.status = "dead"
+            return True
         if kind == "gone" and target:
             self._lose(s, target, self._step(ch.note) or self._step(ch.value) or 1, w)
             return True
         if kind == "new" and target.lower() in ("thing", "item", "") and value and ch.note.strip().lower().startswith("role"):
             self._new_person(s, value, ch.note.split("=", 1)[-1].strip(), w)      # "role=threat" in the note: a person, not a pocket item
+            return True
+        cast = (next((q for q in s.people if value.lower() in (q.id, q.name.lower(), q.name.lower().split()[0])), None)
+                if kind == "new" and target.lower() in ("thing", "item", "") and value else None)
+        if cast is not None:                                     # a cast member written as a new thing ("new Rosa"): met, never pocketed
+            q = cast
+            if not q.met:
+                q.met = True
+                w.note(f"people.{q.id}.met: False -> True")
             return True
         if kind == "new" and target.lower() in ("thing", "item", "") and value:
             where = field.lower()
@@ -485,7 +564,10 @@ class NoirGame(GameBase):
         # a thread id written as a target ("set t0-find-june.resolved"): settle the thread, never match it as a person
         tt = next((t for t in s.threads if t.id == target.lower()), None) if target else None
         if tt is not None:
-            if kind == "set" and field in ("resolved", "status", "closed", "done", "failed") and tt.status == "open":
+            why = [x for x in re.findall(r"[a-z']+", f"{ch.note} {value}".lower()) if x not in ("failed", "resolved", "fail", "closed", "done", "true", "yes")]
+            if kind == "set" and field in ("resolved", "status", "closed", "done", "failed") and tt.status == "open" and (not why or th.says_still_open(f"{ch.note} {value}")):
+                w.reject(f"threads.{tt.id}", "a thread closes only with a reason, and one that does not say it goes on", value)
+            elif kind == "set" and field in ("resolved", "status", "closed", "done", "failed") and tt.status == "open":
                 tt.status = "failed" if (field == "failed" or value.lower().startswith("fail")) else "resolved"
                 tt.note = (ch.note or value).strip()[:200]
                 w.note(f"threads.{tt.id}: open -> {tt.status} (written as a set)")
@@ -672,8 +754,10 @@ class NoirGame(GameBase):
         if self.ending(state):
             return []
         return [
-            CommandSpec(id="smoke", label="Smoke", mode="narrated", hint="Light a cigarette. Five minutes; nerves ease; the pack is lighter."),
-            CommandSpec(id="reload", label="Reload", mode="engine", hint="Fill the revolver from the loose bullets. No model call."),
+            CommandSpec(id="smoke", label="Smoke", mode="narrated", hint="Light a cigarette. Five minutes; nerves ease; the pack is lighter.",
+                        words=["smok", "cigarette", "light up", "a drag", "puff"]),
+            CommandSpec(id="reload", label="Reload", mode="engine", hint="Fill the revolver from the loose bullets. No model call.",
+                        words=["reload", "load", "rounds in", "bullets in", "refill"]),
             CommandSpec(id="notebook", label="Notebook", mode="engine", typed=False, hint="Read everything Frank has written down: clues, contacts, open threads."),
         ]
 
@@ -706,7 +790,7 @@ class NoirGame(GameBase):
             assert bl is not None
             bl.count -= n
             return s, CommandResult(label="Reload", text=f"You thumb {n} round{'s' if n != 1 else ''} into the cylinder. Revolver {rv.loaded}/{cap}; {bl.count} loose bullet{'s' if bl.count != 1 else ''} left.",
-                                    log_line=f"Reloaded the revolver ({rv.loaded}/{cap}).")
+                                    log_line=f"Reloaded the revolver ({rv.loaded}/{cap}).", referee_skip=["revolver", "bullets", "loaded"])
         if command_id == "notebook":
             lines: list[str] = []
             clues = [n for n in s.notebook if n.kind == "clue"]

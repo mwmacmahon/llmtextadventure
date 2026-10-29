@@ -14,6 +14,7 @@ Declarations ([[...]]) never stop the stream: the StreamFilter hides them from t
 from __future__ import annotations
 
 import inspect
+import re
 import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, AsyncIterator, Awaitable, Callable
@@ -66,6 +67,7 @@ class NarrationDone:
     note: str | None
     seconds: float
     requests: int
+    exchange: list[dict] = field(default_factory=list)   # [{role, text}]: the narrator's visible pieces, each call it made, the engine's answers; for history
 
 
 def _add(usage: Usage, more: Usage) -> None:
@@ -88,6 +90,7 @@ async def narrate(provider: Provider, role: RoleConfig, system: str, messages: l
     causes: list[str] = []
     model, stop_reason, note = role.model, None, None
     calls_made = requests = 0
+    exchange: list[dict] = []
     t0 = time.monotonic()
 
     while True:
@@ -117,6 +120,7 @@ async def narrate(provider: Provider, role: RoleConfig, system: str, messages: l
                 prose += tail
                 yield Visible(tail)
             raw += piece
+            exchange.append({"role": "assistant", "text": extract(piece)[0]})
             stop_reason = done.stop_reason
             break
 
@@ -143,6 +147,9 @@ async def narrate(provider: Provider, role: RoleConfig, system: str, messages: l
                 prose = with_mechanic(prose, result.mechanic) + "\n\n"
                 yield Mechanic(result.mechanic, result.data)
         raw += result.text + "\n"
+        cut = piece.rfind("<<")
+        exchange.append({"role": "assistant", "text": (extract(piece[:cut])[0] + "\n" if cut > 0 else "") + piece[cut:].strip() + CLOSE_CALL})
+        exchange.append({"role": "user", "text": result.text})
         msgs = msgs + [Msg("assistant", piece + CLOSE_CALL), Msg("user", result.text + "\n\n" + CONTINUE)]
         if requests > max_calls + 2:               # a model that only calls never ends on its own
             problems.append("too many continuation requests; narration cut")
@@ -153,9 +160,10 @@ async def narrate(provider: Provider, role: RoleConfig, system: str, messages: l
     declarations = [i for i in items if isinstance(i, Declaration)]
     notes = [i.text for i in items if isinstance(i, Note)]
     problems.extend(extract_problems)
+    prose = re.sub(r"\n{3,}", "\n\n", prose)       # a dropped call or note leaves its blank lines behind
     yield NarrationDone(prose=prose.strip(), raw=raw, declarations=declarations, notes=notes, calls=calls, mechanics=mechanics,
                         problems=problems, causes=causes, usage=usage, model=model, stop_reason=stop_reason, note=note,
-                        seconds=round(time.monotonic() - t0, 2), requests=requests)
+                        seconds=round(time.monotonic() - t0, 2), requests=requests, exchange=exchange)
 
 
 # ---- CHECK: the engine rolls; the adjudicator's assessment sets the floor -----------------------

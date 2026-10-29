@@ -126,6 +126,16 @@ entities: [...]                             # whatever your state model wants
 hidden_facts:
   - The true cause, which the narrator knows and must not reveal.
 
+secret_terms: [the hidden truth's own words]  # noir: in the narration's own voice before the player has
+                                            # learned one, the engine rules a serious leak (hook leaked_terms)
+
+pending:                                    # timers already running when the game opens, so the
+  - {id: p1, what: The visitor knocks, who: The visitor, due_day: 1, due_minute: 485,
+     unless: the player has left, source: script}   # opening reads like any mid-game turn (COMING)
+
+place_aliases: {pier street: Lowtown streets}   # noir: names the prose uses → a listed place
+gated_places: {Under the docks: under_docks_found}  # noir: a player move there needs the flag first
+
 events:
   - id: visitor_arrives
     at: {day: 1, minute: 600}               # fires when the clock reaches it; the clock stops there
@@ -237,7 +247,8 @@ helper (`_smoke`) called from both paths. Give the referee a rule that the engin
 command ("never list rounds under items_lost for a reload").
 
 Checklist for a new tracked quantity: (1) pick its row in the table; (2) a command gets a
-`CommandSpec` with a `hint` the adjudicator can match and a `run_command` branch that refuses
+`CommandSpec` with a `hint` the adjudicator can match (and `words`: the input must contain one for a typed
+pick to count, so "strike a match" is not Smoke) and a `run_command` branch that refuses
 with a sentence the narrator can say; (3) a referee field is required-with-sentinel (§8) and
 bounded in `apply_change`; (4) never pre-rule a command's preconditions in `adjudication_rules`
 (the command refuses and the narrator plays it blocked; tell the adjudicator to set the command
@@ -255,8 +266,12 @@ listed pendings with `set p3.resolved`, and records `unseen` rows; the engine la
 (§8). Your rules must say that unseen things never go in a clue, the log line or any player-visible field. The engine keeps pendings at `GameBase.pending_path` (default `hidden.pending`; your hidden-state
 model needs `pending: list[Pending]`), appends unseen facts to `recent_path` (the narrator's
 "behind the scenes" list), stops the clock where a pending falls due, and hands the narrator DUE
-NOW or UNSEEN. A game needs nothing else; set the paths to `None` to switch
-it off.
+NOW or UNSEEN. A scripted timer (scenario `pending:`, `source: script`) happens whatever the player does;
+one the narrator or referee set in play is contestable: its DUE NOW says it does not happen if its `unless`
+has, and that an attempt to stop it is decided by its check. A new timer that restates an open one (same
+actor, mostly the same words) is not added (`pending.duplicate_of`). Actors are written by name, never by
+id: an id the narrator reads every turn is a word it will use. A game needs nothing else; set the paths to
+`None` to switch it off.
 
 ## 8. The referee's rows
 

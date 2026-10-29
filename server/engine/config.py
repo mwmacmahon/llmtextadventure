@@ -26,6 +26,9 @@ class RoleConfig(BaseModel):
     prompt_variant: str = "default"
     timeout_seconds: float = 180        # per request; the API can take minutes to refuse a bad schema
     stop_sequences: list[str] = Field(default_factory=list)   # the narrator's call closer (engine/brackets.py)
+    # narrator only: "called" asks it to stop at each assessed check and wait for the roll; "told" rolls them
+    # before the prose and gives the results in THIS TURN (for a model that writes the outcome before the call)
+    checks: Literal["called", "told"] = "called"
     # llamacpp only (engine/providers/llamacpp_provider.py): the server, the slot this role is pinned to so its
     # cache stays resident beside the other roles', whether the model may think, sampling temperature, auth.
     base_url: str = Field(default_factory=lambda: os.environ.get("TA_LLAMA_URL", "http://127.0.0.1:8080"))

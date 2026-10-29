@@ -41,17 +41,17 @@ from . import spontaneous as spon
 from . import statepath as sp
 from . import threads as th
 from .config import Config
-from .brackets import STOP_SEQUENCES, Note, StreamFilter, extract, with_mechanic
+from .brackets import STOP_SEQUENCES, Call, Note, StreamFilter, extract, is_mechanic_line, with_mechanic
 from .context import build_messages, summary_plan
 from .narration import (Assessment, CallResult, Mechanic, NarrationDone, Visible, default_mechanic_line, narrate,
                         run_check)
-from .game import ApplyReport, CommandResult, Game, GameBase, TurnInfo
+from .game import ApplyReport, CommandResult, Game, GameBase, Rejection, TurnInfo
 from .mechanics import RESOLVERS, CheckRequest, CheckResult, rng_for
 from .providers import Msg, StreamDone, TextDelta, get_provider
-from .providers.base import Usage
+from .providers.base import Msg, Usage
 from .roles import (Adjudication, adjudicator_messages, referee_messages, summarizer_messages, NARRATOR_PROTOCOL)
 from .roles import NARRATOR_WORLD, ChangeReport
-from .changes import apply_changes
+from .changes import apply_changes, screen_unseen_clues
 from .store import Store
 
 MODEL_CALL_KINDS = {"model_call": None, "adjudication": "adjudicator", "verdict": "referee"}
@@ -108,6 +108,18 @@ class Engine:
             self.settings_path.write_text(json.dumps(self.settings, indent=1))
         log.info("settings.updated " + logs.kv(**{f"guard.{k}": v for k, v in self.settings["guard"].items()}))
         return self.get_settings()
+
+    def _exchanges(self, iid: str) -> dict[int, dict]:
+        """Per turn, the narrator's own exchange (its pieces, the calls it made, the engine's answers), from the
+        turn's narrator model_call, so history replays a called check as it happened instead of as prose with
+        the engine's § lines in the narrator's voice (engine/context.py)."""
+        out: dict[int, dict] = {}
+        for r in self.store.ledger(iid):
+            p = r["payload"]
+            if r["kind"] == "model_call" and p.get("role") == "narrator" and p.get("exchange"):
+                out[r["turn"]] = {"exchange": p["exchange"],
+                                  "call_mechanics": [c.get("mechanic", "") for c in p.get("calls", []) if not c.get("told") and c.get("mechanic")]}
+        return out
 
     def expected_chars(self, iid: str) -> int:
         """The progress estimate: a running average of this instance's last narrations, else the default."""
@@ -344,7 +356,7 @@ class Engine:
         #          unless the referee reports one was not completed (DESIGN2 §6, LOG §12)
         levers: list[PendingLever] = []
         if command is None and adj is not None and adj.commands:
-            adj, levers = self._preview_levers(game, state, adj, iid, turn, ledger)
+            adj, levers = self._preview_levers(game, state, adj, iid, turn, ledger, player_text or "")
             extra_directives.extend(lv.directive for lv in levers)
         if replay is not None:
             who = "the referee" if replay.by == "referee" else "the player"
@@ -401,6 +413,20 @@ class Engine:
                 yield {"event": "summary", "data": {"status": "failed", "turns": plan.to_cover, "error": str(e)}}
 
         # ---- 3. narrate -----------------------------------------------------
+        role = self.cfg.role("narrator")
+        handler = self._call_handler(game, state, iid, turn, res["assessments"])
+        # A narrator configured `checks: told` gets the assessed checks already rolled, in THIS TURN, instead of
+        # being asked to stop and call them: a weaker model writes the outcome first and the call after it (or
+        # never), so the roll arrives too late to matter. Same seed, same order, so a rewrite rolls the same.
+        told: list[dict[str, Any]] = []
+        if role.checks == "told":
+            for a in res["assessments"]:
+                diff = a.difficulty.replace("_", " ")
+                r = handler(Call(verb="CHECK", raw=f"CHECK {a.stat} {diff}", stat=a.stat, difficulty=a.difficulty, target=a.target), len(told) + 1)
+                told.append({"label": a.label or a.stat, "stat": a.stat, "difficulty": diff, "target": a.target,
+                             "outcome": str(r.data.get("outcome", "")).replace("_", " "), "mechanic": r.mechanic, "data": r.data,
+                             "call": {"verb": "CHECK", "raw": f"CHECK {a.stat} {diff}", "stat": a.stat, "difficulty": a.difficulty, "target": a.target}})
+            res["told"] = told
         scene_text = _hook(game, "scene_block", state, adj, "narrator", default="")
         coming = _pending_block(game, state, "narrator")
         bulletin = (((scene_text + "\n\n") if scene_text else "") + game.render_bulletin(state, player_text)
@@ -408,12 +434,14 @@ class Engine:
         yield {"event": "bulletin", "data": {"turn": turn, "text": bulletin}}
         self.store.append_transcript(iid, turn, "bulletin", bulletin)
 
-        role = self.cfg.role("narrator")
         provider = get_provider(role)
         system = (inst.prefix_text or game.frozen_prefix(state)) + "\n\n" + NARRATOR_WORLD
         ctx = build_messages(self.store, iid, self.cfg.context.window_turns, bulletin, player_text,
-                             slide=self.cfg.context.window_slide)
+                             slide=self.cfg.context.window_slide, exchanges=self._exchanges(iid))
         messages = ctx.messages
+        reminder = _check_reminder(res, told)
+        if reminder:                                # the last thing the narrator reads before it writes
+            messages = messages[:-1] + [Msg("user", messages[-1].content + "\n\n" + reminder)]
 
         t0 = time.monotonic()
         done: StreamDone | None = None
@@ -424,7 +452,6 @@ class Engine:
             system = system + "\n\n" + NARRATOR_PROTOCOL
             if not role.stop_sequences:
                 role = role.model_copy(update={"stop_sequences": list(STOP_SEQUENCES)})
-            handler = self._call_handler(game, state, iid, turn, res["assessments"])
             expected = self.expected_chars(iid)
             written = 0
             last_progress = 0
@@ -441,9 +468,16 @@ class Engine:
                 else:
                     ndone = nev
             assert ndone is not None
-            done = StreamDone(text=ndone.prose, stop_reason=ndone.stop_reason, model=ndone.model, usage=ndone.usage, note=ndone.note)
-            calls_block = {"requests": ndone.requests, "calls": ndone.calls, "declarations": [d.model_dump(mode="json") for d in ndone.declarations],
-                           "notes": ndone.notes,
+            prose_out = ndone.prose
+            for t in told:                          # the rolls the narrator was told: shown after the prose they shaped
+                if t["mechanic"]:
+                    prose_out = with_mechanic(prose_out, t["mechanic"])
+                    yield {"event": "mechanic", "data": {"turn": turn, "text": t["mechanic"], "data": t["data"]}}
+            done = StreamDone(text=prose_out, stop_reason=ndone.stop_reason, model=ndone.model, usage=ndone.usage, note=ndone.note)
+            calls_block = {"requests": ndone.requests,
+                           "calls": [{"call": t["call"], "result": t["data"], "mechanic": t["mechanic"], "told": True} for t in told] + ndone.calls,
+                           "declarations": [d.model_dump(mode="json") for d in ndone.declarations],
+                           "notes": ndone.notes, "exchange": ndone.exchange, "told": [t["label"] + ": " + t["outcome"] for t in told],
                            "problems": ndone.problems, "causes": ndone.causes, "raw": ndone.raw,
                            "assessed_not_called": [a.label for a in res["assessments"] if not a.called]}
         except Exception as e:
@@ -477,6 +511,7 @@ class Engine:
         delta_json: dict | None = None
         lever_outcomes: list[dict[str, Any]] | None = None
         referee_error: str | None = None
+        leaked: list[str] = _hook(game, "leaked_terms", state, narration, player_text or "", default=[]) or []
         if not getattr(game, "skip_referee", False) and adj is not None and adj.kind in ("action", "trivial"):
             yield {"event": "progress", "data": _progress("checking", len(narration), max(len(narration), 1))}
             try:
@@ -486,7 +521,7 @@ class Engine:
                 delta, meta = await self._referee(game, state, res["directives"], player_text, for_referee, adj, levers=_lever_lines(levers))
                 delta_json = delta.model_dump(mode="json")
                 ledger("verdict", {**delta_json, "_call": meta})
-                present = [e for e in delta.present if e in _hook(game, "entity_ids", state, default=[])]
+                present = _named_present(game, state, [e for e in delta.present if e in _hook(game, "entity_ids", state, default=[])], narration)
                 causes = list(calls_block.get("causes", [])) + [e for d in res["directives"] for e in (adj.entities if adj else []) if e in d]
                 vetoes = [f"{c.target}: {c.note or c.value}" for c in delta.changes if c.kind == "not_done"]
                 state, lever_outcomes = self._commit_levers(game, state, levers, vetoes, iid, turn, ledger)
@@ -494,14 +529,26 @@ class Engine:
                 for lv, out in zip(levers, lever_outcomes):
                     if out["status"] == "applied":
                         skip += lv.preview.referee_skip
+                screened = screen_unseen_clues(delta, narration, calls_block.get("notes", []))
+                for term in leaked:                     # a word the player has not learned does not reach his notebook either
+                    for c in [c for c in delta.changes if c.kind == "learned" and re.search(r"\b" + re.escape(term.lower()), c.value.lower())]:
+                        delta.changes.remove(c)
+                        screened.append(Rejection(path="notebook", reason=f"uses '{term}', which the player has not learned", value=c.value))
                 state, report, extras = apply_changes(game, state, delta, present=present, causes=causes, skip=skip)
+                report.rejected.extend(screened)
                 doc = state.model_dump(mode="json")
                 ppath, clock = getattr(game, "pending_path", None), getattr(game, "clock", None)
                 if ppath and clock:
                     pitems = pend.load(doc, ppath)
                     clk = sp.lookup(doc, clock.path, None) or {"day": 1, "minute": 0}
                     now_abs = int(clk["day"]) * clock.minutes_per_day + int(clk["minute"])
+                    names = _hook(game, "entity_names", state, default=None) or {}
                     for new in extras.pending_new:
+                        new.who = names.get(new.who.strip(), new.who)        # the narrator reads who by name, never by id
+                        dup = pend.duplicate_of(pitems, new)
+                        if dup is not None:
+                            report.rejected.append(Rejection(path="pending", reason=f"already in motion as {dup.id}", value=new.what))
+                            continue
                         src = "narrator" if any("soon:" in n.lower() for n in calls_block.get("notes", [])) else "referee"
                         p = pend.add(pitems, new, now_abs=now_abs, minutes_per_day=clock.minutes_per_day, turn=turn, source=src)
                         ledger("pending", {"action": "new", **p.model_dump(mode="json")})
@@ -520,7 +567,12 @@ class Engine:
                     sp.assign(doc, rpath, seen_list[-12:])
                     report.applied.append(f"unseen: {len(extras.unseen)} fact{'s' if len(extras.unseen) != 1 else ''} recorded")   # never the content
                 if delta.log_line:
-                    sp.append(doc, getattr(game, "log_path", "log"), f"{_clock_text(game, doc)}{delta.log_line.strip()}")
+                    lpath = getattr(game, "log_path", "log")
+                    last = (list(sp.lookup(doc, lpath, []) or []) or [""])[-1]
+                    if _same_line(last, delta.log_line):    # a weak referee repeats last turn's line
+                        report.rejected.append(Rejection(path="log", reason="the same as the last log line", value=delta.log_line.strip()))
+                    else:
+                        sp.append(doc, lpath, f"{_clock_text(game, doc)}{delta.log_line.strip()}")
                 tpath = getattr(game, "threads_path", None)
                 if tpath and (extras.threads_opened or extras.threads_closed):
                     applied, rejected = th.apply_updates(doc, tpath, extras.threads_opened, extras.threads_closed, turn)
@@ -570,15 +622,34 @@ class Engine:
         self.store.save_snapshot(iid, turn, state.model_dump(mode="json"))
         log.info("turn.done " + logs.kv(iid=iid, turn=turn, seconds=time.monotonic() - t_turn, ending=_hook(game, "ending", state)))
 
+        # The engine checks the referee's check rulings against what it knows: check_skipped needs an assessed check
+        # that was never rolled, check_ignored needs a roll. Anything else is the referee second-guessing the
+        # adjudicator; it is recorded as an issue and retells nothing.
+        uncalled = [a.label for a in res["assessments"] if not a.called]
+        rolled = bool(calls_block.get("calls"))
+        rulings = []
+        for r in (delta_json or {}).get("rulings", []):
+            if (r.get("rule") == "check_skipped" and not uncalled) or (r.get("rule") == "check_ignored" and not rolled):
+                if delta_json is not None:
+                    delta_json.setdefault("issues", []).append(f"referee ruled {r['rule']} with {'no check rolled' if r['rule'] == 'check_ignored' else 'every assessed check rolled'}: {r.get('what', '')}")
+                log.info("referee.ruling.dismissed " + logs.kv(iid=iid, turn=turn, rule=r.get("rule"), what=r.get("what", "")[:120]))
+                continue
+            rulings.append(r)
         # The engine's own ruling: it assessed checks, told the narrator to call them, and the narrator called none.
         # The referee is asked to catch this too; a weak one does not, and the engine already knows.
-        rulings = list((delta_json or {}).get("rulings", []))
         skipped = list(calls_block.get("assessed_not_called", []))
         if skipped and not calls_block.get("calls") and not any(r.get("rule") == "check_skipped" for r in rulings):
             rulings.append({"rule": "check_skipped", "serious": True, "by": "engine",
                             "what": "the narrator called none of the assessed checks: " + ", ".join(skipped),
                             "fix": "When the fiction reaches each assessed attempt (" + ", ".join(skipped) + "), write its <<CHECK stat difficulty>> line and wait for the result; play what the result says instead of deciding the outcome yourself."})
             log.info("engine.ruling " + logs.kv(iid=iid, turn=turn, rule="check_skipped", serious=True, skipped=",".join(skipped)))
+
+        if leaked and not any(r.get("rule") == "leak" for r in rulings):
+            rulings.append({"rule": "leak", "serious": True, "by": "engine",
+                            "what": "the narration uses " + ", ".join(f"'{t}'" for t in leaked) + " in the player's own voice before he has learned it",
+                            "fix": "The player's character does not know the word" + ("s " if len(leaked) > 1 else " ") + ", ".join(f"'{t}'" for t in leaked)
+                                   + ": nobody has told him. The narration never uses it; describe what he perceives in his own plain words."})
+            log.info("engine.ruling " + logs.kv(iid=iid, turn=turn, rule="leak", serious=True, terms=",".join(leaked)))
 
         mechanics = {
             "kind": adj.kind if adj else None, "elapsed": res["elapsed"],
@@ -703,8 +774,8 @@ class Engine:
             meta["retry"] = retry
         return adj, meta
 
-    def _preview_levers(self, game: Game, state: BaseModel, adj: Adjudication, iid: str, turn: int, ledger: Any
-                        ) -> tuple[Adjudication, list["PendingLever"]]:
+    def _preview_levers(self, game: Game, state: BaseModel, adj: Adjudication, iid: str, turn: int, ledger: Any,
+                        player_text: str = "") -> tuple[Adjudication, list["PendingLever"]]:
         """The adjudicator named levers (typed commands), in the order the input gave them. Run the
         game's own `run_command` for each on a working copy that the turn does not keep, so the second
         preview sees the first's effect (seal, then release): the narrator is told exactly what each
@@ -723,6 +794,9 @@ class Engine:
             if spec is None or not isinstance(game, GameBase):
                 log.info("command.typed.ignored " + logs.kv(iid=iid, turn=turn, id=pick.id))
                 continue
+            if spec.words and player_text and not any(re.search(r"\b" + re.escape(w.lower()), player_text.lower()) for w in spec.words):
+                log.info("command.typed.ignored " + logs.kv(iid=iid, turn=turn, id=pick.id, why="the input does not ask for it"))
+                continue                            # "I strike a match" is not Smoke
             args, problem = _parse_command_args(spec, pick.args)
             if problem:
                 ledger("command", {"id": spec.id, "args": args, "mode": spec.mode, "typed": True, "ok": False, "text": problem})
@@ -828,6 +902,11 @@ class Engine:
                         continue
                 assessments.append(Assessment(stat=stat, difficulty=intent.check.difficulty, target=intent.check.target_entity or "",
                                               label=intent.check.label))
+            for name in getattr(adj, "carried", []) or []:   # the input leans on something in the player's pockets: is it there?
+                missing = _hook(game, "not_carried", state, name, default=None)
+                if missing:
+                    directives.append("NOT CARRIED: " + missing)
+                    notes.append(f"not carried: {name}")
             # clock, stopping at the next scheduled event so it fires on time
             if clock and adj.time_minutes > 0:
                 want = min(adj.time_minutes, clock.cap_minutes)
@@ -1125,6 +1204,43 @@ def _progress(stage: str, chars: int, expected: int) -> dict[str, Any]:
     return {"stage": stage, "chars": chars, "expected": expected, "pct": min(90, int(ratio * 100)), "slow": ratio > 1.2}
 
 
+def _named_present(game: Any, state: BaseModel, ids: list[str], prose: str) -> list[str]:
+    """`present` is who is in the scene; a weak referee lists the cast. Keep an id only when the prose names
+    them (a word of the name, or the id). Games without `entity_names` keep the list as given."""
+    names = _hook(game, "entity_names", state, default=None)
+    if not names:
+        return ids
+    low = prose.lower()
+    def named(e: str) -> bool:
+        words = [w for w in re.findall(r"[a-z]+", names.get(e, "").lower()) if len(w) > 3 and w not in ("thing", "shack", "with")]
+        return e.lower() in low or any(re.search(r"\b" + re.escape(w) + r"\b", low) for w in words)
+    return [e for e in ids if named(e)]
+
+
+def _same_line(previous: str, line: str) -> bool:
+    """Two log lines say the same thing: the clock prefix aside, nearly every content word is shared."""
+    def words(t: str) -> set[str]:
+        t = re.sub(r"^\s*day \d+,? \d{1,2}:\d{2}\.?", "", t.strip().lower())
+        return {w for w in re.findall(r"[a-z]+", t) if len(w) > 3}
+    a, b = words(previous), words(line)
+    return bool(a and b) and len(a & b) / len(a | b) >= 0.8
+
+
+def _check_reminder(res: dict[str, Any], told: list[dict[str, Any]]) -> str:
+    """The closing line of the narrator's last message when the turn has checks: recency is what a weaker
+    model follows. Told: the results are given, play them. Called: stop at the first one and wait."""
+    if told:
+        return ("[ENGINE] This turn's checks are already rolled; THIS TURN gives each result. You never decide whether an "
+                "uncertain attempt works: play each result at the moment the fiction reaches it, and write no check line for them.")
+    pending = [a for a in res.get("assessments", []) if not a.called]
+    if not pending:
+        return ""
+    calls = "; ".join(f"<<CHECK {a.stat} {a.difficulty.replace('_', ' ')}>> ({a.label})" for a in pending)
+    return ("[ENGINE] This turn has checks only the engine can roll: " + calls + ". You never decide whether an uncertain attempt "
+            "works. Write the prose up to the moment of the first attempt, before anything shows how it goes, then its check line "
+            "exactly as given, on its own line, and stop. The engine's next message gives you the result.")
+
+
 def _this_turn_block(res: dict[str, Any]) -> str:
     lines = ["THIS TURN (resolved by the engine; narrate these, do not re-decide them)"]
     adj = res.get("adjudication")
@@ -1134,10 +1250,16 @@ def _this_turn_block(res: dict[str, Any]) -> str:
         lines.append(f"- Time passes: about {res['elapsed']} minutes. The clock above already includes it. Do not narrate beyond it.")
     elif adj is not None and adj.kind in ("action", "trivial"):
         lines.append("- No appreciable time passes.")
-    for a in res.get("assessments", []):
-        vs = f" vs {a.target}" if a.target else ""
-        lines.append(f"- Assessed check, {a.label} ({a.stat}, {a.difficulty.replace('_', ' ')} difficulty{', against ' + a.target if a.target else ''}): "
-                     f"when the fiction reaches this attempt, write <<CHECK {a.stat} {a.difficulty.replace('_', ' ')}>> on its own line and wait for the result. Do not decide it yourself.")
+    told = res.get("told")
+    if told:
+        for t in told:
+            lines.append(f"- Rolled by the engine, {t['label']} ({t['stat']}, {t['difficulty']} difficulty{', against ' + t['target'] if t['target'] else ''}): "
+                         f"{t['outcome'].upper()}. When the fiction reaches this attempt it ends in {t['outcome']}; play that and what follows from it. "
+                         "Never soften or reverse it, and write no check line for it.")
+    else:
+        for a in res.get("assessments", []):
+            lines.append(f"- Assessed check, {a.label} ({a.stat}, {a.difficulty.replace('_', ' ')} difficulty{', against ' + a.target if a.target else ''}): "
+                         f"when the fiction reaches this attempt, write <<CHECK {a.stat} {a.difficulty.replace('_', ' ')}>> on its own line and wait for the result. Do not decide it yourself.")
     for d in res["directives"]:
         lines.append(f"- {d}")
     if not (res.get("assessments") or res["directives"]):     # a quiet turn: say what quiet means

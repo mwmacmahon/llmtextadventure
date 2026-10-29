@@ -231,7 +231,7 @@ async def test_typed_smoke_is_charged_once_even_if_the_referee_also_reports_it(e
     events = await play(engine, iid, "I light a cigarette.")
     assert events[-1]["event"] == "done"
     st = state_of(engine, iid)
-    assert st.item("cigarettes").count == before - 1 and st.player.minutes_since_smoke == 5   # one cigarette, then five minutes of drift
+    assert st.item("cigarettes").count == before - 1 and st.player.minutes_since_smoke == 3   # one cigarette, then drift to 23:33, where the clock stops at the opening timer
     assert any("already applied by the lever" in a for a in events[-1]["data"]["mechanics"]["applied"])   # the row is skipped, not counted twice
 
 

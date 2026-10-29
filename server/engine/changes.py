@@ -8,17 +8,18 @@ game's `land_declarations`. Unknown rows are rejected, never silently dropped.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
 from pydantic import BaseModel
 
 from .brackets import Declaration
-from .game import ApplyReport
+from .game import ApplyReport, Rejection
 from .gamekit import Writer
 from .pending import PendingNew
 from .roles import RULES, SERIOUS_RULES, Change, ChangeReport
-from .threads import ThreadClose
+from .threads import ThreadClose, says_still_open
 
 TRUE_WORDS = {"true", "yes", "on", "1", "set"}
 
@@ -62,6 +63,35 @@ def is_pending_id(s: str) -> bool:
     return len(s) > 1 and s[0] == "p" and s[1:].isdigit()
 
 
+_STOP = {"that", "this", "with", "from", "into", "their", "there", "they", "were", "have", "been", "about", "frank", "player",
+         "will", "what", "when", "where", "which", "while", "unless", "just", "your", "them", "then", "than", "over", "under"}
+
+
+def _content_words(text: str) -> set[str]:
+    return {w.rstrip("s") for w in re.findall(r"[a-z]+", text.lower()) if len(w) >= 4 and w not in _STOP}
+
+
+def screen_unseen_clues(report: ChangeReport, prose: str, notes: list[str]) -> list[Rejection]:
+    """A clue is what the player perceived. A `learned player` row whose words come from an unseen note (the
+    narrator's [[unseen: …]] lines or the referee's own unseen rows) and not from the prose is the referee
+    copying the narrator's private notes into the notebook: drop it before apply. Mutates `report`."""
+    unseen = [_content_words(n.split(":", 1)[1]) for n in notes if n.lower().startswith("unseen:")]
+    unseen += [_content_words(c.value or c.note) for c in report.changes if c.kind == "unseen"]
+    unseen = [u for u in unseen if u]
+    if not unseen:
+        return []
+    seen = _content_words(prose)
+    kept, dropped = [], []
+    for c in report.changes:
+        words = _content_words(c.value) if c.kind == "learned" and c.target.strip().lower() in ("player", "frank", "") else set()
+        if words and max(len(words & u) / len(words) for u in unseen) >= 0.6 and len(words & seen) / len(words) < 0.5:
+            dropped.append(Rejection(path="notebook", reason="from an unseen note, not from what the player perceived", value=c.value))
+        else:
+            kept.append(c)
+    report.changes = kept
+    return dropped
+
+
 def apply_changes(game: Any, state: BaseModel, report: ChangeReport, *, present: list[str], causes: list[str] | None,
                   skip: list[str] | None = None) -> tuple[BaseModel, ApplyReport, Extras]:
     """Land a ChangeReport. `skip`: targets or fields a lever already applied (the command's `referee_skip`)."""
@@ -74,8 +104,10 @@ def apply_changes(game: Any, state: BaseModel, report: ChangeReport, *, present:
     decls: list[Declaration] = []
     for ch in report.changes:
         k = ch.kind
-        if k in ("set", "add") and not ch.field.strip() and "." in ch.target.strip():   # "player.dread" written as the target: split it
-            ch = ch.model_copy(update=dict(zip(("target", "field"), ch.target.strip().rsplit(".", 1))))
+        if k in ("set", "add") and "." in ch.target.strip():          # "player.dread" written as the target: split it
+            base, suffix = ch.target.strip().rsplit(".", 1)
+            if not ch.field.strip() or ch.field.strip().lower() == suffix.lower():
+                ch = ch.model_copy(update={"target": base, "field": suffix})
         if skip_set and (ch.target.strip().lower() in skip_set or ch.field.strip().lower() in skip_set):
             w.note(f"{k} {ch.target}: already applied by the lever; not counted again")
             continue
@@ -104,16 +136,25 @@ def apply_changes(game: Any, state: BaseModel, report: ChangeReport, *, present:
                 ex.threads_opened.append((ch.value or ch.note).strip())
         elif k == "thread_close":
             text = f"{ch.note} {ch.value}".lower()
+            reason = [x for x in re.findall(r"[a-z']+", text) if x not in ("failed", "resolved", "fail", "closed", "done")]
+            if not reason:                         # "failed" alone, nothing about why: how a weak referee abandons the case thread
+                w.reject(f"threads.{ch.target.strip()}", "a thread closes only with a reason: what in the prose settled it", ch.note or ch.value)
+                continue
+            if says_still_open(text):
+                w.reject(f"threads.{ch.target.strip()}", "the reason given says the thread goes on", ch.note or ch.value)
+                continue
             outcome = "failed" if any(x in text for x in ("fail", "abandon", "impossible", "moot", "broken")) else "resolved"
             ex.threads_closed.append(ThreadClose(id=ch.target.strip(), outcome=outcome, note=ch.note))   # type: ignore[arg-type]
         elif k == "flag":
             name = (ch.target or ch.field).strip()
             val = ch.value.strip().lower() in TRUE_WORDS
+            if not name and ch.value.strip() in allowed_flags:      # the flag's name in value, true/false in note
+                name, val = ch.value.strip(), ch.note.strip().lower() in TRUE_WORDS
             flags = getattr(s, "flags", None)
             if name in allowed_flags and isinstance(flags, dict):
-                if flags.get(name) != val:
+                if bool(flags.get(name)) != val:                       # restating a flag as it stands is no change and no rejection
                     w.note(f"flags.{name}: {flags.get(name)!r} -> {val!r}")
-                flags[name] = val
+                    flags[name] = val
             else:
                 w.reject(f"flags.{name}", "not a narrator flag", ch.value)
         elif k == "set" and is_pending_id(ch.target) and ch.field.strip().lower() == "resolved":

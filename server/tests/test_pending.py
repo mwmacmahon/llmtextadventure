@@ -73,6 +73,9 @@ def action(summary: str, minutes: int) -> Adjudication:
 
 async def test_the_world_does_not_wait_end_to_end(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("noir", {})
+    doc = engine.store.load_state(iid)
+    doc["hidden"]["pending"] = []                    # without the scenario's opening timer: this test numbers its own from p1
+    engine.store.save_snapshot(iid, 0, doc)
     seen: dict = {}
 
     # turn 1: the narrator sets something in motion in plain words; the referee types it
@@ -125,7 +128,8 @@ async def test_the_world_does_not_wait_end_to_end(engine: Engine, fake: FakeProv
     assert res["elapsed"] == 3
     assert "stopped at pending p1" in next(l for l in engine.store.ledger(iid, 2) if l["kind"] == "clock")["payload"]["note"]
     bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
-    assert "DUE NOW, at Day 1" in bulletin and "the creature attacks. This happens this turn whatever the player is doing" in bulletin
+    assert "DUE NOW, at Day 1" in bulletin and "the creature attacks. It was set in motion and comes due now. It does not happen if Frank leaves the shack." in bulletin
+    assert "an attempt to stop or escape it, that attempt decides it" in bulletin      # a narrator's timer can be fought; a script's cannot
     assert "Behind the scenes" in bulletin and "the creature is between Frank and the door. (unseen by the player)" in bulletin
     assert "COMING" not in bulletin                                          # it fired this turn, so it is no longer listed as coming
     assert "IMPENDING" not in seen["t2"]                                      # fired is terminal: the referee has nothing to settle

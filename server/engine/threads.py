@@ -104,3 +104,11 @@ def render(threads: list[Thread], recent_closed: int = 3) -> list[str]:
         for t in closed[-recent_closed:]:
             lines.append(f"- {t.title} ({t.status}" + (f": {t.note}" if t.note else "") + ")")
     return lines
+
+
+_STILL_OPEN = re.compile(r"\b(continues?|still|remains?|ongoing|not yet|unresolved|yet to)\b", re.I)
+
+
+def says_still_open(note: str) -> bool:
+    """A close whose own reason says the thread goes on ("the search for June continues") is not a close."""
+    return bool(_STILL_OPEN.search(note or ""))

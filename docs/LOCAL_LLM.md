@@ -110,16 +110,24 @@ processes.
    `.claude/launch.json` has `api-local` (the API on :8011 against the GPU box) and `web-local` (the
    UI on :5174 proxied to it), so a local game can run beside the Anthropic one on :8010/:5173.
 
+## Checks: told, not called
+
+`config.llamacpp.yml` sets the narrator's `checks: told`. Measured on 2026-10-29: asked to stop at
+`<<CHECK …>>` and wait, Qwen3.5 writes the line after the outcome it was meant to wait for (or not at
+all), so the roll arrives too late; given the rolled results in THIS TURN, it plays them. Sonnet calls
+checks at the right moment and keeps `called` (the default). `notes/PLAYTEST-2026-10-29.md` has the runs.
+
 ## What to watch in the log
 
 `data/logs/server.log`, one line per step with the model's token counts. `cache_read` on the
 narrator's `step=narrate` line should sit near its prefix size from the second turn on. A
 `llamacpp.extract truncated` warning means a structured role looped into its token budget (the head
 and tail of the answer follow); the turn goes on with nothing recorded and the mechanics row says so.
-`engine.ruling … rule=check_skipped` means the narrator wrote none of the assessed `<<CHECK>>` lines;
-under the `gate` guard that turn is told twice. A narrator that never writes the line (Qwen3.5 so far)
-makes every assessed turn a double one: set `max_retells` to 0 or the mode to `log` in the settings
-menu if that gets old, and the ruling still shows in the mechanics row.
+`engine.ruling … rule=check_skipped` means a narrator in called mode wrote none of the assessed
+`<<CHECK>>` lines (told mode cannot skip one); `engine.ruling … rule=leak` names a secret word used in the
+narration's own voice; `referee.ruling.dismissed` is a check ruling the engine knows is impossible. Under
+the `gate` guard a serious ruling means the turn is told twice. `referee.rejected` lines are rows the
+engine did not accept; on Sonnet there were none in a whole run, on Qwen3.5 a few a turn.
 
 ## What the cache actually does (measured 2026-10-29)
 

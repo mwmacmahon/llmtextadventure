@@ -49,7 +49,44 @@ class BuiltContext:
     dropped_turns: list[int] = field(default_factory=list)  # completed turns older than the window
 
 
-def build_messages(store: Store, instance_id: str, window_turns: int, bulletin: str, player_text: str, slide: int = 1) -> BuiltContext:
+MECHANIC_PREFIX = "§ "
+
+
+def history_turn(player: str, narration: str, recorded: dict | None = None) -> list[Msg]:
+    """One past turn as the narrator should remember it. The engine's § lines are never in the narrator's
+    voice: a check it called comes back as the exchange that happened (its prose up to the call, the call,
+    the engine's answer as a user message, the continuation); any other § line (a roll it was told, a
+    lever's result) goes in the turn's user message as an [ENGINE] line."""
+    lines = narration.split("\n")
+    mech = [l.strip()[len(MECHANIC_PREFIX):] for l in lines if l.strip().startswith(MECHANIC_PREFIX)]
+    prose = "\n".join(l for l in lines if not l.strip().startswith(MECHANIC_PREFIX))
+    prose = "\n\n".join(p.strip() for p in prose.split("\n\n") if p.strip())
+    exchange = (recorded or {}).get("exchange") or []
+    called = [m.strip() for m in (recorded or {}).get("call_mechanics", [])]
+    use_exchange = any(e["role"] == "user" for e in exchange)
+    pre = [m for m in mech if not (use_exchange and m.strip() in called)]
+    user = f"{PLAYER_TAG}\n{player}" + ("".join(f"\n[ENGINE] {m}" for m in pre) if pre else "")
+    out = [Msg("user", user)]
+    if use_exchange:
+        out += [Msg(e["role"], e["text"]) for e in exchange if e["text"].strip()]
+    else:
+        out.append(Msg("assistant", prose))
+    return out
+
+
+def _merge(msgs: list[Msg]) -> list[Msg]:
+    """Consecutive messages of one role become one: an exchange may end on the engine's answer."""
+    out: list[Msg] = []
+    for m in msgs:
+        if out and out[-1].role == m.role:
+            out[-1] = Msg(m.role, out[-1].content + "\n\n" + m.content)
+        else:
+            out.append(m)
+    return out
+
+
+def build_messages(store: Store, instance_id: str, window_turns: int, bulletin: str, player_text: str, slide: int = 1,
+                   exchanges: dict[int, dict] | None = None) -> BuiltContext:
     rows = store.transcript(instance_id, roles=["player", "narrator", "system_note"])
     turns: dict[int, dict[str, str]] = {}
     for r in rows:
@@ -69,12 +106,11 @@ def build_messages(store: Store, instance_id: str, window_turns: int, bulletin: 
 
     for t in window:
         parts = turns[t]
-        msgs.append(Msg("user", f"{PLAYER_TAG}\n{parts['player']}"))
-        msgs.append(Msg("assistant", parts["narrator"]))
+        msgs.extend(history_turn(parts["player"], parts["narrator"], (exchanges or {}).get(t)))
 
     msgs.append(Msg("user", compose_user_message(bulletin, player_text)))
     return BuiltContext(
-        messages=msgs,
+        messages=_merge(msgs),
         window_first_turn=window[0] if window else None,
         window_turns=len(window),
         summary_turn=summary.turn if summary else None,
