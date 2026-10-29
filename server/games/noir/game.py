@@ -21,7 +21,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from engine import threads as th
-from engine.events import Event, next_scheduled
+from engine.events import Event, evaluate, next_scheduled
 from engine.game import (
     ApplyReport, Chip, ClockSpec, CommandResult, Commands, CommandSpec, EntityCard, EntityCards, GameBase, ListPanel,
     LogPanel, Meter, StatusStrip, TurnInfo, UISchema,
@@ -33,7 +33,7 @@ from engine.roles import AdjudicationV2, Change
 from engine.spontaneous import Spontaneous
 from engine.statepath import Actor
 
-from .state import Case, Condition, Hidden, Item, NoirState, Note, Person, Player
+from .state import COUNTED, Case, Condition, Hidden, Item, NoirState, Note, Person, Player, Tell
 
 HEALTH_VALUES = ["fine", "hurt", "wounded", "critical", "dead"]
 DREAD_STEP = 10
@@ -83,8 +83,20 @@ AUTHORITY: dict[str, Actor] = {
     "player.location": "narrator", "player.health": "narrator", "player.dread": "narrator", "player.conditions": "narrator",
     "inventory": "narrator", "people": "narrator",
     "people.*.agenda": "script", "people.*.secret": "script", "people.*.description": "script",
+    "people.*.tells": "script", "people.*.tells.*.told": "narrator", "things": "narrator",
     "notebook": "narrator", "hidden": "script", "flags": "narrator", "log": "narrator", "threads": "narrator",
 }
+
+
+MAX_THINGS = 20
+DROPPED = re.compile(r"\b(drop(s|ped)?|left (it |behind)|fell|falls|set (it )?down|put (it )?down|knocked (out of|from))\b", re.I)
+REVOLVER_WORDS = {"revolver", "gun", "pistol", "the revolver", "his revolver", "frank's revolver", ".38"}
+_STOP = {"that", "this", "with", "from", "into", "their", "there", "they", "were", "have", "been", "about", "frank", "said",
+         "will", "what", "when", "where", "which", "while", "just", "them", "then", "than", "over", "under", "told", "says"}
+
+
+def _words(text: str) -> set[str]:
+    return {x.rstrip("s") for x in re.findall(r"[a-z]+", text.lower()) if len(x) >= 4 and x not in _STOP}
 
 
 def slug(text: str) -> str:
@@ -150,6 +162,7 @@ class NoirGame(GameBase):
             clock=Clock(day=sc.get("start", {}).get("day", 1), minute=sc.get("start", {}).get("minute", 20 * 60)),
             player=player,
             inventory=[Item(**i) for i in sc.get("inventory", [])],
+            things=[Item(**i) for i in sc.get("things", [])],
             people=[Person(**p) for p in sc.get("people", [])],
             log=[sc.get("opening_log", "The case begins.")],
             threads=[th.Thread(id=t["id"], title=t["title"], opened_turn=0) for t in sc.get("threads", [])],
@@ -178,13 +191,17 @@ class NoirGame(GameBase):
         b.append("")
         b.append(f"{p.name}: {p.description} Good at: {', '.join(p.proficiencies) or 'nothing in particular'}. Bad at: {', '.join(p.weaknesses) or 'nothing in particular'}.")
         b.append("")
-        b.append("The cast. What Frank knows about each arrives in the game state as they are met; what is written here under 'Hidden' he does not know, and you never hand it to him:")
+        b.append("The cast. What Frank knows about each arrives in the game state as they are met; what is written here under 'Hidden' he does not know, and you never hand it to him. "
+                 "'Hidden' is what a person knows, not what they say: they give it up only as the pieces listed under 'Tells', each only when its condition is met in play, "
+                 "one piece at a time, and never the Hidden line whole. The game state lists, for the people with Frank, which pieces are open now and which are not yet.")
         for q in s.people:
             b.append(f"- {q.name} ({q.id}), {q.role}. {q.description}".rstrip())
             if q.agenda:
                 b.append(f"    Wants: {q.agenda}")
             if q.secret:
                 b.append(f"    Hidden: {q.secret}")
+            for t in q.tells:
+                b.append(f"    Tells, only when {t.when or 'asked'}: {t.what}")
         if s.hidden.facts:
             b.append("")
             b.append("Hidden truth (the player does not know this; never reveal it directly):")
@@ -246,6 +263,10 @@ class NoirGame(GameBase):
         key = re.sub(r"^(a|an|the|my|his|some|\d+)\s+", "", key).strip()
         if not key or state.item(key) is not None:
             return None
+        lying = state.thing(key)
+        if lying is not None and not lying.held_by and lying.place == state.player.location:
+            return (f"{state.player.name} is not carrying {name.strip()}: it lies here, where he left it. Picking it up is part of the attempt; "
+                    "play that, and the rest of the attempt with it in his hand.")
         return (f"{state.player.name} is not carrying {name.strip()}: it is not in his pockets. When he reaches for it, it is not there; "
                 "play that, and the rest of the attempt without it.")
 
@@ -256,6 +277,8 @@ class NoirGame(GameBase):
         conds = ", ".join(c.name for c in p.conditions) or "none"
         lines.append(f"{p.name}: at {p.location or 'unknown'}; health {p.health}; nerves {p.dread_tier(p.dread)}; conditions: {conds}.")
         lines.append("Pockets: " + ", ".join(it.render() + (f" ({it.note})" if it.note and it.loaded is None and it.id not in ("dollars",) else "") for it in s.inventory) + ".")
+        if s.things:
+            lines.append("Not on Frank: " + "; ".join(self._thing_line(s, t) for t in s.things) + ".")
         smoke = "never, this case" if not s.flags.get("smoked") else ("just now" if p.minutes_since_smoke == 0 else f"{p.minutes_since_smoke} minutes ago")
         lines.append(f"Last cigarette: {smoke}.")
 
@@ -268,6 +291,11 @@ class NoirGame(GameBase):
                 lines.append(f"- {q.name}: " + ", ".join(x for x in bits if x) + ".")
                 for f in q.facts[-4:]:
                     lines.append(f"    {f}")
+        tells = self._tells_here(s)
+        if tells:
+            lines.append("")
+            lines.append("What the people with Frank could tell him (they give up a piece only when its condition is met, one at a time):")
+            lines.extend(tells)
         if s.notebook:
             lines.append("")
             lines.append("Notebook (most recent):")
@@ -299,6 +327,55 @@ class NoirGame(GameBase):
         if nxt:
             lines.append(f"Do not narrate past {nxt.when_text}; the engine has something scheduled then and will tell you when it happens.")
         return "\n".join(lines)
+
+    def _thing_line(self, s: NoirState, t: Item) -> str:
+        holder = s.person(t.held_by) if t.held_by else None
+        where = f"held by {holder.name}" + (f" ({holder.location})" if holder.location else "") if holder else f"at {t.place or 'unknown'}"
+        return f"{t.render()}, {where}"
+
+    def tell_open(self, s: NoirState, t: Tell) -> bool:
+        """The engine's half of a tell's condition: its `needs` predicate, over the state (True when it has none)."""
+        if t.needs is None:
+            return True
+        try:
+            return evaluate(t.needs, s.model_dump(mode="json"), s.hidden.events, turn=0)
+        except ValueError:
+            return True
+
+    def _tells_here(self, s: NoirState) -> list[str]:
+        out: list[str] = []
+        for q in s.people:
+            if q.location != s.player.location or q.status in ("dead", "missing") or not q.tells:
+                continue
+            for t in q.tells:
+                if t.told:
+                    continue
+                if self.tell_open(s, t):
+                    out.append(f"- {q.name} [{q.id}, tell {t.id}]: may tell, only when {t.when or 'asked'}: {t.what}")
+                else:
+                    out.append(f"- {q.name} [{q.id}, tell {t.id}]: not yet, whatever Frank does: {t.what}")
+        return out
+
+    def _mark_told(self, s: NoirState, people: list[Person], text: str, w: Writer, tell_id: str = "") -> bool:
+        """A tell given up in the prose: by its id from a `set <person>.told` row, or a fact or clue whose words are
+        mostly a tell's own (the referee often writes the clue and not the row). Told before its engine condition
+        held is still told, and says so."""
+        words = _words(text)
+        for q in people:
+            for t in q.tells:
+                if t.told:
+                    continue
+                hit = tell_id and tell_id.strip().lower() == t.id
+                if not hit and not tell_id and words:
+                    tw = _words(t.what)
+                    shared = words & tw
+                    hit = len(shared) >= 3 and len(shared) / min(len(words), len(tw)) >= 0.5
+                if hit and w.set(f"people.{q.id}.tells.{t.id}.told", False, True):
+                    t.told = True
+                    if not self.tell_open(s, t):
+                        w.note(f"people.{q.id}.tells.{t.id}: told before its condition held")
+                    return True
+        return False
 
     # ---- mechanics hooks -----------------------------------------------------
     def stats(self, state: NoirState) -> dict[str, int]:
@@ -357,7 +434,10 @@ class NoirGame(GameBase):
             "- add player.dread ±n: 0 on an ordinary turn, including successes and calm conversations; +3 to +10 only when something frightened or hurt him (the creature, violence, a threat, a failure under danger, horror); -3 to -10 when he rests, drinks, smokes, wins clearly, reaches safety, or is treated kindly; a full night's sleep is -10.",
             "- set player.conditions +<name> or -<name>: conditions with mechanical weight are " + ", ".join(k for k in CONDITION_MODS if k != WITHDRAWAL) + "; others are allowed as flavour; '" + WITHDRAWAL + "' is the engine's, never add or remove it. Remove only a condition the state lists.",
             "- add revolver.loaded -n: rounds Frank actually fired this turn (never as a lost item). add cigarettes.count -n: cigarettes Frank LIT this turn (finishing one lit earlier is nothing); the engine handles the rest of smoking. add dollars.count -n: dollars spent. add bullets.count ±n when the prose plainly says so. Matches are a book: striking matches changes nothing; gone matches only when the book is used up, given away or lost.",
-            "- new thing value=<name> field=player (target thing, field player, always): a thing Frank picked up, was given, bought, borrowed, or found and kept, named as the prose names it (note=count for several). gone <thing>: handed over, used up, dropped or taken; the revolver only on an explicit loss of the revolver. Reloading is a lever the engine applies: never report its rounds.",
+            "- new thing value=<name> field=player (target thing, field player, always): a thing Frank picked up, was given, bought, borrowed, or found and kept, named as the prose names it (note=count for several). gone <thing>: used up or destroyed; the revolver only on an explicit loss of the revolver. Reloading is a lever the engine applies: never report its rounds.",
+            "- move <thing> <place>: Frank dropped it or left it somewhere; it stays there (listed under 'Not on Frank'). move <thing> <person id>: he handed it over or it was taken from him. move <thing> player: he picked it up again or got it back. Counted things (dollars, bullets, cigarettes) go by add, never by move.",
+            "- new thing value=<name> field=<place>: something that could matter again left lying in a listed place, not taken by Frank (a dropped weapon, evidence left where it was). Never a person or a creature, and never set dressing.",
+            "- set <person id>.told value=<tell id>: the person gave Frank that piece of what they know this turn. The game state lists the open pieces, with their ids, for the people with Frank; one row per piece told.",
             "- add <person id>.attitude ±n (-3 to 3): only when Frank did something to that person this turn that changes how they treat him: paid, helped, respected, threatened, insulted, lied and was caught. A tense conversation is 0. Being offered a bribe changes nothing.",
             "- set <person id>.status alive|dead|missing|unknown, only if changed.",
             "- learned <person id> value=fact: what they told Frank or what he learned about them, one short sentence; a witness's statement is a fact about the witness first, and also about the listed person it concerns when there is one.",
@@ -492,6 +572,7 @@ class NoirGame(GameBase):
                 else:
                     s.notebook.append(Note(kind="clue", text=c))
                     w.note(f"notebook += {c[:120]!r}")
+            self._mark_told(s, [q for q in s.people if q.location == p.location], c, w)
             return True
 
         # pockets: counted things by count, the revolver's rounds, items in and out
@@ -530,10 +611,25 @@ class NoirGame(GameBase):
             elif n > 0:
                 self._gain(s, it.name, n, w)
             return True
+        if kind == "move" and target and not is_player and s.person(target) is None:
+            it = s.item(target)
+            lying = None if it is not None else s.thing(target)
+            if it is not None or lying is not None:
+                self._relocate(s, it or lying, it is not None, target, ch.value, w)      # type: ignore[arg-type]
+                return True
+        if kind == "gone" and target and s.item(target) is None and s.thing(target) is not None:
+            t = s.thing(target)
+            if t is not None and w.set(f"things.{t.id}", self._thing_line(s, t), None):
+                s.things.remove(t)
+            return True
         if kind == "gone" and target and s.item(target) is None and (s.person(target) or self._same_person(s, target)):
             q = s.person(target) or self._same_person(s, target)    # a person "gone" from the story: killed or destroyed
             if q is not None and q.status != "dead" and w.set(f"people.{q.id}.status", q.status, "dead"):
                 q.status = "dead"
+            return True
+        dropped = s.item(target) if kind == "gone" and target and DROPPED.search(f"{ch.note} {value}") else None
+        if dropped is not None and dropped.id not in COUNTED and dropped.count == 1:
+            self._relocate(s, dropped, True, target, p.location, w)    # "gone revolver, note: dropped it": it lies where he dropped it
             return True
         if kind == "gone" and target:
             self._lose(s, target, self._step(ch.note) or self._step(ch.value) or 1, w)
@@ -554,8 +650,21 @@ class NoirGame(GameBase):
             if where in ("player", "frank", "pockets", "person:player", "inventory", ""):
                 count = self._step(ch.note) or 1
                 self._gain(s, value, max(1, count), w)
+                return True
+            holder = s.person(where)
+            place = None if holder else self._place(s, ch.field)
+            if holder is None and place is None:
+                w.reject("things", "a thing outside Frank's pockets lies in a listed place or is held by a listed person", f"{value} at {ch.field}")
+            elif s.thing(value) is not None:
+                w.reject("things", "already recorded", value)
+            elif len(s.things) >= MAX_THINGS:
+                w.reject("things", "too many things recorded", value)
             else:
-                w.reject("inventory", "a thing is in Frank's pockets only when he takes it; nowhere else is recorded here", value)
+                tid = slug(value)
+                tid = tid if s.thing(tid) is None and s.item(tid) is None else f"{tid}_{len(s.things)}"
+                t = Item(id=tid, name=value[:50], note=ch.note.strip()[:80], place=place or "", held_by=holder.id if holder else "")
+                s.things.append(t)
+                w.note(f"things += {self._thing_line(s, t)!r}")
             return True
         if kind == "new" and target.lower() == "person" and value:
             self._new_person(s, value, ch.note, w)
@@ -607,6 +716,15 @@ class NoirGame(GameBase):
                 if f and f not in q.facts:
                     q.facts.append(f)
                     w.note(f"people.{q.id}.facts += {f!r}")
+                self._mark_told(s, [q], f, w)
+                return True
+            if kind == "set" and field in ("told", "tell", "tells", "revealed"):
+                tid = value.strip().lower()
+                if any(t.id == tid for t in q.tells):
+                    if not self._mark_told(s, [q], "", w, tell_id=tid) and not any(t.id == tid and t.told for t in q.tells):
+                        w.reject(f"people.{q.id}.tells.{tid}", "not told", value)
+                elif not self._mark_told(s, [q], f"{value} {ch.note}", w):
+                    w.reject(f"people.{q.id}.tells", "no such piece for this person", value)
                 return True
             w.reject(f"people.{q.id}.{field or kind}", "not a field the referee may write", value)
             return True
@@ -651,8 +769,49 @@ class NoirGame(GameBase):
                 return q
         return None
 
+    def _relocate(self, s: NoirState, it: Item, in_pockets: bool, target: str, dest: str, w: Writer) -> None:
+        """A thing changes hands or is left somewhere: to a listed place, to a person (by id or name), or back to
+        Frank. The revolver leaves his pockets only when the row names it; counted things go by add."""
+        low = dest.strip().lower()
+        if in_pockets and (it.id in COUNTED or it.count > 1):
+            w.reject(f"inventory.{it.id}", "counted things go by add <thing>.count -n", dest)
+            return
+        if in_pockets and it.id == "revolver" and target.strip().lower() not in REVOLVER_WORDS:
+            w.reject("inventory.revolver", "only a row that names the revolver moves it", target)
+            return
+        if low in ("player", "frank", "pockets", "inventory", "person:player"):
+            if not in_pockets:
+                self._take_back(s, it, w)
+            return
+        holder = s.person(low)
+        place = None if holder else self._place(s, dest)
+        holder = holder or (None if place else self._same_person(s, dest))
+        if holder is None and place is None:
+            w.reject(f"things.{it.id}", "not a listed place or person", dest)
+            return
+        before = "carried" if in_pockets else self._thing_line(s, it)
+        it.place, it.held_by = (place or "", "") if holder is None else ("", holder.id)
+        if in_pockets:
+            s.inventory.remove(it)
+            if s.thing(it.id) is not None:
+                it.id = f"{it.id}_{len(s.things)}"
+            s.things.append(it)
+        w.set(f"things.{it.id}", before, self._thing_line(s, it))
+
+    def _take_back(self, s: NoirState, it: Item, w: Writer) -> None:
+        s.things.remove(it)
+        it.place, it.held_by = "", ""
+        if s.item(it.id) is not None and s.item(it.id).id == it.id:
+            it.id = f"{it.id}_{len(s.inventory)}"
+        s.inventory.append(it)
+        w.set(f"inventory.{it.id}", None, "carried")
+
     def _gain(self, s: NoirState, name: str, count: int, w: Writer) -> None:
         n = max(1, int(count))
+        lying = s.thing(name)
+        if lying is not None:                       # what he left somewhere or someone took, back in his pockets as it was
+            self._take_back(s, lying, w)
+            return
         it = s.item(name)
         if it is not None and (it.id in ("bullets", "cigarettes", "dollars", "matches") or it.count > 1 or n > 1 or it.name.lower() == name.strip().lower()):
             if it.loaded is not None:
@@ -691,7 +850,7 @@ class NoirGame(GameBase):
             if ammo_word:
                 w.reject("inventory.revolver", "rounds are not the revolver", name)
                 return
-            if k not in ("revolver", "gun", "pistol", "the revolver", "his revolver", "frank's revolver", ".38"):
+            if k not in REVOLVER_WORDS:
                 w.reject("inventory.revolver", "only an explicit loss of the revolver removes it", name)
                 return
             if w.set("inventory.revolver", "carried", None):
@@ -890,6 +1049,7 @@ class NoirGame(GameBase):
                 Meter(label="Nerves", value=p.dread, tier=p.dread_tier(p.dread), thresholds=[25, 45, 65, 85]),
                 Commands(title=p.name, items=self.commands(s)),
                 ListPanel(title="Pockets", items=[Chip(label=it.name, value=self._pocket_value(it)) for it in s.inventory]),
+                *([ListPanel(title="Not on him", items=[Chip(label=t.name, value=self._thing_line(s, t).split(", ", 1)[-1]) for t in s.things])] if s.things else []),
                 ListPanel(title="Condition", items=[
                     *[Chip(label="condition", value=c.name) for c in p.conditions],
                     Chip(label="last cigarette", value=f"{p.minutes_since_smoke} min ago"),

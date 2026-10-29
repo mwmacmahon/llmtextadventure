@@ -142,6 +142,21 @@ pending:                                    # timers already running when the ga
     on_happened: the player wakes in a holding cell at the station, revolver gone; set in motion in a
       [[soon: …]] line that someone comes to the bars within five minutes, at once if the player makes noise
 
+people:                                     # noir: a person's secret, given up piece by piece
+  - id: rosa
+    secret: Saw June leave with Szabo, and Marlowe's car an hour later.   # what she knows (narrator only)
+    tells:                                  # what she will say, and when
+      - id: rosa_june_left
+        what: That June left with Szabo on the Thursday she vanished
+        when: Frank is kind to her, or buys, and asks about June     # the narrator plays this condition
+      - id: rosa_marlowe_car
+        what: That Marlowe's car was on Pier Street an hour later
+        when: she has already told him about June, and he keeps her talking
+        needs: {gte: [people.rosa.attitude, 1]}   # an engine predicate that must hold first, or "not yet"
+
+things:                                     # noir: things that matter outside the player's pockets
+  - {id: shoe, name: woman's shoe, place: Rooftop shack}   # or held_by: <person id>
+
 place_aliases: {pier street: Lowtown streets}   # noir: names the prose uses → a listed place
 gated_places: {Under the docks: under_docks_found}  # noir: a player move there needs the flag first
 
@@ -194,6 +209,16 @@ Rules of thumb:
 - Branching beats: two events at the same `at` with mutual `expires: {fired: <sibling>}`.
 - Endings: conditional events with no `at`, `reveal: never`, negative priority, setting
   `flags.ending`; `ending(state)` reads it.
+- Secrets (noir): the `secret` says what a person knows; `tells` say what they will give up and when.
+  The prefix lists every tell under its person; the state block lists, for the people with the player,
+  each untold tell as "may tell, only when …" or, while its `needs` predicate is false, "not yet,
+  whatever Frank does". The referee marks a tell told (`set <person>.told value=<tell id>`), and a fact or
+  clue in a tell's own words marks it too. An event that plays a tell sets it told in its effects
+  (`{set: [people.szabo.tells.szabo_booth.told, true]}`). A tell told before its `needs` held is still
+  told; the applied line says so.
+- Things (noir): what the player drops, leaves or hands over lands in `things` from the referee's
+  `move <thing> <place|person|player>` rows (a `gone` row whose note says it was dropped is read the same
+  way), and comes back to the pockets as it was. Counted things (dollars, bullets, cigarettes) go by `add`.
 
 ## 7. Commands, and who changes what
 

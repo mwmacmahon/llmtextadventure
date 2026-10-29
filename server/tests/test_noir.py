@@ -365,3 +365,46 @@ async def test_ended_game_refuses_turns_and_nerves_end_in_two_stages(engine: Eng
     events = await play(engine, iid, "I go back in.")
     assert events == [{"event": "error", "data": {"message": events[0]["data"]["message"], "step": "ended"}}] and "The story is over" in events[0]["data"]["message"]
     assert engine.store.latest_turn(iid) == 2
+
+
+# ---- things outside the pockets, and what people will tell --------------------
+
+def test_things_left_in_places_and_held_by_people(game: NoirGame):
+    _, st = game.new_instance({})
+    s2, rep = apply(game, st, ref(C(kind="move", target="revolver", value="Rooftop shack"), C(kind="gone", target="notebook", note="dropped it in the dark"),
+                                  C(kind="move", target="trench coat", value="thing"), C(kind="new", target="thing", value="woman's shoe", field="Rooftop shack"),
+                                  C(kind="move", target="dollars", value="rosa"), C(kind="new", target="thing", value="a crate", field="the moon")))
+    assert s2.item("revolver") is None and s2.thing("revolver").loaded == 6 and s2.thing("revolver").place == "Rooftop shack"
+    assert s2.thing("notebook").place == "Rooftop shack" and s2.thing("trench coat").held_by == "thing" and s2.thing("shoe").place == "Rooftop shack"
+    assert {r.path for r in rep.rejected} == {"inventory.dollars", "things"} and s2.item("dollars").count == 14
+    b = game.render_bulletin(s2, "")
+    assert "Not on Frank: revolver (6/6 rounds), at Rooftop shack;" in b and "trench coat, held by The thing in the shack (Rooftop shack)" in b
+    assert "it lies here" in game.not_carried(s2, "revolver") and any(p.title == "Not on him" for p in game.ui(s2).panels if hasattr(p, "title"))
+    # picked up again, as it was; taken back from the thing; destroyed
+    s3, rep = apply(game, s2, ref(C(kind="new", target="thing", value="revolver", field="player"), C(kind="move", target="trench coat", value="player"),
+                                  C(kind="gone", target="woman's shoe")))
+    assert s3.item("revolver").loaded == 6 and s3.item("trench coat") is not None and s3.thing("shoe") is None and [t.name for t in s3.things] == ["notebook"]
+    assert s2.thing("Szabo's coat") is None                                   # a near name is not the coat on the roof
+    _, rep = apply(game, st, ref(C(kind="move", target="gun pocket", value="Rooftop shack")))   # the revolver moves only by name
+    assert st.item("revolver") is not None
+
+
+def test_people_tell_piece_by_piece_and_the_engine_gates_some(game: NoirGame):
+    _, st = game.new_instance({})
+    st.player.location = "The Anchor"
+    prefix = game.frozen_prefix(st)
+    assert "never the Hidden line whole" in prefix and "Tells, only when Frank is kind to her, or buys" in prefix
+    b = game.render_bulletin(st, "")
+    assert "Rosa [rosa, tell rosa_june_left]: may tell, only when" in b and "Rosa [rosa, tell rosa_marlowe_car]: not yet, whatever Frank does" in b
+    assert "Dooley [dooley" not in b                                          # only the people with Frank
+    s2, rep = apply(game, st, ref(C(kind="learned", target="rosa", value="Rosa saw June leave The Anchor with Szabo the Thursday she vanished."),
+                                  add("rosa", "attitude", "+1")))
+    rosa = s2.person("rosa")
+    assert [t.told for t in rosa.tells] == [True, False] and "rosa_june_left" not in game.render_bulletin(s2, "")
+    assert "Rosa [rosa, tell rosa_marlowe_car]: may tell" in game.render_bulletin(s2, "")    # her attitude opened the second
+    s3, rep = apply(game, s2, ref(C(kind="set", target="rosa", field="told", value="rosa_marlowe_car"), C(kind="set", target="rosa", field="told", value="no_such")))
+    assert all(t.told for t in s3.person("rosa").tells) and rep.rejected[0].reason == "no such piece for this person"
+    # told before the engine's condition held: still told, and noted
+    st.player.location = "Lowtown streets"
+    s4, rep = apply(game, st, ref(C(kind="set", target="szabo", field="told", value="szabo_inside")))
+    assert s4.person("szabo").tells[1].told and any("before its condition" in a for a in rep.applied)

@@ -30,6 +30,8 @@ class Item(BaseModel):
     note: str = ""
     loaded: int | None = None       # rounds in the cylinder (the revolver)
     capacity: int | None = None
+    place: str = ""                 # things only: the listed place it lies in
+    held_by: str = ""               # things only: the person (id) who has it
 
     def render(self) -> str:
         if self.loaded is not None:
@@ -39,6 +41,17 @@ class Item(BaseModel):
         if self.count != 1 or self.id in COUNTED:
             return f"{self.count} {self.name}"
         return self.name
+
+
+class Tell(BaseModel):
+    """One piece of what a person knows that they will give Frank, and when (secrets pacing). `when` is read by
+    the narrator in play ("if he is kind, or buys"); `needs` is an engine predicate (engine/events.py) that must
+    hold first, or the person will not tell it this turn whatever Frank does. The referee marks it told."""
+    id: str
+    what: str
+    when: str = ""
+    needs: Any = None
+    told: bool = False
 
 
 class Condition(BaseModel):
@@ -58,6 +71,7 @@ class Person(BaseModel):
     facts: list[str] = Field(default_factory=list)      # what Frank knows / what they said
     agenda: str = ""                # script
     secret: str = ""                # script, hidden: the prefix tells the narrator
+    tells: list[Tell] = Field(default_factory=list)     # script, hidden: the secret given up piece by piece
 
     @property
     def attitude_word(self) -> str:
@@ -127,6 +141,7 @@ class NoirState(BaseModel):
     clock: Clock = Field(default_factory=Clock)
     player: Player = Field(default_factory=Player)
     inventory: list[Item] = Field(default_factory=list)
+    things: list[Item] = Field(default_factory=list)    # things that matter outside Frank's pockets: in a place or held by someone
     people: list[Person] = Field(default_factory=list)
     notebook: list[Note] = Field(default_factory=list)
     log: list[str] = Field(default_factory=list)
@@ -140,23 +155,34 @@ class NoirState(BaseModel):
 
     def item(self, key: str) -> Item | None:
         """Find an item by id, exact name, or a loose match on words (the referee names things in prose)."""
-        k = key.strip().lower()
-        if not k:
-            return None
-        for it in self.inventory:
-            if it.id == k or it.name.lower() == k:
-                return it
-        alias = ALIASES.get(k.rstrip("s")) or ALIASES.get(k)
-        if alias:
-            return next((it for it in self.inventory if it.id == alias), None)
-        words = set(k.replace("'s", "").split())
-        best: tuple[int, Item | None] = (0, None)
-        for it in self.inventory:
-            iw = set(it.name.lower().split())
-            score = len(words & iw)
-            if score > best[0]:
-                best = (score, it)
-        return best[1]
+        return find_item(self.inventory, key)
+
+    def thing(self, key: str) -> Item | None:
+        """The same lookup over the things outside his pockets, stricter: every word of the shorter name in the
+        longer, so "Szabo's coat" is not the trench coat Frank left on the roof."""
+        return find_item(self.things, key, strict=True)
+
+
+def find_item(items: list[Item], key: str, strict: bool = False) -> Item | None:
+    k = key.strip().lower()
+    if not k:
+        return None
+    for it in items:
+        if it.id == k or it.name.lower() == k:
+            return it
+    alias = ALIASES.get(k.rstrip("s")) or ALIASES.get(k)
+    if alias:
+        return next((it for it in items if it.id == alias), None)
+    words = set(k.replace("'s", "").split())
+    best: tuple[int, Item | None] = (0, None)
+    for it in items:
+        iw = set(it.name.lower().split())
+        score = len(words & iw)
+        if strict and score < min(len(words), len(iw)):
+            continue
+        if score > best[0]:
+            best = (score, it)
+    return best[1]
 
 
 ALIASES = {

@@ -5,12 +5,16 @@ few hours can bump a crew member's stress or move them, which makes assertions a
 locations and moods nondeterministic. They are switched off for every test by default; a test
 that wants them asks for the `no_happenings` fixture's value (the real roll function) and
 re-installs it with monkeypatch.
+
+The referee runs as one call: tests queue one canned ChangeReport per turn, and a split referee (config.yml
+`split: true`) would hand it to its first pass alone. The split has its own test.
 """
 from __future__ import annotations
 
 import pytest
 
 from engine import spontaneous as spon
+from engine.config import Config
 
 _REAL_ROLL = spon.roll
 
@@ -19,3 +23,9 @@ _REAL_ROLL = spon.roll
 def no_happenings(monkeypatch):
     monkeypatch.setattr(spon, "roll", lambda *a, **k: ([], []))
     return _REAL_ROLL
+
+
+@pytest.fixture(autouse=True)
+def one_referee_call(monkeypatch):
+    real = Config.role
+    monkeypatch.setattr(Config, "role", lambda self, name: real(self, name).model_copy(update={"split": False}) if name == "referee" else real(self, name))

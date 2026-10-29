@@ -208,8 +208,8 @@ each pass only the kinds it owns and drops the second of two rows that say the s
 verdict's `_call.parts` has seconds, rows and kept per pass. Measured on Sonnet (18 turns, two runs
 each, 2026-10-29 night): rows recalled 75–78 of 108 against 66–68 in one call; about 30 more rows the
 key does not have, mostly clues until the player pass was told what a clue is; 5.7 s against 3.6 s;
-$0.023 against $0.014 a turn, the uncached input down from 48k to 7.5k tokens. Not yet measured
-locally.
+$0.023 against $0.014 a turn, the uncached input down from 48k to 7.5k tokens. On for Sonnet
+(`config.yml`); off locally until it is measured there.
 
 ## The next model: Qwen3.5-27B dense
 
