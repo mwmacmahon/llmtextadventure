@@ -7,7 +7,8 @@ that wants them asks for the `no_happenings` fixture's value (the real roll func
 re-installs it with monkeypatch.
 
 The referee runs as one call: tests queue one canned ChangeReport per turn, and a split referee (config.yml
-`split: true`) would hand it to its first pass alone. The split has its own test.
+`split: true`) would hand it to its first pass alone. The split has its own test; tests/live run the
+referee as config.yml says.
 """
 from __future__ import annotations
 
@@ -26,6 +27,8 @@ def no_happenings(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def one_referee_call(monkeypatch):
+def one_referee_call(monkeypatch, request):
+    if "live" in request.node.path.parts:      # the live evals measure the referee as config.yml runs it
+        return
     real = Config.role
     monkeypatch.setattr(Config, "role", lambda self, name: real(self, name).model_copy(update={"split": False}) if name == "referee" else real(self, name))
