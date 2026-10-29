@@ -167,6 +167,9 @@ class LlamaCppProvider:
 
     async def extract(self, role: RoleConfig, system: str, messages: list[Msg], schema: type[T]) -> tuple[T, Usage]:
         await self.prepare()
+        first: Usage | None = None
+        if role.two_pass:
+            messages, first = await self._think_first(role, system, messages)
         body = self._body(role, system, messages)
         body["response_format"] = {"type": "json_schema", "json_schema": {"name": schema.__name__, "schema": inline_schema(schema.model_json_schema())}}
         async with self._client(role) as client:
@@ -182,7 +185,41 @@ class LlamaCppProvider:
             raise RuntimeError(f"structured extraction truncated at max_tokens={role.max_tokens}")
         usage = _usage(data.get("usage"), data.get("timings"))
         usage.extra["model"] = data.get("model") or role.model
+        if first is not None:
+            usage.input_tokens += first.input_tokens
+            usage.output_tokens += first.output_tokens
+            usage.cache_read_input_tokens += first.cache_read_input_tokens
+            usage.extra.update(first.extra)
         return schema.model_validate_json(content), usage
+
+    async def _think_first(self, role: RoleConfig, system: str, messages: list[Msg]) -> tuple[list[Msg], Usage]:
+        """The first of the two passes: the same prompt, thinking on, no grammar, and a request for the
+        conclusions in plain words. The answer (not the thoughts: `--reasoning-format` keeps those apart)
+        goes back as the assistant's turn, and the grammar call that follows is told to transcribe it."""
+        body = self._body(role, system, messages + [Msg("user", THINK_FIRST)])
+        body["chat_template_kwargs"] = {"enable_thinking": True}
+        body["max_tokens"] = role.two_pass_max_tokens
+        async with self._client(role) as client:
+            r = await client.post("/v1/chat/completions", json=body)
+            r.raise_for_status()
+            data = r.json()
+        choice = data["choices"][0]
+        msg = choice.get("message") or {}
+        answer = (msg.get("content") or "").strip()
+        reasoning = msg.get("reasoning_content") or ""
+        if choice.get("finish_reason") == "length" and not answer:
+            log.warning("llamacpp.two_pass thinking ran out of max_tokens=%s with no answer; reasoning tail=%r", role.two_pass_max_tokens, reasoning[-300:])
+            answer = "(the first pass ran out of room; decide from the turn directly)"
+        usage = _usage(data.get("usage"), data.get("timings"))
+        usage.extra["two_pass"] = {"reasoning_chars": len(reasoning), "answer_chars": len(answer), "finish": choice.get("finish_reason")}
+        return messages + [Msg("user", THINK_FIRST), Msg("assistant", answer), Msg("user", THEN_STRUCTURE)], usage
+
+
+THINK_FIRST = ("Before the structured answer: think the turn through, then write your conclusions in plain words, one per "
+               "line. Each line is one thing you will report, with its target and its value exactly as the state names "
+               "them, or one thing you considered and decided not to report, with why. No JSON yet.")
+THEN_STRUCTURE = ("Now return exactly those conclusions in the required structure. Nothing that is not in your conclusions; "
+                  "nothing from your conclusions left out.")
 
 
 def _hit_stop(text: str, role: RoleConfig) -> bool:

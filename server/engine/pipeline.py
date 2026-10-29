@@ -736,18 +736,9 @@ class Engine:
     async def _adjudicate(self, game: Game, state: BaseModel, iid: str, player_text: str) -> tuple[Adjudication, dict]:
         role = self.cfg.role("adjudicator")
         provider = get_provider(role)
-        rules = _hook(game, "adjudication_rules", state, default="")
-        state_text = _hook(game, "state_for_models", state, default=game.render_bulletin(state, ""))
-        scene_text = _hook(game, "scene_block", state, None, "engine", default="")
-        if scene_text:
-            state_text = scene_text + "\n\n" + state_text
-        impending = _pending_block(game, state, "engine")
-        if impending:
-            state_text += "\n\n" + impending
         recent = _recent_prose(self.store, iid, turns=2)
-        system, msgs = adjudicator_messages(rules, state_text, recent, player_text, _commands_text(_hook(game, "commands", state, default=[])))
+        system, msgs, schema = adjudicator_inputs(game, state, recent, player_text)
         t0 = time.monotonic()
-        schema = getattr(game, "adjudication_schema", Adjudication)
         adj, usage = await provider.extract(role, system, msgs, schema)
         retry: str | None = None
         if adj.kind == "action" and not adj.intents:
@@ -1022,21 +1013,42 @@ class Engine:
                        adj: Adjudication | None = None, levers: list[str] | None = None) -> tuple[ChangeReport, dict]:
         role = self.cfg.role("referee")
         provider = get_provider(role)
-        rules = _hook(game, "referee_rules", state, default="")
-        state_text = _hook(game, "state_for_models", state, default=game.render_bulletin(state, ""))
-        scene_text = _hook(game, "scene_block", state, adj, "engine", default="")
-        if scene_text:
-            state_text = scene_text + "\n\n" + state_text
-        impending = _pending_block(game, state, "engine")
-        if impending:
-            state_text += "\n\n" + impending
-        system, msgs = referee_messages(rules, state_text, directives, player_text, narration, levers=levers)
+        system, msgs = referee_inputs(game, state, directives, player_text, narration, adj, levers)
         t0 = time.monotonic()
         delta, usage = await provider.extract(role, system, msgs, ChangeReport)
         return delta, {"provider": provider.name, "model": usage.extra.get("model") or role.model, "seconds": round(time.monotonic() - t0, 2), "usage": asdict(usage)}
 
 
 # ---- helpers ---------------------------------------------------------------
+def _engine_state_text(game: Game, state: BaseModel, adj: Adjudication | None) -> str:
+    """The state as the structured roles read it: the scene block (games that have one), the state block,
+    then IMPENDING with ids."""
+    state_text = _hook(game, "state_for_models", state, default=game.render_bulletin(state, ""))
+    scene_text = _hook(game, "scene_block", state, adj, "engine", default="")
+    if scene_text:
+        state_text = scene_text + "\n\n" + state_text
+    impending = _pending_block(game, state, "engine")
+    if impending:
+        state_text += "\n\n" + impending
+    return state_text
+
+
+def adjudicator_inputs(game: Game, state: BaseModel, recent: list[Msg], player_text: str) -> tuple[str, list[Msg], type]:
+    """Everything the adjudicator is sent, built from a state and an input alone, so a stored turn can be
+    replayed outside the pipeline (tools/eval_replay.py) and get exactly what the live turn got."""
+    rules = _hook(game, "adjudication_rules", state, default="")
+    state_text = _engine_state_text(game, state, None)
+    system, msgs = adjudicator_messages(rules, state_text, recent, player_text, _commands_text(_hook(game, "commands", state, default=[])))
+    return system, msgs, getattr(game, "adjudication_schema", Adjudication)
+
+
+def referee_inputs(game: Game, state: BaseModel, directives: list[str], player_text: str, narration: str,
+                   adj: Adjudication | None = None, levers: list[str] | None = None) -> tuple[str, list[Msg]]:
+    """Everything the referee is sent (see adjudicator_inputs)."""
+    rules = _hook(game, "referee_rules", state, default="")
+    return referee_messages(rules, _engine_state_text(game, state, adj), directives, player_text, narration, levers=levers)
+
+
 
 @dataclass
 class Replay:

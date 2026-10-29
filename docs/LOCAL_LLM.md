@@ -151,6 +151,42 @@ Without it, the narrator re-processed about 5k tokens a turn, 2.5 s at this mode
   `prefix.local.md` next to `prefix.md` if one is needed; keep the state block identical.
 - Latency per turn against the Anthropic path (the ledger's `seconds` per call).
 
+## Measuring a model: the replay harness
+
+`tools/eval_replay.py` turns "is this model good enough as the clerk?" into a number before a playtest.
+`export` takes the turns Sonnet played from the store (the state before the turn, the input, the prose
+with its § lines and notes, the THIS TURN directives) and Sonnet's own adjudication and referee rows as the
+expected answer, one JSON line per turn (`notes/eval/corpus/*.jsonl`, hand-correctable: Sonnet is good,
+not right). `run` builds exactly what the live pipeline sends (`pipeline.adjudicator_inputs`,
+`pipeline.referee_inputs`), calls whatever `TA_CONFIG` names with any `--opt key=value` overrides on the
+role (temperature, top_k, two_pass, model…), lands the replayed report on the same state through
+`apply_changes` so the shims and the engine's rejections are exercised too, and scores: the adjudicator
+on kind, time, the (stat, difficulty) checks, commands and carried; the referee on rows by (kind, target,
+field, value) with word overlap for the text kinds, on the applied lines by path and exactly, and on what
+the engine rejected. Every run is written to `notes/eval/runs/<tag>.json` with each turn's diff; `-v`
+prints the diffs as it goes. The ceiling is Sonnet replaying its own turns (`--tag sonnet-self`): a
+sampled model does not reproduce itself, so a local model's number is read against that, not against 100%.
+
+```
+cd server
+.venv/bin/python tools/eval_replay.py export <iid> [<iid>…] -o ../notes/eval/corpus/sonnet.jsonl
+TA_CONFIG=config.llamacpp.yml TA_LLAMA_URL=http://192.168.0.215:8280 TA_LLAMA_PREPARE_URL=http://192.168.0.215:8281/free-comfy \
+  .venv/bin/python tools/eval_replay.py run ../notes/eval/corpus/sonnet.jsonl --role both --tag a3b-baseline -v
+… run ../notes/eval/corpus/sonnet.jsonl --role referee --opt two_pass=true --tag a3b-two-pass
+```
+
+## The two-pass clerk
+
+A grammar constrains every token from the first, so a thinking model under `response_format` cannot think:
+either `<think>` is illegal or the thoughts are forced into JSON. `two_pass: true` on a structured role
+(llamacpp only) splits the work: the same prompt with thinking on and no grammar, asked for its
+conclusions in plain lines ("each line one thing you will report, with its target and value as the state
+names them, or one thing you decided not to report, and why"); then the grammar call, with that answer as
+the assistant's turn and the instruction to transcribe it and nothing else. One extra call per role per
+turn and the thinking tokens (`two_pass_max_tokens`, default 3072); the first pass runs on the role's own
+slot, so its prefix is cached like any other. The usage is summed; `usage.extra["two_pass"]` records the
+reasoning and answer sizes. Measure it with the harness before turning it on in play.
+
 ## The next model: Qwen3.5-27B dense
 
 The A3B's judgment is its ceiling, not its prompts: 3B active parameters decide every referee row. The

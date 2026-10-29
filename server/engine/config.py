@@ -34,6 +34,11 @@ class RoleConfig(BaseModel):
     base_url: str = Field(default_factory=lambda: os.environ.get("TA_LLAMA_URL", "http://127.0.0.1:8080"))
     slot: int | None = None
     thinking: bool = False
+    # structured roles only: think first in a free call (thinking on, no grammar), then a second call turns
+    # that answer into the schema under the grammar. A grammar over a thinking model constrains the thoughts,
+    # so the two cannot share one call. Costs a call and the thinking tokens; `two_pass_max_tokens` bounds them.
+    two_pass: bool = False
+    two_pass_max_tokens: int = 3072
     temperature: float | None = None
     top_p: float | None = None          # the rest of the sampler; unset means the server's command-line defaults
     top_k: int | None = None

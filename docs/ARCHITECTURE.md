@@ -43,6 +43,7 @@ server/
                          station: the space-station AI game; noir: a detective with pockets, dice and nerves
   tools/play.py          terminal client for a running server (humans and playtest agents)
   tools/authority_audit.py  who owns each state field and what can write it; fails on engine-owned holes
+  tools/eval_replay.py   replays stored turns through the adjudicator and referee on any model and scores the rows (docs/LOCAL_LLM.md)
   tests/                 offline tests (fake provider); tests/live: opt-in live role evaluations
 web/                     Vite + React + TypeScript; renders the UI schema, knows no game
 docs/                    this file, GAME_AUTHORING.md, LOCAL_LLM.md
@@ -253,6 +254,12 @@ record; the log is for watching a session and for post-mortems.
 `tests/live/` holds opt-in evaluations that call the real models with a scorecard of contexts
 per role (`TA_LIVE=1`), writing results to `data/evals/` so prompt and model changes can be
 compared.
+
+`tools/eval_replay.py` is the model gate: a corpus of turns a strong model played, exported from the
+store with that model's adjudication and referee rows as the expected answer, replayed through
+`pipeline.adjudicator_inputs` / `pipeline.referee_inputs` (the live input builders) against any
+provider, model or role option, landed with `apply_changes`, and scored per role; runs go to
+`notes/eval/runs/`. The strong model replaying itself is the ceiling.
 
 
 ## 2.0 (branch `2.0`, in progress; design in `notes/DESIGN2.md`)

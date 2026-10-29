@@ -158,3 +158,29 @@ def test_inline_schema_resolves_refs_and_closes_objects():
     assert "description" in intent["properties"]["check"]   # the field's own description rides along
     with pytest.raises(ValueError):
         inline_schema({"$defs": {"N": {"type": "object", "properties": {"next": {"$ref": "#/$defs/N"}}}}, "$ref": "#/$defs/N"})
+
+
+@pytest.mark.asyncio
+async def test_two_pass_thinks_without_a_grammar_then_transcribes_under_it():
+    reqs: list[dict] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        body = json.loads(req.content)
+        reqs.append(body)
+        if "response_format" not in body:
+            return httpx.Response(200, json={"choices": [{"message": {"content": "kind: action\nminutes: 3", "reasoning_content": "let me see..."}, "finish_reason": "stop"}],
+                                             "usage": {"prompt_tokens": 40, "completion_tokens": 30}})
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"kind": "action", "minutes": 3}'}, "finish_reason": "stop"}],
+                                         "usage": {"prompt_tokens": 80, "completion_tokens": 9}})
+
+    p = LlamaCppProvider(transport=httpx.MockTransport(handler))
+    out, usage = await p.extract(role(slot=2, stop_sequences=[], two_pass=True, two_pass_max_tokens=512), "S", [Msg("user", "x")], Verdict)
+    assert out == Verdict(kind="action", minutes=3)
+    assert len(reqs) == 2
+    think, structure = reqs
+    assert think["chat_template_kwargs"] == {"enable_thinking": True} and think["max_tokens"] == 512 and "response_format" not in think
+    assert think["messages"][-1]["role"] == "user" and "No JSON yet" in think["messages"][-1]["content"]
+    assert structure["chat_template_kwargs"] == {"enable_thinking": False} and structure["response_format"]["type"] == "json_schema"
+    assert [m["role"] for m in structure["messages"]] == ["system", "user", "user", "assistant", "user"]
+    assert structure["messages"][-2]["content"] == "kind: action\nminutes: 3"
+    assert (usage.input_tokens, usage.output_tokens) == (120, 39) and usage.extra["two_pass"]["reasoning_chars"] == 13
