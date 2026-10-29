@@ -37,7 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from engine.changes import apply_changes, screen_unseen_clues  # noqa: E402
 from engine.config import load_config  # noqa: E402
-from engine.pipeline import _hook, _named_present, _recent_prose, adjudicator_inputs, referee_inputs  # noqa: E402
+from engine.pipeline import _hook, _named_present, adjudicator_inputs, extract_adjudication, referee_inputs  # noqa: E402
 from engine.providers import Msg, get_provider  # noqa: E402
 from engine.registry import load_games  # noqa: E402
 from engine.roles import ChangeReport  # noqa: E402
@@ -90,6 +90,8 @@ def export_turns(store: Store, games: dict, iid: str, turns: list[int] | None, a
             "player_text": tr["player"], "recent": recent, "directives": directives,
             "prose": prose, "notes": notes, "narration": for_referee,
             "expected": {
+                # an action with no intents is the bug the adjudicate retry now catches: its checks are no answer to score against
+                "adjudication_unreliable": adj.get("kind") == "action" and not adj.get("intents"),
                 "adjudication": {k: v for k, v in adj.items() if not k.startswith("_")},
                 "changes": verdict.get("changes", []), "present": verdict.get("present", []),
                 "applied": (delta or {}).get("applied", []), "rejected": (delta or {}).get("rejected", []),
@@ -175,7 +177,8 @@ def score_applied(expected: list[str], got: list[str]) -> dict:
 
 def score_adjudication(expected: dict, got: dict) -> dict:
     def checks(a: dict) -> Counter:
-        return Counter((_norm(i["check"].get("stat")), _norm(i["check"].get("difficulty"))) for i in a.get("intents", []) if i.get("check"))
+        return Counter((re.sub(r"\s*\(.*?\)\s*$", "", _norm(i["check"].get("stat"))), _norm(i["check"].get("difficulty")))   # "muscle (-1)": the pipeline reads the name
+                       for i in a.get("intents", []) if i.get("check"))
     def cmds(a: dict) -> Counter:
         return Counter(_norm(c.get("id")) for c in a.get("commands", []) or [])
     def carried(a: dict) -> set[str]:
@@ -215,16 +218,17 @@ async def replay_turn(rec: dict, games: dict, cfg, roles: set[str], opts: dict[s
     state = game.load_state(rec["snapshot"])
     exp = rec["expected"]
     res: dict[str, Any] = {"iid": rec["iid"], "turn": rec["turn"], "game": rec["game"]}
-    if "adjudicator" in roles:
+    if "adjudicator" in roles and not exp.get("adjudication_unreliable"):
         role = _role_with(cfg, "adjudicator", opts)
         provider = get_provider(role)
         recent = [Msg(**m) for m in rec["recent"]]
         system, msgs, schema = adjudicator_inputs(game, state, recent, rec["player_text"])
         t0 = time.monotonic()
         try:
-            adj, usage = await provider.extract(role, system, msgs, schema)
+            adj, usage, retry, recovered = await extract_adjudication(provider, role, system, msgs, schema, _hook(game, "stats", state, default={}))
             got = adj.model_dump(mode="json")
-            res["adjudicator"] = {"seconds": round(time.monotonic() - t0, 1), "got": got, "score": score_adjudication(exp["adjudication"], got), "usage": asdict(usage)}
+            res["adjudicator"] = {"seconds": round(time.monotonic() - t0, 1), "got": got, "retry": retry, "recovered": recovered,
+                                  "score": score_adjudication(exp["adjudication"], got), "usage": asdict(usage)}
         except Exception as e:                                  # a refused prompt, a truncated extract: counted, not fatal
             res["adjudicator"] = {"seconds": round(time.monotonic() - t0, 1), "error": f"{type(e).__name__}: {e}"[:300]}
     if "referee" in roles:

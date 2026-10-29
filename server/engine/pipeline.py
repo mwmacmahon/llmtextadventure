@@ -739,23 +739,11 @@ class Engine:
         recent = _recent_prose(self.store, iid, turns=2)
         system, msgs, schema = adjudicator_inputs(game, state, recent, player_text)
         t0 = time.monotonic()
-        adj, usage = await provider.extract(role, system, msgs, schema)
-        retry: str | None = None
-        if adj.kind == "action" and not adj.intents:
-            # A command is not an intent: the rest of the input (a run on a bad leg, a shot, a search) still
-            # needs its intent and its check, and the model dropped them (live, 2026-10-29, even with the rule
-            # in its instructions). Ask once more with the gap named; keep the first answer if the second is no better.
-            retry = "no_intents"
+        adj, usage, retry, recovered = await extract_adjudication(provider, role, system, msgs, schema, _hook(game, "stats", state, default={}))
+        if retry:
             log.info("adjudicate.retry " + logs.kv(iid=iid, why=retry))
-            again = [*msgs, Msg("assistant", adj.model_dump_json()),
-                     Msg("user", "That adjudication has kind=action and an empty intents list, which the rules forbid. Keep the commands exactly as "
-                                 "they are and add every intent the input attempts, each with its check when the outcome is uncertain; if the input "
-                                 "asks for the commands and nothing else, one intent for that attempt with no check. Return the complete adjudication again.")]
-            second, usage2 = await provider.extract(role, system, again, schema)
-            u1, u2 = asdict(usage), asdict(usage2)
-            usage = Usage(**{k: (u1[k] + u2[k] if isinstance(u1[k], int) else u2[k]) for k in u1})
-            if second.intents:
-                adj = second
+        if recovered:
+            log.info("adjudicate.recovered_checks " + logs.kv(iid=iid, checks=recovered))
         adj.time_minutes = max(0, int(adj.time_minutes))
         if adj.kind in ("clarify", "impossible", "trivial"):
             adj.time_minutes = 0
@@ -1031,6 +1019,65 @@ def _engine_state_text(game: Game, state: BaseModel, adj: Adjudication | None) -
     if impending:
         state_text += "\n\n" + impending
     return state_text
+
+
+async def extract_adjudication(provider: Any, role: Any, system: str, msgs: list[Msg], schema: type, stats: dict) -> tuple[Any, Usage, str | None, list[str]]:
+    """The adjudicator's call as the engine makes it, live and in the replay harness: the extract, one
+    retry when an action comes back with no intents, and checks recovered from the wrong field."""
+    adj, usage = await provider.extract(role, system, msgs, schema)
+    retry: str | None = None
+    if adj.kind == "action" and not adj.intents:
+        # A command is not an intent: the rest of the input (a run on a bad leg, a shot, a search) still
+        # needs its intent and its check, and the model dropped them (live, 2026-10-29, even with the rule
+        # in its instructions; Sonnet does it on about one turn in seven). Ask once more with the gap named;
+        # keep the first answer if the second is no better.
+        retry = "no_intents"
+        again = [*msgs, Msg("assistant", adj.model_dump_json()),
+                 Msg("user", "That adjudication has kind=action and an empty intents list, which the rules forbid. Keep the commands exactly as "
+                             "they are and add every intent the input attempts, each with its check when the outcome is uncertain; if the input "
+                             "asks for the commands and nothing else, one intent for that attempt with no check. Return the complete adjudication again.")]
+        second, usage2 = await provider.extract(role, system, again, schema)
+        u1, u2 = asdict(usage), asdict(usage2)
+        usage = Usage(**{k: (u1[k] + u2[k] if isinstance(u1[k], int) else u2[k]) for k in u1})
+        if second.intents:
+            adj = second
+    return adj, usage, retry, recover_misplaced_checks(adj, stats)
+
+
+_TIER = r"(very[ _-]?low|very[ _-]?high|low|medium|high)"
+
+
+def recover_misplaced_checks(adj: Adjudication, stats: dict) -> list[str]:
+    """A weak model writes the check it means into the wrong field ("transition": "hands check (medium)")
+    and leaves `check` null. Shape, not meaning: when an intent has no check and its own text names one of
+    the game's stats with a difficulty tier beside it, that is the check. Nothing is inferred from a stat
+    named without a tier. Returns what was recovered, as 'stat difficulty' strings."""
+    if not stats:
+        return []
+    from .roles import CheckProposal
+    names = "|".join(re.escape(k) for k in sorted(stats, key=len, reverse=True))
+    pats = [re.compile(rf"\b({names})\b(?:\s*\([+-]?\d+\))?[\s,:-]*(?:check|roll|test)?[\s,:(-]*{_TIER}\b", re.I),
+            re.compile(rf"\b{_TIER}\b[\s,:-]*(?:difficulty\s*)?({names})\b(?:\s*\([+-]?\d+\))?\s*(?:check|roll|test)\b", re.I)]
+    out: list[str] = []
+    for intent in adj.intents:
+        if intent.check is not None:
+            continue
+        text = " | ".join(str(getattr(intent, f, "") or "") for f in ("transition", "action"))
+        m = pats[0].search(text)
+        stat, tier = (m.group(1), m.group(2)) if m else (None, None)
+        if not m:
+            m = pats[1].search(text)
+            if m:
+                tier, stat = m.group(1), m.group(2)
+        if not stat:
+            continue
+        tier = re.sub(r"[ -]", "_", tier.lower())
+        intent.check = CheckProposal(label=intent.action[:60], stat=stat.lower(), difficulty=tier)
+        transition = getattr(intent, "transition", "") or ""
+        if transition and (pats[0].search(transition) or pats[1].search(transition)):
+            intent.transition = ""                         # it held the check, not a transition
+        out.append(f"{stat.lower()} {tier}")
+    return out
 
 
 def adjudicator_inputs(game: Game, state: BaseModel, recent: list[Msg], player_text: str) -> tuple[str, list[Msg], type]:

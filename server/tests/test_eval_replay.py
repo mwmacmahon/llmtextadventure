@@ -47,3 +47,26 @@ def test_adjudication_scores_kind_time_checks_commands_and_carried():
     assert not score_adjudication({"kind": "action", "time_minutes": 60}, {"kind": "clarify", "time_minutes": 0})["kind_ok"]
     assert score_adjudication({"kind": "action", "time_minutes": 60}, {"kind": "action", "time_minutes": 35})["time_ok"]
     assert not score_adjudication({"kind": "action", "time_minutes": 60}, {"kind": "action", "time_minutes": 20})["time_ok"]
+
+
+def test_a_check_written_into_the_wrong_field_is_recovered_only_with_a_stat_and_a_tier():
+    from engine.pipeline import recover_misplaced_checks
+    from engine.roles import AdjudicationV2, CheckProposal, IntentV2
+    stats = {"eye": 2, "wits": 2, "tongue": 1, "hands": 2, "muscle": -1, "nerve": 0}
+    adj = AdjudicationV2(kind="action", summary="s", time_minutes=1, risk="high", intents=[
+        IntentV2(action="shoot", transition="hands check (medium)"),
+        IntentV2(action="move", transition="muscle (-1) high"),
+        IntentV2(action="climb", transition="a very high muscle check"),
+        IntentV2(action="shoot", transition="The outcome depends on Frank's hands stat and the difficulty of hitting it."),
+        IntentV2(action="bluff", transition="move:the_anchor via:door"),
+        IntentV2(action="look", check=CheckProposal(label="look", stat="eye", difficulty="low"), transition="hands high"),
+    ])
+    assert recover_misplaced_checks(adj, stats) == ["hands medium", "muscle high", "muscle very_high"]
+    a, b, c, d, e, f = adj.intents
+    assert (a.check.stat, a.check.difficulty, a.transition) == ("hands", "medium", "")
+    assert (b.check.stat, b.check.difficulty) == ("muscle", "high") and (c.check.difficulty) == "very_high"
+    assert d.check is None and e.check is None and e.transition == "move:the_anchor via:door"
+    assert f.check.stat == "eye" and f.transition == "hands high"            # a check that is there is never replaced
+    assert recover_misplaced_checks(adj, {}) == []
+    assert list(IntentV2.model_json_schema()["properties"])[-1] == "check"   # the grammar writes it last
+

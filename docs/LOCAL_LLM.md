@@ -175,6 +175,12 @@ TA_CONFIG=config.llamacpp.yml TA_LLAMA_URL=http://192.168.0.215:8280 TA_LLAMA_PR
 … run ../notes/eval/corpus/sonnet.jsonl --role referee --opt two_pass=true --tag a3b-two-pass
 ```
 
+**Field order is a prompt.** Under a grammar a model writes the fields in schema order and cannot go
+back. With `check` second in an intent, the A3B committed to null before describing the attempt and then
+wrote "hands check (medium)" into `transition`; with `check` last it assesses the right stat as often as
+Sonnet does (16 of 20 on the corpus). Put every field that needs a decision after the fields that
+describe what is being decided.
+
 ## The two-pass clerk
 
 A grammar constrains every token from the first, so a thinking model under `response_format` cannot think:

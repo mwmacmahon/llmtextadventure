@@ -52,11 +52,17 @@ class Adjudication(BaseModel):
         return cls(kind="action", summary=f"The player attempts: {player_text[:80]}", time_minutes=5, intents=[Intent(action=player_text[:80])], risk="low")
 
 
-class IntentV2(Intent):
+class IntentV2(BaseModel):
     """2.0: an intent names what it concerns and, when it moves the player or something they hold, the
-    proposed transition. The engine annotates it with facts; the narrator decides (DESIGN2 §6)."""
+    proposed transition. The engine annotates it with facts; the narrator decides (DESIGN2 §6).
+    Not a subclass of Intent, for the field order: a grammar-constrained model writes the fields in
+    schema order, and with `check` second the local model committed to null before it had described
+    the attempt, then wrote "hands check (medium)" into `transition` (eval run a3b-baseline, 2026-10-29).
+    `check` comes last, once the attempt is on the page."""
+    action: str = Field(description="One concrete thing the player is trying to do, in a short sentence.")
     targets: list[str] = Field(default_factory=list, description="Ids of the people, things and places this attempt concerns, exactly as listed in the scene.")
-    transition: str = Field(default="", description="If the attempt moves the player or something they hold, one of: 'move:<place id> via:<exit or door id>', 'take:<thing id>', 'drop:<thing id>', 'give:<thing id> to:<person id>', 'put:<thing id> in:<container id>', 'open:<thing id>', 'close:<thing id>'. Name what the player is trying, by id where one is listed, by name otherwise. Empty when nothing moves.")
+    transition: str = Field(default="", description="If the attempt moves the player or something they hold, one of: 'move:<place id> via:<exit or door id>', 'take:<thing id>', 'drop:<thing id>', 'give:<thing id> to:<person id>', 'put:<thing id> in:<container id>', 'open:<thing id>', 'close:<thing id>'. Name what the player is trying, by id where one is listed, by name otherwise. Empty when nothing moves. Never a check or an outcome.")
+    check: CheckProposal | None = Field(default=None, description="The check that decides this attempt when its outcome is uncertain and matters: stat, difficulty, label. Every attack, shot, escape under threat, forced or hurried physical feat, lock, hidden search, or attempt to get something out of someone who may refuse has one. Null only for what cannot fail.")
 
 
 class Focus(BaseModel):
@@ -97,7 +103,8 @@ ADJUDICATOR_INSTRUCTIONS = """You are the adjudicator for a text adventure. You 
 Rules:
 - kind=action for any real attempt that could change the world or takes time. kind=trivial for looking, recalling, or asking about the interface. kind=impossible when the player's means cannot do it at all (then say why in clarify_question, briefly).
 - Take the most natural reading of the input in its scene and adjudicate that. A terse input means the obvious thing: "turn around" with something behind the player means facing it; "go in" means the door in front of them. kind=clarify is rare: only when the input names something that does not exist, or when two readings would lead to materially different consequences and nothing in the scene favours either. Never clarify a short physical action, and never offer the player a menu of choices the narrator could simply play.
-- Propose a check only when the outcome is uncertain and the stakes matter. Routine use of the player's own abilities needs no check. Use the stats and difficulty tiers exactly as the rules list them.
+- Propose a check only when the outcome is uncertain and the stakes matter. Routine use of the player's own abilities, with nothing pressing on him, needs no check; the same ability under threat, in a hurry or against resistance does (a shot at something that is coming for him, a run on a bad leg with something behind him). Use the stats and difficulty tiers exactly as the rules list them.
+- A check goes in its intent's `check` field (label, stat, difficulty), never in `action`, `targets` or `transition`; an intent that needs a check and has `check` null gets no roll at all.
 - Estimate time honestly. Reading a log is a minute; a conversation is ten; waiting for someone to sleep is hours. The state may list IMPENDING things due at a time; they fire on their own and the engine stops the clock at the first one that falls due, so never shorten an estimate to dodge one.
 - Waiting, watching for a while, or otherwise letting time pass is kind=action with time_minutes equal to the time waited, never trivial.
 - When IMPENDING has something due within this input's time and the input tries to stop, escape or fight it, assess the check that decides that attempt.
@@ -174,6 +181,8 @@ Rows:
 - not_done <lever id> note=why: only when a lever listed under LEVERS was interrupted, abandoned or not completed in the prose.
 - ruling <rule> value=what happened, note=how to tell it again: the prose broke a rule the engine acts on; when the rule is serious the engine sets the turn aside and has the narrator tell it again with your note as its instruction, so write the note as that instruction, one sentence. The rule goes in field: contradiction (the prose depends on something the state says is false: an absent item used, a locked exit passed, an empty gun fired, a person addressed who is elsewhere); unauthorized_addition (an addition the rules forbid: a weapon, a new place or person the rules do not allow); directive_ignored (a THIS TURN directive not played: a due event skipped, a BLOCKED lever narrated as done, a CLEAR lever's effect changed); check_skipped (an assessed check never called while the attempt was played as succeeding); check_ignored (a called check whose result the prose did not play); leak (a hidden fact revealed, or the content of an unseen note put where the player can perceive it); drift (a wrong name, a time slip, set dressing clashing with the state: minor, recorded only).
 - issue value=text: anything else the engine should know that is not a ruling.
+Lines in the prose that begin with § are the engine's own: the result of a check it rolled (a stat, the dice, the outcome), placed where the roll happened. They are correct by definition and are not the narrator's writing; never rule on them or on their presence, and never report a change from them alone. A check with a § line was called; judge only whether the prose around it plays that outcome (check_ignored).
+Lines in the prose that begin with § are the engine's own: the result of a check it rolled (a stat, the dice, the outcome), placed where the roll happened. They are correct by definition and are not the narrator's writing; never rule on them or on their presence, and never report a change from them alone. A check with a § line was called; judge only whether the prose around it plays that outcome (check_ignored).
 Before you finish, always check four things and add a ruling row for each that applies: did the narration reveal something the player's character cannot know, or show what its own unseen note says is out of sight (leak)? did it contradict the state (contradiction)? did it ignore a directive it was given (directive_ignored)? did it skip an assessed check while playing the attempt as succeeding, or ignore a called check's result (check_skipped, check_ignored)?
 LEVERS, when listed, are the player's exact actions the engine applies by itself right after your report; do not report their effects.
 Be terse: one row per change, nothing for what did not change."""
