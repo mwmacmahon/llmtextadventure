@@ -41,6 +41,8 @@ log = logging.getLogger("textadventure.providers.llamacpp")
 
 PREPARE_EVERY = 60.0        # seconds between calls to the yield helper
 _last_prepare = 0.0
+SLOT_EVERY = 30.0           # seconds a slot size read from /props is trusted (the model can be swapped under us)
+_slot: dict[str, tuple[float, int | None]] = {}
 
 
 def inline_schema(js: dict) -> dict:
@@ -115,6 +117,26 @@ class LlamaCppProvider:
             if getattr(role, key) is not None:
                 body[key] = getattr(role, key)
         return body
+
+    async def context_tokens(self, role: RoleConfig) -> int | None:
+        """The context one slot holds, from the server's /props (llama-server splits --ctx-size across its
+        slots). A swapped model brings its own size; the narrator's window is trimmed to it. None when the
+        server does not answer: then only the role's own max_prompt_tokens bounds the request."""
+        base = role.base_url.rstrip("/")
+        now = time.monotonic()
+        hit = _slot.get(base)
+        if hit and now - hit[0] < SLOT_EVERY:
+            return hit[1]
+        n: int | None = None
+        try:
+            async with self._client(role) as client:
+                r = await client.get("/props", timeout=5)
+                if r.status_code == 200:
+                    n = int(((r.json().get("default_generation_settings") or {}).get("n_ctx")) or 0) or None
+        except Exception as e:  # noqa: BLE001 - a missing size is no reason to fail a turn
+            log.warning("llamacpp.props failed url=%s err=%s", base, e)
+        _slot[base] = (now, n)
+        return n
 
     async def prepare(self) -> None:
         """Ask the GPU box to give the model its VRAM back (ComfyUI's, through the yield helper) before a

@@ -437,12 +437,16 @@ class Engine:
         provider = get_provider(role)
         system = (inst.prefix_text or game.frozen_prefix(state)) + "\n\n" + NARRATOR_WORLD
         reminder = _check_reminder(res, told)
+        budget = role.max_prompt_tokens
+        slot = await provider.context_tokens(role) if hasattr(provider, "context_tokens") else None
+        if slot:                                    # the server's own slot, less the reply and a margin for a call's continuation
+            budget = min(budget or slot, slot - role.max_tokens - SLOT_MARGIN)
         ctx = build_messages(self.store, iid, self.cfg.context.window_turns, bulletin, player_text,
                              slide=self.cfg.context.window_slide, exchanges=self._exchanges(iid),
-                             max_tokens=role.max_prompt_tokens, fixed_chars=len(system) + len(NARRATOR_PROTOCOL) + len(reminder or "") + 4)
+                             max_tokens=budget, fixed_chars=len(system) + len(NARRATOR_PROTOCOL) + len(reminder or "") + 4)
         if ctx.trimmed_turns or ctx.over_budget:
             log.warning("narrator.window_trimmed " + logs.kv(iid=iid, turn=turn, trimmed=len(ctx.trimmed_turns), kept=ctx.window_turns,
-                                                              est_tokens=ctx.est_tokens, budget=role.max_prompt_tokens, over=ctx.over_budget or None))
+                                                              est_tokens=ctx.est_tokens, budget=budget, slot=slot, over=ctx.over_budget or None))
         messages = ctx.messages
         if reminder:                                # the last thing the narrator reads before it writes
             messages = messages[:-1] + [Msg("user", messages[-1].content + "\n\n" + reminder)]
@@ -1333,6 +1337,9 @@ def _same_line(previous: str, line: str) -> bool:
         return {w for w in re.findall(r"[a-z]+", t) if len(w) > 3}
     a, b = words(previous), words(line)
     return bool(a and b) and len(a & b) / len(a | b) >= 0.8
+
+
+SLOT_MARGIN = 1024      # tokens kept free in a local slot beyond the narrator's max_tokens: a call's continuation, the estimate's error
 
 
 def _check_reminder(res: dict[str, Any], told: list[dict[str, Any]]) -> str:

@@ -238,6 +238,32 @@ key does not have, mostly clues until the player pass was told what a clue is; 5
 $0.023 against $0.014 a turn, the uncached input down from 48k to 7.5k tokens. On for Sonnet
 (`config.yml`); off locally until it is measured there.
 
+## Swapping the model
+
+The model is a profile on the box: `~/textadventure/profiles/<name>.env` (from `server/tools/gumbo/profiles/`),
+a few lines of `MODEL=`, `CTX=`, `CKPT=` (any of `llama-game.sh`'s values). The active one is named in
+`profiles/ACTIVE`; with none, the script's defaults (the A3B). From the game's machine:
+
+```
+server/.venv/bin/python server/tools/llm.py              # what is loaded, its slots, the profiles
+server/.venv/bin/python server/tools/llm.py use qwen27b  # swap and wait until it has loaded
+```
+
+The helper beside the server (`gpu-yield.py`, :8281) answers `GET /models` and `POST /use {"profile": …}`:
+it takes only the name of a profile file that exists and whose model is on disk, writes `ACTIVE`, and
+stops llama-server; `llama-game.sh` starts it again on the new profile (the systemd unit stays as it is).
+A new model is a new profile file. The game needs no change after a swap: the llama.cpp provider reads the
+slot size from the server's `/props` (cached 30 s) and trims the narrator's window to it, less the reply
+and a margin (`narrator.window_trimmed` in the log names both).
+
+Installing this once on the box (the user's to run; it replaces the two files and adds the profiles):
+
+```
+scp server/tools/gumbo/llama-game.sh server/tools/gumbo/gpu-yield.py gumbo:~/textadventure/
+scp -r server/tools/gumbo/profiles gumbo:~/textadventure/
+ssh gumbo systemctl --user restart textadventure-llm
+```
+
 ## The next model: Qwen3.5-27B dense
 
 The A3B's judgment is its ceiling, not its prompts: 3B active parameters decide every referee row. The
@@ -259,12 +285,12 @@ checkpoints across three slots; about 26 GB worst case on the 32 GB card. The 27
 to the A3B's 10 and 48 linear to its 30, so expect about 21 GB of weights, 1.6 GB of KV, and a checkpoint
 near 100 MiB: up to 9.4 GB of checkpoints, and a worst case around 33 GB, which does not fit. Levers, in
 order: `CKPT=2048` (halves the checkpoint count per 32k slot: a cached prefix then rewinds in 2k steps,
-which costs a little re-prompting, nothing else), then `CTX=65536` (about 21k a slot; lower the
-narrator's `max_prompt_tokens` to 18000 with it), and only as a last resort the
+which costs a little re-prompting, nothing else), then `CTX=65536` in its profile (about 21k a slot;
+the game follows the server's slot size), and only as a last resort the
 second card (`CUDA_VISIBLE_DEVICES=0,1` with `--tensor-split`: the 3060 is slow and the split costs
 bandwidth). An over-long prompt never spills VRAM: with `--no-context-shift` the server refuses it and the
-turn fails with an error in the log. The narrator's `max_prompt_tokens` (28000 in `config.llamacpp.yml`, for a
-32k slot) keeps it from getting there: the request is estimated at 3.5 characters a token and the window
+turn fails with an error in the log. The narrator's budget keeps it from getting there (the slot size the
+server reports, or a role's `max_prompt_tokens`): the request is estimated at 3.5 characters a token and the window
 gives up its oldest turns in slide steps until it fits (`narrator.window_trimmed` in the log; `trimmed` and
 `est_tokens` in the ledger's request). Trimmed turns return through the summary once the window's own start
 passes them.

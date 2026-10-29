@@ -14,7 +14,8 @@ WorkingDirectory=%h/textadventure
 ExecStart=%h/textadventure/llama-game.sh
 Restart=on-failure
 RestartSec=5
-# Override the script's defaults here if needed, e.g.:
+# The model is chosen by profile (profiles/*.env, profiles/ACTIVE; swap with server/tools/llm.py from the
+# game's machine), not here. Defaults a profile does not set can still be overridden here, e.g.:
 # Environment=PORT=8280
 # Environment=CTX=98304
 

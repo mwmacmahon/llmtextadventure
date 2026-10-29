@@ -184,3 +184,21 @@ async def test_two_pass_thinks_without_a_grammar_then_transcribes_under_it():
     assert [m["role"] for m in structure["messages"]] == ["system", "user", "user", "assistant", "user"]
     assert structure["messages"][-2]["content"] == "kind: action\nminutes: 3"
     assert (usage.input_tokens, usage.output_tokens) == (120, 39) and usage.extra["two_pass"]["reasoning_chars"] == 13
+
+
+async def test_the_slot_size_comes_from_the_server_and_is_kept_a_while():
+    import engine.providers.llamacpp_provider as lp
+    lp._slot.clear()
+    calls = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls.append(req.url.path)
+        return httpx.Response(200, json={"total_slots": 3, "default_generation_settings": {"n_ctx": 21845}})
+
+    p = LlamaCppProvider(transport=httpx.MockTransport(handler))
+    r = role(base_url="http://box:8280")
+    assert await p.context_tokens(r) == 21845 and await p.context_tokens(r) == 21845 and calls == ["/props"]
+    lp._slot.clear()
+    down = LlamaCppProvider(transport=httpx.MockTransport(lambda req: httpx.Response(503)))
+    assert await down.context_tokens(r) is None
+    lp._slot.clear()

@@ -43,6 +43,7 @@ server/
                          station: the space-station AI game; noir: a detective with pockets, dice and nerves
   tools/play.py          terminal client for a running server (humans and playtest agents)
   tools/authority_audit.py  who owns each state field and what can write it; fails on engine-owned holes
+  tools/llm.py           the local model on the GPU box: what is loaded, the profiles, swap (docs/LOCAL_LLM.md)
   tools/eval_replay.py   replays stored turns through the adjudicator and referee on any model, scores them, grades them against the hand-judged key (docs/LOCAL_LLM.md)
   tests/                 offline tests (fake provider); tests/live: opt-in live role evaluations
 web/                     Vite + React + TypeScript; renders the UI schema, knows no game
