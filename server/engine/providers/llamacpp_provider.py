@@ -45,15 +45,23 @@ SLOT_EVERY = 30.0           # seconds a slot size read from /props is trusted (t
 _slot: dict[str, tuple[float, int | None]] = {}
 
 
+def _structured(prop: dict) -> bool:
+    """A list or object field, or one that may be an object or null."""
+    kinds = [prop.get("type")] + [o.get("type") for o in prop.get("anyOf", []) if isinstance(o, dict)]
+    return "array" in kinds or "object" in kinds
+
+
 def inline_schema(js: dict) -> dict:
     """The schema as llama.cpp's grammar builder enforces it. pydantic emits nested models as `$ref`s
     into `$defs`, which the server (gumbo's build, 2026-10) does not resolve: the referenced object
     becomes any JSON, and the model invents keys. So every `$ref` is replaced by its definition, and
-    every object gets `additionalProperties: false` so only the schema's keys can appear, and every one of
-    its keys `required`: a field with a default is optional to pydantic, and the grammar then lets a model
-    end the object before it (the Qwen3.5-27B wrote kind, summary, time and carried, and never `intents`,
-    on 22 of 24 turns). An empty value is still allowed; leaving the field out is not. Recursive schemas
-    have no finite inline form; none of the roles' schemas are."""
+    every object gets `additionalProperties: false` so only the schema's keys can appear. Its list and object
+    fields (and object-or-null ones, like an intent's `check`) are made `required` too: a field with a default
+    is optional to pydantic, and the grammar then lets a model end the object before it (the Qwen3.5-27B wrote
+    kind, summary, time and carried, and never `intents`, on 22 of 24 turns). An empty list or a null is still
+    allowed; leaving the field out is not. Plain fields with defaults (a row's who, note, minutes, hidden)
+    stay optional: requiring them made every referee row spell them out, 40% more tokens a call.
+    Recursive schemas have no finite inline form; none of the roles' schemas are."""
     defs = js.get("$defs") or js.get("definitions") or {}
 
     def walk(node, seen: frozenset):
@@ -70,7 +78,8 @@ def inline_schema(js: dict) -> dict:
         out = {k: walk(v, seen) for k, v in node.items() if k not in ("$defs", "definitions")}
         if out.get("type") == "object" and "properties" in out:
             out.setdefault("additionalProperties", False)
-            out["required"] = list(out["properties"])
+            req = list(out.get("required", []))
+            out["required"] = req + [k for k, v in out["properties"].items() if k not in req and _structured(v)]
         return out
 
     return walk(js, frozenset())

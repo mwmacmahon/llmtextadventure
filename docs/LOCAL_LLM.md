@@ -252,7 +252,9 @@ server/.venv/bin/python server/tools/llm.py use qwen27b  # swap and wait until i
 The helper beside the server (`gpu-yield.py`, :8281) answers `GET /models` and `POST /use {"profile": …}`:
 it takes only the name of a profile file that exists and whose model is on disk, writes `ACTIVE`, and
 stops llama-server; `llama-game.sh` starts it again on the new profile (the systemd unit stays as it is).
-A new model is a new profile file. The game needs no change after a swap: the llama.cpp provider reads the
+A new model is a new profile file. `CTX=auto` sizes the context to the VRAM free at load: the script leaves
+out `--ctx-size` and llama.cpp's `--fit` makes it as large as fits (up to the model's trained length), keeping
+`FIT_TARGET` MiB free (1536) and never going below `FIT_CTX` (49152 in all). The game needs no change after a swap: the llama.cpp provider reads the
 slot size from the server's `/props` (cached 30 s) and trims the narrator's window to it, less the reply
 and a margin (`narrator.window_trimmed` in the log names both).
 
@@ -265,6 +267,14 @@ ssh gumbo systemctl --user restart textadventure-llm
 ```
 
 ## The next model: Qwen3.5-27B dense
+
+**Measured 2026-10-29 (evening), on the 5090:** at `CTX=98304` the 27B loads in 24 s and takes 26.1 of 32.6 GB:
+20.0 GB of weights, 3.3 GB of attention cache (16 layers, q8_0, about 34 KB a token across the slots), 0.45 GB
+of recurrent state, 0.5 GB of compute. **Context checkpoints are not in VRAM**: they live in system RAM (150 MiB
+each on this model; VRAM stayed flat at 26.2 GB through a 24-turn replay while llama-server's RSS grew). The
+estimate below counted them on the GPU and is wrong; the 3060 is not needed, and `CKPT` is a RAM and speed
+trade, not a VRAM one (gumbo has 62 GB). About 50–55 tokens a second out; a 9.4k-token narrator prompt in 7 s
+cold, 3.7 s cached.
 
 The A3B's judgment is its ceiling, not its prompts: 3B active parameters decide every referee row. The
 step up that keeps the three slots is the dense Qwen3.5-27B, the same hybrid layout (three layers in

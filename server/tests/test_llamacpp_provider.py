@@ -144,16 +144,18 @@ async def test_prepare_posts_to_the_yield_helper_once_a_minute(monkeypatch):
 
 
 def test_inline_schema_resolves_refs_and_closes_objects():
-    """pydantic's $ref/$defs become inline objects with additionalProperties false and every key required;
+    """pydantic's $ref/$defs become inline objects with additionalProperties false, list and object keys required;
     the sibling description on a $ref node is kept; a recursive schema is refused."""
     from engine.providers.llamacpp_provider import inline_schema
     from engine.roles import Adjudication
     js = inline_schema(Adjudication.model_json_schema())
     assert "$defs" not in js and "$ref" not in json.dumps(js)
-    assert js["additionalProperties"] is False and js["required"] == list(js["properties"])   # defaults too: a grammar may not skip them
-    assert {"kind", "summary", "intents", "commands"} <= set(js["required"])
+    assert js["additionalProperties"] is False and {"kind", "summary", "intents", "commands"} <= set(js["required"])   # lists too: a grammar may not skip them
     intent = js["properties"]["intents"]["items"]
-    assert intent["type"] == "object" and intent["required"] == list(intent["properties"]) and intent["additionalProperties"] is False
+    assert intent["type"] == "object" and intent["additionalProperties"] is False and {"action", "check"} <= set(intent["required"])   # check: object or null, never left out
+    from engine.roles import ChangeReport
+    row = inline_schema(ChangeReport.model_json_schema())["properties"]["changes"]["items"]
+    assert row["required"] == ["kind"] and "changes" in inline_schema(ChangeReport.model_json_schema())["required"]   # a row's plain defaults stay optional
     check = next(o for o in intent["properties"]["check"]["anyOf"] if o.get("type") == "object")
     assert "stat" in check["required"] and check["additionalProperties"] is False
     assert "description" in intent["properties"]["check"]   # the field's own description rides along

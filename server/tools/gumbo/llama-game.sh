@@ -29,6 +29,8 @@ YIELD_PORT="${YIELD_PORT:-8281}" # gpu-yield.py beside the server: POST /free-co
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"   # CUDA device 0 = the RTX 5090 on this box
 DEFAULT_MODEL="${MODEL:-$HOME/llms/text-generation-webui/user_data/models/Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf}"
 DEFAULT_CTX="${CTX:-98304}"      # total; llama-server splits it evenly across slots (32k each)
+FIT_TARGET="${FIT_TARGET:-1536}" # CTX=auto: MiB llama.cpp leaves free on the GPU when it sizes the context to fit
+FIT_CTX="${FIT_CTX:-49152}"      # CTX=auto: the smallest total context it may settle on (16k a slot at 3 slots)
 DEFAULT_CKPT="${CKPT:-512}"      # recurrent-state checkpoint every N prompt tokens (default 8192): a hybrid model can only rewind its
                                   # state to a checkpoint, so this decides how much of a shared prefix a slot can reuse
 
@@ -66,12 +68,17 @@ while true; do
   [ -f "$MODEL" ] || { echo "profile $ACTIVE: no model at $MODEL" >&2; exit 1; }
   free_comfy
   rm -f "$PROFILES/.switching"
+  if [ "$CTX" = "auto" ]; then              # llama.cpp's --fit sizes the context to the free VRAM, less FIT_TARGET MiB
+    CTX_ARGS=(--fit on --fit-target "$FIT_TARGET" --fit-ctx "$FIT_CTX")
+  else
+    CTX_ARGS=(--ctx-size "$CTX")
+  fi
   echo "llama-server :$PORT, profile $ACTIVE, $PARALLEL slots, ctx $CTX, ckpt $CKPT, idle sleep ${IDLE}s, model $(basename "$MODEL")"
   "$LLAMA_BIN" \
     -m "$MODEL" \
     --host "$HOST" --port "$PORT" \
     --n-gpu-layers 999 \
-    --ctx-size "$CTX" \
+    "${CTX_ARGS[@]}" \
     --batch-size 1024 \
     --parallel "$PARALLEL" \
     --jinja \
