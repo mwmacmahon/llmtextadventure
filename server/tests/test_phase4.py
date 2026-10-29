@@ -19,7 +19,7 @@ from engine.pipeline import Engine  # noqa: E402
 from engine.providers.fake import FakeProvider  # noqa: E402
 from engine.providers.factory import get_provider  # noqa: E402
 from engine.registry import load_games  # noqa: E402
-from engine.roles import Adjudication  # noqa: E402
+from engine.roles import Adjudication, Intent  # noqa: E402
 from engine.store import Store  # noqa: E402
 from engine.roles import Change, ChangeReport  # noqa: E402
 
@@ -143,7 +143,7 @@ async def test_happening_in_a_turn_reaches_narrator_and_mechanics(engine: Engine
     doc["hidden"]["spontaneous"] = [spon.Spontaneous(id="sure_thing", chance_per_hour=1.0, who=["reyes"], directive="Reyes hums.",
                                                      reason="He is happy.", visible=True, effects=[{"set": ["crew.reyes.mood", "humming"]}]).model_dump(mode="json")]
     engine.store.save_snapshot(iid, 0, doc)
-    fake.canned["Adjudication"] = [Adjudication(kind="action", summary="wait an hour", time_minutes=60, risk="none")]
+    fake.canned["Adjudication"] = [Adjudication(kind="action", summary="wait an hour", time_minutes=60, risk="none", intents=[Intent(action="wait an hour")])]
     events = await play(engine, iid, "I wait an hour.")
     res = next(e for e in events if e["event"] == "resolution")["data"]
     assert [h["id"] for h in res["happened"]] == ["sure_thing"]

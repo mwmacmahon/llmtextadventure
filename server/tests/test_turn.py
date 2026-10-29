@@ -115,7 +115,7 @@ async def test_clarify_does_not_advance_time_or_run_referee(engine: Engine, fake
 
 async def test_referee_delta_respects_authority_and_bounds(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("station", {})
-    fake.canned["Adjudication"] = [Adjudication(kind="action", summary="talk to Voss", time_minutes=1, risk="low")]
+    fake.canned["Adjudication"] = [Adjudication(kind="action", summary="talk to Voss", time_minutes=1, risk="low", intents=[Intent(action="talk to Voss")])]
     C = Change
     fake.canned["ChangeReport"] = [ChangeReport.of(
         C(kind="flag", target="voss_found_forgery", value="true"), C(kind="flag", target="not_a_flag", value="true"),

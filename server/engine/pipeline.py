@@ -46,6 +46,7 @@ from .narration import (Assessment, CallResult, Mechanic, NarrationDone, Visible
 from .game import ApplyReport, CommandResult, Game, GameBase, TurnInfo
 from .mechanics import RESOLVERS, CheckRequest, CheckResult, rng_for
 from .providers import Msg, StreamDone, TextDelta, get_provider
+from .providers.base import Usage
 from .roles import (Adjudication, adjudicator_messages, referee_messages, summarizer_messages, NARRATOR_PROTOCOL)
 from .roles import NARRATOR_WORLD, ChangeReport
 from .changes import apply_changes
@@ -245,13 +246,12 @@ class Engine:
                 log.exception("step.failed " + logs.kv(iid=iid, turn=turn, step="adjudicate"))
                 yield {"event": "error", "data": {"message": f"adjudicator failed: {e}", "step": "adjudicate"}}
                 return
-        # ---- 1b. a typed lever: previewed now, played by the narrator, committed after the prose
-        #          unless the referee reports it was not completed (DESIGN2 §6, LOG §12)
-        lever: PendingLever | None = None
-        if command is None and adj is not None and adj.command:
-            adj, lever = self._preview_lever(game, state, adj, iid, turn, ledger)
-            if lever is not None:
-                extra_directives.append(lever.directive)
+        # ---- 1b. typed levers: previewed now, in order, played by the narrator, committed after the prose
+        #          unless the referee reports one was not completed (DESIGN2 §6, LOG §12)
+        levers: list[PendingLever] = []
+        if command is None and adj is not None and adj.commands:
+            adj, levers = self._preview_levers(game, state, adj, iid, turn, ledger)
+            extra_directives.extend(lv.directive for lv in levers)
         if adj is not None:
             yield {"event": "adjudication", "data": adj.model_dump(mode="json")}
 
@@ -363,22 +363,23 @@ class Engine:
         # engine's kinds and hands the game its own; the lever commits before the rows unless the referee said not_done.
         report = ApplyReport()
         delta_json: dict | None = None
-        lever_outcome: dict[str, Any] | None = None
+        lever_outcomes: list[dict[str, Any]] | None = None
         if not getattr(game, "skip_referee", False) and adj is not None and adj.kind in ("action", "trivial"):
             try:
                 for_referee = narration
                 if calls_block.get("notes"):
                     for_referee += "\n\n[NARRATOR'S NOTES: facts it decided, what is happening unseen (unseen:), what it set in motion (soon:)]\n" + "\n".join(f"- {n}" for n in calls_block["notes"])
-                delta, meta = await self._referee(game, state, res["directives"], player_text, for_referee, adj, levers=_lever_lines(lever))
+                delta, meta = await self._referee(game, state, res["directives"], player_text, for_referee, adj, levers=_lever_lines(levers))
                 delta_json = delta.model_dump(mode="json")
                 ledger("verdict", {**delta_json, "_call": meta})
                 present = [e for e in delta.present if e in _hook(game, "entity_ids", state, default=[])]
                 causes = list(calls_block.get("causes", [])) + [e for d in res["directives"] for e in (adj.entities if adj else []) if e in d]
                 vetoes = [f"{c.target}: {c.note or c.value}" for c in delta.changes if c.kind == "not_done"]
-                state, lever_outcome = self._commit_lever(game, state, lever, vetoes, iid, turn, ledger)
+                state, lever_outcomes = self._commit_levers(game, state, levers, vetoes, iid, turn, ledger)
                 skip = list(cmd_result.referee_skip) if cmd_result else []
-                if lever is not None and lever_outcome and lever_outcome["status"] == "applied":
-                    skip += lever.preview.referee_skip
+                for lv, out in zip(levers, lever_outcomes):
+                    if out["status"] == "applied":
+                        skip += lv.preview.referee_skip
                 state, report, extras = apply_changes(game, state, delta, present=present, causes=causes, skip=skip)
                 doc = state.model_dump(mode="json")
                 ppath, clock = getattr(game, "pending_path", None), getattr(game, "clock", None)
@@ -428,12 +429,13 @@ class Engine:
                 log.exception("step.failed " + logs.kv(iid=iid, turn=turn, step="referee"))
                 yield {"event": "referee", "data": {"delta": None, "error": f"referee failed: {e}"}}
 
-        if lever is not None and lever_outcome is None:          # no referee ran: the lever happened
-            state, lever_outcome = self._commit_lever(game, state, lever, [], iid, turn, ledger)
+        if levers and lever_outcomes is None:                    # no referee ran: the levers happened
+            state, lever_outcomes = self._commit_levers(game, state, levers, [], iid, turn, ledger)
+        lever_outcomes = lever_outcomes or []
         narration_stored = narration
-        if lever is not None and lever_outcome is not None:
-            yield {"event": "mechanic", "data": {"turn": turn, "text": lever_outcome["text"], "data": {"lever": lever.id, "status": lever_outcome["status"]}}}
-            narration_stored = with_mechanic(narration, lever_outcome["text"])
+        for lv, out in zip(levers, lever_outcomes):
+            yield {"event": "mechanic", "data": {"turn": turn, "text": out["text"], "data": {"lever": lv.id, "status": out["status"]}}}
+            narration_stored = with_mechanic(narration_stored, out["text"])
         self.store.append_transcript(iid, turn, "narrator", narration_stored)
 
         touched = [f"{p}: set by script" for p in res["effect_paths"]]
@@ -459,12 +461,12 @@ class Engine:
                         "resolved": [a.split(": ", 1)[1] for a in report.applied if a.startswith("settled: ")]},
             "expired": [x.event_id for x in res["expired"]],
             "happenings": [{"id": h.id, "who": h.who, "reason": h.reason if h.visible else None} for h in res["happened"]],
-            "applied": ([f"command {lever.id}"] if lever is not None and lever_outcome and lever_outcome["status"] == "applied" else []) + report.applied,
+            "applied": [f"command {o['id']}" for o in lever_outcomes if o["status"] == "applied"] + report.applied,
             "rejected": [r.model_dump() for r in report.rejected],
             "drift": drift_lines,
-            "lever": lever_outcome,
+            "levers": lever_outcomes,
             "issues": (delta_json or {}).get("issues", []) + res["notes"]
-                      + ([f"lever {lever.id} not completed: {lever_outcome['text']}"] if lever is not None and lever_outcome and lever_outcome["status"] == "not_completed" else [])
+                      + [f"lever {o['id']} not completed: {o['text']}" for o in lever_outcomes if o["status"] == "not_completed"]
                       + [f"assessed check not called: {a}" for a in calls_block.get("assessed_not_called", [])]
                       + [f"narrator: {p}" for p in calls_block.get("problems", [])],
             "calls": [{"call": c["call"].get("raw"), "mechanic": c.get("mechanic"), "outcome": (c.get("result") or {}).get("outcome")} for c in calls_block.get("calls", [])],
@@ -501,56 +503,94 @@ class Engine:
         t0 = time.monotonic()
         schema = getattr(game, "adjudication_schema", Adjudication)
         adj, usage = await provider.extract(role, system, msgs, schema)
+        retry: str | None = None
+        if adj.kind == "action" and not adj.intents:
+            # A command is not an intent: the rest of the input (a run on a bad leg, a shot, a search) still
+            # needs its intent and its check, and the model dropped them (live, 2026-10-29, even with the rule
+            # in its instructions). Ask once more with the gap named; keep the first answer if the second is no better.
+            retry = "no_intents"
+            log.info("adjudicate.retry " + logs.kv(iid=iid, why=retry))
+            again = [*msgs, Msg("assistant", adj.model_dump_json()),
+                     Msg("user", "That adjudication has kind=action and an empty intents list, which the rules forbid. Keep the commands exactly as "
+                                 "they are and add every intent the input attempts, each with its check when the outcome is uncertain; if the input "
+                                 "asks for the commands and nothing else, one intent for that attempt with no check. Return the complete adjudication again.")]
+            second, usage2 = await provider.extract(role, system, again, schema)
+            u1, u2 = asdict(usage), asdict(usage2)
+            usage = Usage(**{k: (u1[k] + u2[k] if isinstance(u1[k], int) else u2[k]) for k in u1})
+            if second.intents:
+                adj = second
         adj.time_minutes = max(0, int(adj.time_minutes))
         if adj.kind in ("clarify", "impossible", "trivial"):
             adj.time_minutes = 0
             adj.intents = [i.model_copy(update={"check": None}) for i in adj.intents]
-        return adj, {"provider": provider.name, "model": usage.extra.get("model") or role.model, "seconds": round(time.monotonic() - t0, 2), "usage": asdict(usage)}
+        meta = {"provider": provider.name, "model": usage.extra.get("model") or role.model, "seconds": round(time.monotonic() - t0, 2), "usage": asdict(usage)}
+        if retry:
+            meta["retry"] = retry
+        return adj, meta
 
-    def _preview_lever(self, game: Game, state: BaseModel, adj: Adjudication, iid: str, turn: int, ledger: Any
-                       ) -> tuple[Adjudication, "PendingLever | None"]:
-        """The adjudicator named a lever (a typed command). Run the game's own `run_command` on the
-        state *without keeping the result*: the narrator is told exactly what it would do (CLEAR) or
-        why it cannot (BLOCKED), plays it in the fiction, and `_commit_lever` applies it after the
-        prose unless the referee reports the attempt was not completed (DESIGN2 §6, LOG §12). The
-        adjudicator names intentions; outcomes stay with the narrator and the dice. A missing or bad
-        parameter is still a question; an unknown or untypeable command is ignored. Clicked commands
-        apply at once (step 0): a click is not prose."""
+    def _preview_levers(self, game: Game, state: BaseModel, adj: Adjudication, iid: str, turn: int, ledger: Any
+                        ) -> tuple[Adjudication, list["PendingLever"]]:
+        """The adjudicator named levers (typed commands), in the order the input gave them. Run the
+        game's own `run_command` for each on a working copy that the turn does not keep, so the second
+        preview sees the first's effect (seal, then release): the narrator is told exactly what each
+        would do (CLEAR) or why it cannot (BLOCKED), plays them in the fiction, and `_commit_levers`
+        applies them in order after the prose unless the referee reports one was not completed
+        (DESIGN2 §6, LOG §12). The adjudicator names intentions; outcomes stay with the narrator and
+        the dice. A missing or bad parameter is still a question, and ends the turn as a clarify; an
+        unknown or untypeable command is dropped. Clicked commands apply at once (step 0): a click is
+        not prose."""
         specs = _hook(game, "commands", state, default=[])
-        spec = next((c for c in specs if c.id == adj.command and c.typed), None)
-        if spec is None or not isinstance(game, GameBase):
-            log.info("command.typed.ignored " + logs.kv(iid=iid, turn=turn, id=adj.command))
-            return adj.model_copy(update={"command": "", "command_args": []}), None
-        args, problem = _parse_command_args(spec, adj.command_args)
-        if problem:
-            ledger("command", {"id": spec.id, "args": args, "mode": spec.mode, "typed": True, "ok": False, "text": problem})
-            log.info("command.typed.refused " + logs.kv(iid=iid, turn=turn, id=spec.id, kind="clarify", why=problem))
-            return adj.model_copy(update={"kind": "clarify", "clarify_question": problem, "time_minutes": 0,
-                                          "intents": [i.model_copy(update={"check": None}) for i in adj.intents],
-                                          "command": "", "command_args": []}), None
-        _, res = game.run_command(state, spec.id, args)
-        label = res.label or spec.label
-        kind = "action" if adj.kind == "trivial" else adj.kind
-        if not res.ok:
-            text = (res.text or "It does not go through.").strip()
-            directive = (f"The player's attempt, {label}: BLOCKED. {text} It does not happen: play the attempt and the player "
-                         f"finding out why, in the fiction, and do not narrate it as done.")
-            ledger("command_preview", {"id": spec.id, "args": args, "mode": spec.mode, "typed": True, "ok": False, "text": text})
-            log.info("command.typed.blocked " + logs.kv(iid=iid, turn=turn, id=spec.id, why=text))
-            return adj.model_copy(update={"kind": kind}), PendingLever(id=spec.id, args=args, mode=spec.mode, label=label, preview=res, blocked=True, directive=directive)
-        clause = (" The engine applies it after your prose unless the fiction shows it was not completed. You may complicate the attempt "
-                  "with an interruption or a check, but never change what it does; those numbers are authoritative.")
-        directive = (res.directive.strip() + clause) if res.directive else (
-            f"The player's {label}: CLEAR. If it goes through it does exactly this: {res.text.strip()}" + clause)
-        ledger("command_preview", {"id": spec.id, "args": args, "mode": spec.mode, "typed": True, **res.model_dump(mode="json")})
-        log.info("command.typed.preview " + logs.kv(iid=iid, turn=turn, id=spec.id, mode=spec.mode, args=json.dumps(args)))
-        adj = adj.model_copy(update={
-            "kind": kind,
-            "time_minutes": max(adj.time_minutes, res.minutes),
-            "entities": list(dict.fromkeys([*adj.entities, *res.entities])),
-            "systems": list(dict.fromkeys([*adj.systems, *res.systems])),
-        })
-        return adj, PendingLever(id=spec.id, args=args, mode=spec.mode, label=label, preview=res, directive=directive)
+        levers: list[PendingLever] = []
+        working = state
+        kept: list[Any] = []
+        for pick in adj.commands:
+            spec = next((c for c in specs if c.id == pick.id and c.typed), None)
+            if spec is None or not isinstance(game, GameBase):
+                log.info("command.typed.ignored " + logs.kv(iid=iid, turn=turn, id=pick.id))
+                continue
+            args, problem = _parse_command_args(spec, pick.args)
+            if problem:
+                ledger("command", {"id": spec.id, "args": args, "mode": spec.mode, "typed": True, "ok": False, "text": problem})
+                log.info("command.typed.refused " + logs.kv(iid=iid, turn=turn, id=spec.id, kind="clarify", why=problem))
+                return adj.model_copy(update={"kind": "clarify", "clarify_question": problem, "time_minutes": 0,
+                                              "intents": [i.model_copy(update={"check": None}) for i in adj.intents],
+                                              "commands": []}), []
+            kept.append(pick)
+            after, res = game.run_command(working, spec.id, args)
+            label = res.label or spec.label
+            if not res.ok:
+                text = (res.text or "It does not go through.").strip()
+                directive = (f"The player's attempt, {label}: BLOCKED. {text} It does not happen: play the attempt and the player "
+                             f"finding out why, in the fiction, and do not narrate it as done.")
+                ledger("command_preview", {"id": spec.id, "args": args, "mode": spec.mode, "typed": True, "ok": False, "text": text})
+                log.info("command.typed.blocked " + logs.kv(iid=iid, turn=turn, id=spec.id, why=text))
+                levers.append(PendingLever(id=spec.id, args=args, mode=spec.mode, label=label, preview=res, blocked=True, directive=directive))
+                continue
+            working = after                                          # the next preview sees this one done
+            clause = (" The engine applies it after your prose unless the fiction shows it was not completed. You may complicate the attempt "
+                      "with an interruption or a check, but never change what it does; those numbers are authoritative.")
+            directive = (res.directive.strip() + clause) if res.directive else (
+                f"The player's {label}: CLEAR. If it goes through it does exactly this: {res.text.strip()}" + clause)
+            ledger("command_preview", {"id": spec.id, "args": args, "mode": spec.mode, "typed": True, **res.model_dump(mode="json")})
+            log.info("command.typed.preview " + logs.kv(iid=iid, turn=turn, id=spec.id, mode=spec.mode, args=json.dumps(args)))
+            adj = adj.model_copy(update={
+                "time_minutes": max(adj.time_minutes, res.minutes),
+                "entities": list(dict.fromkeys([*adj.entities, *res.entities])),
+                "systems": list(dict.fromkeys([*adj.systems, *res.systems])),
+            })
+            levers.append(PendingLever(id=spec.id, args=args, mode=spec.mode, label=label, preview=res, directive=directive))
+        kind = "action" if (levers and adj.kind == "trivial") else adj.kind
+        return adj.model_copy(update={"kind": kind, "commands": kept}), levers
+
+    def _commit_levers(self, game: Game, state: BaseModel, levers: list["PendingLever"], vetoes: list[str], iid: str, turn: int, ledger: Any
+                       ) -> tuple[BaseModel, list[dict[str, Any]]]:
+        """After the prose: commit every previewed lever in order, each on the state the one before left."""
+        outcomes: list[dict[str, Any]] = []
+        for lv in levers:
+            state, out = self._commit_lever(game, state, lv, vetoes, iid, turn, ledger)
+            if out is not None:
+                outcomes.append(out)
+        return state, outcomes
 
     def _commit_lever(self, game: Game, state: BaseModel, lever: "PendingLever | None", vetoes: list[str], iid: str, turn: int, ledger: Any
                       ) -> tuple[BaseModel, dict[str, Any] | None]:
@@ -781,14 +821,16 @@ def _pending_block(game: Any, state: BaseModel, audience: str) -> str:
     return "\n\n".join(parts)
 
 
-def _lever_lines(lever: "PendingLever | None") -> list[str]:
-    """What the referee is told about the lever, so it can veto a lever the prose did not complete
-    and does not double-report its effects."""
-    if lever is None:
-        return []
-    if lever.blocked:
-        return [f"{lever.id} ({lever.label}): refused by the engine: {lever.preview.text.strip()} Nothing changed."]
-    return [f"{lever.id} ({lever.label}): {lever.preview.text.strip()}"]
+def _lever_lines(levers: list["PendingLever"]) -> list[str]:
+    """What the referee is told about the levers, in order, so it can veto one the prose did not
+    complete and does not double-report their effects."""
+    out: list[str] = []
+    for lv in levers:
+        if lv.blocked:
+            out.append(f"{lv.id} ({lv.label}): refused by the engine: {lv.preview.text.strip()} Nothing changed.")
+        else:
+            out.append(f"{lv.id} ({lv.label}): {lv.preview.text.strip()}")
+    return out
 
 
 def _hook(game: Any, name: str, *args: Any, default: Any = None) -> Any:

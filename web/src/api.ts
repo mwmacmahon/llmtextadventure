@@ -40,7 +40,7 @@ export type Mechanics = {
   applied: string[];
   rejected: { path: string; reason: string; value?: unknown }[];
   drift?: string[];
-  lever?: { id: string; status: "applied" | "blocked" | "not_completed"; text: string } | null;
+  levers?: { id: string; status: "applied" | "blocked" | "not_completed"; text: string }[];
   pending?: { fired: string[]; new: string[]; resolved: string[] };
   issues: string[];
 };

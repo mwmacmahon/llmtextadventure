@@ -255,10 +255,11 @@ function MechanicsRow({ text }: { text: string }) {
   for (const h of m.happenings ?? []) bits.push(`unscripted: ${h.id.replace(/_/g, " ")}${h.reason ? ` (${h.reason})` : ""}`);
   if (m.applied.length) bits.push(`${m.applied.length} change${m.applied.length === 1 ? "" : "s"}`);
   if (m.rejected.length) bits.push(`${m.rejected.length} rejected`);
-  if (m.lever && m.lever.status !== "applied") bits.push(`${m.lever.id}: ${m.lever.status.replace("_", " ")}`);
+  for (const lv of m.levers ?? []) if (lv.status !== "applied") bits.push(`${lv.id}: ${lv.status.replace("_", " ")}`);
   if (m.drift?.length) bits.push(`${m.drift.length} drifted`);
   if (!bits.length) return null;
   const lines = [
+    ...(m.levers ?? []).map((lv) => `lever ${lv.id} ${lv.status.replace("_", " ")}: ${lv.text}`),
     ...m.applied,
     ...m.rejected.map((r) => `rejected ${r.path}: ${r.reason}`),
     ...(m.drift ?? []).map((d) => `drift ${d}`),

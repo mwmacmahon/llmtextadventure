@@ -95,8 +95,8 @@ def _print_turn(events: list[dict], as_json: bool) -> None:
     bits = [f"turn {d.get('turn')}", kind, f"elapsed {m.get('elapsed')}m"]
     for c in m.get("calls", []):
         bits.append(f"call {c['call']}: {c.get('outcome') or 'answered'}")
-    if m.get("lever"):
-        bits.append(f"lever {m['lever']['id']}: {m['lever']['status'].replace('_', ' ')}")
+    for lv in m.get("levers") or []:
+        bits.append(f"lever {lv['id']}: {lv['status'].replace('_', ' ')}")
     if m.get("declarations"):
         bits.append("declared " + " | ".join(m["declarations"]))
     if m.get("events"):

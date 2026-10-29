@@ -78,13 +78,17 @@ ADJUDICATE   Sonnet (was Haiku; see config.yml for the measurements), one messag
              checks are assessed here and called by the narrator, and a focus names what the narrator should see against `Adjudication`
              kind (action | trivial | clarify | impossible), summary, time_minutes,
              intents[{action, check?{stat, difficulty, target_entity}}], entities, systems, risk,
-             command + command_args when the prose plainly asks for a listed engine command
-             (skipped for narrated commands: the command already knows)
+             commands[{id, args}] for every listed engine command the prose plainly asks for, in order;
+             a command is never an intent and never empties the intents: an action that comes back with
+             no intents is sent back once with the gap named (`_call.retry = "no_intents"`)
              system prompt = instructions + game rules + command list, stable per instance (cached);
              the moving state is the [GAME STATE] block in the user message
   ▼
-TYPED CMD    if the adjudicator named a command: game.run_command before anything else, same
-             code as a click; refused → the turn becomes clarify/impossible, narrator explains
+LEVERS       each named command is previewed in order through game.run_command on one working copy the
+             turn does not keep (the second preview sees the first's effect): the narrator gets one THIS
+             TURN line per lever, CLEAR with the exact effect or BLOCKED with the reason; a missing
+             parameter makes the turn a clarify. They commit in order after the prose, skipping any the
+             referee reported a not_done row for; one § line each; mechanics.levers
   ▼
 RESOLVE      engine, deterministic
              - checks: resolver(rng seeded by instance+turn, CheckRequest + game modifiers) → tier

@@ -188,14 +188,16 @@ Every tracked quantity changes in exactly one place. Decide which of three kinds
 
 A command reaches `run_command` two ways, and both must work for every command: the player
 **clicks** it in the side panel, or **types** it. The adjudicator is shown `commands(state)`
-(id, parameters with their options, hint) and sets `Adjudication.command` and `command_args`
-when the input plainly asks for one. A **clicked** command applies at once. A **typed** one is a
-lever the player proposes: the pipeline runs `run_command` on a copy first and tells the narrator
-exactly what it would do (your `text`, as "CLEAR. If it goes through it does exactly this: …") or
+(id, parameters with their options, hint) and lists every one the input plainly asks for under
+`Adjudication.commands`, in the order the input gives them. A **clicked** command applies at once.
+A **typed** one is a lever the player proposes: the pipeline runs `run_command` for each on a
+working copy, in order, so the second preview sees the first's effect, and tells the narrator
+exactly what each would do (your `text`, as "CLEAR. If it goes through it does exactly this: …") or
 why it cannot (`ok=False`, your `text`, as "BLOCKED … play the attempt and the player finding out
-why"); the narrator plays it with time passing; after the prose the pipeline runs `run_command`
-for real, unless the referee reported a `not_done` row for the lever because the prose shows it
-was interrupted. The player sees the result as a § mechanics line. So write `text` for both uses:
+why"); the narrator plays them with time passing; after the prose the pipeline runs `run_command`
+for real, in the same order, skipping any the referee reported a `not_done` row for because the
+prose shows it was interrupted. A command is never an intent: the rest of the input keeps its
+intents and their checks. The player sees the result as a § mechanics line. So write `text` for both uses:
 as a promise before the prose and as the engine's line after it. A missing or invalid parameter
 still asks "Which module? (Lab, Cargo)". Mark console-only commands `typed=False` (notebook,
 assistant channel) so prose never maps onto them.
@@ -290,7 +292,7 @@ Use `TA_PROVIDER=fake`. The fake provider streams a canned narration and returns
 (`FakeProvider.canned["Adjudication"] = [...]`), or a `hook(schema, last_user_message)`.
 Drive turns with `Engine.run_turn(iid, text)` or `run_turn(iid, command=(id, args))` and assert on
 the SSE events, the state snapshot and the ledger. A typed command is a canned `Adjudication`
-with `command` and `command_args` set (`tests/test_typed_commands.py`). `test_role_rules_are_
+with `commands` set (`tests/test_typed_commands.py`). `test_role_rules_are_
 stable_across_turns` fails if a game's `adjudication_rules` or `referee_rules` change with the
 state, which would break the structured roles' prompt cache. Live role evaluations (real models, opt-in,
 `TA_LIVE=1`) live under `server/tests/live/` and write scorecards to `data/evals/`.

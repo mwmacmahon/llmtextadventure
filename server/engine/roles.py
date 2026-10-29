@@ -30,6 +30,11 @@ class Intent(BaseModel):
     check: CheckProposal | None = Field(default=None, description="A check, only if the outcome is genuinely uncertain and matters.")
 
 
+class CommandPick(BaseModel):
+    id: str = Field(description="The id of a listed engine command the input plainly asks for, exactly.")
+    args: list[str] = Field(default_factory=list, description="One 'name=value' per parameter, values from the listed options exactly. Empty if the command has no parameters.")
+
+
 class Adjudication(BaseModel):
     kind: Kind = Field(description="action: a real attempt. trivial: looking/thinking/asking the interface, no time or risk. clarify: ambiguous, ask. impossible: cannot be done with the player's means.")
     summary: str = Field(description="One sentence: what the player is doing, in the engine's terms.")
@@ -40,8 +45,7 @@ class Adjudication(BaseModel):
     systems: list[str] = Field(default_factory=list, description="Names of station/world systems involved, exactly as listed.")
     risk: Literal["none", "low", "medium", "high"] = Field(description="How likely this is to raise suspicion or cause harm if it goes wrong.")
     notes: str | None = Field(default=None, description="Anything the narrator or engine should know that the fields above do not capture.")
-    command: str = Field(default="", description="If the input plainly asks for one of the listed engine commands, its id exactly. Empty string otherwise.")
-    command_args: list[str] = Field(default_factory=list, description="For command: one 'name=value' per parameter, values from the listed options exactly. Empty list if the command has no parameters.")
+    commands: list[CommandPick] = Field(default_factory=list, description="Every listed engine command the input plainly asks for, in the order the input gives them. Empty when it asks for none.")
 
     @classmethod
     def example(cls, player_text: str) -> "Adjudication":
@@ -96,7 +100,8 @@ Rules:
 - Waiting, watching for a while, or otherwise letting time pass is kind=action with time_minutes equal to the time waited, never trivial.
 - Name entities and systems only from the lists given, by id or name exactly.
 - kind=action always carries at least one intent, each with its check when the outcome is uncertain. Never return an empty intents list for an action.
-- Engine commands: if the input plainly asks for one of the listed commands (the player's exact, deliberate use of their own means), set `command` to its id and `command_args` to its parameters; the engine applies it exactly before the narrator writes. The rest of the input, if any, is adjudicated as usual (kind, time, intents). Do not set a command for a vague or partial match, and never for something merely similar; when nothing matches, leave command empty and adjudicate the attempt as usual, with its check. Set the command even when you believe it cannot go through (a full cylinder, an empty pack): the engine checks that itself and the narrator plays the refusal in the fiction; never rule a listed command impossible yourself.
+- Engine commands: for each listed command the input plainly asks for (the player's exact, deliberate use of their own means), add an entry to `commands` with its id and its parameters, in the order the input gives them; the engine previews each one for the narrator and applies them exactly. Do not list a command for a vague or partial match, and never for something merely similar. List a command even when you believe it cannot go through (a full cylinder, an empty pack): the engine checks that itself and the narrator plays the refusal in the fiction; never rule a listed command impossible yourself.
+- Commands are not intents, and listing commands never empties `intents`. Everything else the input attempts (a run on a bad leg, a shot, a search, a word with someone) is an intent of its own with its check when the outcome is uncertain, exactly as if no command were present. When the input asks for a command and nothing else, `intents` holds that one attempt with no check.
 - Be terse. The fields are the output; do not write prose."""
 
 
@@ -105,7 +110,7 @@ def adjudicator_messages(rules: str, state_text: str, recent: list[Msg], player_
     command list only. Everything that moves goes in the [GAME STATE] block of the user message."""
     system = ADJUDICATOR_INSTRUCTIONS + "\n\nGAME RULES FOR ADJUDICATION\n" + rules.strip()
     if commands_text.strip():
-        system += "\n\nENGINE COMMANDS (set `command` and `command_args` when the input plainly asks for one)\n" + commands_text.strip()
+        system += "\n\nENGINE COMMANDS (list each one the input plainly asks for under `commands`, in order)\n" + commands_text.strip()
     msgs: list[Msg] = []
     for m in recent[-4:]:
         msgs.append(m)
