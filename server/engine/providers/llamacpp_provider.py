@@ -14,10 +14,18 @@ The same two operations as the Anthropic provider, with llama.cpp's own levers:
 
 No API key by default; `RoleConfig.api_key_env` names an environment variable when the server
 wants a bearer token. The `model` field is sent but llama-server serves whatever it has loaded.
+
+Sharing the GPU: the server sleeps when idle (`--sleep-idle-seconds`) and reloads on the next
+request, and ComfyUI on the same box may have taken the VRAM meanwhile. `TA_LLAMA_PREPARE_URL`
+names the yield helper beside the server (`tools/gumbo/gpu-yield.py`, `POST /free-comfy`); when
+set, the provider posts to it before invoking the model, at most once a minute, best effort.
 """
 from __future__ import annotations
 
 import json
+import logging
+import os
+import time
 from typing import AsyncIterator, TypeVar
 
 import httpx
@@ -27,6 +35,10 @@ from ..config import RoleConfig
 from .base import Msg, StreamDone, StreamEvent, TextDelta, Usage
 
 T = TypeVar("T", bound=BaseModel)
+log = logging.getLogger("textadventure.providers.llamacpp")
+
+PREPARE_EVERY = 60.0        # seconds between calls to the yield helper
+_last_prepare = 0.0
 
 
 def _usage(d: dict | None, timings: dict | None) -> Usage:
@@ -74,7 +86,26 @@ class LlamaCppProvider:
             body["temperature"] = role.temperature
         return body
 
+    async def prepare(self) -> None:
+        """Ask the GPU box to give the model its VRAM back (ComfyUI's, through the yield helper) before a
+        call. Only when `TA_LLAMA_PREPARE_URL` is set; once a minute at most; a failure is logged, not raised."""
+        global _last_prepare
+        url = os.environ.get("TA_LLAMA_PREPARE_URL", "").strip()
+        if not url:
+            return
+        now = time.monotonic()
+        if now - _last_prepare < PREPARE_EVERY:
+            return
+        _last_prepare = now
+        try:
+            async with httpx.AsyncClient(timeout=20, transport=self._transport) as client:
+                r = await client.post(url)
+                log.info("llamacpp.prepare url=%s status=%s body=%s", url, r.status_code, r.text[:80])
+        except Exception as e:  # the game goes on; the server will say if it cannot load
+            log.warning("llamacpp.prepare failed url=%s err=%s", url, e)
+
     async def stream(self, role: RoleConfig, system: str, messages: list[Msg]) -> AsyncIterator[StreamEvent]:
+        await self.prepare()
         body = self._body(role, system, messages)
         body["stream"] = True
         text = ""
@@ -105,6 +136,7 @@ class LlamaCppProvider:
         yield StreamDone(text=text, stop_reason=stop_reason, model=role.model, usage=usage)
 
     async def extract(self, role: RoleConfig, system: str, messages: list[Msg], schema: type[T]) -> tuple[T, Usage]:
+        await self.prepare()
         body = self._body(role, system, messages)
         body["response_format"] = {"type": "json_schema", "json_schema": {"name": schema.__name__, "schema": schema.model_json_schema()}}
         async with self._client(role) as client:

@@ -107,3 +107,37 @@ def test_config_local_yml_loads_through_ta_config(monkeypatch):
     monkeypatch.setenv("TA_CONFIG", "config.llamacpp.yml")
     cfg = load_config()
     assert cfg.role("narrator").provider == "llamacpp" and cfg.role("referee").slot == 2 and cfg.role("summarizer").slot == 0
+
+
+async def test_prepare_posts_to_the_yield_helper_once_a_minute(monkeypatch):
+    """With TA_LLAMA_PREPARE_URL set, the provider asks the GPU box to free ComfyUI's VRAM before a call,
+    once a minute at most; without it, nothing is posted; a helper that is down does not stop the call."""
+    import engine.providers.llamacpp_provider as mod
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        if request.url.path == "/free-comfy":
+            return httpx.Response(200, json={"comfy": "freed"})
+        return httpx.Response(200, json={"choices": [{"message": {"content": "{\"x\": 1}"}, "finish_reason": "stop"}],
+                                         "timings": {"prompt_n": 3, "cache_n": 0, "predicted_n": 2}})
+
+    class S(BaseModel):
+        x: int
+
+    role = RoleConfig(provider="llamacpp", model="m", base_url="http://gpu:8280", max_tokens=64)
+    prov = mod.LlamaCppProvider(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(mod, "_last_prepare", 0.0)
+    monkeypatch.delenv("TA_LLAMA_PREPARE_URL", raising=False)
+    await prov.extract(role, "s", [Msg("user", "u")], S)
+    assert seen == ["http://gpu:8280/v1/chat/completions"]
+    monkeypatch.setenv("TA_LLAMA_PREPARE_URL", "http://gpu:8281/free-comfy")
+    await prov.extract(role, "s", [Msg("user", "u")], S)
+    await prov.extract(role, "s", [Msg("user", "u")], S)
+    assert seen[1:] == ["http://gpu:8281/free-comfy", "http://gpu:8280/v1/chat/completions", "http://gpu:8280/v1/chat/completions"]
+    # the helper being down is logged, not raised
+    monkeypatch.setattr(mod, "_last_prepare", 0.0)
+    monkeypatch.setenv("TA_LLAMA_PREPARE_URL", "http://127.0.0.1:1/free-comfy")
+    down = mod.LlamaCppProvider(transport=httpx.MockTransport(lambda req: (_ for _ in ()).throw(httpx.ConnectError("down")) if req.url.port == 1 else handler(req)))
+    out, _ = await down.extract(role, "s", [Msg("user", "u")], S)
+    assert out.x == 1

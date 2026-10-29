@@ -42,19 +42,32 @@ latency and the stop sequence does not apply inside the thinking block.
 ## Running it
 
 The game has its own llama-server on the GPU box, separate from bruba's `llm-manager` (which stays
-untouched): `server/tools/gumbo/llama-game.sh` and the optional user unit
-`textadventure-llm.service`. It listens on **8280** (bruba's manager and servers use 8080–8092,
-ComfyUI 8188, ollama 11434), binds all interfaces so the game can reach it from the MacBook now and
-from the Mac mini later, and runs the Qwen3.5-35B-A3B Q4 file with three slots, thinking off,
-q8_0 KV cache, flash attention, the model's rope base, and Qwen's recommended sampling (the game's
-roles send their own temperature per request). Before loading, it asks a running ComfyUI for its
-VRAM through ComfyUI's own `/free` endpoint; the ComfyUI process stays up and reloads on its next
-prompt. Nothing else on the box is touched.
+untouched): `server/tools/gumbo/llama-game.sh`, its helper `gpu-yield.py`, and the optional user
+unit `textadventure-llm.service`. It listens on **8280** (bruba's manager and servers use
+8080–8092, ComfyUI 8188, ollama 11434), binds all interfaces so the game can reach it from the
+MacBook now and from the Mac mini later, and runs the Qwen3.5-35B-A3B Q4 file with three slots,
+thinking off, q8_0 KV cache, flash attention, the model's rope base, and Qwen's recommended
+sampling (the game's roles send their own temperature per request).
+
+The GPU is shared both ways, as bruba's hub does for its services, without touching bruba:
+
+- **Taking it.** Before loading, the script asks a running ComfyUI for its VRAM through ComfyUI's
+  own `/free` endpoint; the ComfyUI process stays up and reloads on its next prompt. ComfyUI
+  listens on localhost only, so the script also starts `gpu-yield.py` on **8281**, whose one job
+  is `POST /free-comfy`; the game calls it before invoking the model (`TA_LLAMA_PREPARE_URL`, at
+  most once a minute), so a server that slept into a GPU ComfyUI has since filled reloads into a
+  free one.
+- **Giving it back.** `--sleep-idle-seconds` (`IDLE`, default 600): after ten minutes without a
+  request the server drops the model from VRAM and keeps the port; the next request reloads it,
+  about half a minute, and the roles' prompts are re-paid once. Set `IDLE=-1` to never sleep.
+
+Nothing else on the box is touched; `systemctl --user stop textadventure-llm` or Ctrl-C ends both
+processes.
 
 1. Copy the two files to the GPU box, from this repo:
 
    ```bash
-   ssh gumbo 'mkdir -p ~/textadventure' && scp server/tools/gumbo/llama-game.sh server/tools/gumbo/textadventure-llm.service gumbo:~/textadventure/
+   ssh gumbo 'mkdir -p ~/textadventure' && scp server/tools/gumbo/llama-game.sh server/tools/gumbo/gpu-yield.py server/tools/gumbo/textadventure-llm.service gumbo:~/textadventure/
    ```
 
 2. On the GPU box, run it in the foreground the first time (Ctrl-C stops it and frees the VRAM):
@@ -86,10 +99,11 @@ prompt. Nothing else on the box is touched.
 4. Play:
 
    ```bash
-   TA_LLAMA_URL=http://GPU_HOST:8280 ./dev.sh local
+   TA_LLAMA_URL=http://GPU_HOST:8280 TA_LLAMA_PREPARE_URL=http://GPU_HOST:8281/free-comfy ./dev.sh local
    ```
 
    `TA_CONFIG=<file>` picks another config under `server/`; `base_url` per role overrides the URL.
+   The smoke tool honours `TA_LLAMA_PREPARE_URL` the same way.
 
 ## What to watch on the first real runs
 

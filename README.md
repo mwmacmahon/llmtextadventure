@@ -53,7 +53,7 @@ Every role on a local `llama-server` instead (`server/config.llamacpp.yml`, one 
 each role's context survives between turns; see `docs/ARCHITECTURE.md` §7):
 
 ```bash
-TA_LLAMA_URL=http://GPU_HOST:8280 ./dev.sh local
+TA_LLAMA_URL=http://GPU_HOST:8280 TA_LLAMA_PREPARE_URL=http://GPU_HOST:8281/free-comfy ./dev.sh local
 ```
 
 Before playing, `cd server && .venv/bin/python tools/local_smoke.py --url http://GPU_HOST:8280`

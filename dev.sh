@@ -34,7 +34,7 @@ if [ "${1:-}" = "fake" ]; then
   echo "offline: TA_PROVIDER=fake"
 elif [ "${1:-}" = "local" ]; then
   export TA_CONFIG="${TA_CONFIG:-config.llamacpp.yml}"
-  echo "local models: TA_CONFIG=$TA_CONFIG, llama-server at ${TA_LLAMA_URL:-http://127.0.0.1:8080}"
+  echo "local models: TA_CONFIG=$TA_CONFIG, llama-server at ${TA_LLAMA_URL:-http://127.0.0.1:8080}, yield helper ${TA_LLAMA_PREPARE_URL:-unset}"
 elif [ -n "${ANTHROPIC_API_KEY:-}" ]; then
   echo "warning: ANTHROPIC_API_KEY is set and outranks the ant auth profile" >&2
 fi
