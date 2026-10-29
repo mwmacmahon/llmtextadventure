@@ -151,6 +151,33 @@ Without it, the narrator re-processed about 5k tokens a turn, 2.5 s at this mode
   `prefix.local.md` next to `prefix.md` if one is needed; keep the state block identical.
 - Latency per turn against the Anthropic path (the ledger's `seconds` per call).
 
+## The next model: Qwen3.5-27B dense
+
+The A3B's judgment is its ceiling, not its prompts: 3B active parameters decide every referee row. The
+step up that keeps the three slots is the dense Qwen3.5-27B, the same hybrid layout (three layers in
+four hold a fixed-size recurrent state, one in four a KV cache), so the per-slot memory stays small while
+all 27B of weight work on every token. Expect roughly a third of the A3B's tokens per second: turns of
+15–20 s instead of 5–7, Sonnet territory. Build in use: `Huihui-Qwen3.5-27B-abliterated.i1-Q6_K.gguf`
+(20.6 GiB, `mradermacher/Huihui-Qwen3.5-27B-abliterated-i1-GGUF`), copied to the GPU box over ssh; swap
+it in with `MODEL=` in the unit's environment (the user runs that).
+
+**VRAM is allocated at load, not during play.** `llama-server` sizes the KV and recurrent-state buffers for
+the whole `CTX` up front; a long prompt grows nothing. What grows at runtime is the context checkpoints a
+hybrid model keeps so a slot can rewind its recurrent state (`--checkpoint-every-n-tokens`, the `CKPT`
+knob): up to 32 per slot, each the size of the full recurrent state. Read the load lines in the journal
+(`journalctl --user -u textadventure-llm | grep -E "model buffer size|KV buffer size|RS buffer size|compute buffer size|context checkpoint"`)
+before the first game. Measured for the A3B at 98,304 total context (32k a slot), q8 KV: model 18.5 GB,
+KV 1.0 GB, recurrent state 0.19 GB, compute 0.49 GB, one checkpoint 62.8 MiB, so up to 5.9 GB of
+checkpoints across three slots; about 26 GB worst case on the 32 GB card. The 27B has 16 attention layers
+to the A3B's 10 and 48 linear to its 30, so expect about 21 GB of weights, 1.6 GB of KV, and a checkpoint
+near 100 MiB: up to 9.4 GB of checkpoints, and a worst case around 33 GB, which does not fit. Levers, in
+order: `CKPT=2048` (halves the checkpoint count per 32k slot: a cached prefix then rewinds in 2k steps,
+which costs a little re-prompting, nothing else), then `CTX=65536` (about 21k a slot; the narrator's
+window is bounded in turns, 12–17, so measure its prompt in the log first), and only as a last resort the
+second card (`CUDA_VISIBLE_DEVICES=0,1` with `--tensor-split`: the 3060 is slow and the split costs
+bandwidth). An over-long prompt never spills VRAM: with `--no-context-shift` the server refuses it and the
+turn fails with an error in the log; a token budget on the narrator's window is an open item (ISSUES §6).
+
 ## Not built
 
 A `prompt_variant` per role, and side-calls (the referee reusing the narrator's cached prefix for

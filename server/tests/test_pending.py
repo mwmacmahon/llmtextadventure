@@ -43,6 +43,21 @@ def test_pending_rows_due_tick_resolve_and_lines():
     assert [p.id for p in pend.load(doc, "hidden.pending")] == ["p1", "p2"]
 
 
+def test_a_scripted_timer_with_outcomes_is_contestable_and_tells_both_branches():
+    plain = pend.Pending(id="p1", what="the visitor knocks", who="The visitor", due_day=1, due_minute=485, source="script")
+    assert "whatever the player is doing" in pend.directive(plain, 1440)
+    fight = pend.Pending(id="p2", what="the thing grabs for Frank", who="The thing", due_day=1, due_minute=1413, source="script",
+                         unless="Frank is off the roof", on_stopped="it goes over the parapet, hurt.", on_happened="Frank wakes in a cell.")
+    d = pend.directive(fight, 1440)
+    assert "whatever the player is doing" not in d
+    assert "It does not happen if Frank is off the roof." in d and "that attempt decides it" in d
+    assert d.endswith("If it is stopped: it goes over the parapet, hurt. If it happens: Frank wakes in a cell.")
+    for audience in ("engine", "narrator"):
+        line = pend.lines([fight], 1 * 1440 + 1400, 1440, audience)[0]
+        assert "if stopped: it goes over the parapet, hurt." in line and "if it happens: Frank wakes in a cell." in line
+    assert pend.lines([plain], 1 * 1440 + 480, 1440, "narrator") == ["- the visitor knocks; by The visitor; in about 5 min, at 08:05"]
+
+
 @pytest.fixture
 def engine(tmp_path: Path) -> Engine:
     cfg = load_config()

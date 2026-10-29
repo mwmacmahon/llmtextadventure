@@ -7,7 +7,9 @@ or code may add them too. Each is due at a clock time and is hidden from the pla
 Resolve stops the clock at the earliest due pending, as it does for scripted events, and hands the
 narrator a DUE NOW directive, or an UNSEEN one for a hidden pending, whose consequences the player
 meets later. `unless` is plain words for what would stop it; the referee resolves a pending when
-the prose shows that it happened, was prevented, or no longer applies.
+the prose shows that it happened, was prevented, or no longer applies. A scripted one may carry its
+outcomes, `on_stopped` and `on_happened`: then it is contestable like one set in play, and the narrator is
+told both branches, under COMING every turn and in the DUE NOW.
 
 Pendings live in the state document (`GameBase.pending_path`) so they survive snapshots, undo and
 export. Ids are p1, p2, … per instance.
@@ -31,6 +33,8 @@ class Pending(BaseModel):
     due_minute: int = 0
     hidden: bool = False              # the player does not see it happen
     unless: str = ""                  # plain words: what would stop it
+    on_stopped: str = ""              # scripted: what happens when the player's attempt to stop or escape it succeeds
+    on_happened: str = ""             # scripted: what happens when it goes through (where it leaves the player, what it sets in motion)
     source: str = "referee"           # referee | narrator | script | engine
     created_turn: int = 0
     fired: bool = False
@@ -130,11 +134,13 @@ def directive(p: Pending, minutes_per_day: int) -> str:
     if p.hidden:
         return (f"UNSEEN BY THE PLAYER, at {when}: {p.what}{who}. It has happened; do not show it. Let its consequences surface "
                 f"where and when the player would meet them, and write what changed out of sight in an [[unseen: …]] line.")
-    if p.source in ("narrator", "referee"):     # set in motion in play: real, but the player may still fight it
+    if p.source in ("narrator", "referee") or p.on_stopped or p.on_happened:   # contestable: set in motion in play, or scripted with its outcomes written
         stop = f" It does not happen if {p.unless}." if p.unless else ""
+        branches = (f" If it is stopped: {p.on_stopped.strip()}" if p.on_stopped else "") \
+            + (f" If it happens: {p.on_happened.strip()}" if p.on_happened else "")
         return (f"DUE NOW, at {when}: {p.what}{who}. It was set in motion and comes due now.{stop} If the player's action this turn "
                 f"is an attempt to stop or escape it, that attempt decides it: play the check THIS TURN gives for it, or, with none, "
-                f"what the attempt plainly achieves. Otherwise it happens; play it with its consequences.")
+                f"what the attempt plainly achieves. Otherwise it happens; play it with its consequences.{branches}")
     return (f"DUE NOW, at {when}: {p.what}{who}. This happens this turn whatever the player is doing; play it, with its consequences, "
             f"and do not let the player's action pre-empt it.")
 
@@ -155,6 +161,10 @@ def lines(items: list[Pending], now_abs: int, minutes_per_day: int, audience: st
             bits.append(f"unless {p.unless}")
         if p.hidden:
             bits.append("the player does not know")
+        if p.on_stopped:
+            bits.append(f"if stopped: {p.on_stopped.strip()}")
+        if p.on_happened:
+            bits.append(f"if it happens: {p.on_happened.strip()}")
         head = f"{p.id}: " if audience == "engine" else ""
         out.append(f"- {head}{'; '.join(bits)}")
     return out

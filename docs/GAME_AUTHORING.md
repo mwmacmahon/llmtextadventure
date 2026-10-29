@@ -132,6 +132,15 @@ secret_terms: [the hidden truth's own words]  # noir: in the narration's own voi
 pending:                                    # timers already running when the game opens, so the
   - {id: p1, what: The visitor knocks, who: The visitor, due_day: 1, due_minute: 485,
      unless: the player has left, source: script}   # opening reads like any mid-game turn (COMING)
+  - id: p2                                  # an encounter the player can win or lose: write both ends
+    what: The thing grabs for the player
+    who: The thing
+    due_day: 1
+    due_minute: 1413
+    unless: the player is off the roof first
+    on_stopped: it goes back over the parapet, hurt; the player is free to leave
+    on_happened: the player wakes in a holding cell at the station, revolver gone; set in motion in a
+      [[soon: …]] line that someone comes to the bars within five minutes, at once if the player makes noise
 
 place_aliases: {pier street: Lowtown streets}   # noir: names the prose uses → a listed place
 gated_places: {Under the docks: under_docks_found}  # noir: a player move there needs the flag first
@@ -268,7 +277,12 @@ model needs `pending: list[Pending]`), appends unseen facts to `recent_path` (th
 "behind the scenes" list), stops the clock where a pending falls due, and hands the narrator DUE
 NOW or UNSEEN. A scripted timer (scenario `pending:`, `source: script`) happens whatever the player does;
 one the narrator or referee set in play is contestable: its DUE NOW says it does not happen if its `unless`
-has, and that an attempt to stop it is decided by its check. A new timer that restates an open one (same
+has, and that an attempt to stop it is decided by its check. A scripted timer with its outcomes written
+(`on_stopped`, `on_happened`) is contestable the same way, and both branches go to the narrator under
+COMING every turn and in the DUE NOW, so the scenario, not the model, decides what winning and losing an
+encounter mean: where it leaves the player and what it sets in motion next (a `[[soon: …]]` line the
+referee turns into the next timer). Without them a weak narrator invents the ending, and a strong one once
+sent the player off an eleven-storey roof into a lake. A new timer that restates an open one (same
 actor, mostly the same words) is not added (`pending.duplicate_of`). Actors are written by name, never by
 id: an id the narrator reads every turn is a word it will use. A game needs nothing else; set the paths to
 `None` to switch it off.
