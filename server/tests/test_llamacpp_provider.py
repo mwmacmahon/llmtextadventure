@@ -141,3 +141,20 @@ async def test_prepare_posts_to_the_yield_helper_once_a_minute(monkeypatch):
     down = mod.LlamaCppProvider(transport=httpx.MockTransport(lambda req: (_ for _ in ()).throw(httpx.ConnectError("down")) if req.url.port == 1 else handler(req)))
     out, _ = await down.extract(role, "s", [Msg("user", "u")], S)
     assert out.x == 1
+
+
+def test_inline_schema_resolves_refs_and_closes_objects():
+    """pydantic's $ref/$defs become inline objects with additionalProperties false; required survives;
+    the sibling description on a $ref node is kept; a recursive schema is refused."""
+    from engine.providers.llamacpp_provider import inline_schema
+    from engine.roles import Adjudication
+    js = inline_schema(Adjudication.model_json_schema())
+    assert "$defs" not in js and "$ref" not in json.dumps(js)
+    assert js["additionalProperties"] is False and js["required"] == ["kind", "summary", "time_minutes", "risk"]
+    intent = js["properties"]["intents"]["items"]
+    assert intent["type"] == "object" and intent["required"] == ["action"] and intent["additionalProperties"] is False
+    check = next(o for o in intent["properties"]["check"]["anyOf"] if o.get("type") == "object")
+    assert "stat" in check["required"] and check["additionalProperties"] is False
+    assert "description" in intent["properties"]["check"]   # the field's own description rides along
+    with pytest.raises(ValueError):
+        inline_schema({"$defs": {"N": {"type": "object", "properties": {"next": {"$ref": "#/$defs/N"}}}}, "$ref": "#/$defs/N"})

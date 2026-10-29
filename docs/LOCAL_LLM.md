@@ -105,7 +105,18 @@ processes.
    `TA_CONFIG=<file>` picks another config under `server/`; `base_url` per role overrides the URL.
    The smoke tool honours `TA_LLAMA_PREPARE_URL` the same way.
 
-## What to watch on the first real runs
+## What the cache actually does (measured 2026-10-29)
+
+Qwen3.5-35B-A3B is a hybrid: attention layers with a KV cache and recurrent layers with a state.
+A slot can reuse a prefix of its previous prompt only back to a **checkpoint** of that state, and
+llama-server checkpoints every 8192 prompt tokens by default plus the end of each prompt. So an
+identical prompt is fully cached (the smoke tool shows this), a prompt that extends the previous
+one is cached up to the old end, and a prompt that shares only a prefix is cached up to the last
+checkpoint inside the prefix, which for a 5k-token narrator prompt was nothing. The script sets
+`--checkpoint-every-n-tokens 512` (`CKPT`) so the roles' stable prefixes come back from cache at
+512-token granularity. Each checkpoint is a copy of the recurrent state; 32 per slot are kept.
+Without it, the narrator re-processed about 5k tokens a turn, 2.5 s at this model's prefill speed.
+
 
 - Schema grammar + a 3B-active MoE: whether the adjudicator's intents and the referee's rows come
   back as sensible as Sonnet's. The live cases in `server/tests/live/` run against any provider the

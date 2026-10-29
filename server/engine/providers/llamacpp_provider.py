@@ -7,7 +7,9 @@ The same two operations as the Anthropic provider, with llama.cpp's own levers:
   - `cache_prompt`: the server re-evaluates only the suffix the slot has not seen. `timings.cache_n`
     comes back as `cache_read_input_tokens`, `timings.prompt_n` as `input_tokens`.
   - `response_format: json_schema`: grammar-constrained output for `extract()`; the model cannot
-    produce anything but an instance of the schema.
+    produce anything but an instance of the schema. The schema is sent with every `$ref` inlined
+    and every object closed (`inline_schema`), because the server's grammar builder does not
+    resolve pydantic's `$defs` and would otherwise let the nested objects be anything.
   - `chat_template_kwargs: {"enable_thinking": ...}` per role (`RoleConfig.thinking`); thinking is
     off by default here, because a grammar over a thinking model constrains the thoughts too.
   - `stop`: the narrator's `>>` closer, as on the API.
@@ -39,6 +41,33 @@ log = logging.getLogger("textadventure.providers.llamacpp")
 
 PREPARE_EVERY = 60.0        # seconds between calls to the yield helper
 _last_prepare = 0.0
+
+
+def inline_schema(js: dict) -> dict:
+    """The schema as llama.cpp's grammar builder enforces it. pydantic emits nested models as `$ref`s
+    into `$defs`, which the server (gumbo's build, 2026-10) does not resolve: the referenced object
+    becomes any JSON, and the model invents keys. So every `$ref` is replaced by its definition, and
+    every object gets `additionalProperties: false` so only the schema's keys can appear. Recursive
+    schemas have no finite inline form; none of the roles' schemas are."""
+    defs = js.get("$defs") or js.get("definitions") or {}
+
+    def walk(node, seen: frozenset):
+        if isinstance(node, list):
+            return [walk(n, seen) for n in node]
+        if not isinstance(node, dict):
+            return node
+        if "$ref" in node:
+            name = node["$ref"].rsplit("/", 1)[-1]
+            if name in seen:
+                raise ValueError(f"recursive schema at {node['$ref']}: cannot be inlined for llama.cpp")
+            merged = {**defs[name], **{k: v for k, v in node.items() if k != "$ref"}}
+            return walk(merged, seen | {name})
+        out = {k: walk(v, seen) for k, v in node.items() if k not in ("$defs", "definitions")}
+        if out.get("type") == "object" and "properties" in out and "additionalProperties" not in out:
+            out["additionalProperties"] = False
+        return out
+
+    return walk(js, frozenset())
 
 
 def _usage(d: dict | None, timings: dict | None) -> Usage:
@@ -138,7 +167,7 @@ class LlamaCppProvider:
     async def extract(self, role: RoleConfig, system: str, messages: list[Msg], schema: type[T]) -> tuple[T, Usage]:
         await self.prepare()
         body = self._body(role, system, messages)
-        body["response_format"] = {"type": "json_schema", "json_schema": {"name": schema.__name__, "schema": schema.model_json_schema()}}
+        body["response_format"] = {"type": "json_schema", "json_schema": {"name": schema.__name__, "schema": inline_schema(schema.model_json_schema())}}
         async with self._client(role) as client:
             r = await client.post("/v1/chat/completions", json=body)
             r.raise_for_status()

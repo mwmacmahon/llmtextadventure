@@ -22,6 +22,8 @@ CTX="${CTX:-98304}"              # total; llama-server splits it evenly across s
 COMFY_URL="${COMFY_URL:-http://127.0.0.1:8188}"
 IDLE="${IDLE:-600}"              # seconds idle before the server sleeps: drops the model from VRAM, keeps the port, reloads on the next request
 YIELD_PORT="${YIELD_PORT:-8281}" # gpu-yield.py beside the server: POST /free-comfy, called by the game before it invokes the model
+CKPT="${CKPT:-512}"              # recurrent-state checkpoint every N prompt tokens (default 8192): a hybrid model can only rewind its
+                                  # state to a checkpoint, so this decides how much of a shared prefix a slot can reuse
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"   # CUDA device 0 = the RTX 5090 on this box
 
 [ -x "$LLAMA_BIN" ] || { echo "no llama-server at $LLAMA_BIN" >&2; exit 1; }
@@ -56,6 +58,7 @@ echo "llama-server :$PORT, $PARALLEL slots, ctx $CTX, idle sleep ${IDLE}s, model
   --flash-attn on \
   --no-context-shift \
   --sleep-idle-seconds "$IDLE" \
+  --checkpoint-every-n-tokens "$CKPT" \
   --rope-freq-base 1000000 \
   --temp 0.7 --top-p 0.8 --top-k 20 --min-p 0.0 &
 LLAMA_PID=$!
