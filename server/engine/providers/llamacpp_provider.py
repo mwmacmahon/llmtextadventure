@@ -49,8 +49,11 @@ def inline_schema(js: dict) -> dict:
     """The schema as llama.cpp's grammar builder enforces it. pydantic emits nested models as `$ref`s
     into `$defs`, which the server (gumbo's build, 2026-10) does not resolve: the referenced object
     becomes any JSON, and the model invents keys. So every `$ref` is replaced by its definition, and
-    every object gets `additionalProperties: false` so only the schema's keys can appear. Recursive
-    schemas have no finite inline form; none of the roles' schemas are."""
+    every object gets `additionalProperties: false` so only the schema's keys can appear, and every one of
+    its keys `required`: a field with a default is optional to pydantic, and the grammar then lets a model
+    end the object before it (the Qwen3.5-27B wrote kind, summary, time and carried, and never `intents`,
+    on 22 of 24 turns). An empty value is still allowed; leaving the field out is not. Recursive schemas
+    have no finite inline form; none of the roles' schemas are."""
     defs = js.get("$defs") or js.get("definitions") or {}
 
     def walk(node, seen: frozenset):
@@ -65,8 +68,9 @@ def inline_schema(js: dict) -> dict:
             merged = {**defs[name], **{k: v for k, v in node.items() if k != "$ref"}}
             return walk(merged, seen | {name})
         out = {k: walk(v, seen) for k, v in node.items() if k not in ("$defs", "definitions")}
-        if out.get("type") == "object" and "properties" in out and "additionalProperties" not in out:
-            out["additionalProperties"] = False
+        if out.get("type") == "object" and "properties" in out:
+            out.setdefault("additionalProperties", False)
+            out["required"] = list(out["properties"])
         return out
 
     return walk(js, frozenset())

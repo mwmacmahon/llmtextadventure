@@ -39,7 +39,7 @@ roles:
     two_pass: false         # true: think first (no grammar), then the grammar call; measure with tools/eval_replay.py --opt two_pass=true
     two_pass_max_tokens: 3072
     slot: 1
-    max_tokens: 1024
+    max_tokens: 1536              # every field is required under the grammar now (inline_schema): answers run longer
     temperature: 0.2
     top_p: 0.5
     top_k: 20
