@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, streamCommand, streamTurn, type InstanceView, type Mechanics, type TranscriptRow, type TurnEvent } from "./api";
+import { api, streamCommand, streamRewrite, streamTurn, type InstanceView, type Mechanics, type TranscriptRow, type TurnEvent } from "./api";
 import { DebugDrawer } from "./components/DebugDrawer";
 import { Lobby } from "./components/Lobby";
 import { Panels } from "./components/Panels";
@@ -57,6 +57,8 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
           }
           setPending(ev.data.label ?? pendingText);
           setStage(ev.data.mode === "engine" ? null : "resolving…");
+        } else if (ev.event === "rewrite") {
+          setStage(`retelling turn ${ev.data.turn}…`);
         } else if (ev.event === "adjudication") {
           setStage(ev.data.kind === "clarify" || ev.data.kind === "impossible" ? "asking for clarification…" : "resolving…");
         } else if (ev.event === "resolution") {
@@ -104,6 +106,15 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
     return run(streamCommand(id, command, args), command);
   }
 
+  /** "You're out of line": the last turn is told again with the player's ruling, same facts, same dice. */
+  function rewrite() {
+    if (!view || streaming !== null || view.turn === 0) return;
+    const hint = window.prompt("What was out of line? The narrator tells the last turn again under this ruling, with the same dice.");
+    if (!hint || !hint.trim()) return;
+    const last = [...view.transcript].reverse().find((r) => r.role === "player");
+    return run(streamRewrite(id, hint.trim()), last ? `${last.text}  ↺ ${hint.trim()}` : `↺ ${hint.trim()}`);
+  }
+
   async function undo(toTurn?: number) {
     if (streaming !== null) return;
     setErr(null);
@@ -140,6 +151,9 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
         <span className="spacer" />
         <button onClick={() => undo()} disabled={view.turn === 0 || streaming !== null} title="Rewind one turn">
           undo
+        </button>
+        <button onClick={() => rewrite()} disabled={view.turn === 0 || streaming !== null} title="Tell the last turn again under a ruling of yours: same facts, same dice, only the words change">
+          rewrite
         </button>
         <button onClick={() => branch()} disabled={streaming !== null} title="Copy this game as a new branch from here">
           branch
@@ -257,8 +271,10 @@ function MechanicsRow({ text }: { text: string }) {
   if (m.rejected.length) bits.push(`${m.rejected.length} rejected`);
   for (const lv of m.levers ?? []) if (lv.status !== "applied") bits.push(`${lv.id}: ${lv.status.replace("_", " ")}`);
   if (m.drift?.length) bits.push(`${m.drift.length} drifted`);
+  if (m.rewritten) bits.push(`retold${m.rewritten.attempt > 1 ? ` (${m.rewritten.attempt}×)` : ""}`);
   if (!bits.length) return null;
   const lines = [
+    ...(m.rewritten ? [`ruling: ${m.rewritten.hint}`] : []),
     ...(m.levers ?? []).map((lv) => `lever ${lv.id} ${lv.status.replace("_", " ")}: ${lv.text}`),
     ...m.applied,
     ...m.rejected.map((r) => `rejected ${r.path}: ${r.reason}`),

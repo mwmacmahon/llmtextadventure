@@ -43,6 +43,7 @@ export type Mechanics = {
   levers?: { id: string; status: "applied" | "blocked" | "not_completed"; text: string }[];
   pending?: { fired: string[]; new: string[]; resolved: string[] };
   issues: string[];
+  rewritten?: { hint: string; attempt: number } | null;
 };
 
 export type Origin = { forked_from?: string; at_turn?: number; imported?: boolean; original_id?: string; exported?: string };
@@ -87,6 +88,7 @@ export type TurnEvent =
   | { event: "adjudication"; data: { kind: string; summary: string; time_minutes: number; clarify_question?: string | null } }
   | { event: "resolution"; data: { assessed: { label: string; stat: string; difficulty: string; target: string }[]; fired: { event_id: string; variant: string }[]; expired: { event_id: string }[]; elapsed: number; directives: string[] } }
   | { event: "bulletin"; data: { turn: number; text: string } }
+  | { event: "rewrite"; data: { turn: number; hint: string; attempt: number } }
   | { event: "text"; data: { t: string } }
   | { event: "mechanic"; data: { turn: number; text: string; data: Record<string, any> } }
   | { event: "referee"; data: { delta: Record<string, any> | null; report?: { applied: string[]; rejected: unknown[] }; error?: string } }
@@ -96,6 +98,11 @@ export type TurnEvent =
 /** POST a typed turn and stream server-sent events back. */
 export function streamTurn(id: string, text: string, signal?: AbortSignal): AsyncGenerator<TurnEvent> {
   return streamSse(`/api/instances/${id}/turn`, { text }, signal);
+}
+
+/** POST a ruling on the last turn: the narrator tells it again from the same facts and dice, the referee reads it again. */
+export function streamRewrite(id: string, hint: string, signal?: AbortSignal): AsyncGenerator<TurnEvent> {
+  return streamSse(`/api/instances/${id}/rewrite`, { hint }, signal);
 }
 
 /** POST a clicked command; engine commands answer with command+done, narrated ones stream a full turn. */

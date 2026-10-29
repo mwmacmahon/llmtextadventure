@@ -39,6 +39,10 @@ class TurnInput(BaseModel):
     text: str
 
 
+class RewriteInput(BaseModel):
+    hint: str
+
+
 class UndoInput(BaseModel):
     turn: int | None = None
 
@@ -172,6 +176,13 @@ async def turn(iid: str, body: TurnInput):
 async def command(iid: str, body: CommandInput):
     _exists(iid)
     return _sse(engine.run_turn(iid, command=(body.command, body.args)))
+
+
+@app.post("/api/instances/{iid}/rewrite")
+async def rewrite(iid: str, body: RewriteInput):
+    """Tell the last turn again with the player's ruling as a directive: same adjudication, levers and dice."""
+    _exists(iid)
+    return _sse(engine.rewrite_turn(iid, body.hint))
 
 
 # ---- static frontend (production) ----------------------------------------

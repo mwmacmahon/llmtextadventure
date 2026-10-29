@@ -166,12 +166,14 @@ class Engine:
 
     # ---- turn -------------------------------------------------------------
     async def run_turn(self, iid: str, player_text: str | None = None,
-                       command: tuple[str, dict[str, Any]] | None = None) -> AsyncIterator[dict[str, Any]]:
+                       command: tuple[str, dict[str, Any]] | None = None,
+                       replay: Replay | None = None) -> AsyncIterator[dict[str, Any]]:
         """Yield SSE-ready events.
 
         Typed turn:     adjudication, resolution, [summary], bulletin, text*, referee, done | error
         Engine command: command, done
         Narrated cmd:   command, adjudication, resolution, [summary], bulletin, text*, referee, done | error
+        Rewrite:        rewrite, then as a typed turn with the stored adjudication (see `rewrite_turn`)
         """
         inst = self.store.get_instance(iid)
         if not inst:
@@ -232,6 +234,14 @@ class Engine:
 
         assert player_text is not None
         self.store.append_transcript(iid, turn, "player", player_text)
+        if replay is not None:
+            ledger("rewrite", {"hint": replay.hint, "attempt": replay.attempt, "history": replay.history})
+            log.info("turn.rewrite " + logs.kv(iid=iid, turn=turn, attempt=replay.attempt, hint_chars=len(replay.hint)))
+            yield {"event": "rewrite", "data": {"turn": turn, "hint": replay.hint, "attempt": replay.attempt}}
+            adj = replay.adjudication
+            ledger("adjudication", {**adj.model_dump(mode="json"), "_call": {
+                "provider": replay.call.get("provider"), "model": replay.call.get("model"), "seconds": 0, "usage": asdict(Usage()),
+                "replayed": True, "attempt": replay.attempt}})
 
         # ---- 1. adjudicate --------------------------------------------------
         if adj is None and not getattr(game, "skip_adjudication", False):
@@ -252,6 +262,10 @@ class Engine:
         if command is None and adj is not None and adj.commands:
             adj, levers = self._preview_levers(game, state, adj, iid, turn, ledger)
             extra_directives.extend(lv.directive for lv in levers)
+        if replay is not None:
+            extra_directives.append(
+                f"RULING from the player on your previous telling of this turn: {replay.hint.strip()} That telling was set aside. "
+                "Tell this turn again from the same facts above, keeping to the ruling. Do not mention the ruling or that this is a retelling.")
         if adj is not None:
             yield {"event": "adjudication", "data": adj.model_dump(mode="json")}
 
@@ -473,6 +487,8 @@ class Engine:
             "declarations": [d.get("raw") for d in calls_block.get("declarations", [])],
             "notes": calls_block.get("notes", []),
         }
+        if replay is not None:
+            mechanics["rewritten"] = {"hint": replay.hint, "attempt": replay.attempt}
         self.store.append_transcript(iid, turn, "mechanics", json.dumps(mechanics))
 
         yield {
@@ -485,6 +501,52 @@ class Engine:
                 "ui": game.ui(state).model_dump(mode="json"),
             },
         }
+
+    async def rewrite_turn(self, iid: str, hint: str) -> AsyncIterator[dict[str, Any]]:
+        """"You're out of line": tell the last turn again. The turn is rewound and replayed with its stored
+        adjudication, the same levers and the same dice seed, with the player's ruling as a directive; the
+        narrator and the referee run again and this telling replaces the last one. The earlier tellings stay
+        in the turn's `rewrite` ledger row. Only a typed turn can be retold: a clicked command is not prose."""
+        inst = self.store.get_instance(iid)
+        if not inst:
+            yield {"event": "error", "data": {"message": "no such instance"}}
+            return
+        hint = (hint or "").strip()
+        if not hint:
+            yield {"event": "error", "data": {"message": "say what was out of line", "step": "rewrite"}}
+            return
+        turn = self.store.latest_turn(iid)
+        if turn < 1:
+            yield {"event": "error", "data": {"message": "nothing to rewrite yet", "step": "rewrite"}}
+            return
+        rows = self.store.ledger(iid, turn)
+        adj_row = next((r["payload"] for r in rows if r["kind"] == "adjudication"), None)
+        if adj_row is None or any(r["kind"] == "command" and not r["payload"].get("typed") for r in rows):
+            yield {"event": "error", "data": {"message": "only a typed turn can be retold; this one was a clicked command", "step": "rewrite"}}
+            return
+        game = self.games[inst.game]
+        schema = getattr(game, "adjudication_schema", Adjudication)
+        adj = schema.model_validate({k: v for k, v in adj_row.items() if k != "_call"})
+        transcript = [r for r in self.store.transcript(iid) if r.turn == turn]
+        player_text = next((r.text for r in transcript if r.role == "player"), None)
+        if player_text is None:
+            yield {"event": "error", "data": {"message": "the turn has no player line to replay", "step": "rewrite"}}
+            return
+        prev = next((r["payload"] for r in rows if r["kind"] == "rewrite"), None)
+        history = list(prev["history"]) if prev else []
+        history.append({
+            "attempt": prev["attempt"] if prev else 0, "hint": prev["hint"] if prev else None,
+            "narration": next((r.text for r in transcript if r.role == "narrator"), ""),
+            "mechanics": next((r.text for r in transcript if r.role == "mechanics"), ""),
+        })
+        attempt = (prev["attempt"] if prev else 0) + 1
+        self.store.truncate_after_turn(iid, turn - 1)
+        call = dict(adj_row.get("_call") or {})
+        if not call.get("model"):                 # the row came from an earlier rewrite that kept no call meta
+            role = self.cfg.role("adjudicator")
+            call = {"provider": role.provider, "model": role.model}
+        async for ev in self.run_turn(iid, player_text, replay=Replay(adjudication=adj, hint=hint, attempt=attempt, history=history, call=call)):
+            yield ev
 
     # ---- steps -------------------------------------------------------------
     async def _adjudicate(self, game: Game, state: BaseModel, iid: str, player_text: str) -> tuple[Adjudication, dict]:
@@ -783,6 +845,19 @@ class Engine:
 
 
 # ---- helpers ---------------------------------------------------------------
+
+@dataclass
+class Replay:
+    """A rewrite: the last turn told again from the same facts. The adjudication is the stored one (no
+    adjudicator call), the levers are previewed again on the same state, the dice come from the same seed
+    (`rng_for(iid, turn)`), and the player's ruling joins THIS TURN as a directive. Only the words change,
+    then the referee reads them again (DESIGN2 §8, the manual half)."""
+    adjudication: Adjudication
+    hint: str
+    attempt: int                      # 1 for the first rewrite of a turn
+    history: list[dict[str, Any]]     # every earlier telling of this turn: {attempt, hint, narration, mechanics}
+    call: dict[str, Any]              # the original adjudicator call's meta (provider, model); its usage is not counted again
+
 
 @dataclass
 class PendingLever:

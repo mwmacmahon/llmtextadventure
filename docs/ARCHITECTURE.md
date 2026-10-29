@@ -62,7 +62,12 @@ One SQLite file, four tables, all keyed by instance:
 | `ledger` | seq, turn, kind, payload | kinds: `model_call`, `adjudication`, `check`, `event_fired`, `event_expired`, `happening`, `clock`, `verdict`, `delta`, `drift`, `pending` and `unseen` (things set in motion during play and facts out of the player's sight; `engine/pending.py`), `command_preview` (a typed lever as previewed for the narrator), `command` (clicked, or `typed: true` when a lever was committed after the prose, refused, or `not_completed`) |
 | `snapshot` | turn, state | full state after every turn; turn 0 is the opening |
 
-Undo truncates all three per-turn tables after a turn. Fork is export truncated at a turn and
+Undo truncates all three per-turn tables after a turn. Rewrite (`Engine.rewrite_turn`, `POST
+…/rewrite {hint}`) is undo of the last turn plus a replay of it through `run_turn` with a `Replay`:
+the stored adjudication (no adjudicator call), the levers previewed again on the same state, the
+same dice seed, and the player's ruling as a THIS TURN directive; the narrator and the referee run
+again and the new telling replaces the old, whose prose and mechanics stay in the turn's `rewrite`
+ledger row (`history`, one entry per earlier telling). Only a typed turn can be retold. Fork is export truncated at a turn and
 re-imported with an `origin`. Export format 1 is the four tables for one instance, self-contained.
 Schema changes are additive (`ALTER TABLE ADD COLUMN` in `store.MIGRATIONS`).
 
