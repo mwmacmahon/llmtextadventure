@@ -185,7 +185,11 @@ names them, or one thing you decided not to report, and why"); then the grammar 
 the assistant's turn and the instruction to transcribe it and nothing else. One extra call per role per
 turn and the thinking tokens (`two_pass_max_tokens`, default 3072); the first pass runs on the role's own
 slot, so its prefix is cached like any other. The usage is summed; `usage.extra["two_pass"]` records the
-reasoning and answer sizes. Measure it with the harness before turning it on in play.
+reasoning and answer sizes. Measure it with the harness before turning it on in play. Measured on the
+A3B (18 Sonnet turns, 2026-10-29): no gain. Checks assessed 4/20 against 2/20 without it (Sonnet replaying
+itself: 14/20), referee rows 22/108 against 24/108 (Sonnet: 65/108), at ten times the time per call (22 s
+against 2.2 s); the thinking ran to about 3,000 tokens and finished. The 3B-active model's judgment is the
+ceiling, not its lack of room to think. Left in as a knob for the dense model.
 
 ## The next model: Qwen3.5-27B dense
 

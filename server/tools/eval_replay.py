@@ -224,7 +224,7 @@ async def replay_turn(rec: dict, games: dict, cfg, roles: set[str], opts: dict[s
         try:
             adj, usage = await provider.extract(role, system, msgs, schema)
             got = adj.model_dump(mode="json")
-            res["adjudicator"] = {"seconds": round(time.monotonic() - t0, 1), "got": got, "score": score_adjudication(exp["adjudication"], got)}
+            res["adjudicator"] = {"seconds": round(time.monotonic() - t0, 1), "got": got, "score": score_adjudication(exp["adjudication"], got), "usage": asdict(usage)}
         except Exception as e:                                  # a refused prompt, a truncated extract: counted, not fatal
             res["adjudicator"] = {"seconds": round(time.monotonic() - t0, 1), "error": f"{type(e).__name__}: {e}"[:300]}
     if "referee" in roles:
@@ -255,7 +255,7 @@ async def replay_turn(rec: dict, games: dict, cfg, roles: set[str], opts: dict[s
             applied, rejected = list(report.applied), [r.model_dump(mode="json") for r in report.rejected] + [r.model_dump(mode="json") for r in screened]
         except Exception as e:
             applied, rejected = [], [{"path": "apply", "reason": f"{type(e).__name__}: {e}"[:200], "value": ""}]
-        res["referee"] = {"seconds": seconds, "got": got_rows, "present": list(delta.present), "log_line": delta.log_line,
+        res["referee"] = {"seconds": seconds, "got": got_rows, "present": list(delta.present), "log_line": delta.log_line, "usage": asdict(usage),
                           "rows": score_rows(exp["changes"], got_rows), "applied": score_applied(exp["applied"], applied),
                           "rejected": rejected, "expected_rejected": exp.get("rejected", [])}
     return res
