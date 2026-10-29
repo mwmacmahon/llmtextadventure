@@ -1,6 +1,6 @@
 # Every role on one local llama-server (llama.cpp), started with --parallel 3 so each role is pinned to its
 # own slot and keeps its own KV cache / recurrent state resident between turns. Use it with
-#   TA_CONFIG=config.local.yml TA_LLAMA_URL=http://<gpu-host>:8080 ./dev.sh
+#   TA_CONFIG=config.llamacpp.yml TA_LLAMA_URL=http://<gpu-host>:8280 ./dev.sh
 # or ./dev.sh local. Thinking is off: the structured roles run under a JSON-schema grammar, and the narrator
 # needs time-to-first-token, not deliberation. The model name is informational; the server serves what it loaded.
 
@@ -13,6 +13,12 @@ server:
   log_dir: ../data/logs
   log_level: INFO
 
+# Sampling, explicit per role (2026-10-29). Before this every role sent only a temperature and took the rest
+# from llama-game.sh's command line (--temp 0.7 --top-p 0.8 --top-k 20 --min-p 0.0, repeat penalty 1.0):
+#   narrator 0.7, adjudicator 0.2, referee 0.2, summarizer 0.4.
+# Now: the narrator keeps Qwen's recommended general settings (0.7 / 0.8 / 20 / 0); the structured roles
+# sample tight (0.2 / 0.5 / 20 / 0) with a small repeat penalty, since a schema-constrained loop otherwise
+# runs the referee into its token budget. Tuning is for later; these are the known-solid starting points.
 roles:
   narrator:
     provider: llamacpp
@@ -20,6 +26,10 @@ roles:
     slot: 0
     max_tokens: 2048
     temperature: 0.7
+    top_p: 0.8
+    top_k: 20
+    min_p: 0.0
+    repeat_penalty: 1.0
     timeout_seconds: 240
   adjudicator:
     provider: llamacpp
@@ -27,6 +37,10 @@ roles:
     slot: 1
     max_tokens: 1024
     temperature: 0.2
+    top_p: 0.5
+    top_k: 20
+    min_p: 0.0
+    repeat_penalty: 1.05
     timeout_seconds: 120
   referee:
     provider: llamacpp
@@ -34,13 +48,21 @@ roles:
     slot: 2
     max_tokens: 1536
     temperature: 0.2
+    top_p: 0.5
+    top_k: 20
+    min_p: 0.0
+    repeat_penalty: 1.05
     timeout_seconds: 120
   summarizer:
     provider: llamacpp
     model: qwen3.5-35b-a3b
     slot: 0                     # shares the narrator's slot: it runs only every six turns, between narrations
     max_tokens: 1024
-    temperature: 0.4
+    temperature: 0.3
+    top_p: 0.8
+    top_k: 20
+    min_p: 0.0
+    repeat_penalty: 1.05
     timeout_seconds: 180
 
 context:

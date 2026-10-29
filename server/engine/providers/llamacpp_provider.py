@@ -111,8 +111,9 @@ class LlamaCppProvider:
             body["id_slot"] = role.slot
         if role.stop_sequences:
             body["stop"] = list(role.stop_sequences)
-        if role.temperature is not None:
-            body["temperature"] = role.temperature
+        for key in ("temperature", "top_p", "top_k", "min_p", "repeat_penalty"):
+            if getattr(role, key) is not None:
+                body[key] = getattr(role, key)
         return body
 
     async def prepare(self) -> None:
@@ -173,9 +174,12 @@ class LlamaCppProvider:
             r.raise_for_status()
             data = r.json()
         choice = data["choices"][0]
-        if choice.get("finish_reason") == "length":
-            raise RuntimeError(f"structured extraction truncated at max_tokens={role.max_tokens}")
         content = (choice.get("message") or {}).get("content") or ""
+        if choice.get("finish_reason") == "length":
+            # a schema-constrained model that runs out of budget is nearly always looping; the tail says how
+            log.warning("llamacpp.extract truncated role=%s max_tokens=%s chars=%s head=%r tail=%r",
+                        role.model, role.max_tokens, len(content), content[:200], content[-300:])
+            raise RuntimeError(f"structured extraction truncated at max_tokens={role.max_tokens}")
         usage = _usage(data.get("usage"), data.get("timings"))
         usage.extra["model"] = data.get("model") or role.model
         return schema.model_validate_json(content), usage

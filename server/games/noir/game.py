@@ -429,6 +429,9 @@ class NoirGame(GameBase):
             return True
 
         # pockets: counted things by count, the revolver's rounds, items in and out
+        if kind == "add" and is_player and field and s.item(field) is not None:      # "add player.dollars -1": the pocket by its name
+            target, field = field, ""
+            is_player = False
         it = s.item(target) if target else None
         if it is None and kind in ("add", "gone", "set") and target:
             k = target.lower()
@@ -464,6 +467,9 @@ class NoirGame(GameBase):
         if kind == "gone" and target:
             self._lose(s, target, self._step(ch.note) or self._step(ch.value) or 1, w)
             return True
+        if kind == "new" and target.lower() in ("thing", "item", "") and value and ch.note.strip().lower().startswith("role"):
+            self._new_person(s, value, ch.note.split("=", 1)[-1].strip(), w)      # "role=threat" in the note: a person, not a pocket item
+            return True
         if kind == "new" and target.lower() in ("thing", "item", "") and value:
             where = field.lower()
             if where in ("player", "frank", "pockets", "person:player", "inventory", ""):
@@ -474,6 +480,17 @@ class NoirGame(GameBase):
             return True
         if kind == "new" and target.lower() == "person" and value:
             self._new_person(s, value, ch.note, w)
+            return True
+
+        # a thread id written as a target ("set t0-find-june.resolved"): settle the thread, never match it as a person
+        tt = next((t for t in s.threads if t.id == target.lower()), None) if target else None
+        if tt is not None:
+            if kind == "set" and field in ("resolved", "status", "closed", "done", "failed") and tt.status == "open":
+                tt.status = "failed" if (field == "failed" or value.lower().startswith("fail")) else "resolved"
+                tt.note = (ch.note or value).strip()[:200]
+                w.note(f"threads.{tt.id}: open -> {tt.status} (written as a set)")
+            else:
+                w.reject(f"threads.{tt.id}", "a thread, not a person; settle it with thread_close", value)
             return True
 
         # people

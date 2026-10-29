@@ -32,6 +32,10 @@ class RoleConfig(BaseModel):
     slot: int | None = None
     thinking: bool = False
     temperature: float | None = None
+    top_p: float | None = None          # the rest of the sampler; unset means the server's command-line defaults
+    top_k: int | None = None
+    min_p: float | None = None
+    repeat_penalty: float | None = None # >1 discourages the loops that run a structured role into its token budget
     api_key_env: str | None = None
 
 

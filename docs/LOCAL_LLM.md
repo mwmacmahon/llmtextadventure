@@ -46,8 +46,11 @@ untouched): `server/tools/gumbo/llama-game.sh`, its helper `gpu-yield.py`, and t
 unit `textadventure-llm.service`. It listens on **8280** (bruba's manager and servers use
 8080–8092, ComfyUI 8188, ollama 11434), binds all interfaces so the game can reach it from the
 MacBook now and from the Mac mini later, and runs the Qwen3.5-35B-A3B Q4 file with three slots,
-thinking off, q8_0 KV cache, flash attention, the model's rope base, and Qwen's recommended
-sampling (the game's roles send their own temperature per request).
+thinking off, q8_0 KV cache, flash attention and the model's rope base. Sampling is per role in
+`config.llamacpp.yml` (`temperature`, `top_p`, `top_k`, `min_p`, `repeat_penalty`, each sent with the
+request; unset ones fall back to the script's command line): the narrator on Qwen's general settings
+(0.7 / 0.8 / 20 / 0), the adjudicator and referee tight (0.2 / 0.5 / 20 / 0, repeat penalty 1.05) so
+they follow the row format and do not loop under the grammar, the summarizer in between.
 
 The GPU is shared both ways, as bruba's hub does for its services, without touching bruba:
 
@@ -103,7 +106,20 @@ processes.
    ```
 
    `TA_CONFIG=<file>` picks another config under `server/`; `base_url` per role overrides the URL.
-   The smoke tool honours `TA_LLAMA_PREPARE_URL` the same way.
+   The smoke tool honours `TA_LLAMA_PREPARE_URL` the same way. From the Claude desktop app's preview,
+   `.claude/launch.json` has `api-local` (the API on :8011 against the GPU box) and `web-local` (the
+   UI on :5174 proxied to it), so a local game can run beside the Anthropic one on :8010/:5173.
+
+## What to watch in the log
+
+`data/logs/server.log`, one line per step with the model's token counts. `cache_read` on the
+narrator's `step=narrate` line should sit near its prefix size from the second turn on. A
+`llamacpp.extract truncated` warning means a structured role looped into its token budget (the head
+and tail of the answer follow); the turn goes on with nothing recorded and the mechanics row says so.
+`engine.ruling … rule=check_skipped` means the narrator wrote none of the assessed `<<CHECK>>` lines;
+under the `gate` guard that turn is told twice. A narrator that never writes the line (Qwen3.5 so far)
+makes every assessed turn a double one: set `max_retells` to 0 or the mode to `log` in the settings
+menu if that gets old, and the ruling still shows in the mechanics row.
 
 ## What the cache actually does (measured 2026-10-29)
 

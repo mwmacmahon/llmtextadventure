@@ -62,6 +62,22 @@
         "dev"
       ],
       "port": 5173
+    },
+    {
+      "name": "web-local",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "API_PORT=8011",
+        "npm",
+        "--prefix",
+        "web",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5174"
+      ],
+      "port": 5174
     }
   ]
 }

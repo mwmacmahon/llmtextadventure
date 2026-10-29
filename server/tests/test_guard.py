@@ -166,3 +166,24 @@ def test_progress_estimate_caps_and_flags_slow(engine: Engine, fake: FakeProvide
     assert _progress("writing", 1300, 1000) == {"stage": "writing", "chars": 1300, "expected": 1000, "pct": 90, "slow": True}
     iid = engine.create_instance("noir", {})
     assert engine.expected_chars(iid) == engine.settings["progress"]["default_chars"]      # no narration yet: the default
+
+
+async def test_the_engine_rules_check_skipped_itself_when_no_assessed_check_is_called(engine: Engine, fake: FakeProvider):
+    """The adjudicator assessed a check, THIS TURN told the narrator to call it, the narrator never did: the engine
+    adds the serious ruling without waiting for the referee, and the gate retells once on it."""
+    from engine.roles import CheckProposal
+    engine.update_settings({"guard": {"mode": "gate", "max_retells": 1}})
+    iid = engine.create_instance("noir", {})
+    fake.canned["Adjudication"] = [Adjudication(kind="action", summary="Frank forces the shutter", time_minutes=2, risk="low",
+                                                intents=[Intent(action="force the shutter", check=CheckProposal(label="force the shutter", stat="hands (+2)", difficulty="low"))])]
+    tellings = iter(["The shutter gives at once and you are through.", "You set your shoulder to the shutter.\n<<CHECK hands low>>", "It gives on the second try."])
+    fake.script = lambda system, messages: next(tellings)
+    fake.hook = lambda schema, last: ChangeReport.of(Change(kind="add", target="player", field="dread", value="+1"), log_line="x") if schema is ChangeReport else None
+    events = await events_of(engine.play(iid, "I force the shutter."))
+    retell = next(e["data"] for e in events if e["event"] == "retell")
+    assert retell["rulings"][0]["rule"] == "check_skipped" and retell["rulings"][0]["by"] == "engine" and "force the shutter" in retell["hint"]
+    res = next(e["data"] for e in events if e["event"] == "resolution")
+    assert res["assessed"][0]["stat"] == "hands"                              # "hands (+2)" as the rules list it: the name only
+    done = events[-1]["data"]
+    assert done["mechanics"]["rewritten"]["by"] == "referee" and done["mechanics"]["rulings"] == []
+    assert done["mechanics"]["calls"] and "shoulder" in done["text"]

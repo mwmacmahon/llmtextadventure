@@ -72,7 +72,12 @@ rewrite button sends whatever is in the text box as the ruling; an empty box jus
 
 The **guard** (`Engine.play`, DESIGN2 §8) wraps every turn and rewrite. The referee's `ruling` rows name
 a rule (contradiction, unauthorized_addition, directive_ignored, check_skipped, check_ignored, leak;
-drift is minor) and carry a fix as their note; code decides severity. Mode `log` shows the prose as it
+drift is minor) and carry a fix as their note; code decides severity. A row with the rule written in
+`value` and the sentence in `note` is read the same way. The engine adds one ruling of its own, without
+the referee: when it assessed checks, listed them in THIS TURN, and the narrator called none of them,
+`check_skipped` (serious, `by: engine`) with a fix naming the checks, because a weak referee does not
+catch this and the engine already knows. A referee call that fails (a truncated grammar answer, a
+timeout) records nothing that turn and says so in the mechanics row's issues. Mode `log` shows the prose as it
 is written and records the ruling; `rewrite` shows it, then retells once through the Rewrite path with
 the referee's fix as the instruction; `gate` holds the text and § lines back, sends `progress` events
 instead (a share of the instance's running-average narration length, capped at 90%, "slow" past

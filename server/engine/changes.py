@@ -74,6 +74,8 @@ def apply_changes(game: Any, state: BaseModel, report: ChangeReport, *, present:
     decls: list[Declaration] = []
     for ch in report.changes:
         k = ch.kind
+        if k in ("set", "add") and not ch.field.strip() and "." in ch.target.strip():   # "player.dread" written as the target: split it
+            ch = ch.model_copy(update=dict(zip(("target", "field"), ch.target.strip().rsplit(".", 1))))
         if skip_set and (ch.target.strip().lower() in skip_set or ch.field.strip().lower() in skip_set):
             w.note(f"{k} {ch.target}: already applied by the lever; not counted again")
             continue
@@ -90,10 +92,13 @@ def apply_changes(game: Any, state: BaseModel, report: ChangeReport, *, present:
             ex.issues.append((ch.value or ch.note).strip())
         elif k == "ruling":
             rule = (ch.field or ch.target).strip().lower().replace(" ", "_") or "issue"
+            what, fix = (ch.value or ch.note).strip(), (ch.note or ch.value).strip()
+            if rule not in RULES and ch.value.strip().lower().replace(" ", "_") in RULES:
+                rule, what, fix = ch.value.strip().lower().replace(" ", "_"), (ch.note or ch.value).strip(), (ch.note or ch.value).strip()   # the rule put in value, the sentence in note
             if rule not in RULES:                      # a rule the table does not know is an observation, not a verdict
-                ex.issues.append(f"{rule}: {(ch.value or ch.note).strip()}")
+                ex.issues.append(f"{rule}: {what}")
             else:
-                ex.rulings.append({"rule": rule, "what": (ch.value or ch.note).strip(), "fix": (ch.note or ch.value).strip(), "serious": rule in SERIOUS_RULES})
+                ex.rulings.append({"rule": rule, "what": what, "fix": fix, "serious": rule in SERIOUS_RULES})
         elif k == "thread_open":
             if (ch.value or ch.note).strip():
                 ex.threads_opened.append((ch.value or ch.note).strip())

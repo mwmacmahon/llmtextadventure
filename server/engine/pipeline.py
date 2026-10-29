@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -475,6 +476,7 @@ class Engine:
         report = ApplyReport()
         delta_json: dict | None = None
         lever_outcomes: list[dict[str, Any]] | None = None
+        referee_error: str | None = None
         if not getattr(game, "skip_referee", False) and adj is not None and adj.kind in ("action", "trivial"):
             yield {"event": "progress", "data": _progress("checking", len(narration), max(len(narration), 1))}
             try:
@@ -542,7 +544,8 @@ class Engine:
             except Exception as e:
                 ledger("model_call", {"role": "referee", "error": repr(e)})
                 log.exception("step.failed " + logs.kv(iid=iid, turn=turn, step="referee"))
-                yield {"event": "referee", "data": {"delta": None, "error": f"referee failed: {e}"}}
+                referee_error = f"referee failed, nothing recorded this turn: {e}"
+                yield {"event": "referee", "data": {"delta": None, "error": referee_error}}
 
         if levers and lever_outcomes is None:                    # no referee ran: the levers happened
             state, lever_outcomes = self._commit_levers(game, state, levers, [], iid, turn, ledger)
@@ -567,6 +570,16 @@ class Engine:
         self.store.save_snapshot(iid, turn, state.model_dump(mode="json"))
         log.info("turn.done " + logs.kv(iid=iid, turn=turn, seconds=time.monotonic() - t_turn, ending=_hook(game, "ending", state)))
 
+        # The engine's own ruling: it assessed checks, told the narrator to call them, and the narrator called none.
+        # The referee is asked to catch this too; a weak one does not, and the engine already knows.
+        rulings = list((delta_json or {}).get("rulings", []))
+        skipped = list(calls_block.get("assessed_not_called", []))
+        if skipped and not calls_block.get("calls") and not any(r.get("rule") == "check_skipped" for r in rulings):
+            rulings.append({"rule": "check_skipped", "serious": True, "by": "engine",
+                            "what": "the narrator called none of the assessed checks: " + ", ".join(skipped),
+                            "fix": "When the fiction reaches each assessed attempt (" + ", ".join(skipped) + "), write its <<CHECK stat difficulty>> line and wait for the result; play what the result says instead of deciding the outcome yourself."})
+            log.info("engine.ruling " + logs.kv(iid=iid, turn=turn, rule="check_skipped", serious=True, skipped=",".join(skipped)))
+
         mechanics = {
             "kind": adj.kind if adj else None, "elapsed": res["elapsed"],
             "events": [f.event_id + ("" if f.variant == "trigger" else " (fallback)") for f in res["fired"]]
@@ -580,9 +593,9 @@ class Engine:
             "rejected": [r.model_dump() for r in report.rejected],
             "drift": drift_lines,
             "levers": lever_outcomes,
-            "rulings": (delta_json or {}).get("rulings", []),
-            "issues": (delta_json or {}).get("issues", []) + res["notes"]
-                      + [f"ruling {r['rule']}{' (serious)' if r['serious'] else ''}: {r['what']}" for r in (delta_json or {}).get("rulings", [])]
+            "rulings": rulings,
+            "issues": (delta_json or {}).get("issues", []) + res["notes"] + ([referee_error] if referee_error else [])
+                      + [f"ruling {r['rule']}{' (serious)' if r['serious'] else ''}: {r['what']}" for r in rulings]
                       + [f"lever {o['id']} not completed: {o['text']}" for o in lever_outcomes if o["status"] == "not_completed"]
                       + [f"assessed check not called: {a}" for a in calls_block.get("assessed_not_called", [])]
                       + [f"narrator: {p}" for p in calls_block.get("problems", [])],
@@ -805,7 +818,7 @@ class Engine:
             for intent in adj.intents:
                 if not intent.check:
                     continue
-                stat = intent.check.stat
+                stat = re.sub(r"\s*\(.*?\)\s*$", "", intent.check.stat).strip().lower()   # "muscle (-1)" as listed: the name only
                 if stat not in stats:
                     if fallback and fallback in stats:
                         notes.append(f"adjudicator named unknown stat {stat!r} for {intent.check.label!r}; assessed {fallback} instead")
