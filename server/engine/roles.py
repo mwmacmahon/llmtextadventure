@@ -197,6 +197,33 @@ def referee_messages(rules: str, state_text: str, directives: list[str], player_
     return system, [Msg("user", user)]
 
 
+# A split referee (RoleConfig.split): the same system and the same user message (cached), then one short
+# focus per pass, so each call answers a smaller question. changes.merge_parts keeps from each pass only
+# the row kinds it owns.
+REFEREE_PARTS: dict[str, str] = {
+    "player": "THIS PASS: report only rows about the player's character: its own fields (conditions, meters, health, where it ended up), "
+              "what it carries (counts used up or fired, things picked up, given away, dropped or lost) and the clues it learned (learned player: "
+              "only concrete evidence the rules would put in the notebook, not a description of what it saw or felt; most turns have none or one). "
+              "Other passes report everyone and everything else, and the timers, unseen facts and rulings: leave those out. "
+              "Write present, log_line and confidence for the whole narration.",
+    "world": "THIS PASS: report only rows about everyone and everything other than the player's character: other people (mood, what they "
+             "learned or said, where they went), systems, places and things not in the player's possession, the new people, places and "
+             "things the prose introduced (only what could matter again and the state does not already list; a person or creature is never a thing), "
+             "flags, and threads: check every commitment the prose made (a promise, an order, a plan with a time) for a thread_open, and every "
+             "listed open thread for a close. Other passes report the player's own fields and pockets, "
+             "and the timers, unseen facts and rulings: leave those out. Write present, log_line and confidence for the whole narration.",
+    "time": "THIS PASS: report only what is coming and what went wrong: soon rows for what the prose or the notes set in motion, unseen "
+            "rows for what is happening out of the player's sight, set <pending id>.resolved for a listed pending the prose settled, "
+            "not_done for a lever not completed, and ruling and issue rows: always check the four things. Other passes report every "
+            "change to people, things and places: leave those out. Write present, log_line and confidence for the whole narration.",
+}
+
+
+def referee_part_messages(msgs: list[Msg], part: str) -> list[Msg]:
+    """The shared messages with a cache breakpoint on the last, then the pass's focus as its own message."""
+    return [*msgs[:-1], Msg(msgs[-1].role, msgs[-1].content, cache=True), Msg("user", REFEREE_PARTS[part])]
+
+
 # ---- summarizer -----------------------------------------------------------
 
 SUMMARIZER_INSTRUCTIONS = """You keep the running memory of a text adventure for its narrator. The oldest turns are about to drop out of the narrator's context; fold them into the story so far so nothing that matters is lost.

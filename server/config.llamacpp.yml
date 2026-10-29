@@ -51,6 +51,7 @@ roles:
     model: qwen3.5-35b-a3b
     two_pass: false         # true: think first (no grammar), then the grammar call; measure with tools/eval_replay.py --opt two_pass=true
     two_pass_max_tokens: 3072
+    split: false            # true: three passes (player / world / timers and rulings) over one cached prompt; measure with --opt split=true
     slot: 2
     max_tokens: 1536
     temperature: 0.2

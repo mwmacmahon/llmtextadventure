@@ -197,6 +197,20 @@ itself: 14/20), referee rows 22/108 against 24/108 (Sonnet: 65/108), at ten time
 against 2.2 s); the thinking ran to about 3,000 tokens and finished. The 3B-active model's judgment is the
 ceiling, not its lack of room to think. Left in as a knob for the dense model.
 
+## The split referee
+
+`split: true` on the referee asks three smaller questions instead of one: the same system and user
+message (with a cache breakpoint on it), then one focus line each (`roles.REFEREE_PARTS`): the player's
+own fields and pockets; everyone and everything else, flags and threads; timers, unseen facts, settled
+pendings, not_done and rulings. The first pass runs alone and writes the cache; the other two read it,
+together on Anthropic, one after the other on llama.cpp (one slot). `changes.merge_parts` keeps from
+each pass only the kinds it owns and drops the second of two rows that say the same thing; the
+verdict's `_call.parts` has seconds, rows and kept per pass. Measured on Sonnet (18 turns, two runs
+each, 2026-10-29 night): rows recalled 75–78 of 108 against 66–68 in one call; about 30 more rows the
+key does not have, mostly clues until the player pass was told what a clue is; 5.7 s against 3.6 s;
+$0.023 against $0.014 a turn, the uncached input down from 48k to 7.5k tokens. Not yet measured
+locally.
+
 ## The next model: Qwen3.5-27B dense
 
 The A3B's judgment is its ceiling, not its prompts: 3B active parameters decide every referee row. The

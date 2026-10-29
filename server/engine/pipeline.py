@@ -50,8 +50,8 @@ from .mechanics import RESOLVERS, CheckRequest, CheckResult, rng_for
 from .providers import Msg, StreamDone, TextDelta, get_provider
 from .providers.base import Msg, Usage
 from .roles import (Adjudication, adjudicator_messages, referee_messages, summarizer_messages, NARRATOR_PROTOCOL)
-from .roles import NARRATOR_WORLD, ChangeReport
-from .changes import apply_changes, screen_unseen_clues
+from .roles import NARRATOR_WORLD, REFEREE_PARTS, ChangeReport, referee_part_messages
+from .changes import apply_changes, merge_parts, screen_unseen_clues
 from .store import Store
 
 MODEL_CALL_KINDS = {"model_call": None, "adjudication": "adjudicator", "verdict": "referee"}
@@ -1008,8 +1008,11 @@ class Engine:
         provider = get_provider(role)
         system, msgs = referee_inputs(game, state, directives, player_text, narration, adj, levers)
         t0 = time.monotonic()
-        delta, usage = await provider.extract(role, system, msgs, ChangeReport)
-        return delta, {"provider": provider.name, "model": usage.extra.get("model") or role.model, "seconds": round(time.monotonic() - t0, 2), "usage": asdict(usage)}
+        delta, usage, parts = await extract_referee(provider, role, system, msgs)
+        meta = {"provider": provider.name, "model": usage.extra.get("model") or role.model, "seconds": round(time.monotonic() - t0, 2), "usage": asdict(usage)}
+        if parts:
+            meta["parts"] = parts
+        return delta, meta
 
 
 # ---- helpers ---------------------------------------------------------------
@@ -1047,6 +1050,44 @@ async def extract_adjudication(provider: Any, role: Any, system: str, msgs: list
         if second.intents:
             adj = second
     return adj, usage, retry, recover_misplaced_checks(adj, stats)
+
+
+def _sum_usage(*us: Usage) -> Usage:
+    out = Usage()
+    for u in us:
+        out.input_tokens += u.input_tokens
+        out.output_tokens += u.output_tokens
+        out.cache_read_input_tokens += u.cache_read_input_tokens
+        out.cache_creation_input_tokens += u.cache_creation_input_tokens
+        out.extra = {**out.extra, **u.extra}
+    return out
+
+
+async def extract_referee(provider: Any, role: Any, system: str, msgs: list[Msg]) -> tuple[ChangeReport, Usage, dict[str, dict]]:
+    """The referee's call as the engine makes it, live and in the replay harness. With `role.split`, three
+    passes over the same cached prompt (roles.REFEREE_PARTS), each a smaller question: the first alone, so
+    it writes the cache the others read; then the other two together, or one after the other on llama.cpp,
+    where every pass shares the role's one slot. Returns the merged report, the summed usage and, when
+    split, per pass {seconds, rows, kept}."""
+    if not getattr(role, "split", False):
+        delta, usage = await provider.extract(role, system, msgs, ChangeReport)
+        return delta, usage, {}
+
+    async def one(part: str) -> tuple[str, ChangeReport, Usage, float]:
+        t0 = time.monotonic()
+        rep, u = await provider.extract(role, system, referee_part_messages(msgs, part), ChangeReport)
+        return part, rep, u, round(time.monotonic() - t0, 2)
+
+    names = list(REFEREE_PARTS)
+    done = [await one(names[0])]
+    if provider.name == "llamacpp":
+        for part in names[1:]:
+            done.append(await one(part))
+    else:
+        done += await asyncio.gather(*(one(part) for part in names[1:]))
+    delta, counts = merge_parts([(part, rep) for part, rep, _, _ in done])
+    meta = {part: {"seconds": sec, **counts[part]} for part, _, _, sec in done}
+    return delta, _sum_usage(*(u for _, _, u, _ in done)), meta
 
 
 _TIER = r"(very[ _-]?low|very[ _-]?high|low|medium|high)"

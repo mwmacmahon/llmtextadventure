@@ -236,3 +236,44 @@ def test_a_row_whose_own_note_takes_it_back_is_not_applied(engine: Engine):
     assert back("gone", "Frank still has it in his pocket") and back("set", "no change") and back("add", "already counted, ignore this")
     assert not back("learned", "Szabo ignored the question") and not back("new", "a man still holding a knife")
     assert not back("gone", "dropped in the river") and not back("soon", "ignore")
+
+
+async def test_a_split_referee_asks_three_smaller_questions_over_one_cached_prompt():
+    from engine.changes import merge_parts
+    from engine.pipeline import extract_referee
+    from engine.providers.base import Msg, Usage
+    from engine.roles import REFEREE_PARTS
+    answers = {
+        "player": ChangeReport.of(Change(kind="add", target="revolver", field="loaded", value="-2"),
+                                  Change(kind="learned", target="player", value="The thing bleeds black under the lamp"),
+                                  Change(kind="soon", value="the thing comes back", minutes=5), present=["szabo"], log_line="Frank fired twice."),
+        "world": ChangeReport.of(Change(kind="set", target="szabo", field="mood", value="terrified"),
+                                 Change(kind="learned", target="player", value="Under the lamp the thing bleeds black"),
+                                 Change(kind="thread_open", value="What is the thing?"), log_line="", confidence="low"),
+        "time": ChangeReport.of(Change(kind="soon", value="the thing climbs back onto the roof", minutes=5),
+                                Change(kind="set", target="p1", field="resolved", value="stopped"),
+                                Change(kind="gone", target="matches"), log_line="x"),
+    }
+    seen: list[list[Msg]] = []
+
+    class Stub:
+        name = "anthropic"
+
+        async def extract(self, role, system, messages, schema):
+            seen.append(messages)
+            part = next((k for k, v in REFEREE_PARTS.items() if messages[-1].content == v), "player")
+            return answers[part], Usage(input_tokens=100, cache_read_input_tokens=50 if seen[1:] else 0)
+
+    role = load_config().role("referee").model_copy(update={"split": True})
+    delta, usage, parts = await extract_referee(Stub(), role, "sys", [Msg("user", "state and prose")])
+    assert [m[-1].content for m in seen][0] == REFEREE_PARTS["player"]            # the first pass alone writes the cache
+    assert all(m[0].cache and m[0].content == "state and prose" for m in seen)    # the shared message carries the breakpoint
+    assert [(c.kind, c.target or c.value) for c in delta.changes] == [
+        ("add", "revolver"), ("learned", "player"), ("set", "szabo"), ("thread_open", "What is the thing?"),
+        ("soon", "the thing climbs back onto the roof"), ("set", "p1")]                # each pass's own kinds; the same clue once
+    assert delta.present == ["szabo"] and delta.log_line == "Frank fired twice." and delta.confidence == "low"
+    assert parts["world"]["rows"] == 3 and parts["world"]["kept"] == 2 and parts["time"]["kept"] == 2
+    assert usage.input_tokens == 300 and usage.cache_read_input_tokens == 100
+    one, _, none = await extract_referee(Stub(), role.model_copy(update={"split": False}), "sys", [Msg("user", "state and prose")])
+    assert none == {} and len(seen) == 4
+    assert merge_parts([])[0].changes == []

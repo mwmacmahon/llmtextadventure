@@ -37,10 +37,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from engine.changes import apply_changes, screen_unseen_clues  # noqa: E402
 from engine.config import load_config  # noqa: E402
-from engine.pipeline import _hook, _named_present, adjudicator_inputs, extract_adjudication, referee_inputs  # noqa: E402
+from engine.pipeline import _hook, _named_present, adjudicator_inputs, extract_adjudication, extract_referee, referee_inputs  # noqa: E402
 from engine.providers import Msg, get_provider  # noqa: E402
 from engine.registry import load_games  # noqa: E402
-from engine.roles import ChangeReport  # noqa: E402
 from engine.store import Store  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -244,7 +243,7 @@ async def replay_turn(rec: dict, games: dict, cfg, roles: set[str], opts: dict[s
         system, msgs = referee_inputs(game, state, rec["directives"], rec["player_text"], rec["narration"], adj_obj, levers=[])
         t0 = time.monotonic()
         try:
-            delta, usage = await provider.extract(role, system, msgs, ChangeReport)
+            delta, usage, parts = await extract_referee(provider, role, system, msgs)
         except Exception as e:
             res["referee"] = {"seconds": round(time.monotonic() - t0, 1), "error": f"{type(e).__name__}: {e}"[:300]}
             return res
@@ -259,7 +258,7 @@ async def replay_turn(rec: dict, games: dict, cfg, roles: set[str], opts: dict[s
             applied, rejected = list(report.applied), [r.model_dump(mode="json") for r in report.rejected] + [r.model_dump(mode="json") for r in screened]
         except Exception as e:
             applied, rejected = [], [{"path": "apply", "reason": f"{type(e).__name__}: {e}"[:200], "value": ""}]
-        res["referee"] = {"seconds": seconds, "got": got_rows, "present": list(delta.present), "log_line": delta.log_line, "usage": asdict(usage),
+        res["referee"] = {"seconds": seconds, "got": got_rows, "present": list(delta.present), "log_line": delta.log_line, "usage": asdict(usage), "parts": parts,
                           "rows": score_rows(exp["changes"], got_rows), "applied": score_applied(exp["applied"], applied),
                           "rejected": rejected, "expected_rejected": exp.get("rejected", [])}
     return res

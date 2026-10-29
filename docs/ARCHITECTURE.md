@@ -138,6 +138,7 @@ NARRATE      streamed. system = frozen prefix (cached, 1h). messages = [story so
              and THIS TURN gives the results, for a model that writes outcomes before calling.
   ▼
 REFEREE      Sonnet (was Haiku; see config.yml for the measurements), one messages.parse against roles.ChangeReport, the same for every game
+             (split: three passes over one cached prompt, player / world / timers and rulings, merged by changes.merge_parts)
              rows {kind, target, field, value, who, note, minutes, hidden} + present, log_line, confidence
   ▼
 APPLY        engine/changes.py: engine kinds (threads, flags, pendings, unseen, lever vetoes, issues),

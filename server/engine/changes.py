@@ -109,6 +109,51 @@ def screen_unseen_clues(report: ChangeReport, prose: str, notes: list[str]) -> l
     return dropped
 
 
+TIME_KINDS = {"soon", "unseen", "not_done", "issue", "ruling"}
+WORLD_ONLY_KINDS = {"flag", "thread_open", "thread_close"}
+_CONFIDENCE = ["low", "medium", "high"]
+
+
+def owns(part: str, ch: Change) -> bool:
+    """Which pass of a split referee a row belongs to (roles.REFEREE_PARTS). The player and world passes share
+    the game kinds; merge_parts drops the second of a pair that says the same thing."""
+    time_row = ch.kind in TIME_KINDS or (ch.kind == "set" and is_pending_id(ch.target) and ch.field.strip().lower() == "resolved")
+    if part == "time":
+        return time_row
+    if time_row:
+        return False
+    return part == "world" or ch.kind not in WORLD_ONLY_KINDS
+
+
+def _same_row(a: Change, b: Change) -> bool:
+    if a.kind != b.kind or a.target.strip().lower() != b.target.strip().lower() or a.field.strip().lower() != b.field.strip().lower():
+        return False
+    if a.kind in ("learned", "new"):                    # the same fact or thing in other words
+        wa, wb = _content_words(a.value), _content_words(b.value)
+        return bool(wa and wb) and len(wa & wb) / min(len(wa), len(wb)) >= 0.5
+    return True
+
+
+def merge_parts(parts: list[tuple[str, ChangeReport]]) -> tuple[ChangeReport, dict[str, dict[str, int]]]:
+    """One report from a split referee's passes, in pass order: each pass's own kinds, the first of two rows
+    that say the same thing, every person any pass named present, the first log line, the lowest confidence.
+    Also returns per pass {rows, kept}."""
+    kept: list[Change] = []
+    present: list[str] = []
+    counts: dict[str, dict[str, int]] = {}
+    for part, rep in parts:
+        n = 0
+        for ch in rep.changes:
+            if owns(part, ch) and not any(_same_row(ch, k) for k in kept):
+                kept.append(ch)
+                n += 1
+        present += [x for x in rep.present if x not in present]
+        counts[part] = {"rows": len(rep.changes), "kept": n}
+    log_line = next((r.log_line for _, r in parts if r.log_line.strip()), "")
+    confidence = min((r.confidence for _, r in parts), key=_CONFIDENCE.index, default="medium")
+    return ChangeReport(changes=kept, present=present, log_line=log_line, confidence=confidence), counts
+
+
 def apply_changes(game: Any, state: BaseModel, report: ChangeReport, *, present: list[str], causes: list[str] | None,
                   skip: list[str] | None = None) -> tuple[BaseModel, ApplyReport, Extras]:
     """Land a ChangeReport. `skip`: targets or fields a lever already applied (the command's `referee_skip`)."""
