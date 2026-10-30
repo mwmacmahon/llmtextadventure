@@ -203,6 +203,7 @@ Graded (2026-10-29 night; the old 18 turns carry 75 required rows and 19 checks,
 | 27B i1-Q4_K_M, same rule, v2 | 66 / 90 | 19 | 23 / 24, commands 20 / 24 | 3 |
 | Qwen3-32B Q4_K_M (full attention, 16k a slot), v2 | 56 / 88 | 20 | 18 + 3 right stat / 24, commands 17 / 24 | 6 |
 | A3B (Q4, check last), v2 | 45 / 90 | 15 | 18 + 1 / 24, commands 17 / 24 | 0 |
+| A3B, temperature 0, no repeat penalty (the sweep's pick), v2 | 56 / 90 | 24 | 19 / 24, commands 20 / 24 | 0 |
 
 **Seconds a call (2026-10-29 evening; the referee runs after the narration, so the player waits for it):**
 Sonnet 3.4–3.9 one call, 5.6 split; Opus 5.0 and 7.9; A3B 3.3–3.5 (it decodes at 116–129 tokens a second,
@@ -223,6 +224,12 @@ the fastest dense model and the weakest judge of the three (an older generation;
 at these prompt sizes). The A3B is four times faster than any of them and half the referee (45/90), with the
 adjudicator at 18 of 24. Hosted, for scale: Sonnet split 5.6 / 4.0 s at 85/90 and 24/24; Opus 7.9 / 5.4 s at
 90/90 and 22/24. One run each; the hosted runs leave no row unjudged because the key was written from them.
+
+**Sampling (swept on the A3B, 2026-10-29, one run a setting):** the repeat penalty of 1.05 cost the referee
+about ten required rows of 90; without it, greedy decoding met 56/90 with no call truncated, temperature 0.2
+the same with two calls run into the 1536-token budget, and Qwen's general advice (0.6 / 0.95 / 20 / min_p 0.05)
+fewer with two truncations. The adjudicator sat at 18–22 of 24 whatever the setting. `config.llamacpp.yml`
+now sets the structured roles to temperature 0 and repeat_penalty 1.0; the dense models start from that.
 
 The A3B adjudicator with `check` last is as good as either hosted model; its referee is the weak part
 (half the required rows, about two errors a turn). The key was written by Opus from every run's rows, so

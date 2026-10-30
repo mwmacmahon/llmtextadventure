@@ -17,8 +17,11 @@ server:
 # from llama-game.sh's command line (--temp 0.7 --top-p 0.8 --top-k 20 --min-p 0.0, repeat penalty 1.0):
 #   narrator 0.7, adjudicator 0.2, referee 0.2, summarizer 0.4.
 # Now: the narrator keeps Qwen's recommended general settings (0.7 / 0.8 / 20 / 0); the structured roles
-# sample tight (0.2 / 0.5 / 20 / 0) with a small repeat penalty, since a schema-constrained loop otherwise
-# runs the referee into its token budget. Tuning is for later; these are the known-solid starting points.
+# are greedy (temperature 0) with no repeat penalty. Swept on the A3B against the graded key (2026-10-29,
+# DECISIONS D30): the 1.05 penalty cost the referee about ten required rows of 90 (45 -> 56 without it);
+# temperature 0.2 without the penalty scored the same but ran two calls into the 1536-token budget, greedy
+# none. min_p 0.05 / top_p 0.95 (Qwen's general advice) wrote different rows, mostly unjudged, and truncated
+# twice. One run per setting; the dense models get these as their starting point.
 roles:
   narrator:
     provider: llamacpp
@@ -40,11 +43,11 @@ roles:
     two_pass_max_tokens: 3072
     slot: 1
     max_tokens: 1536              # every field is required under the grammar now (inline_schema): answers run longer
-    temperature: 0.2
+    temperature: 0.0
     top_p: 0.5
     top_k: 20
     min_p: 0.0
-    repeat_penalty: 1.05
+    repeat_penalty: 1.0
     timeout_seconds: 120
   referee:
     provider: llamacpp
@@ -54,11 +57,11 @@ roles:
     split: false            # true: three passes (player / world / timers and rulings) over one cached prompt; measure with --opt split=true
     slot: 2
     max_tokens: 1536
-    temperature: 0.2
+    temperature: 0.0
     top_p: 0.5
     top_k: 20
     min_p: 0.0
-    repeat_penalty: 1.05
+    repeat_penalty: 1.0
     timeout_seconds: 120
   summarizer:
     provider: llamacpp
