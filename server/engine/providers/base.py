@@ -11,8 +11,9 @@ the history, so any backend sees the same bytes.
 """
 from __future__ import annotations
 
+from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import AsyncIterator, Literal, Protocol, TypeVar
+from typing import AsyncIterator, Callable, Literal, Protocol, TypeVar
 
 from pydantic import BaseModel
 
@@ -52,6 +53,31 @@ class StreamDone:
 
 
 StreamEvent = TextDelta | StreamDone
+
+
+@dataclass
+class Exchange:
+    """One extract call as sent and as answered. The engine never keeps these; a recorder (the eval harness,
+    tools/eval_replay.py) sets RECORDER for the calls it makes and stores them with its run."""
+    provider: str
+    model: str
+    schema: str
+    system: str
+    messages: list[Msg]
+    content: str = ""                 # the raw reply, before parsing
+    reasoning: str = ""               # a thinking model's reasoning text, where the backend returns it
+    stop_reason: str | None = None
+    error: str | None = None          # why the call raised (truncated, refused, unparseable), with the reply kept above
+
+
+RECORDER: ContextVar[Callable[[Exchange], None] | None] = ContextVar("RECORDER", default=None)
+
+
+def record(**kw) -> None:
+    """Hand one exchange to the recorder in this context, if any. Costs nothing when none is set."""
+    f = RECORDER.get()
+    if f is not None:
+        f(Exchange(**kw))
 
 
 class Provider(Protocol):

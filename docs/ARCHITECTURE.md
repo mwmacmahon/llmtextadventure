@@ -48,6 +48,7 @@ server/
                          lays over its config while that model is loaded (engine/profiles.py; docs/LOCAL_LLM.md)
   tools/llm.py           the local model on the GPU box: status, send a profile and swap to it
   tools/eval_replay.py   replays stored turns through the adjudicator and referee on any model, scores them, grades them against the hand-judged key (docs/LOCAL_LLM.md)
+  tools/eval_report.py   hydrates eval runs of any format into readable pages: per turn, caught / missed / wrong / unjudged with the sentences that show it; a comparison per corpus
   tests/                 offline tests (fake provider); tests/live: opt-in live role evaluations
 web/                     Vite + React + TypeScript; renders the UI schema, knows no game
 docs/                    this file, GAME_AUTHORING.md, LOCAL_LLM.md
@@ -274,6 +275,15 @@ provider, model or role option, landed with `apply_changes`, and scored per role
 key (`notes/eval/gold.yml`, judged by hand: required, allowed and forbidden rows and checks per turn)
 says how far it is right, and `eval_replay.py grade` re-grades stored runs against it with no model
 calls.
+
+Every run records itself in full (`RUN_FORMAT` 2): the commit, the corpus and the key it used by content hash
+(copied once into `notes/eval/blobs/`), every model call (the prompts as blob ids, the raw reply, the reasoning,
+any error, captured by `engine.providers.RECORDER`, a context variable the engine itself never sets), and the
+full list of what the engine applied. `tools/eval_report.py` turns runs into pages under `notes/eval/reports/`:
+a ledger per turn (each key item caught, missed or wrong, with the sentences of the prose that show it and what
+the source model wrote), the raw calls, and a comparison per corpus with every key item against every run and
+the items few runs catch. It keeps one reader per run format, so old runs stay readable, and grades at report
+time with today's grader, against today's key or the one the run carried.
 
 
 ## 2.0 (branch `2.0`, in progress; design in `notes/DESIGN2.md`)

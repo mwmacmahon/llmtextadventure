@@ -17,7 +17,9 @@ Scores (per role, over the corpus):
   adjudicator  kind, time (within 2 minutes or half), checks as (stat, difficulty) pairs, commands, carried
   referee      rows by (kind, target, field, value) with word-overlap for the text kinds; the applied
                list after apply_changes by path and by exact line; rejections and their reasons
-Runs are written to ../notes/eval/runs/<tag>.json with every turn's diff.
+Runs are written to ../notes/eval/runs/<tag>.json with every turn's diff and every model call (prompts by blob id
+in ../notes/eval/blobs, the raw reply, the reasoning, the error), the commit, and the corpus and key by content hash
+(RUN_FORMAT). tools/eval_report.py hydrates any run, of any format, into readable pages.
 
 The graded key: those scores agree with the strong model, which is not the same as being right. Turns in
 notes/eval/gold.yml are judged by hand (required / allowed / forbidden rows and checks); `run` grades against
@@ -27,9 +29,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import datetime as dt
+import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from collections import Counter
@@ -42,14 +47,48 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from engine.changes import apply_changes, screen_unseen_clues  # noqa: E402
 from engine.config import load_config  # noqa: E402
 from engine.pipeline import _hook, _named_present, adjudicator_inputs, extract_adjudication, extract_referee, referee_inputs  # noqa: E402
-from engine.providers import Msg, get_provider  # noqa: E402
+from engine.providers import RECORDER, Exchange, Msg, get_provider  # noqa: E402
 from engine.registry import load_games  # noqa: E402
 from engine.store import Store  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 TEXT_KINDS = {"soon", "unseen", "learned", "thread_open", "ruling", "issue"}
 GOLD = ROOT / "notes" / "eval" / "gold.yml"
+BLOBS = ROOT / "notes" / "eval" / "blobs"
+# The run file's format. 1: no `format` key (2026-10-29/30: rows and scores, the corpus by path). 2: provenance (git,
+# the corpus and the key by content hash, copied into BLOBS), every model call (prompts by blob id, the raw reply, the
+# reasoning, the error), and the full applied list. tools/eval_report.py keeps a reader for every format; bump this
+# and add a reader there whenever the shape changes.
+RUN_FORMAT = 2
 NOTES_HEAD = "\n\n[NARRATOR'S NOTES: facts it decided, what is happening unseen (unseen:), what it set in motion (soon:)]\n"
+
+
+# ---- the blob store and provenance ------------------------------------------------
+def put_blob(text: str, suffix: str = ".txt") -> str:
+    """Store text once by its content (sha256, 16 hex) and return the id; the same prefix sent 500 times is one file."""
+    bid = hashlib.sha256(text.encode()).hexdigest()[:16]
+    path = BLOBS / f"{bid}{suffix}"
+    if not path.exists():
+        BLOBS.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    return bid
+
+
+def provenance() -> dict:
+    """What produced this run: the commit, whether the server tree had uncommitted changes, this file's own hash."""
+    def git(*a: str) -> str:
+        try:
+            return subprocess.run(["git", *a], cwd=ROOT, capture_output=True, text=True, timeout=10).stdout.strip()
+        except Exception:
+            return ""
+    return {"git": git("rev-parse", "--short=12", "HEAD"), "dirty": bool(git("status", "--porcelain", "--", "server")),
+            "eval_replay": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()[:16]}
+
+
+def exchange_json(role: str, ex: Exchange) -> dict:
+    return {"role": role, "provider": ex.provider, "model": ex.model, "schema": ex.schema, "system": put_blob(ex.system),
+            "messages": [{"role": m.role, "content": put_blob(m.content)} for m in ex.messages],
+            "content": ex.content, "reasoning": ex.reasoning, "stop_reason": ex.stop_reason, "error": ex.error}
 
 
 # ---- corpus ------------------------------------------------------------------
@@ -299,7 +338,9 @@ def grade_rows(gold: dict, got: list[dict]) -> dict:
             allowed.append(r)
         else:
             unjudged.append(r)
-    return {"required": len(gold.get("required", [])), "hits": hits, "missed": missed, "errors": errors, "allowed": len(allowed), "unjudged": unjudged}
+    return {"required": len(gold.get("required", [])), "hits": hits, "missed": missed, "errors": errors, "allowed": len(allowed), "unjudged": unjudged,
+            "met": [{"item": i, "row": rows[j]} for j, i in sorted(owner.items(), key=lambda x: x[1])],     # which row met which required item (by index)
+            "missed_items": [i for i in range(len(req)) if i not in met], "allowed_rows": allowed}
 
 
 def grade_adjudication(gold: dict, got: dict) -> dict:
@@ -368,8 +409,19 @@ async def replay_turn(rec: dict, games: dict, cfg, roles: set[str], opts: dict[s
     game = games[rec["game"]]
     state = game.load_state(rec["snapshot"])
     exp = rec["expected"]
-    res: dict[str, Any] = {"iid": rec["iid"], "turn": rec["turn"], "game": rec["game"]}
-    if "adjudicator" in roles:                              # graded by the key; scored against the old answer only where it is sound
+    res: dict[str, Any] = {"iid": rec["iid"], "turn": rec["turn"], "game": rec["game"], "calls": []}
+    current = {"role": ""}
+    token = RECORDER.set(lambda ex: res["calls"].append(exchange_json(current["role"], ex)))
+    try:
+        await _replay_roles(rec, game, state, exp, res, current, cfg, roles, opts)
+    finally:
+        RECORDER.reset(token)
+    return res
+
+
+async def _replay_roles(rec: dict, game, state, exp: dict, res: dict, current: dict, cfg, roles: set[str], opts: dict[str, str]) -> None:
+    if "adjudicator" in roles:
+        current["role"] = "adjudicator"                              # graded by the key; scored against the old answer only where it is sound
         role = _role_with(cfg, "adjudicator", opts)
         provider = get_provider(role)
         recent = [Msg(**m) for m in rec["recent"]]
@@ -384,6 +436,7 @@ async def replay_turn(rec: dict, games: dict, cfg, roles: set[str], opts: dict[s
         except Exception as e:                                  # a refused prompt, a truncated extract: counted, not fatal
             res["adjudicator"] = {"seconds": round(time.monotonic() - t0, 1), "error": f"{type(e).__name__}: {e}"[:300]}
     if "referee" in roles:
+        current["role"] = "referee"
         role = _role_with(cfg, "referee", opts)
         provider = get_provider(role)
         adj_obj = None
@@ -399,7 +452,7 @@ async def replay_turn(rec: dict, games: dict, cfg, roles: set[str], opts: dict[s
             delta, usage, parts = await extract_referee(provider, role, system, msgs)
         except Exception as e:
             res["referee"] = {"seconds": round(time.monotonic() - t0, 1), "error": f"{type(e).__name__}: {e}"[:300]}
-            return res
+            return
         seconds = round(time.monotonic() - t0, 1)
         got_rows = [c.model_dump(mode="json") for c in delta.changes]
         ids = _hook(game, "entity_ids", state, default=[])
@@ -413,8 +466,7 @@ async def replay_turn(rec: dict, games: dict, cfg, roles: set[str], opts: dict[s
             applied, rejected = [], [{"path": "apply", "reason": f"{type(e).__name__}: {e}"[:200], "value": ""}]
         res["referee"] = {"seconds": seconds, "got": got_rows, "present": list(delta.present), "log_line": delta.log_line, "usage": asdict(usage), "parts": parts,
                           "rows": score_rows(exp["changes"], got_rows), "applied": score_applied(exp["applied"], applied),
-                          "rejected": rejected, "expected_rejected": exp.get("rejected", [])}
-    return res
+                          "rejected": rejected, "expected_rejected": exp.get("rejected", []), "applied_lines": applied}
 
 
 def summarize(results: list[dict]) -> dict:
@@ -550,6 +602,7 @@ async def run(args: argparse.Namespace) -> None:
         role = _role_with(cfg, name, opts)
         print(f"{name}: {role.provider} {role.model} temp={role.temperature} " + " ".join(f"{k}={getattr(role, k)}" for k in ("top_p", "top_k", "min_p", "repeat_penalty", "thinking") if getattr(role, k, None) not in (None, False)))
     results: list[dict] = []
+    started = dt.datetime.now().astimezone().isoformat(timespec="seconds")
     t0 = time.monotonic()
     for rec in recs:
         r = await replay_turn(rec, games, cfg, roles, opts)
@@ -569,7 +622,12 @@ async def run(args: argparse.Namespace) -> None:
     tag = args.tag or time.strftime("run-%Y%m%d-%H%M%S")
     out = ROOT / "notes" / "eval" / "runs" / f"{tag}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps({"tag": tag, "corpus": str(args.corpus), "config": os.environ.get("TA_CONFIG", "config.yml"), "opts": opts,
+    corpus_text = Path(args.corpus).read_text()
+    gold_path = Path(args.gold)
+    gold_text = gold_path.read_text() if gold_path.exists() else ""
+    out.write_text(json.dumps({"format": RUN_FORMAT, "tag": tag, "started": started, "argv": sys.argv[1:], "harness": provenance(),
+                               "corpus_blob": put_blob(corpus_text, ".jsonl"), "gold": str(gold_path), "gold_blob": put_blob(gold_text, ".yml") if gold_text else None,
+                               "corpus": str(args.corpus), "config": os.environ.get("TA_CONFIG", "config.yml"), "opts": opts,
                                "profile": args.profile or os.environ.get("TA_PROFILE") or None,
                                "roles": {n: _role_with(cfg, n, opts).model_dump(mode="json") for n in sorted(roles)},
                                "summary": summary, "turns": results}, indent=1, ensure_ascii=False))

@@ -37,7 +37,7 @@ from pydantic import BaseModel
 
 from .. import profiles
 from ..config import RoleConfig
-from .base import Msg, StreamDone, StreamEvent, TextDelta, Usage
+from .base import Msg, StreamDone, StreamEvent, TextDelta, Usage, record
 
 T = TypeVar("T", bound=BaseModel)
 log = logging.getLogger("textadventure.providers.llamacpp")
@@ -234,17 +234,26 @@ class LlamaCppProvider:
                 retried = True
         content = (choice.get("message") or {}).get("content") or ""
         reasoning = (choice.get("message") or {}).get("reasoning_content") or ""
+        seen = dict(provider=self.name, model=role.model, schema=schema.__name__, system=system, messages=messages,
+                    content=content, reasoning=reasoning, stop_reason=choice.get("finish_reason"))
         if choice.get("finish_reason") == "length":
             # a schema-constrained model that runs out of budget is nearly always looping; the tail says how
             log.warning("llamacpp.extract truncated role=%s max_tokens=%s chars=%s head=%r tail=%r",
                         role.model, role.max_tokens, len(content), content[:200], content[-300:])
+            record(**seen, error=f"structured extraction truncated at max_tokens={role.max_tokens}")
             raise RuntimeError(f"structured extraction truncated at max_tokens={role.max_tokens}")
+        try:
+            parsed = schema.model_validate_json(content)
+        except Exception as e:
+            record(**seen, error=f"{type(e).__name__}: {e}"[:500])
+            raise
+        record(**seen)
         usage = _usage(data.get("usage"), data.get("timings"))
         usage.extra["model"] = data.get("model") or role.model
         if role.thinking:
             # the server's budget message ends the reasoning when it had to close the block (llama-game.sh sets it)
             usage.extra["thinking"] = {"reasoning_chars": len(reasoning), "forced_close": BUDGET_MARK in reasoning[-400:], "retried": retried}
-        return schema.model_validate_json(content), usage
+        return parsed, usage
 
 
 BUDGET_MARK = "Time is short."        # how the server's --reasoning-budget-message starts (tools/gumbo/llama-game.sh)

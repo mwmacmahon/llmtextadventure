@@ -14,7 +14,7 @@ import anthropic
 from pydantic import BaseModel
 
 from ..config import RoleConfig
-from .base import Msg, StreamDone, StreamEvent, TextDelta, Usage
+from .base import Msg, StreamDone, StreamEvent, TextDelta, Usage, record
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -98,11 +98,19 @@ class AnthropicProvider:
     async def extract(self, role: RoleConfig, system: str, messages: list[Msg], schema: type[T]) -> tuple[T, Usage]:
         kw = self._common(role, system)
         kw["messages"] = _to_api_messages(messages, role.cache_ttl)
-        resp = await self.client.messages.parse(output_format=schema, timeout=role.timeout_seconds, **kw)
-        if resp.stop_reason == "refusal":
-            raise RuntimeError("structured extraction refused")
-        if resp.stop_reason == "max_tokens":
-            raise RuntimeError(f"structured extraction truncated at max_tokens={role.max_tokens}")
+        seen = dict(provider=self.name, model=role.model, schema=schema.__name__, system=system, messages=messages)
+        try:
+            resp = await self.client.messages.parse(output_format=schema, timeout=role.timeout_seconds, **kw)
+        except Exception as e:
+            record(**seen, error=f"{type(e).__name__}: {e}"[:500])
+            raise
+        text = "".join(getattr(b, "text", "") for b in resp.content if getattr(b, "type", "") == "text")
+        reasoning = "".join(getattr(b, "thinking", "") or "" for b in resp.content if getattr(b, "type", "") == "thinking")
+        err = ("structured extraction refused" if resp.stop_reason == "refusal"
+               else f"structured extraction truncated at max_tokens={role.max_tokens}" if resp.stop_reason == "max_tokens" else None)
+        record(**seen, content=text, reasoning=reasoning, stop_reason=resp.stop_reason, error=err)
+        if err:
+            raise RuntimeError(err)
         usage = _usage(resp.usage)
         usage.extra["model"] = getattr(resp, "model", None) or role.model
         return resp.parsed_output, usage
