@@ -228,33 +228,51 @@ class LlamaCppProvider:
         return schema.model_validate_json(content), usage
 
     async def _think_first(self, role: RoleConfig, system: str, messages: list[Msg]) -> tuple[list[Msg], Usage]:
-        """The first of the two passes: the same prompt, thinking on, no grammar, and a request for the
-        conclusions in plain words. The answer (not the thoughts: `--reasoning-format` keeps those apart)
-        goes back as the assistant's turn, and the grammar call that follows is told to transcribe it."""
-        body = self._body(role, system, messages + [Msg("user", THINK_FIRST)])
+        """The first of the two passes: the same prompt, thinking on, no grammar, and a short fact-shaped question
+        (`two_pass_question`). The thinking has a budget (`two_pass_max_tokens`): if it is still going when the
+        budget is spent, the think block is closed by hand and the model continues from there with the answer
+        (the raw prompt from /apply-template plus the thoughts so far plus THINK_CLOSE, through /completion on the
+        same slot). The answer (not the thoughts: `--reasoning-format` keeps those apart) goes back as the
+        assistant's turn, and the grammar call that follows is told to transcribe it."""
+        question = role.two_pass_question
+        body = self._body(role, system, messages + [Msg("user", question)])
         body["chat_template_kwargs"] = {"enable_thinking": True}
         body["max_tokens"] = role.two_pass_max_tokens
-        body["temperature"] = role.two_pass_temperature            # thinking loops under greedy / no penalty (config.py)
+        body["temperature"] = role.two_pass_temperature            # free thinking samples on its own (config.py)
+        body["top_p"] = role.two_pass_top_p
         body["repeat_penalty"] = role.two_pass_repeat_penalty
+        forced = False
         async with self._client(role) as client:
             r = await client.post("/v1/chat/completions", json=body)
             r.raise_for_status()
             data = r.json()
-        choice = data["choices"][0]
-        msg = choice.get("message") or {}
-        answer = (msg.get("content") or "").strip()
-        reasoning = msg.get("reasoning_content") or ""
-        if choice.get("finish_reason") == "length" and not answer:
-            log.warning("llamacpp.two_pass thinking ran out of max_tokens=%s with no answer; reasoning tail=%r", role.two_pass_max_tokens, reasoning[-300:])
-            answer = "(the first pass ran out of room; decide from the turn directly)"
-        usage = _usage(data.get("usage"), data.get("timings"))
-        usage.extra["two_pass"] = {"reasoning_chars": len(reasoning), "answer_chars": len(answer), "finish": choice.get("finish_reason")}
-        return messages + [Msg("user", THINK_FIRST), Msg("assistant", answer), Msg("user", THEN_STRUCTURE)], usage
+            choice = data["choices"][0]
+            msg = choice.get("message") or {}
+            answer = (msg.get("content") or "").strip()
+            reasoning = msg.get("reasoning_content") or ""
+            usage = _usage(data.get("usage"), data.get("timings"))
+            if choice.get("finish_reason") == "length" and not answer:
+                forced = True
+                t = await client.post("/apply-template", json={"messages": body["messages"], "chat_template_kwargs": {"enable_thinking": True}})
+                t.raise_for_status()
+                prompt = t.json()["prompt"] + reasoning + THINK_CLOSE      # the template ends inside the open think block
+                comp = {"prompt": prompt, "n_predict": 400, "cache_prompt": True, "stop": ["<|im_end|>"],
+                        "temperature": role.two_pass_temperature, "top_p": role.two_pass_top_p, "repeat_penalty": role.two_pass_repeat_penalty}
+                if role.slot is not None:
+                    comp["id_slot"] = role.slot
+                c = await client.post("/completion", json=comp)
+                c.raise_for_status()
+                cdata = c.json()
+                answer = (cdata.get("content") or "").strip()
+                usage.output_tokens += int(cdata.get("tokens_predicted") or 0)
+        if not answer:
+            log.warning("llamacpp.two_pass no answer after the forced close; reasoning tail=%r", reasoning[-300:])
+            answer = "(the first pass gave no answer; decide from the turn directly)"
+        usage.extra["two_pass"] = {"reasoning_chars": len(reasoning), "answer_chars": len(answer), "finish": choice.get("finish_reason"), "forced_close": forced}
+        return messages + [Msg("user", question), Msg("assistant", answer), Msg("user", THEN_STRUCTURE)], usage
 
 
-THINK_FIRST = ("Before the structured answer: think the turn through, then write your conclusions in plain words, one per "
-               "line. Each line is one thing you will report, with its target and its value exactly as the state names "
-               "them, or one thing you considered and decided not to report, with why. No JSON yet.")
+THINK_CLOSE = "\n\nTime is short. I will write the lines now, from what I have.\n</think>\n\n"
 THEN_STRUCTURE = ("Now return exactly those conclusions in the required structure. Nothing that is not in your conclusions; "
                   "nothing from your conclusions left out.")
 

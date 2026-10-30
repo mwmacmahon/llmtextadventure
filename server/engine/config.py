@@ -40,12 +40,20 @@ class RoleConfig(BaseModel):
     max_prompt_tokens: int | None = None   # narrator: the window shrinks by slide steps to fit (engine/context.py); unset, no limit
     split: bool = False                    # referee: three passes over one cached prompt (roles.REFEREE_PARTS)
     two_pass: bool = False
-    two_pass_max_tokens: int = 3072
-    # the thinking pass samples on its own: greedy with no repeat penalty, the grammar pass's best setting (D30),
-    # sent the A3B's thinking round and round ("Wait, I need to check the time rule again", 29 times in 8k
-    # tokens, no answer); at 0.2 with a 1.05 penalty the same prompt finished in ~3k tokens (D31, 2026-10-29).
-    two_pass_temperature: float = 0.2
-    two_pass_repeat_penalty: float = 1.05
+    # the thinking budget: the model may think this many tokens; if it has not finished, the provider closes the
+    # think block itself ("Time is short. I will write the lines now") and takes the answer (Qwen's documented
+    # thinking-budget mechanism). Left to itself the A3B's thinking over a referee prompt ran past 12k tokens
+    # and looped; with 1536 and the forced close every probe answered in 8-9 s (D32, 2026-10-29).
+    two_pass_max_tokens: int = 1536
+    # the question the thinking pass answers: a short, fact-shaped one. The old "think the turn through and list
+    # what you will and will not report, with why" made the model argue every row kind (D32). Per role in config.
+    two_pass_question: str = ("A few short lines at most, plain words: what did this turn establish that the report must carry? "
+                              "Only what changed or was decided. No format talk. Then stop.")
+    # the thinking pass samples on its own: greedy / no penalty (the grammar pass's best setting, D30) loops in
+    # free thinking (D31); Qwen's thinking settings finish soonest (D32).
+    two_pass_temperature: float = 0.6
+    two_pass_top_p: float = 0.95
+    two_pass_repeat_penalty: float = 1.0
     temperature: float | None = None
     top_p: float | None = None          # the rest of the sampler; unset means the server's command-line defaults
     top_k: int | None = None
