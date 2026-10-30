@@ -34,9 +34,16 @@ class RoleConfig(BaseModel):
     base_url: str = Field(default_factory=lambda: os.environ.get("TA_LLAMA_URL", "http://127.0.0.1:8080"))
     slot: int | None = None
     thinking: bool = False
-    # structured roles only: think first in a free call (thinking on, no grammar), then a second call turns
-    # that answer into the schema under the grammar. A grammar over a thinking model constrains the thoughts,
-    # so the two cannot share one call. Costs a call and the thinking tokens; `two_pass_max_tokens` bounds them.
+    # structured roles with thinking on: the grammar starts after the think block (llama-server 8580, probed D33),
+    # so one call thinks and then fills the schema. The server bounds the thinking (`--reasoning-budget`, the
+    # profile knob THINK_BUDGET) and closes the block itself when the budget runs out; this is that number, so
+    # the provider can give the answer its own room (`max_tokens` + this) and send it per request for the builds
+    # that honour `reasoning_budget_tokens` (b9982+). Without it the budget ate the whole token limit and every
+    # call came back empty (2026-10-29).
+    thinking_budget: int = 1536
+    # structured roles only, the older alternative kept for comparison: think first in a free call (thinking on,
+    # no grammar), then a second call turns that answer into the schema under the grammar. Costs a call and the
+    # thinking tokens; `two_pass_max_tokens` bounds them.
     max_prompt_tokens: int | None = None   # narrator: the window shrinks by slide steps to fit (engine/context.py); unset, no limit
     split: bool = False                    # referee: three passes over one cached prompt (roles.REFEREE_PARTS)
     two_pass: bool = False

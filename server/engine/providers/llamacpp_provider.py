@@ -10,8 +10,10 @@ The same two operations as the Anthropic provider, with llama.cpp's own levers:
     produce anything but an instance of the schema. The schema is sent with every `$ref` inlined
     and every object closed (`inline_schema`), because the server's grammar builder does not
     resolve pydantic's `$defs` and would otherwise let the nested objects be anything.
-  - `chat_template_kwargs: {"enable_thinking": ...}` per role (`RoleConfig.thinking`); thinking is
-    off by default here, because a grammar over a thinking model constrains the thoughts too.
+  - `chat_template_kwargs: {"enable_thinking": ...}` per role (`RoleConfig.thinking`). With thinking on
+    the grammar starts after the `</think>` block (probed on build 8580, D33), so a structured role
+    thinks and then fills the schema in one call; the server's `--reasoning-budget` closes the thinking
+    when it runs long, and `RoleConfig.thinking_budget` says how much room that takes beside the answer.
   - `stop`: the narrator's `>>` closer, as on the API.
 
 No API key by default; `RoleConfig.api_key_env` names an environment variable when the server
@@ -207,12 +209,18 @@ class LlamaCppProvider:
             messages, first = await self._think_first(role, system, messages)
         body = self._body(role, system, messages)
         body["response_format"] = {"type": "json_schema", "json_schema": {"name": schema.__name__, "schema": inline_schema(schema.model_json_schema())}}
+        if role.thinking:
+            # the thinking spends from the same limit as the answer: give the answer its own room. The budget is
+            # enforced server-side on build 8580 (`--reasoning-budget`); newer builds take it per request too.
+            body["max_tokens"] = role.max_tokens + role.thinking_budget
+            body["reasoning_budget_tokens"] = role.thinking_budget
         async with self._client(role) as client:
             r = await client.post("/v1/chat/completions", json=body)
             r.raise_for_status()
             data = r.json()
         choice = data["choices"][0]
         content = (choice.get("message") or {}).get("content") or ""
+        reasoning = (choice.get("message") or {}).get("reasoning_content") or ""
         if choice.get("finish_reason") == "length":
             # a schema-constrained model that runs out of budget is nearly always looping; the tail says how
             log.warning("llamacpp.extract truncated role=%s max_tokens=%s chars=%s head=%r tail=%r",
@@ -220,6 +228,9 @@ class LlamaCppProvider:
             raise RuntimeError(f"structured extraction truncated at max_tokens={role.max_tokens}")
         usage = _usage(data.get("usage"), data.get("timings"))
         usage.extra["model"] = data.get("model") or role.model
+        if role.thinking:
+            # the server's budget message ends the reasoning when it had to close the block (llama-game.sh sets it)
+            usage.extra["thinking"] = {"reasoning_chars": len(reasoning), "forced_close": BUDGET_MARK in reasoning[-400:]}
         if first is not None:
             usage.input_tokens += first.input_tokens
             usage.output_tokens += first.output_tokens
@@ -272,6 +283,7 @@ class LlamaCppProvider:
         return messages + [Msg("user", question), Msg("assistant", answer), Msg("user", THEN_STRUCTURE)], usage
 
 
+BUDGET_MARK = "Time is short."        # the server's --reasoning-budget-message (tools/gumbo/llama-game.sh) and THINK_CLOSE both start with it
 THINK_CLOSE = "\n\nTime is short. I will write the lines now, from what I have.\n</think>\n\n"
 THEN_STRUCTURE = ("Now return exactly those conclusions in the required structure. Nothing that is not in your conclusions; "
                   "nothing from your conclusions left out.")
