@@ -43,6 +43,33 @@ at the paths you declare:
 Keep "fixed for the whole playthrough" facts (premise, entity bios, hidden truth) in the state
 too; `frozen_prefix(state)` renders them once at instance creation.
 
+## 2b. Entities the referee can name
+
+The referee turns prose into rows against your state. When the prose says something true that your state has no
+row, id or field for, the model improvises: the engine refuses the row and a real change is lost, or the model files it
+under the nearest category that fits and a wrong change lands. Recurring "model mistakes" are often this. Design the
+state so the right row always exists:
+
+- **Every entity a row may target has an id, in one namespace,** and every list in the state block shows it as
+  `id = Name`. A list known only by display names invites slugs you do not accept: the station's systems are named
+  ("AI Core") while everything else has ids, and models write `ai_core`, which is refused.
+- **One category for characters.** Anyone or anything with agency (crew, a witness, a creature) is a character, in one
+  list, under that word. A creature filed under "people" is not found there by a model looking for a creature, and it
+  gets added again as a new thing.
+- **Every character has a condition** the referee can set (a health word, a free state note). Without one, "wounded,
+  crawling toward him" has nowhere to go but a new thing.
+- **Places can sit inside places** (a room in a hotel, quarters on a ring). If your game has none yet, say what the
+  referee should do with a sub-place the prose introduces, and why.
+- **Additions are the default; each refusal is a rule with a reason** stated in `referee_rules`, the game's own reason
+  (the hull cannot grow a module; a gun is scarce by design), never only "the model might add too much". The
+  referee follows a rule it can see the point of, and the person reading a refused row can tell a design limit from a
+  model error.
+- **One record per entity.** Two records mirrored by code (the station's crew list and its world people) double what
+  the referee must keep straight.
+
+Both shipped games break some of these as of 2026-10-30; the gaps, the evidence and the proposed order are in
+`notes/DESIGN2.md` §3b (gitignored notes).
+
 ## 3. Field authority
 
 ```python
