@@ -497,7 +497,7 @@ class NoirGame(GameBase):
         lines = [
             "Targets: player (Frank); characters by id (anyone or anything that acts: people, and creatures too): " + ", ".join(f"{q.id} = {q.name}" + (f" (also {', '.join(q.aliases[:3])})" if q.aliases else "") for q in s.people)
             + "; pockets by name as the game state lists them (revolver, bullets, cigarettes, dollars, matches, notebook, …).",
-            "Places: " + ", ".join(s.places) + ". A move or a location value is one of these. A spot inside a listed place is that place. A place the prose introduces that lies inside none of them (a bar on another street, a garage he is driven to) is new: new place value=<its name> field=<the listed place or district streets it lies in or off>, then the move; at most one a turn. If the prose only says he is out on the street, use that district's streets.",
+            "Places: " + ", ".join(s.places) + ". A move or a location value is one of these. A spot inside a listed place is that place. A place the prose introduces that lies inside none of them (a bar on another street, a garage he is driven to) is new: new place value=<its name> field=<the listed place or district streets it lies in or off>, then the move. If the prose only says he is out on the street, use that district's streets.",
             "Rows this game records:",
             "- move player <place>; move <person id> <place>.",
             "- set player.health <" + "|".join(HEALTH_VALUES) + ">, only when the prose says Frank was hurt or treated.",

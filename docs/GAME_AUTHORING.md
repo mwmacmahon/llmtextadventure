@@ -67,8 +67,12 @@ state so the right row always exists:
 - **One record per entity.** Two records mirrored by code (the station's crew list and its world people) double what
   the referee must keep straight.
 
-Both shipped games break some of these as of 2026-10-30; the gaps, the evidence and the proposed order are in
-`notes/DESIGN2.md` §3b (gitignored notes).
+- **Say which list a word belongs to, with examples from your own lists.** A model is not left to work out that "the
+  creature" is a character, "someone's bunk" is the module that holds it, or "the core" is a system: `referee_rules`
+  says so with the game's real ids (see `_mapping_lines` in both games). Give only examples whose ids exist.
+
+What the shipped games fixed on 2026-10-30, and what is still open (places as nested records, one record per crew
+member on the station), is in `notes/DESIGN2.md` §3b (gitignored notes).
 
 ## 3. Field authority
 
