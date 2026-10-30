@@ -10,8 +10,7 @@ format shims and the engine's rejections are exercised too), and compares.
 
     .venv/bin/python tools/eval_replay.py export <iid> <iid>:3,5,8 --purpose d36-mechanics --title "…"   # a new test set
     .venv/bin/python tools/eval_replay.py run ts_noir.station_20261029_02_24t --role referee            # Sonnet (config.yml)
-    TA_CONFIG=config.llamacpp.yml TA_LLAMA_URL=http://192.168.0.215:8280 \\
-        .venv/bin/python tools/eval_replay.py run <test set id> --role both --profile a3b-think
+    .venv/bin/python tools/eval_replay.py run <test set id> --role both --profile a3b-think          # gumbo (config.llamacpp.yml)
     .venv/bin/python tools/eval_replay.py check <test set id>                                          # the key is sound
     .venv/bin/python tools/eval_replay.py grade ../notes/eval/runs/<run id>.json -v                    # re-grade, free
 
@@ -701,6 +700,11 @@ async def run(args: argparse.Namespace) -> None:
         if llm_use(args.profile) != 0:
             raise SystemExit(1)
         os.environ["TA_PROFILE"] = args.profile
+        # a profile is a model on the box, so the roles go to the box too; without this a profile run swapped the
+        # box and then asked Sonnet (config.yml), 2026-10-30
+        os.environ.setdefault("TA_CONFIG", "config.llamacpp.yml")
+        from tools.llm import SERVER
+        os.environ.setdefault("TA_LLAMA_URL", SERVER)
     cfg = load_config()
     games = load_games(cfg.resolve(cfg.server.content_root))
     roles = {"adjudicator", "referee"} if args.role == "both" else {args.role}

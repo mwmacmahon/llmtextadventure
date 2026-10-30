@@ -142,10 +142,14 @@ in `notes/DECISIONS.md` when it is more than a line or two. A key only gets fair
 cd server
 # hosted models (Sonnet by default; config.yml): costs money, about a cent a turn per role
 .venv/bin/python tools/eval_replay.py run ts_station_20261030_02_14t_d36-mechanics --role referee
-# a local model on gumbo, by profile (free)
-TA_CONFIG=config.llamacpp.yml TA_LLAMA_URL=http://192.168.0.215:8280 TA_LLAMA_PREPARE_URL=http://192.168.0.215:8281/free-comfy \
+# a local model on gumbo, by profile (free): --profile swaps the box and sends the roles to it (config.llamacpp.yml)
+TA_LLAMA_PREPARE_URL=http://192.168.0.215:8281/free-comfy \
   .venv/bin/python tools/eval_replay.py run ts_noir.station_20261029_02_24t --role both --profile a3b-think
 ```
+
+Before 2026-10-30 `--profile` only swapped the box, and the roles went wherever `TA_CONFIG` pointed; with it unset,
+a 27B run was answered by Sonnet (kept as `run_20261030-07_sonnet55_…_repeat`). Run ids are named after the model
+that answered, so the slip shows in the name.
 
 `run` takes a test set id (or a path to its folder), names the run, grades it against the set's key, and writes
 everything: the commit and whether the tree had uncommitted changes, the test set and the key as they were (by content
