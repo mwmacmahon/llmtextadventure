@@ -659,9 +659,9 @@ class Engine:
 
         if leaked and not any(r.get("rule") == "leak" for r in rulings):
             rulings.append({"rule": "leak", "serious": True, "by": "engine",
-                            "what": "the narration uses " + ", ".join(f"'{t}'" for t in leaked) + " in the player's own voice before he has learned it",
-                            "fix": "The player's character does not know the word" + ("s " if len(leaked) > 1 else " ") + ", ".join(f"'{t}'" for t in leaked)
-                                   + ": nobody has told him. The narration never uses it; describe what he perceives in his own plain words."})
+                            "what": "the narration uses " + ", ".join(f"'{t}'" for t in leaked) + " in the player's own voice before the player has learned it",
+                            "fix": "The player does not know the word" + ("s " if len(leaked) > 1 else " ") + ", ".join(f"'{t}'" for t in leaked)
+                                   + ": nobody has told them and nothing they perceived said it. The narration never uses it; describe what the player perceives in plain words."})
             log.info("engine.ruling " + logs.kv(iid=iid, turn=turn, rule="leak", serious=True, terms=",".join(leaked)))
 
         mechanics = {

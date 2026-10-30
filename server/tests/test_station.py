@@ -113,20 +113,24 @@ def test_the_alarm_weighs_suspicion_by_trust(game):
 def test_trust_bond_and_word_rows(game):
     st = fresh(game)
     st2, rep, _ = rows(game, st,
-                       Change(kind="add", target="park", field="trust", value="+3"),              # clamped to +2
-                       Change(kind="set", target="voss", field="trust", value="hostile"),          # a word: a step of at most 2 toward it
+                       Change(kind="add", target="park", field="trust", value="+3"),              # clamped to +1
+                       Change(kind="set", target="voss", field="trust", value="hostile"),          # a word: a step of at most 2 toward it (a number: 1)
                        Change(kind="set", target="okafor", field="suspicion", value="wary"),       # a word where the step goes
                        Change(kind="set", target="reyes", field="stress", value="frayed"),
                        Change(kind="add", target="okafor", field="reyes", value="-1"),             # a bond, written as crew.other
                        Change(kind="add", target="voss", field="bond", value="lindqvist +1"),      # a bond, the other named in the value
                        Change(kind="add", target="park", field="trust", value="banana"))
-    assert st2.crew_by_id("park").trust == 4 and st2.crew_by_id("voss").trust == -4
-    assert st2.crew_by_id("okafor").suspicion == 13 and st2.crew_by_id("reyes").stress == 30
+    assert st2.crew_by_id("park").trust == 3 and st2.crew_by_id("voss").trust == -4
+    assert st2.crew_by_id("okafor").suspicion == 33 and st2.crew_by_id("reyes").stress == 45    # a word moves up to a band and a half; a number at most 10 / 15
     assert st2.crew_by_id("okafor").bonds["reyes"] == 1 and st2.crew_by_id("voss").bonds["lindqvist"] == 0
     assert any(r.path == "crew.park.trust" for r in rep.rejected) is False                       # "banana": no step, no change, no shrug
     assert st2.world.person("voss").attributes["trust"].value == "hostile"
     # the dossier grew a line per person touched
-    assert st2.crew_by_id("park").history and "trust 2 -> 4" in st2.crew_by_id("park").history[-1]
+    assert st2.crew_by_id("park").history and "trust 2 -> 3" in st2.crew_by_id("park").history[-1]
+    _, rep, _ = rows(game, st2, Change(kind="set", target="okafor", field="suspicion", value="certain"))     # she ordered the core cut
+    assert any(ln.startswith("crew.okafor.suspicion: 33 -> 63") for ln in rep.applied)
+    _, rep, _ = rows(game, st2, Change(kind="add", target="okafor", field="suspicion", value="+40"))
+    assert any(ln.startswith("crew.okafor.suspicion: 33 -> 43") for ln in rep.applied)
     # the station's alarm is not a row
     _, rep, _ = rows(game, st2, Change(kind="add", target="player", field="suspicion", value="+10"))
     assert rep.rejected and rep.rejected[0].path == "suspicion"
@@ -204,6 +208,12 @@ def test_the_implant_nudge_moves_feeling_and_the_third_in_a_day_is_felt(game):
     assert st.crew_by_id("park").stress == 43 and st.crew_by_id("park").mood == "calm" and st.crew_by_id("park").suspicion == 0
     st, res = game.run_command(st, "nudge", {"crew": "park", "shade": "warmth"})
     assert st.crew_by_id("park").trust == 3
+    # with the core's link out, no lever reaches anything
+    cut = st.model_copy(deep=True)
+    next(x for x in cut.systems if x.name == "AI Core").control = "none"
+    for cid, args in (("nudge", {"crew": "park", "shade": "calm"}), ("hatches", {"action": "seal", "module": "Lab"}), ("power", {"action": "cut", "system": "Lab"})):
+        _, res = game.run_command(cut, cid, args)
+        assert not res.ok and "link is out" in res.text
     st, res = game.run_command(st, "nudge", {"crew": "park", "shade": "unease"})
     assert "third nudge in a day" in res.directive and st.crew_by_id("park").suspicion == 10 and st.crew_by_id("park").stress == 55
     assert len(st.crew_by_id("park").nudges) == 3 and "felt it" in st.crew_by_id("park").history[-1]
@@ -347,7 +357,7 @@ def test_the_isolation_fuse_blows_into_the_wipe(game):
 
 def test_leaked_terms_and_the_dossier(game):
     st = fresh(game)
-    assert game.leaked_terms(st, "The readings say it is an organism, and it responds to the electrical field.", "I look.") == ["organism", "electrical field"]
+    assert game.leaked_terms(st, "The readings say it is an organism, and it responds to the electrical field.", "I look.") == ["organism"]   # the field its sensors can find
     st.findings.append("The sample is an organism.")
     assert game.leaked_terms(st, "An organism, then.", "") == []
     assert game.leaked_terms(st, 'Lindqvist says: "it is an organism".', "") == []       # dialogue is not scanned

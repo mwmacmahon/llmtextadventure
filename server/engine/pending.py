@@ -148,11 +148,27 @@ def scheduled_as(events: list[Any], new: PendingNew) -> str | None:
     for e in events:
         if getattr(e, "fired", False) or getattr(e, "expired", False) or getattr(e, "reveal", "") == "never" or not getattr(e, "description", ""):
             continue
+        if not _timed(e):                       # a conditional event (a fuse) may never fire: a timer that sounds like it is the referee's own
+            continue
         ew = _words(e.description)
         shared = nw & ew
         if len(shared) >= 4 or (len(shared) >= 3 and len(shared) / min(len(nw), len(ew)) >= 0.4):
             return e.id
     return None
+
+
+def _timed(e: Any) -> bool:
+    """An event the engine will fire at a clock time: `at`, or an `at` predicate inside its trigger."""
+    if getattr(e, "at", None):
+        return True
+
+    def has_at(pred: Any) -> bool:
+        if isinstance(pred, dict):
+            return any(k == "at" or has_at(v) for k, v in pred.items())
+        if isinstance(pred, list):
+            return any(has_at(x) for x in pred)
+        return False
+    return has_at(getattr(e, "trigger", None))
 
 
 def next_due(items: list[Pending], minutes_per_day: int) -> Pending | None:

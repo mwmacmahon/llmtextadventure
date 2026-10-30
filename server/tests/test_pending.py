@@ -219,7 +219,8 @@ async def test_pre_pending_instances_still_load_and_run(engine: Engine, fake: Fa
 def test_a_timer_that_restates_a_scheduled_event_is_the_engines():
     from engine.events import Event
     from engine.pending import PendingNew, scheduled_as
-    booth = Event(id="anchor_meeting", description="Szabo meets Frank in the back booth at The Anchor at nine, tells him what he can, gives him a brass key, and runs.")
+    booth = Event(id="anchor_meeting", trigger={"all": [{"at": {"day": 2, "minute": 1260}}, {"eq": ["player.location", "The Anchor"]}]},    # timed inside its trigger, as the scenario writes it
+                  description="Szabo meets Frank in the back booth at The Anchor at nine, tells him what he can, gives him a brass key, and runs.")
     caller = PendingNew(what="The caller arrives at The Anchor's back booth at nine, expecting Frank alone with something that shows the thing", who="", in_minutes=60)
     other = PendingNew(what="Rosa will serve the dockhand down the bar if Frank keeps silent", who="Rosa", in_minutes=2)
     assert scheduled_as([booth], caller) == "anchor_meeting" and scheduled_as([booth], other) is None
@@ -270,3 +271,15 @@ def test_an_event_lights_a_fuse_and_another_fires_on_its_fate():
     assert items[1].happened
     items[1].resolved_why = "Voss was talked out of it"
     assert items[1].stopped
+
+
+def test_a_timer_that_restates_a_conditional_event_is_the_referees_own():
+    """Round 2 of the station (2026-10-30): Okafor ordered the core link pulled after a confession, and the referee's timer
+    for it was refused as "the engine has it scheduled (diagnostic_fuse)", a fuse that had not lit and might never. Only an
+    event with a fixed time is the engine's to fire."""
+    from engine import events as ev
+    fuse = ev.Event(id="diagnostic_fuse", trigger={"gte": ["suspicion", 50]}, description="Voss will run a full diagnostic of the station software with the core's network link pulled")
+    timed = ev.Event(id="tug_docks", at={"day": 7, "minute": 1200}, description="The tug docks at the Habitation collar with an agency crew and orders about the sample")
+    new = PendingNew(what="Voss and Reyes move to physically pull the AI core's network link at the Reactor bus", who="voss", in_minutes=20)
+    assert pend.scheduled_as([fuse, timed], new) is None
+    assert pend.scheduled_as([timed], PendingNew(what="the tug docks at the Habitation collar with the agency crew", in_minutes=30)) == "tug_docks"

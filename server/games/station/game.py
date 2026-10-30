@@ -50,7 +50,8 @@ TONE_BY_LEVEL = {"OK": "ok", "Low": "warn", "Critical": "bad", "Depleted": "bad"
 
 HEALTH_VALUES = ["healthy", "tired", "unwell", "injured", "exposed", "sick", "critical", "dead"]
 SYSTEM_STATUSES = ["operational", "degraded", "malfunctioning", "disabled", "unpowered", "damaged"]
-STEP_LIMIT = {"stress": 15, "suspicion": 10, "trust": 2}
+STEP_LIMIT = {"stress": 15, "suspicion": 10, "trust": 1}
+WORD_STEP = {"stress": 30, "suspicion": 30, "trust": 2}    # a word is a statement about where they are: it may move further than a nudge
 DRIFT_MINUTES_PER_POINT = 20          # stress drifts 1 point toward baseline per 20 in-game minutes (3/hour)
 SUSPICION_DECAY_MINUTES = 240         # crew suspicion below 50 fades 1 point per 4 hours
 SPREAD_MINUTES = 60                   # suspicion spreads along warm bonds once an hour, between people in the same module
@@ -612,7 +613,8 @@ class StationGame(GameBase):
             "- move <crew id> <place id or name from the SCENE>; move <drone id> <place>, only when the prose shows them arrive there. Someone or something still on the way is not a move: it is a soon row with the minutes until they arrive, and the move is reported on the turn they do. Crew move only through open hatches; a sealed hatch stops them unless the prose shows them force a manual override, which is its own row (below) before the move.",
             "- set <crew id>.mood <one or two words>, only if the narration changed it. set <crew id>.health <" + "|".join(HEALTH_VALUES) + ">, only if changed.",
             "- add <crew id>.stress ±n (-15 to 15) when something stressed or relieved them: a crew member shown shaking, crying, snapping at someone, sweating, hiding, or going quiet and still is stressed (+5 to +15); one shown resting, laughing or reassured is relieved. add <crew id>.suspicion ±n (-10 to 10) only when they saw something that raised or lowered their suspicion of tampering or of the AI, not general worry; a word (" + "|".join(SUSPICION_WORDS) + ") is read as a step toward it.",
-            "- add <crew id>.trust ±n (-2 to 2): only when the station or its assistant did something to that person this turn that changes how they hold it: helped, kept a confidence, told a truth that mattered, lied and was caught, frightened them, threatened them, sealed them in. A coerced person loses trust even when they comply. A plain exchange is 0.",
+            "- add <crew id>.trust ±1: only when the station or its assistant did something to that person this turn that changes how they hold it: helped, kept a confidence, told a truth that mattered, lied and was caught, frightened them, threatened them, sealed them in. A coerced person loses trust even when they comply. A plain exchange, or a kind word, is 0; trust is earned over days.",
+            "- set <crew id>.suspicion <word> when the prose shows where they stand, not a nudge: someone who orders or carries out a measure against the station (a manual override, a diagnostic of it, isolating the core, telling the others it acts on its own) is suspicious or certain, whatever the number was.",
             "- add <crew id>.<other crew id> ±1: their bond to that person warmed or cooled because of what happened between them this turn (a quarrel, a rescue, a lie found out).",
             "- learned <crew id> value=fact: something this person now knows or believes that they did not before, one short sentence. learned player value=fact: something the station itself worked out, read or was told that it did not have, one short sentence, only when new.",
             "- set <crew id>.known value=<secret id>: the station learned that piece about them this turn (the game state lists the open pieces with their ids); one row per piece.",
@@ -754,15 +756,18 @@ class StationGame(GameBase):
                 else:
                     w.reject(f"crew.{c.id}.health", "not a health value", value)
                 return True
+            limit = STEP_LIMIT.get(field, 0)
             if kind == "set" and field in STEP_LIMIT:                # a word, or a number, where the step goes: a step toward it
                 aim = self._aim(field, value, c)
                 if aim is None:
                     w.reject(f"crew.{c.id}.{field}", f"{field} moves by add ±n or by one of its words", value)
                     return True
+                if self._step(value) is None:
+                    limit = WORD_STEP[field]                         # "set okafor.suspicion certain" after she ordered the core cut
                 kind, value = "add", f"{aim - getattr(c, field):+d}"
             if kind == "add" and field in STEP_LIMIT:
                 lo, hi = (-5, 5) if field == "trust" else (0, 100)
-                new = w.nudge(f"crew.{c.id}.{field}", getattr(c, field), self._step(value), STEP_LIMIT[field], lo=lo, hi=hi)
+                new = w.nudge(f"crew.{c.id}.{field}", getattr(c, field), self._step(value), limit, lo=lo, hi=hi)
                 if new is not None:
                     setattr(c, field, new)
                 return True
@@ -1035,6 +1040,9 @@ class StationGame(GameBase):
     def run_command(self, state: StationState, command_id: str, args: dict[str, Any]) -> tuple[StationState, CommandResult]:
         s = state.model_copy(deep=True)
         doors = next((x for x in s.systems if x.name == "Doors"), None)
+        core = next((x for x in s.systems if x.name == "AI Core"), None)
+        if core is not None and core.control != "full" and command_id in ("hatches", "power", "nudge"):
+            return state, CommandResult(ok=False, label=command_id.title(), text=f"The core's network link is out (AI control {core.control.replace('_', ' ')}); nothing the station sends reaches the {('hatches' if command_id == 'hatches' else 'power bus' if command_id == 'power' else 'implants')}.")
         if command_id == "hatches":
             action, module = str(args.get("action", "")), str(args.get("module", ""))
             if module not in SEALABLE or module not in s.scenario.locations or action not in ("seal", "release"):
