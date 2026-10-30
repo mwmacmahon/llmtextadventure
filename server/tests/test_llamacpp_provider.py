@@ -100,12 +100,40 @@ async def test_extract_with_thinking_on_gives_the_answer_its_own_room_and_notes_
                                          "usage": {"prompt_tokens": 50, "completion_tokens": 540}, "timings": {"prompt_n": 50, "cache_n": 0, "predicted_n": 540}})
 
     p = LlamaCppProvider(transport=httpx.MockTransport(handler))
-    out, usage = await p.extract(role(stop_sequences=[], thinking=True, thinking_budget=512), "S", [Msg("user", "x")], Verdict)
+    out, usage = await p.extract(role(stop_sequences=[], thinking=True, thinking_budget=512, presence_penalty=1.0), "S", [Msg("user", "x")], Verdict)
     assert out == Verdict(kind="action", minutes=3)
     assert seen["chat_template_kwargs"] == {"enable_thinking": True} and seen["response_format"]["type"] == "json_schema"
     assert seen["max_tokens"] == 64 + 512 and seen["reasoning_budget_tokens"] == 512
-    assert usage.extra["thinking"] == {"reasoning_chars": 811, "forced_close": True}
+    assert seen["presence_penalty"] == 1.0
+    assert usage.extra["thinking"] == {"reasoning_chars": 811, "forced_close": True, "retried": False}
     assert usage.output_tokens == 540
+
+
+@pytest.mark.asyncio
+async def test_a_thinking_call_that_loops_under_the_grammar_is_sent_again_with_the_loop_penalty():
+    bodies: list[dict] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(req.content))
+        if len(bodies) == 1:
+            return httpx.Response(200, json={"choices": [{"message": {"content": '{"kind": "action", "minutes": 3}, {"kind": "action"' * 9,
+                                                                      "reasoning_content": "round and round"}, "finish_reason": "length"}]})
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"kind": "action", "minutes": 3}', "reasoning_content": "once"}, "finish_reason": "stop"}],
+                                         "usage": {"prompt_tokens": 50, "completion_tokens": 40}})
+
+    p = LlamaCppProvider(transport=httpx.MockTransport(handler))
+    out, usage = await p.extract(role(stop_sequences=[], thinking=True, loop_penalty=1.5), "S", [Msg("user", "x")], Verdict)
+    assert out == Verdict(kind="action", minutes=3) and len(bodies) == 2
+    assert "presence_penalty" not in bodies[0] and bodies[1]["presence_penalty"] == 1.5
+    assert usage.extra["thinking"] == {"reasoning_chars": 4, "forced_close": False, "retried": True}
+
+
+@pytest.mark.asyncio
+async def test_a_thinking_call_that_loops_twice_still_raises():
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"kind": "a'}, "finish_reason": "length"}]})
+    with pytest.raises(RuntimeError, match="truncated"):
+        await LlamaCppProvider(transport=httpx.MockTransport(handler)).extract(role(thinking=True), "S", [Msg("user", "x")], Verdict)
 
 
 @pytest.mark.asyncio

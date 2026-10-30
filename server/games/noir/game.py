@@ -594,6 +594,15 @@ class NoirGame(GameBase):
             else:
                 w.reject("player.health", "not a health value", value)
             return True
+        if kind in ("add", "set") and is_player and field in ("time", "clock", "minutes", "minute", "hour"):
+            w.reject("clock", "the clock is the engine's; the adjudicator's minutes move it", value)
+            return True
+        if kind == "set" and is_player and field == "dread":       # "set player.dread +3" is a nudge; "set player.dread 35" one toward 35
+            v = value.strip()
+            if v[:1] in "+-":
+                kind = "add"
+            elif v.isdigit():
+                kind, value = "add", str(int(v) - p.dread)
         if kind == "add" and is_player and field == "dread":
             new = w.nudge("player.dread", p.dread, self._step(value), DREAD_STEP)
             if new is not None:

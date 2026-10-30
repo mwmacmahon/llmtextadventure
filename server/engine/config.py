@@ -41,6 +41,10 @@ class RoleConfig(BaseModel):
     # that honour `reasoning_budget_tokens` (b9982+). Without it the budget ate the whole token limit and every
     # call came back empty (2026-10-29).
     thinking_budget: int = 1536
+    # thinking roles: a structured call that truncates after the think block has looped under the grammar; it is
+    # sent once more with this presence penalty (Qwen's remedy for repetition in thinking mode). Not applied to
+    # every call: at 1.0 on every call the A3B referee lost ten rows of 74 (D34). 0 turns the retry off.
+    loop_penalty: float = 1.0
     # structured roles only, the older alternative kept for comparison: think first in a free call (thinking on,
     # no grammar), then a second call turns that answer into the schema under the grammar. Costs a call and the
     # thinking tokens; `two_pass_max_tokens` bounds them.
@@ -66,6 +70,7 @@ class RoleConfig(BaseModel):
     top_k: int | None = None
     min_p: float | None = None
     repeat_penalty: float | None = None # >1 discourages the loops that run a structured role into its token budget
+    presence_penalty: float | None = None   # Qwen's remedy for endless repetition in thinking mode (0–2); the loops under the grammar after a think block (D34)
     api_key_env: str | None = None
 
 

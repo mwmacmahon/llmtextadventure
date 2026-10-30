@@ -552,3 +552,16 @@ def test_three_more_shapes_from_the_sweep_runs(game: NoirGame):
     assert reasons[0].startswith("health is a word") and reasons[1].startswith("nothing by that name") and len(reasons) == 2
     assert s2.item("cigarettes").count == 10 and s2.player.minutes_since_smoke == 0      # a count moved by -1 is one smoked
     assert s2.item("photo_june") is not None            # "scrap of paper" is not the photograph of June: "of" alone matches nothing
+
+
+def test_dread_written_as_set_and_rows_about_the_clock(game: NoirGame):
+    """From the thinking runs (D34): "set player.dread +3" is a nudge, "set player.dread 35" a nudge toward 35 under
+    the same cap; "set player.time" is the clock's, which the adjudicator's minutes move, and is judged, not a shape."""
+    _, st = game.new_instance({})
+    d0 = st.player.dread
+    s2, rep = apply(game, st, ref(C(kind="set", target="player", field="dread", value="+3")))
+    assert s2.player.dread == d0 + 3
+    s3, rep = apply(game, s2, ref(C(kind="set", target="player", field="dread", value=str(d0 + 40))))
+    assert s3.player.dread == d0 + 13                                             # +10 at most a row
+    s4, rep = apply(game, s3, ref(C(kind="set", target="player", field="time", value="Day 2, 19:45")))
+    assert s4.clock == s3.clock and any(r.path == "clock" and "engine" in r.reason for r in rep.rejected)

@@ -241,27 +241,55 @@ wrote "hands check (medium)" into `transition`; with `check` last it assesses th
 Sonnet does (16 of 20 on the corpus). Put every field that needs a decision after the fields that
 describe what is being decided.
 
-## The two-pass clerk
+## Thinking under the grammar (2026-10-29/30, DECISIONS D31–D34)
 
-*(2026-10-29, late: the first sentence below is stale for the current llama-server build (8580): with
-`enable_thinking: true` and `response_format` in one call, the grammar starts after the think block and the
-model thinks, then writes the JSON. What remains true is that the thinking must be bounded: `--reasoning-budget N`
-on the server (`THINK_BUDGET` in a profile) closes it; the small Qwen3.5 models rarely close it themselves.
-See DECISIONS D31–D33 and the measurements that follow this section.)*
+With `enable_thinking: true` and `response_format: json_schema` in one call, llama-server (build 8580) starts the
+grammar after the `</think>` block: the model thinks freely, then writes the JSON. An earlier note here claimed the
+grammar constrained the thoughts too; it was probed false. So a structured role thinks with `thinking: true` and
+nothing else, and two things make it workable:
 
-A grammar constrains every token from the first, so a thinking model under `response_format` cannot think:
-either `<think>` is illegal or the thoughts are forced into JSON. `two_pass: true` on a structured role
-(llamacpp only) splits the work: the same prompt with thinking on and no grammar, asked for its
-conclusions in plain lines ("each line one thing you will report, with its target and value as the state
-names them, or one thing you decided not to report, and why"); then the grammar call, with that answer as
-the assistant's turn and the instruction to transcribe it and nothing else. One extra call per role per
-turn and the thinking tokens (`two_pass_max_tokens`, default 3072); the first pass runs on the role's own
-slot, so its prefix is cached like any other. The usage is summed; `usage.extra["two_pass"]` records the
-reasoning and answer sizes. Measure it with the harness before turning it on in play. Measured on the
-A3B (18 Sonnet turns, 2026-10-29): no gain. Checks assessed 4/20 against 2/20 without it (Sonnet replaying
-itself: 14/20), referee rows 22/108 against 24/108 (Sonnet: 65/108), at ten times the time per call (22 s
-against 2.2 s); the thinking ran to about 3,000 tokens and finished. The 3B-active model's judgment is the
-ceiling, not its lack of room to think. Left in as a knob for the dense model.
+- **A budget.** The small Qwen3.5 models rarely close the think block themselves (the A3B referee ran past 12k
+  tokens and looped; no sampling finished it at 4096). `--reasoning-budget N` on the server (`THINK_BUDGET` in a
+  profile; the `-think` profiles set 1536) closes it with a message ("Time is short. I will answer now, from what I
+  have.") and the answer follows: Qwen's own documented thinking-budget method. Per-request budgets
+  (`reasoning_budget_tokens`) arrive in newer builds (b9982+); the provider sends one, this build ignores it.
+- **Room for the answer.** The thinking spends from the same `max_tokens` as the answer; `RoleConfig.thinking_budget`
+  (1536, match the server's) is added to it when thinking is on. Without that every call came back empty.
+  `usage.extra["thinking"]` records `reasoning_chars`, `forced_close` (the budget message at the end of the
+  reasoning) and `retried`.
+
+**Measured on the v2 key, like for like on the turns every run completed:**
+
+| run | referee s/call | hits | errors | unjudged | adjudicator exact / commands | s/call |
+|---|---|---|---|---|---|---|
+| A3B, no thinking (greedy) | 3.5 | 35 / 65 | 10 | 33 | 18 / 17 / 24 | 3.2 |
+| A3B, two-pass, budget 1536 | 11.7 | 39 / 65 | 6 | 31 | 24 / 21 / 24 | 11.2 |
+| A3B, thinking in one call, 1536 | 10.8 | 38 / 65 | 5 | 22 | 22 / 23 / 24 | 7.8 |
+| A3B, one call, 512 | 6.4 | 39 / 65 | 11 | 66 | 20 / 21 / 24 | 5.1 |
+| 27B Q6, no thinking | 13.7 | 46 / 65 | 16 | 37 | 23 / 21 / 24 | 8.3 |
+| 27B, one call, 1536 | 39.8 | 45 / 65 | 13 | 44 | 21 / 24 / 24 | 31.7 |
+| 27B, one call, 512 | 26.5 | 41 / 65 | 21 | 79 | 24 / 22 / 24 | 17.1 |
+
+What it says: one call does what two-pass did, in one call. The 27B gains nothing from thinking at any budget
+and pays two to three times the latency (at 50 tokens a second a 1536 budget is 30 s of every call): it stays the
+no-thinking dense reference. The A3B's budget is 1536, not 512: at 512 the thinking is cut on 40 of 46 calls and
+the referee sprays rows again (unjudged triples, errors double). With thinking the A3B sits beside the 27B
+without: three seconds faster a call, fewer required rows, a third of the errors, the better adjudicator.
+
+**The loop after the think block.** Greedy decoding with no penalty serves the grammar best (the sweep above), but
+after a think block 4 of 48 A3B referee calls looped under the grammar (`set player.health` over and over) and
+truncated, losing the turn. A presence penalty of 1.0 on every call stops the loops and costs ten required rows
+of 74; Qwen's thinking preset (0.6 / 0.95 / 20) still loops and loses rows. So the penalty is paid only by the
+calls that loop: a thinking call that truncates is sent once more with `loop_penalty` (presence 1.0; 0 turns it
+off), one extra call on the few that loop instead of rows on every call.
+With the retry, on all 24 turns: A3B thinking 47 / 90 hits, 7 errors, 25 unjudged, 9 rejections, 11.9 s a call,
+2 calls retried and none lost (two-pass on the same key: 52 / 90, 9, 37, 14 at 11.7 s; no thinking: 45 / 90, 15,
+37, 21 at 3.5 s). **The A3B's settled configuration: thinking on, one call, the `a3b-think` profile (budget 1536),
+greedy with no penalty, the loop retry.** The 27B runs without thinking (`qwen27b`).
+
+**Two-pass** (`two_pass: true`: the same prompt with thinking on and no grammar, asked a short fact-shaped question,
+then the grammar call transcribing that answer) is the older design, kept only until the one-call runs settle;
+it costs a call per role per turn and measured the same as one call on the A3B.
 
 ## The split referee
 

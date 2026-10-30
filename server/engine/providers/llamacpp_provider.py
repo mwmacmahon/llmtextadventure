@@ -128,7 +128,7 @@ class LlamaCppProvider:
             body["id_slot"] = role.slot
         if role.stop_sequences:
             body["stop"] = list(role.stop_sequences)
-        for key in ("temperature", "top_p", "top_k", "min_p", "repeat_penalty"):
+        for key in ("temperature", "top_p", "top_k", "min_p", "repeat_penalty", "presence_penalty"):
             if getattr(role, key) is not None:
                 body[key] = getattr(role, key)
         return body
@@ -214,11 +214,24 @@ class LlamaCppProvider:
             # enforced server-side on build 8580 (`--reasoning-budget`); newer builds take it per request too.
             body["max_tokens"] = role.max_tokens + role.thinking_budget
             body["reasoning_budget_tokens"] = role.thinking_budget
+        retried = False
         async with self._client(role) as client:
             r = await client.post("/v1/chat/completions", json=body)
             r.raise_for_status()
             data = r.json()
-        choice = data["choices"][0]
+            choice = data["choices"][0]
+            if role.thinking and choice.get("finish_reason") == "length" and role.loop_penalty:
+                # after a think block the greedy grammar pass loops now and then (4 of 48 A3B referee calls, D34);
+                # a presence penalty stops the loops but costs rows on every call, so it is paid only here, on
+                # the retry of a call that looped
+                log.warning("llamacpp.extract looped after thinking role=%s chars=%s; retrying with presence_penalty=%s",
+                            role.model, len((choice.get("message") or {}).get("content") or ""), role.loop_penalty)
+                body["presence_penalty"] = role.loop_penalty
+                r = await client.post("/v1/chat/completions", json=body)
+                r.raise_for_status()
+                data = r.json()
+                choice = data["choices"][0]
+                retried = True
         content = (choice.get("message") or {}).get("content") or ""
         reasoning = (choice.get("message") or {}).get("reasoning_content") or ""
         if choice.get("finish_reason") == "length":
@@ -230,7 +243,7 @@ class LlamaCppProvider:
         usage.extra["model"] = data.get("model") or role.model
         if role.thinking:
             # the server's budget message ends the reasoning when it had to close the block (llama-game.sh sets it)
-            usage.extra["thinking"] = {"reasoning_chars": len(reasoning), "forced_close": BUDGET_MARK in reasoning[-400:]}
+            usage.extra["thinking"] = {"reasoning_chars": len(reasoning), "forced_close": BUDGET_MARK in reasoning[-400:], "retried": retried}
         if first is not None:
             usage.input_tokens += first.input_tokens
             usage.output_tokens += first.output_tokens
