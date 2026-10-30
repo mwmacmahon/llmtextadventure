@@ -1102,8 +1102,8 @@ async def extract_referee(provider: Any, role: Any, system: str, msgs: list[Msg]
     if not split:
         delta, usage = await provider.extract(role, system, msgs, ChangeReport)
         return delta, usage, {}
-    if split == "focused":
-        return await _extract_focused(provider, role, system, msgs, ids or {})
+    if split in ("focused", "focused3"):
+        return await _extract_focused(provider, role, system, msgs, ids or {}, split)
 
     async def one(part: str) -> tuple[str, ChangeReport, Usage, float]:
         t0 = time.monotonic()
@@ -1122,17 +1122,18 @@ async def extract_referee(provider: Any, role: Any, system: str, msgs: list[Msg]
     return delta, _sum_usage(*(u for _, _, u, _ in done)), meta
 
 
-async def _extract_focused(provider: Any, role: Any, system: str, msgs: list[Msg], ids: dict[str, list[str]]) -> tuple[ChangeReport, Usage, dict[str, dict]]:
+async def _extract_focused(provider: Any, role: Any, system: str, msgs: list[Msg], ids: dict[str, list[str]],
+                          mode: str = "focused") -> tuple[ChangeReport, Usage, dict[str, dict]]:
     """The focused split (engine/referee_passes.py): the passes in order, each blind to the others; the first
     alone so it writes the cache, the rest together, or in turn on llama.cpp."""
     from . import referee_passes as rp
 
     async def one(part: str) -> tuple[str, Any, Usage, float]:
         t0 = time.monotonic()
-        rep, u = await provider.extract(role, system, rp.pass_messages(msgs, part, ids), rp.pass_schema(part, ids))
+        rep, u = await provider.extract(role, system, rp.pass_messages(msgs, part, ids, mode), rp.pass_schema(part, ids, mode))
         return part, rep, u, round(time.monotonic() - t0, 2)
 
-    names = list(rp.PASSES)
+    names = list(rp.PLANS[mode])
     done = [await one(names[0])]
     if provider.name == "llamacpp":
         for part in names[1:]:

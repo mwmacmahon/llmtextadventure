@@ -49,8 +49,9 @@ class RoleConfig(BaseModel):
     loop_penalty: float = 1.0
     max_prompt_tokens: int | None = None   # narrator: the window shrinks by slide steps to fit (engine/context.py); unset, no limit
     # referee: True, three passes over one cached prompt, the same schema, a focus line each (roles.REFEREE_PARTS);
-    # "focused", a pass per group of row kinds, each with its own guide, examples and schema (engine/referee_passes.py)
-    split: bool | Literal["focused"] = False
+    # "focused", a pass per group of row kinds, each with its own guide, examples and schema (engine/referee_passes.py);
+    # "focused3", the same with the rulings folded into the time pass
+    split: bool | Literal["focused", "focused3"] = False
     temperature: float | None = None
     top_p: float | None = None          # the rest of the sampler; unset means the server's command-line defaults
     top_k: int | None = None

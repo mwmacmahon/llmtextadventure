@@ -265,27 +265,46 @@ issue: anything else the engine should know that is not a ruling, in a sentence.
 }
 
 
-def pass_schema(part: str, ids: dict[str, list[str]]) -> type[BaseModel]:
+def _fold(a: str, b: str) -> dict[str, Any]:
+    pa, pb = PASSES[a], PASSES[b]
+    return {"kinds": pa["kinds"] + pb["kinds"], "focus": pa["focus"] + " And " + pb["focus"][0].lower() + pb["focus"][1:],
+            "guide": pa["guide"] + "\n" + pb["guide"]}
+
+
+# which passes a split runs (RoleConfig.split): "focused" four; "focused3" with the rulings folded into the time pass,
+# where the three-pass split had them (D45: does a pass of its own make the model find broken rules that are not there?)
+PLANS: dict[str, dict[str, dict[str, Any]]] = {
+    "focused": PASSES,
+    "focused3": {"state": PASSES["state"], "knowledge": PASSES["knowledge"], "time": _fold("time", "rulings")},
+}
+
+
+def _spec(part: str, mode: str) -> dict[str, Any]:
+    return PLANS.get(mode, PASSES)[part]
+
+
+def pass_schema(part: str, ids: dict[str, list[str]], mode: str = "focused") -> type[BaseModel]:
     """The output schema of one pass: its own row kinds, closed lists from this turn's ids."""
     rows = _rows(ids)
-    shapes = [rows[k] for k in PASSES[part]["kinds"] if rows[k] is not None]
+    spec = _spec(part, mode)
+    shapes = [rows[k] for k in spec["kinds"] if rows[k] is not None]
     row_t: Any = Union[tuple(shapes)] if len(shapes) > 1 else shapes[0]
     fields: dict[str, Any] = {"changes": (list[row_t], Field(default_factory=list))}
-    if PASSES[part].get("summary"):
+    if spec.get("summary"):
         fields["present"] = (list[str], Field(default_factory=list))
         fields["log_line"] = (str, ...)
         fields["confidence"] = (Literal["low", "medium", "high"], ...)
     return create_model(f"Referee_{part}", **fields)
 
 
-def pass_kinds(part: str, ids: dict[str, list[str]]) -> list[str]:
+def pass_kinds(part: str, ids: dict[str, list[str]], mode: str = "focused") -> list[str]:
     rows = _rows(ids)
-    return [k for k in PASSES[part]["kinds"] if rows[k] is not None]
+    return [k for k in _spec(part, mode)["kinds"] if rows[k] is not None]
 
 
-def pass_message(part: str, ids: dict[str, list[str]]) -> str:
-    p = PASSES[part]
-    kinds = pass_kinds(part, ids)
+def pass_message(part: str, ids: dict[str, list[str]], mode: str = "focused") -> str:
+    p = _spec(part, mode)
+    kinds = pass_kinds(part, ids, mode)
     missing = [k for k in p["kinds"] if k not in kinds]
     lines = [_HEAD.format(focus=p["focus"][0].upper() + p["focus"][1:]), "", "Rows this pass writes: " + ", ".join(kinds) + ".", p["guide"]]
     if missing:
@@ -293,9 +312,9 @@ def pass_message(part: str, ids: dict[str, list[str]]) -> str:
     return "\n".join(lines)
 
 
-def pass_messages(msgs: list[Msg], part: str, ids: dict[str, list[str]]) -> list[Msg]:
+def pass_messages(msgs: list[Msg], part: str, ids: dict[str, list[str]], mode: str = "focused") -> list[Msg]:
     """The shared messages with a cache breakpoint on the last, then this pass's own message."""
-    return [*msgs[:-1], Msg(msgs[-1].role, msgs[-1].content, cache=True), Msg("user", pass_message(part, ids))]
+    return [*msgs[:-1], Msg(msgs[-1].role, msgs[-1].content, cache=True), Msg("user", pass_message(part, ids, mode))]
 
 
 def merge(parts: list[tuple[str, BaseModel]]) -> tuple[ChangeReport, dict[str, dict[str, int]]]:

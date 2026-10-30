@@ -97,3 +97,16 @@ def test_the_examples_name_no_game():
     text = "\n".join(rp.pass_message(p, IDS) for p in rp.PASSES).lower()
     for word in ("okafor", "reyes", "voss", "lindqvist", "park", "frank", "june", "station", "revolver"):
         assert word not in text.replace("gannet", ""), word
+
+
+def test_focused3_folds_the_rulings_into_the_time_pass():
+    assert list(rp.PLANS["focused3"]) == ["state", "knowledge", "time"]
+    assert rp.pass_kinds("time", IDS, "focused3") == ["soon", "unseen", "resolve", "not_done", "ruling", "issue"]
+    msg = rp.pass_message("time", IDS, "focused3")
+    assert "check four things" in msg.lower() and "[[soon:" in msg
+
+    class Role:
+        split = "focused3"
+    stub = _Stub()
+    asyncio.run(extract_referee(stub, Role(), "SYSTEM", [Msg("user", "S")], IDS))
+    assert [s for _, s in stub.calls] == ["Referee_state", "Referee_knowledge", "Referee_time"]
