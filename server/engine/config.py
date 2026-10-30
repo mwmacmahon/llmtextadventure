@@ -41,6 +41,11 @@ class RoleConfig(BaseModel):
     split: bool = False                    # referee: three passes over one cached prompt (roles.REFEREE_PARTS)
     two_pass: bool = False
     two_pass_max_tokens: int = 3072
+    # the thinking pass samples on its own: greedy with no repeat penalty, the grammar pass's best setting (D30),
+    # sent the A3B's thinking round and round ("Wait, I need to check the time rule again", 29 times in 8k
+    # tokens, no answer); at 0.2 with a 1.05 penalty the same prompt finished in ~3k tokens (D31, 2026-10-29).
+    two_pass_temperature: float = 0.2
+    two_pass_repeat_penalty: float = 1.05
     temperature: float | None = None
     top_p: float | None = None          # the rest of the sampler; unset means the server's command-line defaults
     top_k: int | None = None

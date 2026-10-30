@@ -234,6 +234,8 @@ class LlamaCppProvider:
         body = self._body(role, system, messages + [Msg("user", THINK_FIRST)])
         body["chat_template_kwargs"] = {"enable_thinking": True}
         body["max_tokens"] = role.two_pass_max_tokens
+        body["temperature"] = role.two_pass_temperature            # thinking loops under greedy / no penalty (config.py)
+        body["repeat_penalty"] = role.two_pass_repeat_penalty
         async with self._client(role) as client:
             r = await client.post("/v1/chat/completions", json=body)
             r.raise_for_status()

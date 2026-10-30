@@ -177,11 +177,13 @@ async def test_two_pass_thinks_without_a_grammar_then_transcribes_under_it():
                                          "usage": {"prompt_tokens": 80, "completion_tokens": 9}})
 
     p = LlamaCppProvider(transport=httpx.MockTransport(handler))
-    out, usage = await p.extract(role(slot=2, stop_sequences=[], two_pass=True, two_pass_max_tokens=512), "S", [Msg("user", "x")], Verdict)
+    out, usage = await p.extract(role(slot=2, stop_sequences=[], two_pass=True, two_pass_max_tokens=512, temperature=0.0, repeat_penalty=1.0), "S", [Msg("user", "x")], Verdict)
     assert out == Verdict(kind="action", minutes=3)
     assert len(reqs) == 2
     think, structure = reqs
     assert think["chat_template_kwargs"] == {"enable_thinking": True} and think["max_tokens"] == 512 and "response_format" not in think
+    assert (think["temperature"], think["repeat_penalty"]) == (0.2, 1.05)          # the thinking pass samples on its own: greedy loops
+    assert (structure["temperature"], structure["repeat_penalty"]) == (0.0, 1.0)   # the grammar pass keeps the role's
     assert think["messages"][-1]["role"] == "user" and "No JSON yet" in think["messages"][-1]["content"]
     assert structure["chat_template_kwargs"] == {"enable_thinking": False} and structure["response_format"]["type"] == "json_schema"
     assert [m["role"] for m in structure["messages"]] == ["system", "user", "user", "assistant", "user"]
