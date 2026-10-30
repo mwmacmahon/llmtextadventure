@@ -1,0 +1,8 @@
+# Qwen3-32B dense, full attention in every layer (no recurrent state, so a cached prefix is reused token by token).
+# Its KV cache costs about 4x the hybrid 27B's per token (64 attention layers against 16: about 136 KB a token at
+# q8_0), so the context is the trade: 65536 total (21k a slot) is 8.5 GB of cache beside about 19 GB of Q4_K_M
+# weights; 98304 would not fit. 56/88 on the v2 key at 9.7 s a referee call: the weakest judge of the three dense
+# models (an older generation). Qwen3, not 3.5: thinking is off via the template kwarg.
+model: Qwen3-32B-abliterated.Q4_K_M.gguf
+server: {ctx: 65536, ckpt: 2048, kv: q8_0, think_budget: -1}
+roles: {}

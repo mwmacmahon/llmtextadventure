@@ -159,7 +159,7 @@ with its § lines and notes, the THIS TURN directives) and Sonnet's own adjudica
 expected answer, one JSON line per turn (`notes/eval/corpus/*.jsonl`, hand-correctable: Sonnet is good,
 not right). `run` builds exactly what the live pipeline sends (`pipeline.adjudicator_inputs`,
 `pipeline.referee_inputs`), calls whatever `TA_CONFIG` names with any `--opt key=value` overrides on the
-role (temperature, top_k, two_pass, model…), lands the replayed report on the same state through
+role (temperature, top_k, thinking, model…) or a whole profile (`--profile`), lands the replayed report on the same state through
 `apply_changes` so the shims and the engine's rejections are exercised too, and scores: the adjudicator
 on kind, time, the (stat, difficulty) checks, commands and carried; the referee on rows by (kind, target,
 field, value) with word overlap for the text kinds, on the applied lines by path and exactly, and on what
@@ -172,7 +172,7 @@ cd server
 .venv/bin/python tools/eval_replay.py export <iid> [<iid>…] -o ../notes/eval/corpus/sonnet.jsonl
 TA_CONFIG=config.llamacpp.yml TA_LLAMA_URL=http://192.168.0.215:8280 TA_LLAMA_PREPARE_URL=http://192.168.0.215:8281/free-comfy \
   .venv/bin/python tools/eval_replay.py run ../notes/eval/corpus/sonnet.jsonl --role both --tag a3b-baseline -v
-… run ../notes/eval/corpus/sonnet.jsonl --role referee --opt two_pass=true --tag a3b-two-pass
+… run ../notes/eval/corpus/v2.jsonl --role both --profile a3b-think --tag a3b-think
 ```
 
 **The graded key.** A strong model's own rows are an answer it can only agree with: Opus scored level with
@@ -287,9 +287,8 @@ With the retry, on all 24 turns: A3B thinking 47 / 90 hits, 7 errors, 25 unjudge
 37, 21 at 3.5 s). **The A3B's settled configuration: thinking on, one call, the `a3b-think` profile (budget 1536),
 greedy with no penalty, the loop retry.** The 27B runs without thinking (`qwen27b`).
 
-**Two-pass** (`two_pass: true`: the same prompt with thinking on and no grammar, asked a short fact-shaped question,
-then the grammar call transcribing that answer) is the older design, kept only until the one-call runs settle;
-it costs a call per role per turn and measured the same as one call on the A3B.
+**Two-pass** (think first in a free call, then a grammar call transcribing the answer) was the older design;
+it measured level with one call on the A3B and was deleted (D35). Its numbers stay in the table above.
 
 ## The split referee
 
@@ -305,34 +304,53 @@ key does not have, mostly clues until the player pass was told what a clue is; 5
 $0.023 against $0.014 a turn, the uncached input down from 48k to 7.5k tokens. On for Sonnet
 (`config.yml`); off locally until it is measured there.
 
-## Swapping the model
+## Swapping the model: profiles
 
-The model is a profile on the box: `~/textadventure/profiles/<name>.env` (from `server/tools/gumbo/profiles/`),
-a few lines of `MODEL=`, `CTX=`, `CKPT=`, `KV=` (any of `llama-game.sh`'s values; `KV=f16` is the full attention cache, `q8_0` the default half-size one). The active one is named in
-`profiles/ACTIVE`; with none, the script's defaults (the A3B). From the game's machine:
+A model is a profile in the repo, `server/profiles/<name>.yml` (`engine/profiles.py`): the model file, what
+llama-server starts with on the box, and the role settings the game uses while that model is loaded.
+
+```yaml
+model: Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf                          # a file in the box's model directory
+server: {ctx: 98304, ckpt: 512, kv: q8_0, think_budget: 1536}   # llama-game.sh's knobs
+roles:                                                          # laid over config.llamacpp.yml while loaded
+  adjudicator: {thinking: true, thinking_budget: 1536}
+  referee: {thinking: true, thinking_budget: 1536}
+```
+
+From the game's machine:
 
 ```
-server/.venv/bin/python server/tools/llm.py              # what is loaded, its slots, the profiles
-server/.venv/bin/python server/tools/llm.py use qwen27b  # swap and wait until it has loaded
+server/.venv/bin/python server/tools/llm.py                  # what is loaded, the profiles here and on the box
+server/.venv/bin/python server/tools/llm.py use a3b-think    # send the profile to the box, swap, wait for the load
+server/.venv/bin/python server/tools/llm.py show qwen27b     # the profile as the box and the game read it
 ```
 
-The helper beside the server (`gpu-yield.py`, :8281) answers `GET /models` and `POST /use {"profile": …}`:
-it takes only the name of a profile file that exists and whose model is on disk, writes `ACTIVE`, and
-stops llama-server; `llama-game.sh` starts it again on the new profile (the systemd unit stays as it is).
-A swap re-runs the loop inside the copy of `llama-game.sh` that is already running, not the file: after copying
-a new script to the box, restart the service (`ssh gumbo systemctl --user restart textadventure-llm`) or the new
-flags never load (the first budgeted run went out without `--reasoning-budget`, D34).
-A new model is a new profile file. `CTX=auto` sizes the context to the VRAM free at load: the script leaves
-out `--ctx-size` and llama.cpp's `--fit` makes it as large as fits (up to the model's trained length), keeping
-`FIT_TARGET` MiB free (1536) and never going below `FIT_CTX` (49152 in all). The game needs no change after a swap: the llama.cpp provider reads the
-slot size from the server's `/props` (cached 30 s) and trims the narrator's window to it, less the reply
-and a margin (`narrator.window_trimmed` in the log names both).
+`use` posts the model name and the server block to the helper beside llama-server (`tools/gumbo/gpu-yield.py`,
+:8281, `POST /use`). The helper checks every value (the model is a file name looked up in its model directory,
+each server value matches its knob's pattern; it never takes a path or a command off the LAN), writes
+`~/textadventure/profiles/<name>.env` and `ACTIVE`, and stops llama-server; `llama-game.sh` starts it again on
+the new profile. The profiles on the box are generated: edit them in the repo.
 
-Installing this once on the box (the user's to run; it replaces the two files and adds the profiles):
+The game follows the loaded profile. `load_config` asks the helper once (`GET /models` → `active`) and the
+llama.cpp provider asks again once a minute; `Config.role()` lays the active profile's `roles` over the
+configured role. So with `a3b-think` loaded the structured roles think and give the answer its room; with
+`qwen27b` loaded they do not; nothing in `config.llamacpp.yml` changes hands. The helper is found from
+`TA_LLAMA_HELPER_URL`, else port 8281 on the host in `TA_LLAMA_PREPARE_URL` or `TA_LLAMA_URL`; with none set
+nothing is asked. `TA_PROFILE=<name>` forces a profile without asking (eval runs, offline work), and
+`tools/eval_replay.py run --profile <name>` swaps the box and runs under that profile, recording it in the run.
+The context length is the profile's `ctx` (total; a third a slot) or `auto` (sized to the free VRAM, leaving
+`FIT_TARGET` MiB and never below `FIT_CTX`); the game reads the slot size from the server (`/props`) and trims
+the narrator's window to it, so no role setting needs to change with the context.
+
+Profiles now: `a3b-think` (the settled A3B, D34), `a3b` (no thinking), `qwen27b` (the dense reference, no
+thinking), `qwen27b-kv16` (f16 cache), `qwen27b-auto` (fitted context), `qwen3-32b` (full attention, 21k a
+slot). A new model is a new file: copy the GGUF to the box's model directory, write the profile, `use` it.
+
+Installing the box side once (the user's to run; it replaces the two files; the service restart loads them, a
+swap alone does not):
 
 ```
 scp server/tools/gumbo/llama-game.sh server/tools/gumbo/gpu-yield.py gumbo:~/textadventure/
-scp -r server/tools/gumbo/profiles gumbo:~/textadventure/
 ssh gumbo systemctl --user restart textadventure-llm
 ```
 

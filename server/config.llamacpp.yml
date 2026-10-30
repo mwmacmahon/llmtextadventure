@@ -39,9 +39,6 @@ roles:
   adjudicator:
     provider: llamacpp
     model: qwen3.5-35b-a3b
-    two_pass: false         # true: think first (no grammar, a thinking budget), then the grammar call; measure with tools/eval_replay.py --opt two_pass=true
-    two_pass_max_tokens: 1536   # the thinking budget; past it the provider closes the think block and takes the answer (D32)
-    two_pass_question: "Three lines at most, plain words: what he tries, the real risks (stat, difficulty), the minutes. Then stop."
     slot: 1
     max_tokens: 1536              # every field is required under the grammar now (inline_schema): answers run longer
     temperature: 0.0
@@ -53,9 +50,6 @@ roles:
   referee:
     provider: llamacpp
     model: qwen3.5-35b-a3b
-    two_pass: false         # true: think first (no grammar, a thinking budget), then the grammar call; measure with tools/eval_replay.py --opt two_pass=true
-    two_pass_max_tokens: 1536   # the thinking budget; past it the provider closes the think block and takes the answer (D32)
-    two_pass_question: "Six lines at most, plain words: what changed this turn (place, pockets, body, what he learned, people, things in motion)? Only changes. No format talk. Then stop."
     split: false            # true: three passes (player / world / timers and rulings) over one cached prompt; measure with --opt split=true
     slot: 2
     max_tokens: 1536

@@ -20,6 +20,7 @@ def test_profiles_are_listed_and_a_swap_takes_a_name_never_a_path(tmp_path: Path
     (prof / "big.env").write_text(f"MODEL={models}/b.gguf\nCTX=65536\n")
     (prof / "gone.env").write_text(f"MODEL={models}/missing.gguf\n")
     gy.PROFILES = str(prof)
+    gy.MODELS = str(models)
     llama = subprocess.Popen(["sleep", "30"])                 # stands in for llama-server
     (prof / ".llama.pid").write_text(str(llama.pid))
     srv = ThreadingHTTPServer(("127.0.0.1", 0), gy.Handler)
@@ -45,6 +46,21 @@ def test_profiles_are_listed_and_a_swap_takes_a_name_never_a_path(tmp_path: Path
         assert (prof / "ACTIVE").read_text().strip() == "big" and (prof / ".switching").exists()
         assert llama.wait(timeout=5) != 0                                       # llama-server was told to stop
         assert call("/models")[1]["active"] == "big"
+        # a profile sent whole (what tools/llm.py sends from server/profiles/<name>.yml): written here, then used
+        code, out = call("/use", {"profile": "think", "model": "a.gguf", "server": {"ctx": "98304", "ckpt": "512", "kv": "q8_0", "think_budget": "1536"}})
+        assert code == 200 and out["using"] == "think" and out["model"] == "a.gguf"
+        env = (prof / "think.env").read_text()
+        assert f"MODEL={models}/a.gguf" in env and "THINK_BUDGET=1536" in env and "CTX=98304" in env and "KV=q8_0" in env
+        assert (prof / "ACTIVE").read_text().strip() == "think" and gy.read_profile("think")["THINK_BUDGET"] == "1536"
+        assert call("/models")[1]["models_dir"] == str(models)
+        # and nothing that is not a file name in the model directory, a known knob, or a value shaped like one
+        assert call("/use", {"profile": "x", "model": "../a.gguf", "server": {}})[0] == 400
+        assert call("/use", {"profile": "x", "model": "zzz.gguf", "server": {}})[0] == 400
+        assert call("/use", {"profile": "x", "model": "a.gguf", "server": {"ctx": "auto; rm -rf /"}})[0] == 400
+        assert call("/use", {"profile": "x", "model": "a.gguf", "server": {"gpu_layers": "10"}})[0] == 400
+        assert call("/use", {"profile": "x", "model": "a.gguf", "server": {"kv": "f32"}})[0] == 400
+        assert not (prof / "x.env").exists()
+        assert call("/use", {"profile": "x", "model": "a.gguf", "server": {"ctx": "auto"}})[0] == 200 and "CTX=auto" in (prof / "x.env").read_text()
     finally:
         srv.shutdown()
         llama.kill()

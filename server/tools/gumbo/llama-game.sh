@@ -10,11 +10,13 @@
 #   ~/textadventure/llama-game.sh            run in the foreground (Ctrl-C stops both processes)
 #   systemctl --user start textadventure-llm  the same, as a service (see textadventure-llm.service)
 #
-# The model and its sizes come from a profile: profiles/<name>.env (MODEL=, CTX=, CKPT=, any of the values
-# below), the active one named in profiles/ACTIVE. Swap models from anywhere on the LAN through the helper
-# (POST :8281/use {"profile": "qwen27b"}, or server/tools/llm.py on the game's machine): it writes ACTIVE
-# and stops llama-server, and this script starts it again on the new profile. Values in the environment
-# (the unit's Environment= lines) are the defaults a profile overrides.
+# The model and its sizes come from a profile: profiles/<name>.env (MODEL=, CTX=, CKPT=, KV=, THINK_BUDGET=),
+# the active one named in profiles/ACTIVE. The profiles are written here by the helper (gpu-yield.py) from
+# the repo's server/profiles/<name>.yml when the game's machine swaps (server/tools/llm.py use <name>): it
+# writes the .env and ACTIVE and stops llama-server, and this script starts it again on the new profile.
+# Edit profiles in the repo, not here. Values in the environment (the unit's Environment= lines) are the
+# defaults a profile overrides. A new copy of THIS script needs a service restart: a swap re-runs the loop
+# of the copy already running.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"

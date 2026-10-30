@@ -1,0 +1,8 @@
+# The A3B with its structured roles thinking: one call, the grammar after the think block, the server closing the
+# thinking at 1536 tokens (DECISIONS D34). 47/90 referee, 7 errors, adjudicator 22 exact + 23/24 commands, about
+# 12 s / 8 s a call. The settled A3B configuration; the narrator and summarizer do not think.
+model: Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf
+server: {ctx: 98304, ckpt: 512, kv: q8_0, think_budget: 1536}
+roles:
+  adjudicator: {thinking: true, thinking_budget: 1536}
+  referee: {thinking: true, thinking_budget: 1536}

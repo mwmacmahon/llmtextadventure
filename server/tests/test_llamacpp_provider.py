@@ -214,63 +214,6 @@ def test_inline_schema_resolves_refs_and_closes_objects():
         inline_schema({"$defs": {"N": {"type": "object", "properties": {"next": {"$ref": "#/$defs/N"}}}}, "$ref": "#/$defs/N"})
 
 
-@pytest.mark.asyncio
-async def test_two_pass_thinks_without_a_grammar_then_transcribes_under_it():
-    reqs: list[dict] = []
-
-    def handler(req: httpx.Request) -> httpx.Response:
-        body = json.loads(req.content)
-        reqs.append(body)
-        if "response_format" not in body:
-            return httpx.Response(200, json={"choices": [{"message": {"content": "kind: action\nminutes: 3", "reasoning_content": "let me see..."}, "finish_reason": "stop"}],
-                                             "usage": {"prompt_tokens": 40, "completion_tokens": 30}})
-        return httpx.Response(200, json={"choices": [{"message": {"content": '{"kind": "action", "minutes": 3}'}, "finish_reason": "stop"}],
-                                         "usage": {"prompt_tokens": 80, "completion_tokens": 9}})
-
-    p = LlamaCppProvider(transport=httpx.MockTransport(handler))
-    out, usage = await p.extract(role(slot=2, stop_sequences=[], two_pass=True, two_pass_max_tokens=512, temperature=0.0, repeat_penalty=1.0), "S", [Msg("user", "x")], Verdict)
-    assert out == Verdict(kind="action", minutes=3)
-    assert len(reqs) == 2
-    think, structure = reqs
-    assert think["chat_template_kwargs"] == {"enable_thinking": True} and think["max_tokens"] == 512 and "response_format" not in think
-    assert (think["temperature"], think["top_p"], think["repeat_penalty"]) == (0.6, 0.95, 1.0)   # the thinking pass samples on its own: greedy loops
-    assert (structure["temperature"], structure["repeat_penalty"]) == (0.0, 1.0)   # the grammar pass keeps the role's
-    assert usage.extra["two_pass"]["forced_close"] is False
-    assert think["messages"][-1]["role"] == "user" and "No format talk" in think["messages"][-1]["content"]   # the default two_pass_question
-    assert structure["chat_template_kwargs"] == {"enable_thinking": False} and structure["response_format"]["type"] == "json_schema"
-    assert [m["role"] for m in structure["messages"]] == ["system", "user", "user", "assistant", "user"]
-    assert structure["messages"][-2]["content"] == "kind: action\nminutes: 3"
-    assert (usage.input_tokens, usage.output_tokens) == (120, 39) and usage.extra["two_pass"]["reasoning_chars"] == 13
-
-
-@pytest.mark.asyncio
-async def test_two_pass_closes_the_think_block_when_the_budget_runs_out():
-    reqs: list[tuple[str, dict]] = []
-
-    def handler(req: httpx.Request) -> httpx.Response:
-        body = json.loads(req.content)
-        reqs.append((req.url.path, body))
-        if req.url.path == "/apply-template":
-            return httpx.Response(200, json={"prompt": "<|im_start|>user\nx<|im_end|>\n<|im_start|>assistant\n<think>\n"})
-        if req.url.path == "/completion":
-            return httpx.Response(200, json={"content": "kind: action\nminutes: 3", "tokens_predicted": 7})
-        if "response_format" not in body:
-            return httpx.Response(200, json={"choices": [{"message": {"content": "", "reasoning_content": "Wait, the rules say"}, "finish_reason": "length"}],
-                                             "usage": {"prompt_tokens": 40, "completion_tokens": 512}})
-        return httpx.Response(200, json={"choices": [{"message": {"content": '{"kind": "action", "minutes": 3}'}, "finish_reason": "stop"}],
-                                         "usage": {"prompt_tokens": 80, "completion_tokens": 9}})
-
-    p = LlamaCppProvider(transport=httpx.MockTransport(handler))
-    out, usage = await p.extract(role(slot=2, stop_sequences=[], two_pass=True, two_pass_max_tokens=512), "S", [Msg("user", "x")], Verdict)
-    assert out == Verdict(kind="action", minutes=3)
-    assert [path for path, _ in reqs] == ["/v1/chat/completions", "/apply-template", "/completion", "/v1/chat/completions"]
-    comp = reqs[2][1]
-    assert comp["prompt"].endswith("<think>\nWait, the rules say\n\nTime is short. I will write the lines now, from what I have.\n</think>\n\n")
-    assert comp["id_slot"] == 2 and comp["n_predict"] == 400
-    assert reqs[3][1]["messages"][-2]["content"] == "kind: action\nminutes: 3"
-    assert usage.extra["two_pass"]["forced_close"] is True and usage.output_tokens == 512 + 7 + 9
-
-
 async def test_the_slot_size_comes_from_the_server_and_is_kept_a_while():
     import engine.providers.llamacpp_provider as lp
     lp._slot.clear()

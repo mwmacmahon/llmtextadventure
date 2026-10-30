@@ -1,0 +1,4 @@
+# qwen27b with the full f16 attention cache (about 68 KB a token against 34 at q8_0), for a long-context quality check.
+model: Huihui-Qwen3.5-27B-abliterated.i1-Q6_K.gguf
+server: {ctx: 98304, ckpt: 2048, kv: f16, think_budget: -1}
+roles: {}

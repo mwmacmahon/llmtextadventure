@@ -530,6 +530,13 @@ def _print_turn(r: dict) -> None:
 
 
 async def run(args: argparse.Namespace) -> None:
+    if args.profile:
+        # swap the box to the profile and run under its role overrides (engine/profiles.py); the same TA_PROFILE
+        # also tells Config.role() which overrides apply, so the box and the run cannot disagree
+        from tools.llm import use as llm_use
+        if llm_use(args.profile) != 0:
+            raise SystemExit(1)
+        os.environ["TA_PROFILE"] = args.profile
     cfg = load_config()
     games = load_games(cfg.resolve(cfg.server.content_root))
     roles = {"adjudicator", "referee"} if args.role == "both" else {args.role}
@@ -563,6 +570,7 @@ async def run(args: argparse.Namespace) -> None:
     out = ROOT / "notes" / "eval" / "runs" / f"{tag}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({"tag": tag, "corpus": str(args.corpus), "config": os.environ.get("TA_CONFIG", "config.yml"), "opts": opts,
+                               "profile": args.profile or os.environ.get("TA_PROFILE") or None,
                                "roles": {n: _role_with(cfg, n, opts).model_dump(mode="json") for n in sorted(roles)},
                                "summary": summary, "turns": results}, indent=1, ensure_ascii=False))
     print("written", out)
@@ -580,7 +588,8 @@ def main() -> None:
     rn = sub.add_parser("run", help="replay a corpus and score it")
     rn.add_argument("corpus")
     rn.add_argument("--role", choices=["adjudicator", "referee", "both"], default="both")
-    rn.add_argument("--opt", action="append", default=[], help="role option override, e.g. temperature=0 thinking=true model=…")
+    rn.add_argument("--profile", help="swap the box to this profile (server/profiles/<name>.yml) and run under its role settings")
+    rn.add_argument("--opt", action="append", default=[], help="role option override on top, e.g. temperature=0 thinking=true model=…")
     rn.add_argument("--turns", nargs="*", help="only these: '3' or 'iid:3'")
     rn.add_argument("--limit", type=int)
     rn.add_argument("--tag")

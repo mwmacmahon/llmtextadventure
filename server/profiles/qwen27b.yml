@@ -1,0 +1,7 @@
+# Qwen3.5-27B dense, abliterated (Huihui), i1-Q6_K, ~21 GB of weights, without thinking (it gains nothing from it at
+# 2-3x the latency, D34). 66/90 on the v2 key at 13.7 s a referee call, 50 tokens a second. CKPT=2048 keeps the
+# per-slot context checkpoints (about 100 MiB each on this model) from outgrowing the 5090; if it still does not
+# fit, ctx 65536 (about 21k a slot: the game reads the slot size from the server and trims the narrator's window).
+model: Huihui-Qwen3.5-27B-abliterated.i1-Q6_K.gguf
+server: {ctx: 98304, ckpt: 2048, kv: q8_0, think_budget: -1}
+roles: {}

@@ -56,6 +56,10 @@ each role's context survives between turns; see `docs/ARCHITECTURE.md` §7):
 TA_LLAMA_URL=http://GPU_HOST:8280 TA_LLAMA_PREPARE_URL=http://GPU_HOST:8281/free-comfy ./dev.sh local
 ```
 
+The local model is a profile (`server/profiles/<name>.yml`: the model, the server's context and thinking
+budget, the role settings used while it is loaded); `server/.venv/bin/python server/tools/llm.py use a3b-think`
+swaps the box to one and the game follows (`docs/LOCAL_LLM.md`, "Swapping the model").
+
 Before playing, `cd server && .venv/bin/python tools/local_smoke.py --url http://GPU_HOST:8280`
 rebuilds each role's real input from a stored instance and runs the roles in turn order for a few
 rounds, printing prompt, cached and output tokens per call, so you can see the cache hold.
