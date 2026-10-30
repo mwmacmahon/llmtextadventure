@@ -96,6 +96,7 @@ class CrewMember(BaseModel):
     spread_bank: int = 0                # minutes banked toward the next contagion step
     nudges: list[int] = Field(default_factory=list)   # engine: absolute minutes of recent implant nudges (too many and they feel wrong)
     blocked_at: str = ""                # engine: the module whose sealed hatch last stopped their routine (counted once per seal)
+    off_routine_until: int = 0          # engine: absolute minute until which a referee placement holds against the routine walk (the next slot)
 
     @property
     def trust_word(self) -> str:

@@ -256,6 +256,23 @@ def test_routines_walk_the_crew_and_a_sealed_hatch_on_the_way_is_met_once(game):
     assert st8.crew_by_id("okafor").location == "Habitation ring" and st8.crew_by_id("okafor").blocked_at == ""
 
 
+def test_a_referee_placement_holds_against_the_routine_until_its_next_slot(game):
+    """Round 3: the referee walked Okafor and Voss to the Reactor for a head count; the next turn's routine walk pulled them
+    back to Command and the narrator was ruled in contradiction with the state. A placement holds until the next slot."""
+    st = fresh(game)
+    st.clock.minute = 8 * 60 + 19
+    ok = st.crew_by_id("okafor")
+    ok.location = "Reactor"
+    st.world.person("okafor").location = "reactor"
+    st2 = game.after_turn(st, info(2, ["crew.okafor.location: 'Command' -> 'Reactor'"]))
+    assert st2.crew_by_id("okafor").location == "Reactor" and st2.crew_by_id("okafor").off_routine_until == st.clock.absolute() + (12 * 60 - st.clock.minute)
+    st3 = game.after_turn(st2, info(3))                       # the next turn: nothing placed her; she stays where the prose put her
+    assert st3.crew_by_id("okafor").location == "Reactor"
+    st3.clock.minute = 12 * 60 + 1                            # her next slot (lunch) has begun: the routine resumes
+    st4 = game.after_turn(st3, info(5))
+    assert st4.crew_by_id("okafor").location == "Habitation ring" and st4.crew_by_id("okafor").off_routine_until == 0
+
+
 def test_suspicion_spreads_along_warm_bonds_in_the_same_module(game):
     st = fresh(game)
     voss, reyes, okafor = st.crew_by_id("voss"), st.crew_by_id("reyes"), st.crew_by_id("okafor")
@@ -328,9 +345,9 @@ def test_the_isolation_fuse_blows_into_the_wipe(game):
     assert "isolation_fuse" in [f.event_id for f in fired] and any("Okafor gives the order" in d for d in directives)
     items = pend.load(doc, "hidden.pending")
     fuse = next(p for p in items if p.tag == "isolation")
-    assert fuse.due_minute == 480 + 180 and "DUE NOW" in pend.directive(fuse, 1440) and "If it is stopped" in pend.directive(fuse, 1440)   # contestable, though hidden
+    assert fuse.due_minute == 480 + 60 and "DUE NOW" in pend.directive(fuse, 1440) and "If it is stopped" in pend.directive(fuse, 1440)   # contestable, though hidden
     # it comes due and nothing stops it
-    pend.tick(items, 1440 + 480 + 180, 1440, 2)
+    pend.tick(items, 1440 + 480 + 60, 1440, 2)
     pend.save(doc, "hidden.pending", items)
     fired, _, directives = ev.tick(events, doc, 3, ctx=ctx)
     assert "ending_wiped" in [f.event_id for f in fired] and doc["flags"]["ending"].startswith("The crew isolated")
@@ -339,7 +356,7 @@ def test_the_isolation_fuse_blows_into_the_wipe(game):
     events2 = [ev.Event.model_validate(e) for e in doc2["hidden"]["events"]]
     ev.tick(events2, doc2, 1, ctx=ctx)
     items2 = pend.load(doc2, "hidden.pending")
-    pend.tick(items2, 1440 + 480 + 180, 1440, 2)
+    pend.tick(items2, 1440 + 480 + 60, 1440, 2)
     pend.resolve(items2, [f"{items2[-1].id}: Reyes would not pull the link"], 2)
     pend.save(doc2, "hidden.pending", items2)
     fired, _, _ = ev.tick(events2, doc2, 3, ctx=ctx)
@@ -381,7 +398,7 @@ def test_saved_games_take_scenario_edits_and_old_saves_still_load(game):
     # a pre-D36 save: no trust, bonds, secrets, routine, history, findings
     old = st.model_dump(mode="json")
     for c in old["crew"]:
-        for k in ("bio", "traits", "trust", "bonds", "secrets", "routine", "history", "nudges", "blocked_at", "spread_bank"):
+        for k in ("bio", "traits", "trust", "bonds", "secrets", "routine", "history", "nudges", "blocked_at", "off_routine_until", "spread_bank"):
             c.pop(k, None)
     old.pop("findings")
     loaded = game.load_state(old)

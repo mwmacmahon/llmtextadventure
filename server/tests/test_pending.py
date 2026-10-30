@@ -283,3 +283,19 @@ def test_a_timer_that_restates_a_conditional_event_is_the_referees_own():
     new = PendingNew(what="Voss and Reyes move to physically pull the AI core's network link at the Reactor bus", who="voss", in_minutes=20)
     assert pend.scheduled_as([fuse, timed], new) is None
     assert pend.scheduled_as([timed], PendingNew(what="the tug docks at the Habitation collar with the agency crew", in_minutes=30)) == "tug_docks"
+
+
+def test_a_turn_cut_short_at_a_timer_softens_directive_ignored():
+    """Round 3, turn 3: the clock stopped at a timer three minutes into a five-minute intent; the narrator stopped there as
+    told, the levers reported not completed, and the referee ruled directive_ignored (serious) on what was never reached."""
+    from types import SimpleNamespace
+    from engine.pipeline import _soften_unreached
+    rulings = [{"rule": "directive_ignored", "serious": True, "what": "the hatches were not sealed"},
+               {"rule": "leak", "serious": True, "what": "names the thing"}]
+    cut = {"clock_note": "stopped at pending p3", "elapsed": 3, "adjudication": SimpleNamespace(time_minutes=5)}
+    out = _soften_unreached(rulings, cut)
+    assert out[0]["serious"] is False and out[0]["softened"] and "cut short" in out[0]["what"] and out[1]["serious"] is True
+    whole = {"clock_note": "", "elapsed": 5, "adjudication": SimpleNamespace(time_minutes=5)}
+    assert _soften_unreached(rulings, whole)[0]["serious"] is True
+    capped = {"clock_note": "stopped at pending p3", "elapsed": 5, "adjudication": SimpleNamespace(time_minutes=5)}
+    assert _soften_unreached(rulings, capped)[0]["serious"] is True     # the timer fell at the end: the intent was reached

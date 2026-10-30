@@ -270,8 +270,9 @@ Rules of thumb:
   state block lists the open ones by id, the referee marks one known by `set voss.known value=voss_diag` or
   by a `learned` row in its own words; known, it is +1 on influence against them and +2 when the check
   uses it, and a revealed tag's hidden countdown shows on the player's panel), `routine` (slots of
-  `{start, end, place, doing}` in minutes of the day; `after_turn` walks crew the prose did not place, and a
-  sealed hatch on the way is met once per seal: suspicion up, a line behind the scenes), `history` (the
+  `{start, end, place, doing}` in minutes of the day; `after_turn` walks crew the prose did not place, a crew member
+  the prose did place stays put until their next slot begins, and a sealed hatch on the way is met once per seal:
+  suspicion up, a line behind the scenes), `history` (the
   engine's clock-stamped dossier, one line per turn a crew member was touched). Hatches are door things
   (`tags: [hatch]`, `attributes.locked`) that exits name with `door:`; the station's seal locks them, and a
   crew member at one forces it with `set <hatch id>.locked false who=<crew id>` (Doors control drops to

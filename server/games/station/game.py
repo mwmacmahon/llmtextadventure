@@ -122,6 +122,9 @@ def stress_word(n: int) -> str:
     return STRESS_WORDS[0] if n <= 25 else STRESS_WORDS[1] if n <= 50 else STRESS_WORDS[2] if n <= 75 else STRESS_WORDS[3]
 
 
+MINUTES_PER_DAY = 1440
+
+
 def routine_now(c: CrewMember, minute: int) -> Routine | None:
     for r in c.routine:
         if (r.start <= minute < r.end) if r.start <= r.end else (minute >= r.start or minute < r.end):
@@ -808,8 +811,10 @@ class StationGame(GameBase):
                 elif value != sy.status:
                     if sy.name == "AI Core":
                         w.reject("systems.AI Core.status", "the core's status is the engine's (endings)", value)
-                    elif "unpowered" in (value, sy.status) and sy.control == "full":
-                        w.reject(f"systems.{sy.name}.status", "power is under AI control; the crew need manual override to change it", value)
+                    elif sy.status == "unpowered" and sy.control == "full":
+                        w.reject(f"systems.{sy.name}.status", "unpowered by the station; only its power lever (or a crew override) brings it back", value)
+                    elif value == "unpowered" and sy.control == "full":
+                        w.reject(f"systems.{sy.name}.status", "power is under AI control; the crew need manual override to cut it", value)
                     elif w.set(f"systems.{sy.name}.status", sy.status, value):
                         sy.status = value
                 return True
@@ -1197,7 +1202,15 @@ class StationGame(GameBase):
         s.sealed.append(r.place)
         self._set_hatches(s, r.place, True)
         self._sync_world_from_crew(s)
-        return [s]
+        # a placement by the prose that has run out: the walk clears the hold and resumes
+        s2 = state.model_copy(deep=True)
+        c2 = s2.crew_by_id(c.id)
+        assert c2 is not None
+        c2.location = other.name
+        c2.off_routine_until = 1
+        s2.clock.minute = r.start
+        self._sync_world_from_crew(s2)
+        return [s, s2]
 
     def after_turn(self, state: StationState, info: TurnInfo) -> StationState:
         """Stress returns toward baseline at 3/hour; the mood word snaps back to baseline when drift brings stress back
@@ -1236,7 +1249,16 @@ class StationGame(GameBase):
                     c.suspicion = max(0, c.suspicion - 1)
             c.nudges = [t for t in c.nudges if s.clock.absolute() - t < NUDGE_WINDOW]
         self._spread(s, info.elapsed_minutes)
-        self._walk_routines(s, moved | {c.id for c in s.crew if f"crew.{c.id}.location" in touched})
+        placed = moved | {c.id for c in s.crew if f"crew.{c.id}.location" in touched}
+        for c in s.crew:
+            # the prose put them somewhere: they stay off their routine until its next slot begins
+            if c.id in placed and c.routine:
+                r = routine_now(c, s.clock.minute)
+                nxt = routine_next(c, s.clock.minute)
+                if r is not None and r.place != c.location and nxt is not None:
+                    ahead = nxt.start - s.clock.minute if nxt.start > s.clock.minute else MINUTES_PER_DAY - s.clock.minute + nxt.start
+                    c.off_routine_until = s.clock.absolute() + ahead
+        self._walk_routines(s, placed)
         s.suspicion = self._derived_alarm(s)
         return s
 
@@ -1261,6 +1283,9 @@ class StationGame(GameBase):
         for c in s.crew:
             if c.id in moved or c.health in ("critical", "dead") or not c.routine:
                 continue
+            if s.clock.absolute() < c.off_routine_until:      # the prose placed them; the routine resumes at its next slot
+                continue
+            c.off_routine_until = 0
             r = routine_now(c, s.clock.minute)
             if r is None or r.place == c.location:
                 if r is not None and c.blocked_at:

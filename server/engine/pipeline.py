@@ -648,6 +648,10 @@ class Engine:
                 log.info("referee.ruling.dismissed " + logs.kv(iid=iid, turn=turn, rule=r.get("rule"), what=r.get("what", "")[:120]))
                 continue
             rulings.append(r)
+        rulings = _soften_unreached(rulings, res)
+        for r in rulings:
+            if r.get("softened"):
+                log.info("referee.ruling.softened " + logs.kv(iid=iid, turn=turn, rule=r.get("rule"), what=r.get("what", "")[:120]))
         # The engine's own ruling: it assessed checks, told the narrator to call them, and the narrator called none.
         # The referee is asked to catch this too; a weak one does not, and the engine already knows.
         skipped = list(calls_block.get("assessed_not_called", []))
@@ -1369,6 +1373,23 @@ def _check_reminder(res: dict[str, Any], told: list[dict[str, Any]]) -> str:
     return ("[ENGINE] This turn has checks only the engine can roll: " + calls + ". You never decide whether an uncertain attempt "
             "works. Write the prose up to the moment of the first attempt, before anything shows how it goes, then its check line "
             "exactly as given, on its own line, and stop. The engine's next message gives you the result.")
+
+
+def _soften_unreached(rulings: list[dict[str, Any]], res: dict[str, Any]) -> list[dict[str, Any]]:
+    """A turn the clock cut short at a timer ends before the player's intent is finished, by design: the narrator was told
+    to stop there. A `directive_ignored` ruling on such a turn is about what was not reached, not what was ignored, so it is
+    recorded and not serious (no retell)."""
+    adj = res.get("adjudication")
+    note = res.get("clock_note") or ""
+    if "stopped at" not in note or adj is None or adj.time_minutes <= res.get("elapsed", 0):
+        return rulings
+    out = []
+    for r in rulings:
+        if r.get("rule") == "directive_ignored" and r.get("serious"):
+            r = {**r, "serious": False, "softened": True,
+                 "what": r.get("what", "") + " (the turn was cut short at a timer; what was not reached was not ignored)"}
+        out.append(r)
+    return out
 
 
 def _this_turn_block(res: dict[str, Any]) -> str:
