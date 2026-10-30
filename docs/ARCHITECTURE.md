@@ -232,7 +232,13 @@ concurrent; the pipeline is sequential and one slot generates while the others h
 `stream` uses the role's stop sequences and reads llama.cpp's `timings` into `Usage` (`prompt_n`,
 `cache_n`, `predicted_n`); `extract` sends the pydantic schema as `response_format: json_schema`,
 which the server compiles to a grammar, so the JSON is valid by construction and a truncated answer
-(`finish_reason: length`) raises. `thinking` per role goes through `chat_template_kwargs`.
+(`finish_reason: length`) raises. `thinking` per role goes through `chat_template_kwargs`; with it on, the
+grammar starts after the think block, the server's `--reasoning-budget` closes the thinking, the role's
+`thinking_budget` gives the answer its own room, and a call that loops under the grammar after thinking is
+retried once with `loop_penalty`. Which model is loaded, and the role settings that go with it, is a profile
+(`server/profiles/<name>.yml`, `engine/profiles.py`): `tools/llm.py use` sends it to the box's helper, and
+`Config.role()` lays the loaded profile's overrides over the configured role, asking the helper once at load
+and once a minute from the provider.
 `server/config.llamacpp.yml` is the whole-game version (`./dev.sh local`, or `TA_CONFIG=<file>`);
 `tools/local_smoke.py` checks cache survival against a real server before playing. `docs/LOCAL_LLM.md`
 has the run book.
