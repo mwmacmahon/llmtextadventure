@@ -52,15 +52,26 @@ class Pending(BaseModel):
 
     @property
     def happened(self) -> bool:
-        """It came due and nothing stopped it: fired, and not settled with a reason that plainly says it was stopped."""
-        return self.fired and not (self.resolved and bool(_STOPPED.search(self.resolved_why)))
+        """It went through. Came due: unless settled with a reason that plainly says it was stopped. Settled before it came
+        due: only when the reason says it went through ("the crew pulled the link at 08:25"); a stop, a duplicate or no
+        reason at all is not a happening, so a cleared timer never blows a fuse."""
+        lead = _LEAD.match(self.resolved_why or "") if self.resolved else None
+        if lead:                                     # "happened: …" / "stopped: …" says it outright
+            return lead.group(1).lower() == "happened"
+        if self.fired:
+            return not (self.resolved and bool(_STOPPED.search(self.resolved_why)))
+        return self.resolved and not _STOPPED.search(self.resolved_why) and not _MOOT.search(self.resolved_why) \
+            and self.resolved_why != NO_REASON
 
     @property
     def stopped(self) -> bool:
         return self.resolved and not self.happened
 
 
-_STOPPED = re.compile(r"\b(stopp?ed|prevent|avert|escap|interrupt|did not|didn't|does not|doesn't|not happen|never happen|talked out|held off|refus|would not|wouldn't|fail|abort|call(ed)? off|postpon|cancel|no longer)", re.I)
+NO_REASON = "settled in the prose"
+_LEAD = re.compile(r"\s*(happened|stopped)\b", re.I)
+_MOOT = re.compile(r"\b(duplicat|same as|superseded|replaced by|covered by|merged|restates?|already (listed|scheduled|tracked)|in error|mistaken)", re.I)
+_STOPPED = re.compile(r"\b(stopp?ed|prevent|avert|escap|interrupt|did not|didn't|does not|doesn't|not happen|never happen|talk(ed|s)? (\w+ )?out( of)?|persuad|kept (\w+ )?from|blocked|held off|refus|would not|wouldn't|fail|abort|call(ed)? off|postpon|cancel|no longer)", re.I)
 
 
 class PendingNew(BaseModel):
@@ -192,7 +203,7 @@ def resolve(items: list[Pending], refs: list[str], turn: int) -> list[Pending]:
         p = next((x for x in items if x.id == pid.strip().lower() and not x.resolved), None)   # live, or fired and not yet settled
         if p is None:
             continue
-        p.resolved, p.resolved_why = True, why.strip() or "settled in the prose"
+        p.resolved, p.resolved_why = True, why.strip() or NO_REASON
         done.append(p)
     return done
 

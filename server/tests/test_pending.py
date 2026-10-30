@@ -299,3 +299,44 @@ def test_a_turn_cut_short_at_a_timer_softens_directive_ignored():
     assert _soften_unreached(rulings, whole)[0]["serious"] is True
     capped = {"clock_note": "stopped at pending p3", "elapsed": 5, "adjudication": SimpleNamespace(time_minutes=5)}
     assert _soften_unreached(rulings, capped)[0]["serious"] is True     # the timer fell at the end: the intent was reached
+
+
+def test_a_fuse_settled_before_it_came_due_has_happened_when_the_reason_says_so():
+    """Round 4 of the station (2026-10-30): Okafor pulled the Core link an hour before the isolation fuse was due; the
+    referee settled it ("the crew pulled the Core link at 08:25") and wrote that the next turn ends the game, but an
+    unfired timer could only read as stopped, so the ending never fired and the fuse re-armed. A settle before it came
+    due is a happening when its reason says it went through; a stop, a duplicate or no reason is not."""
+    from engine import events as ev
+    events = [ev.Event(id="blow", trigger={"pending_happened": "isolation"}, effects=[{"flag": ["ending", "wiped"]}])]
+
+    def live_doc():
+        doc = {"clock": {"day": 1, "minute": 500}, "hidden": {"pending": []}, "flags": {}}
+        items = pend.load(doc, "hidden.pending")
+        pend.add(items, PendingNew(what="The crew isolate the AI core", in_minutes=184, hidden=True), now_abs=1440 + 500,
+                 minutes_per_day=1440, turn=10, source="script", tag="isolation", on_happened="the link comes out")
+        pend.save(doc, "hidden.pending", items)
+        return doc
+
+    def settle(why):
+        doc = live_doc()
+        items = pend.load(doc, "hidden.pending")
+        assert [p.id for p in pend.resolve(items, [f"p1: {why}" if why else "p1"], 11)] == ["p1"]
+        pend.save(doc, "hidden.pending", items)
+        return doc, items[0]
+
+    doc, p = settle("the crew pulled the Core link at 08:25; Okafor took the station to manual")
+    assert p.happened and not p.stopped and ev.evaluate({"pending_happened": "isolation"}, doc, events, 11)
+    ctx = ev.EffectContext(pending_path="hidden.pending", clock_path="clock", minutes_per_day=1440, turn=12)
+    fired, _, _ = ev.tick(events, doc, 12, ctx=ctx)
+    assert [f.event_id for f in fired] == ["blow"] and doc["flags"]["ending"] == "wiped"
+    assert settle("happened: Okafor didn't wait for the hour")[1].happened                # the leading word says it outright
+    for why in ("Reyes talked her out of it", "no longer applies", "duplicate of p3", "same as p4", "stopped: the bus was sealed", ""):
+        doc, p = settle(why)
+        assert not p.happened and p.stopped, why
+        assert ev.evaluate({"pending_stopped": "isolation"}, doc, events, 11)
+    # once it came due, the rule is as it was: settled with no stop word, or with none at all, it happened
+    doc = live_doc(); items = pend.load(doc, "hidden.pending")
+    pend.tick(items, 1440 + 684, 1440, 12)
+    assert items[0].happened
+    pend.resolve(items, ["p1: stopped: Park held the hatch"], 12)
+    assert items[0].stopped
