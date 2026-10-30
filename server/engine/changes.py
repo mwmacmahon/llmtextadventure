@@ -199,6 +199,9 @@ def apply_changes(game: Any, state: BaseModel, report: ChangeReport, *, present:
     decls: list[Declaration] = []
     for ch in report.changes:
         k = ch.kind
+        lead = re.match(rf"\s*{re.escape(k)}\s+(\S.*)$", ch.target, re.I)
+        if lead:                                                          # "set p8.resolved" written as the target: the kind twice (Sonnet, 2026-10-30)
+            ch = ch.model_copy(update={"target": lead.group(1)})
         if k in ("set", "add", "move", "learned") and "." in ch.target.strip():    # "player.dread" written as the target: split it
             ch = split_dotted(ch)
         if k == "new" and "." in ch.target.strip() and not ch.field.strip():   # "new creature.Rooftop shack": the name, then where
@@ -258,6 +261,8 @@ def apply_changes(game: Any, state: BaseModel, report: ChangeReport, *, present:
                     flags[name] = val
             else:
                 w.reject(f"flags.{name}", "not a narrator flag", ch.value)
+        elif k in ("set", "add", "move", "gone") and is_pending_id(ch.target) and ch.field.strip().lower() in ("how", "happened"):
+            ex.pending_resolved.append(f"{pending_id(ch.target)}: happened: {ch.value or ch.note}")   # "set p13.how = Okafor pulls the link" (A3B, 2026-10-30)
         elif k in ("set", "add", "move", "gone") and is_pending_id(ch.target) and (ch.field.strip().lower() in ("resolved", "status", "outcome", "")
                                                                                    or ch.value.strip().lower() in _SETTLED_WORDS):
             ex.pending_resolved.append(f"{pending_id(ch.target)}: {ch.value or ch.note}")    # "set p1.resolved", "set pending p1 = stopped"

@@ -80,3 +80,17 @@ def test_a_saved_game_with_the_old_creature_id_loads_under_the_new_one(games):
     assert s.person("creature") is not None and s.person("thing") is None
     assert sum(1 for q in s.people if q.name == "The thing in the shack") == 1
     assert s.things[0].held_by == "creature"
+
+
+def test_a_row_with_its_kind_written_again_in_the_target_lands(games):
+    g = games["station"]
+    _, st = g.new_instance({})
+    s, rep = apply(g, st, C(kind="set", target="set ai_core.control", value="limited"))
+    assert next(x for x in s.systems if x.name == "AI Core").control == "limited" and not rep.rejected
+
+
+def test_a_timer_settled_under_how_has_happened(games):
+    g = games["station"]
+    _, st = g.new_instance({})
+    _, _, ex = apply_changes(g, st, ChangeReport.of(C(kind="set", target="p13", field="how", value="Okafor pulls the Core link")), present=[], causes=[])
+    assert ex.pending_resolved == ["p13: happened: Okafor pulls the Core link"]
