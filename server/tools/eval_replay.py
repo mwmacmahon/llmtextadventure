@@ -49,6 +49,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from engine.changes import apply_changes, screen_unseen_clues  # noqa: E402
 from engine.config import load_config  # noqa: E402
+from engine.referee_passes import EXAMPLE_NAMES, referee_ids  # noqa: E402
 from engine.pipeline import _hook, _named_present, adjudicator_inputs, extract_adjudication, extract_referee, referee_inputs  # noqa: E402
 from engine.providers import RECORDER, Exchange, Msg, get_provider  # noqa: E402
 from engine.registry import load_games  # noqa: E402
@@ -69,6 +70,8 @@ NOTES_HEAD = "\n\n[NARRATOR'S NOTES: facts it decided, what is happening unseen 
 
 
 # ---- names: test sets and runs (docs/TESTING.md, D44) ----------------------------------
+_COPIED = re.compile(r"\b(" + "|".join(EXAMPLE_NAMES) + r")\b")   # a row naming the focused split's example world
+
 def set_id(games: list[str], made: str, nn: int, count: int, purpose: str = "") -> str:
     """ts_<games>_<YYYYMMDD>_<nn>_<count>t[_<purpose>]: e.g. ts_noir.station_20261029_02_24t."""
     return f"ts_{'.'.join(sorted(set(games)))}_{made}_{nn:02d}_{count}t" + (f"_{purpose}" if purpose else "")
@@ -501,7 +504,9 @@ def _role_with(cfg, name: str, opts: dict[str, str]):
     upd: dict[str, Any] = {}
     for k, v in opts.items():
         cur = getattr(role, k)
-        if isinstance(cur, bool) or v.lower() in ("true", "false"):
+        if v.lower() not in ("true", "false") and k == "split":           # split=focused
+            upd[k] = v
+        elif isinstance(cur, bool) or v.lower() in ("true", "false"):
             upd[k] = v.lower() == "true"
         elif isinstance(cur, int) and not isinstance(cur, bool):
             upd[k] = int(v)
@@ -558,7 +563,7 @@ async def _replay_roles(rec: dict, game, state, exp: dict, res: dict, current: d
         res["levers_given"] = rec.get("levers") is not None
         t0 = time.monotonic()
         try:
-            delta, usage, parts = await extract_referee(provider, role, system, msgs)
+            delta, usage, parts = await extract_referee(provider, role, system, msgs, referee_ids(state, rec.get("levers") or []))
         except Exception as e:
             res["referee"] = {"seconds": round(time.monotonic() - t0, 1), "error": f"{type(e).__name__}: {e}"[:300]}
             return
@@ -603,6 +608,7 @@ def summarize(results: list[dict]) -> dict:
                         "rows_recall": f"{rows_hits}/{rows_exp}", "rows_precision": f"{rows_hits}/{rows_got}",
                         "applied_recall": f"{ap_hits}/{ap_exp} ({ap_exact} exact)", "applied_precision": f"{ap_hits}/{ap_got}",
                         "rejected": sum(len(a["rejected"]) for a in ok), "rejected_reasons": reasons.most_common(8),
+                        "copied_examples": sum(1 for a in ok for r in a.get("got", []) if _COPIED.search(json.dumps(r).lower())),
                         "seconds_avg": round(sum(a["seconds"] for a in ref) / len(ref), 1)}
     return s
 

@@ -1034,7 +1034,8 @@ class Engine:
         provider = get_provider(role)
         system, msgs = referee_inputs(game, state, directives, player_text, narration, adj, levers)
         t0 = time.monotonic()
-        delta, usage, parts = await extract_referee(provider, role, system, msgs)
+        from .referee_passes import referee_ids
+        delta, usage, parts = await extract_referee(provider, role, system, msgs, referee_ids(state, levers))
         meta = {"provider": provider.name, "model": usage.extra.get("model") or role.model, "seconds": round(time.monotonic() - t0, 2), "usage": asdict(usage)}
         if parts:
             meta["parts"] = parts
@@ -1089,15 +1090,20 @@ def _sum_usage(*us: Usage) -> Usage:
     return out
 
 
-async def extract_referee(provider: Any, role: Any, system: str, msgs: list[Msg]) -> tuple[ChangeReport, Usage, dict[str, dict]]:
+async def extract_referee(provider: Any, role: Any, system: str, msgs: list[Msg],
+                          ids: dict[str, list[str]] | None = None) -> tuple[ChangeReport, Usage, dict[str, dict]]:
     """The referee's call as the engine makes it, live and in the replay harness. With `role.split`, three
     passes over the same cached prompt (roles.REFEREE_PARTS), each a smaller question: the first alone, so
     it writes the cache the others read; then the other two together, or one after the other on llama.cpp,
     where every pass shares the role's one slot. Returns the merged report, the summed usage and, when
-    split, per pass {seconds, rows, kept}."""
-    if not getattr(role, "split", False):
+    split, per pass {seconds, rows, kept}. `ids`: this turn's closed lists for the focused split
+    (referee_passes.referee_ids)."""
+    split = getattr(role, "split", False)
+    if not split:
         delta, usage = await provider.extract(role, system, msgs, ChangeReport)
         return delta, usage, {}
+    if split == "focused":
+        return await _extract_focused(provider, role, system, msgs, ids or {})
 
     async def one(part: str) -> tuple[str, ChangeReport, Usage, float]:
         t0 = time.monotonic()
@@ -1112,6 +1118,28 @@ async def extract_referee(provider: Any, role: Any, system: str, msgs: list[Msg]
     else:
         done += await asyncio.gather(*(one(part) for part in names[1:]))
     delta, counts = merge_parts([(part, rep) for part, rep, _, _ in done])
+    meta = {part: {"seconds": sec, **counts[part]} for part, _, _, sec in done}
+    return delta, _sum_usage(*(u for _, _, u, _ in done)), meta
+
+
+async def _extract_focused(provider: Any, role: Any, system: str, msgs: list[Msg], ids: dict[str, list[str]]) -> tuple[ChangeReport, Usage, dict[str, dict]]:
+    """The focused split (engine/referee_passes.py): the passes in order, each blind to the others; the first
+    alone so it writes the cache, the rest together, or in turn on llama.cpp."""
+    from . import referee_passes as rp
+
+    async def one(part: str) -> tuple[str, Any, Usage, float]:
+        t0 = time.monotonic()
+        rep, u = await provider.extract(role, system, rp.pass_messages(msgs, part, ids), rp.pass_schema(part, ids))
+        return part, rep, u, round(time.monotonic() - t0, 2)
+
+    names = list(rp.PASSES)
+    done = [await one(names[0])]
+    if provider.name == "llamacpp":
+        for part in names[1:]:
+            done.append(await one(part))
+    else:
+        done += await asyncio.gather(*(one(part) for part in names[1:]))
+    delta, counts = rp.merge([(part, rep) for part, rep, _, _ in done])
     meta = {part: {"seconds": sec, **counts[part]} for part, _, _, sec in done}
     return delta, _sum_usage(*(u for _, _, u, _ in done)), meta
 

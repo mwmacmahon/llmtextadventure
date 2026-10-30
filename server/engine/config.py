@@ -48,7 +48,9 @@ class RoleConfig(BaseModel):
     # every call: at 1.0 on every call the A3B referee lost ten rows of 74 (D34). 0 turns the retry off.
     loop_penalty: float = 1.0
     max_prompt_tokens: int | None = None   # narrator: the window shrinks by slide steps to fit (engine/context.py); unset, no limit
-    split: bool = False                    # referee: three passes over one cached prompt (roles.REFEREE_PARTS)
+    # referee: True, three passes over one cached prompt, the same schema, a focus line each (roles.REFEREE_PARTS);
+    # "focused", a pass per group of row kinds, each with its own guide, examples and schema (engine/referee_passes.py)
+    split: bool | Literal["focused"] = False
     temperature: float | None = None
     top_p: float | None = None          # the rest of the sampler; unset means the server's command-line defaults
     top_k: int | None = None
