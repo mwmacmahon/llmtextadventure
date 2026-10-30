@@ -50,7 +50,7 @@ class RoleConfig(BaseModel):
     max_prompt_tokens: int | None = None   # narrator: the window shrinks by slide steps to fit (engine/context.py); unset, no limit
     # referee: True, three passes over one cached prompt, the same schema, a focus line each (roles.REFEREE_PARTS);
     # "focused", a pass per group of row kinds, each with its own guide, examples and schema (engine/referee_passes.py);
-    # "focused3", the same with the rulings folded into the time pass
+    # "focused3", the same with the rulings folded into the time pass. Both ARCHIVED 2026-10-30, not helping (D45)
     split: bool | Literal["focused", "focused3"] = False
     temperature: float | None = None
     top_p: float | None = None          # the rest of the sampler; unset means the server's command-line defaults

@@ -1,5 +1,14 @@
-"""The focused split referee (RoleConfig.split = "focused"): one shared prompt, then a pass per group of row
-kinds, each with its own instructions, worked examples and output schema.
+"""ARCHIVED 2026-10-30: NOT HELPING as of 10/30/2026; kept, off by default, for one rerun after the entity fixes
+(notes/DECISIONS.md D45, D46). Measured on A3B with thinking against one call: required items +1 (station) and +4 to +5
+(noir); wrong rows on noir 4 -> 15 (four passes) and 19 (focused3); 3-4x the time a turn. Without thinking A3B loops
+under the grammar on a third to half of the turns either way. The wrong rows are mostly (a) rulings written to say a
+rule was kept ("the prose played the failure correctly"): the rulings guide asks the model to check four things and it
+reports each check; (b) the noir creature added again as a new thing (a design gap: it is filed under people, has no
+condition field and its id is `thing`); (c) `ai_core`, a system with a name and no id. Fix (b) and (c) in the games
+and (a) in the guide before judging the split again. Nothing in config.yml or config.llamacpp.yml turns it on.
+
+The focused split referee (RoleConfig.split = "focused" or "focused3"): one shared prompt, then a pass per group of
+row kinds, each with its own instructions, worked examples and output schema.
 
 Every pass is sent the same system and user message as the one-call referee (so the server's cache holds the
 prefix once), then one more user message of its own: what this pass reports, the shape of each row kind it owns

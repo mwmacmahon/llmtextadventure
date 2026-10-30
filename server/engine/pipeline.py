@@ -1124,7 +1124,8 @@ async def extract_referee(provider: Any, role: Any, system: str, msgs: list[Msg]
 
 async def _extract_focused(provider: Any, role: Any, system: str, msgs: list[Msg], ids: dict[str, list[str]],
                           mode: str = "focused") -> tuple[ChangeReport, Usage, dict[str, dict]]:
-    """The focused split (engine/referee_passes.py): the passes in order, each blind to the others; the first
+    """ARCHIVED 2026-10-30, not helping (D45; engine/referee_passes.py says why and what to fix before a rerun).
+    The focused split (engine/referee_passes.py): the passes in order, each blind to the others; the first
     alone so it writes the cache, the rest together, or in turn on llama.cpp."""
     from . import referee_passes as rp
 
