@@ -291,6 +291,9 @@ server/.venv/bin/python server/tools/llm.py use qwen27b  # swap and wait until i
 The helper beside the server (`gpu-yield.py`, :8281) answers `GET /models` and `POST /use {"profile": …}`:
 it takes only the name of a profile file that exists and whose model is on disk, writes `ACTIVE`, and
 stops llama-server; `llama-game.sh` starts it again on the new profile (the systemd unit stays as it is).
+A swap re-runs the loop inside the copy of `llama-game.sh` that is already running, not the file: after copying
+a new script to the box, restart the service (`ssh gumbo systemctl --user restart textadventure-llm`) or the new
+flags never load (the first budgeted run went out without `--reasoning-budget`, D34).
 A new model is a new profile file. `CTX=auto` sizes the context to the VRAM free at load: the script leaves
 out `--ctx-size` and llama.cpp's `--fit` makes it as large as fits (up to the model's trained length), keeping
 `FIT_TARGET` MiB free (1536) and never going below `FIT_CTX` (49152 in all). The game needs no change after a swap: the llama.cpp provider reads the
