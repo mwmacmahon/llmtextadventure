@@ -566,8 +566,14 @@ class NoirGame(GameBase):
             return True
         if kind == "set" and is_player and field == "location":
             return self.apply_change(s, ch.model_copy(update={"kind": "move"}), w)
-        if kind == "add" and is_player and field == "health" and value.lstrip("+") in HEALTH_VALUES:    # "add player.health +hurt"
-            kind, value = "set", value.lstrip("+")
+        if kind == "add" and is_player and field == "health":                       # "add player.health +hurt"; "-1" is no health
+            if value.lstrip("+") in HEALTH_VALUES:
+                kind, value = "set", value.lstrip("+")
+            else:
+                w.reject("player.health", "health is a word (" + "|".join(HEALTH_VALUES) + "), not a number", value)
+                return True
+        if kind == "move" and field in ("count", "loaded") and self._step(value) is not None:   # "move cigarettes.count -1": a count
+            kind = "add"
         if kind == "set" and is_player and field == "status":                       # Frank has health, not a status
             if value.lower() in HEALTH_VALUES:
                 field = "health"
@@ -820,6 +826,9 @@ class NoirGame(GameBase):
                     w.reject("inventory.revolver.loaded", "rounds go in through the reload lever", value)
                 else:
                     w.reject(f"inventory.{pocket_key(name)}", "not carried, and not lying anywhere listed", value)
+                return True
+            if kind == "move" and not is_player:                               # a thing nobody listed, moved: not a person
+                w.reject(f"things.{target}", "nothing by that name is carried or lying anywhere listed", value)
                 return True
             if not is_player:
                 w.reject(f"people.{target}", "unknown person id", value)

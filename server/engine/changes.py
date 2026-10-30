@@ -199,11 +199,14 @@ def apply_changes(game: Any, state: BaseModel, report: ChangeReport, *, present:
     decls: list[Declaration] = []
     for ch in report.changes:
         k = ch.kind
-        if k in ("set", "add") and "." in ch.target.strip():          # "player.dread" written as the target: split it
+        if k in ("set", "add", "move", "learned") and "." in ch.target.strip():    # "player.dread" written as the target: split it
             ch = split_dotted(ch)
         if k == "new" and "." in ch.target.strip() and not ch.field.strip():   # "new creature.Rooftop shack": the name, then where
             base, where = ch.target.strip().rsplit(".", 1)
             ch = ch.model_copy(update={"target": base, "field": where})
+        if k == "set" and not ch.field.strip() and ch.target.strip() in allowed_flags:      # "set okafor_got_report true": a flag by its name
+            k = "flag"
+            ch = ch.model_copy(update={"kind": "flag"})
         if skip_set and (ch.target.strip().lower() in skip_set or ch.field.strip().lower() in skip_set):
             w.note(f"{k} {ch.target}: already applied by the lever; not counted again")
             continue
@@ -266,6 +269,8 @@ def apply_changes(game: Any, state: BaseModel, report: ChangeReport, *, present:
             d = to_declaration(ch) if _hook(game, "has_world", s, default=False) else None
             if d is not None:
                 decls.append(d)
+            elif k == "set" and not ch.field.strip() and ch.value.strip().lower() in TRUE_WORDS | {"false", "no", "off", "0"}:
+                w.reject(f"flags.{ch.target.strip()}", "not a narrator flag", ch.value)       # a flag this game does not list
             else:
                 w.reject(f"{k} {ch.target}" + (f".{ch.field}" if ch.field else ""), "not something this game records", ch.value)
     if decls:

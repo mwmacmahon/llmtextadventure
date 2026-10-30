@@ -31,12 +31,14 @@ DEFAULT_MODEL="${MODEL:-$HOME/llms/text-generation-webui/user_data/models/Qwen3.
 DEFAULT_CTX="${CTX:-98304}"      # total; llama-server splits it evenly across slots (32k each)
 FIT_TARGET="${FIT_TARGET:-1536}" # CTX=auto: MiB llama.cpp leaves free on the GPU when it sizes the context to fit
 FIT_CTX="${FIT_CTX:-49152}"      # CTX=auto: the smallest total context it may settle on (16k a slot at 3 slots)
+DEFAULT_THINK_BUDGET="${THINK_BUDGET:--1}"   # llama.cpp --reasoning-budget: tokens of thinking a request with thinking on may spend before the server
+                                  # closes the think block itself (-1 unlimited). Server-wide; roles with thinking off are untouched.
 DEFAULT_KV="${KV:-q8_0}"        # KV cache type for the attention layers (q8_0 halves it; f16 is the full cache: ~68 KB a token on the 27B)
 DEFAULT_CKPT="${CKPT:-512}"      # recurrent-state checkpoint every N prompt tokens (default 8192): a hybrid model can only rewind its
                                   # state to a checkpoint, so this decides how much of a shared prefix a slot can reuse
 
 load_profile() {                 # the defaults, then the active profile over them
-  MODEL="$DEFAULT_MODEL"; CTX="$DEFAULT_CTX"; CKPT="$DEFAULT_CKPT"; KV="$DEFAULT_KV"
+  MODEL="$DEFAULT_MODEL"; CTX="$DEFAULT_CTX"; CKPT="$DEFAULT_CKPT"; KV="$DEFAULT_KV"; THINK_BUDGET="$DEFAULT_THINK_BUDGET"
   ACTIVE="$(tr -d '[:space:]' 2>/dev/null < "$PROFILES/ACTIVE" || true)"
   if [ -n "$ACTIVE" ] && [ -f "$PROFILES/$ACTIVE.env" ]; then
     set -a; . "$PROFILES/$ACTIVE.env"; set +a
@@ -74,7 +76,7 @@ while true; do
   else
     CTX_ARGS=(--ctx-size "$CTX")
   fi
-  echo "llama-server :$PORT, profile $ACTIVE, $PARALLEL slots, ctx $CTX, ckpt $CKPT, kv $KV, idle sleep ${IDLE}s, model $(basename "$MODEL")"
+  echo "llama-server :$PORT, profile $ACTIVE, $PARALLEL slots, ctx $CTX, ckpt $CKPT, kv $KV, think budget $THINK_BUDGET, idle sleep ${IDLE}s, model $(basename "$MODEL")"
   "$LLAMA_BIN" \
     -m "$MODEL" \
     --host "$HOST" --port "$PORT" \
@@ -86,6 +88,7 @@ while true; do
     --chat-template-kwargs '{"enable_thinking": false}' \
     --reasoning-format deepseek \
     --cache-type-k "$KV" --cache-type-v "$KV" \
+    --reasoning-budget "$THINK_BUDGET" --reasoning-budget-message "Time is short. I will answer now, from what I have." \
     --flash-attn on \
     --no-context-shift \
     --sleep-idle-seconds "$IDLE" \

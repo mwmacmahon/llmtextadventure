@@ -243,6 +243,12 @@ describe what is being decided.
 
 ## The two-pass clerk
 
+*(2026-10-29, late: the first sentence below is stale for the current llama-server build (8580): with
+`enable_thinking: true` and `response_format` in one call, the grammar starts after the think block and the
+model thinks, then writes the JSON. What remains true is that the thinking must be bounded: `--reasoning-budget N`
+on the server (`THINK_BUDGET` in a profile) closes it; the small Qwen3.5 models rarely close it themselves.
+See DECISIONS D31–D33 and the measurements that follow this section.)*
+
 A grammar constrains every token from the first, so a thinking model under `response_format` cannot think:
 either `<think>` is illegal or the thoughts are forced into JSON. `two_pass: true` on a structured role
 (llamacpp only) splits the work: the same prompt with thinking on and no grammar, asked for its

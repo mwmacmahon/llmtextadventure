@@ -182,16 +182,19 @@ def find_item(items: list[Item], key: str, strict: bool = False) -> Item | None:
     alias = ALIASES.get(k.rstrip("s")) or ALIASES.get(k)
     if alias:
         return next((it for it in items if it.id == alias), None)
-    words = set(k.replace("'s", "").split())
+    words = set(k.replace("'s", "").split()) - _FILLER           # "scrap of paper" shares only "of" with "photograph of June": no match
     best: tuple[int, Item | None] = (0, None)
     for it in items:
-        iw = set(it.name.lower().split())
+        iw = set(it.name.lower().split()) - _FILLER
         score = len(words & iw)
         if strict and score < min(len(words), len(iw)):
             continue
         if score > best[0]:
             best = (score, it)
     return best[1]
+
+
+_FILLER = {"of", "the", "a", "an", "his", "her", "its", "their", "with", "and", "in", "on", "from", "for", "to"}
 
 
 def pocket_word(key: str) -> bool:

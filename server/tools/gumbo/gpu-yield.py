@@ -55,7 +55,7 @@ def models() -> dict:
     profiles = []
     for n in names:
         p = read_profile(n)
-        profiles.append({"name": n, "model": os.path.basename(p.get("MODEL", "")), "ctx": p.get("CTX"), "ckpt": p.get("CKPT"), "kv": p.get("KV"),
+        profiles.append({"name": n, "model": os.path.basename(p.get("MODEL", "")), "ctx": p.get("CTX"), "ckpt": p.get("CKPT"), "kv": p.get("KV"), "think_budget": p.get("THINK_BUDGET"),
                          "present": bool(p.get("MODEL")) and os.path.isfile(p.get("MODEL", ""))})
     dirs = {os.path.dirname(read_profile(n).get("MODEL", "")) for n in names} - {""}
     files = sorted({f for d in dirs if os.path.isdir(d) for f in os.listdir(d) if f.endswith(".gguf")})

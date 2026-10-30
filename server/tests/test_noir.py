@@ -542,3 +542,13 @@ def test_load_state_rereads_the_script_owned_parts(game: NoirGame):
     assert s2.person("thing").aliases and s2.person("ada").description.startswith("Thirty") and s2.person("pulaski") is not None and not s2.person("pulaski").met
     assert s2.person("rosa").tells[0].told and not s2.person("rosa").tells[1].told and "The Anchor" in s2.case.locations
     assert game._same_person(s2, "the creature") is s2.person("thing")
+
+
+def test_three_more_shapes_from_the_sweep_runs(game: NoirGame):
+    _, st = game.new_instance({})
+    s2, rep = apply(game, st, ref(add("player", "health", "-1"), C(kind="move", target="scrap of paper", value="rosa"),
+                                  C(kind="move", target="cigarettes.count", field="-1", value="-1")))
+    reasons = [r.reason for r in rep.rejected]
+    assert reasons[0].startswith("health is a word") and reasons[1].startswith("nothing by that name") and len(reasons) == 2
+    assert s2.item("cigarettes").count == 10 and s2.player.minutes_since_smoke == 0      # a count moved by -1 is one smoked
+    assert s2.item("photo_june") is not None            # "scrap of paper" is not the photograph of June: "of" alone matches nothing
