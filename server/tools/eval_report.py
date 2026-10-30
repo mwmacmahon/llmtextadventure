@@ -215,6 +215,10 @@ def forbidden_index(gold_ref: dict, row: dict) -> int | None:
     return next((i for i, f in enumerate(gold_ref.get("forbidden", [])) if matches(f, row)), None)
 
 
+def gray_index(gold_ref: dict, row: dict) -> int | None:
+    return next((i for i, f in enumerate(gold_ref.get("gray", [])) if matches(f, row)), None)
+
+
 # ---- words, sentences and evidence ----------------------------------------------------------------
 _STOP = set("the and that this with from into have has had was were are for not but his her him she they them their there what when where which who will would could should than then been being about over under after before just only very also some more most such each other into onto upon your you our its it's player frank station crew".split())
 
@@ -373,14 +377,14 @@ CSS = """
 /* Layout: one reading column of turns; each turn a sheet with the key's verdicts as a ledger, evidence quoted under each line. */
 :root{
   --paper:#f5f7f6; --sheet:#ffffff; --ink:#18201d; --muted:#5b6862; --rule:#d8dfdb; --accent:#2f4fb3;
-  --ok:#1f7a4d; --ok-bg:#e3f2ea; --miss:#a05a00; --miss-bg:#fbefd9; --bad:#b3261e; --bad-bg:#fbe4e2; --unj:#4b5d8a; --unj-bg:#e7ebf5;
+  --ok:#1f7a4d; --ok-bg:#e3f2ea; --gray:#6b46a8; --gray-bg:#efe8f8; --miss:#a05a00; --miss-bg:#fbefd9; --bad:#b3261e; --bad-bg:#fbe4e2; --unj:#4b5d8a; --unj-bg:#e7ebf5;
   --markbg:#fff1a8; --code:#eef2f0;
   --display:"Source Serif 4", Georgia, "Times New Roman", serif; --body:"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono:"IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --paper:#111614; --sheet:#181f1c; --ink:#e3ebe7; --muted:#9aa8a1; --rule:#2c3632; --accent:#8fa6ff;
-  --ok:#7fd3a4; --ok-bg:#16301f; --miss:#f2b45a; --miss-bg:#33260f; --bad:#ff8f86; --bad-bg:#3a1714; --unj:#a9b8e6; --unj-bg:#1e2538;
+  --ok:#7fd3a4; --ok-bg:#16301f; --gray:#c4a8f0; --gray-bg:#2a2140; --miss:#f2b45a; --miss-bg:#33260f; --bad:#ff8f86; --bad-bg:#3a1714; --unj:#a9b8e6; --unj-bg:#1e2538;
   --markbg:#5a4a00; --code:#202925; color-scheme:dark}}
 :root[data-theme="dark"]{
   --paper:#111614; --sheet:#181f1c; --ink:#e3ebe7; --muted:#9aa8a1; --rule:#2c3632; --accent:#8fa6ff;
@@ -413,6 +417,7 @@ a{color:var(--accent)} a:focus-visible,summary:focus-visible{outline:2px solid v
 .miss{background:var(--miss-bg)} .miss .tag{color:var(--miss)}
 .bad{background:var(--bad-bg)} .bad .tag{color:var(--bad)}
 .unj{background:var(--unj-bg)} .unj .tag{color:var(--unj)}
+.gray{background:var(--gray-bg)} .gray .tag{color:var(--gray)} td.g{color:var(--gray);font-weight:600}
 .plain .tag{color:var(--muted)}
 .row,.pat{font:13px/1.5 var(--mono);overflow-wrap:anywhere}
 .rk{font-weight:600} .rt{color:var(--accent)} .rv{} .rn{color:var(--muted)}
@@ -420,7 +425,7 @@ a{color:var(--accent)} a:focus-visible,summary:focus-visible{outline:2px solid v
 blockquote{margin:6px 0 0;padding:4px 10px;border-left:2px solid var(--rule);font-size:.9rem;max-width:75ch}
 mark{background:var(--markbg);color:inherit;padding:0 1px;border-radius:2px}
 mark.q.ok{background:var(--ok-bg);box-shadow:inset 0 -2px var(--ok)} mark.q.miss{background:var(--miss-bg);box-shadow:inset 0 -2px var(--miss)}
-mark.q.bad{background:var(--bad-bg);box-shadow:inset 0 -2px var(--bad)} mark.q.quiet{background:transparent;box-shadow:inset 0 -1px var(--muted)}
+mark.q.bad{background:var(--bad-bg);box-shadow:inset 0 -2px var(--bad)} mark.q.gray{background:var(--gray-bg);box-shadow:inset 0 -2px var(--gray)} sup.gray{color:var(--gray)} mark.q.quiet{background:transparent;box-shadow:inset 0 -1px var(--muted)}
 sup.ql{font:600 10px var(--mono);margin-left:2px} sup.ok{color:var(--ok)} sup.miss{color:var(--miss)} sup.bad{color:var(--bad)} sup.quiet{color:var(--muted)}
 pre.j{margin:3px 0;padding:6px 8px;max-height:none}
 blockquote.qt{position:relative;cursor:help} blockquote.qt.key{border-left:3px solid var(--accent)} blockquote.qt.guess{border-left:3px dashed var(--muted);color:var(--muted)}
@@ -440,7 +445,7 @@ th{font-weight:600;color:var(--muted);font-size:.78rem;letter-spacing:.03em}
 td.c{text-align:center;font-family:var(--mono)} td.num{font-variant-numeric:tabular-nums;font-family:var(--mono)}
 td.y{color:var(--ok)} td.n{color:var(--miss)} td.x{color:var(--bad);font-weight:600} td.none{color:var(--rule)}
 th.run{writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;font:11px var(--mono);height:9rem}
-tr.turnrow td{background:var(--code);font-weight:600}
+tr.turnrow td{background:var(--code);font-weight:600} tr.gray td:first-child{border-left:3px solid var(--gray)}
 .legend{display:flex;flex-wrap:wrap;gap:12px;font-size:.85rem;color:var(--muted);margin:6px 0}
 @media (max-width:560px){.line{grid-template-columns:1fr}.tag{justify-self:start}.turn{padding:12px}}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
@@ -546,7 +551,7 @@ def highlight(text: str, marks: list[tuple[str, str, str]]) -> str:
             m = merged[-1]
             m[1] = max(m[1], s[1])
             m[2] += [l for l in s[2] if l not in m[2]]
-            m[3] = min(m[3], s[3], key=["bad", "miss", "ok", "quiet"].index)
+            m[3] = min(m[3], s[3], key=["bad", "miss", "gray", "ok", "quiet"].index)
         else:
             merged.append(s)
     out, pos = [], 0
@@ -564,17 +569,20 @@ def item_statuses(g: dict | None, gref: dict | None) -> dict[str, str]:
     if not gref:
         return st
     met = {m["item"] for m in (g or {}).get("met", [])}
-    for i, _ in enumerate(gref.get("required", [])):
-        st[f"R{i}"] = "ok" if i in met else "miss" if g is not None else "quiet"
+    for i, item in enumerate(gref.get("required", [])):
+        st[f"R{i}"] = ("gray" if item.get("gray") else "ok" if i in met else "miss") if g is not None else "quiet"
     hit = {forbidden_index(gref, r) for r in (g or {}).get("errors", [])}
     for i, _ in enumerate(gref.get("forbidden", [])):
         st[f"F{i}"] = "bad" if i in hit else "quiet"
+    ghit = {gray_index(gref, r) for r in (g or {}).get("gray_rows", [])}
+    for i, _ in enumerate(gref.get("gray", [])):
+        st[f"G{i}"] = "gray" if i in ghit else "quiet"
     return st
 
 
 def render_passage(rec: dict, gref: dict | None, st: dict[str, str]) -> str:
     marks = []
-    for sec, letter in (("required", "R"), ("forbidden", "F")):
+    for sec, letter in (("required", "R"), ("forbidden", "F"), ("gray", "G")):
         for i, item in enumerate((gref or {}).get(sec, [])):
             for q in quotes_of(item):
                 marks.append((q, f"{letter}{i}", st.get(f"{letter}{i}", "quiet")))
@@ -606,7 +614,11 @@ def render_referee(t: Turn, rec: dict, g: dict | None, gref: dict | None, prose:
     if g is not None and gref is not None:
         met = {m["item"]: m["row"] for m in g.get("met", [])}
         for i, item in enumerate(gref.get("required", [])):
-            if i in met:
+            if item.get("gray"):
+                body = ((f"<div class=sub>produced:</div><pre class='j'>{E(as_json(met[i]))}</pre>" if i in met else "<div class=sub>not produced.</div>")
+                        + f"<div class=sub><b>why it is a gray area:</b> {E(str(item['gray']))}</div>")
+                parts.append(_item_block("gray", "gray · caught" if i in met else "gray · missed", f"R{i}", item, body, text))
+            elif i in met:
                 body = f"<div class=sub>produced:</div><pre class='j'>{E(as_json(met[i]))}</pre>"
                 parts.append(_item_block("ok", "caught", f"R{i}", item, body, text))
             else:
@@ -627,6 +639,12 @@ def render_referee(t: Turn, rec: dict, g: dict | None, gref: dict | None, prose:
                 ws = row_words(r)
                 body += "".join(quote_html(text, x, "guess", ws) for x in guess_sentences(text, ws, 1))
             parts.append(_item_block("bad", "wrong", f"F{fi}", item, body, text))
+        for r in g.get("gray_rows", []):
+            gi = gray_index(gref, r)
+            item = gref.get("gray", [])[gi] if gi is not None else {}
+            body = (f"<div class=sub>produced:</div><pre class='j'>{E(as_json(r))}</pre>"
+                    f"<div class=sub><b>why it is a gray area:</b> {E(item.get('why', ''))}</div>")
+            parts.append(_item_block("gray", "gray row", f"G{gi}", item, body, text))
         avoided = [(i, f) for i, f in enumerate(gref.get("forbidden", [])) if i not in {forbidden_index(gref, r) for r in g.get("errors", [])}]
         if avoided:
             parts.append(f"<details><summary>{len(avoided)} forbidden item{'s' if len(avoided) != 1 else ''} this run avoided</summary>"
@@ -638,7 +656,9 @@ def render_referee(t: Turn, rec: dict, g: dict | None, gref: dict | None, prose:
                               + "".join(quote_html(text, x, "guess", ws) for x in ev), "the key does not cover a row like this yet"))
         for r in g.get("allowed_rows", []):
             extra.append(line("plain", "allowed", f"<pre class='j'>{E(as_json(r))}</pre>", "a fair call either way, or a repeat of a caught row"))
-        head = f"<h3>The key, item by item · {g['hits']}/{g['required']} required caught, {len(g['errors'])} wrong</h3>"
+        head = (f"<h3>The key, item by item · {g['hits']}/{g['required']} required caught, {len(g['errors'])} wrong"
+                + (f" · gray: {g.get('gray_hits', 0)}/{g.get('gray_required', 0)} debatable items met, {len(g.get('gray_rows', []))} defensible rows" if g.get("gray_required") or g.get("gray_rows") else "")
+                + "</h3>")
     else:
         head = "<h3>The referee's rows · this turn is not in the graded key</h3>"
         extra += [line("plain", "reported", f"<pre class='j'>{E(as_json(r))}</pre>") for r in ref["got"] if r.get("kind") != "issue"]
@@ -737,6 +757,7 @@ def render_run(run: Run, key: str, today: dict[str, dict], standalone: bool) -> 
         gr, ga = g.get("referee"), g.get("adjudicator")
         if gr:
             tot["req"] += gr["required"]; tot["hit"] += gr["hits"]; tot["wrong"] += len(gr["errors"]); tot["unj"] += len(gr["unjudged"])
+            tot["greq"] += gr.get("gray_required", 0); tot["ghit"] += gr.get("gray_hits", 0); tot["grow"] += len(gr.get("gray_rows", []))
         if ga:
             tot["creq"] += ga["checks"]["required"]; tot["cexact"] += ga["checks"]["exact"]; tot["cstat"] += ga["checks"]["stat_only"]
             tot["cwrong"] += len(ga["checks"]["errors"])
@@ -771,12 +792,13 @@ def render_run(run: Run, key: str, today: dict[str, dict], standalone: bool) -> 
     stats = "<div class='stats'>" + "".join(
         f"<span class='stat'>{lab} <b>{val}</b></span>" for lab, val in (
             ("required caught", f"{tot['hit']}/{tot['req']}"), ("wrong rows", tot["wrong"]), ("unjudged", tot["unj"]),
+            ("gray items met", f"{tot['ghit']}/{tot['greq']}"), ("gray rows", tot["grow"]),
             ("checks", f"{tot['cexact']}+{tot['cstat']}/{tot['creq']}"), ("wrong checks", tot["cwrong"])) if tot["req"] or tot["creq"]) + "</div>"
     notes = "".join(f"<p class='lede'>{E(n)}</p>" for n in run.notes)
     body = (f"<p><a href='index.html'>All runs</a> · <a href='compare-{E(run.corpus_name)}.html'>Compare runs on {E(run.corpus_name)}</a></p>"
             f"<h1>{E(run.tag)}</h1>{meta}{stats}{notes}"
             "<div class='legend'><span>caught: a reported row meets a required item</span><span>missed: no row did; the quotes are the sentences that show it</span>"
-            "<span>wrong: a row the key forbids</span><span>unjudged: a row the key does not cover yet</span>"
+            "<span>wrong: a row the key forbids</span><span>gray: a debatable item, or a defensible row; tallied apart</span><span>unjudged: a row the key does not cover yet</span>"
             "<span>quotes marked FROM THE KEY were picked by hand; GUESS quotes come from word matching and may be wrong; hover or tap any quote for its context</span></div>"
             f"<nav class='toc'>{''.join(toc)}</nav>{''.join(secs)}"
             + (f"<h2>Prompts</h2>{prompts}" if prompts else ""))
@@ -789,7 +811,7 @@ def render_compare(name: str, runs: list[tuple[Run, dict]], gold: dict[str, dict
     corpus = next((r.corpus for r, _ in runs if r.corpus), {})
     keys = sorted({t.key for r, _ in runs for t in r.turns if t.key in gold}, key=lambda k: (k.split(":")[0], int(k.split(":")[1])))
     head = "<tr><th>key item</th><th>caught</th>" + "".join(f"<th class='run' title='{E(model_label(r))}'><a href='run-{E(r.tag)}.html'>{E(r.tag)}</a></th>" for r, _ in runs) + "</tr>"
-    rows, never, always_wrong = [], [], []
+    rows, never, always_wrong, grays = [], [], [], []
     for k in keys:
         rec = corpus.get(k, {})
         gk = gold[k]
@@ -806,7 +828,8 @@ def render_compare(name: str, runs: list[tuple[Run, dict]], gold: dict[str, dict
                     continue
                 n += 1
                 yes += v == "y"
-                out.append({"y": "<td class='c y' title='caught'>✓</td>", "n": "<td class='c n' title='missed'>○</td>", "x": "<td class='c x' title='wrong'>✗</td>"}[v])
+                out.append({"y": "<td class='c y' title='caught'>✓</td>", "n": "<td class='c n' title='missed'>○</td>", "x": "<td class='c x' title='wrong'>✗</td>",
+                            "g": "<td class='c g' title='wrote the gray row'>◐</td>"}[v])
             return "".join(out), yes, n
 
         for i, item in enumerate(gk.get("referee", {}).get("required", [])):
@@ -814,9 +837,13 @@ def render_compare(name: str, runs: list[tuple[Run, dict]], gold: dict[str, dict
                 gr = g.get("referee")
                 return None if gr is None else ("y" if i in {m["item"] for m in gr.get("met", [])} else "n")
             c, yes, n = cells(f)
+            if item.get("gray"):
+                grays.append((k, f"R{i}", plain(item), str(item["gray"]), item.get("tags") or ["untagged"], f"met by {yes}/{n}"))
+                rows.append(f"<tr class='gray'><td><span class=pat>gray: {E(plain(item))}</span><div class=sub>{E(str(item['gray']))}</div>{chips(item)}</td><td class='num'>{yes}/{n}</td>{c}</tr>")
+                continue
             if n and yes <= n * RARE:
-                never.append((yes / n, k, describe(item), yes, n))
-            rows.append(f"<tr><td><span class=pat>{describe(item)}</span>{chips(item)}</td><td class='num'>{yes}/{n}</td>{c}</tr>")
+                never.append((yes / n, k, E(plain(item)), yes, n))
+            rows.append(f"<tr><td><span class=pat>{E(plain(item))}</span>{chips(item)}</td><td class='num'>{yes}/{n}</td>{c}</tr>")
         for i, item in enumerate(gk.get("referee", {}).get("forbidden", [])):
             def f(t, g, i=i):
                 gr = g.get("referee")
@@ -828,6 +855,15 @@ def render_compare(name: str, runs: list[tuple[Run, dict]], gold: dict[str, dict
                 if yes <= n * OFTEN:
                     always_wrong.append((yes / n, k, describe(item) + f"<div class=sub>{E(item.get('why', ''))}</div>", n - yes, n))
                 rows.append(f"<tr><td><span class=pat>not: {describe(item)}</span><div class=sub>{E(item.get('why', ''))}</div>{chips(item)}</td><td class='num'>{yes}/{n} clean</td>{c}</tr>")
+        for i, item in enumerate(gk.get("referee", {}).get("gray", [])):
+            def f(t, g, i=i):
+                gr = g.get("referee")
+                if gr is None:
+                    return None
+                return "g" if any(gray_index(gk["referee"], r) == i for r in gr.get("gray_rows", [])) else "y"
+            c, clean, n = cells(f)
+            grays.append((k, f"G{i}", plain(item), item.get("why", ""), item.get("tags") or ["untagged"], f"written by {n - clean}/{n}"))
+            rows.append(f"<tr class='gray'><td><span class=pat>gray row: {E(plain(item))}</span><div class=sub>{E(item.get('why', ''))}</div>{chips(item)}</td><td class='num'>{n - clean}/{n} wrote it</td>{c}</tr>")
         for want in gk.get("adjudicator", {}).get("checks", {}).get("required", []):
             def f(t, g, want=want):
                 ga = g.get("adjudicator")
@@ -852,8 +888,18 @@ def render_compare(name: str, runs: list[tuple[Run, dict]], gold: dict[str, dict
     if always_wrong:
         summary += ("<h2>Often wrong</h2><p class='lede'>Forbidden rows half the runs or more wrote.</p><ul class='ledger'>"
                     + "".join(line("bad", f"{bad}/{n}", f"<span class=id>{E(k)}</span> <span class=pat>not: {d}</span>") for _, k, d, bad, n in sorted(always_wrong)) + "</ul>")
+    if grays:
+        by_tag: dict[str, list] = defaultdict(list)
+        for g_ in grays:
+            for tg in g_[4]:
+                by_tag[tg].append(g_)
+        summary += ("<h2>Gray areas</h2><p class='lede'>Readings the key counts as defensible but not ideal, by cause. Each is tallied apart, "
+                    "never as an error; the causes are where a prompt or the engine could make the input clearer.</p>"
+                    + "".join(f"<h3>{E(tg)} ({len(v)})</h3><div class='ledger'>"
+                              + "".join(line("gray", lab, f"<span class=id>{E(k)}</span> {E(pl)}", E(why) + f" · {E(cnt)}") for k, lab, pl, why, _, cnt in v)
+                              + "</div>" for tg, v in sorted(by_tag.items(), key=lambda x: -len(x[1]))))
     body = (f"<p><a href='index.html'>All runs</a></p><h1>Compare runs on {E(name)}</h1>"
-            f"<p class='lede'>{len(runs)} runs, {len(keys)} graded turns, graded with today's grader and key. ✓ caught or clean, ○ missed, ✗ wrong, · not in that run.</p>"
+            f"<p class='lede'>{len(runs)} runs, {len(keys)} graded turns, graded with today's grader and key. ✓ caught or clean, ○ missed, ✗ wrong, ◐ wrote a gray row, · not in that run.</p>"
             f"{summary}<h2>Every item</h2><div class='scroll'><table>{head}{''.join(rows)}</table></div>")
     return page(f"Compare {name}", body, standalone)
 
@@ -865,11 +911,11 @@ def render_index(items: list[tuple[Run, dict]], corpora: list[str], key: str) ->
         t = info["tot"]
         rows.append(f"<tr><td><a href='run-{E(r.tag)}.html'>{E(r.tag)}</a></td><td>{E(r.started[:16].replace('T', ' '))}</td><td>{E(r.corpus_name)}</td>"
                     f"<td>{E(model_label(r))}</td><td class='num'>{t['hit']}/{t['req']}</td><td class='num'>{t['wrong']}</td><td class='num'>{t['unj']}</td>"
-                    f"<td class='num'>{t['cexact']}+{t['cstat']}/{t['creq']}</td><td class='num'>{r.format}</td></tr>")
+                    f"<td class='num'>{t['ghit']}/{t['greq']} · {t['grow']}</td><td class='num'>{t['cexact']}+{t['cstat']}/{t['creq']}</td><td class='num'>{r.format}</td></tr>")
     body = ("<h1>Eval runs</h1><p class='lede'>Every replay of stored turns through the adjudicator and the referee, graded with today's grader against "
             + ("today's key" if key == "now" else "the key each run carried") + ". Open a run for the turn-by-turn ledger, or a comparison for every key item against every run.</p>"
             + "<p>" + " · ".join(f"<a href='compare-{E(c)}.html'>Compare runs on {E(c)}</a>" for c in corpora) + "</p>"
-            + "<div class='scroll'><table><tr><th>run</th><th>ran</th><th>corpus</th><th>models</th><th>required</th><th>wrong</th><th>unjudged</th><th>checks</th><th>format</th></tr>"
+            + "<div class='scroll'><table><tr><th>run</th><th>ran</th><th>corpus</th><th>models</th><th>required</th><th>wrong</th><th>unjudged</th><th>gray met · rows</th><th>checks</th><th>format</th></tr>"
             + "".join(rows) + "</table></div>")
     return page("Eval runs", body, standalone=False)
 

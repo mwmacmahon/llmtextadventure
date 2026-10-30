@@ -98,3 +98,18 @@ def test_evidence_finds_the_sentence_and_marks_the_words():
     q = er.evidence(PROSE, ["skid", "revolver"])
     assert len(q) == 1 and "<mark>revolver</mark>" in q[0] and "<mark>skids</mark>" in q[0]
     assert er.evidence(PROSE, ["telephone"]) == []
+
+
+def test_gray_items_and_rows_are_tallied_apart_never_as_errors():
+    """D43: a debatable requirement (`gray: why` on a required row) and a defensible row (`gray:` list) count apart."""
+    from tools.eval_replay import grade_rows
+    key = {"required": [{"kind": "add", "target": "revolver", "field": "loaded", "step": [-2, -2]},
+                        {"kind": "add", "target": "player", "field": "dread", "step": [3, 10], "gray": "he steadied"}],
+           "forbidden": [{"kind": "unseen", "words": ["ankle"], "why": "the player feels it"}],
+           "gray": [{"kind": "unseen", "words": ["crawl"], "why": "the note carries what he cannot perceive"}]}
+    g = grade_rows(key, [{"kind": "add", "target": "revolver", "field": "loaded", "value": "-2"},
+                         {"kind": "unseen", "value": "the thing is crawling toward him"},
+                         {"kind": "unseen", "value": "it has his ankle"}])
+    assert (g["hits"], g["required"], g["gray_hits"], g["gray_required"]) == (1, 1, 0, 1)
+    assert len(g["errors"]) == 1 and len(g["gray_rows"]) == 1 and g["gray_rows"][0]["why"].startswith("the note")
+    assert g["missed"] == []                                   # a missed gray item is not a miss

@@ -247,6 +247,8 @@ def score_adjudication(expected: dict, got: dict) -> dict:
 #     required:  [pattern | {any: [pattern, ...]}, ...]
 #     allowed:   [pattern, ...]
 #     forbidden: [pattern + {why: ...}, ...]
+#     gray:      [pattern + {why: ...}, ...]   defensible, not ideal: tallied apart, never an error (D43)
+#   a required item with `gray: <why>` is a debatable requirement: met or missed, it is tallied apart
 #   adjudicator:
 #     kind: action | [action, trivial]
 #     checks: {required: [{stat: [...], difficulty: [...]}], allowed: [...], forbidden: [...]}
@@ -322,23 +324,29 @@ def grade_rows(gold: dict, got: list[dict]) -> dict:
     for i in range(len(req)):
         assign(i, set())
     met = set(owner.values())
-    missed = [item for i, item in enumerate(req) if i not in met]
-    hits = len(met)
+    firm = [i for i, item in enumerate(req) if not item.get("gray")]           # gray: a debatable requirement, tallied apart
+    missed = [req[i] for i in firm if i not in met]
+    hits = len([i for i in firm if i in met])
     hit_keys = {(_norm(shape(rows[j]).get("kind")), shape(rows[j])["target"], shape(rows[j])["field"]) for j in owner}
     rem = [r for j, r in enumerate(rows) if j not in owner]
-    errors, allowed, unjudged = [], [], []
+    errors, allowed, unjudged, gray_rows = [], [], [], []
     for r in rem:
         sr = shape(r)
         bad = next((f for f in gold.get("forbidden", []) if matches(f, r)), None)
+        gray = next((f for f in gold.get("gray", []) if matches(f, r)), None)
         if (_norm(sr.get("kind")), sr["target"], sr["field"]) in hit_keys and sr["target"] and _norm(sr.get("kind")) not in TEXT_KINDS:
             allowed.append(r)
+        elif gray is not None:                       # defensible, not ideal: its own tally, never an error
+            gray_rows.append({**r, "why": gray.get("why", "")})
         elif bad is not None:
             errors.append({**r, "why": bad.get("why", "")})
         elif any(matches(a, r) for a in gold.get("allowed", [])):
             allowed.append(r)
         else:
             unjudged.append(r)
-    return {"required": len(gold.get("required", [])), "hits": hits, "missed": missed, "errors": errors, "allowed": len(allowed), "unjudged": unjudged,
+    grays = [i for i, item in enumerate(req) if item.get("gray")]
+    return {"required": len(firm), "hits": hits, "missed": missed, "errors": errors, "allowed": len(allowed), "unjudged": unjudged,
+            "gray_required": len(grays), "gray_hits": len([i for i in grays if i in met]), "gray_rows": gray_rows,
             "met": [{"item": i, "row": rows[j]} for j, i in sorted(owner.items(), key=lambda x: x[1])],     # which row met which required item (by index)
             "missed_items": [i for i in range(len(req)) if i not in met], "allowed_rows": allowed}
 
@@ -518,7 +526,9 @@ def summarize_gold(results: list[dict]) -> dict:
     if ref:
         out["referee"] = {"turns": len(ref), "required": f"{sum(x['hits'] for x in ref)}/{sum(x['required'] for x in ref)}",
                           "errors": sum(len(x["errors"]) for x in ref), "allowed": sum(x["allowed"] for x in ref),
-                          "unjudged": sum(len(x["unjudged"]) for x in ref)}
+                          "unjudged": sum(len(x["unjudged"]) for x in ref),
+                          "gray_required": f"{sum(x.get('gray_hits', 0) for x in ref)}/{sum(x.get('gray_required', 0) for x in ref)}",
+                          "gray_rows": sum(len(x.get("gray_rows", [])) for x in ref)}
     if adj:
         c = [x["checks"] for x in adj]
         out["adjudicator"] = {"turns": len(adj), "kind_ok": sum(x["kind_ok"] for x in adj),
