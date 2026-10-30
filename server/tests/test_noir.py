@@ -437,3 +437,108 @@ def test_more_shapes_read_broadly(game: NoirGame):
     s2, rep = apply(game, st, ref(C(kind="add", target="player", field="conditions", value="+burned hand"),
                                   C(kind="new", target="notebook", field="Rooftop shack", note="lying on the floor")))
     assert s2.player.has_condition("burned hand") and s2.thing("notebook").place == "Rooftop shack"
+
+
+# ---- the second pass over the states (2026-10-29, Fable): shapes the local models write, and gaps ----
+
+def test_dotted_targets_with_the_value_in_the_field(game: NoirGame):
+    _, st = game.new_instance({})
+    s2, rep = apply(game, st, ref(C(kind="add", target="revolver.loaded", field="-1"),                     # the value where the field goes
+                                  C(kind="set", target="player.conditions", field="+shaken", value="Frank is shaken by the fall."),
+                                  C(kind="add", target="player.dread", field="count", value="+5"),            # another field word: the target's wins
+                                  C(kind="add", target="dollars.count", field="-1"),
+                                  C(kind="set", target="player.health", field="hurt"),
+                                  C(kind="set", target="player.conditions", field="condition", value="-tired"),
+                                  C(kind="add", target="revolver.loaded", value="-0")))
+    assert s2.item("revolver").loaded == 5 and s2.player.has_condition("shaken") and s2.player.dread == 40
+    assert s2.item("dollars").count == 13 and s2.player.health == "hurt" and not s2.player.has_condition("tired")
+    assert not rep.rejected
+    # a pending item settled with the reason in `field`
+    from engine.changes import apply_changes as ac
+    _, _, ex = ac(game, st, ref(C(kind="set", target="p1.resolved", field="reason", value="Frank shot it and it let go")), present=[], causes=[])
+    assert ex.pending_resolved == ["p1: Frank shot it and it let go"]
+
+
+def test_health_and_conditions_added_without_a_sign(game: NoirGame):
+    _, st = game.new_instance({})
+    s2, rep = apply(game, st, ref(add("player", "health", "+hurt"), C(kind="add", target="player", field="conditions", value="burned hand")))
+    assert s2.player.health == "hurt" and s2.player.has_condition("burned hand") and not rep.rejected
+
+
+def test_a_person_gone_is_dead_only_when_the_row_says_so(game: NoirGame):
+    _, st = game.new_instance({})
+    s2, _ = apply(game, st, ref(C(kind="gone", target="thing", note="it went over the parapet, hurt, into the rain")))
+    assert s2.person("thing").status == "alive" and s2.person("thing").location == "Unknown"
+    s3, _ = apply(game, st, ref(C(kind="gone", target="the creature", note="the head shot killed it; it came apart into grease")))
+    assert s3.person("thing").status == "dead"                                   # by its alias, too
+
+
+def test_aliases_moods_and_things_left_here(game: NoirGame):
+    _, st = game.new_instance({})
+    assert "Also called the creature, the thing, the shepherd, it." in game.frozen_prefix(st) and "At the start: frightened." in game.frozen_prefix(st)
+    s2, rep = apply(game, st, ref(C(kind="move", target="the caller", value="The Anchor"), C(kind="set", target="ada", field="mood", value="Relieved"),
+                                  C(kind="move", target="notebook", value="the floor")))
+    assert s2.person("szabo").location == "The Anchor" and s2.person("szabo").met and s2.person("ada").mood == "relieved"
+    assert s2.thing("notebook").place == "Rooftop shack" and not rep.rejected
+    assert "Ada Kessler: at Kessler house, friendly toward Frank, relieved." in game.render_bulletin(s2, "")
+
+
+def test_a_missing_person_found_can_tell(game: NoirGame):
+    _, st = game.new_instance({})
+    st.player.location = "Under the docks"
+    st.flags["june_found"] = True
+    b = game.render_bulletin(st, "")
+    assert "June Kessler [june, tell june_held]: may tell" in b                  # status still "missing", but she is here with Frank
+
+
+def test_rows_about_frank_that_belong_to_someone_else_are_judged(game: NoirGame):
+    _, st = game.new_instance({})
+    st.player.location = "The Anchor"
+    s2, rep = apply(game, st, ref(C(kind="set", target="player", field="status", value="alive"), C(kind="set", target="player", field="status", value="hurt"),
+                                  C(kind="set", target="player", field="told", value="rosa_june_left"), add("player", "attitude", "+3")))
+    reasons = {r.path: r.reason for r in rep.rejected}
+    assert "not a status" in reasons["player.health"] and "Frank has none" in reasons["player.attitude"]
+    assert s2.player.health == "hurt" and s2.person("rosa").tells[0].told
+
+
+def test_new_rows_named_after_the_thing_itself(game: NoirGame):
+    _, st = game.new_instance({})
+    st.person("thing").met = False
+    s2, rep = apply(game, st, ref(C(kind="new", target="creature.Lowtown streets"), C(kind="new", target="yellow grease.player"),
+                                  C(kind="new", target="umbrella", note="borrowed from Rosa")))
+    assert s2.person("thing").met and s2.person("thing").location == "Lowtown streets"
+    assert s2.item("yellow grease") is not None and s2.item("umbrella") is not None and not rep.rejected
+
+
+def test_pocket_things_he_no_longer_has_are_judged_not_unknown(game: NoirGame):
+    _, st = game.new_instance({})
+    st.inventory = [i for i in st.inventory if i.id != "revolver"]
+    _, rep = apply(game, st, ref(C(kind="move", target="revolver", value="Rooftop shack"), C(kind="set", target="revolver", value="6/6"),
+                                 add("player.revolver", "loaded", "-1"), add("player", "matches", "-1")))
+    reasons = [r.reason for r in rep.rejected]
+    assert reasons[0].startswith("not carried, and not lying") and reasons[1].startswith("rounds go in") and reasons[2].startswith("rounds go in")
+    assert "unknown person id" not in reasons and len(reasons) == 3           # the matches went down by one
+
+
+def test_pending_rows_in_their_other_spellings(game: NoirGame):
+    from engine.changes import apply_changes as ac
+    _, st = game.new_instance({})
+    rows = [C(kind="set", target="pending p1", value="interrupted"), C(kind="set", target="p2", value="resolved"),
+            C(kind="set", target="P3 (the grab)", field="status", value="stopped", note="Frank shot it")]
+    _, rep, ex = ac(game, st, ref(*rows), present=[], causes=[])
+    assert ex.pending_resolved == ["p1: interrupted", "p2: resolved", "p3: stopped"] and not rep.rejected
+
+
+def test_load_state_rereads_the_script_owned_parts(game: NoirGame):
+    _, st = game.new_instance({})
+    doc = st.model_dump(mode="json")
+    for q in doc["people"]:
+        q.pop("aliases", None); q["description"] = "stale"
+        if q["id"] == "rosa":
+            q["tells"][0]["told"] = True
+    doc["people"] = [q for q in doc["people"] if q["id"] != "pulaski"]
+    doc["case"]["locations"] = ["Nowhere"]
+    s2 = game.load_state(doc)
+    assert s2.person("thing").aliases and s2.person("ada").description.startswith("Thirty") and s2.person("pulaski") is not None and not s2.person("pulaski").met
+    assert s2.person("rosa").tells[0].told and not s2.person("rosa").tells[1].told and "The Anchor" in s2.case.locations
+    assert game._same_person(s2, "the creature") is s2.person("thing")

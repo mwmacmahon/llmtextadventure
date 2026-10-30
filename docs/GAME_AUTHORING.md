@@ -144,6 +144,8 @@ pending:                                    # timers already running when the ga
 
 people:                                     # noir: a person's secret, given up piece by piece
   - id: rosa
+    aliases: [the barkeep]                  # what the prose calls her besides her name; a row naming one is hers
+    mood: wary                              # a word for how she is now; the prefix shows it, the referee may set it
     secret: Saw June leave with Szabo, and Marlowe's car an hour later.   # what she knows (narrator only)
     tells:                                  # what she will say, and when
       - id: rosa_june_left
@@ -159,6 +161,13 @@ things:                                     # noir: things that matter outside t
 
 place_aliases: {pier street: Lowtown streets}   # noir: names the prose uses → a listed place
 gated_places: {Under the docks: under_docks_found}  # noir: a player move there needs the flag first
+```
+
+Script-owned fields (a person's description, role, agenda, secret, aliases and tells; the case's places and
+flags; the hidden facts and terms; people the scenario gains) are re-read from the scenario every time a saved
+game loads (noir `load_state`), so an edit reaches games already in play. What was told stays told.
+
+```yaml
 
 events:
   - id: visitor_arrives

@@ -33,7 +33,7 @@ from engine.roles import AdjudicationV2, Change
 from engine.spontaneous import Spontaneous
 from engine.statepath import Actor
 
-from .state import COUNTED, Case, Condition, Hidden, Item, NoirState, Note, Person, Player, Tell
+from .state import pocket_key, pocket_word, COUNTED, Case, Condition, Hidden, Item, NoirState, Note, Person, Player, Tell
 
 HEALTH_VALUES = ["fine", "hurt", "wounded", "critical", "dead"]
 DREAD_STEP = 10
@@ -93,6 +93,8 @@ ATTITUDE_WORDS = {"hostile": -4, "angry": -3, "suspicious": -1, "guarded": -1, "
 MAX_THINGS = 20
 DROPPED = re.compile(r"\b(drop(s|ped)?|left (it |behind)|fell|falls|lies|lying|set (it )?down|put (it )?down|knocked (out of|from)|let go)\b", re.I)
 REVOLVER_WORDS = {"revolver", "gun", "pistol", "the revolver", "his revolver", "frank's revolver", ".38"}
+DEAD_WORDS = re.compile(r"\b(dead|dies|died|dying|killed?|kills|destroyed|corpse|comes? apart|came apart|grease|shot dead|finished (it|him|her) off)\b", re.I)
+HERE_WORDS = {"here", "floor", "the floor", "ground", "the ground", "where he stands", "where he is", "at his feet", "nearby", "beside him"}
 _STOP = {"that", "this", "with", "from", "into", "their", "there", "they", "were", "have", "been", "about", "frank", "said",
          "will", "what", "when", "where", "which", "while", "just", "them", "then", "than", "over", "under", "told", "says"}
 
@@ -176,6 +178,34 @@ class NoirGame(GameBase):
         return f"{sc['name']} — {player.name}", state
 
     def load_state(self, data: dict[str, Any]) -> NoirState:
+        """A saved game, with the script-owned parts read from the scenario again (AUTHORITY "script"): a person's
+        description, role, agenda, secret, aliases and tells (what was told stays told), the case's places and
+        flags, the hidden facts and terms, and any person the scenario has gained since. A scenario edit then
+        reaches every game, not only new ones."""
+        sc = self.content.scenarios().get((data.get("case") or {}).get("id", ""))
+        if sc:
+            data = dict(data)
+            case = dict(data.get("case") or {})
+            city = sc.get("city", {})
+            case.update(locations=city.get("locations", case.get("locations", [])), safe_locations=city.get("safe_locations", case.get("safe_locations", [])),
+                        narrator_flags=sc.get("narrator_flags", case.get("narrator_flags", {})))
+            data["case"] = case
+            hidden = dict(data.get("hidden") or {})
+            hidden.update(facts=sc.get("hidden_facts", hidden.get("facts", [])), terms=sc.get("secret_terms", hidden.get("terms", [])))
+            data["hidden"] = hidden
+            people = [dict(q) for q in data.get("people") or []]
+            by_id = {q.get("id"): q for q in people}
+            for sp in sc.get("people", []):
+                q = by_id.get(sp["id"])
+                if q is None:
+                    people.append(dict(sp, met=False))
+                    continue
+                for key in ("name", "role", "description", "agenda", "secret", "aliases"):
+                    if key in sp:
+                        q[key] = sp[key]
+                told = {t.get("id"): bool(t.get("told")) for t in q.get("tells") or []}
+                q["tells"] = [dict(t, told=told.get(t["id"], t.get("told", False))) for t in sp.get("tells", [])]
+            data["people"] = people
         return NoirState.model_validate(data)
 
     def opening(self, state: NoirState) -> str | None:
@@ -197,7 +227,8 @@ class NoirGame(GameBase):
                  "'Hidden' is what a person knows, not what they say: they give it up only as the pieces listed under 'Tells', each only when its condition is met in play, "
                  "one piece at a time, and never the Hidden line whole. The game state lists, for the people with Frank, which pieces are open now and which are not yet.")
         for q in s.people:
-            b.append(f"- {q.name} ({q.id}), {q.role}. {q.description}".rstrip())
+            b.append(f"- {q.name} ({q.id}), {q.role}. {q.description}".rstrip() + (f" Also called {', '.join(q.aliases)}." if q.aliases else "")
+                     + (f" At the start: {q.mood}." if q.mood else ""))
             if q.agenda:
                 b.append(f"    Wants: {q.agenda}")
             if q.secret:
@@ -289,7 +320,7 @@ class NoirGame(GameBase):
             lines.append("")
             lines.append("People Frank has dealt with:")
             for q in met:
-                bits = [f"{q.status}" if q.status != "alive" else "", f"at {q.location or 'unknown'}", f"{q.attitude_word} toward Frank"]
+                bits = [f"{q.status}" if q.status != "alive" else "", f"at {q.location or 'unknown'}", f"{q.attitude_word} toward Frank", q.mood]
                 lines.append(f"- {q.name}: " + ", ".join(x for x in bits if x) + ".")
                 for f in q.facts[-4:]:
                     lines.append(f"    {f}")
@@ -347,7 +378,7 @@ class NoirGame(GameBase):
     def _tells_here(self, s: NoirState) -> list[str]:
         out: list[str] = []
         for q in s.people:
-            if q.location != s.player.location or q.status in ("dead", "missing") or not q.tells:
+            if q.location != s.player.location or q.status == "dead" or not q.tells:     # "missing" and here with Frank is found
                 continue
             for t in q.tells:
                 if t.told:
@@ -515,6 +546,10 @@ class NoirGame(GameBase):
         value = ch.value.strip()
         kind = ch.kind
         is_player = target.lower() in ("player", "frank", "")
+        if is_player and "." in field:                        # "add player field=revolver.loaded": the pocket, then its field
+            target, field = (x.strip() for x in field.split(".", 1))
+            is_player = False
+            field = field.lower()
 
         if kind in ("move", "set") and (kind == "move" or field == "location"):
             value = self._place(s, value) or value          # "Pier Street", "the anchor" → the listed place
@@ -531,6 +566,21 @@ class NoirGame(GameBase):
             return True
         if kind == "set" and is_player and field == "location":
             return self.apply_change(s, ch.model_copy(update={"kind": "move"}), w)
+        if kind == "add" and is_player and field == "health" and value.lstrip("+") in HEALTH_VALUES:    # "add player.health +hurt"
+            kind, value = "set", value.lstrip("+")
+        if kind == "set" and is_player and field == "status":                       # Frank has health, not a status
+            if value.lower() in HEALTH_VALUES:
+                field = "health"
+            else:
+                w.reject("player.health", "Frank has health (" + "|".join(HEALTH_VALUES) + "), not a status", value)
+                return True
+        if kind == "set" and is_player and field in ("told", "tell", "tells", "revealed"):   # the tell written on Frank: whoever here has it
+            if not self._mark_told(s, [q for q in s.people if q.location == p.location], "", w, tell_id=value):
+                w.reject("people.tells", "no one with Frank has a piece by that id", value)
+            return True
+        if kind in ("add", "set") and is_player and field == "attitude":
+            w.reject("player.attitude", "attitude is a listed person's toward Frank; Frank has none", value)
+            return True
         if kind == "set" and is_player and field == "health":
             if value in HEALTH_VALUES:
                 if w.set("player.health", p.health, value):
@@ -543,8 +593,8 @@ class NoirGame(GameBase):
             if new is not None:
                 p.dread = new
             return True
-        if kind == "add" and is_player and field in ("conditions", "condition") and value[:1] in "+-":   # "add player.conditions +burned hand"
-            kind = "set"
+        if kind == "add" and is_player and field in ("conditions", "condition"):   # "add player.conditions +burned hand", or without the sign
+            kind, value = "set", value if value[:1] in "+-" else "+" + value
         if kind == "set" and is_player and field in ("conditions", "condition"):
             removing = value.startswith("-")
             name = value.lstrip("+-").strip().lower()[:30]
@@ -595,6 +645,8 @@ class NoirGame(GameBase):
                 if rv is None:
                     return True
                 have = rv.loaded or 0
+                if n == 0:                              # "add revolver.loaded -0": nothing fired, nothing to refuse
+                    return True
                 if n < 0:
                     fired = -n
                     if fired > have:
@@ -624,15 +676,30 @@ class NoirGame(GameBase):
         if kind == "new" and target.lower() not in ("thing", "item", "person", "place", "") and s.item(target) is not None and self._place(s, ch.field):
             self._relocate(s, s.item(target), True, target, ch.field, w)    # "new revolver at Rooftop shack": his own thing, lying there
             return True
+        if kind == "new" and target.lower() not in ("thing", "item", "person", "place", ""):     # "new creature", "new yellow grease field=player"
+            q = s.person(target) or self._same_person(s, target)
+            if q is not None:                                            # a cast member written as new: met, and placed if the row says where
+                if not q.met:
+                    q.met = True
+                    w.note(f"people.{q.id}.met: False -> True")
+                place = self._place(s, ch.field) if ch.field.strip() else None
+                if place and place != q.location and w.set(f"people.{q.id}.location", q.location, place):
+                    q.location = place
+                return True
+            return self.apply_change(s, ch.model_copy(update={"target": "thing", "value": target, "note": ch.note or ch.value}), w)
         if kind == "gone" and target and s.item(target) is None and s.thing(target) is not None:
             t = s.thing(target)
             if t is not None and w.set(f"things.{t.id}", self._thing_line(s, t), None):
                 s.things.remove(t)
             return True
         if kind == "gone" and target and s.item(target) is None and (s.person(target) or self._same_person(s, target)):
-            q = s.person(target) or self._same_person(s, target)    # a person "gone" from the story: killed or destroyed
-            if q is not None and q.status != "dead" and w.set(f"people.{q.id}.status", q.status, "dead"):
-                q.status = "dead"
+            q = s.person(target) or self._same_person(s, target)    # a person "gone": dead only if the row says so, else out of the scene
+            if q is not None and q.status != "dead":
+                if DEAD_WORDS.search(f"{ch.note} {value}"):
+                    if w.set(f"people.{q.id}.status", q.status, "dead"):
+                        q.status = "dead"
+                elif q.location != "Unknown" and w.set(f"people.{q.id}.location", q.location, "Unknown"):
+                    q.location = "Unknown"
             return True
         dropped = s.item(target) if kind == "gone" and target and DROPPED.search(f"{ch.note} {value}") else None
         if dropped is not None and dropped.id not in COUNTED and dropped.count == 1:
@@ -731,6 +798,11 @@ class NoirGame(GameBase):
                     w.note(f"people.{q.id}.facts += {f!r}")
                 self._mark_told(s, [q], f, w)
                 return True
+            if kind == "set" and field == "mood":
+                word = value.strip(" .").lower()[:30]
+                if word and w.set(f"people.{q.id}.mood", q.mood, word):
+                    q.mood = word
+                return True
             if kind == "set" and field in ("told", "tell", "tells", "revealed"):
                 tid = value.strip().lower()
                 if any(t.id == tid for t in q.tells):
@@ -741,9 +813,17 @@ class NoirGame(GameBase):
                 return True
             w.reject(f"people.{q.id}.{field or kind}", "not a field the referee may write", value)
             return True
-        if kind in ("move", "set", "add", "learned") and target and not is_player:
-            w.reject(f"people.{target}", "unknown person id", value)
-            return True
+        if kind in ("move", "set", "add", "learned") and target:
+            name = next((x for x in ((target if not is_player else ""), field) if x and pocket_word(x)), "")
+            if name:                                                           # a pocket thing he no longer has, or a reload written as a set
+                if field == "loaded" or re.match(r"^\d+\s*/\s*\d+$", value) or value.lstrip("+").isdigit():
+                    w.reject("inventory.revolver.loaded", "rounds go in through the reload lever", value)
+                else:
+                    w.reject(f"inventory.{pocket_key(name)}", "not carried, and not lying anywhere listed", value)
+                return True
+            if not is_player:
+                w.reject(f"people.{target}", "unknown person id", value)
+                return True
         return False
 
     def apply_present(self, s: NoirState, present: list[str], w: Writer) -> NoirState:
@@ -775,6 +855,10 @@ class NoirGame(GameBase):
     # ---- pocket helpers -----------------------------------------------------
     @staticmethod
     def _same_person(s: NoirState, name: str) -> Person | None:
+        k = name.strip().lower().removeprefix("the ").strip(" .")
+        for q in s.people:                                   # what the script says the prose calls them: "the creature", "the caller"
+            if any(k == a.lower().removeprefix("the ") for a in q.aliases):
+                return q
         words = {x for x in re.split(r"[^a-z]+", name.lower()) if len(x) > 2 and x not in ("the", "mrs", "mr", "miss", "professor", "chief", "sergeant", "doctor")}
         for q in s.people:
             qw = {x for x in re.split(r"[^a-z]+", q.name.lower()) if len(x) > 2}
@@ -786,6 +870,8 @@ class NoirGame(GameBase):
         """A thing changes hands or is left somewhere: to a listed place, to a person (by id or name), or back to
         Frank. The revolver leaves his pockets only when the row names it; counted things go by add."""
         low = dest.strip().lower()
+        if low in HERE_WORDS and s.player.location:         # "left it on the floor": where Frank is
+            dest, low = s.player.location, s.player.location.lower()
         if in_pockets and (it.id in COUNTED or it.count > 1):
             w.reject(f"inventory.{it.id}", "counted things go by add <thing>.count -n", dest)
             return

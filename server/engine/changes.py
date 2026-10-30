@@ -58,9 +58,41 @@ def _hook(game: Any, name: str, *args: Any, default: Any = None) -> Any:
     return fn(*args) if fn is not None else default
 
 
+FIELD_WORDS = {"location", "health", "mood", "stress", "suspicion", "dread", "attitude", "status", "control", "level", "conditions",
+               "condition", "count", "loaded", "locked", "open", "state", "resolved", "told", "tell", "tells", "reason", "note", "value",
+               "facts", "fact", "name", "role"}
+
+
+def split_dotted(ch: Change) -> Change:
+    """"player.dread" written as the target. The suffix is the field. What was in `field` is then either nothing, the
+    suffix again, another field word (dropped: the target's own wins, "add player.dread field=count"), or the value
+    itself ("add revolver.loaded field=-1", "set player.conditions field=+shaken value=<the reason>"), which moves to
+    `value` and pushes a value that was really the note into `note`. The models write all four."""
+    base, suffix = ch.target.strip().rsplit(".", 1)
+    f = ch.field.strip()
+    if not base or not suffix:
+        return ch
+    up: dict[str, str] = {"target": base, "field": suffix}
+    if f and f.lower() != suffix.lower() and f.lower() not in FIELD_WORDS:
+        up["value"] = f
+        if ch.value.strip() and not ch.note.strip():
+            up["note"] = ch.value
+    elif f and f.lower() != suffix.lower() and suffix.lower() not in FIELD_WORDS:
+        up = {"target": suffix, "field": f}                   # "add player.revolver field=loaded": the suffix is the thing, f its field
+    return ch.model_copy(update=up)
+
+
+def pending_id(s: str) -> str:
+    """The id in "p1", "pending p1", "pending: p1", "P1 (the grab)"; "" when the text is not one."""
+    m = re.match(r"^\s*(?:pending\b[:\s]*)?(p\d+)\b", s.strip().lower())
+    return m.group(1) if m else ""
+
+
 def is_pending_id(s: str) -> bool:
-    s = s.strip().lower()
-    return len(s) > 1 and s[0] == "p" and s[1:].isdigit()
+    return bool(pending_id(s))
+
+
+_SETTLED_WORDS = {"resolved", "stopped", "happened", "interrupted", "failed", "done", "settled", "averted", "prevented", "fired"}
 
 
 _STOP = {"that", "this", "with", "from", "into", "their", "there", "they", "were", "have", "been", "about", "frank", "player",
@@ -118,7 +150,7 @@ _CONFIDENCE = ["low", "medium", "high"]
 def owns(part: str, ch: Change) -> bool:
     """Which pass of a split referee a row belongs to (roles.REFEREE_PARTS). The player and world passes share
     the game kinds; merge_parts drops the second of a pair that says the same thing."""
-    time_row = ch.kind in TIME_KINDS or (ch.kind == "set" and is_pending_id(ch.target) and ch.field.strip().lower() == "resolved")
+    time_row = ch.kind in TIME_KINDS or (ch.kind == "set" and is_pending_id(ch.target))
     if part == "time":
         return time_row
     if time_row:
@@ -168,9 +200,10 @@ def apply_changes(game: Any, state: BaseModel, report: ChangeReport, *, present:
     for ch in report.changes:
         k = ch.kind
         if k in ("set", "add") and "." in ch.target.strip():          # "player.dread" written as the target: split it
-            base, suffix = ch.target.strip().rsplit(".", 1)
-            if not ch.field.strip() or ch.field.strip().lower() == suffix.lower():
-                ch = ch.model_copy(update={"target": base, "field": suffix})
+            ch = split_dotted(ch)
+        if k == "new" and "." in ch.target.strip() and not ch.field.strip():   # "new creature.Rooftop shack": the name, then where
+            base, where = ch.target.strip().rsplit(".", 1)
+            ch = ch.model_copy(update={"target": base, "field": where})
         if skip_set and (ch.target.strip().lower() in skip_set or ch.field.strip().lower() in skip_set):
             w.note(f"{k} {ch.target}: already applied by the lever; not counted again")
             continue
@@ -222,8 +255,9 @@ def apply_changes(game: Any, state: BaseModel, report: ChangeReport, *, present:
                     flags[name] = val
             else:
                 w.reject(f"flags.{name}", "not a narrator flag", ch.value)
-        elif k == "set" and is_pending_id(ch.target) and ch.field.strip().lower() == "resolved":
-            ex.pending_resolved.append(f"{ch.target.strip().lower()}: {ch.value or ch.note}")
+        elif k in ("set", "add", "move", "gone") and is_pending_id(ch.target) and (ch.field.strip().lower() in ("resolved", "status", "outcome", "")
+                                                                                   or ch.value.strip().lower() in _SETTLED_WORDS):
+            ex.pending_resolved.append(f"{pending_id(ch.target)}: {ch.value or ch.note}")    # "set p1.resolved", "set pending p1 = stopped"
         elif takes_itself_back(ch):
             w.reject(f"{k} {ch.target}" + (f".{ch.field}" if ch.field else ""), "the row's own note takes it back", ch.note)
         else:

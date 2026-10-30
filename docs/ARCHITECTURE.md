@@ -295,7 +295,10 @@ Branch `1.0` preserves the first engine; `main` stays there until 2.0 is playabl
   dims them and lists calls and declarations in the turn summary.
 - Tests: `tests/test_brackets.py`, `tests/test_world.py`, `tests/test_narration.py`,
   `tests/test_narrator_loop.py` (the loop end to end through the fake provider, which now honours stop
-  sequences and can be scripted).
+  sequences and can be scripted). `tests/test_row_shapes.py` replays every referee row from every stored
+  eval run (notes/eval/runs, gitignored; skipped without it) on its turn's snapshot and fails on any row the
+  engine could not read ("unknown person id", "not something this game records"): the unit tests write
+  canonical rows, this one uses the rows the models wrote.
 
 - The narrator is never asked for ids: `scene(audience="narrator")` is prose; calls take a stat and a
   difficulty (a name only when needed); square-bracket lines from the narrator are plain-English notes

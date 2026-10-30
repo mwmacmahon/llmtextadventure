@@ -7,6 +7,7 @@ Field authority lives in game.py (AUTHORITY).
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -64,8 +65,10 @@ class Person(BaseModel):
     name: str
     role: str
     description: str = ""           # fixed; the prefix
+    aliases: list[str] = Field(default_factory=list)    # script: what the prose calls them besides the name ("the creature", "the caller")
     location: str = ""
     attitude: int = 0               # -5..5 toward Frank
+    mood: str = ""                  # a word for how they are right now; the referee may set it
     status: PersonStatus = "alive"
     met: bool = False
     facts: list[str] = Field(default_factory=list)      # what Frank knows / what they said
@@ -163,8 +166,14 @@ class NoirState(BaseModel):
         return find_item(self.things, key, strict=True)
 
 
-def find_item(items: list[Item], key: str, strict: bool = False) -> Item | None:
+def pocket_key(key: str) -> str:
+    """"player.revolver", "Frank's revolver", "his matches", "inventory.cigarettes": the pocket's own name."""
     k = key.strip().lower()
+    return re.sub(r"^(player|frank|frank's|his|inventory|pockets|pocket)[.\s]+", "", k).strip()
+
+
+def find_item(items: list[Item], key: str, strict: bool = False) -> Item | None:
+    k = pocket_key(key)
     if not k:
         return None
     for it in items:
@@ -185,6 +194,13 @@ def find_item(items: list[Item], key: str, strict: bool = False) -> Item | None:
     return best[1]
 
 
+def pocket_word(key: str) -> bool:
+    """Whether a name is a pocket thing's, carried or not: an alias, or the id of anything this game ever lists."""
+    k = pocket_key(key).rstrip("s")
+    return bool(k) and (k in ALIASES or k in ALIASES.values() or k + "s" in ALIASES.values() or k in POCKET_IDS or k + "s" in POCKET_IDS)
+
+
+POCKET_IDS = {"revolver", "bullets", "cigarettes", "dollars", "matches", "lockpicks", "notebook", "pencil", "trench_coat", "trench coat", "photo", "photograph"}
 ALIASES = {
     "bullet": "bullets", "round": "bullets", "cartridge": "bullets", "shell": "bullets", "ammo": "bullets", "ammunition": "bullets",
     "cigarette": "cigarettes", "smoke": "cigarettes", "cig": "cigarettes", "pack of cigarettes": "cigarettes",
