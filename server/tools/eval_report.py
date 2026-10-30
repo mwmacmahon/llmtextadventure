@@ -611,7 +611,9 @@ def render_passage(rec: dict, gref: dict | None, st: dict[str, str]) -> str:
             + f"<div>The player: <span class='said'>“{E(rec.get('player_text', ''))}”</span></div>"
             + f"<div class='prose'>{highlight(prose, marks)}</div>"
             + (f"<div class=sub>The narrator's notes, which the referee reads with the prose:</div><pre class='notes'>{highlight(notes, marks)}</pre>" if notes else "<div class=sub>The narrator left no notes this turn.</div>")
-            + (f"<details><summary>THIS TURN, the engine's instructions to the narrator ({len(rec.get('directives') or [])})</summary><pre>{highlight(dirs, marks)}</pre></details>" if dirs else ""))
+            + (f"<details><summary>THIS TURN, the engine's instructions to the narrator ({len(rec.get('directives') or [])})</summary><pre>{highlight(dirs, marks)}</pre></details>" if dirs else "")
+            + ((f"<div class=sub>The player's commands this turn, as the referee was told them:</div><pre>{E(chr(10).join(rec['levers']))}</pre>" if rec["levers"] else "")
+               if rec.get("levers") is not None else "<div class=sub>This test set's turns do not record the player's commands, so the referee was not told them.</div>"))
 
 
 def _item_block(cls: str, tag: str, label: str, item: dict, body: str, text: str = "") -> str:
