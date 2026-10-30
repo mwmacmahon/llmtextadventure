@@ -48,7 +48,7 @@ server/
                          lays over its config while that model is loaded (engine/profiles.py; docs/LOCAL_LLM.md)
   tools/llm.py           the local model on the GPU box: status, send a profile and swap to it
   tools/eval_replay.py   replays stored turns through the adjudicator and referee on any model, scores them, grades them against the hand-judged key (docs/LOCAL_LLM.md)
-  tools/eval_report.py   hydrates eval runs of any format into readable pages: per turn, caught / missed / wrong / unjudged with the sentences that show it; a comparison per corpus
+  tools/eval_report.py   hydrates eval runs of any format into readable pages (the pieces, names and how to read them: docs/TESTING.md): per turn, caught / missed / wrong / unjudged with the sentences that show it; a comparison per corpus
   tests/                 offline tests (fake provider); tests/live: opt-in live role evaluations
 web/                     Vite + React + TypeScript; renders the UI schema, knows no game
 docs/                    this file, GAME_AUTHORING.md, LOCAL_LLM.md
@@ -271,8 +271,8 @@ compared.
 store with that model's adjudication and referee rows as the expected answer, replayed through
 `pipeline.adjudicator_inputs` / `pipeline.referee_inputs` (the live input builders) against any
 provider, model or role option, landed with `apply_changes`, and scored per role; runs go to
-`notes/eval/runs/`. Scores against that answer only say how far a model agrees with it; the graded
-key (`notes/eval/gold.yml`, judged by hand: required, allowed and forbidden rows and checks per turn)
+`notes/eval/runs/`. Scores against that answer only say how far a model agrees with it; each test set's answer
+key (`notes/eval/sets/<test set id>/key.yml`, judged by hand: required, allowed, forbidden and gray rows and checks per turn)
 says how far it is right, and `eval_replay.py grade` re-grades stored runs against it with no model
 calls.
 

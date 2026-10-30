@@ -40,7 +40,7 @@ def test_a_format_1_run_reads_against_the_corpus_by_path_and_says_so(tmp_path):
                                "roles": {"referee": {"model": "qwen", "temperature": 0.2}}, "summary": {}, "turns": [_turn({})]}))
     r = er.read_run(run)
     assert r.format == 1
-    assert r.corpus["abc123def456:1"]["prose"] == PROSE and "as it is now" in r.corpus_note
+    assert r.corpus["abc123def456:1"]["prose"] == PROSE and "as they are now" in r.corpus_note
     assert r.turns[0].calls is None and r.turns[0].referee["applied_lines"] is None
     html, info = er.render_run(r, "now", GOLD, standalone=True)
     g = info["grades"]["abc123def456:1"]["referee"]
@@ -72,7 +72,7 @@ def test_a_format_2_run_reads_its_own_copies_and_shows_the_calls(tmp_path, monke
                                "corpus": "gone/mini.jsonl", "corpus_blob": "c0rpus000000000", "gold_blob": None,
                                "roles": {"referee": {"model": "m"}}, "opts": {}, "summary": {}, "turns": [t]}))
     r = er.read_run(run)
-    assert r.format == 2 and "the copy the run carried" in r.corpus_note and r.corpus["abc123def456:1"]["title"] == "The Kessler Girl"
+    assert r.format == 2 and "the run carried" in r.corpus_note and r.corpus["abc123def456:1"]["title"] == "The Kessler Girl"
     html, _ = er.render_run(r, "now", GOLD, standalone=True)
     assert "THE TURN AS SENT" in html and "SYSTEM PROMPT TEXT" in html and "inventory.revolver.loaded: 6 -&gt; 4" in html
     assert "commit abc" in html
@@ -113,3 +113,26 @@ def test_gray_items_and_rows_are_tallied_apart_never_as_errors():
     assert (g["hits"], g["required"], g["gray_hits"], g["gray_required"]) == (1, 1, 0, 1)
     assert len(g["errors"]) == 1 and len(g["gray_rows"]) == 1 and g["gray_rows"][0]["why"].startswith("the note")
     assert g["missed"] == []                                   # a missed gray item is not a miss
+
+
+def test_test_sets_and_runs_are_named_by_game_date_and_model_that_answered(tmp_path, monkeypatch):
+    """D44: test set ids and run ids say what they are; a run is named by the model that answered, not the config's
+    label; an old name finds its test set."""
+    import yaml
+    from tools import eval_replay as rp
+    assert rp.set_id(["station", "noir", "noir"], "20261029", 2, 24) == "ts_noir.station_20261029_02_24t"
+    assert rp.set_id(["station"], "20261030", 2, 14, "d36-mechanics") == "ts_station_20261030_02_14t_d36-mechanics"
+    assert rp.set_short("ts_noir.station_20261029_02_24t") == "noir.station-20261029-02"
+    assert [rp.short_model(m) for m in ("claude-sonnet-5-5", "Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf", "Huihui-Qwen3.5-27B-abliterated.i1-Q6_K.gguf")] \
+        == ["sonnet55", "a3b-q4", "q27-q6"]
+    turns = [{"referee": {"usage": {"extra": {"model": "Huihui-Qwen3.5-27B-abliterated.i1-Q6_K.gguf"}}}}]
+    roles = {"referee": {"model": "qwen3.5-35b-a3b", "thinking": True}}           # the config's label lies; the served model does not
+    assert rp.model_part(roles, turns) == "q27-q6-think-ref"
+    assert rp.run_id("20261030", 4, "a3b-q4-think", "ts_noir.station_20261029_02_24t", "Temp 0") \
+        == "run_20261030-04_a3b-q4-think_on_noir.station-20261029-02_temp-0"
+    sets = tmp_path / "sets"
+    (sets / "ts_noir_20261029_01_2t").mkdir(parents=True)
+    (sets / "ts_noir_20261029_01_2t" / "set.yml").write_text(yaml.safe_dump({"id": "ts_noir_20261029_01_2t", "aliases": ["v2"]}))
+    monkeypatch.setattr(rp, "SETS", sets)
+    assert rp.find_set("../notes/eval/corpus/v2.jsonl")["id"] == "ts_noir_20261029_01_2t"
+    assert rp.find_set("ts_noir_20261029_01_2t")["_dir"].name == "ts_noir_20261029_01_2t"

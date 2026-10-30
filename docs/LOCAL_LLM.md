@@ -156,34 +156,34 @@ Without it, the narrator re-processed about 5k tokens a turn, 2.5 s at this mode
 `tools/eval_replay.py` turns "is this model good enough as the clerk?" into a number before a playtest.
 `export` takes the turns Sonnet played from the store (the state before the turn, the input, the prose
 with its § lines and notes, the THIS TURN directives) and Sonnet's own adjudication and referee rows as the
-expected answer, one JSON line per turn (`notes/eval/corpus/*.jsonl`, hand-correctable: Sonnet is good,
+expected answer, one JSON line per turn (a test set: `notes/eval/sets/<test set id>/turns.jsonl`, docs/TESTING.md; hand-correctable: Sonnet is good,
 not right). `run` builds exactly what the live pipeline sends (`pipeline.adjudicator_inputs`,
 `pipeline.referee_inputs`), calls whatever `TA_CONFIG` names with any `--opt key=value` overrides on the
 role (temperature, top_k, thinking, model…) or a whole profile (`--profile`), lands the replayed report on the same state through
 `apply_changes` so the shims and the engine's rejections are exercised too, and scores: the adjudicator
 on kind, time, the (stat, difficulty) checks, commands and carried; the referee on rows by (kind, target,
 field, value) with word overlap for the text kinds, on the applied lines by path and exactly, and on what
-the engine rejected. Every run is written to `notes/eval/runs/<tag>.json` with each turn's diff; `-v`
+the engine rejected. Every run is written to `notes/eval/runs/<run id>.json` with each turn's diff; `-v`
 prints the diffs as it goes. The ceiling is Sonnet replaying its own turns (`--tag sonnet-self`): a
 sampled model does not reproduce itself, so a local model's number is read against that, not against 100%.
 
 ```
 cd server
-.venv/bin/python tools/eval_replay.py export <iid> [<iid>…] -o ../notes/eval/corpus/sonnet.jsonl
+.venv/bin/python tools/eval_replay.py export <iid> <iid>:3,5,8 --purpose <word> --title "…"
 TA_CONFIG=config.llamacpp.yml TA_LLAMA_URL=http://192.168.0.215:8280 TA_LLAMA_PREPARE_URL=http://192.168.0.215:8281/free-comfy \
-  .venv/bin/python tools/eval_replay.py run ../notes/eval/corpus/sonnet.jsonl --role both --tag a3b-baseline -v
-… run ../notes/eval/corpus/v2.jsonl --role both --profile a3b-think --tag a3b-think
+  .venv/bin/python tools/eval_replay.py run ts_noir.station_20261029_02_24t --role both -v
+… run ts_noir.station_20261029_02_24t --role both --profile a3b-think
 ```
 
 **The graded key.** A strong model's own rows are an answer it can only agree with: Opus scored level with
-Sonnet against Sonnet's rows while being right more often where they disagreed. `notes/eval/gold.yml`
+Sonnet against Sonnet's rows while being right more often where they disagreed. the test set's `key.yml`
 judges each corpus turn by hand against the rules as they stand: `required` rows (the state must carry
 them; alternatives in `any:`), `allowed` rows (a fair call either way), `forbidden` rows (wrong, with
 why), and for the adjudicator the required checks as accepted stats and difficulty ranges. A reported row
 is a hit, an error, allowed, or unjudged (graded by nobody yet: add it to the key). Rows are compared as
 the engine reads them ("add player.revolver.loaded -1" is "add revolver.loaded -1"), required items are
 met by the best assignment, a repeat of a hit is a duplicate. `run` grades against the key as it goes;
-`grade <run.json …> [-v]` re-grades stored runs for nothing. Corpus `notes/eval/corpus/v2.jsonl`: 24
+`grade <run.json …> [-v]` re-grades stored runs for nothing. Test set `ts_noir.station_20261029_02_24t` (was `v2`): 24
 turns (18 old Sonnet turns, 6 new ones that exercise tells and things outside the pockets).
 
 Graded (2026-10-29 night; the old 18 turns carry 75 required rows and 19 checks, v2's 24 turns 90 and 24):

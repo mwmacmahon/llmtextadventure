@@ -8,22 +8,25 @@ same inputs the live pipeline builds (`pipeline.adjudicator_inputs`, `pipeline.r
 whatever TA_CONFIG names, lands the replayed report on the same state with `apply_changes` (so the
 format shims and the engine's rejections are exercised too), and compares.
 
-    .venv/bin/python tools/eval_replay.py export <iid> [<iid> ...] -o ../notes/eval/corpus/noir.jsonl
+    .venv/bin/python tools/eval_replay.py export <iid> <iid>:3,5,8 --purpose d36-mechanics --title "…"   # a new test set
+    .venv/bin/python tools/eval_replay.py run ts_noir.station_20261029_02_24t --role referee            # Sonnet (config.yml)
     TA_CONFIG=config.llamacpp.yml TA_LLAMA_URL=http://192.168.0.215:8280 \\
-        .venv/bin/python tools/eval_replay.py run ../notes/eval/corpus/noir.jsonl --role both --tag a3b-baseline
-    ... run corpus.jsonl --role referee --opt temperature=0 --opt thinking=true -v
+        .venv/bin/python tools/eval_replay.py run <test set id> --role both --profile a3b-think
+    .venv/bin/python tools/eval_replay.py grade ../notes/eval/runs/<run id>.json -v                    # re-grade, free
+
+The pieces (test set, answer key, run, report), their names and how to write and read them: docs/TESTING.md.
 
 Scores (per role, over the corpus):
   adjudicator  kind, time (within 2 minutes or half), checks as (stat, difficulty) pairs, commands, carried
   referee      rows by (kind, target, field, value) with word-overlap for the text kinds; the applied
                list after apply_changes by path and by exact line; rejections and their reasons
-Runs are written to ../notes/eval/runs/<tag>.json with every turn's diff and every model call (prompts by blob id
+Runs are written to ../notes/eval/runs/<run id>.json with every turn's diff and every model call (prompts by blob id
 in ../notes/eval/blobs, the raw reply, the reasoning, the error), the commit, and the corpus and key by content hash
 (RUN_FORMAT). tools/eval_report.py hydrates any run, of any format, into readable pages.
 
-The graded key: those scores agree with the strong model, which is not the same as being right. Turns in
-notes/eval/gold.yml are judged by hand (required / allowed / forbidden rows and checks); `run` grades against
-it too, and `grade <run.json …>` re-grades stored runs with no model calls. See "the graded key" below.
+The answer key: those scores agree with the strong model, which is not the same as being right. Each test set's
+key.yml is judged by hand (required / allowed / forbidden / gray rows and checks); `run` grades against it too, and
+`grade <run.json …>` re-grades stored runs with no model calls. See "the graded key" below.
 """
 from __future__ import annotations
 
@@ -53,14 +56,104 @@ from engine.store import Store  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 TEXT_KINDS = {"soon", "unseen", "learned", "thread_open", "ruling", "issue"}
-GOLD = ROOT / "notes" / "eval" / "gold.yml"
-BLOBS = ROOT / "notes" / "eval" / "blobs"
+EVAL = ROOT / "notes" / "eval"
+SETS = EVAL / "sets"                   # one folder per test set: set.yml (manifest), turns.jsonl, key.yml (docs/TESTING.md)
+RUNS = EVAL / "runs"
+BLOBS = EVAL / "blobs"
 # The run file's format. 1: no `format` key (2026-10-29/30: rows and scores, the corpus by path). 2: provenance (git,
 # the corpus and the key by content hash, copied into BLOBS), every model call (prompts by blob id, the raw reply, the
 # reasoning, the error), and the full applied list. tools/eval_report.py keeps a reader for every format; bump this
 # and add a reader there whenever the shape changes.
 RUN_FORMAT = 2
 NOTES_HEAD = "\n\n[NARRATOR'S NOTES: facts it decided, what is happening unseen (unseen:), what it set in motion (soon:)]\n"
+
+
+# ---- names: test sets and runs (docs/TESTING.md, D44) ----------------------------------
+def set_id(games: list[str], made: str, nn: int, count: int, purpose: str = "") -> str:
+    """ts_<games>_<YYYYMMDD>_<nn>_<count>t[_<purpose>]: e.g. ts_noir.station_20261029_02_24t."""
+    return f"ts_{'.'.join(sorted(set(games)))}_{made}_{nn:02d}_{count}t" + (f"_{purpose}" if purpose else "")
+
+
+def set_short(sid: str) -> str:
+    """The part of a test set id a run id carries: noir.station-20261029-02."""
+    parts = sid.split("_")
+    return f"{parts[1]}-{parts[2]}-{parts[3]}" if len(parts) >= 4 and parts[0] == "ts" else sid
+
+
+def short_model(name: str) -> str:
+    """A model as a run id names it: sonnet55, opus55, a3b-q4, q27-q6, q32-q4."""
+    n = (name or "unknown").lower()
+    m = re.match(r"claude-([a-z]+)-(\d+)-(\d+)", n)
+    if m:
+        return f"{m.group(1)}{m.group(2)}{m.group(3)}"
+    size = re.search(r"(\d+)b(?![a-z])", n)
+    base = "a3b" if "a3b" in n else f"q{size.group(1)}" if size else re.sub(r"[^a-z0-9]+", "", n)[:12]
+    quant = re.search(r"\bq(\d)_", n) or re.search(r"[.\-]q(\d)", n)
+    return base + (f"-q{quant.group(1)}" if quant else "")
+
+
+def served_models(turns: list[dict]) -> Counter:
+    """The models that answered, as the calls report them (the served file or API model), not the config's label."""
+    c: Counter = Counter()
+    for t in turns:
+        for role in ("adjudicator", "referee"):
+            m = (((t.get(role) or {}).get("usage") or {}).get("extra") or {}).get("model")
+            if m:
+                c[m] += 1
+    return c
+
+
+def model_part(roles: dict, turns: list[dict]) -> str:
+    served = served_models(turns)
+    name = served.most_common(1)[0][0] if served else next((r.get("model") for r in roles.values() if r.get("model")), "unknown")
+    think = any(r.get("thinking") for r in roles.values())
+    which = "" if {"adjudicator", "referee"} <= set(roles) else "-ref" if "referee" in roles else "-adj" if "adjudicator" in roles else ""
+    return short_model(name) + ("-think" if think else "") + which
+
+
+def run_id(date: str, nn: int, model: str, sid: str, note: str = "") -> str:
+    """run_<YYYYMMDD>-<nn>_<model>[-<role>]_on_<games>-<set date>-<set nn>[_<note>]."""
+    note = re.sub(r"[^a-z0-9.\-]+", "-", note.lower()).strip("-")
+    return f"run_{date}-{nn:02d}_{model}_on_{set_short(sid)}" + (f"_{note}" if note else "")
+
+
+def next_nn(folder: Path, prefix: str) -> int:
+    return 1 + len([p for p in folder.glob(f"{prefix}*")]) if folder.exists() else 1
+
+
+def set_manifests() -> dict[str, dict]:
+    import yaml
+    out = {}
+    for m in sorted(SETS.glob("*/set.yml")) if SETS.exists() else []:
+        d = yaml.safe_load(m.read_text()) or {}
+        d["_dir"] = m.parent
+        out[d.get("id") or m.parent.name] = d
+    return out
+
+
+def find_set(ref: str) -> dict:
+    """A test set by id, by folder, by an old name (`v2`) or by an old corpus path (`../notes/eval/corpus/v2.jsonl`)."""
+    sets = set_manifests()
+    if ref in sets:
+        return sets[ref]
+    p = Path(ref)
+    if p.is_dir() and (p / "set.yml").exists():
+        return next(d for d in sets.values() if d["_dir"].resolve() == p.resolve())
+    stem = p.stem if p.suffix == ".jsonl" else p.name
+    for d in sets.values():
+        if stem in (d.get("aliases") or []) or ref in (d.get("aliases") or []):
+            return d
+    raise SystemExit(f"no test set {ref!r} (ids: {', '.join(sets) or 'none yet'})")
+
+
+def set_key_path(manifest: dict) -> Path | None:
+    """The set's own key.yml, or the key of the set named in key_from."""
+    own = manifest["_dir"] / "key.yml"
+    if own.exists():
+        return own
+    if manifest.get("key_from"):
+        return set_key_path(find_set(manifest["key_from"]))
+    return None
 
 
 # ---- the blob store and provenance ------------------------------------------------
@@ -239,7 +332,7 @@ def score_adjudication(expected: dict, got: dict) -> dict:
 
 # ---- the graded key (gold) ----------------------------------------------------
 # A strong model's own rows are an answer key it can only agree with. The gold key is judged by hand, turn by
-# turn (notes/eval/gold.yml, keyed "iid:turn"): rows that must be reported, rows that are a fair call either
+# turn (a test set's key.yml, keyed "iid:turn"): rows that must be reported, rows that are a fair call either
 # way, rows that are wrong. A reported row is a hit (it meets a required pattern), an error (it meets a
 # forbidden one), allowed, or unjudged: a row nobody has graded yet, listed so the key can grow.
 #
@@ -603,7 +696,11 @@ async def run(args: argparse.Namespace) -> None:
     games = load_games(cfg.resolve(cfg.server.content_root))
     roles = {"adjudicator", "referee"} if args.role == "both" else {args.role}
     opts = dict(kv.split("=", 1) for kv in args.opt)
-    recs = [json.loads(l) for l in Path(args.corpus).read_text().splitlines() if l.strip()]
+    tset = find_set(args.set)
+    turns_path = tset["_dir"] / "turns.jsonl"
+    key_path = Path(args.gold) if args.gold else set_key_path(tset)
+    recs = [json.loads(l) for l in turns_path.read_text().splitlines() if l.strip()]
+    print(f"test set {tset['id']}: {len(recs)} turns; key: {key_path.relative_to(ROOT) if key_path else 'none (the run is not graded)'}")
     if args.turns:
         recs = [r for r in recs if f"{r['iid']}:{r['turn']}" in args.turns or str(r["turn"]) in args.turns]
     if args.limit:
@@ -620,7 +717,7 @@ async def run(args: argparse.Namespace) -> None:
         if args.verbose:
             _print_turn(r)
     summary = summarize(results)
-    gold = load_gold(Path(args.gold))
+    gold = load_gold(key_path) if key_path else {}
     if gold:
         grade_results(results, gold)
         summary["gold"] = summarize_gold(results)
@@ -629,67 +726,97 @@ async def run(args: argparse.Namespace) -> None:
                 _print_gold(r)
     summary["wall_seconds"] = round(time.monotonic() - t0)
     print(json.dumps(summary, indent=1))
-    tag = args.tag or time.strftime("run-%Y%m%d-%H%M%S")
-    out = ROOT / "notes" / "eval" / "runs" / f"{tag}.json"
+    day = started[:10].replace("-", "")
+    note = "-".join([args.note] if args.note else []) or "-".join(f"{k}{v}" for k, v in opts.items() if k != "model")
+    roles_json = {n: _role_with(cfg, n, opts).model_dump(mode="json") for n in sorted(roles)}
+    rid = run_id(day, next_nn(RUNS, f"run_{day}-"), model_part(roles_json, results), tset["id"], note)
+    out = RUNS / f"{rid}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
-    corpus_text = Path(args.corpus).read_text()
-    gold_path = Path(args.gold)
-    gold_text = gold_path.read_text() if gold_path.exists() else ""
-    out.write_text(json.dumps({"format": RUN_FORMAT, "tag": tag, "started": started, "argv": sys.argv[1:], "harness": provenance(),
-                               "corpus_blob": put_blob(corpus_text, ".jsonl"), "gold": str(gold_path), "gold_blob": put_blob(gold_text, ".yml") if gold_text else None,
-                               "corpus": str(args.corpus), "config": os.environ.get("TA_CONFIG", "config.yml"), "opts": opts,
+    corpus_text = turns_path.read_text()
+    gold_text = key_path.read_text() if key_path else ""
+    out.write_text(json.dumps({"format": RUN_FORMAT, "tag": rid, "set": tset["id"], "started": started, "argv": sys.argv[1:], "harness": provenance(),
+                               "corpus_blob": put_blob(corpus_text, ".jsonl"), "gold": str(key_path) if key_path else None, "gold_blob": put_blob(gold_text, ".yml") if gold_text else None,
+                               "corpus": str(turns_path), "config": os.environ.get("TA_CONFIG", "config.yml"), "opts": opts,
                                "profile": args.profile or os.environ.get("TA_PROFILE") or None,
-                               "roles": {n: _role_with(cfg, n, opts).model_dump(mode="json") for n in sorted(roles)},
+                               "roles": roles_json, "served": dict(served_models(results)),
                                "summary": summary, "turns": results}, indent=1, ensure_ascii=False))
     print("written", out)
+
+
+def export_set(picks: list[str], any_model: bool, purpose: str, title: str) -> Path:
+    """Make a new test set from stored play: picks are `<instance id>` (every turn) or `<instance id>:3,5,8`."""
+    import yaml
+    cfg = load_config()
+    store = Store(cfg.resolve(cfg.server.data_dir) / "textadventure.sqlite3")
+    games = load_games(cfg.resolve(cfg.server.content_root))
+    recs: list[dict] = []
+    for pick in picks:
+        iid, _, nums = pick.partition(":")
+        recs += export_turns(store, games, iid, [int(x) for x in nums.split(",")] if nums else None, any_model)
+    if not recs:
+        raise SystemExit("no turns to export (a turn needs a stored adjudication, verdict and narration; --any-model keeps non-Sonnet turns)")
+    day = time.strftime("%Y%m%d")
+    sid = set_id([r["game"] for r in recs], day, next_nn(SETS, f"ts_*_{day}_") if SETS.exists() else 1, len(recs), purpose)
+    folder = SETS / sid
+    folder.mkdir(parents=True, exist_ok=False)
+    (folder / "turns.jsonl").write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in recs))
+    sources: dict[str, dict] = {}
+    for r in recs:
+        sources.setdefault(r["iid"], {"instance": r["iid"], "game": r["game"], "title": r.get("title", ""), "model": r.get("source_model", ""), "turns": []})["turns"].append(r["turn"])
+    manifest = {"id": sid, "title": title or "(say what this set is for)", "games": sorted({r["game"] for r in recs}),
+                "made": time.strftime("%Y-%m-%d"), "made_at_commit": provenance()["git"], "turns": len(recs), "purpose": purpose,
+                "status": "active", "aliases": [], "sources": list(sources.values()), "notes": ""}
+    (folder / "set.yml").write_text("# A test set (docs/TESTING.md): frozen turn records, their answer key, this manifest.\n"
+                                    + yaml.safe_dump(manifest, sort_keys=False, allow_unicode=True, width=120))
+    return folder
+
+
+def run_set_key(d: dict) -> Path | None:
+    """The key a stored run is graded with today: its test set's key (by the run's `set`, or its old corpus path)."""
+    try:
+        return set_key_path(find_set(d.get("set") or d.get("corpus", "")))
+    except SystemExit:
+        return None
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    ex = sub.add_parser("export", help="write a corpus from stored turns")
-    ex.add_argument("iids", nargs="+")
-    ex.add_argument("-o", "--out", required=True)
-    ex.add_argument("--turns", help="comma list of turn numbers to keep")
+    ex = sub.add_parser("export", help="make a new test set from stored play (docs/TESTING.md)")
+    ex.add_argument("picks", nargs="+", help="<instance id> for every turn, or <instance id>:3,5,8")
+    ex.add_argument("--purpose", default="", help="a word or two for the set id: d36-mechanics, fuses")
+    ex.add_argument("--title", default="", help="what the set is for, in plain words (the manifest's title)")
     ex.add_argument("--any-model", action="store_true", help="keep turns whose referee was not Sonnet")
-    ex.add_argument("--append", action="store_true")
-    rn = sub.add_parser("run", help="replay a corpus and score it")
-    rn.add_argument("corpus")
+    rn = sub.add_parser("run", help="replay a test set through a model setup and grade it")
+    rn.add_argument("set", help="a test set id (ts_…), its folder, or an old name")
     rn.add_argument("--role", choices=["adjudicator", "referee", "both"], default="both")
     rn.add_argument("--profile", help="swap the box to this profile (server/profiles/<name>.yml) and run under its role settings")
     rn.add_argument("--opt", action="append", default=[], help="role option override on top, e.g. temperature=0 thinking=true model=…")
     rn.add_argument("--turns", nargs="*", help="only these: '3' or 'iid:3'")
     rn.add_argument("--limit", type=int)
-    rn.add_argument("--tag")
+    rn.add_argument("--note", help="words for the run id: what this run varies (default: the --opt overrides)")
     rn.add_argument("-v", "--verbose", action="store_true")
-    rn.add_argument("--gold", default=str(GOLD), help="the graded key (default notes/eval/gold.yml)")
-    gr = sub.add_parser("grade", help="grade stored runs against the graded key, with no model calls")
+    rn.add_argument("--gold", help="grade against this key instead of the test set's own")
+    gr = sub.add_parser("grade", help="grade stored runs against their test set's key, with no model calls")
     gr.add_argument("runs", nargs="+")
-    gr.add_argument("--gold", default=str(GOLD))
+    gr.add_argument("--gold", help="grade against this key instead of each run's test set key")
     gr.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
     if args.cmd == "export":
-        cfg = load_config()
-        store = Store(cfg.resolve(cfg.server.data_dir) / "textadventure.sqlite3")
-        games = load_games(cfg.resolve(cfg.server.content_root))
-        turns = [int(x) for x in args.turns.split(",")] if args.turns else None
-        recs = [r for iid in args.iids for r in export_turns(store, games, iid, turns, args.any_model)]
-        out = Path(args.out)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        with out.open("a" if args.append else "w") as f:
-            for r in recs:
-                f.write(json.dumps(r, ensure_ascii=False) + "\n")
-        by = Counter((r["game"], r["source_model"]) for r in recs)
-        print(f"{len(recs)} turns -> {out}", dict(by))
+        folder = export_set(args.picks, args.any_model, args.purpose, args.title)
+        print(f"test set {folder.name}: {sum(1 for _ in (folder / 'turns.jsonl').open())} turns -> {folder}; write its key.yml next (docs/TESTING.md)")
     elif args.cmd == "grade":
-        gold = load_gold(Path(args.gold))
         for path in args.runs:
             d = json.loads(Path(path).read_text())
-            grade_results(d["turns"], gold)
+            key = Path(args.gold) if args.gold else run_set_key(d)
+            if key is None:
+                print(json.dumps({"run": Path(path).stem, "graded": "no key for its test set"}))
+                continue
+            grade_results(d["turns"], load_gold(key))
             if args.verbose:
                 for r in d["turns"]:
                     _print_gold(r)
-            print(json.dumps({"run": d.get("tag") or path, **summarize_gold(d["turns"])}, ensure_ascii=False))
+            print(json.dumps({"run": Path(path).stem, **summarize_gold(d["turns"])}, ensure_ascii=False))
     else:
         asyncio.run(run(args))
 

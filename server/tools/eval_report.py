@@ -6,10 +6,11 @@ the prompts the model saw. A comparison page per corpus shows every key item aga
 model catches stands out: a hard case, or a key that asks for the wrong thing.
 
     .venv/bin/python tools/eval_report.py build                       # every run in notes/eval/runs
-    .venv/bin/python tools/eval_report.py build ../notes/eval/runs/v2-opus.json ../notes/eval/runs/q27-ref-one.json
+    .venv/bin/python tools/eval_report.py build ../notes/eval/runs/<run id>.json [...]
     .venv/bin/python tools/eval_report.py build --key run             # grade with the key each run carried (format 2)
 
-Pages go to notes/eval/reports/ (gitignored): index.html (every run), run-<tag>.html, compare-<corpus>.html.
+Pages go to notes/eval/reports/ (gitignored): index.html (every run), <run id>.html (one run), <test set id>.html (every run on that test set).
+The pieces and their names: docs/TESTING.md.
 
 How old runs stay readable (the design, D41):
   - A run file carries `format` (tools/eval_replay.py RUN_FORMAT; no key means 1). READERS has one function per format
@@ -42,7 +43,8 @@ from typing import Any, Callable
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from eval_replay import BLOBS, GOLD, ROOT, RUN_FORMAT, _alts, _canon, _norm, grade_adjudication, grade_rows, load_gold, matches  # noqa: E402
+from eval_replay import (BLOBS, ROOT, RUN_FORMAT, _alts, _canon, _norm, find_set, grade_adjudication, grade_rows, load_gold, matches,  # noqa: E402
+                         served_models, set_key_path, short_model)
 
 RUNS = ROOT / "notes" / "eval" / "runs"
 REPORTS = ROOT / "notes" / "eval" / "reports"
@@ -73,13 +75,23 @@ class Run:
     roles: dict                       # role name -> its settings as the run had them
     opts: dict
     profile: str | None
-    corpus_name: str
+    corpus_name: str                  # the test set id (docs/TESTING.md)
     corpus: dict[str, dict]           # "iid:turn" -> the corpus record (the turn as the source model played it)
     corpus_note: str
     gold_text: str | None             # the key the run carried (format 2)
     harness: dict | None
     turns: list[Turn]
     notes: list[str] = field(default_factory=list)
+    alias: str = ""                   # the run's name before D44, when it had another
+    served: dict = field(default_factory=dict)   # the models that answered, as the calls reported them
+    set_title: str = ""
+
+
+def _set_of(d: dict) -> dict | None:
+    try:
+        return find_set(d.get("set") or d.get("corpus", ""))
+    except SystemExit:
+        return None
 
 
 # ---- readers, one per format -------------------------------------------------------------------
@@ -132,28 +144,34 @@ def _started(d: dict, path: Path) -> str:
 
 def read_v1(d: dict, path: Path) -> Run:
     """2026-10-29/30: rows, scores and the corpus path; no prompts, no raw replies, no copy of the corpus or the key."""
-    corpus, where = _corpus_from_path(d.get("corpus", ""))
-    note = (f"read against {where.relative_to(ROOT) if where and where.is_relative_to(ROOT) else where} as it is now; "
-            "format 1 runs kept no copy, so a hand edit since the run would show here") if where else "the corpus file is gone"
-    return Run(tag=d.get("tag") or path.stem, path=path, format=1, started=_started(d, path), roles=d.get("roles", {}),
-               opts=d.get("opts", {}), profile=d.get("profile"), corpus_name=Path(d.get("corpus", "?")).stem, corpus=corpus,
+    ts = _set_of(d)
+    corpus, where = _corpus_from_path(str(ts["_dir"] / "turns.jsonl") if ts else d.get("corpus", ""))
+    note = ("read against the test set's turns as they are now; format 1 runs kept no copy, so a hand edit since the run "
+            "would show here") if where else "the test set is gone"
+    return Run(tag=path.stem, path=path, format=1, started=_started(d, path), roles=d.get("roles", {}),
+               opts=d.get("opts", {}), profile=d.get("profile"), corpus_name=ts["id"] if ts else Path(d.get("corpus", "?")).stem, corpus=corpus,
                corpus_note=note, gold_text=None, harness=None, turns=_turns(d, keep_calls=False),
-               notes=["Format 1: the raw replies and the prompts were not kept; the engine's applied list is kept only as a score."])
+               notes=["Format 1: the raw replies and the prompts were not kept; the engine's applied list is kept only as a score."],
+               alias=d.get("tag") if d.get("tag") and d.get("tag") != path.stem else "", served=dict(served_models(d.get("turns", []))),
+               set_title=(ts or {}).get("title", ""))
 
 
 def read_v2(d: dict, path: Path) -> Run:
     """Provenance, the corpus and the key by content hash, every call, the full applied list."""
+    ts = _set_of(d)
     corpus = _corpus_from_blob(d.get("corpus_blob", "")) if d.get("corpus_blob") else None
-    note = f"the copy the run carried (blob {d.get('corpus_blob')})"
+    note = f"the copy of the test set's turns the run carried (blob {d.get('corpus_blob')})"
     if corpus is None:
-        corpus, where = _corpus_from_path(d.get("corpus", ""))
-        note = f"the run's copy is missing; read against {where} as it is now" if where else "the corpus is gone"
+        corpus, where = _corpus_from_path(str(ts["_dir"] / "turns.jsonl") if ts else d.get("corpus", ""))
+        note = "the run's copy is missing; read against the test set's turns as they are now" if where else "the test set is gone"
     gtext = None
     if d.get("gold_blob") and (BLOBS / f"{d['gold_blob']}.yml").exists():
         gtext = (BLOBS / f"{d['gold_blob']}.yml").read_text()
-    return Run(tag=d.get("tag") or path.stem, path=path, format=2, started=_started(d, path), roles=d.get("roles", {}),
-               opts=d.get("opts", {}), profile=d.get("profile"), corpus_name=Path(d.get("corpus", "?")).stem, corpus=corpus or {},
-               corpus_note=note, gold_text=gtext, harness=d.get("harness"), turns=_turns(d, keep_calls=True))
+    return Run(tag=path.stem, path=path, format=2, started=_started(d, path), roles=d.get("roles", {}),
+               opts=d.get("opts", {}), profile=d.get("profile"), corpus_name=ts["id"] if ts else Path(d.get("corpus", "?")).stem, corpus=corpus or {},
+               corpus_note=note, gold_text=gtext, harness=d.get("harness"), turns=_turns(d, keep_calls=True),
+               alias=d.get("tag") if d.get("tag") and d.get("tag") != path.stem else "",
+               served=d.get("served") or dict(served_models(d.get("turns", []))), set_title=(ts or {}).get("title", ""))
 
 
 READERS: dict[int, Callable[[dict, Path], Run]] = {1: read_v1, 2: read_v2}
@@ -191,7 +209,7 @@ def _gold_from_text(text: str) -> dict[str, dict]:
 
 def regrade(run: Run, key: str, today: dict[str, dict]) -> tuple[dict[str, dict], dict[str, dict], str]:
     """Each turn's grade (referee, adjudicator) with today's grader, against today's key or the run's own."""
-    gold, which = today, "today's key (notes/eval/gold.yml)"
+    gold, which = today, f"today's key for test set {run.corpus_name}"
     if key == "run":
         if run.gold_text is not None:
             gold, which = _gold_from_text(run.gold_text), "the key this run carried"
@@ -360,11 +378,13 @@ def chips(item: dict) -> str:
 
 
 def model_label(run: Run, role: str | None = None) -> str:
+    """The model that answered (as the calls reported it; the config's name only when none did), and the settings."""
     roles = [role] if role else sorted(run.roles)
+    served = max(run.served, key=run.served.get) if run.served else None
     out = []
     for r in roles:
         c = run.roles.get(r) or {}
-        bits = [str(c.get("model") or "?")]
+        bits = [served or f"{c.get('model') or '?'} (config name; the served model was not recorded)"]
         for k in ("temperature", "thinking", "split", "effort"):
             if c.get(k) not in (None, False, "", 0) or (k == "temperature" and c.get(k) == 0):
                 bits.append(f"{k}={c[k]}")
@@ -785,7 +805,8 @@ def render_run(run: Run, key: str, today: dict[str, dict], standalone: bool) -> 
     meta = (f"<dl class='meta'><dt>models</dt><dd>{E(model_label(run))}</dd>"
             + (f"<dt>profile</dt><dd>{E(run.profile)}</dd>" if run.profile else "")
             + (f"<dt>options</dt><dd>{E(json.dumps(run.opts))}</dd>" if run.opts else "")
-            + f"<dt>ran</dt><dd>{E(run.started)}</dd><dt>corpus</dt><dd>{E(run.corpus_name)}: {E(run.corpus_note)}</dd>"
+            + f"<dt>ran</dt><dd>{E(run.started)}</dd><dt>test set</dt><dd>{E(run.corpus_name)}{(' · ' + E(run.set_title)) if run.set_title else ''}<br><span class=sub>{E(run.corpus_note)}</span></dd>"
+            + (f"<dt>old name</dt><dd>{E(run.alias)}</dd>" if run.alias else "")
             + f"<dt>graded with</dt><dd>{E(which)}, today's grader</dd>"
             + (f"<dt>harness</dt><dd>commit {E(h.get('git', '?'))}{' with uncommitted changes' if h.get('dirty') else ''}</dd>" if h else "")
             + f"<dt>file</dt><dd>{E(str(run.path.relative_to(ROOT) if run.path.is_relative_to(ROOT) else run.path))} · format {run.format}</dd></dl>")
@@ -795,7 +816,7 @@ def render_run(run: Run, key: str, today: dict[str, dict], standalone: bool) -> 
             ("gray items met", f"{tot['ghit']}/{tot['greq']}"), ("gray rows", tot["grow"]),
             ("checks", f"{tot['cexact']}+{tot['cstat']}/{tot['creq']}"), ("wrong checks", tot["cwrong"])) if tot["req"] or tot["creq"]) + "</div>"
     notes = "".join(f"<p class='lede'>{E(n)}</p>" for n in run.notes)
-    body = (f"<p><a href='index.html'>All runs</a> · <a href='compare-{E(run.corpus_name)}.html'>Compare runs on {E(run.corpus_name)}</a></p>"
+    body = (f"<p><a href='index.html'>All runs</a> · <a href='{E(run.corpus_name)}.html'>Compare every run on this test set</a></p>"
             f"<h1>{E(run.tag)}</h1>{meta}{stats}{notes}"
             "<div class='legend'><span>caught: a reported row meets a required item</span><span>missed: no row did; the quotes are the sentences that show it</span>"
             "<span>wrong: a row the key forbids</span><span>gray: a debatable item, or a defensible row; tallied apart</span><span>unjudged: a row the key does not cover yet</span>"
@@ -810,7 +831,7 @@ def render_compare(name: str, runs: list[tuple[Run, dict]], gold: dict[str, dict
     """Rows: every key item of every graded turn in this corpus. Columns: runs. Cells: caught, missed, wrong."""
     corpus = next((r.corpus for r, _ in runs if r.corpus), {})
     keys = sorted({t.key for r, _ in runs for t in r.turns if t.key in gold}, key=lambda k: (k.split(":")[0], int(k.split(":")[1])))
-    head = "<tr><th>key item</th><th>caught</th>" + "".join(f"<th class='run' title='{E(model_label(r))}'><a href='run-{E(r.tag)}.html'>{E(r.tag)}</a></th>" for r, _ in runs) + "</tr>"
+    head = "<tr><th>key item</th><th>caught</th>" + "".join(f"<th class='run' title='{E(model_label(r))}'><a href='{E(r.tag)}.html'>{E(r.tag)}</a></th>" for r, _ in runs) + "</tr>"
     rows, never, always_wrong, grays = [], [], [], []
     for k in keys:
         rec = corpus.get(k, {})
@@ -898,10 +919,27 @@ def render_compare(name: str, runs: list[tuple[Run, dict]], gold: dict[str, dict
                     + "".join(f"<h3>{E(tg)} ({len(v)})</h3><div class='ledger'>"
                               + "".join(line("gray", lab, f"<span class=id>{E(k)}</span> {E(pl)}", E(why) + f" · {E(cnt)}") for k, lab, pl, why, _, cnt in v)
                               + "</div>" for tg, v in sorted(by_tag.items(), key=lambda x: -len(x[1]))))
-    body = (f"<p><a href='index.html'>All runs</a></p><h1>Compare runs on {E(name)}</h1>"
+    try:
+        man = find_set(name)
+    except SystemExit:
+        man = {}
+    srcs = "; ".join(f"{x.get('title') or x.get('game')} ({x.get('instance')}, turns {', '.join(map(str, x.get('turns', [])))}, played by {x.get('model')})"
+                     for x in man.get("sources", []))
+    manifest = ("<dl class='meta'>"
+                + f"<dt>what it is</dt><dd>{E(man.get('title', ''))}</dd>"
+                + f"<dt>status</dt><dd>{E(man.get('status', '?'))}"
+                + (f", superseded by <a href='{E(man['superseded_by'])}.html'>{E(man['superseded_by'])}</a>" if man.get("superseded_by") else "")
+                + (f"; its key is that set's key" if man.get("key_from") else "") + "</dd>"
+                + f"<dt>made</dt><dd>{E(str(man.get('made', '?')))} at commit {E(str(man.get('made_at_commit', '?')))}</dd>"
+                + (f"<dt>purpose</dt><dd>{E(man['purpose'])}</dd>" if man.get("purpose") else "")
+                + f"<dt>turns</dt><dd>{E(str(man.get('turns', '?')))}: {E(srcs)}</dd>"
+                + (f"<dt>old names</dt><dd>{E(', '.join(man.get('aliases') or []))}</dd>" if man.get("aliases") else "")
+                + (f"<dt>notes</dt><dd>{E(man['notes'])}</dd>" if man.get("notes") else "")
+                + "</dl>") if man else ""
+    body = (f"<p><a href='index.html'>All runs</a></p><h1>{E(name)}</h1>{manifest}<h2>Every run on this test set</h2>"
             f"<p class='lede'>{len(runs)} runs, {len(keys)} graded turns, graded with today's grader and key. ✓ caught or clean, ○ missed, ✗ wrong, ◐ wrote a gray row, · not in that run.</p>"
             f"{summary}<h2>Every item</h2><div class='scroll'><table>{head}{''.join(rows)}</table></div>")
-    return page(f"Compare {name}", body, standalone)
+    return page(f"Test set {name}", body, standalone)
 
 
 # ---- the index ------------------------------------------------------------------------------------------
@@ -909,26 +947,39 @@ def render_index(items: list[tuple[Run, dict]], corpora: list[str], key: str) ->
     rows = []
     for r, info in sorted(items, key=lambda x: x[0].started, reverse=True):
         t = info["tot"]
-        rows.append(f"<tr><td><a href='run-{E(r.tag)}.html'>{E(r.tag)}</a></td><td>{E(r.started[:16].replace('T', ' '))}</td><td>{E(r.corpus_name)}</td>"
+        rows.append(f"<tr><td><a href='{E(r.tag)}.html'>{E(r.tag)}</a></td><td>{E(r.started[:16].replace('T', ' '))}</td><td>{E(r.corpus_name)}</td>"
                     f"<td>{E(model_label(r))}</td><td class='num'>{t['hit']}/{t['req']}</td><td class='num'>{t['wrong']}</td><td class='num'>{t['unj']}</td>"
                     f"<td class='num'>{t['ghit']}/{t['greq']} · {t['grow']}</td><td class='num'>{t['cexact']}+{t['cstat']}/{t['creq']}</td><td class='num'>{r.format}</td></tr>")
     body = ("<h1>Eval runs</h1><p class='lede'>Every replay of stored turns through the adjudicator and the referee, graded with today's grader against "
             + ("today's key" if key == "now" else "the key each run carried") + ". Open a run for the turn-by-turn ledger, or a comparison for every key item against every run.</p>"
-            + "<p>" + " · ".join(f"<a href='compare-{E(c)}.html'>Compare runs on {E(c)}</a>" for c in corpora) + "</p>"
+            + "<p>" + " · ".join(f"<a href='{E(c)}.html'>{E(c)}</a>" for c in corpora) + "</p>"
             + "<div class='scroll'><table><tr><th>run</th><th>ran</th><th>corpus</th><th>models</th><th>required</th><th>wrong</th><th>unjudged</th><th>gray met · rows</th><th>checks</th><th>format</th></tr>"
             + "".join(rows) + "</table></div>")
     return page("Eval runs", body, standalone=False)
 
 
+_KEYS: dict[str, dict] = {}
+
+
+def todays_key(set_name: str) -> dict[str, dict]:
+    """Today's answer key for a test set (its key.yml, or the key its manifest names in key_from); {} when it has none."""
+    if set_name not in _KEYS:
+        try:
+            kp = set_key_path(find_set(set_name))
+        except SystemExit:
+            kp = None
+        _KEYS[set_name] = load_gold(kp) if kp else {}
+    return _KEYS[set_name]
+
+
 def build(paths: list[Path], key: str, out: Path) -> list[Path]:
-    today = load_gold(GOLD)
     out.mkdir(parents=True, exist_ok=True)
     items: list[tuple[Run, dict]] = []
     written = []
     for p in paths:
         run = read_run(p)
-        html_text, info = render_run(run, key, today, standalone=True)
-        f = out / f"run-{run.tag}.html"
+        html_text, info = render_run(run, key, todays_key(run.corpus_name), standalone=True)
+        f = out / f"{run.tag}.html"
         f.write_text(html_text)
         written.append(f)
         items.append((run, info))
@@ -936,13 +987,16 @@ def build(paths: list[Path], key: str, out: Path) -> list[Path]:
     for r, info in items:
         by_corpus[r.corpus_name].append((r, info))
     for name, rs in by_corpus.items():
-        gold = rs[0][1]["gold"] if key == "run" else today
-        f = out / f"compare-{name}.html"
+        gold = rs[0][1]["gold"] if key == "run" else todays_key(name)
+        f = out / f"{name}.html"
         f.write_text(render_compare(name, sorted(rs, key=lambda x: x[0].started), gold, standalone=True))
         written.append(f)
     f = out / "index.html"
     f.write_text(render_index(items, sorted(by_corpus), key))
     written.append(f)
+    if len(paths) == len(sorted(RUNS.glob("run_*.json"))):      # a full build: the folder holds exactly these pages
+        for stale in set(out.glob("*.html")) - set(written):
+            stale.unlink()
     return written
 
 
@@ -954,7 +1008,7 @@ def main() -> None:
     b.add_argument("--key", choices=["now", "run"], default="now", help="grade against today's key (default) or the key each run carried")
     b.add_argument("--out", default=str(REPORTS))
     args = ap.parse_args()
-    paths = [Path(p) for p in args.runs] or sorted(RUNS.glob("*.json"))
+    paths = [Path(p) for p in args.runs] or sorted(p for p in RUNS.glob("run_*.json"))
     written = build(paths, args.key, Path(args.out))
     print(f"{len(written)} pages -> {args.out}")
 
