@@ -251,6 +251,36 @@ def evidence(prose: str, words: list[str], n: int = 2) -> list[str]:
     return [mark(s, words) for _, _, s in sorted(best, key=lambda x: x[1])]
 
 
+def guess_sentences(text: str, words: list[str], n: int = 2) -> list[str]:
+    """The automatic quote finder: the sentences sharing most words with an item or a row. A guess, and shown as one."""
+    words = [w for w in dict.fromkeys(w.lower() for w in words if w and len(w) > 2)]
+    scored = [(-sum(1 for w in words if _hit(w, s)), i, s) for i, s in enumerate(sentences(text))]
+    best = sorted(x for x in scored if x[0] < 0)[:n]
+    return [s for _, _, s in sorted(best, key=lambda x: x[1])]
+
+
+def _context(text: str, q: str) -> str:
+    """The paragraph holding the quote, with the paragraphs either side, the quote marked: what a hover shows."""
+    paras = [x for x in re.split(r"\n\s*\n|\n", text) if x.strip()]
+    at = next((i for i, x in enumerate(paras) if q in x), None)
+    if at is None:
+        return E(text[:1500])
+    out = []
+    for i in range(max(0, at - 1), min(len(paras), at + 2)):
+        x = paras[i]
+        out.append(E(x).replace(E(q), f"<mark>{E(q)}</mark>", 1) if i == at else E(x))
+    return "<br><br>".join(out)
+
+
+def quote_html(text: str, q: str, kind: str, words: list[str] | None = None) -> str:
+    """One quote, labelled as hand-picked (from the key) or a guess (word matching); hover or tap for the paragraphs around it."""
+    shown = mark(q, words) if words else E(q)
+    label = ("<span class='src key'>from the key</span>" if kind == "key"
+             else "<span class='src guess'>guess: matched by shared words, may be wrong</span>")
+    return (f"<blockquote class='qt {kind}' tabindex='0'>{label}{shown}"
+            f"<span class='ctx' role='tooltip'><span class='sub'>in context (the paragraph and its neighbours):</span><br>{_context(text, q)}</span></blockquote>")
+
+
 def mark(sent: str, words: list[str]) -> str:
     out = E(sent)
     for w in sorted(words, key=len, reverse=True):
@@ -389,6 +419,15 @@ a{color:var(--accent)} a:focus-visible,summary:focus-visible{outline:2px solid v
 .sub{font-size:.85rem;color:var(--muted);margin-top:3px}
 blockquote{margin:6px 0 0;padding:4px 10px;border-left:2px solid var(--rule);font-size:.9rem;max-width:75ch}
 mark{background:var(--markbg);color:inherit;padding:0 1px;border-radius:2px}
+mark.q.ok{background:var(--ok-bg);box-shadow:inset 0 -2px var(--ok)} mark.q.miss{background:var(--miss-bg);box-shadow:inset 0 -2px var(--miss)}
+mark.q.bad{background:var(--bad-bg);box-shadow:inset 0 -2px var(--bad)} mark.q.quiet{background:transparent;box-shadow:inset 0 -1px var(--muted)}
+sup.ql{font:600 10px var(--mono);margin-left:2px} sup.ok{color:var(--ok)} sup.miss{color:var(--miss)} sup.bad{color:var(--bad)} sup.quiet{color:var(--muted)}
+pre.j{margin:3px 0;padding:6px 8px;max-height:none}
+blockquote.qt{position:relative;cursor:help} blockquote.qt.key{border-left:3px solid var(--accent)} blockquote.qt.guess{border-left:3px dashed var(--muted);color:var(--muted)}
+.src{display:block;font:600 10px var(--mono);letter-spacing:.05em;text-transform:uppercase;margin-bottom:2px} .src.key{color:var(--accent)} .src.guess{color:var(--muted)}
+.qt .ctx{display:none;position:absolute;left:0;right:0;top:100%;z-index:5;background:var(--sheet);color:var(--ink);border:1px solid var(--rule);border-radius:6px;
+  box-shadow:0 6px 20px rgba(0,0,0,.18);padding:10px 12px;font:14px/1.55 var(--display);max-height:22em;overflow:auto}
+.qt:hover .ctx,.qt:focus .ctx,.qt:focus-within .ctx{display:block} pre.notes{white-space:pre-wrap} b.lab{font-family:var(--mono);font-size:.8rem}
 details{border-top:1px solid var(--rule);padding-top:8px}
 summary{cursor:pointer;color:var(--muted);font-size:.9rem}
 pre{background:var(--code);padding:10px 12px;border-radius:6px;overflow-x:auto;font:12px/1.5 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;max-height:36em;overflow-y:auto}
@@ -427,42 +466,184 @@ def _source_rows_for(item: dict, rec: dict) -> list[dict]:
     return [r for r in (rec.get("expected", {}).get("changes") or []) if any(matches(a, r) for a in _alts(item))]
 
 
+FIELD_WORDS = {"loaded": "loaded rounds", "count": "count", "conditions": "conditions", "health": "health", "dread": "dread", "stress": "stress",
+               "suspicion": "suspicion", "trust": "trust", "location": "location", "resolved": "resolved"}
+
+
+def quotes_of(item: dict) -> list[str]:
+    q = item.get("quote")
+    return [q] if isinstance(q, str) else list(q or [])
+
+
+def plain(item: dict) -> str:
+    """A key item as a sentence a person reads: 'the revolver's loaded goes down by 2'."""
+    alts = _alts(item)
+    if len(alts) > 1:
+        return "any one of: " + "; or ".join(dict.fromkeys(plain(a) for a in alts))
+    p = alts[0]
+    def one(v):
+        return " or ".join(str(x) for x in v) if isinstance(v, list) else str(v)
+    kind = one(p.get("kind", "any row"))
+    t = one(p["target"]) if p.get("target") not in (None, "", [""]) else ""
+    f = one(p["field"]) if p.get("field") not in (None, "", [""]) else ""
+    who = {"player": "the player", "": ""}.get(t, f"{t}")
+    about = (" about " + ", ".join(f"“{w}”" for w in p.get("words", []) + p.get("vwords", []))) if p.get("words") or p.get("vwords") else ""
+    step = ""
+    if "step" in p:
+        lo, hi = p["step"]
+        n = f"{abs(lo)}" if lo == hi else f"{min(abs(lo), abs(hi))} to {max(abs(lo), abs(hi))}"
+        step = (": down by " if hi < 0 else ": up by " if lo > 0 else ": changes by ") + n
+    val = f" to {one(p['value'])}" if "value" in p else ""
+    if re.fullmatch(r"p\d+", t or "") and f in ("resolved", ""):
+        return f"timer {t} is settled (it happened, or was stopped)"
+    f = FIELD_WORDS.get(f, f)
+    if kind == "add":
+        return f"{who}'s {f or 'count'}{step or ': changes'}"
+    if kind == "set":
+        return f"{who}'s {f}" + (val.replace(' to ', ' is set to ', 1) if val else " changes") + about if f else f"{who} changes{val}{about}"
+    if kind == "move":
+        return f"{who or 'someone or something'} moves{val}{about}"
+    if kind == "new":
+        return f"a new thing is recorded{about}" + (f" (named {one(p['value'])})" if "value" in p else "")
+    if kind == "gone":
+        return f"{who or 'something'} is removed from play{about}"
+    if kind == "learned":
+        return ("the player learns a clue" if t in ("player", "player or ", "") else f"{who} learns something") + about
+    if kind == "unseen":
+        return f"an off-screen fact is recorded (something the player cannot perceive){about}"
+    if kind == "soon":
+        return f"a timer is set for something coming{about}" + (f" (by {who})" if who else "")
+    if kind == "thread_open":
+        return f"a story thread opens{about}"
+    if kind == "thread_close":
+        return f"story thread {t} closes" if t else "a story thread closes"
+    if kind == "ruling":
+        rule = f or t or one(p.get("value", "")) or "any"
+        return f"a ruling that the narrator broke a rule ({rule})"
+    if kind == "flag":
+        return f"flag {t} is set"
+    if kind == "not_done":
+        return "a lever is marked not done"
+    return f"{kind} {who}.{f}{val}{about}"
+
+
+def as_json(d: dict) -> str:
+    return json.dumps({k: v for k, v in d.items() if v not in (None, "", [], 0, False) and k not in ("why", "quote", "tags", "level")}, ensure_ascii=False)
+
+
+def highlight(text: str, marks: list[tuple[str, str, str]]) -> str:
+    """Escape text and wrap each quote's first occurrence in a labelled mark; overlapping quotes share one mark."""
+    spans: list[list] = []
+    for q, label, cls in marks:
+        i = text.find(q)
+        if i < 0:
+            continue
+        spans.append([i, i + len(q), [label], cls])
+    spans.sort()
+    merged: list[list] = []
+    for s in spans:
+        if merged and s[0] < merged[-1][1]:
+            m = merged[-1]
+            m[1] = max(m[1], s[1])
+            m[2] += [l for l in s[2] if l not in m[2]]
+            m[3] = min(m[3], s[3], key=["bad", "miss", "ok", "quiet"].index)
+        else:
+            merged.append(s)
+    out, pos = [], 0
+    for a, b, labels, cls in merged:
+        out.append(E(text[pos:a]))
+        out.append(f"<mark class='q {cls}'>{E(text[a:b])}</mark><sup class='ql {cls}'>{' '.join(labels)}</sup>")
+        pos = b
+    out.append(E(text[pos:]))
+    return "".join(out)
+
+
+def item_statuses(g: dict | None, gref: dict | None) -> dict[str, str]:
+    """R0, R1 … (required) and F0 … (forbidden) to ok / miss / bad / quiet."""
+    st: dict[str, str] = {}
+    if not gref:
+        return st
+    met = {m["item"] for m in (g or {}).get("met", [])}
+    for i, _ in enumerate(gref.get("required", [])):
+        st[f"R{i}"] = "ok" if i in met else "miss" if g is not None else "quiet"
+    hit = {forbidden_index(gref, r) for r in (g or {}).get("errors", [])}
+    for i, _ in enumerate(gref.get("forbidden", [])):
+        st[f"F{i}"] = "bad" if i in hit else "quiet"
+    return st
+
+
+def render_passage(rec: dict, gref: dict | None, st: dict[str, str]) -> str:
+    marks = []
+    for sec, letter in (("required", "R"), ("forbidden", "F")):
+        for i, item in enumerate((gref or {}).get(sec, [])):
+            for q in quotes_of(item):
+                marks.append((q, f"{letter}{i}", st.get(f"{letter}{i}", "quiet")))
+    prose, notes, dirs = rec.get("prose", ""), "\n".join(rec.get("notes") or []), "\n".join(rec.get("directives") or [])
+    return ("<h3>What the referee read</h3>"
+            + f"<div>The player: <span class='said'>“{E(rec.get('player_text', ''))}”</span></div>"
+            + f"<div class='prose'>{highlight(prose, marks)}</div>"
+            + (f"<div class=sub>The narrator's notes, which the referee reads with the prose:</div><pre class='notes'>{highlight(notes, marks)}</pre>" if notes else "<div class=sub>The narrator left no notes this turn.</div>")
+            + (f"<details><summary>THIS TURN, the engine's instructions to the narrator ({len(rec.get('directives') or [])})</summary><pre>{highlight(dirs, marks)}</pre></details>" if dirs else ""))
+
+
+def _item_block(cls: str, tag: str, label: str, item: dict, body: str, text: str = "") -> str:
+    qs = quotes_of(item)
+    where = ("<div class=sub>where the turn shows it:</div>" + "".join(quote_html(text, q, "key") for q in qs)) if qs else ""
+    return (f"<div class='line {cls}'><span class='tag'>{E(tag)}</span><div>"
+            f"<div><b class='lab'>{E(label)}</b> {E(plain(item))}{chips(item)}</div>"
+            f"<div class=sub>expected JSON (a pattern; a key it leaves out matches anything)</div><pre class='j'>{E(as_json(item))}</pre>"
+            f"{where}{body}</div></div>")
+
+
 def render_referee(t: Turn, rec: dict, g: dict | None, gref: dict | None, prose: str) -> str:
     ref = t.referee or {}
     if "error" in ref:
         return f"<h3>Referee</h3><div class='ledger'>{line('bad', 'failed', E(ref['error']))}</div>"
     if "got" not in ref:
         return ""
-    parts = []
+    parts, extra = [], []
+    text = "\n\n".join(x for x in (prose, "\n".join(rec.get("notes") or []), "\n".join(rec.get("directives") or [])) if x)
     if g is not None and gref is not None:
-        req = gref.get("required", [])
         met = {m["item"]: m["row"] for m in g.get("met", [])}
-        for i, item in enumerate(req):
+        for i, item in enumerate(gref.get("required", [])):
             if i in met:
-                parts.append(line("ok", "caught", f"<div class=pat>{describe(item)}{chips(item)}</div>", f"by <span class=row>{row_html(met[i])}</span>"))
+                body = f"<div class=sub>produced:</div><pre class='j'>{E(as_json(met[i]))}</pre>"
+                parts.append(_item_block("ok", "caught", f"R{i}", item, body, text))
             else:
                 src = _source_rows_for(item, rec)
-                sub = ("the source model wrote: " + "; ".join(f"<span class=row>{row_html(r)}</span>" for r in src[:2])) if src else "the source model did not write it either"
-                parts.append(line("miss", "missed", f"<div class=pat>{describe(item)}{chips(item)}</div>", sub, evidence(prose, pattern_words(item))))
+                body = ("<div class=sub><b>not produced.</b> " + ("The source model wrote:" if src else "The source model did not write it either.") + "</div>"
+                        + "".join(f"<pre class='j'>{E(as_json(r))}</pre>" for r in src[:2]))
+                if not quotes_of(item):
+                    ws = pattern_words(item)
+                    ev = guess_sentences(text, ws)
+                    body += ("<div class=sub>the key has no quote for this item yet; the finder's guess:</div>" + "".join(quote_html(text, x, "guess", ws) for x in ev)) if ev else ""
+                parts.append(_item_block("miss", "missed", f"R{i}", item, body, text))
         for r in g.get("errors", []):
             fi = forbidden_index(gref, r)
             item = gref.get("forbidden", [])[fi] if fi is not None else {}
-            parts.append(line("bad", "wrong", f"<div class=row>{row_html(r)}</div>",
-                              f"forbidden by the key: {E(r.get('why') or '')}" + (f" <span class=pat>({describe(item)})</span>" if item else "") + chips(item),
-                              evidence(prose, row_words(r))))
+            body = (f"<div class=sub>produced (the key forbids it):</div><pre class='j'>{E(as_json(r))}</pre>"
+                    f"<div class=sub><b>why it is wrong:</b> {E(r.get('why') or item.get('why', ''))}</div>")
+            if not quotes_of(item):
+                ws = row_words(r)
+                body += "".join(quote_html(text, x, "guess", ws) for x in guess_sentences(text, ws, 1))
+            parts.append(_item_block("bad", "wrong", f"F{fi}", item, body, text))
+        avoided = [(i, f) for i, f in enumerate(gref.get("forbidden", [])) if i not in {forbidden_index(gref, r) for r in g.get("errors", [])}]
+        if avoided:
+            parts.append(f"<details><summary>{len(avoided)} forbidden item{'s' if len(avoided) != 1 else ''} this run avoided</summary>"
+                         + "".join(_item_block("plain", "avoided", f"F{i}", f, f"<div class=sub>why the key forbids it: {E(f.get('why', ''))}</div>", text) for i, f in avoided) + "</details>")
         for r in g.get("unjudged", []):
-            parts.append(line("unj", "unjudged", f"<div class=row>{row_html(r)}</div>", "nobody has graded a row like this yet", evidence(prose, row_words(r), 1)))
-        allowed = g.get("allowed_rows", [])
-        if allowed:
-            parts.append(f"<details><summary>{len(allowed)} allowed row{'s' if len(allowed) != 1 else ''} (a fair call either way, or a repeat of a hit)</summary>"
-                         + "".join(line("plain", "allowed", f"<div class=row>{row_html(r)}</div>") for r in allowed) + "</details>")
-        head = f"<h3>Referee · {g['hits']}/{g['required']} required, {len(g['errors'])} wrong, {len(g['unjudged'])} unjudged</h3>"
+            ws = row_words(r)
+            ev = guess_sentences(text, ws, 1)
+            extra.append(line("unj", "unjudged", f"<pre class='j'>{E(as_json(r))}</pre>"
+                              + "".join(quote_html(text, x, "guess", ws) for x in ev), "the key does not cover a row like this yet"))
+        for r in g.get("allowed_rows", []):
+            extra.append(line("plain", "allowed", f"<pre class='j'>{E(as_json(r))}</pre>", "a fair call either way, or a repeat of a caught row"))
+        head = f"<h3>The key, item by item · {g['hits']}/{g['required']} required caught, {len(g['errors'])} wrong</h3>"
     else:
-        head = "<h3>Referee · not in the graded key</h3>"
-        parts += [line("plain", "reported", f"<div class=row>{row_html(r)}</div>") for r in ref["got"] if r.get("kind") != "issue"]
+        head = "<h3>The referee's rows · this turn is not in the graded key</h3>"
+        extra += [line("plain", "reported", f"<pre class='j'>{E(as_json(r))}</pre>") for r in ref["got"] if r.get("kind") != "issue"]
     issues = [r for r in ref["got"] if r.get("kind") == "issue"]
-    if issues:
-        parts.append("".join(line("plain", "issue", f"<div class=row>{E(str(r.get('value')))}</div>") for r in issues))
+    extra += [line("plain", "issue", f"<div class=row>{E(str(r.get('value')))}</div>", "a note to the engine; never graded") for r in issues]
     eng = []
     for x in ref.get("rejected", []):
         eng.append(line("plain", "refused", f"<div class=row>{E(str(x.get('path')))} = {E(str(x.get('value'))[:200])}</div>", E(str(x.get("reason")))))
@@ -470,13 +651,14 @@ def render_referee(t: Turn, rec: dict, g: dict | None, gref: dict | None, prose:
         eng.append(f"<pre>{E(chr(10).join(ref['applied_lines']) or '(nothing applied)')}</pre>")
     else:
         a = ref.get("applied") or {}
-        eng.append(f"<div class=sub>applied (as a score against the source model's turn): {a.get('exact', 0)} exact, {a.get('by_path', 0)} same path, "
-                   f"{len(a.get('missed', []))} not applied, {len(a.get('extra', []))} extra</div>")
+        eng.append(f"<div class=sub>format 1 kept only a score: {a.get('exact', 0)} lines as the source model's turn, {a.get('by_path', 0)} on the same path, "
+                   f"{len(a.get('missed', []))} it did not apply, {len(a.get('extra', []))} extra</div>")
     src = rec.get("expected", {}).get("changes") or []
     return (head + f"<div class='ledger'>{''.join(parts)}</div>"
-            + f"<details><summary>What the engine did with these rows ({len(ref.get('rejected', []))} refused)</summary>{''.join(eng)}</details>"
-            + (f"<details><summary>The source model's rows for this turn ({len(src)})</summary>"
-               + "".join(line("plain", "source", f"<div class=row>{row_html(r)}</div>") for r in src) + "</details>" if src else ""))
+            + (f"<h3>Other rows it produced ({len(extra)})</h3><div class='ledger'>{''.join(extra)}</div>" if extra else "")
+            + f"<details><summary>What the engine did with the rows ({len(ref.get('rejected', []))} refused)</summary>{''.join(eng)}</details>"
+            + (f"<details><summary>Every row the source model wrote for this turn ({len(src)})</summary>"
+               + "".join(f"<pre class='j'>{E(as_json(r))}</pre>" for r in src) + "</details>" if src else ""))
 
 
 def _check_text(c: dict) -> str:
@@ -566,16 +748,12 @@ def render_run(run: Run, key: str, today: dict[str, dict], standalone: bool) -> 
             s = t.stored_gold["referee"]
             if (s["hits"], len(s["errors"])) != (gr["hits"], len(gr["errors"])):
                 stored = f"<div class=sub>graded at the time: {s['hits']}/{s['required']} required, {len(s['errors'])} wrong (the key or the grader has changed since)</div>"
-        directives = rec.get("directives") or []
         secs.append(
             f"<section class='turn' id='{anchor}'><header><h2>{E(rec.get('title') or t.game)} · turn {t.turn}</h2>"
             f"<span class='id'>{E(t.key)} · {E(t.game)} · source {E(rec.get('source_model', '?'))}</span></header>"
             + (f"<div class='why'>{E(gk.get('why', '').strip())}</div>" if gk and gk.get("why") else ("<div class=sub>Not in the graded key.</div>" if not gk else ""))
             + stored
-            + (f"<div>The player: <span class='said'>“{E(rec.get('player_text', ''))}”</span></div>" if rec else "<div class=sub>This turn is not in the corpus the run points at.</div>")
-            + (f"<details><summary>THIS TURN, as the engine told the narrator ({len(directives)})</summary><pre>{E(chr(10).join(directives))}</pre></details>" if directives else "")
-            + (f"<details><summary>The prose the referee read</summary><div class='prose'>{E(prose)}</div>"
-               + (f"<pre>{E(chr(10).join(rec.get('notes') or []))}</pre>" if rec.get("notes") else "") + "</details>" if prose else "")
+            + (render_passage(rec, gk.get("referee") if gk else None, item_statuses(gr, gk.get("referee") if gk else None)) if rec else "<div class=sub>This turn is not in the corpus the run points at.</div>")
             + render_adjudicator(t, rec, ga, gk.get("adjudicator") if gk else None)
             + render_referee(t, rec, gr, gk.get("referee") if gk else None, prose)
             + render_calls(t, systems)
@@ -598,7 +776,8 @@ def render_run(run: Run, key: str, today: dict[str, dict], standalone: bool) -> 
     body = (f"<p><a href='index.html'>All runs</a> · <a href='compare-{E(run.corpus_name)}.html'>Compare runs on {E(run.corpus_name)}</a></p>"
             f"<h1>{E(run.tag)}</h1>{meta}{stats}{notes}"
             "<div class='legend'><span>caught: a reported row meets a required item</span><span>missed: no row did; the quotes are the sentences that show it</span>"
-            "<span>wrong: a row the key forbids</span><span>unjudged: a row the key does not cover yet</span></div>"
+            "<span>wrong: a row the key forbids</span><span>unjudged: a row the key does not cover yet</span>"
+            "<span>quotes marked FROM THE KEY were picked by hand; GUESS quotes come from word matching and may be wrong; hover or tap any quote for its context</span></div>"
             f"<nav class='toc'>{''.join(toc)}</nav>{''.join(secs)}"
             + (f"<h2>Prompts</h2>{prompts}" if prompts else ""))
     return page(f"Eval run {run.tag}", body, standalone), {"tot": tot, "grades": grades, "gold": gold}

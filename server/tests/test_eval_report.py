@@ -17,7 +17,7 @@ REC = {"iid": "abc123def456", "turn": 1, "game": "noir", "title": "The Kessler G
        "player_text": "I fire twice and back toward the door.", "directives": ["DUE NOW: the arm grabs"], "prose": PROSE, "notes": [],
        "expected": {"changes": [{"kind": "add", "target": "player", "field": "dread", "value": "+6"}], "adjudication": {"kind": "action", "intents": []}}}
 GOLD = {"abc123def456:1": {"why": "Both shots miss; the gun skids away; the grab begins.",
-                           "referee": {"required": [{"kind": "add", "target": "revolver", "field": "loaded", "step": [-2, -2]},
+                           "referee": {"required": [{"kind": "add", "target": "revolver", "field": "loaded", "step": [-2, -2], "quote": "You fire twice and both shots go wide."},
                                                     {"kind": "move", "target": "revolver", "words": ["skid"]}],
                                        "allowed": [],
                                        "forbidden": [{"kind": "unseen", "words": ["ankle"], "why": "the player feels it"}]}}}
@@ -45,9 +45,13 @@ def test_a_format_1_run_reads_against_the_corpus_by_path_and_says_so(tmp_path):
     html, info = er.render_run(r, "now", GOLD, standalone=True)
     g = info["grades"]["abc123def456:1"]["referee"]
     assert g["hits"] == 1 and g["missed_items"] == [1] and len(g["errors"]) == 1 and len(g["unjudged"]) == 1
-    assert "<mark>skid" in html                              # the missed item quotes the sentence that shows it
-    assert "the player feels it" in html and "nobody has graded a row like this yet" in html
-    assert "the source model did not write it either" in html
+    assert "<mark>skid" in html                              # a missed item with no quote yet: the sentences that may show it
+    assert "guess: matched by shared words, may be wrong" in html and "from the key" in html   # a guess is labelled as one
+    assert "in context (the paragraph and its neighbours)" in html
+    assert "the player feels it" in html and "the key does not cover a row like this yet" in html
+    assert "The source model did not write it either" in html
+    assert "<mark class='q ok'>You fire twice and both shots go wide.</mark><sup class='ql ok'>R0</sup>" in html   # the quote, marked in the passage
+    assert "revolver&#x27;s loaded rounds: down by 2" in html                                                        # the item in plain words
     assert "Format 1: the raw replies and the prompts were not kept" in html
 
 
