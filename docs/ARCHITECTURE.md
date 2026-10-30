@@ -42,6 +42,7 @@ server/
   games/<name>/          state.py (pydantic), game.py (hooks, UI); content loaded from content_root
                          station: the space-station AI game; noir: a detective with pockets, dice and nerves
   tools/play.py          terminal client for a running server (humans and playtest agents)
+  tools/autoplay.py      plays a game through a running server from a script of inputs or with a player model; writes a playtest report under notes/playtests/
   tools/authority_audit.py  who owns each state field and what can write it; fails on engine-owned holes
   profiles/*.yml         model profiles: the model file, what llama-server starts with, the role settings the game
                          lays over its config while that model is loaded (engine/profiles.py; docs/LOCAL_LLM.md)
@@ -317,6 +318,11 @@ Branch `1.0` preserves the first engine; `main` stays there until 2.0 is playabl
   things, lock and state changes, gone) through the game's `land_declarations` to `world.apply_declarations`.
   The earlier three concurrent referees (game, world, motion), each born of a "Schema is too complex"
   refusal, are gone.
+- The station's crew are people (D36): bio, traits with weight in the dice, trust toward the station (the
+  alarm meter weighs each person's suspicion by it), bonds suspicion spreads along, secrets the station can
+  learn and use, a routine the engine walks them along, a growing dossier; alarm tiers light fuses (timers
+  started by event effects, lapsed by the engine, read by events: `engine/events.py`, `engine/pending.py`);
+  hatches are door things a crew member can force; the implant nudge is a lever (`games/station/game.py`).
 - The station is on the world: a `world:` section in its scenario (modules with hatches, cameras,
   the cabinet and canister, drones, the pod); `StationState.world`, built on a new instance; crew and
   world kept in sync by code (the world is authoritative for location); sealing a module locks its

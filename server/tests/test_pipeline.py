@@ -76,7 +76,7 @@ async def test_prefix_holds_static_content_and_bulletin_is_small(engine: Engine)
     for static in ("Hidden truth", "Interests:", "Fusion reactor"):
         assert static not in bulletin
     assert len(bulletin) < len(prefix) / 3
-    assert len(bulletin) < 3500  # ~800 tokens incl. the THIS TURN block; it was ~10k chars before the split
+    assert len(bulletin) < 5600  # ~1300 tokens incl. the SCENE and THIS TURN blocks; was 3500 before D36 (trust, routine, open secrets per crew member)
 
 
 def test_window_start_moves_in_steps():

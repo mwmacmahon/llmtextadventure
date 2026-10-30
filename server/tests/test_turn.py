@@ -143,7 +143,7 @@ async def test_referee_delta_respects_authority_and_bounds(engine: Engine, fake:
     assert any("Warp" in str(r.get("value")) or "Warp" in r["path"] for r in rejected)
     assert ("flags.not_a_flag", "not a narrator flag") in reasons
     assert st.log[-1].endswith("Voss noticed a forged entry.")
-    assert st.suspicion == engine.games["station"]._derived_suspicion(st)
+    assert st.suspicion == engine.games["station"]._derived_alarm(st)
 
 
 async def test_scripted_spine_and_ending_over_a_long_day(engine: Engine, fake: FakeProvider):

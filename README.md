@@ -8,7 +8,7 @@ Rebooted October 2026. The 2023–24 codebase lives on the `legacy` branch.
 ## Layout
 
 ```
-server/      Python 3.13, FastAPI, SQLite. Engine, providers, games (station, noir), tools/play.py.
+server/      Python 3.13, FastAPI, SQLite. Engine, providers, games (station, noir), tools/play.py, tools/autoplay.py.
 web/         Vite + React + TypeScript. Generic client driven by a UI schema.
 docs/        ARCHITECTURE.md (how the engine works), GAME_AUTHORING.md, LOCAL_LLM.md.
 notes/       gitignored: design doc, decision log, reference material, game content.

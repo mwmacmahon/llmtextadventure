@@ -35,6 +35,8 @@ class Pending(BaseModel):
     on_stopped: str = ""              # scripted: what happens when the player's attempt to stop or escape it succeeds
     on_happened: str = ""             # scripted: what happens when it goes through (where it leaves the player, what it sets in motion)
     source: str = "referee"           # referee | narrator | script | engine
+    tag: str = ""                     # script: a name events can read (predicates pending_live / pending_happened / pending_stopped)
+    until: Any = None                 # script: an engine predicate; while it holds at a resolve tick the engine resolves the timer itself
     created_turn: int = 0
     fired: bool = False
     fired_turn: int | None = None
@@ -47,6 +49,18 @@ class Pending(BaseModel):
     @property
     def live(self) -> bool:
         return not self.fired and not self.resolved
+
+    @property
+    def happened(self) -> bool:
+        """It came due and nothing stopped it: fired, and not settled with a reason that plainly says it was stopped."""
+        return self.fired and not (self.resolved and bool(_STOPPED.search(self.resolved_why)))
+
+    @property
+    def stopped(self) -> bool:
+        return self.resolved and not self.happened
+
+
+_STOPPED = re.compile(r"\b(stopp?ed|prevent|avert|escap|interrupt|did not|didn't|does not|doesn't|not happen|never happen|talked out|held off|refus|would not|wouldn't|fail|abort|call(ed)? off|postpon|cancel|no longer)", re.I)
 
 
 class PendingNew(BaseModel):
@@ -72,13 +86,36 @@ def save(doc: dict, path: str, items: list[Pending]) -> None:
     sp.assign(doc, path, [p.model_dump(mode="json") for p in items])
 
 
-def add(items: list[Pending], new: PendingNew, *, now_abs: int, minutes_per_day: int, turn: int, source: str = "referee") -> Pending:
+def add(items: list[Pending], new: PendingNew, *, now_abs: int, minutes_per_day: int, turn: int, source: str = "referee",
+        tag: str = "", until: Any = None, on_stopped: str = "", on_happened: str = "") -> Pending:
     n = 1 + max((int(p.id[1:]) for p in items if p.id[1:].isdigit()), default=0)
     due = now_abs + max(0, int(new.in_minutes))
     p = Pending(id=f"p{n}", what=new.what.strip().rstrip("."), who=new.who.strip(), due_day=due // minutes_per_day, due_minute=due % minutes_per_day,
-                hidden=bool(new.hidden), unless=new.unless.strip().rstrip("."), source=source, created_turn=turn)
+                hidden=bool(new.hidden), unless=new.unless.strip().rstrip("."), source=source, created_turn=turn,
+                tag=tag.strip(), until=until, on_stopped=on_stopped.strip(), on_happened=on_happened.strip())
     items.append(p)
     return p
+
+
+def by_tag(items: list[Pending], tag: str) -> list[Pending]:
+    return [p for p in items if p.tag == tag]
+
+
+def lapse(items: list[Pending], holds, turn: int) -> list[Pending]:
+    """The engine's half of `unless`: every live timer whose `until` predicate holds now is resolved by the engine,
+    "no longer applies". `holds(pred)` evaluates a predicate over the current state (engine/events.py)."""
+    done: list[Pending] = []
+    for p in items:
+        if not p.live or p.until is None:
+            continue
+        try:
+            ok = bool(holds(p.until))
+        except ValueError:
+            ok = False
+        if ok:
+            p.resolved, p.resolved_why = True, "no longer applies (the engine's condition held)"
+            done.append(p)
+    return done
 
 
 def _words(text: str) -> set[str]:
@@ -136,7 +173,7 @@ def resolve(items: list[Pending], refs: list[str], turn: int) -> list[Pending]:
     done: list[Pending] = []
     for ref in refs:
         pid, _, why = ref.partition(":")
-        p = next((x for x in items if x.id == pid.strip().lower() and x.live), None)
+        p = next((x for x in items if x.id == pid.strip().lower() and not x.resolved), None)   # live, or fired and not yet settled
         if p is None:
             continue
         p.resolved, p.resolved_why = True, why.strip() or "settled in the prose"
@@ -147,7 +184,7 @@ def resolve(items: list[Pending], refs: list[str], turn: int) -> list[Pending]:
 def directive(p: Pending, minutes_per_day: int) -> str:
     when = clock_text(p.due_abs(minutes_per_day), minutes_per_day)
     who = f" ({p.who})" if p.who else ""
-    if p.hidden:
+    if p.hidden and not (p.on_stopped or p.on_happened):     # a scripted fuse is hidden from the player's panel, not from the moment it blows
         return (f"UNSEEN BY THE PLAYER, at {when}: {p.what}{who}. It has happened; do not show it. Let its consequences surface "
                 f"where and when the player would meet them, and write what changed out of sight in an [[unseen: …]] line.")
     if p.source in ("narrator", "referee") or p.on_stopped or p.on_happened:   # contestable: set in motion in play, or scripted with its outcomes written
@@ -176,11 +213,20 @@ def lines(items: list[Pending], now_abs: int, minutes_per_day: int, audience: st
         if p.unless:
             bits.append(f"unless {p.unless}")
         if p.hidden:
-            bits.append("the player does not know")
+            bits.append("the player does not know" + ("; foreshadow it lightly if the fiction allows" if p.source == "script" else ""))
         if p.on_stopped:
             bits.append(f"if stopped: {p.on_stopped.strip()}")
         if p.on_happened:
             bits.append(f"if it happens: {p.on_happened.strip()}")
         head = f"{p.id}: " if audience == "engine" else ""
         out.append(f"- {head}{'; '.join(bits)}")
+    if audience == "engine":
+        # the ones that came due in the latest firing and are not settled: the referee says which way they went
+        contested = [p for p in items if p.fired and not p.resolved and (p.tag or p.on_stopped or p.on_happened)]   # scripted fuses: their fate is read
+        latest = max((p.fired_turn or 0 for p in contested), default=None)
+        for p in contested:
+            if (p.fired_turn or 0) == latest:
+                out.append(f"- {p.id}: CAME DUE THIS TURN: {p.what}" + (f" (by {p.who})" if p.who else "")
+                           + ". If the prose shows it stopped, escaped or put off, write set " + p.id + ".resolved value=stopped (note: why); "
+                           "if it went through, set " + p.id + ".resolved value=happened. Say nothing and it counts as happened.")
     return out

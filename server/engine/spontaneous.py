@@ -23,7 +23,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from . import statepath as sp
-from .events import apply_effects, evaluate
+from .events import EffectContext, apply_effects, evaluate
 
 
 class Spontaneous(BaseModel):
@@ -66,7 +66,8 @@ def per_turn_chance(chance_per_hour: float, elapsed_minutes: int) -> float:
 
 
 def roll(items: list[Spontaneous], doc: dict, rng: random.Random, elapsed_minutes: int, turn: int,
-         now_minutes: int, clock_path: str = "clock", log_path: str = "log", max_per_turn: int = 2) -> tuple[list[Happened], list[str]]:
+         now_minutes: int, clock_path: str = "clock", log_path: str = "log", max_per_turn: int = 2,
+         ctx: EffectContext | None = None) -> tuple[list[Happened], list[str]]:
     """Mutates `doc` (effects) and the items' status. Returns (happened, directives)."""
     happened: list[Happened] = []
     directives: list[str] = []
@@ -88,7 +89,7 @@ def roll(items: list[Spontaneous], doc: dict, rng: random.Random, elapsed_minute
                 continue
         except Exception:
             continue
-        applied = apply_effects(it.effects, doc, directives, log_path)
+        applied = apply_effects(it.effects, doc, directives, log_path, ctx)
         if it.log:
             sp.append(doc, log_path, it.log)
         it.count += 1

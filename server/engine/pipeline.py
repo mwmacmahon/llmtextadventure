@@ -670,7 +670,8 @@ class Engine:
                       + [("something happened off-screen" if p.hidden else f"due: {p.what}") for p in res.get("pending_fired", [])],
             "pending": {"fired": [p.id for p in res.get("pending_fired", [])],
                         "new": [a.split(": ", 1)[1] for a in report.applied if a.startswith("set in motion: ")],
-                        "resolved": [a.split(": ", 1)[1] for a in report.applied if a.startswith("settled: ")]},
+                        "resolved": [a.split(": ", 1)[1] for a in report.applied if a.startswith("settled: ")],
+                        "lapsed": [p.id for p in res.get("pending_lapsed", [])]},
             "expired": [x.event_id for x in res["expired"]],
             "happenings": [{"id": h.id, "who": h.who, "reason": h.reason if h.visible else None} for h in res["happened"]],
             "applied": [f"command {o['id']}" for o in lever_outcomes if o["status"] == "applied"] + report.applied,
@@ -922,14 +923,27 @@ class Engine:
                 elapsed = want
                 total = now + want
                 clk["day"], clk["minute"] = total // clock.minutes_per_day, total % clock.minutes_per_day
+        # timers the engine's own condition has overtaken (a fuse whose cause went away) lapse before anything fires
+        ppath = getattr(game, "pending_path", None)
+        pending_lapsed: list[pend.Pending] = []
+        if ppath:
+            pitems = pend.load(doc, ppath)
+            if any(p.until is not None and p.live for p in pitems):
+                events0 = _events_of(game, doc)
+                pending_lapsed = pend.lapse(pitems, lambda pr: ev.evaluate(pr, doc, events0, turn, clock_path, ppath), turn)
+                if pending_lapsed:
+                    pend.save(doc, ppath, pitems)
+                    for p in pending_lapsed:
+                        directives.append(f"NO LONGER COMING: {p.what}" + (f" ({p.who})" if p.who else "") + ". What would have brought it about has passed; "
+                                          "if the player would notice the change, let it show, lightly.")
         # events tick (also on clarify turns: time has not moved, so usually nothing fires)
         events = _events_of(game, doc)
-        fired, expired, ev_directives = ev.tick(events, doc, turn, clock_path, log_path)
+        ectx = ev.EffectContext(pending_path=ppath or "hidden.pending", clock_path=clock_path, minutes_per_day=clock.minutes_per_day if clock else 1440, turn=turn)
+        fired, expired, ev_directives = ev.tick(events, doc, turn, clock_path, log_path, ectx)
         sp.assign(doc, getattr(game, "events_path", "hidden.events"), [e.model_dump(mode="json") for e in events])
         directives.extend(ev_directives)
         # pendings that have come due (engine/pending.py); not on a clarify turn, where nothing is narrated
         pending_fired: list[pend.Pending] = []
-        ppath = getattr(game, "pending_path", None)
         if ppath and clock and (adj is None or adj.kind in ("action", "trivial")):
             pitems = pend.load(doc, ppath)
             if pitems:
@@ -945,7 +959,7 @@ class Engine:
             if items:
                 clk = sp.lookup(doc, clock_path, {}) or {}
                 now_abs = int(clk.get("day", 1)) * (clock.minutes_per_day if clock else 1440) + int(clk.get("minute", 0))
-                happened, h_directives = spon.roll(items, doc, rng_for(iid, turn, "spontaneous"), elapsed, turn, now_abs, clock_path, log_path)
+                happened, h_directives = spon.roll(items, doc, rng_for(iid, turn, "spontaneous"), elapsed, turn, now_abs, clock_path, log_path, ctx=ectx)
                 sp.assign(doc, spath, [i.model_dump(mode="json") for i in items])
                 directives.extend(h_directives)
                 rpath = getattr(game, "recent_path", None)
@@ -960,7 +974,7 @@ class Engine:
             + [p for h in happened for p in _effect_paths(h.effects_applied)]
         return {"state": new_state, "assessments": assessments, "fired": fired, "expired": expired, "happened": happened,
                 "elapsed": elapsed, "clock_note": clock_note, "directives": directives, "adjudication": adj, "effect_paths": effect_paths,
-                "notes": notes, "pending_fired": pending_fired}
+                "notes": notes, "pending_fired": pending_fired, "pending_lapsed": pending_lapsed}
 
     def _call_handler(self, game: Game, state: BaseModel, iid: str, turn: int, assessments: list[Assessment]):
         """Turn the narrator's calls into results (DESIGN2 §5): CHECK rolls with the assessment as the floor,
@@ -1363,7 +1377,12 @@ def _this_turn_block(res: dict[str, Any]) -> str:
     if adj is not None:
         lines.append(f"- The engine reads the player's input as: {adj.summary}")
     if res["elapsed"]:
-        lines.append(f"- Time passes: about {res['elapsed']} minutes. The clock above already includes it. Do not narrate beyond it.")
+        note = res.get("clock_note") or ""
+        if "stopped at" in note and adj is not None and adj.time_minutes > res["elapsed"]:
+            lines.append(f"- Time passes: about {res['elapsed']} minutes of the {adj.time_minutes} the player meant to spend; something falls due then (below). "
+                         "Narrate up to that moment, in the fiction: the player's intent is simply not finished yet. Never mention minutes being given, the clock stopping, or the engine.")
+        else:
+            lines.append(f"- Time passes: about {res['elapsed']} minutes. The clock above already includes it. Do not narrate beyond it.")
     elif adj is not None and adj.kind in ("action", "trivial"):
         lines.append("- No appreciable time passes.")
     told = res.get("told")

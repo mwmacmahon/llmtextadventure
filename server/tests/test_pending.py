@@ -194,12 +194,12 @@ async def test_a_hidden_pending_fires_unseen(engine: Engine, fake: FakeProvider)
     fake.hook = hook2
     await play(engine, iid, "I keep watching.")
     # the structured roles see it listed as impending, with the id and the hidden mark, before it fires
-    assert "IMPENDING" in seen["referee"] and "- p1: Lindqvist opens the cabinet; by lindqvist; in about 3 min" in seen["referee"] and "the player does not know" in seen["referee"]
+    assert "IMPENDING" in seen["referee"] and "- p1: Lindqvist opens the cabinet; by Dr. Maja Lindqvist; in about 3 min" in seen["referee"] and "the player does not know" in seen["referee"]
     events = await play(engine, iid, "I wait.")
     res = next(e for e in events if e["event"] == "resolution")["data"]
     assert res["elapsed"] == 3
     bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
-    assert "UNSEEN BY THE PLAYER, at Day 1" in bulletin and "Lindqvist opens the cabinet (lindqvist). It has happened; do not show it." in bulletin
+    assert "UNSEEN BY THE PLAYER, at Day 1" in bulletin and "Lindqvist opens the cabinet (Dr. Maja Lindqvist). It has happened; do not show it." in bulletin
     done = events[-1]["data"]
     assert "something happened off-screen" in done["mechanics"]["events"] and "Lindqvist opens" not in " ".join(done["mechanics"]["events"])
 
@@ -213,7 +213,7 @@ async def test_pre_pending_instances_still_load_and_run(engine: Engine, fake: Fa
     fake.canned["Adjudication"] = [action("Frank looks around.", 2)]
     FakeProvider.script = lambda system, messages: "Rain."
     events = await play(engine, iid, "I look around.")
-    assert events[-1]["event"] == "done" and events[-1]["data"]["mechanics"]["pending"] == {"fired": [], "new": [], "resolved": []}
+    assert events[-1]["event"] == "done" and events[-1]["data"]["mechanics"]["pending"] == {"fired": [], "new": [], "resolved": [], "lapsed": []}
 
 
 def test_a_timer_that_restates_a_scheduled_event_is_the_engines():
@@ -225,3 +225,48 @@ def test_a_timer_that_restates_a_scheduled_event_is_the_engines():
     assert scheduled_as([booth], caller) == "anchor_meeting" and scheduled_as([booth], other) is None
     booth.fired = True
     assert scheduled_as([booth], caller) is None
+
+
+def test_an_event_lights_a_fuse_and_another_fires_on_its_fate():
+    """D36: a conditional event starts a tagged timer; the engine lapses it when its `until` holds; events read
+    the timer's fate by tag (pending_live / pending_happened / pending_stopped)."""
+    from engine import events as ev
+    fuse = {"pending": {"tag": "isolation", "what": "the crew begin isolating the core", "in_minutes": 180, "hidden": True,
+                        "unless": "the alarm falls", "until": {"lt": ["alarm", 60]}, "on_happened": "the core goes dark"}}
+    events = [ev.Event(id="light", trigger={"gte": ["alarm", 75]}, effects=[fuse]),
+              ev.Event(id="blow", trigger={"pending_happened": "isolation"}, effects=[{"flag": ["ending", "wiped"]}])]
+    doc = {"clock": {"day": 1, "minute": 600}, "alarm": 80, "hidden": {"pending": []}, "flags": {}}
+    ctx = ev.EffectContext(pending_path="hidden.pending", clock_path="clock", minutes_per_day=1440, turn=3)
+    fired, _, _ = ev.tick(events, doc, 3, ctx=ctx)
+    assert [f.event_id for f in fired] == ["light"]
+    items = pend.load(doc, "hidden.pending")
+    assert len(items) == 1 and items[0].tag == "isolation" and items[0].due_minute == 780 and items[0].source == "script" and items[0].on_happened == "the core goes dark"
+    assert ev.evaluate({"pending_live": "isolation"}, doc, events, 3) and not ev.evaluate({"pending_happened": "isolation"}, doc, events, 3)
+    # the fuse is already lit: a second tick with the trigger still true starts no second timer
+    events[0].once = False
+    ev.tick(events, doc, 4, ctx=ctx)
+    assert len(pend.load(doc, "hidden.pending")) == 1
+    # the alarm falls: the engine lapses the timer, and the fate predicates say stopped
+    doc["alarm"] = 50
+    items = pend.load(doc, "hidden.pending")
+    lapsed = pend.lapse(items, lambda pr: ev.evaluate(pr, doc, events, 5), 5)
+    assert [p.id for p in lapsed] == ["p1"] and items[0].stopped and not items[0].happened
+    pend.save(doc, "hidden.pending", items)
+    assert ev.evaluate({"pending_stopped": "isolation"}, doc, events, 5)
+    # a timer that came due and was not resolved has happened; the blow fires on it
+    doc["alarm"] = 90
+    events[0].fired = False
+    ev.tick(events, doc, 6, ctx=ctx)
+    items = pend.load(doc, "hidden.pending")
+    assert len(items) == 2 and items[1].live
+    pend.tick(items, 1440 + 600 + 180, 1440, 7)
+    pend.save(doc, "hidden.pending", items)
+    assert items[1].happened
+    events[0].once = True
+    fired, _, _ = ev.tick(events, doc, 8, ctx=ctx)
+    assert [f.event_id for f in fired] == ["blow"] and doc["flags"]["ending"] == "wiped"
+    # a referee resolution that says it went through is still "happened"; one that says it was stopped is not
+    items[1].resolved, items[1].resolved_why = True, "it happened; the override went in"
+    assert items[1].happened
+    items[1].resolved_why = "Voss was talked out of it"
+    assert items[1].stopped

@@ -103,17 +103,19 @@ async def test_referee_threads_land_in_state_and_bulletin(engine: Engine, fake: 
     fake.canned["ChangeReport"] = [ChangeReport.of(Change(kind="thread_open", value="Okafor expects the comms report by noon"), log_line="Promised Okafor a report.")]
     events = await play(engine, iid, "I tell Okafor's assistant the report is coming by noon.")
     st = state_of(engine, iid)
-    assert len(st.threads) == 1 and st.threads[0].status == "open"
-    tid = st.threads[0].id
+    opened = [t for t in st.threads if t.opened_turn == 1]           # the scenario opens with its own threads (t0-…)
+    assert len(opened) == 1 and opened[0].status == "open"
+    tid = opened[0].id
     assert any(a.startswith("threads += ") for a in events[-1]["data"]["mechanics"]["applied"])
     fake.canned["ChangeReport"] = [ChangeReport.of(Change(kind="thread_close", target=tid, note="sent"), log_line="Sent it.")]
     events = await play(engine, iid, "I send the report.")
     bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
     assert f"- {tid}: Okafor expects" in bulletin           # the referee saw it listed with its id
     st = state_of(engine, iid)
-    assert st.threads[0].status == "resolved" and st.threads[0].note == "sent"
+    done = next(t for t in st.threads if t.id == tid)
+    assert done.status == "resolved" and done.note == "sent"
     panel = next(p for p in events[-1]["data"]["ui"]["panels"] if p.get("title") == "Threads")
-    assert panel["items"][0]["label"] == "resolved"
+    assert any(it["label"] == "resolved" and it["value"].startswith("Okafor expects") for it in panel["items"])
 
 
 # ---- happenings -------------------------------------------------------------

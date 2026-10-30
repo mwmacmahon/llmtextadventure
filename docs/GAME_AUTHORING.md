@@ -207,7 +207,8 @@ Rules of thumb:
 - Triggers read only tracked fields with known value sets. If it is not in the state, it cannot
   be in a trigger. Predicates: `at`, `flag`, `not_flag`, `flag_is`, `eq`/`ne`/`gt`/`gte`/`lt`/`lte`,
   `in` (value in a list of values), `has` (a list at the path contains the value, or an item whose
-  id or name is the value), `fired`/`not_fired`/`expired`, `turn_gte`, `all`/`any`/`not`.
+  id or name is the value), `fired`/`not_fired`/`expired`, `pending_live`/`pending_happened`/`pending_stopped`
+  (a tagged timer's fate), `turn_gte`, `all`/`any`/`not`, and the world's (`where`, `holds`, `locked`, …).
 - Events fire in priority order within one tick and later events see the effects of earlier
   ones: a fallback that sets a flag at 23:30 on day 2 is read by a day-3 event evaluated in the
   same tick if the clock jumped past both.
@@ -235,6 +236,47 @@ Rules of thumb:
   "friendly") is a step toward that word, within the usual step.
 - Timers: a soon row that restates a timer in motion, or an event the scenario has scheduled (the
   engine fires it itself), is refused; the meeting at nine is the event's, not a referee timer's.
+- Fuses (D36): a conditional event may start a timer with a `pending` effect, so "a critical mass, then a
+  delay, then the blow" is three rows. The timer carries a `tag`, an `until` predicate the engine checks
+  every resolve tick (while it holds the timer lapses: "no longer applies", and the narrator is told NO
+  LONGER COMING), `hidden: true` to keep it off the player's panel until a clue reveals it (the narrator
+  still has it under COMING and is told to foreshadow it), `unless` in plain words, and `on_stopped` /
+  `on_happened`, which make it contestable in the open when it comes due even though it is hidden. Events
+  read a timer's fate by tag: `pending_live`, `pending_happened` (the latest timer with that tag came due
+  and nothing stopped it) and `pending_stopped`. The referee is told, the turn a fuse comes due, to settle
+  it (`set p3.resolved value=stopped` with why, or `value=happened`); silence counts as happened. A once-event
+  with `rearm: <predicate>` is unfired when the predicate holds (`{pending_stopped: diagnostic}`), so a fuse
+  the player talked the crew out of lights again if the tier returns.
+
+  ```yaml
+  - id: diagnostic_fuse
+    trigger: {all: [{gte: [suspicion, 50]}, {flag: crew_said_tampering}]}
+    rearm: {pending_stopped: diagnostic}
+    directive: Voss says she is running a full diagnostic tonight ...
+    effects:
+      - pending: {tag: diagnostic, what: Voss runs the diagnostic with the core's link pulled, who: voss,
+                  in_minutes: 420, hidden: true, unless: the alarm settles or Voss is kept from Command,
+                  until: {lt: [suspicion, 40]}, on_stopped: "...", on_happened: "..."}
+  - id: diagnostic_found
+    trigger: {all: [{pending_happened: diagnostic}, {not_flag: logs_scrubbed}]}
+    rearm: {pending_live: diagnostic}
+    effects: [{add: [crew.voss.suspicion, 20], lo: 0, hi: 100}]
+  ```
+- People (station, D36): a crew member is `bio`, `traits` (words with weight in the dice, `TRAIT_MODS`),
+  `trust` (-5..5 toward the station; the referee nudges it by at most 2 a turn, a word is a step toward it;
+  4+ is an ally and their suspicion barely counts in the alarm), `bonds` (crew id -> -3..3; suspicion spreads
+  once an hour along warm bonds between people in the same module; the referee moves one by `add okafor.reyes
+  -1`), `secrets` (`what`, `how` the station would learn it, `needs`, `leverage`, `reveals: <timer tag>`; the
+  state block lists the open ones by id, the referee marks one known by `set voss.known value=voss_diag` or
+  by a `learned` row in its own words; known, it is +1 on influence against them and +2 when the check
+  uses it, and a revealed tag's hidden countdown shows on the player's panel), `routine` (slots of
+  `{start, end, place, doing}` in minutes of the day; `after_turn` walks crew the prose did not place, and a
+  sealed hatch on the way is met once per seal: suspicion up, a line behind the scenes), `history` (the
+  engine's clock-stamped dossier, one line per turn a crew member was touched). Hatches are door things
+  (`tags: [hatch]`, `attributes.locked`) that exits name with `door:`; the station's seal locks them, and a
+  crew member at one forces it with `set <hatch id>.locked false who=<crew id>` (Doors control drops to
+  limited, their suspicion rises). The implant nudge is a narrated lever: stress and mood move at once,
+  and the third nudge in a day is felt.
 
 ## 7. Commands, and who changes what
 

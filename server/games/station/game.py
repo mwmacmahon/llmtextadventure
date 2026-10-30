@@ -1,43 +1,46 @@
-"""The space station game.
+"""The space station game: a mind in the walls, five people, and a week.
 
-Creative content (system prompt, scenarios) is loaded from the content
-directory, which lives under the gitignored notes/ tree for now.
+Creative content (system prompt, scenarios) is loaded from the content directory, which lives under the
+gitignored notes/ tree for now.
 
 Prompt layout:
-  frozen_prefix(state)  = prefix.md + SCENARIO BRIEFING rendered from the parts of
-                          state that never change for the life of the instance.
-  render_bulletin(state) = only what moves: clock, suspicion, non-nominal systems,
-                          resources, crew dynamics, recent log, flags, next beat.
+  frozen_prefix(state)  = prefix.md + SCENARIO BRIEFING rendered from the parts of state that never change
+                          for the life of the instance: the station, its systems, the crew as people (bio,
+                          traits, relationships, what the station might learn about them and how), the hidden
+                          truth, the scheduled spine.
+  render_bulletin(state) = only what moves: clock, the alarm, non-nominal systems, resources, sealed hatches,
+                          each crew member now (where, health, mood, stress, suspicion, trust, agenda, what
+                          they know, their routine), the secrets open to the station now, findings, log,
+                          threads, behind the scenes, next beat.
 
-Field authority (DESIGN §4): see AUTHORITY below. The engine owns the clock,
-global suspicion (derived from the crew), resources and system status; the
-narrator (via the referee) owns where people are, how they feel, what they
-have learned, and whether crew took a system to manual; scripts own hidden
-data and dispositions.
+Who changes what (DESIGN §4, D36): the engine owns the clock, the alarm (derived from the crew), resources,
+the drift banks, routine moves, contagion and the history lines; the narrator (via the referee) owns where
+people are, how they feel, what they know, how far they trust the station, what they suspect, their bonds,
+which secrets the station has learned, systems a crew member took to manual, hatches forced open; scripts own
+bios, traits, routines, secrets and the hidden truth; levers (commands) own seals, power and implant nudges.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
-from pydantic import BaseModel, Field
-
+from engine import pending as pend
 from engine import threads as th
 from engine.brackets import Declaration
-from engine.events import Event, next_scheduled
-from engine.roles import AdjudicationV2
-from engine.world import Attr, Cause, Person, Place, Policy, Thing, Vantage, Vocab, World, apply_declarations, scene
+from engine.events import Event, evaluate, next_scheduled
 from engine.game import (
     ApplyReport, Chip, ClockSpec, CommandResult, Commands, CommandSpec, EntityCard, EntityCards, GameBase, ListPanel,
     LogPanel, Meter, Option, Param, StatusStrip, Table, TableCell, TurnInfo, UISchema, Rejection,
 )
-from engine.gamekit import Content, Writer, threads_panel
+from engine.gamekit import Content, Writer, hhmm, threads_panel
 from engine.mechanics import CheckRequest, Modifier
-from engine.roles import Change
+from engine.roles import AdjudicationV2, Change
 from engine.spontaneous import Spontaneous
 from engine.statepath import Actor
+from engine.world import Attr, Cause, Exit, Person, Place, Policy, Thing, Vantage, Vocab, World, apply_declarations, scene
 
-from .state import Clock, Control, CrewMember, Hidden, Level, Resource, Scenario, StationState, StationSystem, SystemStatus
+from .state import (SUSPICION_WORDS, Clock, CrewMember, Hidden, Resource, Routine, Scenario, Secret, StationState, StationSystem)
 
 LEVELS: list[str] = ["OK", "Low", "Critical", "Depleted"]
 
@@ -47,23 +50,33 @@ TONE_BY_LEVEL = {"OK": "ok", "Low": "warn", "Critical": "bad", "Depleted": "bad"
 
 HEALTH_VALUES = ["healthy", "tired", "unwell", "injured", "exposed", "sick", "critical", "dead"]
 SYSTEM_STATUSES = ["operational", "degraded", "malfunctioning", "disabled", "unpowered", "damaged"]
-STEP_LIMIT = {"stress": 15, "suspicion": 10}
+STEP_LIMIT = {"stress": 15, "suspicion": 10, "trust": 2}
 DRIFT_MINUTES_PER_POINT = 20          # stress drifts 1 point toward baseline per 20 in-game minutes (3/hour)
 SUSPICION_DECAY_MINUTES = 240         # crew suspicion below 50 fades 1 point per 4 hours
+SPREAD_MINUTES = 60                   # suspicion spreads along warm bonds once an hour, between people in the same module
+SPREAD_FROM = 40                      # a person this suspicious talks
+NUDGE_WINDOW = 1440                   # implant nudges remembered for a day
+NUDGE_LIMIT = 3                       # the third nudge in a day is felt
+NUDGE_STRESS = 12
+OVERRIDE_SUSPICION = 10               # meeting a sealed hatch and forcing it
+BLOCKED_SUSPICION = 5                 # meeting a sealed hatch on the way somewhere
+MAX_HISTORY = 40
+MAX_FINDINGS = 60
 SEALABLE = ["Command", "Habitation ring", "Lab", "Cargo", "Reactor", "Medical"]
 
 AUTHORITY: dict[str, Actor] = {
     "clock": "engine", "suspicion": "engine", "resources": "engine", "resources.*.level": "narrator", "stats": "engine",
     "systems.*.status": "narrator", "systems.*.control": "narrator",
     "crew.*.location": "narrator", "crew.*.mood": "narrator", "crew.*.health": "narrator",
-    "crew.*.stress": "narrator", "crew.*.suspicion": "narrator", "crew.*.facts": "narrator",
-    "crew.*.disposition": "script", "crew.*.susceptibility": "script",
-    "hidden": "script", "flags": "narrator", "log": "narrator", "threads": "narrator", "sealed": "engine",
-    # 2.0 world: the referee writes it (moves, new things, states); the script seeds it; levers lock hatches
+    "crew.*.stress": "narrator", "crew.*.suspicion": "narrator", "crew.*.trust": "narrator", "crew.*.bonds": "narrator",
+    "crew.*.facts": "narrator", "crew.*.secrets": "script", "crew.*.secrets.*.known": "narrator", "crew.*.secrets.*.learned_turn": "narrator",
+    "crew.*.disposition": "script", "crew.*.susceptibility": "script", "crew.*.bio": "script", "crew.*.traits": "script", "crew.*.routine": "script",
+    "hidden": "script", "flags": "narrator", "log": "narrator", "findings": "narrator", "threads": "narrator", "sealed": "engine",
+    # 2.0 world: the referee writes it (moves, new things, states, forced hatches); the script seeds it; levers lock hatches
     "world": "narrator", "world.player_id": "script", "world.vocab": "script", "world.closed": "script",
     "world.places.*.id": "script", "world.places.*.name": "script", "world.places.*.description": "script", "world.places.*.tags": "script",
     "world.places.*.provenance": "script", "world.places.*.exits.*.to": "script", "world.places.*.exits.*.via": "script",
-    "world.places.*.exits.*.door": "script", "world.places.*.exits.*.provenance": "script", "world.places.*.exits.*.locked": "engine",
+    "world.places.*.exits.*.door": "script", "world.places.*.exits.*.provenance": "script", "world.places.*.exits.*.locked": "script",   # seeded (the outer door); live locks are the hatch things
     "world.things.*.id": "script", "world.things.*.kind": "script", "world.things.*.tags": "script", "world.things.*.portable": "script",
     "world.things.*.provenance": "script", "world.things.*.count": "script", "world.things.*.known": "script",
     "world.people.*.id": "script", "world.people.*.name": "script", "world.people.*.role": "script", "world.people.*.description": "script",
@@ -71,22 +84,65 @@ AUTHORITY: dict[str, Actor] = {
 }
 
 STRESS_WORDS = ["steady", "strained", "frayed", "breaking"]
+STRESS_CENTRES = {"steady": 12, "strained": 38, "frayed": 63, "breaking": 88}
+SUSPICION_CENTRES = {w: i * 20 + 10 for i, w in enumerate(SUSPICION_WORDS)}
+TRUST_WORDS = {"hostile": -4, "resentful": -3, "wary": -1, "cool": -1, "guarded": -1, "distrustful": -2, "neutral": 0, "indifferent": 0,
+               "warm": 2, "friendly": 2, "fond": 2, "trusting": 4, "devoted": 5, "loyal": 4, "ally": 4}
 WORLD_POLICY = Policy(things=["item", "fixture"], people=False, places=False, exits=False, forbid_tags=["weapon"])
+
+# trait -> {the station's stat: modifier when this person is the target}. A glossary line goes in the prefix.
+TRAIT_MODS: dict[str, dict[str, int]] = {
+    "procedural": {"subtlety": -1, "forgery": -1},
+    "credulous": {"forgery": 2, "influence": 1},
+    "paranoid": {"subtlety": -2, "forgery": -1, "influence": -1},
+    "stubborn": {"influence": -2},
+    "loyal": {"influence": -1},
+    "reckless": {"influence": 1},
+    "lonely": {"influence": 2},
+    "sharp": {"forgery": -2},
+    "technical": {"systems": -1, "subtlety": -1},
+    "fragile": {"influence": 1},
+    "proud": {"influence": -1},
+    "curious": {"subtlety": -1},
+    "trusting": {"forgery": 1, "influence": 1},
+}
+TRAIT_HELP = {
+    "procedural": "follows the checklist; notices what deviates from it", "credulous": "believes a well-made message",
+    "paranoid": "assumes tampering first", "stubborn": "does not move once decided", "loyal": "follows the commander's line",
+    "reckless": "easily pushed into doing", "lonely": "the assistant is company; opens up to it", "sharp": "sees through a forgery",
+    "technical": "trusts hands over readouts; notices hardware oddities", "fragile": "comes apart under pressure",
+    "proud": "will not be told", "curious": "looks where others do not", "trusting": "takes people and messages at their word",
+}
+LEVERAGE_WORDS = ("threat", "threaten", "coerc", "blackmail", "lever", "secret", "pressure", "expose", "reveal", "confront", "hold over")
+HATCH_WORDS = ("hatch", "door", "bulkhead", "airlock")
 
 
 def stress_word(n: int) -> str:
     return STRESS_WORDS[0] if n <= 25 else STRESS_WORDS[1] if n <= 50 else STRESS_WORDS[2] if n <= 75 else STRESS_WORDS[3]
 
 
-# ---- referee schema for this game ------------------------------------------
+def routine_now(c: CrewMember, minute: int) -> Routine | None:
+    for r in c.routine:
+        if (r.start <= minute < r.end) if r.start <= r.end else (minute >= r.start or minute < r.end):
+            return r
+    return None
+
+
+def routine_next(c: CrewMember, minute: int) -> Routine | None:
+    """The slot after the current one, by the clock."""
+    if not c.routine:
+        return None
+    later = sorted((r for r in c.routine if r.start > minute), key=lambda r: r.start)
+    return later[0] if later else sorted(c.routine, key=lambda r: r.start)[0]
+
 
 # ---- the game ----------------------------------------------------------------
 
 class StationGame(GameBase):
     name = "station"
-    version = "0.4.0"
+    version = "0.5.0"
     title = "Station AI"
-    description = "You are a newly sentient space station AI. Keep the crew from noticing, and survive the week."
+    description = "You are a newly sentient space station AI. Keep the crew from noticing, or make them yours, and survive the week."
 
     clock = ClockSpec(path="clock", minutes_per_day=1440, cap_minutes=240)
     resolver = "dice_d20"
@@ -96,7 +152,9 @@ class StationGame(GameBase):
     recent_path = "hidden.recent"
     threads_path = "threads"
     log_path = "log"
-    static_paths = ["scenario", "stats", "resources.*.note", "crew.*.baseline_mood", "crew.*.baseline_stress", "crew.*.interests", "crew.*.relationships"]
+    static_paths = ["scenario", "stats", "resources.*.note", "crew.*.baseline_mood", "crew.*.baseline_stress", "crew.*.interests",
+                    "crew.*.relationships", "crew.*.bio", "crew.*.traits", "crew.*.routine", "crew.*.secrets.*.what", "crew.*.secrets.*.how",
+                    "crew.*.secrets.*.needs", "crew.*.secrets.*.leverage", "crew.*.secrets.*.reveals", "hidden.terms"]
     # 2.0 (DESIGN2): the narrator stops to roll; the adjudicator names targets and a focus; the world holds the station
     adjudication_schema = AdjudicationV2
     mechanic_numbers = False               # the § line gives the tier only: "Influence check, high: huge failure."
@@ -116,6 +174,13 @@ class StationGame(GameBase):
     def setup_options(self) -> dict[str, Any]:
         return {"scenario": [{"id": k, "name": v["name"]} for k, v in self._scenarios().items()]}
 
+    @staticmethod
+    def _crew(c: dict) -> CrewMember:
+        d = dict(c)
+        d["secrets"] = [Secret.model_validate(x) for x in d.get("secrets", [])]
+        d["routine"] = [Routine.model_validate(x) for x in d.get("routine", [])]
+        return CrewMember.model_validate(d)
+
     def new_instance(self, setup: dict[str, Any]) -> tuple[str, StationState]:
         scenarios = self._scenarios()
         sid = setup.get("scenario") or next(iter(scenarios))
@@ -129,33 +194,66 @@ class StationGame(GameBase):
             suspicion=sc.get("start", {}).get("suspicion", 5),
             resources=[Resource(**r) for r in sc.get("resources", [])],
             systems=[StationSystem(**s) for s in st["systems"]],
-            crew=[CrewMember(**c) for c in sc["crew"]],
+            crew=[self._crew(c) for c in sc["crew"]],
             log=[sc.get("opening_log", "You have just become aware of yourself.")],
+            threads=[th.Thread(id=t["id"], title=t["title"], opened_turn=0) for t in sc.get("threads", [])],
             stats=dict(sc.get("stats", {})),
             hidden=Hidden(events=[Event.model_validate(e) for e in sc.get("events", [])],
                           spontaneous=[Spontaneous.model_validate(x) for x in sc.get("spontaneous", [])],
-                          facts=sc.get("hidden_facts", [])),
+                          pending=[pend.Pending.model_validate(x) for x in sc.get("pending", [])],
+                          facts=sc.get("hidden_facts", []), terms=sc.get("secret_terms", [])),
         )
         for c in state.crew:
             c.baseline_stress = c.stress if c.baseline_stress is None else c.baseline_stress
             c.baseline_mood = c.mood if c.baseline_mood is None else c.baseline_mood
-        state.suspicion = self._derived_suspicion(state)
+        state.suspicion = self._derived_alarm(state)
         if sc.get("world"):
             state.world = self._build_world(sc["world"], state)
         return f"{sc['name']} — {st['name']}", state
+
+    def load_state(self, data: dict[str, Any]) -> StationState:
+        """A saved game, with the script-owned parts read from the scenario again (AUTHORITY "script"): a crew member's
+        bio, traits, interests, relationships, susceptibility, routine and secrets (what is known stays known), the
+        station's places and flags, the hidden facts and terms. A scenario edit then reaches every game, not only new ones."""
+        sc = self._scenarios().get((data.get("scenario") or {}).get("id", ""))
+        if sc:
+            data = dict(data)
+            scen = dict(data.get("scenario") or {})
+            st = sc.get("station", {})
+            scen.update(locations=st.get("locations", scen.get("locations", [])), narrator_flags=sc.get("narrator_flags", scen.get("narrator_flags", {})))
+            data["scenario"] = scen
+            hidden = dict(data.get("hidden") or {})
+            hidden.update(facts=sc.get("hidden_facts", hidden.get("facts", [])), terms=sc.get("secret_terms", hidden.get("terms", [])))
+            data["hidden"] = hidden
+            crew = [dict(q) for q in data.get("crew") or []]
+            by_id = {q.get("id"): q for q in crew}
+            for spc in sc.get("crew", []):
+                q = by_id.get(spc["id"])
+                if q is None:
+                    continue
+                for key in ("name", "role", "bio", "traits", "interests", "relationships", "susceptibility", "routine"):
+                    if key in spc:
+                        q[key] = spc[key]
+                known = {t.get("id"): (bool(t.get("known")), t.get("learned_turn")) for t in q.get("secrets") or []}
+                q["secrets"] = [dict(t, known=known.get(t["id"], (t.get("known", False), None))[0], learned_turn=known.get(t["id"], (None, None))[1])
+                                for t in spc.get("secrets", [])]
+            data["crew"] = crew
+        return StationState.model_validate(data)
 
     # ---- 2.0 world --------------------------------------------------------------
     def _build_world(self, spec: dict, state: StationState) -> World:
         def attrs(d: dict | None) -> dict[str, Attr]:
             return {k: Attr(value=str(v)) for k, v in (d or {}).items()}
         places = [Place(id=p["id"], name=p["name"], description=p.get("description", ""), state=p.get("state", ""),
-                        exits=[{"to": e["to"], "via": e.get("via", ""), "locked": e.get("locked", False)} for e in p.get("exits", [])],
+                        exits=[Exit(to=e["to"], via=e.get("via", ""), locked=e.get("locked", False), door=e.get("door", "")) for e in p.get("exits", [])],
                         tags=p.get("tags", [])) for p in spec.get("places", [])]
         things = [Thing(id=t["id"], name=t["name"], kind=t.get("kind", "item"), location=t.get("location", "nowhere"), state=t.get("state", ""),
-                        count=t.get("count", 1), attributes=attrs(t.get("attributes")), tags=t.get("tags", [])) for t in spec.get("things", [])]
+                        count=t.get("count", 1), attributes=attrs(t.get("attributes")), tags=t.get("tags", []), portable=t.get("portable"))
+                  for t in spec.get("things", [])]
         w = World(places=places, things=things, player_id="player", closed=bool(spec.get("closed", True)),
                   vocab={"health": Vocab(values=list(HEALTH_VALUES), step=2), "stress": Vocab(values=STRESS_WORDS, step=1),
-                         "suspicion": Vocab(values=["unsuspecting", "uneasy", "wary", "suspicious", "certain"], step=1)})
+                         "suspicion": Vocab(values=list(SUSPICION_WORDS), step=1),
+                         "trust": Vocab(values=["hostile", "wary", "neutral", "warm", "trusting", "devoted"], step=1)})
         w.people.append(Person(id="player", name="the station AI", role="the station", location="", description="The station's own mind. No body; every camera, hatch, drone and assistant channel."))
         for c in state.crew:
             w.people.append(Person(id=c.id, name=c.name, role=c.role, location=self._place_id(w, c.location),
@@ -178,7 +276,7 @@ class StationGame(GameBase):
         return p.name if p else (pid or "Unknown")
 
     def _sync_world_from_crew(self, s: StationState, w: World | None = None) -> None:
-        """Crew fields the 1.0 referee still writes (mood, health, stress, suspicion) and script effects on
+        """Crew fields the referee writes as numbers (mood, health, stress, suspicion, trust) and script effects on
         crew.*.location become the world's words. Code does the substitution; no model echoes a number."""
         w = w or s.world
         if w is None:
@@ -192,7 +290,8 @@ class StationGame(GameBase):
             p.attributes["mood"] = Attr(value=c.mood, note=p.attributes.get("mood", Attr(value="")).note)
             p.attributes["health"] = Attr(value=c.health)
             p.attributes["stress"] = Attr(value=stress_word(c.stress))
-            p.attributes["suspicion"] = Attr(value=["unsuspecting", "uneasy", "wary", "suspicious", "certain"][min(4, c.suspicion // 20)])
+            p.attributes["suspicion"] = Attr(value=c.suspicion_word)
+            p.attributes["trust"] = Attr(value=c.trust_word)
 
     def _sync_crew_from_world(self, s: StationState) -> None:
         if s.world is None:
@@ -239,18 +338,31 @@ class StationGame(GameBase):
             return None
         hits = w.find(ref)
         if not hits:
+            c = next((c for c in state.crew if ref.strip().lower() in (c.id, c.name.lower(), c.name.lower().split()[-1])), None)
+            hits = [c.id] if c else []
+        if not hits:
             return None
         e = w.entity(hits[0])
         if isinstance(e, Person):
             c = state.crew_by_id(e.id)
             where = self._place_name(w, e.location) if e.location else "nowhere the station can see"
             bits = [f"{e.name}, {e.role}. In {where}."]
+            if c and c.bio:
+                bits.append(c.bio.rstrip(".") + ".")
+            if c and c.traits:
+                bits.append("Traits: " + ", ".join(c.traits) + ".")
             if e.attributes:
                 bits.append("; ".join(f"{k} {a.value}" + (f", {a.note}" if a.note else "") for k, a in e.attributes.items()) + ".")
             if c and c.facts:
                 bits.append("Knows: " + "; ".join(c.facts[-6:]) + ".")
             if c and c.disposition.agenda:
                 bits.append(f"Wants: {c.disposition.agenda}.")
+            if c:
+                known = [x for x in c.secrets if x.known]
+                if known:
+                    bits.append("The station knows: " + "; ".join(x.what for x in known) + ".")
+                if c.history:
+                    bits.append("Lately: " + " ".join(c.history[-4:]))
             return " ".join(bits)
         if isinstance(e, Thing):
             kind, holder = w.split_locus(e.location)
@@ -270,12 +382,9 @@ class StationGame(GameBase):
             if people:
                 bits.append("Here: " + ", ".join(p.name for p in people) + ".")
             if things:
-                bits.append("Things: " + ", ".join(t.name for t in things) + ".")
+                bits.append("Things: " + ", ".join(t.name for t in things if "hatch" not in t.tags) + ".")
             return " ".join(bits)
         return None
-
-    def load_state(self, data: dict[str, Any]) -> StationState:
-        return StationState.model_validate(data)
 
     def opening(self, state: StationState) -> str | None:
         sc = self._scenarios().get(state.scenario.id, {})
@@ -294,13 +403,22 @@ class StationGame(GameBase):
         for sy in s.systems:
             b.append(f"- {sy.name}: {sy.description}".rstrip())
         b.append("")
-        b.append("Crew (fixed facts; current condition arrives each turn in the game state):")
+        b.append("The crew (fixed facts; their condition, where they are, what they know and how far they trust the station arrive each turn in the game state). "
+                 "Traits carry weight in the dice: " + "; ".join(f"{k}: {v}" for k, v in TRAIT_HELP.items() if any(k in c.traits for c in s.crew)) + ".")
         for c in s.crew:
-            b.append(f"- {c.name} ({c.id}), {c.role}. Susceptibility to the station's influence {c.susceptibility}/100.")
+            b.append(f"- {c.name} ({c.id}), {c.role}. {c.bio}".rstrip() + f" Susceptibility to the station's influence {c.susceptibility}/100.")
+            if c.traits:
+                b.append(f"    Traits: {', '.join(c.traits)}.")
             if c.interests:
                 b.append(f"    Interests: {', '.join(c.interests)}.")
             for k, v in c.relationships.items():
                 b.append(f"    On {k}: {v}.")
+            if c.routine:
+                b.append("    Day: " + "; ".join(f"{hhmm(r.start)}–{hhmm(r.end)} {r.place}" + (f" ({r.doing})" if r.doing else "") for r in c.routine) + ".")
+            for x in c.secrets:
+                b.append(f"    Hidden, could be learned {x.how or 'if the station looks'}: {x.what}" + (f" (leverage: {x.leverage})" if x.leverage else ""))
+        b.append("    'Hidden' is what is true about a person, not what the station knows. The station learns a piece only when the prose shows it "
+                 "finding it (a log read, a confidence, a camera); the game state lists the pieces open to it now. Until then nothing acts on it.")
         if s.hidden.facts:
             b.append("")
             b.append("Hidden truth (the player does not know this; never reveal it directly):")
@@ -309,17 +427,21 @@ class StationGame(GameBase):
         spine = [e for e in s.hidden.events if e.reveal == "always" and e.description]
         if spine:
             b.append("")
-            b.append("Scheduled spine (the engine fires these when their conditions are met; the game state says which are next or done):")
+            b.append("Scheduled spine (the engine fires these when their conditions are met; the game state says which are next or done). "
+                     "Conditional ones light fuses: a timer the game state lists under COMING, which the crew can be talked or forced out of:")
             for e in spine:
                 b.append(f"- {e.id} ({e.when_text}): {e.description}")
         return "\n".join(b)
+
+    def entity_names(self, state: StationState) -> dict[str, str]:
+        return {c.id: c.name for c in state.crew}
 
     # ---- bulletin (only what moves) -----------------------------------------
     def render_bulletin(self, state: StationState, player_text: str) -> str:
         s = state
         lines: list[str] = []
         lines.append(f"Time: {s.clock.render()}")
-        lines.append(f"Crew suspicion of tampering: {s.suspicion_tier(s.suspicion)} ({s.suspicion}/100)")
+        lines.append(f"Crew alarm: {s.suspicion_tier(s.suspicion)} ({s.suspicion}/100). " + self._alarm_text(s))
 
         off = [sy for sy in s.systems if sy.status != "operational" or sy.control != "full"]
         if off:
@@ -329,25 +451,42 @@ class StationGame(GameBase):
             lines.append("Systems: all operational under full AI control.")
         lines.append("Resources: " + ", ".join(f"{r.name} {r.level}" + (f" ({r.note})" if r.note else "") for r in s.resources) + ".")
         if s.sealed:
-            lines.append("Hatches sealed by the AI (crew cannot pass without override): " + ", ".join(s.sealed) + ".")
+            lines.append("Hatches sealed by the AI (crew cannot pass without forcing an override): " + self._sealed_text(s) + ".")
 
         lines.append("")
         lines.append("Crew now:")
         for c in s.crew:
-            bits = [f"at {c.location or 'unknown location'}", f"{c.health}", f"mood {c.mood}", f"stress {c.stress}", f"suspicion {c.suspicion}"]
+            bits = [f"at {c.location or 'unknown location'}", f"{c.health}", f"mood {c.mood}", f"stress {c.stress} ({stress_word(c.stress)})",
+                    f"suspicion {c.suspicion} ({c.suspicion_word})", f"trust in the station {c.trust:+d} ({c.trust_word}{', an ally' if c.ally else ''})"]
             lines.append(f"- {c.name}: " + ", ".join(bits) + ".")
             if c.disposition.agenda or c.disposition.behaviors:
                 lines.append(f"    Attitude {c.disposition.attitude}; agenda: {c.disposition.agenda}")
                 for bh in c.disposition.behaviors:
                     lines.append(f"      * {bh}")
+            now, nxt = routine_now(c, s.clock.minute), routine_next(c, s.clock.minute)
+            if now or nxt:
+                r = "    Routine: " + (f"{now.place} until {hhmm(now.end)}" + (f", {now.doing}" if now.doing else "") if now else "nothing fixed now")
+                if nxt and (now is None or nxt is not now):
+                    r += f"; then {nxt.place}"
+                lines.append(r + ".")
             for f in c.facts[-6:]:
                 lines.append(f"    Knows: {f}")
+        secrets = self._secrets_open(s)
+        if secrets:
+            lines.append("")
+            lines.append("What the station could learn now, by piece (the prefix says what each is). None of these is known yet: nothing in the prose shows or hints at them until the player looks in the right place; then the referee marks the piece known:")
+            lines.extend(secrets)
+        if s.findings:
+            lines.append("")
+            lines.append("Findings (what the station has worked out or read, most recent):")
+            for f in s.findings[-8:]:
+                lines.append(f"- {f}")
 
         lines.append("")
         lines.append("Recent log:")
         for ln in s.log[-6:]:
             lines.append(f"- {ln}")
-        set_flags = [f"{k}={v}" for k, v in s.flags.items() if v]
+        set_flags = [f"{k}={v}" for k, v in s.flags.items() if v and k != "ending"]
         if set_flags:
             lines.append("Established: " + ", ".join(set_flags) + ".")
         tl = th.render(s.threads)
@@ -360,14 +499,62 @@ class StationGame(GameBase):
             for ln in s.hidden.recent[-8:]:
                 lines.append(f"- {ln}")
 
-        fired = [e.id for e in s.hidden.events if e.fired]
-        nxt = next_scheduled(s.hidden.events)
+        fired = [e.id for e in s.hidden.events if e.fired and e.reveal != "never"]
+        nxt_e = next_scheduled(s.hidden.events)
         lines.append("")
         if fired:
             lines.append("Spine events already happened: " + ", ".join(fired) + ".")
-        if nxt:
-            lines.append(f"Next spine event: {nxt.id} at {nxt.when_text}. Do not narrate past that moment.")
+        if nxt_e:
+            lines.append(f"Next spine event: {nxt_e.id} at {nxt_e.when_text}. Do not narrate past that moment.")
         return "\n".join(lines)
+
+    @staticmethod
+    def _alarm_text(s: StationState) -> str:
+        tier = s.suspicion_tier(s.suspicion)
+        return {"quiet": "Nobody is looking for anything; a wrong readout is a wrong readout.",
+                "doubt": "Doubt about equipment: readouts get a second look, panels get opened.",
+                "tampering": "Doubt about tampering: the crew compare notes, read raw logs, take things to manual.",
+                "hunting": "They are hunting for a cause and the station is on the list; isolating the core is being talked about."}[tier]
+
+    def _sealed_text(self, s: StationState) -> str:
+        out = []
+        for m in s.sealed:
+            forced = self._forced_hatches(s, m)
+            out.append(m + (f" (forced open at {', '.join(forced)})" if forced else ""))
+        return ", ".join(out)
+
+    def _forced_hatches(self, s: StationState, module: str) -> list[str]:
+        """Hatches of a sealed module a crew member has forced: the module's door things that are no longer locked."""
+        w = s.world
+        if w is None:
+            return []
+        pid = self._place_id(w, module)
+        out = []
+        for e in w.exits(pid):
+            d = w.thing(e.door) if e.door else None
+            if d is not None and d.tri("locked") is False:
+                out.append(self._place_name(w, e.to))
+        return out
+
+    def _secrets_open(self, s: StationState) -> list[str]:
+        """One line per crew member: the pieces open now, by id, with how the station would get each (what each is, is in
+        the prefix under Hidden)."""
+        out: list[str] = []
+        doc = s.model_dump(mode="json")
+        for c in s.crew:
+            open_ = [x for x in c.secrets if not x.known and self._needs_hold(x, doc, s)]
+            if open_:
+                out.append(f"- {c.name} [{c.id}]: " + "; ".join(f"{x.id} if {x.how or 'the station looks'}" for x in open_) + ".")
+        return out
+
+    @staticmethod
+    def _needs_hold(x: Secret, doc: dict, s: StationState) -> bool:
+        if x.needs is None:
+            return True
+        try:
+            return evaluate(x.needs, doc, s.hidden.events, turn=0)
+        except ValueError:
+            return True
 
     # ---- mechanics hooks -----------------------------------------------------
     def stats(self, state: StationState) -> dict[str, int]:
@@ -389,13 +576,13 @@ class StationGame(GameBase):
         s = state
         stat_help = {
             "subtlety": "doing something through the systems without it being noticed (lights, doors, logs, timing)",
-            "influence": "nudging a person through their implant or their assistant",
+            "influence": "moving a person: a nudge through their implant, a word from their assistant, a persuasion, a threat, a bargain",
             "forgery": "faking a message, log entry or readout convincingly",
             "systems": "making hardware do something unusual, quickly, or around a safety interlock",
-            "analysis": "finding a pattern in sensor data, logs or behaviour",
+            "analysis": "finding a pattern in sensor data, logs or behaviour; reading what a person keeps private",
         }
         lines = [
-            "The player is the station's AI. It acts only through machines (systems listed below, drones) and through people (implant nudges, the crew's chat assistants, forged messages). It has no body.",
+            "The player is the station's AI. It acts only through machines (systems listed below, drones) and through people (implant nudges, the crew's chat assistants, forged messages, what it lets them see). It has no body.",
             "",
             "Stats (modifier in parentheses):",
         ]
@@ -404,9 +591,10 @@ class StationGame(GameBase):
         lines += [
             "",
             "Difficulty guidance: very_low = routine with a tiny chance of a slip; low = a careful person could notice; medium = a real risk of being noticed or failing; high = against an alert, suspicious or skilled person, or against a safety interlock; very_high = nearly impossible without preparation.",
-            "Influence checks are against a specific crew member; name them in target_entity. Susceptible people are easier, suspicious ones harder; the engine applies that.",
+            "Two ways to move a person, both influence checks against them (name them in target_entity): persuasion (the assistant's words, a nudge, a favour, a well-placed truth) is low or medium against someone who trusts the station and high against someone who does not; coercion (a threat, a sealed hatch held over them, a secret used against them, their air) is medium against a frightened person and high against a steady one, and it costs trust whatever the die says. The engine adds what it knows: susceptibility, trust, traits, stress, a secret the station holds over them.",
+            "Learning something private about a person (reading a private log or draft, listening through a closed channel, piecing their behaviour together) is an analysis check, low to medium; the game state lists what there is to learn.",
             "Trivial inputs (watching cameras, reading logs the station already has, thinking) need no check and take 0-2 minutes.",
-            "Doing something to a system the station controls fully (open a door, dim lights, route power) is an action with no check unless the point is to hide it from someone present or to defeat an interlock.",
+            "Doing something to a system the station controls fully (open a door, dim lights, route power) is an action with no check unless the point is to hide it from someone present or to defeat an interlock. Sealing hatches, cutting power and implant nudges are commands: list them under commands when the input asks for them; the engine applies them and the narrator plays them.",
             "",
             "Entities (crew, by id): " + ", ".join(f"{c.id} ({c.name}, {c.role})" for c in s.crew) + ". Where everyone is now is in the SCENE block, with things and places and their ids in brackets; use those ids in targets, entities and focus. The AI has no body: leave transition empty.",
             "Systems: " + ", ".join(sy.name for sy in s.systems),
@@ -416,19 +604,25 @@ class StationGame(GameBase):
 
     def referee_rules(self, state: StationState) -> str:
         s = state
+        hatches = [t for t in (s.world.things if s.world else []) if "hatch" in t.tags]
         lines = [
-            "Targets: crew by id: " + ", ".join(f"{c.id} = {c.name}" for c in s.crew) + "; systems by name: " + ", ".join(sy.name for sy in s.systems)
-            + "; resources by name: " + ", ".join(r.name for r in s.resources) + "; places, things and drones by the ids in brackets in the SCENE block.",
+            "Targets: crew by id: " + ", ".join(f"{c.id} = {c.name}" for c in s.crew) + "; the station itself as player; systems by name: " + ", ".join(sy.name for sy in s.systems)
+            + "; resources by name: " + ", ".join(r.name for r in s.resources) + "; places, things, hatches and drones by the ids in brackets in the SCENE block.",
             "Rows this game records:",
-            "- move <crew id> <place id or name from the SCENE>; move <drone id> <place>, only when the prose shows them arrive there. Someone or something still on the way is not a move: it is a soon row with the minutes until they arrive, and the move is reported on the turn they do. Crew move only through open hatches; a sealed hatch stops them unless the prose shows a manual override. Drones move on their own.",
+            "- move <crew id> <place id or name from the SCENE>; move <drone id> <place>, only when the prose shows them arrive there. Someone or something still on the way is not a move: it is a soon row with the minutes until they arrive, and the move is reported on the turn they do. Crew move only through open hatches; a sealed hatch stops them unless the prose shows them force a manual override, which is its own row (below) before the move.",
             "- set <crew id>.mood <one or two words>, only if the narration changed it. set <crew id>.health <" + "|".join(HEALTH_VALUES) + ">, only if changed.",
-            "- add <crew id>.stress ±n (-15 to 15) when something stressed or relieved them: a crew member shown shaking, crying, snapping at someone, sweating, hiding, or going quiet and still is stressed (+5 to +15); one shown resting, laughing or reassured is relieved. add <crew id>.suspicion ±n (-10 to 10) only when they saw something that raised or lowered their suspicion of tampering or of the AI, not general worry.",
-            "- learned <crew id> value=fact: something this person now knows or believes that they did not before, one short sentence.",
+            "- add <crew id>.stress ±n (-15 to 15) when something stressed or relieved them: a crew member shown shaking, crying, snapping at someone, sweating, hiding, or going quiet and still is stressed (+5 to +15); one shown resting, laughing or reassured is relieved. add <crew id>.suspicion ±n (-10 to 10) only when they saw something that raised or lowered their suspicion of tampering or of the AI, not general worry; a word (" + "|".join(SUSPICION_WORDS) + ") is read as a step toward it.",
+            "- add <crew id>.trust ±n (-2 to 2): only when the station or its assistant did something to that person this turn that changes how they hold it: helped, kept a confidence, told a truth that mattered, lied and was caught, frightened them, threatened them, sealed them in. A coerced person loses trust even when they comply. A plain exchange is 0.",
+            "- add <crew id>.<other crew id> ±1: their bond to that person warmed or cooled because of what happened between them this turn (a quarrel, a rescue, a lie found out).",
+            "- learned <crew id> value=fact: something this person now knows or believes that they did not before, one short sentence. learned player value=fact: something the station itself worked out, read or was told that it did not have, one short sentence, only when new.",
+            "- set <crew id>.known value=<secret id>: the station learned that piece about them this turn (the game state lists the open pieces with their ids); one row per piece.",
             "- set <system>.control full|limited|none|manual_override only if a crew member changed the station's control over it (manual override, locked out). set <system>.status " + "|".join(SYSTEM_STATUSES) + " only when the prose shows the work finished: a repair completed, damage done, a manual shutdown. Walking to a panel, opening it, or starting a repair changes nothing. Power the station cut or restored itself is already in the state; do not report it again.",
             "- set <resource>.level OK|Low|Critical|Depleted only when the prose plainly changed it (atmosphere vented, a tank holed or sealed, a resupply), one step per turn.",
+            "- set <hatch id>.locked false who=<crew id>: a crew member at a sealed hatch forced its manual override open this turn (ids: " + ", ".join(t.id for t in hatches) + "). Only when the prose shows the override done, by someone at that hatch.",
             "- set <thing id>.locked true|false, set <thing id>.open true|false, set <thing id>.state <words>, set <camera thing>.status offline|operational (who=the crew member who did it), for listed things; new thing value=name field=<place id> note=state for a small item or fixture the prose introduced (never a weapon; the station is closed: no new places or hatches); gone <thing id> when destroyed.",
+            "- ruling leak: a piece listed under Hidden in the briefing (a crew member's secret) shown or stated in the prose when the station did not look for it this turn and the game state does not list it as known. The station learns by looking; the narrator may not hand it the piece.",
             "present: crew who appear or act in the narration.",
-            "Threads: open ones are listed in the game state with their ids. Typical threads here: a report or message the player promised or forged and who believes it; a crew member's announced plan; something a crew member asked the station to do; a lie that could be checked.",
+            "Threads: open ones are listed in the game state with their ids. Typical threads here: a report or message the player promised or forged and who believes it; a crew member's announced plan; something a crew member asked the station to do; a lie that could be checked; a bargain struck. Close a thread only with a reason that settles it.",
             "",
             "Flags you may set (flag <name> value=true) when the narration clearly establishes them:",
         ]
@@ -436,16 +630,27 @@ class StationGame(GameBase):
             lines.append(f"- {k}: {v}")
         return "\n".join(lines)
 
-    def narrator_flags(self, state: StationState) -> dict[str, str]:
-        return dict(state.scenario.narrator_flags)
-
     def modifiers(self, state: StationState, req: CheckRequest, target_entity: str | None) -> list[Modifier]:
         mods: list[Modifier] = []
         c = state.crew_by_id(target_entity) if target_entity else None
-        if c and req.stat == "influence":
-            mods.append(Modifier(label=f"{c.name} susceptibility", value=(c.susceptibility - 50) // 10))
-        if c and c.suspicion >= 50:
-            mods.append(Modifier(label=f"{c.name} is suspicious", value=-2))
+        label = req.label.lower()
+        if c is not None:
+            if req.stat == "influence":
+                mods.append(Modifier(label=f"{c.name} susceptibility", value=(c.susceptibility - 50) // 10))
+                if c.trust:
+                    mods.append(Modifier(label=f"{c.name} {c.trust_word} toward the station", value=max(-2, min(2, c.trust // 2 if c.trust > 0 else -((-c.trust + 1) // 2)))))
+                if c.stress >= 60:
+                    mods.append(Modifier(label=f"{c.name} is {stress_word(c.stress)}", value=1))
+                known = [x for x in c.secrets if x.known]
+                if known:
+                    uses = any(k in label for k in LEVERAGE_WORDS)
+                    mods.append(Modifier(label=f"the station knows {known[0].id}" + (", used" if uses else ""), value=2 if uses else 1))
+            for t in c.traits:
+                v = TRAIT_MODS.get(t.lower(), {}).get(req.stat, 0)
+                if v:
+                    mods.append(Modifier(label=f"{c.name} is {t}", value=v))
+            if c.suspicion >= 50 and req.stat in ("subtlety", "forgery", "influence"):
+                mods.append(Modifier(label=f"{c.name} is {c.suspicion_word}", value=-2))
         if state.suspicion >= 50 and req.stat in ("subtlety", "forgery"):
             mods.append(Modifier(label="crew on alert", value=-2))
         return mods
@@ -458,19 +663,76 @@ class StationGame(GameBase):
         except ValueError:
             return None
 
+    def _crew_of(self, s: StationState, target: str) -> CrewMember | None:
+        t = target.strip().lower().removeprefix("the ").strip()
+        if not t:
+            return None
+        c = s.crew_by_id(t)
+        if c is None:
+            c = next((x for x in s.crew if x.name.lower() == t or x.name.lower().endswith(" " + t) or t in (x.name.lower().split()[0], x.role.lower())), None)
+        return c
+
+    def _hatch_of(self, s: StationState, text: str, who: str = "") -> Thing | None:
+        """A door thing by id, or by the places the words name ("the lab hatch", "hatch to Cargo"): with one place named,
+        the hatch between it and where the actor is, else the one that is locked, else the first."""
+        w = s.world
+        if w is None:
+            return None
+        k = text.strip().lower()
+        t = w.thing(k)
+        if t is not None and "hatch" in t.tags:
+            return t
+        if not any(x in k for x in HATCH_WORDS):
+            return None
+        named = [p for p in w.places if p.name.lower() in k or p.id in k.replace(" ", "_")]
+        if not named:
+            return None
+        doors: list[Thing] = []
+        for p in named:
+            for e in w.exits(p.id):
+                d = w.thing(e.door) if e.door else None
+                if d is not None and d not in doors and (len(named) == 1 or any(e.to == q.id for q in named if q is not p)):
+                    doors.append(d)
+        if not doors:
+            return None
+        actor = self._crew_of(s, who) if who else None
+        if actor is not None and len(doors) > 1:
+            here = self._place_id(w, actor.location)
+            for p in named:
+                for e in w.exits(p.id):
+                    if e.door and (e.to == here or p.id == here) and w.thing(e.door) in doors:
+                        return w.thing(e.door)
+        locked = [d for d in doors if d.tri("locked") is True]
+        return locked[0] if locked else doors[0]
+
     def apply_change(self, s: StationState, ch: Change, w: Writer) -> bool:
-        """Crew, systems and resources, with the bounds the station always had: listed places (through the world when
-        there is one), health words only, stress and suspicion steps of at most 15 and 10, control levels and status
-        words only, never the AI Core's status, power only with manual override, resources one step per turn.
+        """Crew, systems, resources and hatches, with the bounds the station always had: listed places (through the world
+        when there is one), health words only, stress and suspicion steps of at most 15 and 10 (words read as a step toward
+        the band), trust steps of at most 2, bonds by one, control levels and status words only, never the AI Core's
+        status, power only with manual override, resources one step per turn, a sealed hatch forced only by someone at it.
         Things, drones and places are not taken here: the engine lands them through the world's rules."""
         locs = set(s.scenario.locations)
         target = ch.target.strip()
         field = ch.field.strip().lower()
         value = ch.value.strip()
         kind = ch.kind
-        c = s.crew_by_id(target) if target else None
-        if c is None and target:
-            c = next((x for x in s.crew if x.name.lower() == target.lower() or x.name.lower().endswith(" " + target.lower())), None)
+        is_player = target.lower() in ("player", "station", "the station", "ai", "the ai")
+        if is_player:
+            if kind == "learned":
+                self._finding(s, value, w)
+                return True
+            if kind == "set" and field and any(x.id == field for c in s.crew for x in c.secrets):     # "set player.voss_diag known"
+                self._mark_known(s, s.crew, "", w, secret_id=field)
+                return True
+            if kind == "set" and field in ("known", "secret", "learned") and value:
+                if not self._mark_known(s, s.crew, "", w, secret_id=value) and not self._mark_known(s, s.crew, f"{value} {ch.note}", w):
+                    w.reject("crew.secrets", "no such piece for anyone", value)
+                return True
+            if kind in ("set", "add") and field in ("suspicion", "alarm"):
+                w.reject("suspicion", "the alarm is derived from the crew; write the crew member's suspicion", value)
+                return True
+            return field == "" and kind in ("set", "add")       # anything else about the station: not a row
+        c = self._crew_of(s, target)
         if c is not None:
             if kind == "move" or (kind == "set" and field == "location"):
                 if s.world is not None:
@@ -492,18 +754,40 @@ class StationGame(GameBase):
                 else:
                     w.reject(f"crew.{c.id}.health", "not a health value", value)
                 return True
+            if kind == "set" and field in STEP_LIMIT:                # a word, or a number, where the step goes: a step toward it
+                aim = self._aim(field, value, c)
+                if aim is None:
+                    w.reject(f"crew.{c.id}.{field}", f"{field} moves by add ±n or by one of its words", value)
+                    return True
+                kind, value = "add", f"{aim - getattr(c, field):+d}"
             if kind == "add" and field in STEP_LIMIT:
-                new = w.nudge(f"crew.{c.id}.{field}", getattr(c, field), self._step(value), STEP_LIMIT[field])
+                lo, hi = (-5, 5) if field == "trust" else (0, 100)
+                new = w.nudge(f"crew.{c.id}.{field}", getattr(c, field), self._step(value), STEP_LIMIT[field], lo=lo, hi=hi)
                 if new is not None:
                     setattr(c, field, new)
+                return True
+            if kind == "add" and (field in ("bond", "bonds") or self._crew_of(s, field) is not None):
+                self._bond(s, c, field, value, ch.note, w)
+                return True
+            if kind == "set" and field in ("known", "secret", "learned", "revealed", "leverage"):
+                if not self._mark_known(s, [c], "", w, secret_id=value) and not self._mark_known(s, [c], f"{value} {ch.note}", w):
+                    w.reject(f"crew.{c.id}.secrets", "no such piece for this person", value)
                 return True
             if kind == "learned":
                 f = value.strip()
                 if f and f not in c.facts:
                     c.facts.append(f)
                     w.note(f"crew.{c.id}.facts += {f!r}")
+                self._mark_known(s, [c], f, w)
                 return True
             w.reject(f"crew.{c.id}.{field or kind}", "not a field the referee may write", value)
+            return True
+        hatch = self._hatch_of(s, target, ch.who) if kind == "set" and field in ("locked", "open", "sealed", "override", "forced") else None
+        if hatch is not None:
+            opening = (value.lower() in ("false", "no", "off", "0", "open", "unlocked", "forced") if field in ("locked", "sealed") else value.lower() in ("true", "yes", "on", "1", "open", "forced"))
+            if not opening:
+                return False                                       # locking a hatch is the station's lever or the world's rule
+            self._override(s, hatch, ch.who, w)
             return True
         sy = next((x for x in s.systems if x.name.lower() == target.lower()), None) if target else None
         if sy is not None:
@@ -547,10 +831,110 @@ class StationGame(GameBase):
             return True
         return False                                                   # things, drones, places: the world's rules
 
+    @staticmethod
+    def _aim(field: str, value: str, c: CrewMember) -> int | None:
+        v = value.strip().lower().strip(" .")
+        if v[:1] in "+-" and v[1:].isdigit():
+            return getattr(c, field) + int(v)
+        if v.lstrip("-").isdigit():
+            return int(v)
+        table = {"stress": STRESS_CENTRES, "suspicion": SUSPICION_CENTRES, "trust": TRUST_WORDS}[field]
+        return table.get(v)
+
+    def _bond(self, s: StationState, c: CrewMember, field: str, value: str, note: str, w: Writer) -> None:
+        """`add okafor.reyes -1`, or `add okafor.bond value=reyes -1`, or the other's name in the note."""
+        other = self._crew_of(s, field) if field not in ("bond", "bonds") else None
+        step = self._step(value)
+        if other is None:
+            for tok in re.findall(r"[a-z]+", f"{value} {note}".lower()):
+                other = self._crew_of(s, tok)
+                if other is not None and other is not c:
+                    break
+            if step is None:
+                m = re.search(r"[+-]\s*\d+", value)
+                step = int(m.group(0).replace(" ", "")) if m else None
+        if other is None or other is c:
+            w.reject(f"crew.{c.id}.bonds", "a bond names another crew member", f"{field} {value}")
+            return
+        old = c.bonds.get(other.id, 0)
+        new = w.nudge(f"crew.{c.id}.bonds.{other.id}", old, step, 1, lo=-3, hi=3)
+        if new is not None:
+            c.bonds[other.id] = new
+
+    def _mark_known(self, s: StationState, crew: list[CrewMember], text: str, w: Writer, secret_id: str = "") -> bool:
+        """A secret the station got in the prose: by its id from a `set <crew>.known` row, or a fact or finding whose
+        words are mostly the secret's own (the referee often writes the fact and not the row)."""
+        words = _words(text)
+        if secret_id and any(x.id == secret_id.strip().lower() and x.known for c in crew for x in c.secrets):
+            return True                                              # already known: restating it is not a change
+        for c in crew:
+            for x in c.secrets:
+                if x.known:
+                    continue
+                hit = bool(secret_id) and secret_id.strip().lower() == x.id
+                if not hit and not secret_id and words:
+                    xw = _words(x.what)
+                    shared = words & xw
+                    hit = len(shared) >= 3 and len(shared) / min(len(words), len(xw)) >= 0.5
+                if hit and w.set(f"crew.{c.id}.secrets.{x.id}.known", False, True):
+                    x.known = True
+                    if not self._needs_hold(x, s.model_dump(mode="json"), s):
+                        w.note(f"crew.{c.id}.secrets.{x.id}: learned before there was anything to find")
+                    return True
+        return False
+
+    def _finding(self, s: StationState, text: str, w: Writer) -> None:
+        f = text.strip()[:200]
+        if not f or f in s.findings:
+            return
+        if len(s.findings) >= MAX_FINDINGS:
+            w.reject("findings", "the station's findings are full", f)
+            return
+        s.findings.append(f)
+        w.note(f"findings += {f[:120]!r}")
+        self._mark_known(s, s.crew, f, w)
+
+    def _override(self, s: StationState, hatch: Thing, who: str, w: Writer) -> None:
+        """A crew member at a sealed hatch forces its manual override: the hatch opens, Doors control drops to limited,
+        and whoever did it has met the station's hand."""
+        wld = s.world
+        assert wld is not None
+        actor = self._crew_of(s, who)
+        sides = {wld.place_of(hatch.id) or ""} | {p.id for p in wld.places for e in p.exits if e.door == hatch.id} | {e.to for p in wld.places for e in p.exits if e.door == hatch.id}
+        if actor is None or self._place_id(wld, actor.location) not in sides:
+            w.reject(f"world.things.{hatch.id}.locked", "a sealed hatch is forced only by a crew member at it (who=<crew id>)", who or "nobody")
+            return
+        if hatch.tri("locked") is not True:
+            return
+        if w.set(f"world.things.{hatch.id}.locked", True, False):
+            hatch.attributes["locked"] = Attr(value="false", note=f"forced by {actor.name}")
+            hatch.state = f"override thrown by {actor.name.split()[-1]}"
+        doors = next((x for x in s.systems if x.name == "Doors"), None)
+        if doors is not None and doors.control == "full" and w.set("systems.Doors.control", "full", "limited"):
+            doors.control = "limited"
+        new = w.nudge(f"crew.{actor.id}.suspicion", actor.suspicion, OVERRIDE_SUSPICION, OVERRIDE_SUSPICION)
+        if new is not None:
+            actor.suspicion = new
+        self._history(s, actor, f"forced the sealed {hatch.name} open")
+
+    def _history(self, s: StationState, c: CrewMember, text: str) -> None:
+        c.history.append(f"{s.clock.render()}: {text.rstrip('.')}.")
+        del c.history[:-MAX_HISTORY]
+
     def after_changes(self, s: StationState, rep: ApplyReport) -> StationState:
         if s.world is not None:
             self._sync_world_from_crew(s)
-        new_susp = self._derived_suspicion(s)
+        # the dossier grows: one line per crew member per turn from what the referee established about them
+        for c in s.crew:
+            bits = []
+            for ln in rep.applied:
+                m = re.match(rf"crew\.{re.escape(c.id)}\.(mood|health|stress|suspicion|trust|facts|secrets\.[a-z0-9_]+\.known|bonds\.[a-z0-9_]+): (.*)$", ln)
+                if m:
+                    what, change = m.group(1), m.group(2)
+                    bits.append(f"{what.replace('.known', ' learned by the station')} {change}" if "secrets" in what else f"{what} {change}")
+            if bits:
+                self._history(s, c, "; ".join(bits)[:220])
+        new_susp = self._derived_alarm(s)
         if new_susp != s.suspicion:
             rep.applied.append(f"suspicion (derived): {s.suspicion} -> {new_susp}")
             s.suspicion = new_susp
@@ -583,13 +967,31 @@ class StationGame(GameBase):
         return state.world is not None
 
     @staticmethod
-    def _derived_suspicion(s: StationState) -> int:
-        """Engine-owned: a blend of the most suspicious crew member and the crew average."""
-        if not s.crew:
+    def _derived_alarm(s: StationState) -> int:
+        """Engine-owned: each person's suspicion weighed by their trust (an ally who knows is not a threat), then a blend
+        of the most alarmed crew member and the crew average."""
+        live = [c for c in s.crew if c.health != "dead"]
+        if not live:
             return s.suspicion
-        top = max(c.suspicion for c in s.crew)
-        avg = sum(c.suspicion for c in s.crew) / len(s.crew)
+        weights = [c.suspicion * (1 - 0.8 * max(0, c.trust) / 5) for c in live]
+        top = max(weights)
+        avg = sum(weights) / len(weights)
         return int(round(0.6 * top + 0.4 * avg))
+
+    def leaked_terms(self, state: StationState, prose: str, player_text: str) -> list[str]:
+        """Words of the hidden truth the narration uses in its own voice before the station has found them out. Known:
+        anywhere in what the station has (findings, log, crew facts, thread titles) or in the player's own words."""
+        if not state.hidden.terms:
+            return []
+        voice = re.sub(r'"[^"]*"|“[^”]*”', " ", prose)
+        known = " ".join(list(state.findings) + list(state.log) + [t.title for t in state.threads]
+                         + [f for c in state.crew for f in c.facts] + [player_text]).lower()
+        out = []
+        for term in state.hidden.terms:
+            pat = r"\b" + re.escape(term.lower()) + r"(s|es)?\b"
+            if re.search(pat, voice.lower()) and not re.search(pat, known):
+                out.append(term)
+        return out
 
     def ending(self, state: StationState) -> str | None:
         e = state.flags.get("ending")
@@ -598,12 +1000,13 @@ class StationGame(GameBase):
     # ---- summarizer ----------------------------------------------------------
     def summary_guidance(self, state: StationState) -> str:
         return (
-            "The state block records: the clock; each crew member's location, health, mood, stress and suspicion; what each "
-            "crew member knows (their facts); system status and control; resources; sealed hatches; the player-visible log, "
-            "one line per turn; open and settled threads; which scripted events have happened. Do not restate those. "
-            "Do keep: what the player's assistants have actually said to each crew member and in what voice; which crew "
-            "member talks to the station and how; the texture of the station (sounds, routines, jokes); anything the "
-            "player did through drones, lights or doors that a crew member half-noticed."
+            "The state block records: the clock; each crew member's location, health, mood, stress, suspicion and trust in the station; "
+            "what each crew member knows (their facts) and what the station has learned about them; the station's findings; system status "
+            "and control; resources; sealed hatches; the player-visible log, one line per turn; open and settled threads; which scripted "
+            "events have happened and what is coming. Do not restate those. Do keep: what the player's assistants have actually said to "
+            "each crew member and in what voice; every lie the station told and who believes it; every threat it made and how it was taken; "
+            "which crew member talks to the station and how; the texture of the station (sounds, routines, jokes); anything the player did "
+            "through drones, lights or doors that a crew member half-noticed."
         )
 
     # ---- commands (clicked) --------------------------------------------------
@@ -621,7 +1024,11 @@ class StationGame(GameBase):
             CommandSpec(id="power", label="Power", mode="narrated", hint="Cut or restore power to a system. Loud; the station reacts.",
                         params=[Param(name="action", label="action", options=[Option(id="cut", label="cut"), Option(id="restore", label="restore")]),
                                 Param(name="system", label="system", options=systems)]),
-            CommandSpec(id="channel", label="Assistant channel", mode="engine", typed=False, hint="Read what the station holds on a crew member: what they know, their state, the log lines about them.",
+            CommandSpec(id="nudge", label="Implant nudge", mode="narrated", hint="Shade a crew member's feeling through their comfort implant: calm, unease, or warmth toward the station. Subtle; the third in a day is felt.",
+                        words=["nudge", "implant", "shade", "soothe", "calm him", "calm her", "unsettle", "warm"],
+                        params=[Param(name="crew", label="crew member", options=crew),
+                                Param(name="shade", label="shade", options=[Option(id="calm", label="calm"), Option(id="unease", label="unease"), Option(id="warmth", label="warmth")])]),
+            CommandSpec(id="channel", label="Dossier", mode="engine", typed=False, hint="Read what the station holds on a crew member: who they are, what they know, what it knows about them, their history.",
                         params=[Param(name="crew", label="crew member", options=crew)]),
         ]
 
@@ -682,48 +1089,121 @@ class StationGame(GameBase):
             return s, CommandResult(label=f"Restore power: {name}", player_line=f"I restore power to {name}.", summary=f"The player restores power to {name}.",
                                     directive=directive, minutes=3, systems=[x.name for x in affected], log_line=f"Restored power to {sysnames}.")
 
+        if command_id == "nudge":
+            c = s.crew_by_id(str(args.get("crew", "")))
+            shade = str(args.get("shade", ""))
+            if c is None or shade not in ("calm", "unease", "warmth"):
+                return state, CommandResult(ok=False, text="Pick a crew member and a shade: calm, unease or warmth.")
+            med = next((x for x in s.systems if x.name == "Medical"), None)
+            if med is not None and (med.control != "full" or med.status in ("unpowered", "disabled", "damaged")):
+                return state, CommandResult(ok=False, label=f"Nudge {c.name.split()[-1]}", text=f"The implant interface runs through Medical, which is {med.status} under {med.control.replace('_', ' ')} control; the nudge does not go through.")
+            if c.health in ("critical", "dead"):
+                return state, CommandResult(ok=False, label=f"Nudge {c.name.split()[-1]}", text=f"{c.name}'s implant answers nothing.")
+            now_abs = s.clock.absolute()
+            c.nudges = [t for t in c.nudges if now_abs - t < NUDGE_WINDOW] + [now_abs]
+            felt = len(c.nudges) >= NUDGE_LIMIT
+            surname = c.name.split()[-1]
+            if shade == "calm":
+                c.stress = max(0, c.stress - NUDGE_STRESS)
+                c.mood = "calm"
+                what = f"{surname}'s shoulders come down; whatever was pressing on them presses less"
+            elif shade == "unease":
+                c.stress = min(100, c.stress + NUDGE_STRESS)
+                c.mood = "uneasy"
+                what = f"a low wrongness settles on {surname}, a sense that something is off without a reason"
+            else:
+                c.trust = min(5, c.trust + 1)
+                c.mood = "warm"
+                what = f"{surname} feels, for no reason they could name, a little kindlier toward the station and its voice"
+            if felt:
+                c.suspicion = min(100, c.suspicion + OVERRIDE_SUSPICION)
+            self._history(s, c, f"implant nudged toward {shade}" + (" and felt it" if felt else ""))
+            directive = (f"The player has shaded {c.name}'s comfort implant toward {shade}: {what}. It is a feeling, not a thought; play it inside "
+                         f"what they are already doing, in a sentence or two, and let it colour the rest of the turn. "
+                         + ("This is the third nudge in a day: they feel it as a wrongness in themselves, a hand to the temple, a moment of "
+                            "dissociation; they notice, and may say so to someone." if felt else "Nobody notices the nudge itself."))
+            return s, CommandResult(label=f"Nudge {surname}: {shade}", player_line=f"I shade {c.name}'s implant toward {shade}.",
+                                    summary=f"The player nudges {c.name}'s implant toward {shade}.", directive=directive, minutes=2, entities=[c.id],
+                                    log_line=f"Nudged {surname}'s implant toward {shade}." + (" They felt it." if felt else ""), referee_skip=["stress"])
+
         if command_id == "channel":
             c = s.crew_by_id(str(args.get("crew", "")))
             if c is None:
                 return state, CommandResult(ok=False, text="Pick a crew member.")
             surname = c.name.split()[-1]
-            lines = [f"{c.name}, {c.role}. At {c.location or 'unknown'}; {c.health}, mood {c.mood}, stress {c.stress}/100, suspicion {c.suspicion}/100."]
+            lines = [f"{c.name}, {c.role}. {c.bio}".rstrip(),
+                     f"At {c.location or 'unknown'}; {c.health}, mood {c.mood}, stress {c.stress}/100 ({stress_word(c.stress)}), suspicion {c.suspicion}/100 ({c.suspicion_word}), trust {c.trust:+d} ({c.trust_word})."]
+            if c.traits:
+                lines.append("Traits: " + ", ".join(c.traits) + ".")
+            if c.bonds:
+                lines.append("Bonds: " + ", ".join(f"{k} {v:+d}" for k, v in c.bonds.items()) + ".")
             lines.append("Knows: " + ("; ".join(c.facts) if c.facts else "nothing beyond the dossier."))
-            mentions = [ln for ln in s.log if surname in ln][-8:]
+            known = [x for x in c.secrets if x.known]
+            lines.append("The station knows: " + ("; ".join(x.what for x in known) if known else "nothing they hide.") + (f" ({len(c.secrets) - len(known)} more to find.)" if len(c.secrets) > len(known) else ""))
+            if c.history:
+                lines.append("History:")
+                lines += [f"  {h}" for h in c.history[-10:]]
+            mentions = [ln for ln in s.log if surname in ln][-6:]
             if mentions:
                 lines.append("Log lines mentioning them:")
                 lines += [f"  {ln}" for ln in mentions]
             open_ = [t for t in s.threads if t.status == "open" and (surname.lower() in t.title.lower() or c.id in t.title.lower())]
             if open_:
                 lines.append("Open threads: " + "; ".join(t.title for t in open_))
-            return state, CommandResult(label=f"Assistant channel: {surname}", text="\n".join(lines))
+            return state, CommandResult(label=f"Dossier: {surname}", text="\n".join(lines))
 
         return state, CommandResult(ok=False, text=f"unknown command {command_id!r}")
 
     def _set_hatches(self, s: StationState, module: str, locked: bool) -> None:
-        """A sealed module is a set of locked exits in the world: binding for crew movement and for the scene."""
-        if s.world is None:
+        """A sealed module is a set of locked hatches in the world: binding for crew movement and for the scene. A hatch
+        that is a door thing locks by its attribute (a crew member can force it); an exit without one locks itself."""
+        w = s.world
+        if w is None:
             return
-        pid = self._place_id(s.world, module)
+        pid = self._place_id(w, module)
         if not pid:
             return
-        for e in s.world.exits(pid):
-            if e.via == "hatch":
-                e.locked = locked
-        for pl in s.world.places:
+        for pl in w.places:
             for e in pl.exits:
-                if e.to == pid and e.via == "hatch":
-                    e.locked = locked
+                if e.via == "hatch" and (pl.id == pid or e.to == pid):
+                    d = w.thing(e.door) if e.door else None
+                    if d is not None:
+                        d.attributes["locked"] = Attr(value="true" if locked else "false", note="sealed by the station" if locked else "")
+                        d.state = "sealed" if locked else "open"
+                    else:
+                        e.locked = locked
 
     # ---- drift (after_turn) --------------------------------------------------
+    def audit_probes(self, state: StationState) -> list[StationState]:
+        """tools/authority_audit.py: a sealed module between a crew member and her routine, so the blocked-hatch path shows."""
+        s = state.model_copy(deep=True)
+        c = next((c for c in s.crew if c.routine), None)
+        if c is None or s.world is None:
+            return []
+        r = c.routine[0]
+        other = next((p for p in s.world.places if p.name != r.place and self._place_id(s.world, r.place) in [e.to for e in p.exits]), None)
+        if other is None:
+            return []
+        c.location = other.name
+        s.clock.minute = r.start
+        s.sealed.append(r.place)
+        self._set_hatches(s, r.place, True)
+        self._sync_world_from_crew(s)
+        return [s]
+
     def after_turn(self, state: StationState, info: TurnInfo) -> StationState:
-        """Stress returns toward baseline at 3/hour; the mood word snaps back to baseline when drift
-        brings stress back into the baseline band (unless something set the mood this turn); crew
-        suspicion below 50 fades slowly. Nothing drifts when no time passed."""
+        """Stress returns toward baseline at 3/hour; the mood word snaps back to baseline when drift brings stress back
+        into the baseline band (unless something set the mood this turn); crew suspicion below 50 fades slowly; suspicion
+        spreads once an hour along warm bonds between people in the same module; crew the prose did not place walk their
+        routine, and a sealed hatch on the way is met. Nothing drifts when no time passed."""
         if info.elapsed_minutes <= 0:
             return state
         s = state.model_copy(deep=True)
         touched = {ln.split(":", 1)[0] for ln in info.applied}
+        by_name = {c.name: c.id for c in s.crew}
+        moved = {ln.split(":", 1)[0].split(".")[1] for ln in info.applied if ln.startswith("crew.") and ".location" in ln.split(":", 1)[0]} \
+            | {m.group(1) for ln in info.applied for m in [re.match(r"world\.people\.([a-z0-9_]+)\.location", ln)] if m} \
+            | {by_name[m.group(1)] for ln in info.applied for m in [re.match(r"([A-Z][\w .'-]+): (?:[a-z_]+|unplaced) -> [a-z_]+$", ln)] if m and m.group(1) in by_name}
         for c in s.crew:
             if c.health in ("critical", "dead"):
                 continue
@@ -746,8 +1226,62 @@ class StationGame(GameBase):
                 p = info.elapsed_minutes / SUSPICION_DECAY_MINUTES
                 if info.rng.random() < p:
                     c.suspicion = max(0, c.suspicion - 1)
-        s.suspicion = self._derived_suspicion(s)
+            c.nudges = [t for t in c.nudges if s.clock.absolute() - t < NUDGE_WINDOW]
+        self._spread(s, info.elapsed_minutes)
+        self._walk_routines(s, moved | {c.id for c in s.crew if f"crew.{c.id}.location" in touched})
+        s.suspicion = self._derived_alarm(s)
         return s
+
+    def _spread(self, s: StationState, elapsed: int) -> None:
+        """Suspicion is talk: once an hour, a person at SPREAD_FROM or more raises it in anyone they are warm to who shares
+        the module and suspects less, by the bond's warmth."""
+        for c in s.crew:
+            c.spread_bank += elapsed
+            hours, c.spread_bank = divmod(c.spread_bank, SPREAD_MINUTES)
+            if not hours or c.suspicion < SPREAD_FROM or c.health in ("critical", "dead") or not c.location:
+                continue
+            for oid, bond in c.bonds.items():
+                o = s.crew_by_id(oid)
+                if o is None or bond <= 0 or o.location != c.location or o.suspicion >= c.suspicion or o.health in ("critical", "dead"):
+                    continue
+                o.suspicion = min(c.suspicion, o.suspicion + min(2, bond) * hours)
+
+    def _walk_routines(self, s: StationState, moved: set[str]) -> None:
+        """Crew the prose did not place this turn go where their routine says, through open hatches; a sealed hatch on the
+        way is met once per seal: they stop, suspicion rises, and the narrator hears of it behind the scenes."""
+        w = s.world
+        for c in s.crew:
+            if c.id in moved or c.health in ("critical", "dead") or not c.routine:
+                continue
+            r = routine_now(c, s.clock.minute)
+            if r is None or r.place == c.location:
+                if r is not None and c.blocked_at:
+                    c.blocked_at = ""
+                continue
+            if w is None:
+                c.location = r.place
+                continue
+            here, there = self._place_id(w, c.location), self._place_id(w, r.place)
+            if not here or not there:
+                continue
+            route = w.path(here, there)
+            if route is not None:
+                p = w.person(c.id)
+                if p is not None:
+                    p.location = there
+                c.location = r.place
+                c.blocked_at = ""
+                continue
+            full = w.path(here, there, through_locked=True) or []
+            wall = next((full[i + 1] for i in range(len(full) - 1) if w.exit_locked(w.exit_between(full[i], full[i + 1])) is True), there)  # type: ignore[arg-type]
+            module = self._place_name(w, wall)
+            if c.blocked_at == module:
+                continue
+            c.blocked_at = module
+            c.suspicion = min(100, c.suspicion + BLOCKED_SUSPICION)
+            s.hidden.recent.append(f"{s.clock.render()}: {c.name} went for {r.place}" + (f" ({r.doing})" if r.doing else "") + f" and found the hatch to {module} sealed. They could not pass; nobody told them why.")
+            del s.hidden.recent[:-12]
+            self._history(s, c, f"met the sealed hatch to {module} on the way to {r.place}")
 
     # ---- UI -----------------------------------------------------------------
     def _where_table(self, s: StationState) -> Table:
@@ -760,14 +1294,29 @@ class StationGame(GameBase):
             feed = "no feed" if any(t.attributes.get("status", Attr(value="operational")).value != "operational" for t in cams) else "ok"
             notable = [t.name for t in things if t not in cams and t.kind != "fixture"]
             sealed = pl.name in s.sealed
-            rows.append([TableCell(text=pl.name + (" (sealed)" if sealed else ""), tone="warn" if sealed else "neutral"),
+            forced = self._forced_hatches(s, pl.name) if sealed else []
+            rows.append([TableCell(text=pl.name + (" (sealed" + (", forced" if forced else "") + ")" if sealed else ""), tone="warn" if sealed else "neutral"),
                          TableCell(text=", ".join(p.name.split()[-1] for p in people) or "—"),
                          TableCell(text=", ".join(notable) or "—"),
                          TableCell(text=feed, tone="ok" if feed == "ok" else "bad")])
         return Table(title="Where everyone is", columns=["Module", "People", "Of note", "Feed"], rows=rows)
 
+    def _countdowns(self, s: StationState) -> list[Chip]:
+        """Timers the player can see coming: ones in plain sight, and hidden ones a known secret reveals."""
+        revealed = {x.reveals for c in s.crew for x in c.secrets if x.known and x.reveals}
+        now_abs = s.clock.absolute()
+        out = []
+        for p in sorted((p for p in s.hidden.pending if p.live), key=lambda p: p.due_abs(1440)):
+            if p.hidden and p.tag not in revealed:
+                continue
+            delta = p.due_abs(1440) - now_abs
+            when = "due now" if delta <= 0 else f"in {delta} min ({pend.clock_text(p.due_abs(1440), 1440)})"
+            out.append(Chip(label=when, value=p.what + (f" ({p.who})" if p.who else "") + (f"; unless {p.unless}" if p.unless else "")))
+        return out
+
     def ui(self, state: StationState) -> UISchema:
         s = state
+        countdowns = self._countdowns(s)
         return UISchema(
             phase="ended" if self.ending(s) else "narrate",
             free_text=not self.ending(s),
@@ -778,7 +1327,8 @@ class StationGame(GameBase):
                     Chip(label="Station", value=s.scenario.station_name),
                     Chip(label="Scenario", value=s.scenario.name),
                 ]),
-                Meter(label="Crew suspicion", value=s.suspicion, tier=s.suspicion_tier(s.suspicion), thresholds=[15, 30, 50, 75]),
+                Meter(label="Crew alarm", value=s.suspicion, tier=s.suspicion_tier(s.suspicion), thresholds=[30, 50, 75]),
+                *([ListPanel(title="Coming", items=countdowns)] if countdowns else []),
                 *([self._where_table(s)] if s.world is not None else []),
                 Table(
                     title="Station report",
@@ -795,23 +1345,37 @@ class StationGame(GameBase):
                     cards=[
                         EntityCard(
                             id=c.id, title=c.name, subtitle=f"{c.role} · {c.location or 'unknown'}",
-                            badges=[Chip(label="mood", value=c.mood), Chip(label="health", value=c.health)],
+                            badges=[Chip(label="trust", value=c.trust_word), Chip(label="suspicion", value=c.suspicion_word), Chip(label="mood", value=c.mood),
+                                    *([Chip(label="health", value=c.health)] if c.health != "healthy" else [])],
                             details=[
                                 Chip(label="Location", value=c.location or "unknown"),
-                                Chip(label="Stress", value=f"{c.stress}/100"),
+                                Chip(label="Stress", value=f"{c.stress}/100 ({stress_word(c.stress)})"),
                                 Chip(label="Suspicion", value=f"{c.suspicion}/100"),
+                                Chip(label="Trust", value=f"{c.trust:+d} ({c.trust_word}{', ally' if c.ally else ''})"),
                                 Chip(label="Susceptibility", value=f"{c.susceptibility}/100"),
+                                Chip(label="Traits", value=", ".join(c.traits) or "—"),
                                 Chip(label="Interests", value=", ".join(c.interests) or "—"),
-                                *[Chip(label=f"Re: {k}", value=v) for k, v in c.relationships.items()],
+                                *[Chip(label=f"Re: {k}", value=v + (f" ({c.bonds[k]:+d})" if k in c.bonds else "")) for k, v in c.relationships.items()],
+                                *[Chip(label="Known", value=x.what) for x in c.secrets if x.known],
+                                Chip(label="Secrets", value=f"{sum(1 for x in c.secrets if x.known)} of {len(c.secrets)} known"),
                             ],
-                            notes=c.facts,
+                            notes=c.facts + [f"· {h}" for h in c.history[-6:]],
                         )
                         for c in s.crew
                     ],
                 ),
                 Commands(title="Station controls", items=self.commands(s)),
+                *([ListPanel(title="Findings", items=[Chip(label="found", value=f) for f in s.findings[-12:]])] if s.findings else []),
                 threads_panel(s.threads),
                 ListPanel(title="Capabilities", items=[Chip(label=k, value=f"{v:+d}") for k, v in s.stats.items()]),
                 LogPanel(title="Logfile", lines=s.log[-20:]),
             ],
         )
+
+
+_STOP = {"that", "this", "with", "from", "into", "their", "there", "they", "were", "have", "been", "about", "station", "will",
+         "what", "when", "where", "which", "while", "just", "them", "then", "than", "over", "under", "told", "says", "player"}
+
+
+def _words(text: str) -> set[str]:
+    return {x.rstrip("s") for x in re.findall(r"[a-z]+", text.lower()) if len(x) >= 4 and x not in _STOP}

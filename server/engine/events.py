@@ -14,6 +14,8 @@ Predicates (JSON/YAML):
   {"in": ["path", [values]]}
   {"has": ["path", value]}                     list at path contains value (or an item whose id/name is value)
   {"fired": "event_id"}     {"not_fired": "event_id"}   {"expired": "event_id"}
+  {"pending_live": "tag"}   {"pending_happened": "tag"}  {"pending_stopped": "tag"}   a scripted timer's fate, by its tag
+                                               (live: any; happened/stopped: the latest timer with that tag)
   {"turn_gte": n}
   {"all": [p, ...]}  {"any": [p, ...]}  {"not": p}  true / false
 
@@ -21,6 +23,10 @@ Effects:
   {"set": ["path", value]}      {"add": ["path", n]}   (optional "lo"/"hi" bounds: {"add": [...], "lo": 0, "hi": 100})
   {"append": ["path", value]}   {"flag": ["name", value]}   {"log": "text"}
   {"directive": "text"}         (adds to this turn's narrator directives; same as the event's own)
+  {"pending": {"tag": "fuse", "what": "...", "who": "", "in_minutes": 360, "hidden": true, "unless": "...",
+               "on_stopped": "...", "on_happened": "...", "until": <predicate>}}
+                                starts a timer (engine/pending.py) from a scripted trigger: a critical mass that
+                                lights a fuse. The tick needs an EffectContext (pending path, clock) for it.
 
 Every windowed event should carry a `fallback` (fires a location-independent
 form after a deadline) or an `expires` clause, per §8.2.
@@ -33,7 +39,16 @@ from pydantic import BaseModel, Field, model_validator
 
 from .world import WORLD_OPS, predicate as world_predicate
 
+from . import pending as pend
 from . import statepath as sp
+
+
+class EffectContext(BaseModel):
+    """What a `pending` effect needs: where timers live and what time it is."""
+    pending_path: str = "hidden.pending"
+    clock_path: str = "clock"
+    minutes_per_day: int = 1440
+    turn: int = 0
 
 Strictness = Literal["scripted", "guided", "advisory"]
 
@@ -64,6 +79,7 @@ class Event(BaseModel):
     fallback: Fallback | None = None
     expires: Expiry | None = None
     exit: Any = None                            # predicate; while false after firing, the directive re-injects
+    rearm: Any = None                           # predicate; a fired once-event is unfired when it holds, so it can fire again (a fuse relit)
     reveal: Literal["always", "on_fire", "never"] = "always"   # whether the narrator's briefing lists it
     # status
     fired: bool = False
@@ -103,7 +119,7 @@ class Expired(BaseModel):
 
 # ---- predicates -----------------------------------------------------------
 
-def evaluate(pred: Any, doc: dict, events: list[Event], turn: int, clock_path: str = "clock") -> bool:
+def evaluate(pred: Any, doc: dict, events: list[Event], turn: int, clock_path: str = "clock", pending_path: str = "hidden.pending") -> bool:
     if pred is None or pred is False:
         return False
     if pred is True:
@@ -111,7 +127,7 @@ def evaluate(pred: Any, doc: dict, events: list[Event], turn: int, clock_path: s
     if not isinstance(pred, dict) or len(pred) != 1:
         raise ValueError(f"bad predicate: {pred!r}")
     (op, arg), = pred.items()
-    ev = lambda p: evaluate(p, doc, events, turn, clock_path)  # noqa: E731
+    ev = lambda p: evaluate(p, doc, events, turn, clock_path, pending_path)  # noqa: E731
     match op:
         case "all":
             return all(ev(p) for p in arg)
@@ -155,6 +171,14 @@ def evaluate(pred: Any, doc: dict, events: list[Event], turn: int, clock_path: s
             return any(e.id == arg and e.expired for e in events)
         case "turn_gte":
             return turn >= int(arg)
+        case "pending_live":
+            return any(p.live for p in pend.by_tag(pend.load(doc, pending_path), arg))
+        case "pending_happened":
+            tagged = pend.by_tag(pend.load(doc, pending_path), arg)
+            return bool(tagged) and tagged[-1].happened
+        case "pending_stopped":
+            tagged = pend.by_tag(pend.load(doc, pending_path), arg)
+            return bool(tagged) and tagged[-1].stopped
         case _ if op in WORLD_OPS:
             return world_predicate(op, arg, doc.get("world"))
     raise ValueError(f"unknown predicate op {op!r}")
@@ -162,11 +186,26 @@ def evaluate(pred: Any, doc: dict, events: list[Event], turn: int, clock_path: s
 
 # ---- effects --------------------------------------------------------------
 
-def apply_effects(effects: list[dict], doc: dict, directives: list[str], log_path: str = "log") -> list[dict]:
+def apply_effects(effects: list[dict], doc: dict, directives: list[str], log_path: str = "log", ctx: EffectContext | None = None) -> list[dict]:
     applied: list[dict] = []
     for eff in effects:
         e = dict(eff)
-        if "set" in e:
+        if "pending" in e:
+            if ctx is None:
+                raise ValueError("a pending effect needs an EffectContext (the resolve tick passes one)")
+            spec = dict(e["pending"])
+            clk = sp.lookup(doc, ctx.clock_path, {}) or {}
+            now_abs = int(clk.get("day", 1)) * ctx.minutes_per_day + int(clk.get("minute", 0))
+            items = pend.load(doc, ctx.pending_path)
+            tag = str(spec.get("tag", ""))
+            if tag and any(p.live for p in pend.by_tag(items, tag)):
+                continue                                # the fuse is already lit
+            new = pend.PendingNew(what=str(spec.get("what", "")), who=str(spec.get("who", "")), in_minutes=int(spec.get("in_minutes", 0)),
+                                  hidden=bool(spec.get("hidden", False)), unless=str(spec.get("unless", "")))
+            pend.add(items, new, now_abs=now_abs, minutes_per_day=ctx.minutes_per_day, turn=ctx.turn, source="script", tag=tag,
+                     until=spec.get("until"), on_stopped=str(spec.get("on_stopped", "")), on_happened=str(spec.get("on_happened", "")))
+            pend.save(doc, ctx.pending_path, items)
+        elif "set" in e:
             sp.assign(doc, e["set"][0], e["set"][1])
         elif "add" in e:
             sp.add(doc, e["add"][0], e["add"][1], e.get("lo"), e.get("hi"))
@@ -190,29 +229,33 @@ def apply_effects(effects: list[dict], doc: dict, directives: list[str], log_pat
 
 # ---- tick -----------------------------------------------------------------
 
-def tick(events: list[Event], doc: dict, turn: int, clock_path: str = "clock", log_path: str = "log") -> tuple[list[Fired], list[Expired], list[str]]:
+def tick(events: list[Event], doc: dict, turn: int, clock_path: str = "clock", log_path: str = "log",
+         ctx: EffectContext | None = None) -> tuple[list[Fired], list[Expired], list[str]]:
     """Evaluate every live event once, in priority order. Mutates `doc` and the
     events' status fields. Returns (fired, expired, directives)."""
     fired: list[Fired] = []
     expired: list[Expired] = []
     directives: list[str] = []
+    ppath = ctx.pending_path if ctx else "hidden.pending"
     for e in sorted(events, key=lambda x: x.priority):
+        if e.fired and e.once and not e.expired and e.rearm is not None and e.fired_turn != turn and evaluate(e.rearm, doc, events, turn, clock_path, ppath):
+            e.fired, e.fired_turn, e.variant, e.exited = False, None, None, True
         if e.expired or (e.fired and e.once):
             if e.fired and not e.exited and e.exit is not None:
-                if evaluate(e.exit, doc, events, turn, clock_path):
+                if evaluate(e.exit, doc, events, turn, clock_path, ppath):
                     e.exited = True
                 elif e.directive:
                     directives.append(f"(still open: {e.id}) {e.directive}")
             continue
-        if e.expires and evaluate(e.expires.when, doc, events, turn, clock_path):
+        if e.expires and evaluate(e.expires.when, doc, events, turn, clock_path, ppath):
             e.expired = True
-            applied = apply_effects(e.expires.effects, doc, directives, log_path)
+            applied = apply_effects(e.expires.effects, doc, directives, log_path, ctx)
             expired.append(Expired(event_id=e.id, effects_applied=applied, description=e.expires.description or ""))
             continue
         variant: str | None = None
-        if evaluate(e.trigger, doc, events, turn, clock_path):
+        if evaluate(e.trigger, doc, events, turn, clock_path, ppath):
             variant = "trigger"
-        elif e.fallback and evaluate(e.fallback.after, doc, events, turn, clock_path):
+        elif e.fallback and evaluate(e.fallback.after, doc, events, turn, clock_path, ppath):
             variant = "fallback"
         if variant is None:
             continue
@@ -220,11 +263,11 @@ def tick(events: list[Event], doc: dict, turn: int, clock_path: str = "clock", l
         e.exited = e.exit is None
         if variant == "fallback" and e.fallback is not None:
             directive = e.fallback.directive or e.directive
-            applied = apply_effects(e.fallback.effects or e.effects, doc, directives, log_path)
+            applied = apply_effects(e.fallback.effects or e.effects, doc, directives, log_path, ctx)
             desc = e.fallback.description or e.description
         else:
             directive = e.directive
-            applied = apply_effects(e.effects, doc, directives, log_path)
+            applied = apply_effects(e.effects, doc, directives, log_path, ctx)
             desc = e.description
         if directive:
             directives.append(directive)
