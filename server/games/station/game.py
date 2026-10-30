@@ -610,8 +610,8 @@ class StationGame(GameBase):
         s = state
         hatches = [t for t in (s.world.things if s.world else []) if "hatch" in t.tags]
         lines = [
-            "Targets: crew by id: " + ", ".join(f"{c.id} = {c.name}" for c in s.crew) + "; the station itself as player; systems by name: " + ", ".join(sy.name for sy in s.systems)
-            + "; resources by name: " + ", ".join(r.name for r in s.resources) + "; places, things, hatches and drones by the ids in brackets in the SCENE block.",
+            "Targets: crew by id: " + ", ".join(f"{c.id} = {c.name}" for c in s.crew) + "; the station itself as player; systems by id: " + ", ".join(f"{self._sys_id(s, sy)} = {sy.name}" for sy in s.systems)
+            + "; resources by id: " + ", ".join(f"{r.id} = {r.name}" for r in s.resources) + "; places, things, hatches and drones by the ids in brackets in the SCENE block.",
             "Rows this game records:",
             "- move <crew id> <place id or name from the SCENE>; move <drone id> <place>, only when the prose shows them arrive there. Someone or something still on the way is not a move: it is a soon row with the minutes until they arrive, and the move is reported on the turn they do. Crew move only through open hatches; a sealed hatch stops them unless the prose shows them force a manual override, which is its own row (below) before the move.",
             "- set <crew id>.mood <one or two words>, only if the narration changed it. set <crew id>.health <" + "|".join(HEALTH_VALUES) + ">, only if changed.",
@@ -628,12 +628,39 @@ class StationGame(GameBase):
             "- ruling leak: a piece listed under Hidden in the briefing (a crew member's secret) shown or stated in the prose when the station did not look for it this turn and the game state does not list it as known. The station learns by looking; the narrator may not hand it the piece.",
             "present: crew who appear or act in the narration.",
             "Threads: open ones are listed in the game state with their ids. Typical threads here: a report or message the player promised or forged and who believes it; a crew member's announced plan; something a crew member asked the station to do; a lie that could be checked; a bargain struck. Close a thread only with a reason that settles it.",
+            *self._mapping_lines(s),
             "",
             "Flags you may set (flag <name> value=true) when the narration clearly establishes them:",
         ]
         for k, v in s.scenario.narrator_flags.items():
             lines.append(f"- {k}: {v}")
         return "\n".join(lines)
+
+    @staticmethod
+    def _mapping_lines(s: StationState) -> list[str]:
+        """Where a thing the prose names belongs, from this station's own lists (D46): the model is never left to work
+        out which list a word goes in. Only examples whose ids exist in this game are given."""
+        w = s.world
+        places = {p.id for p in w.places} if w else set()
+        things = {t.id for t in w.things} if w else set()
+        sys_ids = {sy.id for sy in s.systems}
+        out = ["Which list a word belongs to, with this station's ids:"]
+        if "ai_core" in sys_ids:
+            out.append("- \"the AI core\", \"the core\" → system ai_core (set ai_core.control …)" + "".join(
+                x for x in (("; its network link → thing core_network_link" if "core_network_link" in things else ""),
+                            ("; the bus it runs through → thing core_bus" if "core_bus" in things else ""))) + ".")
+        collide = [sy for sy in s.systems if sy.id in places]
+        if collide:
+            out.append("- A module and its system are two entities: " + "; ".join(f"the {sy.name} module is place {sy.id}, its systems are {sy.id}_system" for sy in collide[:3]) + ".")
+        out.append("- A system written as the list and its name (\"systems.Doors\") is that system by its id (doors).")
+        if "habitation_ring" in places:
+            out.append("- A room or corner inside a module is that module; the station is closed, so it is never a new place: someone's bunk, the galley, the quarters → habitation_ring"
+                       + ("; the reactor bus panel → reactor" if "reactor" in places else "") + ("; the sample bench → lab" if "lab" in places else "") + ".")
+        if any(t.endswith("_drone") for t in things):
+            out.append("- Drones are things, by id (" + ", ".join(sorted(t for t in things if t.endswith("_drone"))) + "), never crew; they move with move rows.")
+        out.append("- An object the prose uses that no list has (a crew member's tablet, a wrench) is new: new thing value=Voss's tablet field=<the place it is in> note=<its state>. Never a set row on an id that is not listed.")
+        out.append("- Crew are characters by id; a crew member's own devices are things, never the crew member.")
+        return out
 
     def modifiers(self, state: StationState, req: CheckRequest, target_entity: str | None) -> list[Modifier]:
         mods: list[Modifier] = []
@@ -667,6 +694,45 @@ class StationGame(GameBase):
             return int(value.strip().replace(" ", ""))
         except ValueError:
             return None
+
+    @staticmethod
+    def _sys_id(s: StationState, sy: StationSystem) -> str:
+        """A system's id in one namespace with places and things: the Lab system is lab_system, since lab is the module."""
+        taken = ({p.id for p in s.world.places} | {t.id for t in s.world.things}) if s.world else set()
+        return sy.id + "_system" if sy.id in taken else sy.id
+
+    @staticmethod
+    def _system_of(s: StationState, target: str, field: str, value: str) -> tuple[StationSystem | None, str]:
+        """A system by id ("ai_core"), by name ("AI Core"), or written as the list and the name ("systems.Doors
+        unpowered": the field is the system, and the value says which field it means)."""
+        t = target.strip().lower().removeprefix("the ").strip()
+        if not t:
+            return None, field
+        places = {p.id for p in s.world.places} if s.world else set()
+        sy = next((x for x in s.systems if t in (x.name.lower(), x.id, x.id + "_system")), None)
+        if sy is not None and t in places and t != sy.id + "_system" and field not in ("status", "control"):
+            return None, field                                   # "lab" with any other field is the module (the world's)
+        if sy is not None:
+            return sy, field
+        if t in ("systems", "system") and field:
+            sy = next((x for x in s.systems if field.lower() in (x.name.lower(), x.id, x.id + "_system")), None)
+            if sy is not None:
+                return sy, "status" if value in SYSTEM_STATUSES else "control" if value in ("full", "limited", "none", "manual_override") else ""
+        return None, field
+
+    @staticmethod
+    def _resource_of(s: StationState, target: str, field: str) -> tuple[Resource | None, str]:
+        t = target.strip().lower().removeprefix("the ").strip()
+        if not t:
+            return None, field
+        r = next((x for x in s.resources if t in (x.name.lower(), x.id)), None)
+        if r is not None:
+            return r, field
+        if t in ("resources", "resource") and field:
+            r = next((x for x in s.resources if field.lower() in (x.name.lower(), x.id)), None)
+            if r is not None:
+                return r, "level"
+        return None, field
 
     def _crew_of(self, s: StationState, target: str) -> CrewMember | None:
         t = target.strip().lower().removeprefix("the ").strip()
@@ -797,8 +863,9 @@ class StationGame(GameBase):
                 return False                                       # locking a hatch is the station's lever or the world's rule
             self._override(s, hatch, ch.who, w)
             return True
-        sy = next((x for x in s.systems if x.name.lower() == target.lower()), None) if target else None
+        sy, sfield = self._system_of(s, target, field, value)
         if sy is not None:
+            field = sfield
             if kind == "set" and field == "control":
                 if value not in ("full", "limited", "none", "manual_override"):
                     w.reject(f"systems.{sy.name}.control", "not a control level", value)
@@ -820,8 +887,9 @@ class StationGame(GameBase):
                 return True
             w.reject(f"systems.{sy.name}.{field or kind}", "not a field the referee may write", value)
             return True
-        r = next((x for x in s.resources if x.name.lower() == target.lower()), None) if target else None
+        r, rfield = self._resource_of(s, target, field)
         if r is not None:
+            field = rfield
             if kind == "set" and field == "level":
                 if value == r.level or value not in LEVELS:
                     if value not in LEVELS:

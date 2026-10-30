@@ -33,7 +33,7 @@ from engine.roles import AdjudicationV2, Change
 from engine.spontaneous import Spontaneous
 from engine.statepath import Actor
 
-from .state import pocket_key, pocket_word, COUNTED, Case, Condition, Hidden, Item, NoirState, Note, Person, Player, Tell
+from .state import pocket_key, pocket_word, COUNTED, Case, Condition, FoundPlace, Hidden, Item, NoirState, Note, Person, Player, Tell
 
 HEALTH_VALUES = ["fine", "hurt", "wounded", "critical", "dead"]
 DREAD_STEP = 10
@@ -84,13 +84,14 @@ AUTHORITY: dict[str, Actor] = {
     "inventory": "narrator", "people": "narrator",
     "people.*.agenda": "script", "people.*.secret": "script", "people.*.description": "script",
     "people.*.tells": "script", "people.*.tells.*.told": "narrator", "things": "narrator",
-    "notebook": "narrator", "hidden": "script", "flags": "narrator", "log": "narrator", "threads": "narrator",
+    "notebook": "narrator", "found_places": "narrator", "hidden": "script", "flags": "narrator", "log": "narrator", "threads": "narrator",
 }
 
 
 ATTITUDE_WORDS = {"hostile": -4, "angry": -3, "suspicious": -1, "guarded": -1, "wary": -1, "cold": -1, "neutral": 0, "indifferent": 0,
                   "friendly": 2, "warm": 2, "trusting": 3, "loyal": 4}
 MAX_THINGS = 20
+MAX_FOUND_PLACES = 12
 DROPPED = re.compile(r"\b(drop(s|ped)?|left (it |behind)|fell|falls|lies|lying|set (it )?down|put (it )?down|knocked (out of|from)|let go)\b", re.I)
 REVOLVER_WORDS = {"revolver", "gun", "pistol", "the revolver", "his revolver", "frank's revolver", ".38"}
 DEAD_WORDS = re.compile(r"\b(dead|dies|died|dying|killed?|kills|destroyed|corpse|comes? apart|came apart|grease|shot dead|finished (it|him|her) off)\b", re.I)
@@ -194,6 +195,17 @@ class NoirGame(GameBase):
             hidden.update(facts=sc.get("hidden_facts", hidden.get("facts", [])), terms=sc.get("secret_terms", hidden.get("terms", [])))
             data["hidden"] = hidden
             people = [dict(q) for q in data.get("people") or []]
+            # a scenario that renamed a character's id (the creature was `thing`, the word for a row kind, until
+            # 2026-10-30, D46): the saved character with that name takes the new id, and what it holds follows
+            sc_ids = {sp["id"] for sp in sc.get("people", [])}
+            renamed: dict[str, str] = {}
+            for sp in sc.get("people", []):
+                old = next((q for q in people if q.get("id") not in sc_ids and q.get("name") == sp.get("name")), None)
+                if old is not None and not any(q.get("id") == sp["id"] for q in people):
+                    renamed[old["id"]] = sp["id"]
+                    old["id"] = sp["id"]
+            if renamed:
+                data["things"] = [dict(t, held_by=renamed.get(t.get("held_by", ""), t.get("held_by", ""))) for t in data.get("things") or []]
             by_id = {q.get("id"): q for q in people}
             for sp in sc.get("people", []):
                 q = by_id.get(sp["id"])
@@ -257,7 +269,7 @@ class NoirGame(GameBase):
         k = name.strip().lower().removeprefix("the ").strip()
         if not k:
             return None
-        locs = list(s.case.locations)
+        locs = list(s.places)
         for l in locs:
             if l.lower().removeprefix("the ") == k:
                 return l
@@ -309,6 +321,8 @@ class NoirGame(GameBase):
         lines: list[str] = [f"Time: {s.clock.render()}, {part_of_day(s.clock.minute)}"]
         conds = ", ".join(c.name for c in p.conditions) or "none"
         lines.append(f"{p.name}: at {p.location or 'unknown'}; health {p.health}; nerves {p.dread_tier(p.dread)}; conditions: {conds}.")
+        if s.found_places:
+            lines.append("Places found in play: " + "; ".join(f.name + (f" (off {f.within})" if f.within else "") for f in s.found_places) + ".")
         lines.append("Pockets: " + ", ".join(it.render() + (f" ({it.note})" if it.note and it.loaded is None and it.id not in ("dollars",) else "") for it in s.inventory) + ".")
         if s.things:
             lines.append("Not on Frank: " + "; ".join(self._thing_line(s, t) for t in s.things) + ".")
@@ -320,7 +334,7 @@ class NoirGame(GameBase):
             lines.append("")
             lines.append("People Frank has dealt with:")
             for q in met:
-                bits = [f"{q.status}" if q.status != "alive" else "", f"at {q.location or 'unknown'}", f"{q.attitude_word} toward Frank", q.mood]
+                bits = [f"{q.status}" if q.status != "alive" else "", f"at {q.location or 'unknown'}", f"{q.attitude_word} toward Frank", q.mood, q.condition]
                 lines.append(f"- {q.name}: " + ", ".join(x for x in bits if x) + ".")
                 for f in q.facts[-4:]:
                     lines.append(f"    {f}")
@@ -418,7 +432,29 @@ class NoirGame(GameBase):
         return [q.id for q in state.people]
 
     def locations(self, state: NoirState) -> list[str]:
-        return list(state.case.locations)
+        return list(state.places)
+
+    @staticmethod
+    def _mapping_lines(s: NoirState) -> list[str]:
+        """Where a word in the prose belongs, from this case's own lists (D46). Only examples whose ids and places exist
+        here are given."""
+        places = set(s.places)
+        creature = next((q for q in s.people if any("creature" in a.lower() for a in q.aliases) or "creature" in q.name.lower()), None)
+        out = ["Which list a word belongs to, with this case's ids and places:"]
+        if creature is not None:
+            out.append(f"- \"the creature\", \"the thing\", \"it\" when it means the creature → character {creature.id}: "
+                       f"set {creature.id}.condition wounded, crawling; move {creature.id} <place>; set {creature.id}.status dead. Never a new thing or a new person.")
+        out.append("- A named stranger is a new person; a nameless one (a man in a cap, the clerk) is nobody; an alias of a listed character is that character.")
+        spots = [(a, b) for a, b in (("a booth at The Anchor", "The Anchor"), ("Frank's desk", "Frank's office"), ("the stairs down to the water", "Under the docks"),
+                                     ("the roof outside the shack", "Rooftop shack")) if b in places]
+        if spots:
+            out.append("- A spot inside a listed place is that place: " + "; ".join(f"{a} → {b}" for a, b in spots) + ".")
+        streets = next((x for x in ("Lowtown streets", "Midtown streets", "Uptown streets") if x in places), None)
+        if streets:
+            out.append(f"- A real place inside none of them is new: \"Sal's Garage, two streets over\" → new place value=Sal's Garage field={streets}, then move player Sal's Garage. "
+                       "Not new: a room, corner or doorway of a listed place.")
+        out.append("- A thing Frank takes is new thing field=player; a thing left lying is new thing field=<place>; a character is never a thing.")
+        return out
 
     def narrator_flags(self, state: NoirState) -> dict[str, str]:
         return dict(state.case.narrator_flags)
@@ -451,7 +487,7 @@ class NoirGame(GameBase):
             "",
             "What Frank carries (pockets, rounds loaded), his conditions and health, and where he is are in the game state block; read them there before ruling something impossible.",
             "Entities (people, by id): " + ", ".join(f"{q.id} ({q.name}, {q.role})" for q in s.people) + ". People Frank has dealt with are listed in the game state; the others he has not met yet.",
-            "Places: " + ", ".join(s.case.locations) + ".",
+            "Places: " + ", ".join(s.places) + ".",
             "There are no systems in this game; leave `systems` empty.",
         ]
         return "\n".join(lines)
@@ -459,8 +495,9 @@ class NoirGame(GameBase):
     def referee_rules(self, state: NoirState) -> str:
         s = state
         lines = [
-            "Targets: player (Frank); people by id: " + ", ".join(f"{q.id} = {q.name}" for q in s.people) + "; pockets by name as the game state lists them (revolver, bullets, cigarettes, dollars, matches, notebook, …).",
-            "Places: " + ", ".join(s.case.locations) + ". A move or a location value must be one of these; if the prose puts someone somewhere not listed, use that district's streets (Lowtown streets, Midtown streets, Uptown streets) or report nothing; never name a building he is not in.",
+            "Targets: player (Frank); characters by id (anyone or anything that acts: people, and creatures too): " + ", ".join(f"{q.id} = {q.name}" + (f" (also {', '.join(q.aliases[:3])})" if q.aliases else "") for q in s.people)
+            + "; pockets by name as the game state lists them (revolver, bullets, cigarettes, dollars, matches, notebook, …).",
+            "Places: " + ", ".join(s.places) + ". A move or a location value is one of these. A spot inside a listed place is that place. A place the prose introduces that lies inside none of them (a bar on another street, a garage he is driven to) is new: new place value=<its name> field=<the listed place or district streets it lies in or off>, then the move; at most one a turn. If the prose only says he is out on the street, use that district's streets.",
             "Rows this game records:",
             "- move player <place>; move <person id> <place>.",
             "- set player.health <" + "|".join(HEALTH_VALUES) + ">, only when the prose says Frank was hurt or treated.",
@@ -472,11 +509,12 @@ class NoirGame(GameBase):
             "- new thing value=<name> field=<place>: something that could matter again left lying in a listed place, not taken by Frank (a dropped weapon, evidence left where it was). Never a person or a creature, and never set dressing.",
             "- set <person id>.told value=<tell id>: the person gave Frank that piece of what they know this turn. The game state lists the open pieces, with their ids, for the people with Frank; one row per piece told.",
             "- add <person id>.attitude ±n (-3 to 3): only when Frank did something to that person this turn that changes how they treat him: paid, helped, respected, threatened, insulted, lied and was caught. A tense conversation is 0. Being offered a bribe changes nothing.",
-            "- set <person id>.status alive|dead|missing|unknown, only if changed.",
+            "- set <character id>.status alive|dead|missing|unknown, only if changed. set <character id>.condition <a few words>: their body's state when the prose changes it (wounded, limping, unconscious, crawling, bleeding from the shoulder); a creature's injuries go here, never as a new thing.",
             "- learned <person id> value=fact: what they told Frank or what he learned about them, one short sentence; a witness's statement is a fact about the witness first, and also about the listed person it concerns when there is one.",
             "- learned player value=clue: concrete evidence Frank learned: a name, an address, a time, an object, a fact about the creatures or the Congregation. One short sentence, only when new. Never something Frank could not perceive.",
             "- new person value=name, field=<place>, note=role: anyone the prose gives a name (a surname is enough) who is not a listed person, even if they appear once; at most two per turn. A nameless stranger (a man in a cap, a clerk, a driver) is nobody: never attach him to a listed id and never a new person. A new name that is plainly a listed person (an alias) is that person: use their id.",
             "present: listed people the prose identifies by name or role; never because of a nameless stranger.",
+            *self._mapping_lines(s),
             "Threads: open ones are listed in the game state with their ids. Typical threads here: a promise to a client or a witness, a lead to follow, a lie Frank told and who believes it, a deadline, a question raised. Close a thread when the prose settles it: 'who was the caller' closes when Frank learns who called; 'check the address' closes when he has searched it; a promise closes when kept or broken.",
             "",
             "Flags you may set (flag <name> value=true) when the narration clearly establishes them:",
@@ -540,7 +578,7 @@ class NoirGame(GameBase):
         rounds fired capped by what is loaded, counted pockets by count, the revolver lost only explicitly,
         attitude steps of at most 3, the cast capped, the notebook capped. Returns False for rows that are not noir's."""
         p = s.player
-        locs = set(s.case.locations)
+        locs = set(s.places)
         target = ch.target.strip()
         field = ch.field.strip().lower()
         value = ch.value.strip()
@@ -758,6 +796,9 @@ class NoirGame(GameBase):
         if kind == "new" and target.lower() == "person" and value:
             self._new_person(s, value, ch.note, w)
             return True
+        if kind == "new" and target.lower() == "place" and value:
+            self._new_place(s, value, ch.field, w)
+            return True
 
         # a thread id written as a target ("set t0-find-june.resolved"): settle the thread, never match it as a person
         tt = next((t for t in s.threads if t.id == target.lower()), None) if target else None
@@ -813,6 +854,11 @@ class NoirGame(GameBase):
                     w.note(f"people.{q.id}.facts += {f!r}")
                 self._mark_told(s, [q], f, w)
                 return True
+            if kind == "set" and field in ("condition", "state", "injury", "injuries", "wounds", "health"):
+                words = value.strip(" .").lower()[:60]
+                if words and w.set(f"people.{q.id}.condition", q.condition, words):
+                    q.condition = words
+                return True
             if kind == "set" and field == "mood":
                 word = value.strip(" .").lower()[:30]
                 if word and w.set(f"people.{q.id}.mood", q.mood, word):
@@ -854,7 +900,7 @@ class NoirGame(GameBase):
 
     def _new_person(self, s: NoirState, name: str, role: str, w: Writer) -> None:
         p = s.player
-        locs = set(s.case.locations)
+        locs = set(s.places)
         nid = slug(name)
         q = s.person(nid) or self._same_person(s, name)
         if q is not None:
@@ -869,6 +915,20 @@ class NoirGame(GameBase):
         s.people.append(Person(id=nid, name=name.strip()[:40], role=role.strip()[:60], location=loc, met=True))
         s.notebook.append(Note(kind="contact", text=f"{name.strip()}: {role.strip()}" + (f" ({loc})" if loc else "")))
         w.note(f"people += {nid} ({name.strip()}, {role.strip()})")
+
+    def _new_place(self, s: NoirState, name: str, within: str, w: Writer) -> None:
+        """A place the prose introduced (D46: additions are the default). A name that resolves to a listed place, or a
+        spot inside one, is that place and adds nothing."""
+        clean = name.strip().strip('"').strip()[:40]
+        listed = self._place(s, clean)
+        if listed is not None:
+            w.note(f"new place {clean!r} is {listed}: nothing added")
+            return
+        if len(s.found_places) >= MAX_FOUND_PLACES:
+            w.reject("found_places", "the city has enough new places this case", clean)
+            return
+        s.found_places.append(FoundPlace(name=clean, within=self._place(s, within) or "" if within.strip() else ""))
+        w.note(f"found_places += {clean!r}" + (f" (off {s.found_places[-1].within})" if s.found_places[-1].within else ""))
 
     # ---- pocket helpers -----------------------------------------------------
     @staticmethod

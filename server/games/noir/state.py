@@ -69,6 +69,7 @@ class Person(BaseModel):
     location: str = ""
     attitude: int = 0               # -5..5 toward Frank
     mood: str = ""                  # a word for how they are right now; the referee may set it
+    condition: str = ""             # their body's state in a few words ("wounded, crawling"); a character, human or not (D46)
     status: PersonStatus = "alive"
     met: bool = False
     facts: list[str] = Field(default_factory=list)      # what Frank knows / what they said
@@ -119,6 +120,14 @@ class Note(BaseModel):
     turn: int = 0
 
 
+class FoundPlace(BaseModel):
+    """A place the prose introduced that lies inside no listed place (D46: additions are the default). The case's
+    own places come from the scenario on every load; these are the game's, so they live outside the case."""
+    name: str
+    within: str = ""                # the listed place or district streets it lies in or off
+    turn: int = 0
+
+
 class Case(BaseModel):
     id: str
     name: str
@@ -146,6 +155,7 @@ class NoirState(BaseModel):
     inventory: list[Item] = Field(default_factory=list)
     things: list[Item] = Field(default_factory=list)    # things that matter outside Frank's pockets: in a place or held by someone
     people: list[Person] = Field(default_factory=list)
+    found_places: list[FoundPlace] = Field(default_factory=list)
     notebook: list[Note] = Field(default_factory=list)
     log: list[str] = Field(default_factory=list)
     threads: list[Thread] = Field(default_factory=list)
@@ -153,6 +163,11 @@ class NoirState(BaseModel):
     hidden: Hidden = Field(default_factory=Hidden)
 
     # ---- helpers ------------------------------------------------------------
+    @property
+    def places(self) -> list[str]:
+        """Every place a row may name: the case's, then those found in play."""
+        return list(self.case.locations) + [f.name for f in self.found_places]
+
     def person(self, pid: str) -> Person | None:
         return next((p for p in self.people if p.id == pid), None)
 

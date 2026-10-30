@@ -10,6 +10,8 @@ events are the fuses (engine/pending.py). Field authority lives in game.py (AUTH
 """
 from __future__ import annotations
 
+import re
+
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -26,10 +28,19 @@ SystemStatus = Literal["operational", "degraded", "malfunctioning", "disabled", 
 Control = Literal["full", "limited", "none", "manual_override"]
 
 
+
+def _slug(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+
 class Resource(BaseModel):
     name: str
     level: Level = "OK"
     note: str = ""
+
+    @property
+    def id(self) -> str:
+        """The id the structured roles name it by ("Food & Water" -> food_water); computed, so saved games keep their shape."""
+        return _slug(self.name)
 
 
 class StationSystem(BaseModel):
@@ -37,6 +48,12 @@ class StationSystem(BaseModel):
     status: SystemStatus = "operational"
     control: Control = "full"
     description: str = ""
+
+    @property
+    def id(self) -> str:
+        """The id the structured roles name it by ("AI Core" -> ai_core). Every other entity a row may target has one;
+        a system known only by its name drew `ai_core` rows the engine refused (DESIGN2 §3b)."""
+        return _slug(self.name)
 
 
 class Disposition(BaseModel):

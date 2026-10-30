@@ -375,7 +375,7 @@ def test_things_left_in_places_and_held_by_people(game: NoirGame):
                                   C(kind="move", target="trench coat", value="thing"), C(kind="new", target="thing", value="woman's shoe", field="Rooftop shack"),
                                   C(kind="move", target="dollars", value="rosa"), C(kind="new", target="thing", value="a crate", field="the moon")))
     assert s2.item("revolver") is None and s2.thing("revolver").loaded == 6 and s2.thing("revolver").place == "Rooftop shack"
-    assert s2.thing("notebook").place == "Rooftop shack" and s2.thing("trench coat").held_by == "thing" and s2.thing("shoe").place == "Rooftop shack"
+    assert s2.thing("notebook").place == "Rooftop shack" and s2.thing("trench coat").held_by == "creature" and s2.thing("shoe").place == "Rooftop shack"
     assert {r.path for r in rep.rejected} == {"inventory.dollars", "things"} and s2.item("dollars").count == 14
     b = game.render_bulletin(s2, "")
     assert "Not on Frank: revolver (6/6 rounds), at Rooftop shack;" in b and "trench coat, held by The thing in the shack (Rooftop shack)" in b
@@ -468,9 +468,9 @@ def test_health_and_conditions_added_without_a_sign(game: NoirGame):
 def test_a_person_gone_is_dead_only_when_the_row_says_so(game: NoirGame):
     _, st = game.new_instance({})
     s2, _ = apply(game, st, ref(C(kind="gone", target="thing", note="it went over the parapet, hurt, into the rain")))
-    assert s2.person("thing").status == "alive" and s2.person("thing").location == "Unknown"
+    assert s2.person("creature").status == "alive" and s2.person("creature").location == "Unknown"
     s3, _ = apply(game, st, ref(C(kind="gone", target="the creature", note="the head shot killed it; it came apart into grease")))
-    assert s3.person("thing").status == "dead"                                   # by its alias, too
+    assert s3.person("creature").status == "dead"                                   # by its alias, too
 
 
 def test_aliases_moods_and_things_left_here(game: NoirGame):
@@ -503,10 +503,10 @@ def test_rows_about_frank_that_belong_to_someone_else_are_judged(game: NoirGame)
 
 def test_new_rows_named_after_the_thing_itself(game: NoirGame):
     _, st = game.new_instance({})
-    st.person("thing").met = False
+    st.person("creature").met = False
     s2, rep = apply(game, st, ref(C(kind="new", target="creature.Lowtown streets"), C(kind="new", target="yellow grease.player"),
                                   C(kind="new", target="umbrella", note="borrowed from Rosa")))
-    assert s2.person("thing").met and s2.person("thing").location == "Lowtown streets"
+    assert s2.person("creature").met and s2.person("creature").location == "Lowtown streets"
     assert s2.item("yellow grease") is not None and s2.item("umbrella") is not None and not rep.rejected
 
 
@@ -539,9 +539,9 @@ def test_load_state_rereads_the_script_owned_parts(game: NoirGame):
     doc["people"] = [q for q in doc["people"] if q["id"] != "pulaski"]
     doc["case"]["locations"] = ["Nowhere"]
     s2 = game.load_state(doc)
-    assert s2.person("thing").aliases and s2.person("ada").description.startswith("Thirty") and s2.person("pulaski") is not None and not s2.person("pulaski").met
+    assert s2.person("creature").aliases and s2.person("ada").description.startswith("Thirty") and s2.person("pulaski") is not None and not s2.person("pulaski").met
     assert s2.person("rosa").tells[0].told and not s2.person("rosa").tells[1].told and "The Anchor" in s2.case.locations
-    assert game._same_person(s2, "the creature") is s2.person("thing")
+    assert game._same_person(s2, "the creature") is s2.person("creature")
 
 
 def test_three_more_shapes_from_the_sweep_runs(game: NoirGame):
