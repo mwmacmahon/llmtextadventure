@@ -12,6 +12,7 @@ format shims and the engine's rejections are exercised too), and compares.
     .venv/bin/python tools/eval_replay.py run ts_noir.station_20261029_02_24t --role referee            # Sonnet (config.yml)
     TA_CONFIG=config.llamacpp.yml TA_LLAMA_URL=http://192.168.0.215:8280 \\
         .venv/bin/python tools/eval_replay.py run <test set id> --role both --profile a3b-think
+    .venv/bin/python tools/eval_replay.py check <test set id>                                          # the key is sound
     .venv/bin/python tools/eval_replay.py grade ../notes/eval/runs/<run id>.json -v                    # re-grade, free
 
 The pieces (test set, answer key, run, report), their names and how to write and read them: docs/TESTING.md.
@@ -220,11 +221,17 @@ def export_turns(store: Store, games: dict, iid: str, turns: list[int] | None, a
         for_referee = prose + (NOTES_HEAD + "\n".join(f"- {n}" for n in notes) if notes else "")
         # the two turns of prose before this one, as the live adjudicator had them
         recent = [asdict(m) for m in _recent_prose_at(store, iid, t)]
+        # the player's commands this turn, as the live referee is told them (pipeline._lever_lines), rebuilt from the previews
+        levers = []
+        for pv in (r["payload"] for r in rows if r["kind"] == "command_preview"):
+            label = pv.get("label") or " ".join([pv["id"], *[str(v) for v in (pv.get("args") or {}).values()]])
+            text = (pv.get("text") or "").strip()
+            levers.append(f"{pv['id']} ({label}): refused by the engine: {text} Nothing changed." if not pv.get("ok") else f"{pv['id']} ({label}): {text}")
         out.append({
             "iid": iid, "turn": t, "game": inst.game, "title": inst.title, "source_model": model,
             "snapshot": store.load_state(iid, t - 1),
             "player_text": tr["player"], "recent": recent, "directives": directives,
-            "prose": prose, "notes": notes, "narration": for_referee,
+            "prose": prose, "notes": notes, "narration": for_referee, "levers": levers,
             "expected": {
                 # an action with no intents is the bug the adjudicate retry now catches: its checks are no answer to score against
                 "adjudication_unreliable": adj.get("kind") == "action" and not adj.get("intents"),
@@ -547,7 +554,9 @@ async def _replay_roles(rec: dict, game, state, exp: dict, res: dict, current: d
                 adj_obj = schema.model_validate(exp["adjudication"])
             except Exception:
                 adj_obj = None
-        system, msgs = referee_inputs(game, state, rec["directives"], rec["player_text"], rec["narration"], adj_obj, levers=[])
+        # test sets made before 2026-10-30 (D44) carry no "levers": their referee is not told the player's commands
+        system, msgs = referee_inputs(game, state, rec["directives"], rec["player_text"], rec["narration"], adj_obj, levers=rec.get("levers") or [])
+        res["levers_given"] = rec.get("levers") is not None
         t0 = time.monotonic()
         try:
             delta, usage, parts = await extract_referee(provider, role, system, msgs)
@@ -771,6 +780,36 @@ def export_set(picks: list[str], any_model: bool, purpose: str, title: str) -> P
     return folder
 
 
+def check_key(manifest: dict) -> list[str]:
+    """What is wrong with a test set's key: a turn it judges that the set does not have (or one it skips), a value YAML cut
+    at an unquoted comma (a key with no value), a required or forbidden row with no quote, a quote that is not word for
+    word in the turn's prose, notes or THIS TURN. Empty when the key is sound."""
+    import yaml
+    kp = set_key_path(manifest)
+    if kp is None:
+        return ["no key: write key.yml in the test set's folder (docs/TESTING.md)"]
+    raw = yaml.safe_load(kp.read_text()) or {}
+    recs = {f"{r['iid']}:{r['turn']}": r for r in map(json.loads, (manifest["_dir"] / "turns.jsonl").read_text().splitlines()) if r}
+    out = [f"{k}: judged in the key, not in the set" for k in raw if k != "_all" and k not in recs]
+    out += [f"{k}: in the set, not judged in the key" for k in recs if k not in raw]
+    for k, turn in raw.items():
+        if k == "_all" or k not in recs:
+            continue
+        hay = "\n".join([recs[k]["prose"], *recs[k].get("notes", []), *recs[k].get("directives", [])])
+        for sec, items in ((turn.get("referee") or {}).items()):
+            for i, it in enumerate(items or []):
+                where = f"{k} referee.{sec}[{i}]"
+                cut = [x for x, v in it.items() if v is None]
+                if cut:
+                    out.append(f"{where}: a value was cut at an unquoted comma (stray key {cut[0]!r}); quote the value")
+                q = it.get("quote")
+                qs = [q] if isinstance(q, str) else list(q or [])
+                if sec in ("required", "forbidden") and not qs and not (sec == "forbidden" and it.get("unquoted")):
+                    out.append(f"{where}: no quote (a forbidden row about something the turn never shows may say unquoted: true)")
+                out += [f"{where}: quote not word for word in the turn: {x[:70]!r}" for x in qs if x not in hay]
+    return out
+
+
 def run_set_key(d: dict) -> Path | None:
     """The key a stored run is graded with today: its test set's key (by the run's `set`, or its old corpus path)."""
     try:
@@ -797,6 +836,8 @@ def main() -> None:
     rn.add_argument("--note", help="words for the run id: what this run varies (default: the --opt overrides)")
     rn.add_argument("-v", "--verbose", action="store_true")
     rn.add_argument("--gold", help="grade against this key instead of the test set's own")
+    ck = sub.add_parser("check", help="check a test set's key: quotes word for word, no value cut at a comma, every turn judged")
+    ck.add_argument("set")
     gr = sub.add_parser("grade", help="grade stored runs against their test set's key, with no model calls")
     gr.add_argument("runs", nargs="+")
     gr.add_argument("--gold", help="grade against this key instead of each run's test set key")
@@ -805,6 +846,10 @@ def main() -> None:
     if args.cmd == "export":
         folder = export_set(args.picks, args.any_model, args.purpose, args.title)
         print(f"test set {folder.name}: {sum(1 for _ in (folder / 'turns.jsonl').open())} turns -> {folder}; write its key.yml next (docs/TESTING.md)")
+    elif args.cmd == "check":
+        problems = check_key(find_set(args.set))
+        print("\n".join(problems) or "the key is sound")
+        raise SystemExit(1 if problems else 0)
     elif args.cmd == "grade":
         for path in args.runs:
             d = json.loads(Path(path).read_text())

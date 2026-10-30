@@ -104,6 +104,14 @@ note), `vwords` (each in the value alone), `step` (`[lo, hi]` for a signed numbe
 **Every required and forbidden row carries `quote`**: the words of the turn that show it, copied exactly from the prose,
 the narrator's notes ("unseen: …", "soon: …") or THIS TURN. One string or a list. A report marks each quote in the
 passage; a quote that is not word for word is a bug in the key. Never leave the reader to guess where an item comes from.
+A forbidden row about something the turn never shows ("no shot was fired", "she never named Szabo") has no passage to
+quote: it says `unquoted: true`, and its `why` says what is absent.
+
+**Check the key** after every edit; it finds quotes that are not word for word, values cut at an unquoted comma, rows
+with no quote, and turns judged in one place and not the other:
+```
+.venv/bin/python tools/eval_replay.py check <test set id>
+```
 
 **Required, allowed, gray or forbidden.** Ask what the engine does with each reading:
 - The engine ends up wrong without it: **required**. A debatable requirement (the prose implies it but never shows it; a
@@ -203,6 +211,13 @@ allowed. A timer the player escaped still needs settling as stopped, because sil
 `ts_noir.station_20261029_02_24t` were recorded before the station had hatches; today's referee rules teach hatch rows,
 so a model writes them and an old key calls the target unknown. Mark such rows gray (`corpus-older-than-prompt`), and make a
 new test set when the games change enough. Each test set's manifest records the commit it was made at.
+
+**Older test sets do not tell the referee the player's commands.** The live referee is told which of the player's
+commands this turn went through, which were refused and which the prose left undone (so it can mark one not done and does
+not report its effects twice). Turn records made before 30 October 2026 (D44) did not record them, so a replay of those sets
+tells the referee nothing about commands: a row restating a lever's effect, or a missing not_done, is harder to judge
+there. Test sets made since carry each turn's commands as the live referee saw them (`levers` in each turn record), and a run
+records whether its referee was given them.
 
 **The config's model name is not the model.** A role's `model` setting is the config's label; for a local model the box
 serves whatever profile is loaded. Runs record the model each call was served by, and run ids and reports use that.
