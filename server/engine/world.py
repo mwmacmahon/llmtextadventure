@@ -959,7 +959,8 @@ def _apply_new_room(w: World, d: Declaration, policy: Policy, out: AppliedDeclar
     """A room inside a recorded place: the closed hull still governs modules and hatches, not a crew member's quarters
     inside one. Reached through its parent; the same name inside the same place is the room already recorded."""
     if not d.locus:
-        reject(d, "say which place the room is inside (field=<place id>)")
+        reject(d, ("the map is closed: no new place stands on its own here; a room inside a recorded place names it (field=<place id>)"
+                   if w.closed else "say which place the room is inside (field=<place id>)"), "unauthorized_addition" if w.closed else "")
         return
     loc = w.normalize_locus(d.locus)
     k, parent = w.split_locus(loc or "")
