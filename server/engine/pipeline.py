@@ -53,6 +53,7 @@ from .roles import (Adjudication, adjudicator_messages, referee_messages, summar
 from .roles import NARRATOR_WORLD, REFEREE_PARTS, ChangeReport, referee_part_messages
 from .changes import apply_changes, merge_parts, screen_unseen_clues
 from .store import Store
+from .tape import PART, Taped, exchange_row
 
 MODEL_CALL_KINDS = {"model_call": None, "adjudication": "adjudicator", "verdict": "referee"}
 log = logs.get("pipeline")
@@ -70,6 +71,7 @@ class Engine:
         self.cfg = cfg
         self.store = store
         self.games = games
+        self._tapes: dict[str, Any] = {}          # iid -> the running turn's ledger writer, for the tape (engine/tape.py)
         # Runtime settings the UI can change (the guard mode, the progress estimate); persisted beside the store.
         self.settings_path = Path(store.path).parent / "settings.json" if getattr(store, "path", None) else None
         self.settings: dict[str, Any] = {"guard": {"mode": cfg.guard.mode, "max_retells": cfg.guard.max_retells},
@@ -283,6 +285,7 @@ class Engine:
             yield {"event": "error", "data": {"message": f"The story is over: {over} Undo or branch from an earlier turn to keep playing.", "step": "ended"}}
             return
         ledger = lambda kind, payload: self.store.append_ledger(iid, turn, kind, payload)  # noqa: E731
+        self._tapes[iid] = ledger
         t_turn = time.monotonic()
         log.info("turn.start " + logs.kv(iid=iid, turn=turn, command=command[0] if command else None,
                                          chars=len(player_text or "")))
@@ -400,7 +403,7 @@ class Engine:
         if plan.needed:
             yield {"event": "summary", "data": {"status": "running", "turns": plan.to_cover}}
             try:
-                text, meta = await self._summarize(game, state, plan)
+                text, meta = await self._summarize(game, state, plan, iid)
                 self.store.append_transcript(iid, plan.to_cover[-1], "system_note", text)
                 ledger("model_call", {"role": "summarizer", **meta, "covered": plan.to_cover, "previous_turn": plan.previous.turn if plan.previous else None, "text": text})
                 log.info("step " + logs.kv(iid=iid, turn=turn, step="summarize", model=meta["model"], seconds=meta["seconds"],
@@ -434,7 +437,7 @@ class Engine:
         yield {"event": "bulletin", "data": {"turn": turn, "text": bulletin}}
         self.store.append_transcript(iid, turn, "bulletin", bulletin)
 
-        provider = get_provider(role)
+        provider = self._provider(role, iid, "narrator")
         system = (inst.prefix_text or game.frozen_prefix(state)) + "\n\n" + NARRATOR_WORLD
         reminder = _check_reminder(res, told)
         budget = role.max_prompt_tokens
@@ -527,7 +530,7 @@ class Engine:
                 for_referee = narration
                 if calls_block.get("notes"):
                     for_referee += "\n\n[NARRATOR'S NOTES: facts it decided, what is happening unseen (unseen:), what it set in motion (soon:)]\n" + "\n".join(f"- {n}" for n in calls_block["notes"])
-                delta, meta = await self._referee(game, state, res["directives"], player_text, for_referee, adj, levers=_lever_lines(levers))
+                delta, meta = await self._referee(game, state, res["directives"], player_text, for_referee, adj, levers=_lever_lines(levers), iid=iid)
                 delta_json = delta.model_dump(mode="json")
                 ledger("verdict", {**delta_json, "_call": meta})
                 present = _named_present(game, state, [e for e in delta.present if e in _hook(game, "entity_ids", state, default=[])], narration)
@@ -588,6 +591,7 @@ class Engine:
             state = drifted
         self.store.save_snapshot(iid, turn, state.model_dump(mode="json"))
         log.info("turn.done " + logs.kv(iid=iid, turn=turn, seconds=time.monotonic() - t_turn, ending=_hook(game, "ending", state)))
+        self._tapes.pop(iid, None)
 
         # The engine checks the referee's check rulings against what it knows: check_skipped needs an assessed check
         # that was never rolled, check_ignored needs a roll. Anything else is the referee second-guessing the
@@ -694,6 +698,8 @@ class Engine:
             "attempt": prev["attempt"] if prev else 0, "hint": prev["hint"] if prev else None,
             "narration": next((r.text for r in transcript if r.role == "narrator"), ""),
             "mechanics": next((r.text for r in transcript if r.role == "mechanics"), ""),
+            # the telling's own ledger (its model calls on the tape, its verdict, its rulings), for tools/round_report.py
+            "ledger": [{"seq": r["seq"], "kind": r["kind"], "payload": r["payload"]} for r in rows if r["kind"] != "rewrite"],
         })
         attempt = (prev["attempt"] if prev else 0) + 1
         self.store.truncate_after_turn(iid, turn - 1)
@@ -705,9 +711,17 @@ class Engine:
             yield ev
 
     # ---- steps -------------------------------------------------------------
+    def _provider(self, role: Any, iid: str | None, step: str) -> Any:
+        """The role's provider; during a live turn, wrapped so every call it makes goes on the turn's tape."""
+        provider = get_provider(role)
+        tape = self._tapes.get(iid or "")
+        if tape is None:
+            return provider
+        return Taped(provider, lambda label, ex: tape("exchange", exchange_row(self.store.put_blob, label, ex)), step)
+
     async def _adjudicate(self, game: Game, state: BaseModel, iid: str, player_text: str) -> tuple[Adjudication, dict]:
         role = self.cfg.role("adjudicator")
-        provider = get_provider(role)
+        provider = self._provider(role, iid, "adjudicator")
         recent = _recent_prose(self.store, iid, turns=2)
         system, msgs, schema = adjudicator_inputs(game, state, recent, player_text)
         t0 = time.monotonic()
@@ -966,9 +980,9 @@ class Engine:
                               data={"odds": [call.num, call.den], "yes": yes})
         return handler
 
-    async def _summarize(self, game: Game, state: BaseModel, plan) -> tuple[str, dict]:
+    async def _summarize(self, game: Game, state: BaseModel, plan, iid: str | None = None) -> tuple[str, dict]:
         role = self.cfg.role("summarizer")
-        provider = get_provider(role)
+        provider = self._provider(role, iid, "summarizer")
         captured = _hook(game, "state_for_models", state, default=game.render_bulletin(state, ""))
         guidance = _hook(game, "summary_guidance", state, default="")
         system, msgs = summarizer_messages(plan.previous.text if plan.previous else None, plan.rows, captured, guidance)
@@ -985,10 +999,11 @@ class Engine:
                       "usage": asdict(done.usage), "note": done.note}
 
     async def _referee(self, game: Game, state: BaseModel, directives: list[str], player_text: str, narration: str,
-                       adj: Adjudication | None = None, levers: list[str] | None = None) -> tuple[ChangeReport, dict]:
+                       adj: Adjudication | None = None, levers: list[str] | None = None, iid: str | None = None) -> tuple[ChangeReport, dict]:
         role = self.cfg.role("referee")
-        provider = get_provider(role)
-        system, msgs = referee_inputs(game, state, directives, player_text, narration, adj, levers)
+        provider = self._provider(role, iid, "referee")
+        recent = _earlier_turns(self.store, iid, role.recent_turns) if iid else []
+        system, msgs = referee_inputs(game, state, directives, player_text, narration, adj, levers, recent=recent)
         t0 = time.monotonic()
         from .referee_passes import referee_ids
         delta, usage, parts = await extract_referee(provider, role, system, msgs, referee_ids(state, levers))
@@ -1063,7 +1078,11 @@ async def extract_referee(provider: Any, role: Any, system: str, msgs: list[Msg]
 
     async def one(part: str) -> tuple[str, ChangeReport, Usage, float]:
         t0 = time.monotonic()
-        rep, u = await provider.extract(role, system, referee_part_messages(msgs, part), ChangeReport)
+        token = PART.set(part)
+        try:
+            rep, u = await provider.extract(role, system, referee_part_messages(msgs, part), ChangeReport)
+        finally:
+            PART.reset(token)
         return part, rep, u, round(time.monotonic() - t0, 2)
 
     names = list(REFEREE_PARTS)
@@ -1087,7 +1106,11 @@ async def _extract_focused(provider: Any, role: Any, system: str, msgs: list[Msg
 
     async def one(part: str) -> tuple[str, Any, Usage, float]:
         t0 = time.monotonic()
-        rep, u = await provider.extract(role, system, rp.pass_messages(msgs, part, ids, mode), rp.pass_schema(part, ids, mode))
+        token = PART.set(part)
+        try:
+            rep, u = await provider.extract(role, system, rp.pass_messages(msgs, part, ids, mode), rp.pass_schema(part, ids, mode))
+        finally:
+            PART.reset(token)
         return part, rep, u, round(time.monotonic() - t0, 2)
 
     names = list(rp.PLANS[mode])
@@ -1148,10 +1171,25 @@ def adjudicator_inputs(game: Game, state: BaseModel, recent: list[Msg], player_t
 
 
 def referee_inputs(game: Game, state: BaseModel, directives: list[str], player_text: str, narration: str,
-                   adj: Adjudication | None = None, levers: list[str] | None = None) -> tuple[str, list[Msg]]:
-    """Everything the referee is sent (see adjudicator_inputs)."""
+                   adj: Adjudication | None = None, levers: list[str] | None = None,
+                   recent: list[tuple[int, str, str]] | None = None) -> tuple[str, list[Msg]]:
+    """Everything the referee is sent (see adjudicator_inputs). `recent`: the TRIAL earlier turns (D59)."""
     rules = _hook(game, "referee_rules", state, default="")
-    return referee_messages(rules, _engine_state_text(game, state, adj), directives, player_text, narration, levers=levers)
+    return referee_messages(rules, _engine_state_text(game, state, adj), directives, player_text, narration, levers=levers, recent=recent)
+
+
+def _earlier_turns(store: Store, iid: str, n: int) -> list[tuple[int, str, str]]:
+    """The last `n` finished turns before the one in play (a turn is finished once its snapshot is saved), as
+    (turn, player input, narration) with the mechanics lines left out. TRIAL (D59), for the referee."""
+    if n <= 0:
+        return []
+    last = store.latest_turn(iid)
+    by_turn: dict[int, dict[str, str]] = {}
+    for r in store.transcript(iid, roles=["player", "narrator"]):
+        if 1 <= r.turn <= last:
+            by_turn.setdefault(r.turn, {})[r.role] = r.text
+    done = sorted(t for t, p in by_turn.items() if "player" in p and "narrator" in p)[-n:]
+    return [(t, by_turn[t]["player"], re.sub(r"\n§ .*", "", by_turn[t]["narrator"])) for t in done]
 
 
 
@@ -1164,7 +1202,7 @@ class Replay:
     adjudication: Adjudication
     hint: str
     attempt: int                      # 1 for the first rewrite of a turn
-    history: list[dict[str, Any]]     # every earlier telling of this turn: {attempt, hint, narration, mechanics}
+    history: list[dict[str, Any]]     # every earlier telling of this turn: {attempt, hint, narration, mechanics, ledger}
     call: dict[str, Any]              # the original adjudicator call's meta (provider, model); its usage is not counted again
     by: str = "player"                # who asked: the player (the rewrite button) or the referee (a serious ruling under the guard)
 

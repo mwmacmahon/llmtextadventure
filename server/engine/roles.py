@@ -188,12 +188,26 @@ LEVERS, when listed, are the player's exact actions the engine applies by itself
 Be terse: one row per change, nothing for what did not change. A row you decide against is left out, never written with a note saying to ignore it."""
 
 
+EARLIER_OPEN = ("[EARLIER TURNS: PAST, ALREADY PLAYED AND ALREADY RECORDED IN THE GAME STATE BELOW. NOT what you are judging. "
+                "Write no rows and no rulings about anything in them; read them only to tell who or what this turn's narration means "
+                "when it refers back (\"she\", \"the man from the docks\", \"the thing he grabbed\").]")
+EARLIER_CLOSE = "[END OF EARLIER TURNS. Everything below is this turn, the one you are judging.]"
+
+
+def earlier_turns_block(recent: list[tuple[int, str, str]]) -> str:
+    """TRIAL (D59): the referee's earlier turns, fenced as past. `recent`: (turn, player input, narration), oldest first."""
+    if not recent:
+        return ""
+    body = "\n\n".join(f"(earlier turn {t})\nPlayer: {p.strip()}\nNarration: {n.strip()}" for t, p, n in recent)
+    return f"{EARLIER_OPEN}\n\n{body}\n\n{EARLIER_CLOSE}\n\n"
+
+
 def referee_messages(rules: str, state_text: str, directives: list[str], player_text: str, narration: str,
-                     levers: list[str] | None = None) -> tuple[str, list[Msg]]:
+                     levers: list[str] | None = None, recent: list[tuple[int, str, str]] | None = None) -> tuple[str, list[Msg]]:
     system = REFEREE_INSTRUCTIONS + "\n\nGAME RULES FOR THE REFEREE\n" + rules.strip()
     d = "\n".join(f"- {x}" for x in directives) if directives else "- (none)"
     lv = ("\n\n[LEVERS THE ENGINE APPLIES AFTER YOUR REPORT, UNLESS NOT COMPLETED]\n" + "\n".join(f"- {x}" for x in levers)) if levers else ""
-    user = (f"[GAME STATE BEFORE THIS TURN]\n{state_text.strip()}\n\n[DIRECTIVES THE NARRATOR WAS GIVEN]\n{d}{lv}\n\n"
+    user = (earlier_turns_block(recent or []) + f"[GAME STATE BEFORE THIS TURN]\n{state_text.strip()}\n\n[DIRECTIVES THE NARRATOR WAS GIVEN]\n{d}{lv}\n\n"
             f"[PLAYER INPUT]\n{player_text.strip()}\n\n[NARRATION AND THE NARRATOR'S NOTES]\n{narration.strip()}")
     return system, [Msg("user", user)]
 

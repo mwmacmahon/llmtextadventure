@@ -3,6 +3,10 @@
 Everything a model is sent is rebuilt from these tables. Raw API messages are
 never stored as the source of truth.
 
+The tape (engine/tape.py) is the exception that proves it: every call a live turn
+makes is kept as an `exchange` ledger row, its prompts by hash in `blob`, as a
+record for tools/round_report.py. Nothing is rebuilt from it.
+
 Export/import: `export_instance` returns a self-contained JSON document (all
 four tables for one instance); `import_instance` recreates it under a fresh
 id. `copy_instance` is the same thing in-process, truncated at a turn: that is
@@ -10,6 +14,7 @@ how branching ("fork from turn N") works.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import threading
@@ -47,10 +52,14 @@ CREATE TABLE IF NOT EXISTS ledger (
   instance_id TEXT NOT NULL,
   seq INTEGER NOT NULL,
   turn INTEGER NOT NULL,
-  kind TEXT NOT NULL,             -- model_call | roll | check | adjudication | delta | verdict | event_fired | event_expired | summary
+  kind TEXT NOT NULL,             -- model_call | exchange | roll | check | adjudication | delta | verdict | event_fired | event_expired | summary
   payload_json TEXT NOT NULL,
   created TEXT NOT NULL,
   PRIMARY KEY (instance_id, seq)
+);
+CREATE TABLE IF NOT EXISTS blob (
+  hash TEXT PRIMARY KEY,          -- a prompt text kept once however many calls sent it (ledger kind=exchange names it)
+  text TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS snapshot (
   instance_id TEXT NOT NULL,
@@ -73,6 +82,25 @@ def _now() -> str:
 
 def _new_id() -> str:
     return uuid.uuid4().hex[:12]
+
+
+def blob_refs(ledger: list[dict]) -> set[str]:
+    """The blob hashes the ledger rows name: every `exchange` row's system prompt and messages, including the
+    exchanges of earlier tellings kept in a `rewrite` row's history."""
+    out: set[str] = set()
+
+    def walk(rows: list[dict]) -> None:
+        for r in rows:
+            p = r.get("payload") or {}
+            if r.get("kind") == "exchange":
+                out.add(p.get("system", ""))
+                out.update(m.get("content", "") for m in p.get("messages", []))
+            elif r.get("kind") == "rewrite":
+                for h in p.get("history", []):
+                    walk(h.get("ledger", []))
+    walk(ledger)
+    out.discard("")
+    return out
 
 
 @dataclass
@@ -244,6 +272,24 @@ class Store:
             for r in self.conn.execute(q, args).fetchall()
         ]
 
+    # ---- blobs (prompt texts, by content) -------------------------------------
+    @_locked
+    def put_blob(self, text: str) -> str:
+        h = hashlib.sha256(text.encode()).hexdigest()[:16]
+        with self.conn:
+            self.conn.execute("INSERT OR IGNORE INTO blob (hash, text) VALUES (?,?)", (h, text))
+        return h
+
+    @_locked
+    def blobs(self, hashes: Iterable[str]) -> dict[str, str]:
+        hs = sorted(set(hashes))
+        out: dict[str, str] = {}
+        for i in range(0, len(hs), 500):
+            part = hs[i:i + 500]
+            q = f"SELECT hash, text FROM blob WHERE hash IN ({','.join('?' * len(part))})"
+            out.update({r["hash"]: r["text"] for r in self.conn.execute(q, part)})
+        return out
+
     # ---- undo -------------------------------------------------------------
     @_locked
     def truncate_after_turn(self, iid: str, turn: int) -> None:
@@ -261,6 +307,10 @@ class Store:
             raise KeyError(iid)
         lim = "" if upto_turn is None else f" AND turn<={int(upto_turn)}"
         rows = lambda q: [dict(r) for r in self.conn.execute(q, (iid,)).fetchall()]  # noqa: E731
+        ledger = [
+            {**r, "payload": json.loads(r.pop("payload_json"))}
+            for r in rows(f"SELECT seq, turn, kind, payload_json, created FROM ledger WHERE instance_id=?{lim} ORDER BY seq")
+        ]
         return {
             "format": EXPORT_FORMAT,
             "exported": _now(),
@@ -270,10 +320,8 @@ class Store:
                 "origin": inst.origin,
             },
             "transcript": rows(f"SELECT seq, turn, role, text, created FROM transcript WHERE instance_id=?{lim} ORDER BY seq"),
-            "ledger": [
-                {**r, "payload": json.loads(r.pop("payload_json"))}
-                for r in rows(f"SELECT seq, turn, kind, payload_json, created FROM ledger WHERE instance_id=?{lim} ORDER BY seq")
-            ],
+            "ledger": ledger,
+            "blobs": self.blobs(blob_refs(ledger)),
             "snapshots": [
                 {**r, "state": json.loads(r.pop("state_json"))}
                 for r in rows(f"SELECT turn, state_json, created FROM snapshot WHERE instance_id=?{lim} ORDER BY turn")
@@ -306,6 +354,7 @@ class Store:
                 "INSERT INTO snapshot (instance_id, turn, state_json, created) VALUES (?,?,?,?)",
                 [(iid, r["turn"], json.dumps(r["state"]), r["created"]) for r in doc["snapshots"]],
             )
+            self.conn.executemany("INSERT OR IGNORE INTO blob (hash, text) VALUES (?,?)", list((doc.get("blobs") or {}).items()))
         return iid
 
     @_locked

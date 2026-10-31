@@ -1,0 +1,402 @@
+#!/usr/bin/env python3
+"""A played game as a page: every turn, every telling of it, and every model call in it, with what each model
+saw (the system prompt and every message, in full) and what it answered, between the engine's own steps (the
+clock, the events, the dice, the rows applied and refused, the rulings that sent a telling back) (D59).
+
+    .venv/bin/python tools/round_report.py <iid> [--out PATH] [--title "…"]
+    .venv/bin/python tools/round_report.py --export game.json             # an exported game (it carries its blobs)
+
+The page is built from the ledger alone: the tape's `exchange` rows (engine/tape.py) and the rows the turn
+already wrote. A retold turn shows each earlier telling first, from its `rewrite` history, then the one that
+stood. Turns played before the tape (2026-10-31) show the engine's rows and the narrator's messages, without
+the prompts nobody kept. Each distinct prompt text is in the page once (a narrator's frozen prefix is one
+text however many turns sent it) and is shown in full when its section is opened.
+
+Each narrator call also gets a composition bar: how many characters of what it read were the fixed prefix,
+the earlier turns, and each section of this turn's game state, so a change that grows one of them shows.
+
+Default output: notes/playtests/<date>-<game>-<iid>.html (gitignored). tools/autoplay.py writes one beside
+each playtest report.
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import html
+import json
+import re
+import sys
+from collections import Counter, defaultdict
+from pathlib import Path
+from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from eval_report import CSS as BASE_CSS, page  # noqa: E402
+
+ROOT = Path(__file__).resolve().parent.parent.parent
+OUT = ROOT / "notes" / "playtests"
+E = html.escape
+
+ROLE_LABEL = {"adjudicator": "Adjudicator", "narrator": "Narrator", "referee": "Referee", "summarizer": "Summarizer"}
+ENGINE_KINDS = {"clock", "event_fired", "event_expired", "happening", "pending", "unseen", "check", "command", "command_preview", "drift"}
+
+CSS = BASE_CSS + """
+.call{border:1px solid var(--rule);border-radius:7px;padding:10px 12px;display:grid;gap:8px;min-width:0;background:var(--sheet)}
+.call > header{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline}
+.call .who{font:600 12px var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.call.adjudicator .who{color:var(--unj)} .call.narrator .who{color:var(--ok)} .call.referee .who{color:var(--gray)} .call.summarizer .who{color:var(--muted)}
+.call.adjudicator{border-left:3px solid var(--unj)} .call.narrator{border-left:3px solid var(--ok)} .call.referee{border-left:3px solid var(--gray)}
+.call.err{border-color:var(--bad)}
+.dim{color:var(--muted);font-size:.85rem}
+.msg{display:grid;grid-template-columns:4.6rem 1fr;gap:6px;align-items:start;min-width:0} .msg > *{min-width:0}
+.msg .r{font:600 10px var(--mono);text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding-top:12px}
+.msg.assistant .r{color:var(--ok)}
+.reply{border-left:2px solid var(--ok);padding-left:10px}
+.eng{font:13px/1.5 var(--mono);color:var(--muted);padding:2px 0 2px 10px;border-left:2px dotted var(--rule);overflow-wrap:anywhere}
+.eng b{color:var(--ink);font-weight:600}
+.sentback{background:var(--bad-bg);border-left:3px solid var(--bad);padding:8px 12px;border-radius:5px}
+.sentback b{color:var(--bad)}
+.telling{display:grid;gap:10px;min-width:0}
+.telling > h3{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.telling.old{opacity:.92;border:1px dashed var(--rule);border-radius:8px;padding:10px}
+.player{font:15px/1.5 var(--display);font-style:italic;border-left:3px solid var(--accent);padding-left:12px;max-width:75ch}
+.bar{display:flex;height:14px;border-radius:3px;overflow:hidden;border:1px solid var(--rule);min-width:0}
+.bar span{display:block;height:100%;min-width:1px}
+.legend2{display:flex;flex-wrap:wrap;gap:4px 12px;font:11px var(--mono);color:var(--muted)}
+.legend2 i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+.c0{background:#6f86c9}.c1{background:#9aa8a1}.c2{background:#3f9a6b}.c3{background:#c9883a}.c4{background:#9a6fc9}.c5{background:#c95f5f}
+.c6{background:#4fa3b3}.c7{background:#b3a24f}.c8{background:#7a7a7a}.c9{background:#d27fb0}
+table.idx td:nth-child(2){max-width:28rem}
+"""
+
+JS = """
+<script>
+(function(){
+  var B = {};
+  try { B = JSON.parse(document.getElementById('blobs').textContent); } catch (e) {}
+  function fill(el){
+    el.querySelectorAll('pre[data-b]').forEach(function(p){
+      if (p.dataset.done) return; p.textContent = B[p.dataset.b] || '(not kept)'; p.dataset.done = '1';
+    });
+  }
+  document.querySelectorAll('details').forEach(function(d){
+    if (d.open) fill(d);
+    d.addEventListener('toggle', function(){ if (d.open) fill(d); });
+  });
+  document.querySelectorAll('pre[data-b]').forEach(function(p){ if (!p.closest('details')) { p.textContent = B[p.dataset.b] || '(not kept)'; } });
+})();
+</script>
+"""
+
+
+# ---- reading ---------------------------------------------------------------------------------------
+def load(iid: str | None, export: Path | None) -> tuple[dict, list[dict], dict[str, str], list[dict], dict[int, dict]]:
+    """(instance, ledger rows, blobs, transcript rows, snapshots by turn) from the store or an export."""
+    if export:
+        doc = json.loads(export.read_text())
+        snaps = {s["turn"]: s["state"] for s in doc.get("snapshots", [])}
+        return doc["instance"], doc["ledger"], doc.get("blobs") or {}, doc.get("transcript", []), snaps
+    from engine.config import load_config
+    from engine.store import Store, blob_refs
+    cfg = load_config()
+    store = Store(cfg.resolve(cfg.server.data_dir) / "textadventure.sqlite3")
+    doc = store.export_instance(iid)
+    snaps = {s["turn"]: s["state"] for s in doc.get("snapshots", [])}
+    return doc["instance"], doc["ledger"], store.blobs(blob_refs(doc["ledger"])), doc["transcript"], snaps
+
+
+def tellings(rows: list[dict]) -> list[dict]:
+    """A turn's tellings in order: each earlier one from the `rewrite` history, then the one that stood."""
+    rw = next((r["payload"] for r in rows if r["kind"] == "rewrite"), None)
+    out = []
+    for h in (rw or {}).get("history", []):
+        out.append({"attempt": h.get("attempt", 0), "hint": h.get("hint"), "rows": h.get("ledger") or [], "narration": h.get("narration", ""),
+                    "old": True, "kept": bool(h.get("ledger"))})
+    out.append({"attempt": (rw or {}).get("attempt", 0), "hint": (rw or {}).get("hint"), "by": (rw or {}).get("by"),
+                "rows": [r for r in rows if r["kind"] != "rewrite"], "old": False, "kept": True})
+    return out
+
+
+# ---- the narrator's reading, by section --------------------------------------------------------------
+HEAD = re.compile(r"^(\[[A-Z][A-Z ]+\]|[A-Z][A-Z]{2,}(?: [A-Z]{2,})*\b.*|[A-Z][^\n]{2,170}:|The cast\..*)$")
+
+
+def sections(text: str) -> list[tuple[str, int]]:
+    """The text cut at its header lines (a [BRACKET] line, an ALL-CAPS opener, a line ending in a colon),
+    as (header, characters)."""
+    out: list[list] = [["(opening)", 0]]
+    for ln in text.splitlines(keepends=True):
+        s = ln.strip()
+        if s and not ln[:1].isspace() and not s.startswith("-") and HEAD.match(s) and (len(s) < 180 or s.startswith("The cast.")):
+            name = re.split(r"\s*\(|\. |:", s, maxsplit=1)[0].strip()[:48]
+            out.append([name, 0])
+        out[-1][1] += len(ln)
+    return [(n, c) for n, c in out if c]
+
+
+def composition(ex: dict, blobs: dict[str, str]) -> list[tuple[str, int]]:
+    system = blobs.get(ex.get("system", ""), "")
+    msgs = ex.get("messages", [])
+    parts: list[tuple[str, int]] = [("system: " + n, c) for n, c in sections(system)]
+    if len(msgs) > 1:
+        earlier = sum(len(blobs.get(m["content"], "")) for m in msgs[:-1])
+        turns = sum(1 for m in msgs[:-1] if m["role"] == "assistant")
+        parts.append((f"earlier turns ({turns})", earlier))
+    if msgs:
+        parts += [("now: " + n, c) for n, c in sections(blobs.get(msgs[-1]["content"], ""))]
+    return parts
+
+
+def render_bar(parts: list[tuple[str, int]]) -> str:
+    total = sum(c for _, c in parts) or 1
+    # group the system prompt's sections into one colour family, the rest each their own
+    spans, legend = [], []
+    for i, (name, c) in enumerate(parts):
+        cls = f"c{i % 10}"
+        spans.append(f"<span class='{cls}' style='width:{100 * c / total:.2f}%' title='{E(name)}: {c:,} chars'></span>")
+        legend.append(f"<span><i class='{cls}'></i>{E(name)} {c:,}</span>")
+    return (f"<div class='dim'>What it read: {total:,} characters (about {total // 4:,} tokens)</div>"
+            f"<div class='bar'>{''.join(spans)}</div><details><summary>by section</summary><div class='legend2'>{''.join(legend)}</div></details>")
+
+
+# ---- rendering ---------------------------------------------------------------------------------------
+def blob_pre(h: str, blobs: dict[str, str]) -> str:
+    return f"<pre data-b='{E(h)}'></pre>" if h in blobs else "<pre>(not kept)</pre>"
+
+
+def render_exchange(ex: dict, blobs: dict[str, str]) -> str:
+    role = ex.get("role", "?")
+    part = ex.get("part")
+    label = ROLE_LABEL.get(role, role) + (f" · {part} pass" if part else "")
+    sys_len = len(blobs.get(ex.get("system", ""), ""))
+    msgs = ex.get("messages", [])
+    m_len = sum(len(blobs.get(m["content"], "")) for m in msgs)
+    head = (f"<header><span class='who'>{E(label)}</span><span class='dim'>{E(ex.get('model') or '')} · {E(ex.get('schema') or '')}"
+            f"{' · stop ' + E(ex['stop_reason']) if ex.get('stop_reason') else ''}</span>"
+            f"<span class='dim'>system {sys_len:,} chars · {len(msgs)} message{'s' if len(msgs) != 1 else ''} {m_len:,} chars</span></header>")
+    body = [head]
+    if role == "narrator":
+        body.append(render_bar(composition(ex, blobs)))
+    body.append(f"<details><summary>System prompt ({sys_len:,} chars)</summary>{blob_pre(ex.get('system', ''), blobs)}</details>")
+    if msgs and role != "narrator":
+        for i, m in enumerate(msgs, 1):
+            text = blobs.get(m["content"], "")
+            first = next((ln for ln in text.splitlines() if ln.strip()), "")[:90]
+            body.append(f"<details{' open' if i == len(msgs) and len(text) > 600 else ''}><summary>Message {i} of {len(msgs)} · {E(m['role'])} · "
+                        f"{len(text):,} chars · {E(first)}</summary>{blob_pre(m['content'], blobs)}</details>")
+    elif msgs:
+        earlier = msgs[:-1]
+        if earlier:
+            inner = "".join(f"<div class='msg {E(m['role'])}'><span class='r'>{E(m['role'])}</span>{blob_pre(m['content'], blobs)}</div>" for m in earlier)
+            body.append(f"<details><summary>Earlier messages ({len(earlier)})</summary>{inner}</details>")
+        last = msgs[-1]
+        body.append(f"<details open><summary>Last message: what it was asked now ({len(blobs.get(last['content'], '')):,} chars)</summary>"
+                    f"{blob_pre(last['content'], blobs)}</details>")
+    if ex.get("reasoning"):
+        body.append(f"<details><summary>Reasoning ({len(ex['reasoning']):,} chars)</summary><pre>{E(ex['reasoning'])}</pre></details>")
+    reply = ex.get("content") or ""
+    if ex.get("schema") not in ("text", None):
+        try:
+            reply = json.dumps(json.loads(reply), indent=1, ensure_ascii=False)
+        except Exception:
+            pass
+    body.append(f"<div class='reply'><div class='dim'>Answered</div><pre>{E(reply) or '(nothing)'}</pre></div>")
+    if ex.get("error"):
+        body.append(f"<div class='sentback'><b>Error</b> {E(ex['error'])}</div>")
+    return f"<section class='call {E(role)}{' err' if ex.get('error') else ''}'>{''.join(body)}</section>"
+
+
+def _short(x: Any, n: int = 220) -> str:
+    s = x if isinstance(x, str) else json.dumps(x, ensure_ascii=False)
+    return s if len(s) <= n else s[:n] + "…"
+
+
+def render_engine(r: dict) -> str:
+    k, p = r["kind"], r.get("payload") or {}
+    if k == "clock":
+        return f"<div class='eng'><b>clock</b> +{p.get('elapsed')} min{(' · ' + E(p['note'])) if p.get('note') else ''}</div>"
+    if k == "event_fired":
+        return f"<div class='eng'><b>event fired</b> {E(p.get('id', ''))}: {E(_short(p.get('directive') or p.get('description') or ''))}</div>"
+    if k == "event_expired":
+        return f"<div class='eng'><b>event expired</b> {E(p.get('id', ''))}</div>"
+    if k == "happening":
+        return f"<div class='eng'><b>happening</b> {E(_short(p))}</div>"
+    if k == "pending":
+        return f"<div class='eng'><b>timer {E(p.get('action', ''))}</b> {E(p.get('id', ''))}: {E(_short(p.get('what') or p))}</div>"
+    if k == "unseen":
+        return f"<div class='eng'><b>unseen</b> {E(_short(p.get('fact', '')))}</div>"
+    if k == "drift":
+        return f"<div class='eng'><b>drift</b> {E('; '.join(p.get('changes') or []))}</div>"
+    if k in ("command", "command_preview"):
+        return f"<div class='eng'><b>{E(k.replace('_', ' '))}</b> {E(p.get('id', ''))} {E(_short(p.get('args') or {}))} {'ok' if p.get('ok') else 'refused'}: {E(_short(p.get('text') or ''))}</div>"
+    return f"<div class='eng'><b>{E(k)}</b> {E(_short(p))}</div>"
+
+
+def render_adjudication(p: dict) -> str:
+    intents = "; ".join(i.get("action", "") + (f" [CHECK {i['check'].get('stat')} {i['check'].get('difficulty')}]" if i.get("check") else "")
+                        for i in p.get("intents") or [])
+    meta = p.get("_call") or {}
+    replayed = " · kept from the first telling" if meta.get("replayed") else ""
+    return (f"<div class='eng'><b>adjudication</b> {E(p.get('kind') or '')}, {p.get('time_minutes')} min{replayed}: {E(p.get('summary') or '')}"
+            f"{('<br>intents: ' + E(intents)) if intents else ''}</div>")
+
+
+def render_narration_calls(p: dict) -> str:
+    out = []
+    for c in p.get("calls") or []:
+        call = c.get("call") or {}
+        res = c.get("result") or {}
+        out.append(f"<div class='eng'><b>{'engine rolled' if c.get('told') else 'narrator called'}</b> {E(call.get('raw', ''))} → "
+                   f"{E(str(res.get('outcome', '')).replace('_', ' ') or _short(res))}{(' · ' + E(c['mechanic'])) if c.get('mechanic') else ''}</div>")
+    for n in p.get("notes") or []:
+        out.append(f"<div class='eng'><b>narrator note</b> {E(n)}</div>")
+    for a in p.get("assessed_not_called") or []:
+        out.append(f"<div class='eng'><b>check not called</b> {E(_short(a))}</div>")
+    for pr in p.get("problems") or []:
+        out.append(f"<div class='eng'><b>narrator problem</b> {E(_short(pr))}</div>")
+    return "".join(out)
+
+
+def render_delta(p: dict) -> str:
+    out = []
+    for a in p.get("applied") or []:
+        out.append(f"<div class='eng'><b>applied</b> {E(_short(a, 300))}</div>")
+    for r in p.get("rejected") or []:
+        out.append(f"<div class='eng' style='color:var(--miss)'><b>refused</b> {E(r.get('path', ''))}: {E(r.get('reason', ''))}</div>")
+    return "".join(out)
+
+
+def render_verdict(p: dict) -> str:
+    out = []
+    for c in p.get("changes") or []:
+        if c.get("kind") == "ruling":
+            out.append(f"<div class='sentback'><b>Ruling: {E(c.get('field') or '')}</b> {E(c.get('value') or '')}"
+                       f"{(' · fix: ' + E(c['note'])) if c.get('note') else ''}</div>")
+        elif c.get("kind") == "issue":
+            out.append(f"<div class='eng'><b>referee issue</b> {E(c.get('value') or '')}</div>")
+    return "".join(out)
+
+
+def render_telling(t: dict, blobs: dict[str, str], prose: str) -> str:
+    rows = sorted(t["rows"], key=lambda r: r.get("seq", 0))
+    title = "First telling" if t["attempt"] == 0 else f"Telling {t['attempt'] + 1}"
+    parts = [f"<h3>{title}{' (sent back)' if t['old'] else ''}</h3>"]
+    if t["attempt"] and t.get("hint") is not None:
+        parts.append(f"<div class='sentback'><b>Told again{' by the ' + E(t['by']) if t.get('by') else ''}</b> with: {E(t['hint'] or '(no instruction: tell it again)')}</div>")
+    if not t["kept"]:
+        parts.append("<div class='dim'>This telling's calls were not kept (it was played before the tape).</div>")
+    has_tape = any(r["kind"] == "exchange" for r in rows)
+    for r in rows:
+        k, p = r["kind"], r.get("payload") or {}
+        if k == "exchange":
+            parts.append(render_exchange(p, blobs))
+        elif k == "adjudication":
+            parts.append(render_adjudication(p))
+        elif k == "model_call" and p.get("role") == "narrator":
+            if not has_tape and p.get("request", {}).get("messages"):
+                last = p["request"]["messages"][-1]["content"]
+                parts.append(f"<section class='call narrator'><header><span class='who'>Narrator</span><span class='dim'>before the tape: the system prompt was not kept</span></header>"
+                             f"<details><summary>Last message ({len(last):,} chars)</summary><pre>{E(last)}</pre></details>"
+                             f"<div class='reply'><div class='dim'>Answered</div><pre>{E(p.get('raw') or '')}</pre></div></section>")
+            parts.append(render_narration_calls(p))
+            if p.get("error"):
+                parts.append(f"<div class='sentback'><b>Narrator failed</b> {E(p['error'])}</div>")
+        elif k == "model_call":
+            if p.get("error"):
+                parts.append(f"<div class='sentback'><b>{E(p.get('role', ''))} failed</b> {E(p['error'])}</div>")
+            elif p.get("role") == "summarizer":
+                parts.append(f"<div class='eng'><b>summary</b> of turns {E(str(p.get('covered')))} written</div>")
+        elif k == "verdict":
+            parts.append(render_verdict(p))
+        elif k == "delta":
+            parts.append(render_delta(p))
+        elif k in ENGINE_KINDS:
+            parts.append(render_engine(r))
+        elif k not in ("rewrite", "world_verdict", "motion_verdict"):
+            parts.append(render_engine(r))
+    if prose:
+        parts.append(f"<details{' open' if not t['old'] else ''}><summary>The prose{' the player saw' if not t['old'] else ' of this telling'}</summary><div class='prose'>{E(prose)}</div></details>")
+    return f"<div class='telling{' old' if t['old'] else ''}'>{''.join(parts)}</div>"
+
+
+def build(inst: dict, ledger: list[dict], blobs: dict[str, str], transcript: list[dict], title: str | None = None, standalone: bool = True) -> str:
+    by_turn: dict[int, list[dict]] = defaultdict(list)
+    for r in ledger:
+        by_turn[r["turn"]].append(r)
+    said: dict[int, dict[str, str]] = defaultdict(dict)
+    for r in transcript:
+        said[r["turn"]].setdefault(r["role"], r["text"])
+    turns = sorted(t for t in set(by_turn) | {r["turn"] for r in transcript} if t >= 1)
+
+    models: Counter = Counter()
+    calls_n = 0
+    for r in ledger:
+        if r["kind"] == "exchange":
+            calls_n += 1
+            models[(r["payload"].get("role"), r["payload"].get("model"))] += 1
+    idx_rows, sections_html = [], []
+    for t in turns:
+        rows = by_turn.get(t, [])
+        tl = tellings(rows)
+        mech = {}
+        try:
+            mech = json.loads(said[t].get("mechanics") or "{}")
+        except Exception:
+            pass
+        n_calls = sum(1 for x in tl for r in x["rows"] if r["kind"] == "exchange")
+        player = said[t].get("player") or said[t].get("command") or ""
+        idx_rows.append(f"<tr><td class='num'><a href='#t{t}'>{t}</a></td><td>{E(_short(player, 110))}</td><td>{E(mech.get('kind') or '')}</td>"
+                        f"<td class='num'>{mech.get('elapsed', '')}</td><td class='num'>{n_calls}</td><td class='num'>{len(mech.get('applied') or [])}</td>"
+                        f"<td class='num'>{len(mech.get('rejected') or [])}</td><td class='num'>{len(tl) - 1 or ''}</td></tr>")
+        body = [f"<header><h2>Turn {t}</h2><span class='id'>{E(mech.get('kind') or '')} · {mech.get('elapsed', '?')} min · {n_calls} model calls"
+                f"{' · told ' + str(len(tl)) + ' times' if len(tl) > 1 else ''}</span></header>"]
+        if player:
+            body.append(f"<div class='player'>{E(player)}</div>")
+        for i, x in enumerate(tl):
+            prose = x.get("narration", "") if x["old"] else said[t].get("narrator", "")
+            body.append(render_telling(x, blobs, prose))
+        sections_html.append(f"<section class='turn' id='t{t}'>{''.join(body)}</section>")
+
+    opening = said.get(0, {}).get("narrator", "")
+    who = "".join(f"<div class='stat'>{E(ROLE_LABEL.get(r, r or '?'))} <b>{E(m or '?')}</b> ×{n}</div>" for (r, m), n in sorted(models.items(), key=lambda x: str(x[0])))
+    head = (f"<h1>{E(title or inst.get('title') or inst['id'])}</h1>"
+            f"<p class='lede'>Every turn of this game, every telling of it, and every model call in it: what each model was sent, in full, and what it "
+            f"answered, between the engine's own steps. Open a call's sections to read its prompts.</p>"
+            f"<dl class='meta'><dt>game</dt><dd>{E(inst['game'])} (version {E(inst.get('game_version') or '')})</dd><dt>instance</dt><dd>{E(inst['id'])}</dd>"
+            f"<dt>started</dt><dd>{E(inst.get('created', '')[:16].replace('T', ' '))} UTC</dd><dt>turns</dt><dd>{len(turns)}</dd><dt>model calls kept</dt><dd>{calls_n}</dd></dl>"
+            f"<div class='stats'>{who}</div>")
+    if opening:
+        head += f"<details><summary>The opening</summary><div class='prose'>{E(opening)}</div></details>"
+    index = ("<div class='scroll'><table class='idx'><thead><tr><th>turn</th><th>input</th><th>kind</th><th>min</th><th>calls</th><th>applied</th>"
+             f"<th>refused</th><th>retold</th></tr></thead><tbody>{''.join(idx_rows)}</tbody></table></div>")
+    data = json.dumps(blobs, ensure_ascii=False).replace("</", "<\\/")
+    body = head + index + "".join(sections_html) + f"<script type='application/json' id='blobs'>{data}</script>" + JS
+    return page(title or f"Round {inst['id']}", body, standalone=standalone)
+
+
+def write_report(iid: str, out: Path | None = None, title: str | None = None, export: Path | None = None, standalone: bool = True) -> Path:
+    inst, ledger, blobs, transcript, _ = load(iid, export)
+    path = out or OUT / f"{dt.date.today():%Y-%m-%d}-{inst['game']}-{inst['id']}.html"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(build(inst, ledger, blobs, transcript, title, standalone))
+    return path
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("iid", nargs="?")
+    ap.add_argument("--export", type=Path)
+    ap.add_argument("--out", type=Path)
+    ap.add_argument("--title")
+    ap.add_argument("--artifact", action="store_true", help="no document wrapper: the form an Artifact publish wants")
+    a = ap.parse_args(argv)
+    if not a.iid and not a.export:
+        ap.error("an instance id, or --export game.json")
+    print(write_report(a.iid, a.out, a.title, a.export, standalone=not a.artifact))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

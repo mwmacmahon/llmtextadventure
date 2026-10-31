@@ -541,6 +541,18 @@ async def replay_turn(rec: dict, games: dict, cfg, roles: set[str], opts: dict[s
     return res
 
 
+def _earlier_of(rec: dict, n: int) -> list[tuple[int, str, str]]:
+    """TRIAL (D59): the referee's earlier turns from the record's `recent` (the adjudicator's last two turns, as
+    [PLAYER] / prose pairs), as pipeline._earlier_turns gives them live. A record holds at most two."""
+    if n <= 0:
+        return []
+    ms = rec.get("recent") or []
+    pairs = [(ms[i]["content"].removeprefix("[PLAYER]").strip(), re.sub(r"\n§ .*", "", ms[i + 1]["content"]))
+             for i in range(0, len(ms) - 1, 2) if ms[i]["role"] == "user" and ms[i + 1]["role"] == "assistant"][-n:]
+    turn = int(rec.get("turn") or 0)
+    return [(turn - len(pairs) + i, p, nar) for i, (p, nar) in enumerate(pairs)]
+
+
 async def _replay_roles(rec: dict, game, state, exp: dict, res: dict, current: dict, cfg, roles: set[str], opts: dict[str, str]) -> None:
     if "adjudicator" in roles:
         current["role"] = "adjudicator"                              # graded by the key; scored against the old answer only where it is sound
@@ -563,7 +575,8 @@ async def _replay_roles(rec: dict, game, state, exp: dict, res: dict, current: d
         provider = get_provider(role)
         adj_obj = _adjudication_of(game, rec)
         # test sets made before 2026-10-30 (D44) carry no "levers": their referee is not told the player's commands
-        system, msgs = referee_inputs(game, state, rec["directives"], rec["player_text"], rec["narration"], adj_obj, levers=rec.get("levers") or [])
+        system, msgs = referee_inputs(game, state, rec["directives"], rec["player_text"], rec["narration"], adj_obj, levers=rec.get("levers") or [],
+                                      recent=_earlier_of(rec, role.recent_turns))
         if opts.get("perturb"):
             system = system.rstrip() + "\n" + PERTURB[opts["perturb"]]
         res["levers_given"] = rec.get("levers") is not None

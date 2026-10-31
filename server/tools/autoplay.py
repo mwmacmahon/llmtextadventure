@@ -15,6 +15,8 @@ mechanics (kind, minutes, events, timers, levers, rows applied and rejected, rul
 as the game shows it (the station: the alarm, each crew member's suspicion/trust/stress/where, sealed hatches, what is
 coming, secrets known); then a table of the run (alarm and trust by turn, rows applied/rejected, seconds, cost).
 `--json` also writes the raw events beside it. Server: TA_URL (default http://127.0.0.1:8010).
+Beside it, `<same name>.html`: every model call of the game, what each model saw and answered (tools/round_report.py,
+read from this checkout's store, so the server must use it too).
 """
 from __future__ import annotations
 
@@ -215,6 +217,11 @@ def run(args: argparse.Namespace) -> int:
     if args.json:
         path.with_suffix(".json").write_text(json.dumps(raw_events, indent=1))
     print(f"report {path}")
+    try:                                    # the page of every model call (tools/round_report.py), from the same store
+        from round_report import write_report
+        print(f"calls  {write_report(iid, path.with_suffix('.html'), title=args.title or f'{game} {tag}')}")
+    except Exception as e:                  # a server on another store (TA_URL elsewhere): the markdown report stands alone
+        print(f"calls  not written: {e}")
     return 0
 
 

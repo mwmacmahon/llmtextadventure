@@ -279,3 +279,18 @@ Run rounds against a server that does not reload (`api-sonnet-fixed` in `.claude
 run at once (the store holds a lock since D48). A scripted round goes off-script when the dice do (noir's opening grab
 puts Frank in the holding cell on most first moves); `--resume <iid> --script more.txt` continues a game from a state
 that suits the test, which is how the place tests of 2026-10-31 reached The Anchor.
+
+### The call report: what each model saw and did (D59)
+
+Every live turn records each model call it makes on the turn's tape (`engine/tape.py`): an `exchange` ledger row per
+call, with the system prompt and each message stored once by hash in the store's `blob` table, and the raw reply. A
+turn the guard or the player had told again keeps each earlier telling's rows in its `rewrite` history.
+`tools/round_report.py <iid>` turns a game into a page: the turn index, then every turn, every telling of it, the
+engine's steps in order and each model call with what it was sent, in full, and what it answered; each narrator call
+also gets a bar of what it read by section, so a change that grows the prompt shows. autoplay writes it beside its
+markdown report (`<same name>.html`); `--artifact` writes the form an Artifact publish takes; `--export game.json`
+reads an exported game (exports carry their blobs). Games played before 2026-10-31 have no prompts on the page.
+
+Trials show up here first: `referee.recent_turns` (D59, a test in progress) puts the last two turns at the head of
+the referee's message, fenced as past; the call report shows the block, and the eval harness replays it from each
+record's `recent`.

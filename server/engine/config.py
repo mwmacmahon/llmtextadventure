@@ -47,6 +47,11 @@ class RoleConfig(BaseModel):
     # sent once more with this presence penalty (Qwen's remedy for repetition in thinking mode). Not applied to
     # every call: at 1.0 on every call the A3B referee lost ten rows of 74 (D34). 0 turns the retry off.
     loop_penalty: float = 1.0
+    # referee only, TRIAL (D59, 2026-10-31; not settled): how many earlier turns (player input and narration) the
+    # referee reads, fenced off as past and already recorded, so it can tell who or what this turn's prose means.
+    # 0: none, as before. Kept only if live rounds and the eval sets say it helps; if kept, the adjudicator's
+    # earlier turns get the same fence.
+    recent_turns: int = 0
     max_prompt_tokens: int | None = None   # narrator: the window shrinks by slide steps to fit (engine/context.py); unset, no limit
     # referee: True, three passes over one cached prompt, the same schema, a focus line each (roles.REFEREE_PARTS);
     # "focused", a pass per group of row kinds, each with its own guide, examples and schema (engine/referee_passes.py);
