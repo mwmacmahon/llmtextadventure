@@ -87,6 +87,7 @@ class Place(BaseModel):
     tags: list[str] = Field(default_factory=list)
     known: bool = True                  # the player knows it exists
     furnished: bool = True              # False: nothing recorded here yet; the narrator may furnish it
+    parent: str = ""                    # the place this one is inside (a room in a module, an office in a building); "" at the top
     provenance: Provenance = "script"
 
 
@@ -283,9 +284,45 @@ class World(BaseModel):
         return sum(t.count for t in self.contents(holder_id) if t.id in hits)
 
     # ---- geography ---------------------------------------------------------------
+    def top(self, place_id: str) -> str:
+        """The outermost place holding this one (itself at the top): the module a room is in."""
+        seen: set[str] = set()
+        cur = place_id
+        while cur not in seen:
+            seen.add(cur)
+            p = self.place(cur)
+            if p is None or not p.parent or self.place(p.parent) is None:
+                return cur
+            cur = p.parent
+        return cur
+
+    def inside(self, a: str, b: str) -> bool:
+        """a is b, or a room somewhere inside b."""
+        seen: set[str] = set()
+        cur = a
+        while cur and cur not in seen:
+            if cur == b:
+                return True
+            seen.add(cur)
+            p = self.place(cur)
+            cur = p.parent if p else ""
+        return False
+
+    def rooms(self, place_id: str) -> list[Place]:
+        return [p for p in self.places if p.parent == place_id]
+
     def exits(self, place_id: str) -> list[Exit]:
+        """Recorded exits, and the open way between a room and the place it is inside (unless an exit records it)."""
         p = self.place(place_id)
-        return list(p.exits) if p else []
+        if p is None:
+            return []
+        out = list(p.exits)
+        if p.parent and self.place(p.parent) and not any(e.to == p.parent for e in out):
+            out.append(Exit(to=p.parent, via="out", locked=False, provenance=p.provenance))
+        for r in self.rooms(p.id):
+            if not any(e.to == r.id for e in out):
+                out.append(Exit(to=r.id, via="inside", locked=False, provenance=r.provenance))
+        return out
 
     def exit_between(self, a: str, b: str) -> Exit | None:
         return next((e for e in self.exits(a) if e.to == b), None)
@@ -521,13 +558,18 @@ def scene(w: World, vantage: Vantage | None = None, *, audience: Audience = "eng
             who = ", ".join(_ref(p, audience) + (f" ({p.status})" if p.status != "present" else "") for p in people)
             drones = ", ".join(_ref(t, audience) for t in things if t.kind == "drone")
             bits = [b for b in (who, drones) if b]
-            feed = v.feeds.get(pl.id, "")
+            feed = v.feeds.get(pl.id, "") if not pl.parent else ""     # a room's feed is its module's, said there
             if feed:
                 bits.append(f"no feed: {feed}")
             if bits:
-                elsewhere.append(f"{pl.name}: " + "; ".join(bits))
+                parent = w.place(pl.parent) if pl.parent else None
+                elsewhere.append(f"{pl.name}" + (f" (in {parent.name})" if parent else "") + ": " + "; ".join(bits))
         if elsewhere:
             lines.append("Elsewhere: " + ". ".join(elsewhere) + ".")
+        rooms = [pl for pl in w.places if pl.parent and w.place(pl.parent)]
+        if rooms:
+            lines.append(("Rooms inside modules: " if n else "  Rooms recorded: ") + "; ".join(
+                f"{_ref(pl, audience)} in {_ref(w.place(pl.parent), audience)}" for pl in rooms) + ".")  # type: ignore[arg-type]
     if corrections:
         lines.append("Corrections from last turn: " + " ".join(corrections))
     return "\n".join(lines)
@@ -542,6 +584,8 @@ class Policy(BaseModel):
     people: bool = False
     places: bool = False
     exits: bool = False                 # discoverable exits
+    rooms: bool = False                 # a new place inside a recorded one (a crew member's quarters), even where the map is closed
+    max_new_places: int = 12            # places the narrator may add in one game
     forbid_tags: list[str] = Field(default_factory=lambda: ["weapon"])
     forbid_names: list[str] = Field(default_factory=lambda: ["weapon", "gun", "pistol", "revolver", "rifle", "shotgun", "knife", "blade",
                                                             "grenade", "launcher", "explosive", "bomb"])   # a code backstop: no model is trusted to tag a pistol
@@ -841,9 +885,9 @@ def _apply_new(w: World, d: Declaration, policy: Policy, out: AppliedDeclaration
         if kind_guess not in policy.things:
             reject(d, f"the narrator may not add things of kind {kind_guess}", "unauthorized_addition")
             return
-        locus = w.normalize_locus(d.locus) if d.locus else w.locus("place", w.player.location)
+        locus = w.normalize_locus(d.locus) if d.locus else _default_locus(w, d)
         if locus is None:
-            reject(d, f"unknown place or holder {d.locus!r}")
+            reject(d, f"unknown place or holder {d.locus!r}" if d.locus else "say where it is (field=<place id>)")
             return
         if locus == w.locus("person", me_id):
             reject(d, "a new thing never appears straight in the player's hands: declare it in the scene, then MOVED", "unauthorized_addition")
@@ -869,8 +913,14 @@ def _apply_new(w: World, d: Declaration, policy: Policy, out: AppliedDeclaration
         w.people.append(Person(id=pid, name=d.name, location=place_id, description=d.state, provenance="narrator"))
         out.applied.append(Change(path=f"world.people.{pid}", text=f"new person {d.name} [{pid}] in {place_id}"))
     else:  # place
+        if policy.rooms and (w.closed or not policy.places or "inside" in [t.lower() for t in d.tags]):
+            _apply_new_room(w, d, policy, out, reject)
+            return
         if not policy.places or w.closed:
             reject(d, "the narrator may not add places here; the map is complete", "unauthorized_addition")
+            return
+        if sum(1 for p in w.places if p.provenance == "narrator") >= policy.max_new_places:
+            reject(d, f"{policy.max_new_places} places have been added this game; the rest of the map stays as it is", "unauthorized_addition")
             return
         origin = w.player.location
         if d.locus:
@@ -890,6 +940,41 @@ def _apply_new(w: World, d: Declaration, policy: Policy, out: AppliedDeclaration
             o.exits.append(Exit(to=pid, via=d.via, locked=False, provenance="narrator"))
             w.place(pid).exits.append(Exit(to=origin, via=d.via, locked=False, provenance="narrator"))  # type: ignore[union-attr]
         out.applied.append(Change(path=f"world.places.{pid}", text=f"new place {d.name} [{pid}] from {origin}" + (f" via {d.via}" if d.via else "")))
+
+
+def _default_locus(w: World, d: Declaration) -> str | None:
+    """Where a new thing with no place given is: where the person it is reported with is (`who`), else where the
+    player is; None when neither is anywhere (a station AI has no body)."""
+    pid, _ = _resolve(w, d.by) if d.by else (None, [])
+    p = w.person(pid) if pid else None
+    if p is not None and p.location and p.id != w.player_id:
+        return w.locus("place", p.location)
+    return w.locus("place", w.player.location) if w.player.location else None
+
+
+def _apply_new_room(w: World, d: Declaration, policy: Policy, out: AppliedDeclarations, reject) -> None:
+    """A room inside a recorded place: the closed hull still governs modules and hatches, not a crew member's quarters
+    inside one. Reached through its parent; the same name inside the same place is the room already recorded."""
+    if not d.locus:
+        reject(d, "say which place the room is inside (field=<place id>)")
+        return
+    loc = w.normalize_locus(d.locus)
+    k, parent = w.split_locus(loc or "")
+    if loc is None or k != "place":
+        reject(d, f"unknown place {d.locus!r} for the room to be inside")
+        return
+    name = d.name.strip().strip('"')
+    key = slug(name)
+    same = next((p for p in w.places if (slug(p.name) == key or p.id == key) and (p.id == parent or w.top(p.id) == w.top(parent))), None)
+    if same is not None:
+        out.applied.append(Change(path=f"world.places.{same.id}", text=f"{name}: already recorded as {same.name} [{same.id}]"))
+        return
+    if sum(1 for p in w.places if p.provenance == "narrator") >= policy.max_new_places:
+        reject(d, f"{policy.max_new_places} places have been added this game; the rest of the map stays as it is", "unauthorized_addition")
+        return
+    pid = d.id if d.id and d.id not in w.ids() else w.unique_id(d.id or name)
+    w.places.append(Place(id=pid, name=name, state=d.state, parent=parent, furnished=False, provenance="narrator"))
+    out.applied.append(Change(path=f"world.places.{pid}", text=f"new place {name} [{pid}] inside {parent}"))
 
 
 def _apply_moved(w: World, d: Declaration, cause: Cause, out: AppliedDeclarations, reject) -> None:

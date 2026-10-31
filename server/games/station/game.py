@@ -89,7 +89,7 @@ STRESS_CENTRES = {"steady": 12, "strained": 38, "frayed": 63, "breaking": 88}
 SUSPICION_CENTRES = {w: i * 20 + 10 for i, w in enumerate(SUSPICION_WORDS)}
 TRUST_WORDS = {"hostile": -4, "resentful": -3, "wary": -1, "cool": -1, "guarded": -1, "distrustful": -2, "neutral": 0, "indifferent": 0,
                "warm": 2, "friendly": 2, "fond": 2, "trusting": 4, "devoted": 5, "loyal": 4, "ally": 4}
-WORLD_POLICY = Policy(things=["item", "fixture"], people=False, places=False, exits=False, forbid_tags=["weapon"])
+WORLD_POLICY = Policy(things=["item", "fixture"], people=False, places=False, exits=False, rooms=True, forbid_tags=["weapon"])
 
 # trait -> {the station's stat: modifier when this person is the target}. A glossary line goes in the prefix.
 TRAIT_MODS: dict[str, dict[str, int]] = {
@@ -279,6 +279,20 @@ class StationGame(GameBase):
         p = w.place(pid)
         return p.name if p else (pid or "Unknown")
 
+    def _module(self, w: World | None, name: str) -> str:
+        """The module a place name is in (a room's module; a module itself): the hull's unit for hatches, cameras, company."""
+        if w is None:
+            return name
+        pid = self._place_id(w, name)
+        return w.top(pid) if pid else name
+
+    def _at(self, w: World | None, where: str, place: str) -> bool:
+        """Someone at `where` is at `place`: the same place, or a room inside it (Okafor in her quarters is on the ring)."""
+        if where == place or w is None:
+            return where == place
+        a, b = self._place_id(w, where), self._place_id(w, place)
+        return bool(a and b) and w.inside(a, b)
+
     def _sync_world_from_crew(self, s: StationState, w: World | None = None) -> None:
         """Crew fields the referee writes as numbers (mood, health, stress, suspicion, trust) and script effects on
         crew.*.location become the world's words. Code does the substitution; no model echoes a number."""
@@ -289,7 +303,9 @@ class StationGame(GameBase):
             p = w.person(c.id)
             if p is None:
                 continue
-            p.location = self._place_id(w, c.location)
+            pid = self._place_id(w, c.location)
+            if not (p.location and pid and w.inside(p.location, pid)):     # in a room of that module: stays in the room
+                p.location = pid
             p.status = "dead" if c.health == "dead" else "present"
             p.attributes["mood"] = Attr(value=c.mood, note=p.attributes.get("mood", Attr(value="")).note)
             p.attributes["health"] = Attr(value=c.health)
@@ -303,7 +319,15 @@ class StationGame(GameBase):
         for c in s.crew:
             p = s.world.person(c.id)
             if p is not None and p.location:
-                c.location = self._place_name(s.world, p.location)
+                c.location = self._place_name(s.world, s.world.top(p.location))   # the crew record keeps the module
+
+    def _where(self, s: StationState, c: Any, ids: bool = False) -> str:
+        """A crew member's module, and the room in it when the world has them in one."""
+        p = s.world.person(c.id) if s.world else None
+        room = s.world.place(p.location) if p is not None and p.location else None
+        if room is None or not room.parent:
+            return c.location or "unknown"
+        return f"{c.location} ({room.name}" + (f" [{room.id}]" if ids else "") + ")"
 
     def _vantage(self, s: StationState, adj: Any) -> Vantage:
         w = s.world
@@ -327,6 +351,9 @@ class StationGame(GameBase):
                 st = cam.attributes.get("status", Attr(value="operational")).value
                 if st != "operational":
                     feeds[pl.id] = f"{cam.name} {st}"
+        for pl in w.places:                       # a room sees through its module's cameras
+            if pl.parent and pl.id not in feeds and w.top(pl.id) in feeds:
+                feeds[pl.id] = feeds[w.top(pl.id)]
         return Vantage(mode="attention", focus_place=focus, feeds=feeds, subject="Attention")
 
     def scene_block(self, state: StationState, adj: Any, audience: str) -> str:
@@ -460,7 +487,7 @@ class StationGame(GameBase):
         lines.append("")
         lines.append("Crew now:")
         for c in s.crew:
-            bits = [f"at {c.location or 'unknown location'}", f"{c.health}", f"mood {c.mood}", f"stress {c.stress} ({stress_word(c.stress)})",
+            bits = [f"at {self._where(s, c, ids=True) if c.location else 'unknown location'}", f"{c.health}", f"mood {c.mood}", f"stress {c.stress} ({stress_word(c.stress)})",
                     f"suspicion {c.suspicion} ({c.suspicion_word})", f"trust in the station {c.trust:+d} ({c.trust_word}{', an ally' if c.ally else ''})"]
             lines.append(f"- {c.name}: " + ", ".join(bits) + ".")
             if c.disposition.agenda or c.disposition.behaviors:
@@ -624,7 +651,7 @@ class StationGame(GameBase):
             "- set <system>.control full|limited|none|manual_override only if a crew member changed the station's control over it (manual override, locked out). set <system>.status " + "|".join(SYSTEM_STATUSES) + " only when the prose shows the work finished: a repair completed, damage done, a manual shutdown. Walking to a panel, opening it, or starting a repair changes nothing. Power the station cut or restored itself is already in the state; do not report it again.",
             "- set <resource>.level OK|Low|Critical|Depleted only when the prose plainly changed it (atmosphere vented, a tank holed or sealed, a resupply), one step per turn.",
             "- set <hatch id>.locked false who=<crew id>: a crew member at a sealed hatch forced its manual override open this turn (ids: " + ", ".join(t.id for t in hatches) + "). Only when the prose shows the override done, by someone at that hatch.",
-            "- set <thing id>.locked true|false, set <thing id>.open true|false, set <thing id>.state <words>, set <camera thing>.status offline|operational (who=the crew member who did it), for listed things; new thing value=name field=<place id> note=state for a small item or fixture the prose introduced (never a weapon; the station is closed: no new places or hatches); gone <thing id> when destroyed.",
+            "- set <thing id>.locked true|false, set <thing id>.open true|false, set <thing id>.state <words>, set <camera thing>.status offline|operational (who=the crew member who did it), for listed things; new thing value=name field=<place id> note=state for a small item or fixture the prose introduced (never a weapon; the hull is closed: no new modules or hatches, but a room inside a module is new place value=<name> field=<module id>); gone <thing id> when destroyed.",
             "- ruling leak: a piece listed under Hidden in the briefing (a crew member's secret) shown or stated in the prose when the station did not look for it this turn and the game state does not list it as known. The station learns by looking; the narrator may not hand it the piece.",
             "present: crew who appear or act in the narration.",
             "Threads: open ones are listed in the game state with their ids. Typical threads here: a report or message the player promised or forged and who believes it; a crew member's announced plan; something a crew member asked the station to do; a lie that could be checked; a bargain struck. Close a thread only with a reason that settles it.",
@@ -654,8 +681,11 @@ class StationGame(GameBase):
             out.append("- A module and its system are two entities: " + "; ".join(f"the {sy.name} module is place {sy.id}, its systems are {sy.id}_system" for sy in collide[:3]) + ".")
         out.append("- A system written as the list and its name (\"systems.Doors\") is that system by its id (doors).")
         if "habitation_ring" in places:
-            out.append("- A room or corner inside a module is that module; the station is closed, so it is never a new place: someone's bunk, the galley, the quarters → habitation_ring"
-                       + ("; the reactor bus panel → reactor" if "reactor" in places else "") + ("; the sample bench → lab" if "lab" in places else "") + ".")
+            out.append("- A room inside a module that someone goes into or stays in (a crew member's quarters, the galley) is a place inside that module: "
+                       "new place value=Okafor's quarters field=habitation_ring, then move okafor <its id>; once it is in the SCENE, use its id and never add it again. "
+                       "A spot is not a room: a bunk, a bench, a panel is the room or module it is in (Park on her bunk → her quarters if recorded, else habitation_ring"
+                       + ("; the reactor bus panel → reactor" if "reactor" in places else "") + ("; the sample bench → lab" if "lab" in places else "")
+                       + "). The hull is closed: never a new module, hatch or way between modules.")
         if any(t.endswith("_drone") for t in things):
             out.append("- Drones are things, by id (" + ", ".join(sorted(t for t in things if t.endswith("_drone"))) + "), never crew; they move with move rows.")
         out.append("- An object the prose uses that no list has (a crew member's tablet, a wrench) is new: new thing value=Voss's tablet field=<the place it is in> note=<its state>. Never a set row on an id that is not listed.")
@@ -768,7 +798,7 @@ class StationGame(GameBase):
             return None
         actor = self._crew_of(s, who) if who else None
         if actor is not None and len(doors) > 1:
-            here = self._place_id(w, actor.location)
+            here = self._module(w, actor.location)
             for p in named:
                 for e in w.exits(p.id):
                     if e.door and (e.to == here or p.id == here) and w.thing(e.door) in doors:
@@ -979,7 +1009,7 @@ class StationGame(GameBase):
         assert wld is not None
         actor = self._crew_of(s, who)
         sides = {wld.place_of(hatch.id) or ""} | {p.id for p in wld.places for e in p.exits if e.door == hatch.id} | {e.to for p in wld.places for e in p.exits if e.door == hatch.id}
-        if actor is None or self._place_id(wld, actor.location) not in sides:
+        if actor is None or self._module(wld, actor.location) not in sides:
             w.reject(f"world.things.{hatch.id}.locked", "a sealed hatch is forced only by a crew member at it (who=<crew id>)", who or "nobody")
             return
         if hatch.tri("locked") is not True:
@@ -1213,7 +1243,7 @@ class StationGame(GameBase):
                 return state, CommandResult(ok=False, text="Pick a crew member.")
             surname = c.name.split()[-1]
             lines = [f"{c.name}, {c.role}. {c.bio}".rstrip(),
-                     f"At {c.location or 'unknown'}; {c.health}, mood {c.mood}, stress {c.stress}/100 ({stress_word(c.stress)}), suspicion {c.suspicion}/100 ({c.suspicion_word}), trust {c.trust:+d} ({c.trust_word})."]
+                     f"At {self._where(s, c)}; {c.health}, mood {c.mood}, stress {c.stress}/100 ({stress_word(c.stress)}), suspicion {c.suspicion}/100 ({c.suspicion_word}), trust {c.trust:+d} ({c.trust_word})."]
             if c.traits:
                 lines.append("Traits: " + ", ".join(c.traits) + ".")
             if c.bonds:
@@ -1323,7 +1353,7 @@ class StationGame(GameBase):
             if c.id in placed and c.routine:
                 r = routine_now(c, s.clock.minute)
                 nxt = routine_next(c, s.clock.minute)
-                if r is not None and r.place != c.location and nxt is not None:
+                if r is not None and not self._at(s.world, c.location, r.place) and nxt is not None:
                     ahead = nxt.start - s.clock.minute if nxt.start > s.clock.minute else MINUTES_PER_DAY - s.clock.minute + nxt.start
                     c.off_routine_until = s.clock.absolute() + ahead
         self._walk_routines(s, placed)
@@ -1340,7 +1370,7 @@ class StationGame(GameBase):
                 continue
             for oid, bond in c.bonds.items():
                 o = s.crew_by_id(oid)
-                if o is None or bond <= 0 or o.location != c.location or o.suspicion >= c.suspicion or o.health in ("critical", "dead"):
+                if o is None or bond <= 0 or self._module(s.world, o.location) != self._module(s.world, c.location) or o.suspicion >= c.suspicion or o.health in ("critical", "dead"):
                     continue
                 o.suspicion = min(c.suspicion, o.suspicion + min(2, bond) * hours)
 
@@ -1355,7 +1385,7 @@ class StationGame(GameBase):
                 continue
             c.off_routine_until = 0
             r = routine_now(c, s.clock.minute)
-            if r is None or r.place == c.location:
+            if r is None or self._at(w, c.location, r.place):
                 if r is not None and c.blocked_at:
                     c.blocked_at = ""
                 continue
@@ -1390,7 +1420,12 @@ class StationGame(GameBase):
         assert w is not None
         rows = []
         for pl in w.places:
+            if pl.parent:
+                continue
             people, things = w.here(pl.id)
+            for r in w.places:                    # crew in a room show on its module's row
+                if r.parent and w.top(r.id) == pl.id:
+                    people += w.here(r.id)[0]
             cams = [t for t in things if t.kind == "system" and "camera" in t.name.lower()]
             feed = "no feed" if any(t.attributes.get("status", Attr(value="operational")).value != "operational" for t in cams) else "ok"
             notable = [t.name for t in things if t not in cams and t.kind != "fixture"]
@@ -1445,11 +1480,11 @@ class StationGame(GameBase):
                     title="Crew dossier",
                     cards=[
                         EntityCard(
-                            id=c.id, title=c.name, subtitle=f"{c.role} · {c.location or 'unknown'}",
+                            id=c.id, title=c.name, subtitle=f"{c.role} · {self._where(s, c)}",
                             badges=[Chip(label="trust", value=c.trust_word), Chip(label="suspicion", value=c.suspicion_word), Chip(label="mood", value=c.mood),
                                     *([Chip(label="health", value=c.health)] if c.health != "healthy" else [])],
                             details=[
-                                Chip(label="Location", value=c.location or "unknown"),
+                                Chip(label="Location", value=self._where(s, c)),
                                 Chip(label="Stress", value=f"{c.stress}/100 ({stress_word(c.stress)})"),
                                 Chip(label="Suspicion", value=f"{c.suspicion}/100"),
                                 Chip(label="Trust", value=f"{c.trust:+d} ({c.trust_word}{', ally' if c.ally else ''})"),

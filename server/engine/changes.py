@@ -43,7 +43,7 @@ def to_declaration(ch: Change) -> Declaration | None:
         return Declaration(verb="MOVED", raw=f"MOVED {ch.target} -> {ch.value}", id=ch.target, locus=ch.value)
     if ch.kind == "new" and ch.value:
         kind = ch.target.strip().lower() if ch.target.strip().lower() in ("thing", "person", "place") else "thing"
-        return Declaration(verb="NEW", raw=f'NEW {kind} "{ch.value}" at {ch.field}', kind=kind, name=ch.value, locus=ch.field, state=ch.note)
+        return Declaration(verb="NEW", raw=f'NEW {kind} "{ch.value}" at {ch.field}', kind=kind, name=ch.value, locus=ch.field, state=ch.note, by=ch.who)
     if ch.kind == "set" and ch.target and ch.field:
         return Declaration(verb="SET", raw=f"SET {ch.target}.{ch.field} {ch.value}", id=ch.target, field=ch.field, value=ch.value, note=ch.note, by=ch.who)
     if ch.kind == "gone" and ch.target:

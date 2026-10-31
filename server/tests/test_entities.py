@@ -32,7 +32,7 @@ def test_station_systems_answer_to_their_ids(games):
     assert sy["AI Core"].control == "manual_override" and sy["Doors"].control == "limited" and sy["Lab"].status == "degraded"
     assert not [r for r in rep.rejected if "no entity" in r.reason]
     rules = g.referee_rules(s)
-    assert "ai_core = AI Core" in rules and "lab_system = Lab" in rules and "→ habitation_ring" in rules
+    assert "ai_core = AI Core" in rules and "lab_system = Lab" in rules and "field=habitation_ring" in rules
 
 
 def test_a_module_row_is_still_the_modules(games):

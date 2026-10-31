@@ -92,6 +92,8 @@ ATTITUDE_WORDS = {"hostile": -4, "angry": -3, "suspicious": -1, "guarded": -1, "
                   "friendly": 2, "warm": 2, "trusting": 3, "loyal": 4}
 MAX_THINGS = 20
 MAX_FOUND_PLACES = 12
+SPOT_WORDS = {"booth", "table", "desk", "counter", "corner", "doorway", "door", "stairs", "stair", "stairwell", "landing", "window",
+              "couch", "bed", "bench", "stool", "seat", "outside", "beside", "behind", "front", "roof"}   # a spot of a place, not a room in it
 DROPPED = re.compile(r"\b(drop(s|ped)?|left (it |behind)|fell|falls|lies|lying|set (it )?down|put (it )?down|knocked (out of|from)|let go)\b", re.I)
 REVOLVER_WORDS = {"revolver", "gun", "pistol", "the revolver", "his revolver", "frank's revolver", ".38"}
 DEAD_WORDS = re.compile(r"\b(dead|dies|died|dying|killed?|kills|destroyed|corpse|comes? apart|came apart|grease|shot dead|finished (it|him|her) off)\b", re.I)
@@ -322,7 +324,7 @@ class NoirGame(GameBase):
         conds = ", ".join(c.name for c in p.conditions) or "none"
         lines.append(f"{p.name}: at {p.location or 'unknown'}; health {p.health}; nerves {p.dread_tier(p.dread)}; conditions: {conds}.")
         if s.found_places:
-            lines.append("Places found in play: " + "; ".join(f.name + (f" (off {f.within})" if f.within else "") for f in s.found_places) + ".")
+            lines.append("Places found in play: " + "; ".join(f.name + (f" ({'off' if f.within.endswith('streets') else 'in'} {f.within})" if f.within else "") for f in s.found_places) + ".")
         lines.append("Pockets: " + ", ".join(it.render() + (f" ({it.note})" if it.note and it.loaded is None and it.id not in ("dollars",) else "") for it in s.inventory) + ".")
         if s.things:
             lines.append("Not on Frank: " + "; ".join(self._thing_line(s, t) for t in s.things) + ".")
@@ -449,10 +451,15 @@ class NoirGame(GameBase):
                                      ("the roof outside the shack", "Rooftop shack")) if b in places]
         if spots:
             out.append("- A spot inside a listed place is that place: " + "; ".join(f"{a} → {b}" for a, b in spots) + ".")
+        room = next(((a, b) for a, b in (("Professor Aldrin's office", "University"), ("June's room upstairs", "June's boarding house"),
+                                          ("the back office", "The Anchor")) if b in places), None)
+        if room:
+            out.append(f"- A room inside a listed place, one someone goes into, is a new place inside it: \"{room[0]}\" → new place value={room[0]} field={room[1]}, "
+                       f"then move player {room[0]}; once it is in the Places list, use that name and never add it again.")
         streets = next((x for x in ("Lowtown streets", "Midtown streets", "Uptown streets") if x in places), None)
         if streets:
             out.append(f"- A real place inside none of them is new: \"Sal's Garage, two streets over\" → new place value=Sal's Garage field={streets}, then move player Sal's Garage. "
-                       "Not new: a room, corner or doorway of a listed place.")
+                       "Not new: a corner, a doorway or a booth of a listed place.")
         out.append("- A thing Frank takes is new thing field=player; a thing left lying is new thing field=<place>; a character is never a thing.")
         return out
 
@@ -497,7 +504,7 @@ class NoirGame(GameBase):
         lines = [
             "Targets: player (Frank); characters by id (anyone or anything that acts: people, and creatures too): " + ", ".join(f"{q.id} = {q.name}" + (f" (also {', '.join(q.aliases[:3])})" if q.aliases else "") for q in s.people)
             + "; pockets by name as the game state lists them (revolver, bullets, cigarettes, dollars, matches, notebook, …).",
-            "Places: " + ", ".join(s.places) + ". A move or a location value is one of these. A spot inside a listed place is that place. A place the prose introduces that lies inside none of them (a bar on another street, a garage he is driven to) is new: new place value=<its name> field=<the listed place or district streets it lies in or off>, then the move. If the prose only says he is out on the street, use that district's streets.",
+            "Places: " + ", ".join(s.places) + ". A move or a location value is one of these. A spot inside a listed place (a booth, a desk, the stairs) is that place. A room inside one (an office, an upstairs room) and a place the prose introduces that lies inside none of them (a bar on another street, a garage he is driven to) are new: new place value=<its name> field=<the listed place it is inside, or the district streets it lies off>, then the move. If the prose only says he is out on the street, use that district's streets.",
             "Rows this game records:",
             "- move player <place>; move <person id> <place>.",
             "- set player.health <" + "|".join(HEALTH_VALUES) + ">, only when the prose says Frank was hurt or treated.",
@@ -917,18 +924,26 @@ class NoirGame(GameBase):
         w.note(f"people += {nid} ({name.strip()}, {role.strip()})")
 
     def _new_place(self, s: NoirState, name: str, within: str, w: Writer) -> None:
-        """A place the prose introduced (D46: additions are the default). A name that resolves to a listed place, or a
-        spot inside one, is that place and adds nothing."""
+        """A place the prose introduced (D46: additions are the default). Its own name for a listed place (exact, or a
+        scenario alias), or a spot inside one ("a booth at The Anchor"), is that place and adds nothing. A room inside a
+        listed place ("Aldrin's office at the University") and a place off a district's streets are new, inside that
+        place: the name only says where it is, it does not make it the same place ("Larry's bar on Pier Street")."""
         clean = name.strip().strip('"').strip()[:40]
-        listed = self._place(s, clean)
-        if listed is not None:
-            w.note(f"new place {clean!r} is {listed}: nothing added")
+        k = clean.lower().removeprefix("the ").strip()
+        aliases = {a.lower(): b for a, b in (self.content.scenarios().get(s.case.id, {}).get("place_aliases") or {}).items()}
+        same = next((l for l in s.places if l.lower().removeprefix("the ") == k), None) or (aliases.get(k) if aliases.get(k) in s.places else None)
+        holder = self._place(s, clean)
+        if same is None and holder is not None and set(re.findall(r"[a-z]+", k)) & SPOT_WORDS:
+            same = holder
+        if same is not None:
+            w.note(f"new place {clean!r} is {same}: nothing added")
             return
         if len(s.found_places) >= MAX_FOUND_PLACES:
             w.reject("found_places", "the city has enough new places this case", clean)
             return
-        s.found_places.append(FoundPlace(name=clean, within=self._place(s, within) or "" if within.strip() else ""))
-        w.note(f"found_places += {clean!r}" + (f" (off {s.found_places[-1].within})" if s.found_places[-1].within else ""))
+        inside = (self._place(s, within) if within.strip() else None) or holder or ""
+        s.found_places.append(FoundPlace(name=clean, within=inside))
+        w.note(f"found_places += {clean!r}" + (f" ({'off' if inside.endswith('streets') else 'in'} {inside})" if inside else ""))
 
     # ---- pocket helpers -----------------------------------------------------
     @staticmethod
