@@ -353,6 +353,7 @@ class Engine:
             except Exception as e:
                 ledger("model_call", {"role": "adjudicator", "error": repr(e)})
                 log.exception("step.failed " + logs.kv(iid=iid, turn=turn, step="adjudicate"))
+                self._fail_turn(iid, turn, ledger, "adjudicate", e)
                 yield {"event": "error", "data": {"message": f"adjudicator failed: {e}", "step": "adjudicate"}}
                 return
         # ---- 1b. typed levers: previewed now, in order, played by the narrator, committed after the prose
@@ -494,6 +495,7 @@ class Engine:
         except Exception as e:
             ledger("model_call", {"role": "narrator", "error": repr(e)})
             log.exception("step.failed " + logs.kv(iid=iid, turn=turn, step="narrate"))
+            self._fail_turn(iid, turn, ledger, "narrate", e)
             yield {"event": "error", "data": {"message": f"narrator failed: {e}", "step": "narrate"}}
             return
         elapsed = time.monotonic() - t0
@@ -711,6 +713,14 @@ class Engine:
             yield ev
 
     # ---- steps -------------------------------------------------------------
+    def _fail_turn(self, iid: str, turn: int, ledger: Any, step: str, e: Exception) -> None:
+        """A turn that failed part way leaves no transcript rows, so the next input takes the same number cleanly
+        (before, the failed player line stayed and the turn held two: ISSUES A2). Its ledger rows stay, with a
+        `turn_failed` row, so the call report shows the attempt that failed."""
+        self.store.drop_transcript_turn(iid, turn)
+        ledger("turn_failed", {"step": step, "error": f"{type(e).__name__}: {e}"[:500]})
+        self._tapes.pop(iid, None)
+
     def _provider(self, role: Any, iid: str | None, step: str) -> Any:
         """The role's provider; during a live turn, wrapped so every call it makes goes on the turn's tape."""
         provider = get_provider(role)
@@ -1030,14 +1040,21 @@ def _engine_state_text(game: Game, state: BaseModel, adj: Adjudication | None) -
 async def extract_adjudication(provider: Any, role: Any, system: str, msgs: list[Msg], schema: type, stats: dict) -> tuple[Any, Usage, str | None, list[str]]:
     """The adjudicator's call as the engine makes it, live and in the replay harness: the extract, one
     retry when an action comes back with no intents, and checks recovered from the wrong field."""
-    adj, usage = await provider.extract(role, system, msgs, schema)
     retry: str | None = None
+    try:
+        adj, usage = await provider.extract(role, system, msgs, schema)
+    except RuntimeError as e:
+        # a reply that did not parse or ran out of room (Sonnet once filled a list with " " until max_tokens,
+        # 2026-10-31, ISSUES A1; 0 of 24 replays of the same request did it again): ask once more
+        log.warning("adjudicate.retry_failed_parse " + logs.kv(why=str(e)[:200]))
+        adj, usage = await provider.extract(role, system, msgs, schema)
+        retry = "failed_parse"
     if adj.kind == "action" and not adj.intents:
         # A command is not an intent: the rest of the input (a run on a bad leg, a shot, a search) still
         # needs its intent and its check, and the model dropped them (live, 2026-10-29, even with the rule
         # in its instructions; Sonnet does it on about one turn in seven). Ask once more with the gap named;
         # keep the first answer if the second is no better.
-        retry = "no_intents"
+        retry = "no_intents" if retry is None else retry + ",no_intents"
         again = [*msgs, Msg("assistant", adj.model_dump_json()),
                  Msg("user", "That adjudication has kind=action and an empty intents list, which the rules forbid. Keep the commands exactly as "
                              "they are and add every intent the input attempts, each with its check when the outcome is uncertain; if the input "

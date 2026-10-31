@@ -312,6 +312,9 @@ def render_telling(t: dict, blobs: dict[str, str], prose: str) -> str:
             parts.append(render_verdict(p))
         elif k == "delta":
             parts.append(render_delta(p))
+        elif k == "turn_failed":
+            parts.append(f"<div class='sentback'><b>This attempt failed at the {E(p.get('step') or '')} step</b> and left no prose; "
+                         f"the player's next input was played as this turn. {E(p.get('error') or '')}</div>")
         elif k in ENGINE_KINDS:
             parts.append(render_engine(r))
         elif k not in ("rewrite", "world_verdict", "motion_verdict"):

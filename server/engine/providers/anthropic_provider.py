@@ -11,7 +11,8 @@ from __future__ import annotations
 from typing import AsyncIterator, TypeVar
 
 import anthropic
-from pydantic import BaseModel
+from anthropic.lib._parse._transform import transform_schema
+from pydantic import BaseModel, TypeAdapter
 
 from ..config import RoleConfig
 from .base import Msg, StreamDone, StreamEvent, TextDelta, Usage, record
@@ -99,8 +100,12 @@ class AnthropicProvider:
         kw = self._common(role, system)
         kw["messages"] = _to_api_messages(messages, role.cache_ttl)
         seen = dict(provider=self.name, model=role.model, schema=schema.__name__, system=system, messages=messages)
+        # what messages.parse does, done here so the raw reply is kept when it does not parse (a reply that looped
+        # until max_tokens raised inside the SDK and left nothing to read, 2026-10-31, ISSUES A1)
+        fmt = {"type": "json_schema", "schema": transform_schema(TypeAdapter(schema).json_schema())}
+        kw["output_config"] = {**kw.get("output_config", {}), "format": fmt}
         try:
-            resp = await self.client.messages.parse(output_format=schema, timeout=role.timeout_seconds, **kw)
+            resp = await self.client.messages.create(timeout=role.timeout_seconds, **kw)
         except Exception as e:
             record(**seen, error=f"{type(e).__name__}: {e}"[:500])
             raise
@@ -108,9 +113,15 @@ class AnthropicProvider:
         reasoning = "".join(getattr(b, "thinking", "") or "" for b in resp.content if getattr(b, "type", "") == "thinking")
         err = ("structured extraction refused" if resp.stop_reason == "refusal"
                else f"structured extraction truncated at max_tokens={role.max_tokens}" if resp.stop_reason == "max_tokens" else None)
+        parsed = None
+        if not err:
+            try:
+                parsed = schema.model_validate_json(text)
+            except Exception as e:
+                err = f"{type(e).__name__}: {e}"[:500]
         record(**seen, content=text, reasoning=reasoning, stop_reason=resp.stop_reason, error=err)
         if err:
             raise RuntimeError(err)
         usage = _usage(resp.usage)
         usage.extra["model"] = getattr(resp, "model", None) or role.model
-        return resp.parsed_output, usage
+        return parsed, usage

@@ -290,6 +290,12 @@ class Store:
             out.update({r["hash"]: r["text"] for r in self.conn.execute(q, part)})
         return out
 
+    @_locked
+    def drop_transcript_turn(self, iid: str, turn: int) -> None:
+        """A turn that failed part way: its transcript rows go (the next turn takes its number); its ledger rows stay."""
+        with self.conn:
+            self.conn.execute("DELETE FROM transcript WHERE instance_id=? AND turn=?", (iid, turn))
+
     # ---- undo -------------------------------------------------------------
     @_locked
     def truncate_after_turn(self, iid: str, turn: int) -> None:
