@@ -204,6 +204,69 @@ def update_settings(body: SettingsInput):
         raise HTTPException(422, str(e))
 
 
+# ---- blind pairs: the user's half of the narrator's pairwise judgement (tools/narrator_eval.py) --------
+# Dev routes: the page shows one unjudged pair at a time, blind; each choice is appended to
+# notes/eval/narrator/judgements/<pairs id>.jsonl here, so the record never lives only in the page.
+def _ne():
+    import sys as _sys
+    from pathlib import Path as _P
+    _sys.path.insert(0, str(_P(__file__).resolve().parent / "tools"))
+    import narrator_eval
+    return narrator_eval
+
+
+class JudgeInput(BaseModel):
+    key: str
+    choice: str
+    reason: str = ""
+    tags: list[str] = []
+
+
+@app.get("/dev/judge")
+def judge_index():
+    from fastapi.responses import HTMLResponse
+    ne = _ne()
+    rows = []
+    for p in sorted(ne.PAIRS.glob("*.json")):
+        P = json.loads(p.read_text())
+        done = len({r["key"] for r in ne.user_judgements(p.stem)})
+        rows.append(f'<li><a href="/dev/judge/{p.stem}">{p.stem}</a>: {done} of {len(P["pairs"])} judged</li>')
+    return HTMLResponse("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'><title>Blind Pairs</title>"
+                        "<body style='font:15px system-ui;padding:16px'><h1>Matchups</h1><ul>" + "".join(rows or ["<li>none yet</li>"]) + "</ul>")
+
+
+@app.get("/dev/judge/{pid}")
+def judge_page(pid: str):
+    from fastapi.responses import HTMLResponse
+    from pathlib import Path as _P
+    if not re.fullmatch(r"[\w.\-]+", pid) or not (_ne().PAIRS / f"{pid}.json").exists():
+        raise HTTPException(404, "no such matchup")
+    return HTMLResponse((_P(__file__).resolve().parent / "tools" / "judge_page.html").read_text().replace("__PID__", pid))
+
+
+@app.get("/dev/judge/{pid}/next")
+def judge_next(pid: str):
+    ne = _ne()
+    P = ne.load_pairs(pid)
+    done = {r["key"] for r in ne.user_judgements(pid)}
+    nxt = next((p for p in P["pairs"] if p["key"] not in done), None)
+    blind = None
+    if nxt:
+        a, b = (nxt["A"], nxt["B"]) if nxt["first"] == "A" else (nxt["B"], nxt["A"])
+        blind = {"key": nxt["key"], "player": nxt["player"], "previous": nxt["previous"], "this_turn": nxt["this_turn"], "first": a, "second": b}
+    return {"total": len(P["pairs"]), "done": len(done), "tags": P["tags"], "pair": blind}
+
+
+@app.post("/dev/judge/{pid}")
+def judge_record(pid: str, body: JudgeInput):
+    if body.choice not in ("first", "second", "tie"):
+        raise HTTPException(422, "choice is first, second or tie")
+    row = _ne().record_judgement(pid, body.key, body.choice, body.reason, body.tags)
+    names = {"A": row["A_name"], "B": row["B_name"]}
+    first = row["shown_first"]
+    return {"recorded": True, "first_name": names[first], "second_name": names["B" if first == "A" else "A"], "choice": row["choice"]}
+
+
 # ---- static frontend (production) ----------------------------------------
 _dist = cfg.resolve(cfg.server.web_dist)
 if _dist.exists():

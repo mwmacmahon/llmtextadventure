@@ -294,3 +294,25 @@ reads an exported game (exports carry their blobs). Games played before 2026-10-
 Trials show up here first: `referee.recent_turns` (D59, a test in progress) puts the last two turns at the head of
 the referee's message, fenced as past; the call report shows the block, and the eval harness replays it from each
 record's `recent`.
+
+## The narrator's measure (D60)
+
+The narrator has its own instruments, in `tools/narrator_eval.py`, run through `eval_replay.py`:
+
+```
+.venv/bin/python tools/eval_replay.py narrator-corpus <iid> [<iid>:3,5,8 ...] --purpose mixed --title "…"
+.venv/bin/python tools/eval_replay.py narrate <corpus> [--opt model=claude-haiku-5-5] [--feed window_turns=6] --note haiku
+.venv/bin/python tools/eval_replay.py rubric <narrator run> [...]
+.venv/bin/python tools/eval_replay.py pairs <run A> <run B>
+.venv/bin/python tools/eval_replay.py judge-pairs <pairs id>
+.venv/bin/python tools/eval_replay.py narrator-report
+```
+
+A **corpus** freezes whole games (by blob) and lists their turns. **narrate** tells every turn again through one
+variant, by the live path: a scratch copy of the game up to the turn before, under the same id so the dice roll the
+same, the stored adjudication, stopping before the referee. The request it builds equals the live one byte for byte
+(tests/test_narrator_replay.py). The **rubric** is a checklist per telling, yes / no / n/a with the sentence that shows
+it. **Pairs** rank two variants: the same turn from each, blind, judged by the user at `/dev/judge` on the game server
+(keys 1, 2, 0 and Enter; each judgement goes to `notes/eval/narrator/judgements/` as it is made) and by the judge
+model in both orders; the report gives B's win rate over A from each, a tie counting half, and their agreement. There
+is no prose score: a single run is measured by its rubric; prose quality only ever by a matchup.

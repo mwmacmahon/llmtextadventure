@@ -335,13 +335,13 @@ class Store:
         }
 
     @_locked
-    def import_instance(self, doc: dict, title: str | None = None, origin: dict | None = None) -> str:
+    def import_instance(self, doc: dict, title: str | None = None, origin: dict | None = None, keep_id: bool = False) -> str:
         if doc.get("format") != EXPORT_FORMAT:
             raise ValueError(f"unsupported export format {doc.get('format')!r}")
         src = doc["instance"]
         if not doc.get("snapshots"):
             raise ValueError("export has no snapshots")
-        iid = _new_id()
+        iid = src["id"] if keep_id else _new_id()        # keep_id: a scratch copy that must roll the same dice (rng_for seeds on the id)
         with self.conn:
             self.conn.execute(
                 "INSERT INTO instance (id, game, game_version, title, created, status, setup_json, prefix_text, origin_json) VALUES (?,?,?,?,?,?,?,?,?)",

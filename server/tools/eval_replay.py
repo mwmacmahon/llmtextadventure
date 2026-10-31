@@ -906,7 +906,48 @@ def main() -> None:
     ra = sub.add_parser("reapply", help="land stored runs' referee rows again through today's engine, no model calls; prints the applied score")
     ra.add_argument("runs", nargs="+")
     ra.add_argument("--write", action="store_true", help="save the new applied lines into the run files")
+    # the narrator's measure (tools/narrator_eval.py)
+    nc = sub.add_parser("narrator-corpus", help="freeze games and turns as a narrator corpus")
+    nc.add_argument("picks", nargs="+", help="<instance id> for every turn, or <instance id>:3,5,8")
+    nc.add_argument("--purpose", default="")
+    nc.add_argument("--title", default="")
+    nr = sub.add_parser("narrate", help="tell every corpus turn again through a narrator variant")
+    nr.add_argument("corpus")
+    nr.add_argument("--opt", action="append", default=[], help="narrator role option, e.g. model=claude-haiku-5-5")
+    nr.add_argument("--feed", action="append", default=[], help="context setting, e.g. window_turns=6")
+    nr.add_argument("--note", default="")
+    nr.add_argument("--limit", type=int)
+    rb = sub.add_parser("rubric", help="the judge model's checklist on every telling of narrator runs")
+    rb.add_argument("runs", nargs="+")
+    rb.add_argument("--judge", default="claude-sonnet-5-5")
+    pa = sub.add_parser("pairs", help="the blind pairs of a matchup: two narrator runs on one corpus")
+    pa.add_argument("run_a")
+    pa.add_argument("run_b")
+    jp = sub.add_parser("judge-pairs", help="the judge model on every pair of a matchup, in both orders")
+    jp.add_argument("pairs")
+    jp.add_argument("--judge", default="claude-sonnet-5-5")
+    sub.add_parser("narrator-report", help="the narrator pages: rubric tallies, win rates, user-judge agreement")
     args = ap.parse_args()
+    if args.cmd in ("rubric", "pairs", "judge-pairs", "narrator-report"):
+        import narrator_eval as ne
+        if args.cmd == "rubric":
+            for r in args.runs:
+                asyncio.run(ne.rubric(r, args.judge))
+        elif args.cmd == "pairs":
+            ne.make_pairs(args.run_a, args.run_b)
+        elif args.cmd == "judge-pairs":
+            asyncio.run(ne.judge_pairs(args.pairs, args.judge))
+        else:
+            print(ne.report())
+        return
+    if args.cmd in ("narrator-corpus", "narrate"):
+        import narrator_eval as ne
+        if args.cmd == "narrator-corpus":
+            folder = ne.make_corpus(args.picks, args.purpose, args.title)
+            print(f"narrator corpus {folder.name} -> {folder}")
+        else:
+            asyncio.run(ne.narrate(args.corpus, dict(kv.split("=", 1) for kv in args.opt), dict(kv.split("=", 1) for kv in args.feed), args.note, args.limit))
+        return
     if args.cmd == "export":
         folder = export_set(args.picks, args.any_model, args.purpose, args.title)
         print(f"test set {folder.name}: {sum(1 for _ in (folder / 'turns.jsonl').open())} turns -> {folder}; write its key.yml next (docs/TESTING.md)")

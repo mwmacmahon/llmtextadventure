@@ -72,6 +72,7 @@ class Engine:
         self.store = store
         self.games = games
         self._tapes: dict[str, Any] = {}          # iid -> the running turn's ledger writer, for the tape (engine/tape.py)
+        self.providers: dict[str, Any] = {}       # step -> a provider to use instead of the role's (the narrator replay's capture)
         # Runtime settings the UI can change (the guard mode, the progress estimate); persisted beside the store.
         self.settings_path = Path(store.path).parent / "settings.json" if getattr(store, "path", None) else None
         self.settings: dict[str, Any] = {"guard": {"mode": cfg.guard.mode, "max_retells": cfg.guard.max_retells},
@@ -362,7 +363,7 @@ class Engine:
         if command is None and adj is not None and adj.commands:
             adj, levers = self._preview_levers(game, state, adj, iid, turn, ledger, player_text or "")
             extra_directives.extend(lv.directive for lv in levers)
-        if replay is not None:
+        if replay is not None and replay.by != "eval":
             who = "the referee" if replay.by == "referee" else "the player"
             if replay.hint:
                 extra_directives.append(
@@ -517,6 +518,12 @@ class Engine:
                 "messages": [{"role": m.role, "content": m.content} for m in messages],
             },
         })
+
+        if replay is not None and replay.stop_after_narration:
+            yield {"event": "narrated", "data": {"turn": turn, "text": narration, "model": done.model, "seconds": round(elapsed, 2),
+                                                 "usage": asdict(done.usage), "directives": res["directives"], "bulletin": bulletin, **calls_block}}
+            self._tapes.pop(iid, None)
+            return
 
         # ---- 4. referee + apply --------------------------------------
         # One referee, one row type, code types it (DESIGN2 §18 A): the report is rows; engine/changes.py lands the
@@ -723,7 +730,7 @@ class Engine:
 
     def _provider(self, role: Any, iid: str | None, step: str) -> Any:
         """The role's provider; during a live turn, wrapped so every call it makes goes on the turn's tape."""
-        provider = get_provider(role)
+        provider = self.providers.get(step) or get_provider(role)
         tape = self._tapes.get(iid or "")
         if tape is None:
             return provider
@@ -1195,6 +1202,117 @@ def referee_inputs(game: Game, state: BaseModel, directives: list[str], player_t
     return referee_messages(rules, _engine_state_text(game, state, adj), directives, player_text, narration, levers=levers, recent=recent)
 
 
+# ---- the narrator replay (tools/eval_replay.py narrate; notes/TASK-narrator-review.md) ----------------------
+# A stored turn is told again by the live path itself: a scratch store holds the game up to the turn before, under
+# the same id (the dice seed on it), and run_turn replays the stored adjudication with Replay(by="eval"), which adds
+# no retelling directive and stops after the narration. So the narrator's request is built by the code that built it
+# live, and a variant (another narrator role, another window) changes only what it names.
+def doc_upto(doc: dict, turn: int) -> dict:
+    """An exported game (Store.export_instance) cut to the turns before `turn`, as it stood when `turn` began: a
+    story-so-far summary is filed under the last turn it covers but written later, so transcript rows written after
+    the turn's bulletin (the moment the narrator was called) are left out too."""
+    rows = [r for r in doc["transcript"] if r["turn"] == turn]
+    # the bulletin is written just before the narrator runs, after any summary the turn itself wrote
+    start = next((r["created"] for r in rows if r["role"] == "bulletin"), min((r["created"] for r in rows), default=None))
+    return {**doc, "transcript": [r for r in doc["transcript"] if r["turn"] < turn and (start is None or r["created"] < start)],
+            "ledger": [r for r in doc["ledger"] if r["turn"] < turn],
+            "snapshots": [x for x in doc["snapshots"] if x["turn"] < turn]}
+
+
+def stored_turn(doc: dict, turn: int) -> dict:
+    """What a replay of `turn` needs from the game: the player's words and the stored adjudication, or why it cannot
+    be replayed (a clicked command, a turn with no adjudication)."""
+    rows = [r for r in doc["ledger"] if r["turn"] == turn]
+    if any(r["kind"] == "command" and not r["payload"].get("typed") for r in rows):
+        return {"skip": "a clicked command"}
+    adj = next((r["payload"] for r in rows if r["kind"] == "adjudication"), None)
+    # the last player line: a game played before ISSUES A2 was fixed can hold a failed attempt's line first
+    player = next((r["text"] for r in reversed(doc["transcript"]) if r["turn"] == turn and r["role"] == "player"), None)
+    if adj is None or player is None:
+        return {"skip": "no stored adjudication or player line"}
+    return {"player_text": player, "adjudication": {k: v for k, v in adj.items() if k != "_call"}, "call": adj.get("_call") or {}}
+
+
+class _Captured(Exception):
+    pass
+
+
+class _CaptureProvider:
+    """Takes the narrator's first request and stops the turn there."""
+    name = "capture"
+
+    def __init__(self) -> None:
+        self.request: tuple[str, list[Msg]] | None = None
+
+    async def stream(self, role: Any, system: str, messages: list[Msg]) -> AsyncIterator[Any]:
+        self.request = (system, list(messages))
+        raise _Captured()
+        yield  # pragma: no cover
+
+    async def extract(self, *a: Any, **k: Any) -> Any:  # pragma: no cover
+        raise _Captured()
+
+
+def _scratch_engine(cfg: Config, games: dict[str, Game], doc: dict, turn: int) -> tuple["Engine", str, Path]:
+    import tempfile
+    folder = Path(tempfile.mkdtemp(prefix="narrator-replay-"))
+    store = Store(folder / "replay.sqlite3")
+    iid = store.import_instance(doc_upto(doc, turn), keep_id=True)
+    return Engine(cfg, store, games), iid, folder
+
+
+def _replay_of(game: Game, st: dict) -> Replay:
+    schema = getattr(game, "adjudication_schema", Adjudication)
+    return Replay(adjudication=schema.model_validate(st["adjudication"]), hint="", attempt=0, history=[],
+                  call=st["call"], by="eval", stop_after_narration=True)
+
+
+async def narrator_inputs(cfg: Config, games: dict[str, Game], doc: dict, turn: int) -> tuple[str, list[Msg]]:
+    """The narrator's first request for stored turn `turn` of the exported game `doc`, built by the live path (see
+    above) with a provider that captures it instead of sending it. On a turn played with the tape, this equals the
+    first narrator exchange the tape holds, byte for byte (tests/test_narrator_replay.py)."""
+    import shutil
+    st = stored_turn(doc, turn)
+    if "skip" in st:
+        raise ValueError(f"turn {turn}: {st['skip']}")
+    eng, iid, folder = _scratch_engine(cfg, games, doc, turn)
+    cap = _CaptureProvider()
+    eng.providers["narrator"] = cap
+    try:
+        async for _ in eng.run_turn(iid, st["player_text"], replay=_replay_of(games[doc["instance"]["game"]], st)):
+            pass
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+    if cap.request is None:
+        raise RuntimeError(f"turn {turn}: the replay never reached the narrator")
+    return cap.request
+
+
+async def narrate_turn(cfg: Config, games: dict[str, Game], doc: dict, turn: int) -> dict:
+    """Tell stored turn `turn` again with `cfg`'s narrator role and context settings: the `narrated` data (the
+    telling with its § lines, calls, declarations, notes, usage, seconds, the directives and the bulletin) plus the
+    tape of the narrator's requests. Errors come back as {"error": …}."""
+    import shutil
+    st = stored_turn(doc, turn)
+    if "skip" in st:
+        return {"skip": st["skip"]}
+    eng, iid, folder = _scratch_engine(cfg, games, doc, turn)
+    out: dict[str, Any] = {}
+    try:
+        async for ev in eng.run_turn(iid, st["player_text"], replay=_replay_of(games[doc["instance"]["game"]], st)):
+            if ev["event"] == "narrated":
+                out = dict(ev["data"])
+            elif ev["event"] == "error":
+                out = {"error": ev["data"].get("message")}
+        tape = [r["payload"] for r in eng.store.ledger(iid, turn) if r["kind"] == "exchange" and r["payload"].get("role") == "narrator"]
+        blobs = eng.store.blobs({h for x in tape for h in [x["system"], *(m["content"] for m in x["messages"])]})
+        out["tape"] = [{**x, "system": blobs.get(x["system"], ""), "messages": [{"role": m["role"], "content": blobs.get(m["content"], "")} for m in x["messages"]]}
+                       for x in tape]
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+    return out
+
+
 def _earlier_turns(store: Store, iid: str, n: int) -> list[tuple[int, str, str]]:
     """The last `n` finished turns before the one in play (a turn is finished once its snapshot is saved), as
     (turn, player input, narration) with the mechanics lines left out. TRIAL (D59), for the referee."""
@@ -1221,7 +1339,9 @@ class Replay:
     attempt: int                      # 1 for the first rewrite of a turn
     history: list[dict[str, Any]]     # every earlier telling of this turn: {attempt, hint, narration, mechanics, ledger}
     call: dict[str, Any]              # the original adjudicator call's meta (provider, model); its usage is not counted again
-    by: str = "player"                # who asked: the player (the rewrite button) or the referee (a serious ruling under the guard)
+    by: str = "player"                # who asked: the player (the rewrite button) or the referee (a serious ruling under the guard);
+                                      # "eval": the narrator replay (tools/eval_replay.py narrate), which adds no retelling directive
+    stop_after_narration: bool = False  # the narrator replay: yield `narrated` with the telling and stop before the referee
 
 
 @dataclass

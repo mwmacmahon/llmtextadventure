@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Blind Pairs</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one pair at a time; the context above, the two tellings side by side (stacked on a phone), the verdict bar fixed below. */
+:root{
+  --paper:#f4f5f2; --sheet:#ffffff; --ink:#1c201d; --muted:#5d665f; --rule:#d6dbd5; --accent:#355f8c; --pick:#e3ecf6; --ok:#2c7a4f;
+  --display:"Source Serif 4", Georgia, serif; --body:"IBM Plex Sans", system-ui, sans-serif; --mono:"IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--paper:#121513;--sheet:#1a1f1c;--ink:#e2e8e3;--muted:#98a39b;--rule:#2d3530;--accent:#8fb3dd;--pick:#1f2c3a;--ok:#7fd3a4;color-scheme:dark}}
+:root[data-theme="dark"]{--paper:#121513;--sheet:#1a1f1c;--ink:#e2e8e3;--muted:#98a39b;--rule:#2d3530;--accent:#8fb3dd;--pick:#1f2c3a;--ok:#7fd3a4;color-scheme:dark}
+body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.55 var(--body)}
+.wrap{max-width:1180px;margin:0 auto;padding-block:16px 170px;padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px))}
+header{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:baseline}
+h1{font:600 1.3rem var(--display);margin:0}
+.dim{color:var(--muted);font-size:.85rem}
+.ctx{display:grid;gap:10px;margin:14px 0}
+details{background:var(--sheet);border:1px solid var(--rule);border-radius:6px;padding:8px 12px}
+summary{cursor:pointer;color:var(--muted);font-size:.88rem}
+pre{white-space:pre-wrap;font:13px/1.5 var(--mono);margin:8px 0 0;overflow-wrap:anywhere}
+.player{font:italic 16px/1.5 var(--display);border-left:3px solid var(--accent);padding-left:12px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.two > section{background:var(--sheet);border:1px solid var(--rule);border-radius:8px;padding:12px 16px;min-width:0}
+.two > section.picked{background:var(--pick);border-color:var(--accent)}
+.two h2{font:600 .78rem var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 6px}
+.prose{white-space:pre-wrap;font:16px/1.65 var(--display)}
+.bar{position:fixed;left:0;right:0;bottom:0;background:var(--sheet);border-top:1px solid var(--rule);padding-block:10px calc(10px + env(safe-area-inset-bottom, 0px));padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px))}
+.bar .in{max-width:1180px;margin:0 auto;display:grid;gap:8px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button{font:600 14px var(--body);padding:8px 14px;border-radius:6px;border:1px solid var(--rule);background:var(--paper);color:var(--ink);cursor:pointer}
+button.on{background:var(--accent);color:var(--sheet);border-color:var(--accent)}
+button:focus-visible,textarea:focus-visible,label:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+kbd{font:11px var(--mono);border:1px solid var(--rule);border-radius:3px;padding:0 4px;margin-left:4px}
+textarea{width:100%;box-sizing:border-box;font:14px var(--body);background:var(--paper);color:var(--ink);border:1px solid var(--rule);border-radius:6px;padding:6px 8px;min-height:2.4em}
+.tags label{font-size:.82rem;border:1px solid var(--rule);border-radius:12px;padding:2px 8px;cursor:pointer;user-select:none}
+.tags input{margin:0 4px 0 0}
+.reveal{color:var(--ok);font:13px var(--mono)}
+@media (max-width:760px){.two{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style></head>
+<body><div class="wrap">
+<header><h1>Blind Pairs</h1><span class="dim" id="progress">loading</span><span class="dim" id="pid"></span></header>
+<p class="dim">The same turn told two ways. Pick the better story. Names stay hidden until you choose. Keys: <kbd>1</kbd> first, <kbd>2</kbd> second, <kbd>0</kbd> tie, <kbd>Enter</kbd> submit (Shift+Enter for a new line in the reason).</p>
+<div class="ctx">
+  <div class="player" id="player"></div>
+  <details><summary>The previous turn, as the player read it</summary><pre id="previous"></pre></details>
+  <details><summary>What the narrator was told this turn</summary><pre id="thisturn"></pre></details>
+</div>
+<div class="two"><section id="s1"><h2>First</h2><div class="prose" id="t1"></div></section><section id="s2"><h2>Second</h2><div class="prose" id="t2"></div></section></div>
+<p class="reveal" id="reveal"></p>
+</div>
+<div class="bar"><div class="in">
+  <div class="row"><button id="b1" data-c="first">First<kbd>1</kbd></button><button id="b2" data-c="second">Second<kbd>2</kbd></button><button id="b0" data-c="tie">Tie<kbd>0</kbd></button>
+    <span class="tags row" id="tags"></span></div>
+  <div class="row" style="flex-wrap:nowrap"><textarea id="reason" placeholder="Why (optional, one line is plenty)"></textarea><button id="go">Submit<kbd>Enter</kbd></button></div>
+</div></div>
+<script>
+const PID = "__PID__";
+let pair = null, choice = null, busy = false;
+const $ = id => document.getElementById(id);
+document.getElementById("pid").textContent = PID;
+function pick(c){ choice = c; ["b1","b2","b0"].forEach(id => $(id).classList.toggle("on", $(id).dataset.c === c));
+  $("s1").classList.toggle("picked", c === "first"); $("s2").classList.toggle("picked", c === "second"); }
+async function load(){
+  const r = await fetch(`/dev/judge/${PID}/next`); const d = await r.json();
+  $("progress").textContent = `${d.done} of ${d.total} judged`;
+  if (!d.pair){ $("player").textContent = "Every pair in this matchup is judged."; $("t1").textContent = $("t2").textContent = ""; pair = null; return; }
+  pair = d.pair; pick(null); $("reason").value = "";
+  $("player").textContent = pair.player; $("previous").textContent = pair.previous || "(the opening)"; $("thisturn").textContent = pair.this_turn;
+  $("t1").textContent = pair.first; $("t2").textContent = pair.second;
+  $("tags").innerHTML = d.tags.map((t,i) => `<label><input type="checkbox" id="tag${i}" value="${t}">${t}</label>`).join("");
+  window.scrollTo(0, 0);
+}
+async function submit(){
+  if (!pair || !choice || busy) return; busy = true;
+  const tags = [...document.querySelectorAll("#tags input:checked")].map(x => x.value);
+  const r = await fetch(`/dev/judge/${PID}`, {method: "POST", headers: {"content-type": "application/json"},
+    body: JSON.stringify({key: pair.key, choice, reason: $("reason").value, tags})});
+  const d = await r.json(); busy = false;
+  $("reveal").textContent = r.ok ? `Recorded. First was ${d.first_name}, second was ${d.second_name}.` : `Not recorded: ${d.detail || r.status}. Try again.`;
+  if (r.ok) load();
+}
+document.querySelectorAll("[data-c]").forEach(b => b.addEventListener("click", () => pick(b.dataset.c)));
+$("go").addEventListener("click", submit);
+document.addEventListener("keydown", e => {
+  const typing = e.target.tagName === "TEXTAREA";
+  if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); submit(); return; }
+  if (typing) return;
+  if (e.key === "1") pick("first"); else if (e.key === "2") pick("second"); else if (e.key === "0") pick("tie");
+});
+load();
+</script>
+</body></html>
