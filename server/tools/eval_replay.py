@@ -50,9 +50,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from engine.changes import apply_changes, screen_unseen_clues  # noqa: E402
 from engine.config import load_config  # noqa: E402
 from engine.referee_passes import EXAMPLE_NAMES, referee_ids  # noqa: E402
-from engine.pipeline import _hook, _named_present, adjudicator_inputs, extract_adjudication, extract_referee, referee_inputs  # noqa: E402
+from engine.pipeline import _hook, _named_present, adjudicator_inputs, extract_adjudication, extract_referee, land_extras, referee_inputs  # noqa: E402
 from engine.providers import RECORDER, Exchange, Msg, get_provider  # noqa: E402
 from engine.registry import load_games  # noqa: E402
+from engine.roles import Change, ChangeReport  # noqa: E402
 from engine.store import Store  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -301,8 +302,9 @@ def score_rows(expected: list[dict], got: list[dict]) -> dict:
 
 
 def score_applied(expected: list[str], got: list[str]) -> dict:
-    """Applied lines look like 'inventory.revolver.loaded: 5 -> 4'; match by path, then by the whole line."""
-    def path(s: str) -> str: return s.split(":")[0].strip()
+    """Applied lines look like 'inventory.revolver.loaded: 5 -> 4'; match by path, then by the whole line. An append
+    ('findings += …', 'threads += t3-…: …') matches by its list: the words and the new id are the model's own."""
+    def path(s: str) -> str: return s.split(" += ")[0].strip() + " +=" if " += " in s.split(":")[0] else s.split(":")[0].strip()
     # "set in motion: p2", "settled: p1", "unseen: 1 fact recorded" are written by the pipeline after apply_changes; the rows score those
     exp = [e for e in expected if not e.startswith(("set in motion:", "settled:", "unseen:"))]
     rem = [g for g in got if not g.startswith(("set in motion:", "settled:", "unseen:"))]
@@ -559,13 +561,7 @@ async def _replay_roles(rec: dict, game, state, exp: dict, res: dict, current: d
         current["role"] = "referee"
         role = _role_with(cfg, "referee", opts)
         provider = get_provider(role)
-        adj_obj = None
-        schema = getattr(game, "adjudication_schema", None)
-        if schema is not None:
-            try:
-                adj_obj = schema.model_validate(exp["adjudication"])
-            except Exception:
-                adj_obj = None
+        adj_obj = _adjudication_of(game, rec)
         # test sets made before 2026-10-30 (D44) carry no "levers": their referee is not told the player's commands
         system, msgs = referee_inputs(game, state, rec["directives"], rec["player_text"], rec["narration"], adj_obj, levers=rec.get("levers") or [])
         if opts.get("perturb"):
@@ -579,18 +575,50 @@ async def _replay_roles(rec: dict, game, state, exp: dict, res: dict, current: d
             return
         seconds = round(time.monotonic() - t0, 1)
         got_rows = [c.model_dump(mode="json") for c in delta.changes]
-        ids = _hook(game, "entity_ids", state, default=[])
-        present = _named_present(game, state, [e for e in delta.present if e in ids], rec["prose"])
-        causes = [e for d in rec["directives"] for e in (adj_obj.entities if adj_obj is not None and hasattr(adj_obj, "entities") else []) if e in d]
-        screened = screen_unseen_clues(delta, rec["prose"], rec["notes"])
-        try:
-            _, report, _ = apply_changes(game, state, delta, present=present, causes=causes, skip=[])
-            applied, rejected = list(report.applied), [r.model_dump(mode="json") for r in report.rejected] + [r.model_dump(mode="json") for r in screened]
-        except Exception as e:
-            applied, rejected = [], [{"path": "apply", "reason": f"{type(e).__name__}: {e}"[:200], "value": ""}]
+        applied, rejected = land_report(game, state, rec, delta, adj_obj)
         res["referee"] = {"seconds": seconds, "got": got_rows, "present": list(delta.present), "log_line": delta.log_line, "usage": asdict(usage), "parts": parts,
                           "rows": score_rows(exp["changes"], got_rows), "applied": score_applied(exp["applied"], applied),
                           "rejected": rejected, "expected_rejected": exp.get("rejected", []), "applied_lines": applied}
+
+
+def _adjudication_of(game, rec: dict):
+    schema = getattr(game, "adjudication_schema", None)
+    try:
+        return schema.model_validate(rec["expected"]["adjudication"]) if schema is not None else None
+    except Exception:
+        return None
+
+
+def land_report(game, state, rec: dict, delta: ChangeReport, adj_obj) -> tuple[list[str], list[dict]]:
+    """A referee report landed on the turn's snapshot as the turn lands it: rows, then timers, threads and unseen
+    facts (land_extras). Returns the applied lines and the rejections."""
+    delta = delta.model_copy(deep=True)
+    ids = _hook(game, "entity_ids", state, default=[])
+    present = _named_present(game, state, [e for e in delta.present if e in ids], rec["prose"])
+    causes = [e for d in rec["directives"] for e in (adj_obj.entities if adj_obj is not None and hasattr(adj_obj, "entities") else []) if e in d]
+    screened = screen_unseen_clues(delta, rec["prose"], rec["notes"])
+    try:
+        after, report, extras = apply_changes(game, state, delta, present=present, causes=causes, skip=[])
+        land_extras(game, after, delta.log_line, report, extras, turn=rec["turn"], notes=rec["notes"])
+        return list(report.applied), [r.model_dump(mode="json") for r in report.rejected] + [r.model_dump(mode="json") for r in screened]
+    except Exception as e:
+        return [], [{"path": "apply", "reason": f"{type(e).__name__}: {e}"[:200], "value": ""}]
+
+
+def reapply(d: dict, games: dict) -> None:
+    """Land a stored run's referee rows again through today's engine, with no model calls: an engine fix is measured
+    on the rows models already wrote (the user's rule: free re-grades before paid runs). Rewrites each turn's applied
+    score, rejections and applied lines in place."""
+    recs = {(r["iid"], r["turn"]): r for r in (json.loads(l) for l in Path(d["corpus"]).open())}
+    for res in d["turns"]:
+        ref, rec = res.get("referee"), recs.get((res["iid"], res["turn"]))
+        if not ref or "got" not in ref or rec is None:
+            continue
+        game = games[rec["game"]]
+        state = game.load_state(rec["snapshot"])
+        delta = ChangeReport(changes=[Change(**c) for c in ref["got"]], present=ref.get("present", []), log_line=ref.get("log_line", ""), confidence="medium")
+        applied, rejected = land_report(game, state, rec, delta, _adjudication_of(game, rec))
+        ref.update({"applied": score_applied(rec["expected"]["applied"], applied), "rejected": rejected, "applied_lines": applied})
 
 
 def summarize(results: list[dict]) -> dict:
@@ -862,6 +890,9 @@ def main() -> None:
     gr.add_argument("runs", nargs="+")
     gr.add_argument("--gold", help="grade against this key instead of each run's test set key")
     gr.add_argument("-v", "--verbose", action="store_true")
+    ra = sub.add_parser("reapply", help="land stored runs' referee rows again through today's engine, no model calls; prints the applied score")
+    ra.add_argument("runs", nargs="+")
+    ra.add_argument("--write", action="store_true", help="save the new applied lines into the run files")
     args = ap.parse_args()
     if args.cmd == "export":
         folder = export_set(args.picks, args.any_model, args.purpose, args.title)
@@ -882,6 +913,18 @@ def main() -> None:
                 for r in d["turns"]:
                     _print_gold(r)
             print(json.dumps({"run": Path(path).stem, **summarize_gold(d["turns"])}, ensure_ascii=False))
+    elif args.cmd == "reapply":
+        cfg = load_config(ROOT / "server" / "config.yml")
+        games = load_games(cfg.resolve(cfg.server.content_root))
+        for path in args.runs:
+            d = json.loads(Path(path).read_text())
+            before = (d.get("summary") or {}).get("referee", {})
+            reapply(d, games)
+            now = summarize(d["turns"]).get("referee", {})
+            print(json.dumps({"run": Path(path).stem, **{k: f"{before.get(k)} -> {now.get(k)}" for k in ("applied_recall", "applied_precision", "rejected")}}, ensure_ascii=False))
+            if args.write:
+                d["summary"]["referee"] = {**d["summary"].get("referee", {}), **{k: now[k] for k in ("applied_recall", "applied_precision", "rejected", "rejected_reasons") if k in now}}
+                Path(path).write_text(json.dumps(d, ensure_ascii=False, indent=1))
     else:
         asyncio.run(run(args))
 

@@ -144,7 +144,10 @@ def test_rows_people_and_new_people(game: NoirGame):
             C(kind="new", target="person", value="Kowalczyk", note="pawnbroker, Pier Street"),
             C(kind="new", target="person", value="Mrs. Pulaski", note="landlady"), present=["rosa"])
     s2, rep = apply(game, st, d, ["rosa"])
-    assert s2.person("rosa").met and s2.person("dooley").attitude == 5 and s2.person("dooley").location == "The Anchor"   # +3 step on 2
+    assert not s2.person("rosa").met                         # named while Frank is on the roof and she is at The Anchor: talked about, not met
+    assert s2.person("dooley").attitude == 5 and s2.person("dooley").location == "The Anchor"   # +3 step on 2
+    s2b, _ = apply(game, s2, ref(C(kind="move", target="player", value="The Anchor"), present=["rosa"]), ["rosa"])
+    assert s2b.person("rosa").met
     assert s2.person("dooley").facts[-1] == "Saw men with lye."
     assert s2.person("kowalczyk") and s2.person("kowalczyk").met and s2.person("kowalczyk").location == "Rooftop shack"
     assert s2.notebook[-1].kind == "contact" and "Kowalczyk" in s2.notebook[-1].text
@@ -152,7 +155,8 @@ def test_rows_people_and_new_people(game: NoirGame):
     assert len(s2.people) == 12
     assert any(a.startswith("people += kowalczyk") for a in rep.applied)
     b = game.render_bulletin(s2, "")
-    assert "Kowalczyk" in b and "Rosa" in b
+    assert "Kowalczyk" in b and "Rosa" not in b                  # the people Frank has dealt with
+    assert "Rosa" in game.render_bulletin(s2b, "")
 
 
 # ---- modifiers ---------------------------------------------------------------

@@ -177,6 +177,20 @@ noir 65–68 that night); one Sonnet run per change is enough to catch a regress
 A run replays the referee and the adjudicator with **today's prompts** on the **recorded** turn. That is the point (a
 prompt change is measured on fixed input) and the catch (see "An old test set meets a new prompt").
 
+**An engine change is measured free, on rows already written.** A run lands the referee's rows as a turn does: the
+state rows, then the timers set in motion or settled, the unseen facts and the threads (`land_extras` in
+engine/pipeline.py, shared with the turn). Runs before 2026-10-31 landed only the state rows, so their "applied" score
+counted every expected thread and timer as missed (Sonnet's station run 48/123 is 95/123 landed in full). `reapply`
+lands a stored run's rows again through today's engine with no model calls and prints the old and new applied score;
+`--write` saves the new lines into the run file:
+
+```
+.venv/bin/python tools/eval_replay.py reapply ../notes/eval/runs/run_20261031-0*.json
+```
+
+An append ("findings += …", "threads += t3-…") is scored by its list: the words and the new thread's id are the model's
+own and never repeat exactly.
+
 
 ## Reading a report
 

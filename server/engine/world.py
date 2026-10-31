@@ -665,6 +665,10 @@ def _resolve(w: World, text: str) -> tuple[str | None, list[str]]:
     hits = w.find(text)
     if len(hits) == 1:
         return hits[0], []
+    qwords = set(re.findall(r"[a-z0-9']+", text.strip().strip('"').lower())) - {"the", "a", "an"}
+    whole = [i for i in hits if qwords and qwords <= set(re.findall(r"[a-z0-9']+", (getattr(w.entity(i), "name", "") or "").lower()))]
+    if len(whole) == 1:                 # "lab_hatch": the Lab hatch has every word, the Lab only one of them
+        return whole[0], []
     return None, hits
 
 

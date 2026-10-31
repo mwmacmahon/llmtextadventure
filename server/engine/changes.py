@@ -122,18 +122,23 @@ def _content_words(text: str) -> set[str]:
 # in the note, not reporting a change. Narrow on purpose: the instruction at the start or end of the note,
 # and for a gone row a note saying the thing is still there.
 _TAKES_BACK = re.compile(r"(^|[;,.:]\s*)(ignore|disregard|skip|omit|no change|not a change)( (this|it|this row|that))?\s*[.!]?\s*$"
-                         r"|^\s*(ignore|disregard|omit|no change|not a change)\b", re.I)
+                         r"|^\s*(ignore|disregard|omit|no change|not a change)\b"
+                         r"|(^|[;,.:]\s*)(do not|don't) (apply|record)( (this|it|this row|that))?\s*[.!]?\s*$", re.I)    # "not yet arrived; do not apply" (Sonnet, 10-31)
+_NOT_ARRIVED = re.compile(r"\b(not (yet )?(arrived|there)|has(n't| not) (yet )?(arrived|reached)|on (his|her|their|its) way|en route|in transit"
+                          r"|still (walking|heading|on the way|going)|arriv(es|ing) (next|later|soon|in))\b", re.I)
 _STILL_THERE = re.compile(r"\bnot (actually |really )?(lost|gone|taken|dropped|removed|destroyed|discarded)\b"
                           r"|\bstill (has|have|holds?|holding|carries|carrying|wears|wearing|in (his|her|their) (pockets?|hands?))\b", re.I)
 
 
 def takes_itself_back(ch: Change) -> bool:
     """True for a game row (set, add, move, new, gone, learned), an unseen fact or a thread opened, whose note
-    says not to apply it. Never a soon: its note is what would stop it."""
+    says not to apply it, and for a move whose note says they have not got there yet. Never a soon: its note is
+    what would stop it."""
     note = (ch.note or "").strip()
     if not note or ch.kind not in ("set", "add", "move", "new", "gone", "learned", "unseen", "thread_open"):
         return False
-    return bool(_TAKES_BACK.search(note)) or (ch.kind == "gone" and bool(_STILL_THERE.search(note)))
+    return (bool(_TAKES_BACK.search(note)) or (ch.kind == "gone" and bool(_STILL_THERE.search(note)))
+            or (ch.kind == "move" and bool(_NOT_ARRIVED.search(note))))     # "walking toward Reactor; not yet arrived": the move is next turn's
 
 
 def screen_unseen_clues(report: ChangeReport, prose: str, notes: list[str]) -> list[Rejection]:

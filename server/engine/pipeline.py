@@ -545,53 +545,7 @@ class Engine:
                         screened.append(Rejection(path="notebook", reason=f"uses '{term}', which the player has not learned", value=c.value))
                 state, report, extras = apply_changes(game, state, delta, present=present, causes=causes, skip=skip)
                 report.rejected.extend(screened)
-                doc = state.model_dump(mode="json")
-                ppath, clock = getattr(game, "pending_path", None), getattr(game, "clock", None)
-                if ppath and clock:
-                    pitems = pend.load(doc, ppath)
-                    clk = sp.lookup(doc, clock.path, None) or {"day": 1, "minute": 0}
-                    now_abs = int(clk["day"]) * clock.minutes_per_day + int(clk["minute"])
-                    names = _hook(game, "entity_names", state, default=None) or {}
-                    for new in extras.pending_new:
-                        new.who = names.get(new.who.strip(), new.who)        # the narrator reads who by name, never by id
-                        dup = pend.duplicate_of(pitems, new)
-                        if dup is not None:
-                            report.rejected.append(Rejection(path="pending", reason=f"already in motion as {dup.id}", value=new.what))
-                            continue
-                        sched = pend.scheduled_as(_events_of(game, doc), new)
-                        if sched is not None:
-                            report.rejected.append(Rejection(path="pending", reason=f"the engine has it scheduled ({sched})", value=new.what))
-                            continue
-                        src = "narrator" if any("soon:" in n.lower() for n in calls_block.get("notes", [])) else "referee"
-                        p = pend.add(pitems, new, now_abs=now_abs, minutes_per_day=clock.minutes_per_day, turn=turn, source=src)
-                        ledger("pending", {"action": "new", **p.model_dump(mode="json")})
-                        report.applied.append(f"set in motion: {p.id}")            # the id only: what is coming is not for the player's eyes
-                    for ref in extras.pending_resolved:
-                        for p in pend.resolve(pitems, [ref], turn):
-                            ledger("pending", {"action": "resolved", **p.model_dump(mode="json")})
-                            report.applied.append(f"settled: {p.id}")
-                    pend.save(doc, ppath, pitems)
-                rpath = getattr(game, "recent_path", None)          # unseen facts join the narrator's "behind the scenes" list
-                if rpath and extras.unseen:
-                    seen_list = list(sp.lookup(doc, rpath, []) or [])
-                    for f in extras.unseen:
-                        seen_list.append(f"{_clock_text(game, doc)}{f.rstrip('.')}. (unseen by the player)")
-                        ledger("unseen", {"fact": f})
-                    sp.assign(doc, rpath, seen_list[-12:])
-                    report.applied.append(f"unseen: {len(extras.unseen)} fact{'s' if len(extras.unseen) != 1 else ''} recorded")   # never the content
-                if delta.log_line:
-                    lpath = getattr(game, "log_path", "log")
-                    last = (list(sp.lookup(doc, lpath, []) or []) or [""])[-1]
-                    if _same_line(last, delta.log_line):    # a weak referee repeats last turn's line
-                        report.rejected.append(Rejection(path="log", reason="the same as the last log line", value=delta.log_line.strip()))
-                    else:
-                        sp.append(doc, lpath, f"{_clock_text(game, doc)}{delta.log_line.strip()}")
-                tpath = getattr(game, "threads_path", None)
-                if tpath and (extras.threads_opened or extras.threads_closed):
-                    applied, rejected = th.apply_updates(doc, tpath, extras.threads_opened, extras.threads_closed, turn)
-                    report.applied.extend(applied)
-                    report.rejected.extend(sp_rej(r) for r in rejected)
-                state = game.load_state(doc)
+                state = land_extras(game, state, delta.log_line, report, extras, turn=turn, notes=calls_block.get("notes", []), ledger=ledger)
                 issues = extras.issues
                 ledger("delta", report.model_dump(mode="json"))
                 log.info("step " + logs.kv(iid=iid, turn=turn, step="referee", model=meta["model"], seconds=meta["seconds"], rows=len(delta.changes),
@@ -1298,6 +1252,61 @@ def _parse_command_args(spec: Any, raw: list[str]) -> tuple[dict[str, str], str]
             return args, (f"Which {p.label}? ({choices})" if not v else f"{v!r} is not a {p.label}; the choices are {choices}.")
         args[p.name] = hit
     return args, ""
+
+
+def land_extras(game: Any, state: BaseModel, log_line: str, report: ApplyReport, extras: Any, *, turn: int, notes: list[str],
+                ledger: Any = None) -> BaseModel:
+    """What apply_changes hands back besides the state: timers set in motion or settled, unseen facts, the log line,
+    threads opened and closed. The turn and the replay harness (tools/eval_replay.py) land them the same way, so a
+    test set scores the timers and threads a model reports, not only its state rows."""
+    ledger = ledger or (lambda kind, payload: None)
+    doc = state.model_dump(mode="json")
+    ppath, clock = getattr(game, "pending_path", None), getattr(game, "clock", None)
+    if ppath and clock:
+        pitems = pend.load(doc, ppath)
+        clk = sp.lookup(doc, clock.path, None) or {"day": 1, "minute": 0}
+        now_abs = int(clk["day"]) * clock.minutes_per_day + int(clk["minute"])
+        names = _hook(game, "entity_names", state, default=None) or {}
+        for ref in extras.pending_resolved:          # settled first: the next step of a timer this report settles is new, not its duplicate
+            for p in pend.resolve(pitems, [ref], turn):
+                ledger("pending", {"action": "resolved", **p.model_dump(mode="json")})
+                report.applied.append(f"settled: {p.id}")
+        for new in extras.pending_new:
+            new.who = names.get(new.who.strip(), new.who)        # the narrator reads who by name, never by id
+            dup = pend.duplicate_of(pitems, new)
+            if dup is not None:
+                report.rejected.append(Rejection(path="pending", reason=f"already in motion as {dup.id}", value=new.what))
+                continue
+            sched = pend.scheduled_as(_events_of(game, doc), new, now_abs, clock.minutes_per_day)
+            if sched is not None:
+                report.rejected.append(Rejection(path="pending", reason=f"the engine has it scheduled ({sched})", value=new.what))
+                continue
+            src = "narrator" if any("soon:" in n.lower() for n in notes) else "referee"
+            p = pend.add(pitems, new, now_abs=now_abs, minutes_per_day=clock.minutes_per_day, turn=turn, source=src)
+            ledger("pending", {"action": "new", **p.model_dump(mode="json")})
+            report.applied.append(f"set in motion: {p.id}")            # the id only: what is coming is not for the player's eyes
+        pend.save(doc, ppath, pitems)
+    rpath = getattr(game, "recent_path", None)          # unseen facts join the narrator's "behind the scenes" list
+    if rpath and extras.unseen:
+        seen_list = list(sp.lookup(doc, rpath, []) or [])
+        for f in extras.unseen:
+            seen_list.append(f"{_clock_text(game, doc)}{f.rstrip('.')}. (unseen by the player)")
+            ledger("unseen", {"fact": f})
+        sp.assign(doc, rpath, seen_list[-12:])
+        report.applied.append(f"unseen: {len(extras.unseen)} fact{'s' if len(extras.unseen) != 1 else ''} recorded")   # never the content
+    if log_line:
+        lpath = getattr(game, "log_path", "log")
+        last = (list(sp.lookup(doc, lpath, []) or []) or [""])[-1]
+        if _same_line(last, log_line):    # a weak referee repeats last turn's line
+            report.rejected.append(Rejection(path="log", reason="the same as the last log line", value=log_line.strip()))
+        else:
+            sp.append(doc, lpath, f"{_clock_text(game, doc)}{log_line.strip()}")
+    tpath = getattr(game, "threads_path", None)
+    if tpath and (extras.threads_opened or extras.threads_closed):
+        applied, rejected = th.apply_updates(doc, tpath, extras.threads_opened, extras.threads_closed, turn)
+        report.applied.extend(applied)
+        report.rejected.extend(sp_rej(r) for r in rejected)
+    return game.load_state(doc)
 
 
 def sp_rej(reason: str):

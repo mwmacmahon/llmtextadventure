@@ -149,23 +149,50 @@ def duplicate_of(items: list[Pending], new: PendingNew) -> Pending | None:
     return None
 
 
-def scheduled_as(events: list[Any], new: PendingNew) -> str | None:
-    """The id of a scheduled event the new timer restates: one not yet fired or expired whose description
-    shares most of the timer's words. The engine fires that event at its own time; a timer for it would play
-    it early, and twice (noir: "the caller arrives at nine" brought Szabo in at 20:45, before the booth)."""
+SCHEDULED_WINDOW = 360     # minutes: a timer restates a scheduled event only when it comes due within this of the event's time
+
+
+def scheduled_as(events: list[Any], new: PendingNew, now_abs: int | None = None, minutes_per_day: int = 1440) -> str | None:
+    """The id of a scheduled event the new timer restates: one not yet fired or expired, due near the timer's
+    time, whose description shares most of the timer's words. The engine fires that event at its own time; a timer
+    for it would play it early, and twice (noir: "the caller arrives at nine" brought Szabo in at 20:45, before the
+    booth). Words alone are not enough: Park's errand to the Reactor on day 1 shares "reaches", "reactor" and "power"
+    with the day-5 brownout (station, 10-31)."""
     nw = _words(new.what)
     if len(nw) < 3:
         return None
+    due = None if now_abs is None else now_abs + max(0, int(new.in_minutes or 0))
     for e in events:
         if getattr(e, "fired", False) or getattr(e, "expired", False) or getattr(e, "reveal", "") == "never" or not getattr(e, "description", ""):
             continue
         if not _timed(e):                       # a conditional event (a fuse) may never fire: a timer that sounds like it is the referee's own
+            continue
+        at = _at_abs(e, minutes_per_day)
+        if due is not None and at is not None and abs(at - due) > SCHEDULED_WINDOW:
             continue
         ew = _words(e.description)
         shared = nw & ew
         if len(shared) >= 4 or (len(shared) >= 3 and len(shared) / min(len(nw), len(ew)) >= 0.4):
             return e.id
     return None
+
+
+def _at_abs(e: Any, minutes_per_day: int) -> int | None:
+    """The event's clock time in absolute minutes: its `at`, else the first `at` in its trigger; None without one."""
+    def find(x: Any) -> Any:
+        if isinstance(x, dict):
+            if "day" in x and "minute" in x:
+                return x
+        for v in (x.values() if isinstance(x, dict) else x if isinstance(x, list) else []):
+            hit = find(v)
+            if hit is not None:
+                return hit
+        return None
+    at = find(getattr(e, "at", None) or {}) or find({"at": getattr(e, "trigger", None)})
+    try:
+        return int(at["day"]) * minutes_per_day + int(at["minute"]) if at else None
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def _timed(e: Any) -> bool:

@@ -450,7 +450,7 @@ class NoirGame(GameBase):
         out.append("- A named stranger is a new person; a nameless one (a man in a cap, the clerk) is nobody; an alias of a listed character is that character. "
                    "A character recorded without a name who is then named is renamed, never added again: set patrolmen.name Walt; "
                    "if a recorded group turns out to be two named men, rename the group to one of them and add the other.")
-        spots = [(a, b) for a, b in (("a booth at The Anchor", "The Anchor"), ("Frank's desk", "Frank's office"), ("the stairs down to the water", "Under the docks"),
+        spots = [(a, b) for a, b in (("a booth at The Anchor", "The Anchor"), ("Frank's desk", "Frank's office"), ("the stairwell below the shack", "Rooftop shack"),
                                      ("the roof outside the shack", "Rooftop shack")) if b in places]
         if spots:
             out.append("- A spot inside a listed place is that place: " + "; ".join(f"{a} → {b}" for a, b in spots) + ".")
@@ -509,21 +509,21 @@ class NoirGame(GameBase):
             + "; pockets by name as the game state lists them (revolver, bullets, cigarettes, dollars, matches, notebook, …).",
             "Places: " + ", ".join(s.places) + ". A move or a location value is one of these. A spot inside a listed place (a booth, a desk, the stairs) is that place. A room inside one (an office, an upstairs room) and a place the prose introduces that lies inside none of them (a bar on another street, a garage he is driven to) are new: new place value=<its name> field=<the listed place it is inside, or the district streets it lies off>, then the move. If the prose only says he is out on the street, use that district's streets.",
             "Rows this game records:",
-            "- move player <place>; move <person id> <place>.",
+            "- move player <place>; move <person id> <place>: where they are when the prose ends. Someone still on the way (the creature dragging him toward the water, a man heading for the docks) has not arrived: that is a soon row with the minutes, and the move is reported on the turn they get there.",
             "- set player.health <" + "|".join(HEALTH_VALUES) + ">, only when the prose says Frank was hurt or treated.",
-            "- add player.dread ±n: 0 on an ordinary turn, including successes and calm conversations; +3 to +10 only when something frightened or hurt him (the creature, violence, a threat, a failure under danger, horror); -3 to -10 when he rests, drinks, smokes, wins clearly, reaches safety, or is treated kindly; a full night's sleep is -10.",
+            "- add player.dread ±n: 0 on an ordinary turn, including successes and calm conversations; +3 to +10 only when something frightened or hurt him (the creature, violence, a threat, a failure under danger, horror); -3 to -10 when he rests, drinks, wins clearly, reaches safety, or is treated kindly; a full night's sleep is -10. A cigarette's calm is the engine's (it lowers dread when he lights one): never count it here.",
             "- set player.conditions +<name> or -<name>: conditions with mechanical weight are " + ", ".join(k for k in CONDITION_MODS if k != WITHDRAWAL) + "; others are allowed as flavour; '" + WITHDRAWAL + "' is the engine's, never add or remove it. Remove only a condition the state lists.",
             "- add revolver.loaded -n: rounds Frank actually fired this turn (never as a lost item). add cigarettes.count -n: cigarettes Frank LIT this turn (finishing one lit earlier is nothing); the engine handles the rest of smoking. add dollars.count -n: dollars spent. add bullets.count ±n when the prose plainly says so. Matches are a book: striking matches changes nothing; gone matches only when the book is used up, given away or lost.",
             "- new thing value=<name> field=player (target thing, field player, always): a thing Frank picked up, was given, bought, borrowed, or found and kept, named as the prose names it (note=count for several). gone <thing>: used up or destroyed; the revolver only on an explicit loss of the revolver. Reloading is a lever the engine applies: never report its rounds.",
             "- move <thing> <place>: Frank dropped it or left it somewhere; it stays there (listed under 'Not on Frank'). move <thing> <person id>: he handed it over or it was taken from him. move <thing> player: he picked it up again or got it back. Counted things (dollars, bullets, cigarettes) go by add, never by move.",
-            "- new thing value=<name> field=<place>: something that could matter again left lying in a listed place, not taken by Frank (a dropped weapon, evidence left where it was). Never a person or a creature, and never set dressing.",
+            "- new thing value=<name> field=<place>: something that could matter again left lying in a listed place, not taken by Frank (a weapon someone else dropped, evidence left where it was). Never one of Frank's own things (his revolver, his notebook): those go by move <thing> <place>. Never a person or a creature, and never set dressing.",
             "- set <person id>.told value=<tell id>: the person gave Frank that piece of what they know this turn. The game state lists the open pieces, with their ids, for the people with Frank; one row per piece told.",
             "- add <person id>.attitude ±n (-3 to 3): only when Frank did something to that person this turn that changes how they treat him: paid, helped, respected, threatened, insulted, lied and was caught. A tense conversation is 0. Being offered a bribe changes nothing.",
             "- set <character id>.status alive|dead|missing|unknown, only if changed. set <character id>.condition <a few words>: their body's state when the prose changes it (wounded, limping, unconscious, crawling, bleeding from the shoulder); a creature's injuries go here, never as a new thing.",
             "- learned <person id> value=fact: what they told Frank or what he learned about them, one short sentence; a witness's statement is a fact about the witness first, and also about the listed person it concerns when there is one.",
             "- learned player value=clue: concrete evidence Frank learned: a name, an address, a time, an object, a fact about the creatures or the Congregation. One short sentence, only when new. Never something Frank could not perceive.",
             "- new person value=name, field=<place>, note=role: anyone the prose gives a name (a surname is enough) who is not a listed person, even if they appear once; at most two per turn. A nameless stranger (a man in a cap, a clerk, a driver) is nobody: never attach him to a listed id and never a new person. A new name that is plainly a listed person (an alias) is that person: use their id.",
-            "present: listed people the prose identifies by name or role; never because of a nameless stranger.",
+            "present: listed people in the scene with Frank, identified by name or role; someone only talked about (a witness's word about Szabo) is not present, and never a nameless stranger.",
             *self._mapping_lines(s),
             "Threads: open ones are listed in the game state with their ids. Typical threads here: a promise to a client or a witness, a lead to follow, a lie Frank told and who believes it, a deadline, a question raised. Close a thread when the prose settles it: 'who was the caller' closes when Frank learns who called; 'check the address' closes when he has searched it; a promise closes when kept or broken.",
             "",
@@ -790,8 +790,11 @@ class NoirGame(GameBase):
                 return True
             holder = s.person(where)
             place = None if holder else self._place(s, ch.field)
+            own = self._own_item(s, value)
             if holder is None and place is None:
                 w.reject("things", "a thing outside Frank's pockets lies in a listed place or is held by a listed person", f"{value} at {ch.field}")
+            elif own is not None:                                # "new thing notebook at Rooftop shack": his own notebook, dropped there
+                self._relocate(s, own, True, value, ch.field, w)
             elif s.thing(value) is not None:
                 w.reject("things", "already recorded", value)
             elif len(s.things) >= MAX_THINGS:
@@ -909,9 +912,27 @@ class NoirGame(GameBase):
                 return True
         return False
 
+    @staticmethod
+    def _own_item(s: NoirState, name: str) -> Item | None:
+        """One of Frank's pocket things by its own name ("notebook", "his revolver", "Frank's notebook"), never a
+        loose match: Szabo's notebook is not Frank's."""
+        low = re.sub(r"^(frank's|his|the|a|an)\s+", "", name.strip().lower())
+        return next((it for it in s.inventory if low in (it.id, it.name.lower(), it.id.replace("_", " "))), None)
+
+    @staticmethod
+    def _same_spot(s: NoirState, a: str, b: str) -> bool:
+        """Two locations are where the same people can meet: the same place, or a found place and the place it is in."""
+        a, b = a.strip().lower(), b.strip().lower()
+        if not a or not b or a == b:
+            return True
+        within = {f.name.lower(): f.within.lower() for f in s.found_places}
+        return within.get(a) == b or within.get(b) == a
+
     def apply_present(self, s: NoirState, present: list[str], w: Writer) -> NoirState:
         for pid in present:
             q = s.person(pid)
+            if q and not q.met and not self._same_spot(s, q.location, s.player.location):
+                continue                    # talked about, not met: Rosa's word about Szabo, who is out on the streets (10-31)
             if q and not q.met:
                 q.met = True
                 w.note(f"people.{q.id}.met: False -> True")

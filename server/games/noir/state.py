@@ -198,18 +198,25 @@ def find_item(items: list[Item], key: str, strict: bool = False) -> Item | None:
     if alias:
         return next((it for it in items if it.id == alias), None)
     words = set(k.replace("'s", "").split()) - _FILLER           # "scrap of paper" shares only "of" with "photograph of June": no match
+    owner = _owner(k)
     best: tuple[int, Item | None] = (0, None)
     for it in items:
-        iw = set(it.name.lower().split()) - _FILLER
+        iw = set(it.name.lower().replace("'s", "").split()) - _FILLER
         score = len(words & iw)
-        if strict and score < min(len(words), len(iw)):
-            continue
+        if strict and (score < min(len(words), len(iw)) or (owner and owner != _owner(it.name.lower()))):
+            continue                                                # Szabo's notebook is not the notebook Frank dropped; "shoe" is the woman's shoe
         if score > best[0]:
             best = (score, it)
     return best[1]
 
 
 _FILLER = {"of", "the", "a", "an", "his", "her", "its", "their", "with", "and", "in", "on", "from", "for", "to"}
+
+
+def _owner(name: str) -> str:
+    """Whose a thing is by its name ("szabo's notebook" -> szabo); Frank's own and unowned things are nobody's."""
+    m = re.search(r"([a-z]+)'s\b", name)
+    return "" if not m or m.group(1) == "frank" else m.group(1)
 
 
 def pocket_word(key: str) -> bool:

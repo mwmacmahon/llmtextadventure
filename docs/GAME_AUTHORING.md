@@ -416,7 +416,11 @@ COMING every turn and in the DUE NOW, so the scenario, not the model, decides wh
 encounter mean: where it leaves the player and what it sets in motion next (a `[[soon: …]]` line the
 referee turns into the next timer). Without them a weak narrator invents the ending, and a strong one once
 sent the player off an eleven-storey roof into a lake. A new timer that restates an open one (same
-actor, mostly the same words) is not added (`pending.duplicate_of`). Actors are written by name, never by
+actor, mostly the same words) is not added (`pending.duplicate_of`); the timers a report settles are
+settled first, so the next step of one it settles ("p1 happened; now it drags him down the stairs") is
+new, not its duplicate. A timer that restates a scheduled event is not added either
+(`pending.scheduled_as`), but only when it comes due within six hours of the event: words alone matched
+Park's errand to the Reactor to the brownout four days later. Actors are written by name, never by
 id: an id the narrator reads every turn is a word it will use. A game needs nothing else; set the paths to
 `None` to switch it off.
 
@@ -437,6 +441,16 @@ adds **vocabulary and bounds**:
   `has_world`, through `land_declarations`) and otherwise rejects it, so nothing is dropped silently.
 - `narrator_flags(state)` names the flags the referee may set; `apply_present` and `after_changes`
   are the hooks for "mark them met" and "recompute the derived suspicion".
+  `present` is who is in the scene; a model also lists whoever the prose names. Noir marks someone met
+  only when they are where Frank is (or in a room of it): a witness's word about Szabo is not meeting him.
+
+Every example in the rules is an answer the model will give. Noir's spot list once read "the stairs down
+to the water → Under the docks", and Sonnet moved the creature there while it was still dragging Frank
+down a stairwell on Cutter Street; "a dropped weapon" as an example of a new thing became Frank's own
+revolver recorded twice. Pick examples that cannot be read as the wrong case, and give the engine the
+check as well: a note that says the row is not to apply ("not yet arrived; do not apply") takes the row
+back (`changes.takes_itself_back`), and a name the world holds with every word ("lab_hatch", "Lab hatch")
+wins over one that shares a single word (the Lab).
 
 The engine lands the engine kinds itself: threads, flags, pendings (`soon`, and `set p3.resolved`),
 unseen facts, lever vetoes (`not_done`), issues. Why one row type: the structured-output compiler
