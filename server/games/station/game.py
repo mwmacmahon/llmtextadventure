@@ -724,8 +724,9 @@ class StationGame(GameBase):
         if seeded:
             out.append("- An object the world already holds, seen or not (listed under Carried or Things in the SCENE, \"not yet seen by the player\" when unseen): "
                        + "; ".join(f"{t.name} → {t.id}" for t in seeded) + ". When the prose shows it, set <id>.known true; never a new thing.")
-        out.append("- An object the prose uses that no list has (a wrench, a mug) is new: new thing value=<name> field=<the place it is in, if the prose says> note=<its state>; "
-                   "hidden=true when it is where the player cannot see it (an unseen note). Never a set row on an id that is not listed.")
+        out.append("- An object the prose uses that no list has (a wrench, a mug) is new: new thing value=<name> field=<the place it is in, if the prose says> note=<what it looks like, always>; "
+                   "hidden=true when it is where the player cannot see it (an unseen note). Name it as the station perceives it (a hard grey case on the Cargo camera), "
+                   "never by what it is or whose until the prose says so; then set <its id>.name <what it is>. Never a set row on an id that is not listed.")
         out.append("- Crew are characters by id; a crew member's own devices are things, never the crew member.")
         return out
 

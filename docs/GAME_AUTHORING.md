@@ -92,6 +92,14 @@ What the shipped games fixed on 2026-10-30 and 31, and what is still open (a roo
 records of one character, the AI locking out the manual hatch overrides), is in `notes/DESIGN2.md` §3b (gitignored
 notes) and `notes/DECISIONS.md` D46–D55.
 
+**Things are named as the player knows them.** A new thing's name is what the player would call it from what the prose
+shows (a small brass key, a hard grey case), never what it is or whose until the prose says so, and every thing carries
+a description: noir's `note`, the world's `state`; give every starting item one in the scenario. When the prose shows
+what a thing is, the referee renames it (`set <thing>.name`); the old name still finds it. People are harder: a voice on
+the telephone is one of the cast the player has not identified. Do not file a hidden identity as an alias (noir's "the
+caller" on Szabo) if the player-facing lists will ever show who someone is; see ISSUES "Open now" I1. Noir records
+`heard_of` beside `met` and marks met only when the person is where Frank is.
+
 ## 3. Field authority
 
 ```python

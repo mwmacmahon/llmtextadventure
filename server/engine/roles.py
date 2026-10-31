@@ -171,7 +171,7 @@ Rows:
 - set <target>.<field> = value: a field takes a value (a mood word, a health word, a status, a lock true/false, a condition as +name or -name).
 - add <target>.<field> ±n: a number moves by a step (dread +8, stress -5, a count -3, rounds loaded -2). Steps are nudges; the engine clamps them.
 - move <target> → value: a person, drone or thing ended the prose somewhere else: a place id or name from the state.
-- new <thing|person|place> value=name, field=where, note=state or role: something the prose introduced that could matter again. Never a weapon unless the rules allow it.
+- new <thing|person|place> value=name, field=where, note=state or role: something the prose introduced that could matter again. Name a thing as the player would from what the prose shows (a small brass key, a hard grey case), never by what it is when the prose has not said so, and always give note=what it looks like. When the prose later shows what it is: set <its id>.name = what it is. Never a weapon unless the rules allow it.
 - gone <target>: a listed thing destroyed or removed from play.
 - learned <target> value=fact: what someone now knows or said; target player for a clue the player learned (concrete evidence, not feelings).
 - flag <name> value=true|false: only names the rules list.

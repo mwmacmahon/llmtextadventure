@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from engine import threads as th
 from engine.changes import clip_words
+from engine.world import Policy
 from engine.events import Event, evaluate, next_scheduled
 from engine.game import (
     ApplyReport, Chip, ClockSpec, CommandResult, Commands, CommandSpec, EntityCard, EntityCards, GameBase, ListPanel,
@@ -93,6 +94,8 @@ ATTITUDE_WORDS = {"hostile": -4, "angry": -3, "suspicious": -1, "guarded": -1, "
                   "friendly": 2, "warm": 2, "trusting": 3, "loyal": 4}
 MAX_THINGS = 20
 MAX_FOUND_PLACES = 12
+THING_TEXT_FIELDS = {"name", "note", "description", "looks", "appearance"}
+WEAPON_POLICY = Policy()                 # the world module's weapon words, as a code backstop: no model is trusted to tag a pistol
 SPOT_WORDS = {"booth", "table", "desk", "counter", "corner", "doorway", "door", "stairs", "stair", "stairwell", "landing", "window",
               "couch", "bed", "bench", "stool", "seat", "outside", "beside", "behind", "front", "roof"}   # a spot of a place, not a room in it
 DROPPED = re.compile(r"\b(drop(s|ped)?|left (it |behind)|fell|falls|lies|lying|set (it )?down|put (it )?down|knocked (out of|from)|let go)\b", re.I)
@@ -514,9 +517,11 @@ class NoirGame(GameBase):
             "- add player.dread ±n: 0 on an ordinary turn, including successes and calm conversations; +3 to +10 only when something frightened or hurt him (the creature, violence, a threat, a failure under danger, horror); -3 to -10 when he rests, drinks, wins clearly, reaches safety, or is treated kindly; a full night's sleep is -10. A cigarette's calm is the engine's (it lowers dread when he lights one): never count it here.",
             "- set player.conditions +<name> or -<name>: conditions with mechanical weight are " + ", ".join(k for k in CONDITION_MODS if k != WITHDRAWAL) + "; others are allowed as flavour; '" + WITHDRAWAL + "' is the engine's, never add or remove it. Remove only a condition the state lists.",
             "- add revolver.loaded -n: rounds Frank actually fired this turn (never as a lost item). add cigarettes.count -n: cigarettes Frank LIT this turn (finishing one lit earlier is nothing); the engine handles the rest of smoking. add dollars.count -n: dollars spent. add bullets.count ±n when the prose plainly says so. Matches are a book: striking matches changes nothing; gone matches only when the book is used up, given away or lost.",
-            "- new thing value=<name> field=player (target thing, field player, always): a thing Frank picked up, was given, bought, borrowed, or found and kept, named as the prose names it (note=count for several). gone <thing>: used up or destroyed; the revolver only on an explicit loss of the revolver. Reloading is a lever the engine applies: never report its rounds.",
+            "- new thing value=<name> field=player (target thing, field player, always): a thing Frank picked up, was given, bought, borrowed, or found and kept, named as Frank would name it from what the prose shows (a small brass key, a folded slip of paper; never whose it is or what it opens until the prose says), note=what it looks like (or the count for several). gone <thing>: used up or destroyed; the revolver only on an explicit loss of the revolver. Reloading is a lever the engine applies: never report its rounds.",
             "- move <thing> <place>: Frank dropped it or left it somewhere; it stays there (listed under 'Not on Frank'). move <thing> <person id>: he handed it over or it was taken from him. move <thing> player: he picked it up again or got it back. Counted things (dollars, bullets, cigarettes) go by add, never by move.",
-            "- new thing value=<name> field=<place>: something that could matter again left lying in a listed place, not taken by Frank (a weapon someone else dropped, evidence left where it was). Never one of Frank's own things (his revolver, his notebook): those go by move <thing> <place>. Never a person or a creature, and never set dressing.",
+            "- new thing value=<name> field=<place>: something that could matter again left lying in a listed place, not taken by Frank (a key left in a lock, a torn letter, evidence left where it was), named and described the same way. Never one of Frank's own things (his revolver, his notebook): those go by move <thing> <place>. Never a person or a creature, and never set dressing.",
+            "- set <thing>.name <what it turned out to be>: the prose shows what a thing is (the small brass key opens warehouse 4's side door: set the small brass key.name the key to warehouse 4). set <thing>.note <what it looks like> when that changes. Frank's own kit keeps its name.",
+            "- No new weapons in this case: a gun, a knife or a blade the prose adds is a ruling (unauthorized_addition), never a new thing. Frank's revolver is his own: move it.",
             "- set <person id>.told value=<tell id>: the person gave Frank that piece of what they know this turn. The game state lists the open pieces, with their ids, for the people with Frank; one row per piece told.",
             "- add <person id>.attitude ±n (-3 to 3): only when Frank did something to that person this turn that changes how they treat him: paid, helped, respected, threatened, insulted, lied and was caught. A tense conversation is 0. Being offered a bribe changes nothing.",
             "- set <character id>.status alive|dead|missing|unknown, only if changed. set <character id>.condition <a few words>: their body's state when the prose changes it (wounded, limping, unconscious, crawling, bleeding from the shoulder); a creature's injuries go here, never as a new thing.",
@@ -730,6 +735,12 @@ class NoirGame(GameBase):
             elif n > 0:
                 self._gain(s, it.name, n, w)
             return True
+        if kind == "set" and target and not is_player and field in THING_TEXT_FIELDS and s.person(target) is None:
+            it = s.item(target)
+            t = it or s.thing(target)
+            if t is not None:                                  # what it turned out to be, or what it looks like
+                self._describe(s, t, it is not None, field, value, w)
+                return True
         if (kind == "move" or (kind == "set" and field == "location")) and target and not is_player and s.person(target) is None:
             it = s.item(target)
             lying = None if it is not None else s.thing(target)
@@ -741,13 +752,11 @@ class NoirGame(GameBase):
             return True
         if kind == "new" and target.lower() not in ("thing", "item", "person", "place", ""):     # "new creature", "new yellow grease field=player"
             q = s.person(target) or self._same_person(s, target)
-            if q is not None:                                            # a cast member written as new: met, and placed if the row says where
-                if not q.met:
-                    q.met = True
-                    w.note(f"people.{q.id}.met: False -> True")
+            if q is not None:                                            # a cast member written as new: placed if the row says where, met if with Frank
                 place = self._place(s, ch.field) if ch.field.strip() else None
                 if place and place != q.location and w.set(f"people.{q.id}.location", q.location, place):
                     q.location = place
+                self._know(s, q, w, met=self._same_spot(s, q.location, s.player.location))
                 return True
             return self.apply_change(s, ch.model_copy(update={"target": "thing", "value": target, "note": ch.note or ch.value}), w)
         if kind == "gone" and target and s.item(target) is None and s.thing(target) is not None:
@@ -776,25 +785,29 @@ class NoirGame(GameBase):
             return True
         cast = (next((q for q in s.people if value.lower() in (q.id, q.name.lower(), q.name.lower().split()[0])), None)
                 if kind == "new" and target.lower() in ("thing", "item", "") and value else None)
-        if cast is not None:                                     # a cast member written as a new thing ("new Rosa"): met, never pocketed
-            q = cast
-            if not q.met:
-                q.met = True
-                w.note(f"people.{q.id}.met: False -> True")
+        if cast is not None:                                     # a cast member written as a new thing ("new Rosa"): known, never pocketed
+            self._know(s, cast, w, met=self._same_spot(s, cast.location, s.player.location))
             return True
         if kind == "new" and target.lower() in ("thing", "item", "") and value:
             where = field.lower()
             if where in ("player", "frank", "pockets", "person:player", "inventory", ""):
-                count = self._step(ch.note) or 1
-                self._gain(s, value, max(1, count), w)
+                weapon = self._new_weapon(s, value)                  # his revolver, picked up again, is no new weapon
+                if weapon:
+                    w.reject("inventory", f"no new weapons in this case ('{weapon}'): the prose adding one is an unauthorized_addition ruling", value)
+                    return True
+                count = self._step(ch.note)
+                self._gain(s, value, max(1, count or 1), w, note="" if count is not None else ch.note)
                 return True
             holder = s.person(where)
             place = None if holder else self._place(s, ch.field)
             own = self._own_item(s, value)
-            if holder is None and place is None:
+            weapon = self._new_weapon(s, value)
+            if weapon:                                           # the case adds no weapons (DESIGN2 §15 E); a weapon in the prose is a ruling
+                w.reject("things", f"no new weapons in this case ('{weapon}'): the prose adding one is an unauthorized_addition ruling", value)
+            elif holder is None and place is None:
                 w.reject("things", "a thing outside Frank's pockets lies in a listed place or is held by a listed person", f"{value} at {ch.field}")
             elif own is not None:                                # "new thing notebook at Rooftop shack": his own notebook, dropped there
-                self._relocate(s, own, True, value, ch.field, w)
+                self._relocate(s, own, True, own.id, ch.field, w)
             elif s.thing(value) is not None:
                 w.reject("things", "already recorded", value)
             elif len(s.things) >= MAX_THINGS:
@@ -807,7 +820,7 @@ class NoirGame(GameBase):
                 w.note(f"things += {self._thing_line(s, t)!r}")
             return True
         if kind == "new" and target.lower() == "person" and value:
-            self._new_person(s, value, ch.note, w)
+            self._new_person(s, value, ch.note, w, ch.field)
             return True
         if kind == "new" and target.lower() == "place" and value:
             self._new_place(s, value, ch.field, w)
@@ -832,9 +845,8 @@ class NoirGame(GameBase):
         if q is None and target and kind in ("move", "set", "add", "learned"):
             q = self._same_person(s, target)
         if q is not None:
-            if not q.met and kind != "learned":                # hearing about someone is not meeting them (a witness's word about Szabo)
-                q.met = True
-                w.note(f"people.{q.id}.met: False -> True")
+            where = value if (kind == "move" or (kind == "set" and field == "location")) and value in locs else q.location
+            self._know(s, q, w, met=kind != "learned" and self._same_spot(s, where, s.player.location))   # a witness's word about Szabo: heard of, not met
             if kind == "move" or (kind == "set" and field == "location"):
                 if value in locs:
                     if w.set(f"people.{q.id}.location", q.location, value):
@@ -913,6 +925,29 @@ class NoirGame(GameBase):
         return False
 
     @staticmethod
+    def _describe(s: NoirState, t: Item, carried: bool, field: str, value: str, w: Writer) -> None:
+        """`set <thing>.name`: what the thing turned out to be ("a small key" -> "the brass key to warehouse 4");
+        the old name stays in its note. `set <thing>.note` (description, looks): what it looks like. Frank's own kit
+        and counted things keep their names."""
+        path = f"{'inventory' if carried else 'things'}.{t.id}"
+        new = value.strip().strip('"')
+        if field == "name":
+            if t.id in COUNTED or t.id == "revolver":
+                w.reject(f"{path}.name", "Frank's own kit keeps its name", value)
+            elif new and new.lower() != t.name.lower() and w.set(f"{path}.name", t.name, new[:50]):
+                t.note = clip_words(f"{t.note}; first seen as {t.name}" if t.note else f"first seen as {t.name}", 80)
+                t.name = new[:50]
+        elif new and w.set(f"{path}.note", t.note, clip_words(new, 80)):
+            t.note = clip_words(new, 80)
+
+    def _new_weapon(self, s: NoirState, name: str) -> str | None:
+        """The weapon word in a new thing's name, unless it is one of the case's own pocket things (the revolver,
+        carried, dropped or held) or something already lying in the world."""
+        if self._own_item(s, name) or s.thing(name) or pocket_word(name):
+            return None
+        return WEAPON_POLICY.forbids_name(name)
+
+    @staticmethod
     def _own_item(s: NoirState, name: str) -> Item | None:
         """One of Frank's pocket things by its own name ("notebook", "his revolver", "Frank's notebook"), never a
         loose match: Szabo's notebook is not Frank's."""
@@ -931,28 +966,37 @@ class NoirGame(GameBase):
     def apply_present(self, s: NoirState, present: list[str], w: Writer) -> NoirState:
         for pid in present:
             q = s.person(pid)
-            if q and not q.met and not self._same_spot(s, q.location, s.player.location):
-                continue                    # talked about, not met: Rosa's word about Szabo, who is out on the streets (10-31)
-            if q and not q.met:
-                q.met = True
-                w.note(f"people.{q.id}.met: False -> True")
+            if q:                           # talked about, not met: Rosa's word about Szabo, who is out on the streets (10-31)
+                self._know(s, q, w, met=self._same_spot(s, q.location, s.player.location))
         return s
 
-    def _new_person(self, s: NoirState, name: str, role: str, w: Writer) -> None:
+    @staticmethod
+    def _know(s: NoirState, q: Person, w: Writer, *, met: bool) -> None:
+        """Frank now knows of this person: met when they were where he is, else only heard of (a name in a witness's
+        mouth, a caller on the line). Meeting someone is having heard of them."""
+        if met and not q.met:
+            w.note(f"people.{q.id}.met: False -> True")
+            q.met = q.heard_of = True
+        elif not q.heard_of and not q.met:
+            w.note(f"people.{q.id}.heard_of: False -> True")
+            q.heard_of = True
+
+    def _new_person(self, s: NoirState, name: str, role: str, w: Writer, where: str = "") -> None:
+        """A named person the prose introduced: met when they are with Frank, else heard of where the row puts them."""
         p = s.player
         locs = set(s.places)
         nid = slug(name)
         q = s.person(nid) or self._same_person(s, name)
         if q is not None:
-            if not q.met:
-                q.met = True
-                w.note(f"people.{q.id}.met: False -> True")
+            self._know(s, q, w, met=self._same_spot(s, q.location, p.location))
             return
         if len(s.people) >= MAX_PEOPLE:
             w.reject("people", "cast is full", name)
             return
-        loc = p.location if p.location in locs else ""
-        s.people.append(Person(id=nid, name=name.strip()[:40], role=role.strip()[:60], location=loc, met=True))
+        elsewhere = self._place(s, where) if where.strip() and where.strip().lower() not in ("player", "frank", "here") else None
+        elsewhere = elsewhere if elsewhere and not self._same_spot(s, elsewhere, p.location) else None
+        loc = elsewhere or (p.location if p.location in locs else "")
+        s.people.append(Person(id=nid, name=name.strip()[:40], role=role.strip()[:60], location=loc, met=elsewhere is None, heard_of=True))
         s.notebook.append(Note(kind="contact", text=f"{name.strip()}: {role.strip()}" + (f" ({loc})" if loc else "")))
         w.note(f"people += {nid} ({name.strip()}, {role.strip()})")
 
@@ -1031,7 +1075,7 @@ class NoirGame(GameBase):
         s.inventory.append(it)
         w.set(f"inventory.{it.id}", None, "carried")
 
-    def _gain(self, s: NoirState, name: str, count: int, w: Writer) -> None:
+    def _gain(self, s: NoirState, name: str, count: int, w: Writer, note: str = "") -> None:
         n = max(1, int(count))
         lying = s.thing(name)
         if lying is not None:                       # what he left somewhere or someone took, back in his pockets as it was
@@ -1054,8 +1098,8 @@ class NoirGame(GameBase):
         iid = slug(name)
         if s.item(iid) is not None:
             iid = f"{iid}_{len(s.inventory)}"
-        s.inventory.append(Item(id=iid, name=name.strip()[:50], count=n))
-        w.note(f"inventory += {name.strip()!r}" + (f" x{n}" if n > 1 else ""))
+        s.inventory.append(Item(id=iid, name=name.strip()[:50], count=n, note=clip_words(note.strip(), 80)))
+        w.note(f"inventory += {name.strip()!r}" + (f" x{n}" if n > 1 else "") + (f" ({clip_words(note.strip(), 80)})" if note.strip() else ""))
 
     def _lose(self, s: NoirState, name: str, count: int, w: Writer, fired: int = 0, smoked: int = 0) -> None:
         k = name.strip().lower()

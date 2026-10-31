@@ -72,6 +72,7 @@ class Person(BaseModel):
     condition: str = ""             # their body's state in a few words ("wounded, crawling"); a character, human or not (D46)
     status: PersonStatus = "alive"
     met: bool = False
+    heard_of: bool = False          # Frank knows of them: a name from a witness, a voice on the line; met implies it
     facts: list[str] = Field(default_factory=list)      # what Frank knows / what they said
     agenda: str = ""                # script
     secret: str = ""                # script, hidden: the prefix tells the narrator

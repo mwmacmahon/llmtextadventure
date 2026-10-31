@@ -101,6 +101,7 @@ class Thing(BaseModel):
     attributes: dict[str, Attr] = Field(default_factory=dict)   # "locked", "open", "status", "control"...
     tags: list[str] = Field(default_factory=list)
     known: bool = True
+    aliases: list[str] = Field(default_factory=list)    # names it had before the prose said what it is ("a taped-over tablet")
     portable: bool | None = None        # None: by kind (items are portable)
     provenance: Provenance = "script"
 
@@ -185,8 +186,9 @@ class World(BaseModel):
             return [q]
         if self.entity(slug(q)):
             return [slug(q)]
-        rows: list[tuple[str, str]] = [(p.id, p.name) for p in self.places] + [(t.id, t.name) for t in self.things] + [(p.id, p.name) for p in self.people]
-        exact = [i for i, n in rows if n.lower() == q]
+        rows: list[tuple[str, str]] = ([(p.id, p.name) for p in self.places] + [(t.id, n) for t in self.things for n in [t.name, *t.aliases]]
+                                       + [(p.id, p.name) for p in self.people])
+        exact = list(dict.fromkeys(i for i, n in rows if n.lower() == q))
         if exact:
             return exact
         qwords = set(re.findall(r"[a-z0-9']+", q)) - {"the", "a", "an"}
@@ -200,7 +202,7 @@ class World(BaseModel):
                 scored.append((-hit, i))
             elif len(q) >= 4 and (q in n.lower() or n.lower() in q):
                 scored.append((0, i))
-        return [i for _, i in sorted(scored)]
+        return list(dict.fromkeys(i for _, i in sorted(scored)))     # a thing with an alias is one candidate
 
     # ---- location ---------------------------------------------------------------
     @staticmethod
@@ -1092,6 +1094,16 @@ def _apply_set(w: World, d: Declaration, cause: Cause, out: AppliedDeclarations,
     field = d.field.lower()
     if field == "location":
         reject(d, "use MOVED for locations")
+        return
+    if field in ("description", "looks", "appearance", "note") and not isinstance(e, Person):
+        field = "state"                                     # what it looks like is its state line
+    if field == "name" and isinstance(e, Thing):            # what it turned out to be: the old name still finds it
+        new = d.value.strip().strip('"')[:60]
+        if new and new.lower() != e.name.lower():
+            old = e.name
+            e.aliases = [a for a in [*e.aliases, old] if a.lower() != new.lower()]
+            e.name = new
+            out.applied.append(Change(path=f"world.things.{e.id}.name", text=f"{old} is now called {new}"))
         return
     if field == "state" and not isinstance(e, Person):
         old = e.state

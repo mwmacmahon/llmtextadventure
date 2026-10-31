@@ -90,7 +90,7 @@ def test_new_instance_prefix_and_bulletin(game: NoirGame):
     assert "CASE FILE" in prefix and "Hidden truth" in prefix and "Emil Szabo (szabo)" in prefix and "Hidden: " in prefix
     assert "Scheduled spine" in prefix and "ending_claimed" not in prefix          # reveal: never
     b = game.render_bulletin(st, "")
-    assert "Pockets: trench coat, revolver (6/6 rounds), 3 bullets, 11 cigarettes" in b and "$14" in b
+    assert "Pockets: trench coat (tan, rain-dark at the shoulders, deep pockets), revolver (6/6 rounds), 3 bullets (" in b and "$14" in b   # every item says what it looks like
     assert "People Frank has dealt with:" in b and "Ada Kessler" in b and "Szabo" not in b.split("Recent log")[0]   # not met yet
     assert "Do not narrate past Day 2 09:30" in b and "szabo_calls_again" not in b
     assert "The thing in the shack: at Rooftop shack, hostile" in b                      # the opening is a turn like any other
@@ -151,7 +151,7 @@ def test_rows_people_and_new_people(game: NoirGame):
     assert s2.person("dooley").facts[-1] == "Saw men with lye."
     assert s2.person("kowalczyk") and s2.person("kowalczyk").met and s2.person("kowalczyk").location == "Rooftop shack"
     assert s2.notebook[-1].kind == "contact" and "Kowalczyk" in s2.notebook[-1].text
-    assert s2.person("old_lady") is None and s2.person("pulaski").met          # matched the listed landlady instead
+    assert s2.person("old_lady") is None and s2.person("pulaski").heard_of and not s2.person("pulaski").met   # the listed landlady, at her house: heard of
     assert len(s2.people) == 12
     assert any(a.startswith("people += kowalczyk") for a in rep.applied)
     b = game.render_bulletin(s2, "")
@@ -417,9 +417,13 @@ def test_people_tell_piece_by_piece_and_the_engine_gates_some(game: NoirGame):
 def test_hearing_about_someone_is_not_meeting_them(game: NoirGame):
     _, st = game.new_instance({})
     s2, _ = apply(game, st, ref(C(kind="learned", target="szabo", value="A Hungarian dock clerk who left with June the night she vanished.")))
-    assert not s2.person("szabo").met and "Szabo" not in game.render_bulletin(s2, "").split("Recent log")[0]
+    assert not s2.person("szabo").met and s2.person("szabo").heard_of
+    assert "Szabo" not in game.render_bulletin(s2, "").split("Recent log")[0]   # heard of is recorded, not shown: who the caller is would show with it
     s3, _ = apply(game, s2, ref(C(kind="move", target="szabo", value="The Anchor")))
-    assert s3.person("szabo").met
+    assert not s3.person("szabo").met                                   # he went to The Anchor; Frank is on the roof
+    s3.player.location = "The Anchor"
+    s4, _ = apply(game, s3, ref(C(kind="set", target="szabo", field="mood", value="frightened")))
+    assert s4.person("szabo").met
 
 
 def test_an_attitude_word_is_a_step_toward_it(game: NoirGame):
@@ -482,7 +486,7 @@ def test_aliases_moods_and_things_left_here(game: NoirGame):
     assert "Also called the creature, the thing, the shepherd, it." in game.frozen_prefix(st) and "At the start: frightened." in game.frozen_prefix(st)
     s2, rep = apply(game, st, ref(C(kind="move", target="the caller", value="The Anchor"), C(kind="set", target="ada", field="mood", value="Relieved"),
                                   C(kind="move", target="notebook", value="the floor")))
-    assert s2.person("szabo").location == "The Anchor" and s2.person("szabo").met and s2.person("ada").mood == "relieved"
+    assert s2.person("szabo").location == "The Anchor" and s2.person("szabo").heard_of and not s2.person("szabo").met and s2.person("ada").mood == "relieved"
     assert s2.thing("notebook").place == "Rooftop shack" and not rep.rejected
     assert "Ada Kessler: at Kessler house, friendly toward Frank, relieved." in game.render_bulletin(s2, "")
 
@@ -510,7 +514,7 @@ def test_new_rows_named_after_the_thing_itself(game: NoirGame):
     st.person("creature").met = False
     s2, rep = apply(game, st, ref(C(kind="new", target="creature.Lowtown streets"), C(kind="new", target="yellow grease.player"),
                                   C(kind="new", target="umbrella", note="borrowed from Rosa")))
-    assert s2.person("creature").met and s2.person("creature").location == "Lowtown streets"
+    assert s2.person("creature").heard_of and not s2.person("creature").met and s2.person("creature").location == "Lowtown streets"   # Frank is on the roof
     assert s2.item("yellow grease") is not None and s2.item("umbrella") is not None and not rep.rejected
 
 
