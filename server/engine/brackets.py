@@ -87,6 +87,7 @@ class Declaration(BaseModel):
     fact: str = ""              # LEARNED
     why: str = ""               # GONE
     by: str = ""                # SET: who did it (a person id or name); a present non-player agent may change a lock
+    hidden: bool = False        # NEW: it exists where the player cannot see it (an unseen note, a pocket): recorded, not known
 
 
 Item = Call | Declaration | Note

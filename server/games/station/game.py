@@ -214,6 +214,7 @@ class StationGame(GameBase):
         state.suspicion = self._derived_alarm(state)
         if sc.get("world"):
             state.world = self._build_world(sc["world"], state)
+            self._seed_secret_things(state)
         return f"{sc['name']} — {st['name']}", state
 
     def load_state(self, data: dict[str, Any]) -> StationState:
@@ -243,7 +244,28 @@ class StationGame(GameBase):
                 q["secrets"] = [dict(t, known=known.get(t["id"], (t.get("known", False), None))[0], learned_turn=known.get(t["id"], (None, None))[1])
                                 for t in spc.get("secrets", [])]
             data["crew"] = crew
-        return StationState.model_validate(data)
+        s = StationState.model_validate(data)
+        self._seed_secret_things(s)
+        return s
+
+    @staticmethod
+    def _seed_secret_things(s: StationState) -> None:
+        """A secret about an object puts the object in the world from the start, unseen (Voss's tablet in her hands,
+        Reyes's bypass in the Reactor): the referee can name it by id, the narrator is not shown it until it is seen,
+        and learning the secret makes it seen. Saved games get it on load."""
+        if s.world is None:
+            return
+        for c in s.crew:
+            for x in c.secrets:
+                spec = x.thing or {}
+                if not spec.get("id"):
+                    continue
+                t = s.world.thing(spec["id"])
+                if t is None:
+                    s.world.things.append(Thing(id=spec["id"], name=spec.get("name", spec["id"]), kind=spec.get("kind", "item"),
+                                                location=spec.get("location") or f"person:{c.id}", state=spec.get("state", ""), known=x.known))
+                elif x.known and not t.known:
+                    t.known = True
 
     # ---- 2.0 world --------------------------------------------------------------
     def _build_world(self, spec: dict, state: StationState) -> World:
@@ -687,7 +709,7 @@ class StationGame(GameBase):
             out.append("- A module and its system are two entities: " + "; ".join(f"the {sy.name} module is place {sy.id}, its systems are {sy.id}_system" for sy in collide[:3]) + ".")
         out.append("- A system written as the list and its name (\"systems.Doors\") is that system by its id (doors).")
         if "habitation_ring" in places:
-            out.append("- A room inside a module that someone goes into or stays in (a crew member's quarters, the galley) is a place inside that module: "
+            out.append("- A room inside a module that matters to the story (someone goes in to do something there, or something is found or hidden there: a crew member's quarters, the galley) is a place inside that module; never every cupboard or corridor: "
                        "new place value=Okafor's quarters field=habitation_ring, then move okafor <its id>; once it is in the SCENE, use its id and never add it again. "
                        "A spot is not a room: a bunk, a bench, a panel is the room or module it is in (Park on her bunk → her quarters if recorded, else habitation_ring"
                        + ("; the reactor bus panel → reactor" if "reactor" in places else "") + ("; the sample bench → lab" if "lab" in places else "")
@@ -698,7 +720,12 @@ class StationGame(GameBase):
                        + (cams[1] if "cameras_habitation" not in cams else "cameras_habitation") + " (" + ", ".join(cams) + "); never a new camera.")
         if any(t.endswith("_drone") for t in things):
             out.append("- Drones are things, by id (" + ", ".join(sorted(t for t in things if t.endswith("_drone"))) + "), never crew; they move with move rows.")
-        out.append("- An object the prose uses that no list has (a crew member's tablet, a wrench) is new: new thing value=Voss's tablet field=<the place it is in> note=<its state>. Never a set row on an id that is not listed.")
+        seeded = [t for t in (s.world.things if s.world else []) if any((x.thing or {}).get("id") == t.id for c in s.crew for x in c.secrets)]
+        if seeded:
+            out.append("- An object the world already holds, seen or not (listed under Carried or Things in the SCENE, \"not yet seen by the player\" when unseen): "
+                       + "; ".join(f"{t.name} → {t.id}" for t in seeded) + ". When the prose shows it, set <id>.known true; never a new thing.")
+        out.append("- An object the prose uses that no list has (a wrench, a mug) is new: new thing value=<name> field=<the place it is in, if the prose says> note=<its state>; "
+                   "hidden=true when it is where the player cannot see it (an unseen note). Never a set row on an id that is not listed.")
         out.append("- Crew are characters by id; a crew member's own devices are things, never the crew member.")
         return out
 
@@ -1003,6 +1030,10 @@ class StationGame(GameBase):
                     hit = len(shared) >= 3 and len(shared) / min(len(words), len(xw)) >= 0.5
                 if hit and w.set(f"crew.{c.id}.secrets.{x.id}.known", False, True):
                     x.known = True
+                    t = s.world.thing(x.thing["id"]) if s.world is not None and (x.thing or {}).get("id") else None
+                    if t is not None and not t.known:
+                        t.known = True
+                        w.note(f"world.things.{t.id}.known: False -> True (the secret's object, now seen)")
                     if not self._needs_hold(x, s.model_dump(mode="json"), s):
                         w.note(f"crew.{c.id}.secrets.{x.id}: learned before there was anything to find")
                     return True

@@ -276,6 +276,13 @@ no-thinking dense reference. The A3B's budget is 1536, not 512: at 512 the think
 the referee sprays rows again (unjudged triples, errors double). With thinking the A3B sits beside the 27B
 without: three seconds faster a call, fewer required rows, a third of the errors, the better adjudicator.
 
+**More room does not help (2026-10-30, D53).** The station referee's thinking reaches the 1536 cap on every turn. The
+role's `thinking_budget` is only a request: run with `--opt thinking_budget=3072` it was byte-identical to 1536, because
+the server's `--reasoning-budget` (the profile's `think_budget`) decides. With the server at 3072 (profile
+`a3b-think3k`) the A3B thought twice as long, again to the cap, and scored the same (station 23, 22, 23 of 48 against a
+1536 band of 19–25; noir 41/70 against 36) at 19–23 s a call instead of 15.6. It fills whatever it is given; a3b-think
+stays.
+
 **The loop after the think block.** Greedy decoding with no penalty serves the grammar best (the sweep above), but
 after a think block 4 of 48 A3B referee calls looped under the grammar (`set player.health` over and over) and
 truncated, losing the turn. A presence penalty of 1.0 on every call stops the loops and costs ten required rows

@@ -161,6 +161,19 @@ run id. Then rebuild and republish the reports:
 .venv/bin/python tools/eval_report.py build
 ```
 
+**A greedy local model is compared by a band, not one run (D52).** The A3B at temperature 0 gives byte-identical output
+run to run, so a repeat measures nothing; but one sentence that means nothing, appended to the referee's rules, moves
+it by up to 6 of the station set's 48 required items. `--opt perturb=1..4` appends one of four neutral sentences
+(`PERTURB` in eval_replay.py); compare configurations by the spread of 3–4 perturbed runs:
+
+```
+for k in 1 2 3; do TA_LLAMA_PREPARE_URL=http://192.168.0.215:8281/free-comfy \
+  .venv/bin/python tools/eval_replay.py run ts_station_20261030_02_14t_d36-mechanics --role referee --profile a3b-think --opt perturb=$k --note mychange-p$k; done
+```
+
+On 2026-10-30 the A3B station band was 19–25 of 48. Sonnet samples, so its repeats already spread (station 44–48,
+noir 65–68 that night); one Sonnet run per change is enough to catch a regression, not to rank two close ones.
+
 A run replays the referee and the adjudicator with **today's prompts** on the **recorded** turn. That is the point (a
 prompt change is measured on fixed input) and the catch (see "An old test set meets a new prompt").
 
@@ -246,3 +259,9 @@ cut at the comma inside `{...}`. Quote any value with a comma.
 report to `notes/playtests/<date>-<game>-<tag>.md` (every turn's prose, the engine's mechanics, the state after it, a run
 table with cost). Use it to see a mechanic work end to end, then turn the interesting turns into a test set so a model or
 prompt change can be measured on them.
+
+Run rounds against a server that does not reload (`api-sonnet-fixed` in `.claude/launch.json`, port 8012,
+`TA_URL=http://127.0.0.1:8012`), so code can change while a round runs; restart it to pick up the change. Two rounds may
+run at once (the store holds a lock since D48). A scripted round goes off-script when the dice do (noir's opening grab
+puts Frank in the holding cell on most first moves); `--resume <iid> --script more.txt` continues a game from a state
+that suits the test, which is how the place tests of 2026-10-31 reached The Anchor.

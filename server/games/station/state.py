@@ -73,6 +73,7 @@ class Secret(BaseModel):
     needs: Any = None
     leverage: str = ""                  # what knowing it buys, in plain words (the narrator's cue)
     reveals: str = ""                   # a pending tag whose hidden countdown this secret shows the player
+    thing: dict[str, Any] = Field(default_factory=dict)   # script: the object the secret is about, seeded unseen ({id, name, kind, location, state})
     known: bool = False
     learned_turn: int | None = None
 

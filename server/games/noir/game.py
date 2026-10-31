@@ -457,7 +457,7 @@ class NoirGame(GameBase):
         room = next(((a, b) for a, b in (("Professor Aldrin's office", "University"), ("June's room upstairs", "June's boarding house"),
                                           ("the back office", "The Anchor")) if b in places), None)
         if room:
-            out.append(f"- A room inside a listed place, one someone goes into, is a new place inside it: \"{room[0]}\" → new place value={room[0]} field={room[1]}, "
+            out.append(f"- A room inside a listed place that matters to the case (someone goes in, something is found or hidden there) is a new place inside it, never every closet: \"{room[0]}\" → new place value={room[0]} field={room[1]}, "
                        f"then move player {room[0]}; once it is in the Places list, use that name and never add it again.")
         streets = next((x for x in ("Lowtown streets", "Midtown streets", "Uptown streets") if x in places), None)
         if streets:

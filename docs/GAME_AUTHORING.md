@@ -58,21 +58,39 @@ state so the right row always exists:
   gets added again as a new thing.
 - **Every character has a condition** the referee can set (a health word, a free state note). Without one, "wounded,
   crawling toward him" has nowhere to go but a new thing.
-- **Places can sit inside places** (a room in a hotel, quarters on a ring). If your game has none yet, say what the
-  referee should do with a sub-place the prose introduces, and why.
+- **Places can sit inside places** (a room in a hotel, quarters on a ring). The world module has `Place.parent`: a room
+  is reached through its parent (an implicit open way), sealed with it, and seen through its module's cameras;
+  `Policy.rooms` lets even a closed map add a room inside a recorded place (the station: no new modules or hatches,
+  but Okafor's quarters on the ring). Noir's found places may sit `within` a listed place. Ask for **rooms that matter**
+  (someone goes in to do something, something is found or hidden there), never every closet; a spot (a booth, a desk,
+  a bunk) is the place it is in. A name that only says where a place is ("Larry's bar on Pier Street") is a new place
+  off that street, not the street.
+- **A new thing's place is optional.** Where the row gives none, the engine puts it where its `who` is, or where its
+  owner's name says ("Voss's tablet"), else records it with no place. Never refuse a real object for want of a place.
+- **Things can exist unseen.** `Thing.known` false: the engine roles see it marked "not yet seen by the player", the
+  narrator's scene leaves it out. A row may add one unseen (`hidden=true`, from an unseen note); the referee marks one
+  seen with `set <id>.known true` or by reporting it again; the same name where one already is, is that thing.
+- **A secret about an object seeds the object.** A station secret may carry `thing: {id, name, kind, location, state}`;
+  the object is in the world from the start, unseen (Voss's tablet in her hands, Reyes's bypass toggle in the
+  Reactor), saved games get it on load, and learning the secret makes it seen. The referee can name it from turn one.
 - **Additions are the default; each refusal is a rule with a reason** stated in `referee_rules`, the game's own reason
   (the hull cannot grow a module; a gun is scarce by design), never only "the model might add too much". The
   referee follows a rule it can see the point of, and the person reading a refused row can tell a design limit from a
   model error.
-- **One record per entity.** Two records mirrored by code (the station's crew list and its world people) double what
-  the referee must keep straight.
+- **One writer per field.** The station keeps a crew record (numbers, the module) and a world person (words, the
+  room); each field has one writer and code mirrors the other, so the referee keeps one character straight. A
+  character met in play who is named later is renamed (`set <id>.name`), not added again.
+- **The grammar asks for what the engine requires.** For every refusal reason the engine has, the row grammar must ask
+  for what avoids it. The grammar once taught `thread_close <id> note=resolved` while the engine refused a close
+  without a reason, and every model wrote the refused form (D51).
 
 - **Say which list a word belongs to, with examples from your own lists.** A model is not left to work out that "the
   creature" is a character, "someone's bunk" is the module that holds it, or "the core" is a system: `referee_rules`
   says so with the game's real ids (see `_mapping_lines` in both games). Give only examples whose ids exist.
 
-What the shipped games fixed on 2026-10-30, and what is still open (places as nested records, one record per crew
-member on the station), is in `notes/DESIGN2.md` §3b (gitignored notes).
+What the shipped games fixed on 2026-10-30 and 31, and what is still open (a room with its own door, merging two
+records of one character, the AI locking out the manual hatch overrides), is in `notes/DESIGN2.md` §3b (gitignored
+notes) and `notes/DECISIONS.md` D46–D55.
 
 ## 3. Field authority
 

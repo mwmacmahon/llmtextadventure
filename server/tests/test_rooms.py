@@ -68,11 +68,12 @@ def test_the_crew_record_does_not_pull_someone_out_of_their_room(station):
 
 def test_a_new_thing_with_no_place_is_where_its_person_is(station):
     _, st = station.new_instance({})
-    s, rep = apply(station, st, C(kind="new", target="thing", value="Voss's tablet", who="voss", note="raw log copy"))
-    t = next(t for t in s.world.things if t.name == "Voss's tablet")
+    s, rep = apply(station, st, C(kind="new", target="thing", value="Voss's mug", who="voss", note="cold coffee"))
+    t = next(t for t in s.world.things if t.name == "Voss's mug")
     assert t.location == "place:command", (t.location, rep.rejected)
     s, rep = apply(station, st, C(kind="new", target="thing", value="a loose panel"))
-    assert not any(t.name == "a loose panel" for t in s.world.things) and any("say where" in r.reason for r in rep.rejected)
+    t = next(t for t in s.world.things if t.name == "a loose panel")          # where is not mandatory (the user, 10-31)
+    assert t.location == "nowhere" and not rep.rejected
 
 
 @pytest.fixture(scope="module")

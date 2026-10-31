@@ -58,7 +58,7 @@ def to_declaration(ch: Change) -> Declaration | None:
         kind = ch.target.strip().lower() if ch.target.strip().lower() in ("thing", "person", "place") else "thing"
         if not ch.target.strip() and ROOM_WORDS & set(re.findall(r"[a-z]+", ch.value.lower())):
             kind = "place"                       # "new value=Park's quarters field=habitation_ring", no kind (Sonnet, round 8)
-        return Declaration(verb="NEW", raw=f'NEW {kind} "{ch.value}" at {ch.field}', kind=kind, name=ch.value, locus=ch.field, state=ch.note, by=ch.who)
+        return Declaration(verb="NEW", raw=f'NEW {kind} "{ch.value}" at {ch.field}', kind=kind, name=ch.value, locus=ch.field, state=ch.note, by=ch.who, hidden=ch.hidden)
     if ch.kind == "set" and ch.target and ch.field:
         return Declaration(verb="SET", raw=f"SET {ch.target}.{ch.field} {ch.value}", id=ch.target, field=ch.field, value=ch.value, note=ch.note, by=ch.who)
     if ch.kind == "gone" and ch.target:

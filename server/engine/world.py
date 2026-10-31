@@ -453,15 +453,20 @@ def _attrs_text(e: Person | Thing, audience: Audience) -> str:
     return "; ".join(bits)
 
 
+def _seen(things: list[Thing], audience: Audience) -> list[Thing]:
+    """The narrator is not shown a thing the player has not seen (a secret's object); the engine roles are, marked."""
+    return [t for t in things if t.known] if audience == "narrator" else things
+
+
 def _thing_text(w: World, t: Thing, audience: Audience, depth: int = 0) -> str:
-    s = _ref(t, audience)
+    s = _ref(t, audience) + ("" if t.known or audience == "narrator" else " (not yet seen by the player)")
     if t.count != 1:
         s += f" ({t.count})" if audience == "narrator" else f" ×{t.count}"
     attrs = _attrs_text(t, audience)
     extras = [x for x in (t.state if t.state.lower() not in attrs.lower().split("; ") else "", attrs) if x]
     if extras:
         s += " (" + "; ".join(extras) + ")"
-    inner = w.contents(t.id)
+    inner = _seen(w.contents(t.id), audience)
     if inner and depth < 2:
         s += " holding: " + ", ".join(_thing_text(w, x, audience, depth + 1) for x in inner)
     return s
@@ -518,6 +523,7 @@ def scene(w: World, vantage: Vantage | None = None, *, audience: Audience = "eng
             lines.append(head)
             lines.append(("Ways out: " if n else "Exits: ") + _exits_text(w, place.id, audience) + ".")
             people, things = w.here(place.id)
+            things = _seen(things, audience)
             if people:
                 lines.append(("Here: " if n else "  Here: ") + ("; " if n else " · ").join(_person_text(p, audience) for p in people) + ".")
             if things:
@@ -546,6 +552,7 @@ def scene(w: World, vantage: Vantage | None = None, *, audience: Audience = "eng
                 lines.append(head)
                 lines.append(("Hatches: " if n else "  Hatches: ") + _exits_text(w, focus.id, audience) + ".")
                 people, things = w.here(focus.id)
+                things = _seen(things, audience)
                 if people:
                     lines.append(("Here: " if n else "  Here: ") + ("; " if n else " · ").join(_person_text(p, audience) for p in people) + ".")
                 if things:
@@ -566,6 +573,9 @@ def scene(w: World, vantage: Vantage | None = None, *, audience: Audience = "eng
                 elsewhere.append(f"{pl.name}" + (f" (in {parent.name})" if parent else "") + ": " + "; ".join(bits))
         if elsewhere:
             lines.append("Elsewhere: " + ". ".join(elsewhere) + ".")
+        carried = [(p, t) for p in w.people if p.id != w.player_id for t in _seen(w.contents(p.id), audience)]
+        if carried:
+            lines.append(("Carried: " if n else "  Carried: ") + "; ".join(f"{_ref(p, audience)}: {_thing_text(w, t, audience)}" for p, t in carried) + ".")
         rooms = [pl for pl in w.places if pl.parent and w.place(pl.parent)]
         if rooms:
             lines.append(("Rooms inside modules: " if n else "  Rooms recorded: ") + "; ".join(
@@ -885,9 +895,9 @@ def _apply_new(w: World, d: Declaration, policy: Policy, out: AppliedDeclaration
         if kind_guess not in policy.things:
             reject(d, f"the narrator may not add things of kind {kind_guess}", "unauthorized_addition")
             return
-        locus = w.normalize_locus(d.locus) if d.locus else _default_locus(w, d)
+        locus = w.normalize_locus(d.locus) if d.locus else (_default_locus(w, d) or NOWHERE)
         if locus is None:
-            reject(d, f"unknown place or holder {d.locus!r}" if d.locus else "say where it is (field=<place id>)")
+            reject(d, f"unknown place or holder {d.locus!r}")
             return
         if locus == w.locus("person", me_id):
             reject(d, "a new thing never appears straight in the player's hands: declare it in the scene, then MOVED", "unauthorized_addition")
@@ -896,13 +906,17 @@ def _apply_new(w: World, d: Declaration, policy: Policy, out: AppliedDeclaration
         if same is not None:                                # the same thing reported again where it is (round 8: "Park's film case" twice)
             if d.state and d.state != same.state:
                 same.state = d.state
+            if not same.known and not d.hidden:             # a thing the world held unseen (a secret's object) is now seen
+                same.known = True
+                out.applied.append(Change(path=f"world.things.{same.id}.known", text=f"{same.name}: now seen"))
             out.applied.append(Change(path=f"world.things.{same.id}", text=f"{d.name}: already recorded as {same.id}" + (f"; state {d.state!r}" if d.state else "")))
             return
         tid = d.id if d.id and d.id not in w.ids() else w.unique_id(d.id or d.name)
-        w.things.append(Thing(id=tid, name=d.name, kind=kind_guess, location=locus, state=d.state,
+        w.things.append(Thing(id=tid, name=d.name, kind=kind_guess, location=locus, state=d.state, known=not d.hidden,
                               tags=[t for t in d.tags if t not in ("container", "fixture", "system", "vehicle", "drone")],
                               provenance="narrator"))
-        out.applied.append(Change(path=f"world.things.{tid}", text=f"new thing {d.name} [{tid}] at {locus}"))
+        out.applied.append(Change(path=f"world.things.{tid}", text=f"new thing {d.name} [{tid}] " + (f"at {locus}" if locus != NOWHERE else "(where not recorded)")
+                                  + (" (unseen)" if d.hidden else "")))
     elif d.kind == "person":
         if not policy.people:
             reject(d, "the narrator may not add people here", "unauthorized_addition")
@@ -1081,6 +1095,12 @@ def _apply_set(w: World, d: Declaration, cause: Cause, out: AppliedDeclarations,
             return
         e.state = d.value
         out.applied.append(Change(path=f"world.{'places' if isinstance(e, Place) else 'things'}.{e.id}.state", text=f"{e.name} state: {old!r} -> {d.value!r}"))
+        return
+    if isinstance(e, Thing) and field in ("known", "seen"):
+        new = d.value.lower() in ("true", "yes", "seen")
+        if e.known != new:
+            e.known = new
+            out.applied.append(Change(path=f"world.things.{e.id}.known", text=f"{e.name} known: {e.known}"))
         return
     if isinstance(e, Place):
         if field == "known":
