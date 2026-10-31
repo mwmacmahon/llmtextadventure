@@ -21,6 +21,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from engine import threads as th
+from engine.changes import clip_words
 from engine.events import Event, evaluate, next_scheduled
 from engine.game import (
     ApplyReport, Chip, ClockSpec, CommandResult, Commands, CommandSpec, EntityCard, EntityCards, GameBase, ListPanel,
@@ -446,7 +447,9 @@ class NoirGame(GameBase):
         if creature is not None:
             out.append(f"- \"the creature\", \"the thing\", \"it\" when it means the creature → character {creature.id}: "
                        f"set {creature.id}.condition wounded, crawling; move {creature.id} <place>; set {creature.id}.status dead. Never a new thing or a new person.")
-        out.append("- A named stranger is a new person; a nameless one (a man in a cap, the clerk) is nobody; an alias of a listed character is that character.")
+        out.append("- A named stranger is a new person; a nameless one (a man in a cap, the clerk) is nobody; an alias of a listed character is that character. "
+                   "A character recorded without a name who is then named is renamed, never added again: set patrolmen.name Walt; "
+                   "if a recorded group turns out to be two named men, rename the group to one of them and add the other.")
         spots = [(a, b) for a, b in (("a booth at The Anchor", "The Anchor"), ("Frank's desk", "Frank's office"), ("the stairs down to the water", "Under the docks"),
                                      ("the roof outside the shack", "Rooftop shack")) if b in places]
         if spots:
@@ -847,6 +850,15 @@ class NoirGame(GameBase):
                 if new is not None:
                     q.attitude = new
                 return True
+            if kind == "set" and field == "name":
+                scripted = {x.get("id") for x in (self.content.scenarios().get(s.case.id, {}).get("people") or [])}
+                new = value.strip().strip('"')[:40]
+                if q.id in scripted:
+                    w.reject(f"people.{q.id}.name", "a scripted character keeps their name; another name is an alias the prose uses", value)
+                elif new and new != q.name and w.set(f"people.{q.id}.name", q.name, new):
+                    q.aliases.append(q.name)
+                    q.name = new
+                return True
             if kind == "set" and field == "status":
                 if value in ("alive", "dead", "missing", "unknown"):
                     if w.set(f"people.{q.id}.status", q.status, value):
@@ -862,7 +874,7 @@ class NoirGame(GameBase):
                 self._mark_told(s, [q], f, w)
                 return True
             if kind == "set" and field in ("condition", "state", "injury", "injuries", "wounds", "health"):
-                words = value.strip(" .").lower()[:60]
+                words = clip_words(value.strip(" .").lower(), 80)
                 if words and w.set(f"people.{q.id}.condition", q.condition, words):
                     q.condition = words
                 return True

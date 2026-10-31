@@ -943,9 +943,12 @@ def _apply_new(w: World, d: Declaration, policy: Policy, out: AppliedDeclaration
 
 
 def _default_locus(w: World, d: Declaration) -> str | None:
-    """Where a new thing with no place given is: where the person it is reported with is (`who`), else where the
-    player is; None when neither is anywhere (a station AI has no body)."""
+    """Where a new thing with no place given is: where the person it is reported with is (`who`, or the owner its name
+    gives: "Voss's tablet"), else where the player is; None when none of them is anywhere (a station AI has no body)."""
     pid, _ = _resolve(w, d.by) if d.by else (None, [])
+    owner = re.match(r"\s*(?:the\s+)?([A-Z][\w.-]*(?:\s+[A-Z][\w.-]*)*)['’]s\s", d.name or "")
+    if pid is None and owner:                               # "Voss's tablet": its owner's name says where it is (round 6)
+        pid, _ = _resolve(w, owner.group(1))
     p = w.person(pid) if pid else None
     if p is not None and p.location and p.id != w.player_id:
         return w.locus("place", p.location)

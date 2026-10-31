@@ -497,8 +497,16 @@ def load_gold(path: Path) -> dict[str, dict]:
 
 
 # ---- replay ------------------------------------------------------------------
+# perturb=<n>: one neutral sentence at the end of the referee's rules, so a greedy local model's spread under an edit that
+# changes nothing can be measured (A3B at temperature 0 is byte-identical run to run: repeats measure nothing).
+PERTURB = {"1": "These rules are complete for this game.", "2": "Nothing here changes the row format above.",
+           "3": "Read the rules above as written.", "4": "The engine checks every row against the state."}
+HARNESS_OPTS = {"perturb"}
+
+
 def _role_with(cfg, name: str, opts: dict[str, str]):
     role = cfg.role(name)
+    opts = {k: v for k, v in opts.items() if k not in HARNESS_OPTS}
     if not opts:
         return role
     upd: dict[str, Any] = {}
@@ -560,6 +568,8 @@ async def _replay_roles(rec: dict, game, state, exp: dict, res: dict, current: d
                 adj_obj = None
         # test sets made before 2026-10-30 (D44) carry no "levers": their referee is not told the player's commands
         system, msgs = referee_inputs(game, state, rec["directives"], rec["player_text"], rec["narration"], adj_obj, levers=rec.get("levers") or [])
+        if opts.get("perturb"):
+            system = system.rstrip() + "\n" + PERTURB[opts["perturb"]]
         res["levers_given"] = rec.get("levers") is not None
         t0 = time.monotonic()
         try:

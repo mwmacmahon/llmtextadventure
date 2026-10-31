@@ -138,7 +138,8 @@ async def test_referee_delta_respects_authority_and_bounds(engine: Engine, fake:
     rejected = rep["rejected"]
     reasons = {(r["path"], r["reason"]) for r in rejected}
     assert any(p == "world" and "Nowhere" in r for p, r in reasons)      # 2.0: locations go through the world
-    assert ("crew.park.health", "not a health value") in reasons
+    park = next(c for c in st.crew if c.id == "park")
+    assert park.health == "healthy" and park.condition == "glowing"     # a word outside the health scale is the body's condition (read broadly)
     assert any("ghost" in str(r.get("value")) or "ghost" in r["path"] for r in rejected)     # unknown target, rejected
     assert any("Warp" in str(r.get("value")) or "Warp" in r["path"] for r in rejected)
     assert ("flags.not_a_flag", "not a narrator flag") in reasons

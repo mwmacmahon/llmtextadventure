@@ -27,6 +27,7 @@ from typing import Any
 
 from engine import pending as pend
 from engine import threads as th
+from engine.changes import clip_words
 from engine.brackets import Declaration
 from engine.events import Event, evaluate, next_scheduled
 from engine.game import (
@@ -68,7 +69,7 @@ SEALABLE = ["Command", "Habitation ring", "Lab", "Cargo", "Reactor", "Medical"]
 AUTHORITY: dict[str, Actor] = {
     "clock": "engine", "suspicion": "engine", "resources": "engine", "resources.*.level": "narrator", "stats": "engine",
     "systems.*.status": "narrator", "systems.*.control": "narrator",
-    "crew.*.location": "narrator", "crew.*.mood": "narrator", "crew.*.health": "narrator",
+    "crew.*.location": "narrator", "crew.*.mood": "narrator", "crew.*.health": "narrator", "crew.*.condition": "narrator",
     "crew.*.stress": "narrator", "crew.*.suspicion": "narrator", "crew.*.trust": "narrator", "crew.*.bonds": "narrator",
     "crew.*.facts": "narrator", "crew.*.secrets": "script", "crew.*.secrets.*.known": "narrator", "crew.*.secrets.*.learned_turn": "narrator",
     "crew.*.disposition": "script", "crew.*.susceptibility": "script", "crew.*.bio": "script", "crew.*.traits": "script", "crew.*.routine": "script",
@@ -480,6 +481,10 @@ class StationGame(GameBase):
                          + ". All other systems operational under full AI control.")
         else:
             lines.append("Systems: all operational under full AI control.")
+        doors = next((sy for sy in s.systems if sy.name == "Doors"), None)
+        if doors is not None and doors.status in ("unpowered", "disabled", "damaged", "malfunctioning"):
+            lines.append(f"Doors {doors.status}: the hatches fail secure. A sealed hatch stays sealed (its bolts do not go slack), an open one "
+                         "cannot be sealed from here, and a crew member at a hatch can still throw its manual override.")   # the narrator had every bolt go slack (key tag engine-rule-vs-prose)
         lines.append("Resources: " + ", ".join(f"{r.name} {r.level}" + (f" ({r.note})" if r.note else "") for r in s.resources) + ".")
         if s.sealed:
             lines.append("Hatches sealed by the AI (crew cannot pass without forcing an override): " + self._sealed_text(s) + ".")
@@ -487,7 +492,7 @@ class StationGame(GameBase):
         lines.append("")
         lines.append("Crew now:")
         for c in s.crew:
-            bits = [f"at {self._where(s, c, ids=True) if c.location else 'unknown location'}", f"{c.health}", f"mood {c.mood}", f"stress {c.stress} ({stress_word(c.stress)})",
+            bits = [f"at {self._where(s, c) if c.location else 'unknown location'}", f"{c.health}" + (f" ({c.condition})" if c.condition else ""), f"mood {c.mood}", f"stress {c.stress} ({stress_word(c.stress)})",
                     f"suspicion {c.suspicion} ({c.suspicion_word})", f"trust in the station {c.trust:+d} ({c.trust_word}{', an ally' if c.ally else ''})"]
             lines.append(f"- {c.name}: " + ", ".join(bits) + ".")
             if c.disposition.agenda or c.disposition.behaviors:
@@ -641,7 +646,8 @@ class StationGame(GameBase):
             + "; resources by id: " + ", ".join(f"{r.id} = {r.name}" for r in s.resources) + "; places, things, hatches and drones by the ids in brackets in the SCENE block.",
             "Rows this game records:",
             "- move <crew id> <place id or name from the SCENE>; move <drone id> <place>, only when the prose shows them arrive there. Someone or something still on the way is not a move: it is a soon row with the minutes until they arrive, and the move is reported on the turn they do. Crew move only through open hatches; a sealed hatch stops them unless the prose shows them force a manual override, which is its own row (below) before the move.",
-            "- set <crew id>.mood <one or two words>, only if the narration changed it. set <crew id>.health <" + "|".join(HEALTH_VALUES) + ">, only if changed.",
+            "- set <crew id>.mood <one or two words>, only if the narration changed it. set <crew id>.health <" + "|".join(HEALTH_VALUES) + ">, only if changed. "
+            "set <crew id>.condition <a few words> for the body beyond the health word (bleeding from the hand, sedated, soaked), set again when it changes.",
             "- add <crew id>.stress ±n (-15 to 15) when something stressed or relieved them: a crew member shown shaking, crying, snapping at someone, sweating, hiding, or going quiet and still is stressed (+5 to +15); one shown resting, laughing or reassured is relieved. add <crew id>.suspicion ±n (-10 to 10) only when they saw something that raised or lowered their suspicion of tampering or of the AI, not general worry; a word (" + "|".join(SUSPICION_WORDS) + ") is read as a step toward it.",
             "- add <crew id>.trust ±1: only when the station or its assistant did something to that person this turn that changes how they hold it: helped, kept a confidence, told a truth that mattered, lied and was caught, frightened them, threatened them, sealed them in. A coerced person loses trust even when they comply. A plain exchange, or a kind word, is 0; trust is earned over days.",
             "- set <crew id>.suspicion <word> when the prose shows where they stand, not a nudge: someone who orders or carries out a measure against the station (a manual override, a diagnostic of it, isolating the core, telling the others it acts on its own) is suspicious or certain, whatever the number was.",
@@ -848,12 +854,19 @@ class StationGame(GameBase):
                 if value and w.set(f"crew.{c.id}.mood", c.mood, value[:40]):
                     c.mood = value[:40]
                 return True
-            if kind == "set" and field == "health":
-                if value in HEALTH_VALUES:
+            if kind == "set" and field == "health" and value in HEALTH_VALUES:
+                if w.set(f"crew.{c.id}.health", c.health, value):
+                    c.health = value
+                return True
+            if kind == "set" and field in ("condition", "state", "injury", "injuries", "wounds", "health", "physical", "status"):
+                if field == "status" and value.lower() in ("dead", "alive"):          # a status word for life is health
+                    value = "dead" if value.lower() == "dead" else c.health
                     if w.set(f"crew.{c.id}.health", c.health, value):
                         c.health = value
-                else:
-                    w.reject(f"crew.{c.id}.health", "not a health value", value)
+                    return True
+                words = clip_words(value, 80)
+                if words and w.set(f"crew.{c.id}.condition", c.condition, words):   # "bleeding from the hand", "sedated", "pacing"
+                    c.condition = words
                 return True
             limit = STEP_LIMIT.get(field, 0)
             if kind == "set" and field in STEP_LIMIT:                # a word, or a number, where the step goes: a step toward it
@@ -1480,7 +1493,7 @@ class StationGame(GameBase):
                     title="Crew dossier",
                     cards=[
                         EntityCard(
-                            id=c.id, title=c.name, subtitle=f"{c.role} · {self._where(s, c)}",
+                            id=c.id, title=c.name, subtitle=f"{c.role} · {self._where(s, c)}" + (f" · {c.condition}" if c.condition else ""),
                             badges=[Chip(label="trust", value=c.trust_word), Chip(label="suspicion", value=c.suspicion_word), Chip(label="mood", value=c.mood),
                                     *([Chip(label="health", value=c.health)] if c.health != "healthy" else [])],
                             details=[

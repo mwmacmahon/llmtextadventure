@@ -37,6 +37,15 @@ class Extras:
     threads_closed: list[ThreadClose] = field(default_factory=list)
 
 
+def clip_words(text: str, n: int) -> str:
+    """At most n characters, cut at a word: a state note stays readable."""
+    text = text.strip()
+    if len(text) <= n:
+        return text
+    cut = text[:n + 1].rsplit(" ", 1)[0].rstrip(" ,;:-")
+    return cut or text[:n]
+
+
 def to_declaration(ch: Change) -> Declaration | None:
     """A game row the game did not take, as the world's typed shape."""
     if (ch.kind == "move" or (ch.kind == "set" and ch.field.strip().lower() == "location")) and ch.target and ch.value:
@@ -207,6 +216,13 @@ def apply_changes(game: Any, state: BaseModel, report: ChangeReport, *, present:
         if k == "new" and "." in ch.target.strip() and not ch.field.strip():   # "new creature.Rooftop shack": the name, then where
             base, where = ch.target.strip().rsplit(".", 1)
             ch = ch.model_copy(update={"target": base, "field": where})
+        open_threads = {t.id for t in getattr(s, "threads", []) or [] if getattr(t, "status", "open") == "open"}
+        if k in ("set", "add") and ch.target.strip() in open_threads and ch.field.strip().lower() in ("resolved", "status", "outcome", "closed", "how", ""):
+            k = "thread_close"                                            # "set t1-okafor-waiting.resolved = Okafor got the report" (Sonnet, A3B)
+            ch = ch.model_copy(update={"kind": "thread_close", "note": " ".join(x for x in (ch.note, ch.value) if x.strip()) or ch.field})
+        if k == "thread_close" and is_pending_id(ch.target):               # a timer closed as a thread ("threads.p3", A3B)
+            k = "set"
+            ch = ch.model_copy(update={"kind": "set", "field": "resolved", "value": ch.value or ch.note})
         if k == "set" and not ch.field.strip() and ch.target.strip() in allowed_flags:      # "set okafor_got_report true": a flag by its name
             k = "flag"
             ch = ch.model_copy(update={"kind": "flag"})

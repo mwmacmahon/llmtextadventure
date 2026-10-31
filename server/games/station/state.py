@@ -92,6 +92,7 @@ class CrewMember(BaseModel):
     bio: str = ""                       # script: a short life, for the prefix
     traits: list[str] = Field(default_factory=list)       # script: words with mechanical weight (game.TRAIT_MODS)
     health: str = "healthy"
+    condition: str = ""                 # narrator-owned words for the body beyond the health word ("bleeding from the hand")
     mood: str = "calm"
     stress: int = 20                    # 0-100
     suspicion: int = 0                  # 0-100, of tampering / of the AI
