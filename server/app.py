@@ -231,8 +231,44 @@ def judge_index():
         P = json.loads(p.read_text())
         done = len({r["key"] for r in ne.user_judgements(p.stem)})
         rows.append(f'<li><a href="/dev/judge/{p.stem}">{p.stem}</a>: {done} of {len(P["pairs"])} judged</li>')
+    checks = []
+    for p in sorted(ne.RUBRIC.glob(f"*.v{ne.RUBRIC_VERSION}.json")):
+        run = p.name.removesuffix(f".v{ne.RUBRIC_VERSION}.json")
+        checks.append(f'<li><a href="/dev/rubric/{run}">{run}</a>: {len(ne.rubric_checks(run))} verdicts checked</li>')
     return HTMLResponse("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'><title>Blind Pairs</title>"
-                        "<body style='font:15px system-ui;padding:16px'><h1>Matchups</h1><ul>" + "".join(rows or ["<li>none yet</li>"]) + "</ul>")
+                        "<body style='font:15px system-ui;padding:16px'><h1>Matchups: which telling is the better story</h1><ul>" + "".join(rows or ["<li>none yet</li>"]) + "</ul>"
+                        "<h1>Rubric spot-check: is the judge right</h1><ul>" + "".join(checks or ["<li>none yet</li>"]) + "</ul>")
+
+
+class RubricCheckInput(BaseModel):
+    key: str
+    agree: str
+    note: str = ""
+
+
+@app.get("/dev/rubric/{run}")
+def rubric_page(run: str):
+    from fastapi.responses import HTMLResponse
+    from pathlib import Path as _P
+    ne = _ne()
+    if not re.fullmatch(r"[\w.\-]+", run) or not (ne.RUBRIC / f"{run}.v{ne.RUBRIC_VERSION}.json").exists():
+        raise HTTPException(404, "no current rubric for that run")
+    return HTMLResponse((_P(__file__).resolve().parent / "tools" / "rubric_check_page.html").read_text().replace("__RUN__", run))
+
+
+@app.get("/dev/rubric/{run}/next")
+def rubric_next(run: str):
+    ne = _ne()
+    sample = ne.rubric_sample(run)
+    done = {c["key"] for c in ne.rubric_checks(run)}
+    return {"total": len(sample), "done": len(done & {x["key"] for x in sample}), "check": next((x for x in sample if x["key"] not in done), None)}
+
+
+@app.post("/dev/rubric/{run}")
+def rubric_record(run: str, body: RubricCheckInput):
+    if body.agree not in ("agree", "disagree"):
+        raise HTTPException(422, "agree or disagree")
+    return _ne().record_rubric_check(run, body.key, body.agree, body.note)
 
 
 @app.get("/dev/judge/{pid}")

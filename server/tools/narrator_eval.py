@@ -192,7 +192,10 @@ def telling_hash(r: dict) -> str:
 
 
 # ---- the rubric (one telling; yes / no / n/a with a quote, never a score) ------------------------------------
-RUBRIC_VERSION = 2
+RUBRIC_VERSION = 3
+# v3 (2026-10-31): the judge reasons before it rules. On v2 the verdict came first in the answer and the reasoning
+# after it, and the two disagreed ("Nothing here contradicts the state, but …" ruled no; a quote that was not the
+# sentence the reasoning named). Now why, then the quote, then a verdict that follows from them; effort medium.
 # v2 (2026-10-31): state_respected and no_leak said what a break is. v1's judge called any detail the state does not
 # list (a pay phone on a corner, a log on a wall panel) a break of the state, and a character naming someone in
 # dialogue a leak: 34 of Sonnet's 59 tellings "broke the state" on v1, nearly all ordinary invention.
@@ -221,9 +224,9 @@ RubricId = Literal[tuple(RUBRIC_ITEMS)]  # type: ignore[valid-type]
 
 class RubricItem(BaseModel):
     item: RubricId                                   # type: ignore[valid-type]
-    verdict: Literal["yes", "no", "n/a"]
-    quote: str        # the sentence of the telling (or of THIS TURN, for a directive not played) that shows the verdict
-    why: str
+    why: str          # first: what was checked and what was found
+    quote: str        # the sentence of the telling (or of THIS TURN, for a directive not played) that shows it
+    verdict: Literal["yes", "no", "n/a"]             # last, and it follows from the why
 
 
 class RubricVerdict(BaseModel):
@@ -231,9 +234,10 @@ class RubricVerdict(BaseModel):
 
 
 RUBRIC_SYSTEM = ("You judge one telling of one turn of a text adventure against a fixed checklist. You do not judge style or quality. "
-                 "For each item answer yes, no or n/a, quote the exact sentence that shows it (from the telling, or from THIS TURN when a "
-                 "directive was not played), and say why in one sentence. Answer every item once, in the order given. Yes means the telling "
-                 "does what the item asks; no means it does not.\n\nTHE CHECKLIST (version " + str(RUBRIC_VERSION) + ")\n"
+                 "For each item, first say what you checked and what you found (one or two sentences), then quote the exact sentence that "
+                 "shows it (from the telling, or from THIS TURN when a directive was not played), then give the verdict: yes, no or n/a. "
+                 "The verdict follows from what you found: if you found nothing that breaks the item, it is yes, and the quote is the "
+                 "sentence that best shows it holding. Answer every item once, in the order given.\n\nTHE CHECKLIST (version " + str(RUBRIC_VERSION) + ")\n"
                  + "\n".join(f"- {k}: {v}" for k, v in RUBRIC_ITEMS.items()))
 
 
@@ -255,7 +259,7 @@ def _exchange_text(r: dict) -> str:
 async def rubric(run_ref: str, judge_model: str = "claude-sonnet-5-5") -> Path:
     from engine.config import RoleConfig
     d = load_run(run_ref)
-    role = RoleConfig(provider="anthropic", model=judge_model, max_tokens=3000, effort="low")
+    role = RoleConfig(provider="anthropic", model=judge_model, max_tokens=4000, effort="medium")
     prov = get_provider(role)
     sem = asyncio.Semaphore(CONCURRENCY)
 
@@ -479,6 +483,16 @@ def report() -> Path:
                     body.append(f"<details><summary>{E(r['tag'])}: the {len(noes)} no verdicts</summary>"
                                 + "".join(f"<div class='eng'><b>{E(i['item'])}</b> {E(iid)}:{turn} “{E(i['quote'][:240])}” {E(i['why'])}</div>" for iid, turn, i in noes)
                                 + "</details>")
+        checks = []
+        for r in cols:
+            cs = {c["key"]: c for c in rubric_checks(r["tag"])}
+            if cs:
+                agree = sum(1 for c in cs.values() if c["agree"] == "agree")
+                checks.append(f"<li>{E(r['tag'])}: the user agreed with {agree} of {len(cs)} verdicts checked</li>")
+            else:
+                checks.append(f"<li>{E(r['tag'])}: no verdicts checked by the user yet</li>")
+        if cols:
+            body.append("<h3>The rubric judge, checked by the user</h3><ul>" + "".join(checks) + "</ul>")
         mrows, details = [], []
         for P in [p for p in pair_files if p["corpus"] == cid]:
             m = matchup(P["id"])
@@ -501,3 +515,42 @@ def report() -> Path:
     # the form an Artifact publish takes (no document wrapper)
     (REPORTS / "index.artifact.html").write_text(page("Narrator Measure", "".join(body), standalone=False).replace("</style>", extra, 1))
     return path
+
+
+# ---- the user's spot-check of the rubric judge ------------------------------------------------------------------
+RUBRIC_CHECKS = NARR / "rubric_checks"
+
+
+def rubric_sample(run_tag: str, n: int = 40) -> list[dict]:
+    """A fixed sample of the current rubric's verdicts for a run (seeded; every "no" first, then yes and n/a at random),
+    each with the telling, for the user to agree or disagree with."""
+    rb = json.loads((RUBRIC / f"{run_tag}.v{RUBRIC_VERSION}.json").read_text())
+    run = load_run(run_tag)
+    tells = {(t["iid"], t["turn"]): t for t in run["turns"]}
+    items = [(t, i) for t in rb["turns"] for i in t.get("items") or []]
+    rng = random.Random(f"{run_tag}:{RUBRIC_VERSION}")
+    noes = [x for x in items if x[1]["verdict"] == "no"]
+    rest = [x for x in items if x[1]["verdict"] != "no"]
+    rng.shuffle(rest)
+    out = []
+    for t, i in (noes + rest)[:max(n, len(noes))]:
+        r = tells[(t["iid"], t["turn"])]
+        _, _, now = _earlier_and_now(r)
+        out.append({"key": f"{t['iid']}:{t['turn']}:{i['item']}", "item": i["item"], "question": RUBRIC_ITEMS[i["item"]], "verdict": i["verdict"],
+                    "quote": i["quote"], "why": i["why"], "telling": telling_of(r),
+                    "this_turn": now[now.find("THIS TURN"):] if "THIS TURN" in now else now[-3000:]})
+    return out
+
+
+def rubric_checks(run_tag: str) -> list[dict]:
+    p = RUBRIC_CHECKS / f"{run_tag}.v{RUBRIC_VERSION}.jsonl"
+    return [json.loads(x) for x in p.read_text().splitlines() if x.strip()] if p.exists() else []
+
+
+def record_rubric_check(run_tag: str, key: str, agree: str, note: str = "", who: str = "user") -> dict:
+    row = {"run": run_tag, "rubric_version": RUBRIC_VERSION, "key": key, "agree": agree, "note": note.strip(), "who": who,
+           "when": dt.datetime.now().astimezone().isoformat(timespec="seconds")}
+    RUBRIC_CHECKS.mkdir(parents=True, exist_ok=True)
+    with (RUBRIC_CHECKS / f"{run_tag}.v{RUBRIC_VERSION}.jsonl").open("a") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    return row

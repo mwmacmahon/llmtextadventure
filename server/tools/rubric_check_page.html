@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rubric Spot-Check</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one pair at a time; the context above, the two tellings side by side (stacked on a phone), the verdict bar fixed below. */
+:root{
+  --paper:#f4f5f2; --sheet:#ffffff; --ink:#1c201d; --muted:#5d665f; --rule:#d6dbd5; --accent:#355f8c; --pick:#e3ecf6; --ok:#2c7a4f;
+  --display:"Source Serif 4", Georgia, serif; --body:"IBM Plex Sans", system-ui, sans-serif; --mono:"IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--paper:#121513;--sheet:#1a1f1c;--ink:#e2e8e3;--muted:#98a39b;--rule:#2d3530;--accent:#8fb3dd;--pick:#1f2c3a;--ok:#7fd3a4;color-scheme:dark}}
+:root[data-theme="dark"]{--paper:#121513;--sheet:#1a1f1c;--ink:#e2e8e3;--muted:#98a39b;--rule:#2d3530;--accent:#8fb3dd;--pick:#1f2c3a;--ok:#7fd3a4;color-scheme:dark}
+body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.55 var(--body)}
+.wrap{max-width:1180px;margin:0 auto;padding-block:16px 170px;padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px))}
+header{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:baseline}
+h1{font:600 1.3rem var(--display);margin:0}
+.dim{color:var(--muted);font-size:.85rem}
+.ctx{display:grid;gap:10px;margin:14px 0}
+details{background:var(--sheet);border:1px solid var(--rule);border-radius:6px;padding:8px 12px}
+summary{cursor:pointer;color:var(--muted);font-size:.88rem}
+pre{white-space:pre-wrap;font:13px/1.5 var(--mono);margin:8px 0 0;overflow-wrap:anywhere}
+.player{font:italic 16px/1.5 var(--display);border-left:3px solid var(--accent);padding-left:12px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.two > section{background:var(--sheet);border:1px solid var(--rule);border-radius:8px;padding:12px 16px;min-width:0}
+.two > section.picked{background:var(--pick);border-color:var(--accent)}
+.two h2{font:600 .78rem var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 6px}
+.prose{white-space:pre-wrap;font:16px/1.65 var(--display)}
+.bar{position:fixed;left:0;right:0;bottom:0;background:var(--sheet);border-top:1px solid var(--rule);padding-block:10px calc(10px + env(safe-area-inset-bottom, 0px));padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px))}
+.bar .in{max-width:1180px;margin:0 auto;display:grid;gap:8px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button{font:600 14px var(--body);padding:8px 14px;border-radius:6px;border:1px solid var(--rule);background:var(--paper);color:var(--ink);cursor:pointer}
+button.on{background:var(--accent);color:var(--sheet);border-color:var(--accent)}
+button:focus-visible,textarea:focus-visible,label:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+kbd{font:11px var(--mono);border:1px solid var(--rule);border-radius:3px;padding:0 4px;margin-left:4px}
+textarea{width:100%;box-sizing:border-box;font:14px var(--body);background:var(--paper);color:var(--ink);border:1px solid var(--rule);border-radius:6px;padding:6px 8px;min-height:2.4em}
+.tags label{font-size:.82rem;border:1px solid var(--rule);border-radius:12px;padding:2px 8px;cursor:pointer;user-select:none}
+.tags input{margin:0 4px 0 0}
+.reveal{color:var(--ok);font:13px var(--mono)}
+@media (max-width:760px){.two{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+<style>.verdict{background:var(--sheet);border:1px solid var(--rule);border-radius:8px;padding:12px 16px;display:grid;gap:6px}
+.verdict b{font:600 13px var(--mono);text-transform:uppercase;letter-spacing:.06em} mark{background:var(--pick);color:inherit}</style></head>
+<body><div class="wrap">
+<header><h1>Rubric Spot-Check</h1><span class="dim" id="progress">loading</span><span class="dim" id="rid"></span></header>
+<p class="dim">The judge model's verdict on one item of one telling. Do you agree? Keys: <kbd>1</kbd> agree, <kbd>2</kbd> disagree, <kbd>Enter</kbd> submit.</p>
+<div class="verdict"><div><b id="item"></b> <span class="dim" id="question"></span></div>
+  <div>The judge said <b id="verdict"></b>: <span id="why"></span></div><div class="dim">Quoting: “<span id="quote"></span>”</div></div>
+<div class="ctx"><details><summary>What the narrator was told this turn</summary><pre id="thisturn"></pre></details></div>
+<section class="two" style="grid-template-columns:1fr"><section><h2>The telling</h2><div class="prose" id="telling"></div></section></section>
+<p class="reveal" id="reveal"></p></div>
+<div class="bar"><div class="in"><div class="row"><button id="b1" data-c="agree">Agree<kbd>1</kbd></button><button id="b2" data-c="disagree">Disagree<kbd>2</kbd></button></div>
+<div class="row" style="flex-wrap:nowrap"><textarea id="note" placeholder="Why, if you disagree (optional)"></textarea><button id="go">Submit<kbd>Enter</kbd></button></div></div></div>
+<script>
+const RUN = "__RUN__"; let cur = null, choice = null, busy = false; const $ = id => document.getElementById(id);
+$("rid").textContent = RUN;
+function pick(c){ choice = c; ["b1","b2"].forEach(id => $(id).classList.toggle("on", $(id).dataset.c === c)); }
+function esc(s){ return s.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"})[c]); }
+async function load(){
+  const d = await (await fetch(`/dev/rubric/${RUN}/next`)).json();
+  $("progress").textContent = `${d.done} of ${d.total} checked`;
+  if (!d.check){ $("item").textContent = "Every verdict in the sample is checked."; $("telling").textContent = ""; cur = null; return; }
+  cur = d.check; pick(null); $("note").value = "";
+  $("item").textContent = cur.item.replace(/_/g, " "); $("question").textContent = cur.question; $("verdict").textContent = cur.verdict;
+  $("why").textContent = cur.why; $("quote").textContent = cur.quote; $("thisturn").textContent = cur.this_turn;
+  const t = esc(cur.telling), q = esc(cur.quote.trim()); $("telling").innerHTML = q && t.includes(q) ? t.replace(q, `<mark>${q}</mark>`) : t;
+  window.scrollTo(0, 0);
+}
+async function submit(){
+  if (!cur || !choice || busy) return; busy = true;
+  const r = await fetch(`/dev/rubric/${RUN}`, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({key: cur.key, agree: choice, note: $("note").value})});
+  busy = false; $("reveal").textContent = r.ok ? "Recorded." : "Not recorded; try again."; if (r.ok) load();
+}
+document.querySelectorAll("[data-c]").forEach(b => b.addEventListener("click", () => pick(b.dataset.c)));
+$("go").addEventListener("click", submit);
+document.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); submit(); return; }
+  if (e.target.tagName === "TEXTAREA") return; if (e.key === "1") pick("agree"); else if (e.key === "2") pick("disagree"); });
+load();
+</script></body></html>
