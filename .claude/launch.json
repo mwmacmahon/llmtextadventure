@@ -78,6 +78,20 @@
         "5174"
       ],
       "port": 5174
+    },
+    {
+      "name": "api-sonnet-fixed",
+      "runtimeExecutable": "server/.venv/bin/uvicorn",
+      "runtimeArgs": [
+        "app:app",
+        "--app-dir",
+        "server",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8012"
+      ],
+      "port": 8012
     }
   ]
 }

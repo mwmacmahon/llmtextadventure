@@ -12,10 +12,12 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from functools import wraps
 from typing import Any, Iterable
 
 EXPORT_FORMAT = 1
@@ -95,10 +97,21 @@ class TranscriptRow:
     created: str
 
 
+def _locked(fn):
+    """One connection serves every request thread; a lock keeps two statements (or a statement and another's
+    transaction) from interleaving on it, which sqlite3 reports as 'bad parameter or other API misuse'."""
+    @wraps(fn)
+    def inner(self, *a, **kw):
+        with self._lock:
+            return fn(self, *a, **kw)
+    return inner
+
+
 class Store:
     def __init__(self, path: Path):
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
+        self._lock = threading.RLock()
         self.conn = sqlite3.connect(str(path), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
@@ -112,6 +125,7 @@ class Store:
                     self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
 
     # ---- instances --------------------------------------------------------
+    @_locked
     def create_instance(self, game: str, game_version: str, title: str, setup: dict, prefix_text: str, state: dict,
                         origin: dict | None = None) -> str:
         iid = _new_id()
@@ -126,18 +140,22 @@ class Store:
             )
         return iid
 
+    @_locked
     def list_instances(self) -> list[InstanceRow]:
         rows = self.conn.execute("SELECT * FROM instance ORDER BY created DESC").fetchall()
         return [self._inst(r) for r in rows]
 
+    @_locked
     def get_instance(self, iid: str) -> InstanceRow | None:
         r = self.conn.execute("SELECT * FROM instance WHERE id=?", (iid,)).fetchone()
         return self._inst(r) if r else None
 
+    @_locked
     def rename_instance(self, iid: str, title: str) -> None:
         with self.conn:
             self.conn.execute("UPDATE instance SET title=? WHERE id=?", (title, iid))
 
+    @_locked
     def delete_instance(self, iid: str) -> None:
         with self.conn:
             for t in ("snapshot", "transcript", "ledger"):
@@ -153,10 +171,12 @@ class Store:
         )
 
     # ---- snapshots --------------------------------------------------------
+    @_locked
     def latest_turn(self, iid: str) -> int:
         r = self.conn.execute("SELECT MAX(turn) AS t FROM snapshot WHERE instance_id=?", (iid,)).fetchone()
         return int(r["t"] or 0)
 
+    @_locked
     def load_state(self, iid: str, turn: int | None = None) -> dict:
         if turn is None:
             turn = self.latest_turn(iid)
@@ -165,6 +185,7 @@ class Store:
             raise KeyError(f"no snapshot for {iid} turn {turn}")
         return json.loads(r["state_json"])
 
+    @_locked
     def save_snapshot(self, iid: str, turn: int, state: dict) -> None:
         with self.conn:
             self.conn.execute(
@@ -173,10 +194,12 @@ class Store:
             )
 
     # ---- transcript -------------------------------------------------------
+    @_locked
     def _next_seq(self, table: str, iid: str) -> int:
         r = self.conn.execute(f"SELECT MAX(seq) AS s FROM {table} WHERE instance_id=?", (iid,)).fetchone()
         return int(r["s"] or 0) + 1
 
+    @_locked
     def append_transcript(self, iid: str, turn: int, role: str, text: str) -> int:
         seq = self._next_seq("transcript", iid)
         with self.conn:
@@ -186,6 +209,7 @@ class Store:
             )
         return seq
 
+    @_locked
     def transcript(self, iid: str, roles: Iterable[str] | None = None) -> list[TranscriptRow]:
         q = "SELECT seq, turn, role, text, created FROM transcript WHERE instance_id=?"
         args: list[Any] = [iid]
@@ -197,6 +221,7 @@ class Store:
         return [TranscriptRow(**dict(r)) for r in self.conn.execute(q, args).fetchall()]
 
     # ---- ledger -----------------------------------------------------------
+    @_locked
     def append_ledger(self, iid: str, turn: int, kind: str, payload: dict) -> int:
         seq = self._next_seq("ledger", iid)
         with self.conn:
@@ -206,6 +231,7 @@ class Store:
             )
         return seq
 
+    @_locked
     def ledger(self, iid: str, turn: int | None = None) -> list[dict]:
         q = "SELECT seq, turn, kind, payload_json, created FROM ledger WHERE instance_id=?"
         args: list[Any] = [iid]
@@ -219,6 +245,7 @@ class Store:
         ]
 
     # ---- undo -------------------------------------------------------------
+    @_locked
     def truncate_after_turn(self, iid: str, turn: int) -> None:
         """Undo: drop everything after `turn` (snapshots, transcript, ledger)."""
         with self.conn:
@@ -227,6 +254,7 @@ class Store:
             self.conn.execute("DELETE FROM ledger WHERE instance_id=? AND turn>?", (iid, turn))
 
     # ---- export / import / copy -------------------------------------------
+    @_locked
     def export_instance(self, iid: str, upto_turn: int | None = None) -> dict:
         inst = self.get_instance(iid)
         if not inst:
@@ -252,6 +280,7 @@ class Store:
             ],
         }
 
+    @_locked
     def import_instance(self, doc: dict, title: str | None = None, origin: dict | None = None) -> str:
         if doc.get("format") != EXPORT_FORMAT:
             raise ValueError(f"unsupported export format {doc.get('format')!r}")
@@ -279,6 +308,7 @@ class Store:
             )
         return iid
 
+    @_locked
     def copy_instance(self, iid: str, upto_turn: int, title: str) -> str:
         doc = self.export_instance(iid, upto_turn)
         return self.import_instance(doc, title=title, origin={"forked_from": iid, "at_turn": upto_turn})
