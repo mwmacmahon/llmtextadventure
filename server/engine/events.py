@@ -33,6 +33,8 @@ form after a deadline) or an `expires` clause, per §8.2.
 """
 from __future__ import annotations
 
+import copy
+
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -230,9 +232,11 @@ def apply_effects(effects: list[dict], doc: dict, directives: list[str], log_pat
 # ---- tick -----------------------------------------------------------------
 
 def tick(events: list[Event], doc: dict, turn: int, clock_path: str = "clock", log_path: str = "log",
-         ctx: EffectContext | None = None) -> tuple[list[Fired], list[Expired], list[str]]:
+         ctx: EffectContext | None = None, since_abs: int | None = None) -> tuple[list[Fired], list[Expired], list[str]]:
     """Evaluate every live event once, in priority order. Mutates `doc` and the
-    events' status fields. Returns (fired, expired, directives)."""
+    events' status fields. Returns (fired, expired, directives). `since_abs`: the clock before this turn's time
+    passed; an event that came due inside that stretch and fires only now is told to the narrator as having happened
+    in the background (the clock stops at triggers, so this is the safety net)."""
     fired: list[Fired] = []
     expired: list[Expired] = []
     directives: list[str] = []
@@ -269,10 +273,88 @@ def tick(events: list[Event], doc: dict, turn: int, clock_path: str = "clock", l
             directive = e.directive
             applied = apply_effects(e.effects, doc, directives, log_path, ctx)
             desc = e.description
+        if directive and since_abs is not None:
+            mpd = ctx.minutes_per_day if ctx else 1440
+            clk = sp.lookup(doc, clock_path, {}) or {}
+            now_abs = int(clk.get("day", 1)) * mpd + int(clk.get("minute", 0))
+            due = due_time(e, variant, now_abs, mpd)
+            if due is not None and since_abs < due < now_abs - 5:
+                directive = (f"BEHIND THE TIME THAT PASSED: this came due at {clock_text(due, mpd)} and has happened since. Work out what happened "
+                             f"in the background in the meantime, and play where things stand now. " + directive)
         if directive:
             directives.append(directive)
         fired.append(Fired(event_id=e.id, variant=variant, directive=directive, effects_applied=applied, description=desc))
     return fired, expired, directives
+
+
+def _gates(pred: Any) -> list[tuple[int, int]]:
+    """Every clock time an `at` predicate names inside a predicate tree, as (day, minute)."""
+    out: list[tuple[int, int]] = []
+    if isinstance(pred, dict):
+        for k, v in pred.items():
+            if k == "at" and isinstance(v, dict) and "minute" in v:
+                out.append((int(v.get("day", 1)), int(v.get("minute", 0))))
+            else:
+                out += _gates(v)
+    elif isinstance(pred, list):
+        for v in pred:
+            out += _gates(v)
+    return out
+
+
+def _doc_at(doc: dict, clock_path: str, t: int, minutes_per_day: int) -> dict:
+    d = copy.deepcopy(doc)
+    sp.assign(d, clock_path, {**(sp.lookup(d, clock_path, {}) or {}), "day": t // minutes_per_day, "minute": t % minutes_per_day})
+    return d
+
+
+def next_firing(events: list[Event], doc: dict, turn: int, now_abs: int, until_abs: int, minutes_per_day: int,
+                clock_path: str = "clock", pending_path: str = "hidden.pending") -> tuple[Event, int] | None:
+    """The first moment in (now, until] at which a live event would fire, by its trigger or its fallback, with the
+    state as it stands: the clock stops there, so time never runs past a trigger (the user, 10-31: "we shouldn't let
+    time pass beyond a trigger that should affect player"). Any time in the trigger counts, not only `at`: noir's
+    Anchor meeting is "at 21:00 and Frank at The Anchor". An event whose expiry holds by then is not coming."""
+    best: tuple[Event, int] | None = None
+    for e in events:
+        if e.expired or (e.fired and e.once):
+            continue
+        times = sorted({d * minutes_per_day + m for d, m in _gates(e.trigger) + (_gates(e.fallback.after) if e.fallback else [])})
+        for t in times:
+            if t <= now_abs or t > until_abs:
+                continue
+            if best is not None and t >= best[1]:
+                break
+            d = _doc_at(doc, clock_path, t, minutes_per_day)
+            if e.expires and evaluate(e.expires.when, d, events, turn, clock_path, pending_path):
+                break
+            if evaluate(e.trigger, d, events, turn, clock_path, pending_path) or (e.fallback and evaluate(e.fallback.after, d, events, turn, clock_path, pending_path)):
+                best = (e, t)
+                break
+    return best
+
+
+def due_time(e: Event, variant: str, now_abs: int, minutes_per_day: int) -> int | None:
+    """When a firing event came due: the latest clock time its trigger (or fallback) names that has passed."""
+    pred = e.fallback.after if variant == "fallback" and e.fallback else e.trigger
+    past = [d * minutes_per_day + m for d, m in _gates(pred) if d * minutes_per_day + m <= now_abs]
+    return max(past) if past else None
+
+
+def clock_text(t: int, minutes_per_day: int) -> str:
+    return f"Day {t // minutes_per_day} {(t % minutes_per_day) // 60:02d}:{t % 60:02d}"
+
+
+def next_moment(events: list[Event], doc: dict, minutes_per_day: int, clock_path: str = "clock", horizon: int = 1440,
+                pending_path: str = "hidden.pending") -> tuple[Event, int] | None:
+    """For "do not narrate past": the next moment an event would fire within a day (next_firing), else the next
+    fixed-time event however far off."""
+    clk = sp.lookup(doc, clock_path, {}) or {}
+    now = int(clk.get("day", 1)) * minutes_per_day + int(clk.get("minute", 0))
+    hit = next_firing(events, doc, 0, now, now + horizon, minutes_per_day, clock_path, pending_path)
+    if hit is not None:
+        return hit
+    e = next_scheduled(events)
+    return (e, int(e.at.get("day", 1)) * minutes_per_day + int(e.at.get("minute", 0))) if e and e.at else None
 
 
 def next_scheduled(events: list[Event]) -> Event | None:

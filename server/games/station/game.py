@@ -29,7 +29,8 @@ from engine import pending as pend
 from engine import threads as th
 from engine.changes import clip_words
 from engine.brackets import Declaration
-from engine.events import Event, evaluate, next_scheduled
+from engine.events import Event, evaluate, next_moment
+from engine.events import clock_text as ev_clock_text
 from engine.game import (
     ApplyReport, Chip, ClockSpec, CommandResult, Commands, CommandSpec, EntityCard, EntityCards, GameBase, ListPanel,
     LogPanel, Meter, Option, Param, StatusStrip, Table, TableCell, TurnInfo, UISchema, Rejection,
@@ -558,12 +559,12 @@ class StationGame(GameBase):
                 lines.append(f"- {ln}")
 
         fired = [e.id for e in s.hidden.events if e.fired and e.reveal != "never"]
-        nxt_e = next_scheduled(s.hidden.events)
+        nxt_e = next_moment(s.hidden.events, s.model_dump(mode="json"), self.clock.minutes_per_day, self.clock.path)
         lines.append("")
         if fired:
             lines.append("Spine events already happened: " + ", ".join(fired) + ".")
         if nxt_e:
-            lines.append(f"Next spine event: {nxt_e.id} at {nxt_e.when_text}. Do not narrate past that moment.")
+            lines.append(f"Next spine event: {nxt_e[0].id} at {ev_clock_text(nxt_e[1], self.clock.minutes_per_day)}. Do not narrate past that moment.")
         return "\n".join(lines)
 
     @staticmethod

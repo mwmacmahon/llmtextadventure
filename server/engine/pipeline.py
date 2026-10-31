@@ -832,6 +832,8 @@ class Engine:
         clock = getattr(game, "clock", None)
         clock_path = getattr(clock, "path", "clock")
         log_path = getattr(game, "log_path", "log")
+        clk0 = (sp.lookup(doc, clock.path, None) or {}) if clock else {}
+        since_abs = int(clk0.get("day", 1)) * clock.minutes_per_day + int(clk0.get("minute", 0)) if clock and clk0 else None
 
         if adj is not None and adj.kind in ("clarify", "impossible"):
             q = adj.clarify_question or adj.summary
@@ -858,19 +860,19 @@ class Engine:
                 if missing:
                     directives.append("NOT CARRIED: " + missing)
                     notes.append(f"not carried: {name}")
-            # clock, stopping at the next scheduled event so it fires on time
+            # clock, stopping where an event would fire (any time in its trigger or fallback) so it fires on time
             if clock and adj.time_minutes > 0:
                 want = min(adj.time_minutes, clock.cap_minutes)
                 if want < adj.time_minutes:
                     clock_note = f"capped from {adj.time_minutes} to {want} minutes"
                 clk = sp.lookup(doc, clock.path)
                 now = clk["day"] * clock.minutes_per_day + clk["minute"]
-                nxt = ev.next_scheduled(_events_of(game, doc))
-                if nxt and nxt.at:
-                    at = int(nxt.at.get("day", 1)) * clock.minutes_per_day + int(nxt.at.get("minute", 0))
-                    if now < at <= now + want:
-                        want = at - now
-                        clock_note = (clock_note + "; " if clock_note else "") + f"stopped at scheduled event {nxt.id}"
+                nxt_f = ev.next_firing(_events_of(game, doc), doc, turn, now, now + want, clock.minutes_per_day, clock.path,
+                                       getattr(game, "pending_path", None) or "hidden.pending")
+                if nxt_f is not None:
+                    nxt, at = nxt_f
+                    want = at - now
+                    clock_note = (clock_note + "; " if clock_note else "") + f"stopped at scheduled event {nxt.id}"
                 ppath = getattr(game, "pending_path", None)
                 nxt_p = pend.next_due(pend.load(doc, ppath), clock.minutes_per_day) if ppath else None
                 if nxt_p is not None:
@@ -897,7 +899,7 @@ class Engine:
         # events tick (also on clarify turns: time has not moved, so usually nothing fires)
         events = _events_of(game, doc)
         ectx = ev.EffectContext(pending_path=ppath or "hidden.pending", clock_path=clock_path, minutes_per_day=clock.minutes_per_day if clock else 1440, turn=turn)
-        fired, expired, ev_directives = ev.tick(events, doc, turn, clock_path, log_path, ectx)
+        fired, expired, ev_directives = ev.tick(events, doc, turn, clock_path, log_path, ectx, since_abs=since_abs)
         sp.assign(doc, getattr(game, "events_path", "hidden.events"), [e.model_dump(mode="json") for e in events])
         directives.extend(ev_directives)
         # pendings that have come due (engine/pending.py); not on a clarify turn, where nothing is narrated

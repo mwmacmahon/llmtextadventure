@@ -152,10 +152,10 @@ def test_rows_people_and_new_people(game: NoirGame):
     assert s2.person("kowalczyk") and s2.person("kowalczyk").met and s2.person("kowalczyk").location == "Rooftop shack"
     assert s2.notebook[-1].kind == "contact" and "Kowalczyk" in s2.notebook[-1].text
     assert s2.person("old_lady") is None and s2.person("pulaski").heard_of and not s2.person("pulaski").met   # the listed landlady, at her house: heard of
-    assert len(s2.people) == 12
+    assert len(s2.people) == 13                         # the case's twelve and Kowalczyk; the caller is a record of his own (D58)
     assert any(a.startswith("people += kowalczyk") for a in rep.applied)
     b = game.render_bulletin(s2, "")
-    assert "Kowalczyk" in b and "Rosa" not in b                  # the people Frank has dealt with
+    assert "Kowalczyk" in b and "- Rosa:" not in b and "- Rosa." in b    # Rosa only heard of: she is at The Anchor
     assert "Rosa" in game.render_bulletin(s2b, "")
 
 
@@ -289,7 +289,9 @@ def test_has_predicate_and_anchor_meeting_fallback(game: NoirGame):
     assert doc["flags"]["found_junes_trail"] is True and any(i["id"] == "brass_key" for i in doc["inventory"])
     assert any("brass key" in d for d in directives)
     st2 = game.load_state(doc)
-    assert st2.person("szabo").met and "Brass key" in st2.notebook[-1].text
+    assert st2.person("szabo").met and "Brass key" in st2.notebook[-2].text
+    assert st2.notebook[-1].text == "the caller is Emil Szabo." and st2.person("caller").id == "szabo"   # the meeting identified him: the record finds Szabo
+    assert any("Called Frank's office tonight" in f for f in st2.person("szabo").facts) and not any(q.id == "caller" for q in st2.cast)
     # missing the meeting: the fallback marks Szabo missed, and the day-3 body is his
     _, st = game.new_instance({})
     doc = st.model_dump(mode="json")
@@ -418,7 +420,9 @@ def test_hearing_about_someone_is_not_meeting_them(game: NoirGame):
     _, st = game.new_instance({})
     s2, _ = apply(game, st, ref(C(kind="learned", target="szabo", value="A Hungarian dock clerk who left with June the night she vanished.")))
     assert not s2.person("szabo").met and s2.person("szabo").heard_of
-    assert "Szabo" not in game.render_bulletin(s2, "").split("Recent log")[0]   # heard of is recorded, not shown: who the caller is would show with it
+    b = game.render_bulletin(s2, "").split("Recent log")[0]
+    assert "- Emil Szabo. A Hungarian dock clerk" in b and "Emil Szabo:" not in b                  # heard of, not dealt with
+    assert "- the caller. Called Frank's office" in b and "Szabo" not in b.split("- the caller.")[1].split("\n")[0]   # two records, no link
     s3, _ = apply(game, s2, ref(C(kind="move", target="szabo", value="The Anchor")))
     assert not s3.person("szabo").met                                   # he went to The Anchor; Frank is on the roof
     s3.player.location = "The Anchor"
@@ -486,7 +490,7 @@ def test_aliases_moods_and_things_left_here(game: NoirGame):
     assert "Also called the creature, the thing, the shepherd, it." in game.frozen_prefix(st) and "At the start: frightened." in game.frozen_prefix(st)
     s2, rep = apply(game, st, ref(C(kind="move", target="the caller", value="The Anchor"), C(kind="set", target="ada", field="mood", value="Relieved"),
                                   C(kind="move", target="notebook", value="the floor")))
-    assert s2.person("szabo").location == "The Anchor" and s2.person("szabo").heard_of and not s2.person("szabo").met and s2.person("ada").mood == "relieved"
+    assert s2.person("caller").location == "The Anchor" and s2.person("szabo").location == "Lowtown streets" and s2.person("ada").mood == "relieved"   # the caller is his own record
     assert s2.thing("notebook").place == "Rooftop shack" and not rep.rejected
     assert "Ada Kessler: at Kessler house, friendly toward Frank, relieved." in game.render_bulletin(s2, "")
 

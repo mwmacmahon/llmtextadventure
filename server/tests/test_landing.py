@@ -122,3 +122,43 @@ def test_hearing_of_someone_is_recorded_apart_from_meeting_them(games):
                 C(kind="new", target="person", value="Kowalczyk", field="Lowtown streets", note="pawnbroker"))
     assert s.person("szabo").heard_of and not s.person("szabo").met
     assert s.person("kowalczyk").heard_of and not s.person("kowalczyk").met and s.person("kowalczyk").location == "Lowtown streets"
+
+
+def test_the_caller_is_his_own_record_until_frank_learns_who_he_is(games):
+    g = games["noir"]
+    _, st = g.new_instance({})
+    s, rep = land(g, st, C(kind="learned", target="the caller", value="He wants Frank at The Anchor at nine."),
+                  C(kind="learned", target="szabo", value="A dock clerk who left with June."))
+    assert "He wants Frank at The Anchor at nine." in s.person("caller").facts and s.person("szabo").facts == ["A dock clerk who left with June."]
+    s2, rep = land(g, s, C(kind="set", target="caller", field="identity", value="marlowe"))
+    assert rep.rejected and "has not shown" in rep.rejected[0].reason and not s2.person("caller").identified
+    s3, rep = land(g, s, C(kind="set", target="the caller", field="identity", value="Emil Szabo"))
+    szabo = s3.person("szabo")
+    assert s3.person("caller") is szabo and "He wants Frank at The Anchor at nine." in szabo.facts, rep.rejected
+    assert s3.notebook[-1].text == "the caller is Emil Szabo."          # aliases are the script's; the record itself finds him
+    again = g.load_state(s3.model_dump(mode="json"))
+    assert [q.id for q in again.cast].count("caller") == 0 and again.person("caller").id == "szabo"   # a load does not bring him back
+    s4, _ = land(g, s3, C(kind="learned", target="the caller", value="He is frightened of Marlowe."))
+    assert "He is frightened of Marlowe." in s4.person("szabo").facts
+
+
+def test_an_old_save_where_frank_met_szabo_gets_the_caller_already_identified(games):
+    g = games["noir"]
+    _, st = g.new_instance({})
+    doc = st.model_dump(mode="json")
+    doc["people"] = [q for q in doc["people"] if q["id"] != "caller"]
+    next(q for q in doc["people"] if q["id"] == "szabo")["met"] = True
+    s = g.load_state(doc)
+    assert s.person("caller").id == "szabo" and "caller" not in [q.id for q in s.cast]
+
+
+def test_a_nameless_figure_can_be_recorded_and_later_identified(games):
+    g = games["noir"]
+    _, st = g.new_instance({})
+    s, rep = land(g, st, C(kind="new", target="person", value="the man in the grey hat", note="follows Frank"))
+    fig = s.person("the_man_in_the_grey_hat")
+    assert fig is not None and fig.met, rep.rejected
+    s2, rep = land(g, s, C(kind="set", target="the_man_in_the_grey_hat", field="identity", value="marlowe"))
+    assert s2.person("the_man_in_the_grey_hat").id == "marlowe" and s2.person("marlowe").met, rep.rejected
+    _, rep = land(g, st, C(kind="set", target="rosa", field="identity", value="szabo"))
+    assert rep.rejected and "character of the case" in rep.rejected[0].reason

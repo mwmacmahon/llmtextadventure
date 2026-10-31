@@ -23,7 +23,8 @@ from pydantic import BaseModel, Field
 from engine import threads as th
 from engine.changes import clip_words
 from engine.world import Policy
-from engine.events import Event, evaluate, next_scheduled
+from engine.events import Event, evaluate, next_moment
+from engine.events import clock_text as ev_clock_text
 from engine.game import (
     ApplyReport, Chip, ClockSpec, CommandResult, Commands, CommandSpec, EntityCard, EntityCards, GameBase, ListPanel,
     LogPanel, Meter, StatusStrip, TurnInfo, UISchema,
@@ -85,7 +86,7 @@ AUTHORITY: dict[str, Actor] = {
     "player.location": "narrator", "player.health": "narrator", "player.dread": "narrator", "player.conditions": "narrator",
     "inventory": "narrator", "people": "narrator",
     "people.*.agenda": "script", "people.*.secret": "script", "people.*.description": "script",
-    "people.*.tells": "script", "people.*.tells.*.told": "narrator", "things": "narrator",
+    "people.*.tells": "script", "people.*.tells.*.told": "narrator", "things": "narrator", "lost": "narrator",
     "notebook": "narrator", "found_places": "narrator", "hidden": "script", "flags": "narrator", "log": "narrator", "threads": "narrator",
 }
 
@@ -95,6 +96,7 @@ ATTITUDE_WORDS = {"hostile": -4, "angry": -3, "suspicious": -1, "guarded": -1, "
 MAX_THINGS = 20
 MAX_FOUND_PLACES = 12
 THING_TEXT_FIELDS = {"name", "note", "description", "looks", "appearance"}
+IDENTITY_FIELDS = {"identity", "is", "identified", "really", "true_identity", "same_as"}
 WEAPON_POLICY = Policy()                 # the world module's weapon words, as a code backstop: no model is trusted to tag a pistol
 SPOT_WORDS = {"booth", "table", "desk", "counter", "corner", "doorway", "door", "stairs", "stair", "stairwell", "landing", "window",
               "couch", "bed", "bench", "stool", "seat", "outside", "beside", "behind", "front", "roof"}   # a spot of a place, not a room in it
@@ -216,15 +218,19 @@ class NoirGame(GameBase):
             for sp in sc.get("people", []):
                 q = by_id.get(sp["id"])
                 if q is None:
-                    people.append(dict(sp, met=False))
+                    who = by_id.get(sp.get("identity", ""))
+                    known = bool(who and who.get("met"))       # a save from before this record: Frank already met who it is
+                    people.append(dict(sp, met=False, identified=known, merged=known))
                     continue
-                for key in ("name", "role", "description", "agenda", "secret", "aliases"):
+                for key in ("name", "role", "description", "agenda", "secret", "aliases", "identity"):
                     if key in sp:
                         q[key] = sp[key]
                 told = {t.get("id"): bool(t.get("told")) for t in q.get("tells") or []}
                 q["tells"] = [dict(t, told=told.get(t["id"], t.get("told", False))) for t in sp.get("tells", [])]
             data["people"] = people
-        return NoirState.model_validate(data)
+        st = NoirState.model_validate(data)
+        self._settle_identities(st)         # an event's effect identified someone (`set: [people.caller.identified, true]`)
+        return st
 
     def opening(self, state: NoirState) -> str | None:
         return self.content.scenarios().get(state.case.id, {}).get("opening_text")
@@ -246,7 +252,9 @@ class NoirGame(GameBase):
                  "one piece at a time, and never the Hidden line whole. The game state lists, for the people with Frank, which pieces are open now and which are not yet.")
         for q in s.people:
             b.append(f"- {q.name} ({q.id}), {q.role}. {q.description}".rstrip() + (f" Also called {', '.join(q.aliases)}." if q.aliases else "")
-                     + (f" At the start: {q.mood}." if q.mood else ""))
+                     + (f" At the start: {q.mood}." if q.mood else "")
+                     + (f" Who this really is: {self._name_of(s, q.identity)} ({q.identity}); Frank does not know it until the prose shows him learning it."
+                        if q.identity and not q.identified else ""))
             if q.agenda:
                 b.append(f"    Wants: {q.agenda}")
             if q.secret:
@@ -335,7 +343,7 @@ class NoirGame(GameBase):
         smoke = "never, this case" if not s.flags.get("smoked") else ("just now" if p.minutes_since_smoke == 0 else f"{p.minutes_since_smoke} minutes ago")
         lines.append(f"Last cigarette: {smoke}.")
 
-        met = [q for q in s.people if q.met]
+        met = [q for q in s.cast if q.met]
         if met:
             lines.append("")
             lines.append("People Frank has dealt with:")
@@ -344,6 +352,12 @@ class NoirGame(GameBase):
                 lines.append(f"- {q.name}: " + ", ".join(x for x in bits if x) + ".")
                 for f in q.facts[-4:]:
                     lines.append(f"    {f}")
+        heard = [q for q in s.cast if q.heard_of and not q.met]
+        if heard:
+            lines.append("")
+            lines.append("People Frank has only heard of (not met; what he knows is what he was told):")
+            for q in heard:
+                lines.append(f"- {q.name}." + "".join(f" {f}" for f in q.facts[-2:]))
         tells = self._tells_here(s)
         if tells:
             lines.append("")
@@ -373,12 +387,12 @@ class NoirGame(GameBase):
                 lines.append(f"- {ln}")
 
         fired = [e.id for e in s.hidden.events if e.fired and e.reveal != "never"]
-        nxt = next_scheduled(s.hidden.events)
+        nxt = next_moment(s.hidden.events, s.model_dump(mode="json"), self.clock.minutes_per_day, self.clock.path)
         lines.append("")
         if fired:
             lines.append("Spine events already happened: " + ", ".join(fired) + ".")
         if nxt:
-            lines.append(f"Do not narrate past {nxt.when_text}; the engine has something scheduled then and will tell you when it happens.")
+            lines.append(f"Do not narrate past {ev_clock_text(nxt[1], self.clock.minutes_per_day)}; the engine has something scheduled then and will tell you when it happens.")
         return "\n".join(lines)
 
     def _thing_line(self, s: NoirState, t: Item) -> str:
@@ -397,7 +411,7 @@ class NoirGame(GameBase):
 
     def _tells_here(self, s: NoirState) -> list[str]:
         out: list[str] = []
-        for q in s.people:
+        for q in s.cast:
             if q.location != s.player.location or q.status == "dead" or not q.tells:     # "missing" and here with Frank is found
                 continue
             for t in q.tells:
@@ -450,7 +464,8 @@ class NoirGame(GameBase):
         if creature is not None:
             out.append(f"- \"the creature\", \"the thing\", \"it\" when it means the creature → character {creature.id}: "
                        f"set {creature.id}.condition wounded, crawling; move {creature.id} <place>; set {creature.id}.status dead. Never a new thing or a new person.")
-        out.append("- A named stranger is a new person; a nameless one (a man in a cap, the clerk) is nobody; an alias of a listed character is that character. "
+        out.append("- A named stranger is a new person; a nameless one who passes (the clerk) is nobody, and one who will matter again is a new person by how Frank would describe him; an alias of a listed character is that character. "
+                   "Who the player knows: a record Frank has not identified (the caller) is its own target until the prose shows him who it is; write rows about the voice on the phone to it, never to whoever you think it is. "
                    "A character recorded without a name who is then named is renamed, never added again: set patrolmen.name Walt; "
                    "if a recorded group turns out to be two named men, rename the group to one of them and add the other.")
         spots = [(a, b) for a, b in (("a booth at The Anchor", "The Anchor"), ("Frank's desk", "Frank's office"), ("the stairwell below the shack", "Rooftop shack"),
@@ -499,7 +514,7 @@ class NoirGame(GameBase):
             "Time: a look around is 2 minutes; a search 15-30; a conversation 10-20; walking across a district 10; Midtown to Lowtown or Uptown 30 (10 by cab); sleeping 6-8 hours; waiting is however long he waits.",
             "",
             "What Frank carries (pockets, rounds loaded), his conditions and health, and where he is are in the game state block; read them there before ruling something impossible.",
-            "Entities (people, by id): " + ", ".join(f"{q.id} ({q.name}, {q.role})" for q in s.people) + ". People Frank has dealt with are listed in the game state; the others he has not met yet.",
+            "Entities (people, by id): " + ", ".join(f"{q.id} ({q.name}, {q.role})" for q in s.cast) + ". People Frank has dealt with are listed in the game state; the others he has not met yet.",
             "Places: " + ", ".join(s.places) + ".",
             "There are no systems in this game; leave `systems` empty.",
         ]
@@ -508,7 +523,7 @@ class NoirGame(GameBase):
     def referee_rules(self, state: NoirState) -> str:
         s = state
         lines = [
-            "Targets: player (Frank); characters by id (anyone or anything that acts: people, and creatures too): " + ", ".join(f"{q.id} = {q.name}" + (f" (also {', '.join(q.aliases[:3])})" if q.aliases else "") for q in s.people)
+            "Targets: player (Frank); characters by id (anyone or anything that acts: people, and creatures too): " + ", ".join(f"{q.id} = {q.name}" + (f" (also {', '.join(q.aliases[:3])})" if q.aliases else "") + (" (who this really is, Frank does not know yet)" if q.identity and not q.identified else "") for q in s.cast)
             + "; pockets by name as the game state lists them (revolver, bullets, cigarettes, dollars, matches, notebook, …).",
             "Places: " + ", ".join(s.places) + ". A move or a location value is one of these. A spot inside a listed place (a booth, a desk, the stairs) is that place. A room inside one (an office, an upstairs room) and a place the prose introduces that lies inside none of them (a bar on another street, a garage he is driven to) are new: new place value=<its name> field=<the listed place it is inside, or the district streets it lies off>, then the move. If the prose only says he is out on the street, use that district's streets.",
             "Rows this game records:",
@@ -527,7 +542,8 @@ class NoirGame(GameBase):
             "- set <character id>.status alive|dead|missing|unknown, only if changed. set <character id>.condition <a few words>: their body's state when the prose changes it (wounded, limping, unconscious, crawling, bleeding from the shoulder); a creature's injuries go here, never as a new thing.",
             "- learned <person id> value=fact: what they told Frank or what he learned about them, one short sentence; a witness's statement is a fact about the witness first, and also about the listed person it concerns when there is one.",
             "- learned player value=clue: concrete evidence Frank learned: a name, an address, a time, an object, a fact about the creatures or the Congregation. One short sentence, only when new. Never something Frank could not perceive.",
-            "- new person value=name, field=<place>, note=role: anyone the prose gives a name (a surname is enough) who is not a listed person, even if they appear once; at most two per turn. A nameless stranger (a man in a cap, a clerk, a driver) is nobody: never attach him to a listed id and never a new person. A new name that is plainly a listed person (an alias) is that person: use their id.",
+            "- new person value=name, field=<place>, note=role: anyone the prose gives a name (a surname is enough) who is not a listed person, even if they appear once; at most two per turn. A nameless stranger who only passes (a clerk, a driver) is nobody. One who will matter again (he follows Frank, calls him, is seen twice, Frank goes looking for him) is new person value=<how Frank would describe him: the man in the grey hat>, note=role. Never put a nameless figure on a listed id because you guess who he is. A new name that is plainly a listed person (an alias) is that person: use their id.",
+            "- set <id>.identity <character id>: the prose shows Frank who a recorded figure or voice really is (the man in the grey hat is Marlowe). Only when Frank learns it in the prose, never on a guess; the engine checks it against the case. The two records become one.",
             "present: listed people in the scene with Frank, identified by name or role; someone only talked about (a witness's word about Szabo) is not present, and never a nameless stranger.",
             *self._mapping_lines(s),
             "Threads: open ones are listed in the game state with their ids. Typical threads here: a promise to a client or a witness, a lead to follow, a lie Frank told and who believes it, a deadline, a question raised. Close a thread when the prose settles it: 'who was the caller' closes when Frank learns who called; 'check the address' closes when he has searched it; a promise closes when kept or broken.",
@@ -800,7 +816,7 @@ class NoirGame(GameBase):
                 return True
             holder = s.person(where)
             place = None if holder else self._place(s, ch.field)
-            own = self._own_item(s, value)
+            own = self._own_item(s, value) or self._unlose(s, value, w)
             weapon = self._new_weapon(s, value)
             if weapon:                                           # the case adds no weapons (DESIGN2 §15 E); a weapon in the prose is a ruling
                 w.reject("things", f"no new weapons in this case ('{weapon}'): the prose adding one is an unauthorized_addition ruling", value)
@@ -847,6 +863,8 @@ class NoirGame(GameBase):
         if q is not None:
             where = value if (kind == "move" or (kind == "set" and field == "location")) and value in locs else q.location
             self._know(s, q, w, met=kind != "learned" and self._same_spot(s, where, s.player.location))   # a witness's word about Szabo: heard of, not met
+            if kind == "set" and (field in IDENTITY_FIELDS or field == "name") and self._identify(s, q, field, value, w):
+                return True
             if kind == "move" or (kind == "set" and field == "location"):
                 if value in locs:
                     if w.set(f"people.{q.id}.location", q.location, value):
@@ -941,11 +959,82 @@ class NoirGame(GameBase):
             t.note = clip_words(new, 80)
 
     def _new_weapon(self, s: NoirState, name: str) -> str | None:
-        """The weapon word in a new thing's name, unless it is one of the case's own pocket things (the revolver,
-        carried, dropped or held) or something already lying in the world."""
-        if self._own_item(s, name) or s.thing(name) or pocket_word(name):
+        """The weapon word in a new thing's name, unless the row names a record that already exists: the revolver is
+        one record (id revolver) carried, lying or held, and keeps its rounds; once it is gone it is gone."""
+        if self._own_item(s, name) or s.thing(name) or self._lost(s, name):
             return None
         return WEAPON_POLICY.forbids_name(name)
+
+    def _name_of(self, s: NoirState, pid: str) -> str:
+        q = next((x for x in s.people if x.id == pid), None)
+        return q.name if q else pid
+
+    def _identify(self, s: NoirState, q: Person, field: str, value: str, w: Writer) -> bool:
+        """`set caller.identity szabo` (also .is, .identified true, or .name Emil Szabo): the prose showed Frank who a
+        record is. Only into the character the record really is when the case says so; a record the case made has no
+        other identity to find. Returns False for a plain rename (the name of nobody listed)."""
+        v = value.strip().strip('"')
+        truthy = v.lower() in ("true", "yes", "1")
+        other = (next((x for x in s.people if x.id == q.identity), None) if field == "identified" and truthy and q.identity
+                 else next((x for x in s.people if x.id == v.lower()), None) or (self._same_person(s, v) if v and not truthy else None))
+        if other is None or other.id == q.id:
+            if field == "name":
+                return False
+            w.reject(f"people.{q.id}.identity", "not a listed character", value)
+            return True
+        scripted = {x.get("id") for x in (self.content.scenarios().get(s.case.id, {}).get("people") or [])}
+        if q.identity and other.id != q.identity:
+            w.reject(f"people.{q.id}.identity", f"the prose has not shown that {q.name} is {other.name}", value)
+        elif not q.identity and q.id in scripted:
+            w.reject(f"people.{q.id}.identity", f"{q.name} is a character of the case, not someone else", value)
+        elif q.identified:
+            pass
+        else:
+            q.identity, q.identified = other.id, True
+            self._settle_identities(s, w)
+        return True
+
+    def _settle_identities(self, s: NoirState, w: Writer | None = None) -> None:
+        """Fold every identified record into the character it is, once: what Frank knew under the other name, met or
+        heard of, where he last saw them, and what they hold; the old name becomes theirs. The record stays (a load
+        would otherwise bring a scripted one back) and finds them from then on."""
+        for q in s.people:
+            if not q.folded or q.merged:
+                continue
+            t = next((x for x in s.people if x.id == q.identity), None)
+            if t is None or t.id == q.id:
+                continue
+            t.facts += [f for f in q.facts if f not in t.facts]
+            if q.met:
+                if not t.met:
+                    t.attitude = q.attitude or t.attitude
+                t.met = True
+                t.location = q.location or t.location
+            t.heard_of = True
+            t.aliases += [a for a in (q.name, *q.aliases) if a.lower() not in {x.lower() for x in (t.name, *t.aliases)}]
+            for th_ in s.things:
+                if th_.held_by == q.id:
+                    th_.held_by = t.id
+            s.notebook.append(Note(kind="contact", text=f"{q.name} is {t.name}."))
+            q.merged, q.location = True, ""
+            if w is not None:
+                w.note(f"people.{q.id}: identified as {t.name} ({t.id})")
+
+    @staticmethod
+    def _lost(s: NoirState, name: str) -> Item | None:
+        low = re.sub(r"^(frank's|his|the|a|an)\s+", "", name.strip().lower())
+        return next((it for it in s.lost if low in (it.id, it.name.lower(), it.id.replace("_", " "))), None)
+
+    def _unlose(self, s: NoirState, name: str, w: Writer) -> Item | None:
+        """A lost one-of-a-kind thing reported again (picked up, or lying somewhere): back in his pockets as the same
+        record, for the row to put where it says. "gone revolver" then "new revolver at Rooftop shack" (A3B) is a drop."""
+        it = self._lost(s, name)
+        if it is None:
+            return None
+        s.lost.remove(it)
+        s.inventory.append(it)
+        w.note(f"inventory.{it.id}: lost -> carried (the same {it.name})")
+        return it
 
     @staticmethod
     def _own_item(s: NoirState, name: str) -> Item | None:
@@ -968,6 +1057,7 @@ class NoirGame(GameBase):
             q = s.person(pid)
             if q:                           # talked about, not met: Rosa's word about Szabo, who is out on the streets (10-31)
                 self._know(s, q, w, met=self._same_spot(s, q.location, s.player.location))
+        self._settle_identities(s, w)       # a scripted effect may have set identified (the Anchor meeting)
         return s
 
     @staticmethod
@@ -1026,14 +1116,14 @@ class NoirGame(GameBase):
     @staticmethod
     def _same_person(s: NoirState, name: str) -> Person | None:
         k = name.strip().lower().removeprefix("the ").strip(" .")
-        for q in s.people:                                   # what the script says the prose calls them: "the creature", "the caller"
-            if any(k == a.lower().removeprefix("the ") for a in q.aliases):
-                return q
+        for q in s.people:                                   # what the script says the prose calls them: "the creature", "the thing"
+            if k == q.name.lower().removeprefix("the ") or any(k == a.lower().removeprefix("the ") for a in q.aliases):
+                return s.person(q.id)                        # "the caller", identified, is Szabo
         words = {x for x in re.split(r"[^a-z]+", name.lower()) if len(x) > 2 and x not in ("the", "mrs", "mr", "miss", "professor", "chief", "sergeant", "doctor")}
         for q in s.people:
             qw = {x for x in re.split(r"[^a-z]+", q.name.lower()) if len(x) > 2}
             if words & qw:
-                return q
+                return s.person(q.id)
         return None
 
     def _relocate(self, s: NoirState, it: Item, in_pockets: bool, target: str, dest: str, w: Writer) -> None:
@@ -1077,6 +1167,8 @@ class NoirGame(GameBase):
 
     def _gain(self, s: NoirState, name: str, count: int, w: Writer, note: str = "") -> None:
         n = max(1, int(count))
+        if self._unlose(s, name, w) is not None:   # the revolver he lost, found again: the same one, its rounds as they were
+            return
         lying = s.thing(name)
         if lying is not None:                       # what he left somewhere or someone took, back in his pockets as it was
             self._take_back(s, lying, w)
@@ -1124,6 +1216,7 @@ class NoirGame(GameBase):
                 return
             if w.set("inventory.revolver", "carried", None):
                 s.inventory.remove(it)
+                s.lost.append(it)
             return
         if it.id in ("bullets", "cigarettes", "dollars", "matches") or it.count > 1:
             if n > it.count:
@@ -1136,6 +1229,7 @@ class NoirGame(GameBase):
             return
         if w.set(f"inventory.{it.id}", "carried", None):
             s.inventory.remove(it)
+            s.lost.append(it)                       # one of a kind: the same record if it turns up again
 
     def _smoke(self, s: NoirState, n: int, w: Writer) -> tuple[NoirState, ApplyReport]:
         """Smoke n cigarettes: the count drops, withdrawal clears, dread eases a little."""
@@ -1225,10 +1319,14 @@ class NoirGame(GameBase):
             contacts = [n for n in s.notebook if n.kind == "contact"]
             lines.append("CLUES" if clues else "CLUES: nothing written down yet.")
             lines += [f"  - {n.text}" for n in clues]
-            met = [q for q in s.people if q.met]
+            met = [q for q in s.cast if q.met]
             if met:
                 lines.append("PEOPLE")
                 lines += [f"  - {q.name}, {q.role}; {q.attitude_word}; last seen {q.location or 'unknown'}." + (f" {q.facts[-1]}" if q.facts else "") for q in met]
+            heard = [q for q in s.cast if q.heard_of and not q.met]
+            if heard:
+                lines.append("HEARD OF")
+                lines += [f"  - {q.name}." + (f" {q.facts[-1]}" if q.facts else "") for q in heard]
             if contacts:
                 lines.append("CONTACTS")
                 lines += [f"  - {n.text}" for n in contacts]
@@ -1303,7 +1401,7 @@ class NoirGame(GameBase):
 
     def ui(self, state: NoirState) -> UISchema:
         s, p = state, state.player
-        met = [q for q in s.people if q.met]
+        met = [q for q in s.cast if q.met]
         return UISchema(
             phase="ended" if self.ending(s) else "narrate",
             free_text=not self.ending(s),
@@ -1336,6 +1434,9 @@ class NoirGame(GameBase):
                             notes=q.facts,
                         )
                         for q in met
+                    ] + [
+                        EntityCard(id=q.id, title=q.name, subtitle="heard of, not met", badges=[Chip(label="known", value="heard of")], details=[], notes=q.facts)
+                        for q in s.cast if q.heard_of and not q.met
                     ],
                 ),
                 ListPanel(title="Notebook", items=[Chip(label=n.kind, value=n.text) for n in s.notebook[-20:]]),

@@ -73,10 +73,18 @@ class Person(BaseModel):
     status: PersonStatus = "alive"
     met: bool = False
     heard_of: bool = False          # Frank knows of them: a name from a witness, a voice on the line; met implies it
+    identity: str = ""              # hidden: the id of the character this record really is ("the caller" is szabo); script or a referee row
+    identified: bool = False        # Frank has learned who it is: the record folds into that character and finds them from then on
+    merged: bool = False            # engine: the fold has been done (once); the record stays so a load does not bring it back
     facts: list[str] = Field(default_factory=list)      # what Frank knows / what they said
     agenda: str = ""                # script
     secret: str = ""                # script, hidden: the prefix tells the narrator
     tells: list[Tell] = Field(default_factory=list)     # script, hidden: the secret given up piece by piece
+
+    @property
+    def folded(self) -> bool:
+        """Identified as someone else: a redirect now, never shown or counted on its own."""
+        return bool(self.identity and self.identified)
 
     @property
     def attitude_word(self) -> str:
@@ -155,6 +163,7 @@ class NoirState(BaseModel):
     player: Player = Field(default_factory=Player)
     inventory: list[Item] = Field(default_factory=list)
     things: list[Item] = Field(default_factory=list)    # things that matter outside Frank's pockets: in a place or held by someone
+    lost: list[Item] = Field(default_factory=list)      # one-of-a-kind things gone from play, kept so the same record comes back if found
     people: list[Person] = Field(default_factory=list)
     found_places: list[FoundPlace] = Field(default_factory=list)
     notebook: list[Note] = Field(default_factory=list)
@@ -170,7 +179,16 @@ class NoirState(BaseModel):
         return list(self.case.locations) + [f.name for f in self.found_places]
 
     def person(self, pid: str) -> Person | None:
-        return next((p for p in self.people if p.id == pid), None)
+        """By id; a record Frank has identified as someone else finds that someone ("the caller", once he knows, is Szabo)."""
+        p = next((p for p in self.people if p.id == pid), None)
+        if p is not None and p.folded and p.identity != p.id:
+            return next((q for q in self.people if q.id == p.identity), p)
+        return p
+
+    @property
+    def cast(self) -> list[Person]:
+        """The people as records the player can know: everyone but the records folded into another."""
+        return [p for p in self.people if not p.folded]
 
     def item(self, key: str) -> Item | None:
         """Find an item by id, exact name, or a loose match on words (the referee names things in prose)."""

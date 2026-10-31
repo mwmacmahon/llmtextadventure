@@ -95,10 +95,12 @@ notes) and `notes/DECISIONS.md` D46–D55.
 **Things are named as the player knows them.** A new thing's name is what the player would call it from what the prose
 shows (a small brass key, a hard grey case), never what it is or whose until the prose says so, and every thing carries
 a description: noir's `note`, the world's `state`; give every starting item one in the scenario. When the prose shows
-what a thing is, the referee renames it (`set <thing>.name`); the old name still finds it. People are harder: a voice on
-the telephone is one of the cast the player has not identified. Do not file a hidden identity as an alias (noir's "the
-caller" on Szabo) if the player-facing lists will ever show who someone is; see ISSUES "Open now" I1. Noir records
-`heard_of` beside `met` and marks met only when the person is where Frank is.
+what a thing is, the referee renames it (`set <thing>.name`); the old name still finds it. A person the player knows by
+another name (a voice on the telephone) is a record of its own with the truth in a hidden `identity` (noir's `caller`,
+identity `szabo`); never an alias of the real character, or the player's lists show the link. Rows about the voice land
+on its record; an event effect (`set: [people.caller.identified, true]`) or a referee row (`set caller.identity szabo`,
+checked against the case) identifies it, and the record folds into the character once and stays as a redirect. Noir
+records `heard_of` beside `met` and marks met only when the person is where Frank is.
 
 ## 3. Field authority
 
@@ -428,7 +430,10 @@ actor, mostly the same words) is not added (`pending.duplicate_of`); the timers 
 settled first, so the next step of one it settles ("p1 happened; now it drags him down the stairs") is
 new, not its duplicate. A timer that restates a scheduled event is not added either
 (`pending.scheduled_as`), but only when it comes due within six hours of the event: words alone matched
-Park's errand to the Reactor to the brownout four days later. Actors are written by name, never by
+Park's errand to the Reactor to the brownout four days later. The clock never runs past a trigger: a turn's time stops at the
+first moment any scripted event would fire (`events.next_firing`: every time inside its trigger or fallback, with the
+state as it stands), so write an event's time anywhere in its trigger; an event that still comes due inside the time
+that passed is handed to the narrator as having happened in the background. Actors are written by name, never by
 id: an id the narrator reads every turn is a word it will use. A game needs nothing else; set the paths to
 `None` to switch it off.
 
