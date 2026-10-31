@@ -125,7 +125,20 @@ def _variant_cfg(cfg: Any, opts: dict[str, str], feed: dict[str, str]) -> Any:
     return v
 
 
-async def narrate(corpus_ref: str, opts: dict[str, str], feed: dict[str, str], note: str = "", limit: int | None = None) -> Path:
+def use_profile(profile: str) -> None:
+    """Swap gumbo to a local model profile and send the roles to it, as `eval_replay.py run --profile` does."""
+    from tools.llm import SERVER, use as llm_use
+    if llm_use(profile) != 0:
+        raise SystemExit(1)
+    os.environ["TA_PROFILE"] = profile
+    os.environ.setdefault("TA_CONFIG", "config.llamacpp.yml")
+    os.environ.setdefault("TA_LLAMA_URL", SERVER)
+
+
+async def narrate(corpus_ref: str, opts: dict[str, str], feed: dict[str, str], note: str = "", limit: int | None = None,
+                  profile: str | None = None) -> Path:
+    if profile:
+        use_profile(profile)
     cfg = load_config()
     games = load_games(cfg.resolve(cfg.server.content_root))
     c = load_corpus(corpus_ref)
@@ -133,7 +146,7 @@ async def narrate(corpus_ref: str, opts: dict[str, str], feed: dict[str, str], n
     role = vcfg.roles["narrator"]
     items = corpus_turns(c)[:limit] if limit else corpus_turns(c)
     print(f"corpus {c['id']}: {len(items)} turns; narrator {role.provider} {role.model}; feed {feed or 'as configured'}")
-    sem = asyncio.Semaphore(CONCURRENCY)
+    sem = asyncio.Semaphore(1 if role.provider == "llamacpp" else CONCURRENCY)    # the box has one slot per role
     started = dt.datetime.now().astimezone().isoformat(timespec="seconds")
 
     async def one(g: dict, doc: dict, turn: int) -> dict:
@@ -160,13 +173,21 @@ async def narrate(corpus_ref: str, opts: dict[str, str], feed: dict[str, str], n
     results = await asyncio.gather(*(one(g, doc, t) for g, doc, t in items))
     day = started[:10].replace("-", "")
     note = note or "-".join(f"{k}{v}" for k, v in {**opts, **feed}.items() if k != "model") or "baseline"
-    rid = f"narr_{day}-{_nn(RUNS, f'narr_{day}-'):02d}_{short_model(role.model)}_on_{c['id'].removeprefix('nc_')}_{_slug(note)}"
+    # a profile names the model the box loaded; the local config's role names one model whatever is loaded (the 27B ran
+    # as "a3b" on 2026-10-31 until this)
+    served = None
+    if profile or os.environ.get("TA_PROFILE"):
+        from engine import profiles
+        served = profiles.load(profile or os.environ["TA_PROFILE"]).model
+    name = _slug(profile or os.environ.get("TA_PROFILE", "")) if served else short_model(role.model)
+    rid = f"narr_{day}-{_nn(RUNS, f'narr_{day}-'):02d}_{name}_on_{c['id'].removeprefix('nc_')}_{_slug(note)}"
     usage = {k: sum((r.get("usage") or {}).get(k, 0) for r in results) for k in ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")}
     RUNS.mkdir(parents=True, exist_ok=True)
     out = RUNS / f"{rid}.json"
     out.write_text(json.dumps({"format": NARRATOR_RUN_FORMAT, "kind": "narrator", "tag": rid, "corpus": c["id"], "corpus_hash": c["_hash"],
-                               "started": started, "argv": sys.argv[1:], "harness": provenance(), "variant": {"opts": opts, "feed": feed, "note": note},
-                               "role": role.model_dump(mode="json"), "context": vcfg.context.model_dump(mode="json"),
+                               "started": started, "argv": sys.argv[1:], "harness": provenance(),
+                               "variant": {"opts": opts, "feed": feed, "note": note, "profile": profile or os.environ.get("TA_PROFILE")},
+                               "role": role.model_dump(mode="json"), "served": served or role.model, "context": vcfg.context.model_dump(mode="json"),
                                "summary": {"turns": len(results), "errors": sum(1 for r in results if r.get("error")),
                                            "chars_avg": round(sum(len(r.get("text", "")) for r in results) / max(1, len(results))),
                                            "seconds_avg": round(sum(r.get("seconds", 0) for r in results) / max(1, len(results)), 1),
@@ -192,7 +213,9 @@ def telling_hash(r: dict) -> str:
 
 
 # ---- the rubric (one telling; yes / no / n/a with a quote, never a score) ------------------------------------
-RUBRIC_VERSION = 3
+RUBRIC_VERSION = 4
+# v4 (2026-10-31): world_moved is n/a on a turn where no time passes (the engine asked a question or ruled the attempt
+# impossible): v3 marked every such turn no, though nothing could move.
 # v3 (2026-10-31): the judge reasons before it rules. On v2 the verdict came first in the answer and the reasoning
 # after it, and the two disagreed ("Nothing here contradicts the state, but …" ruled no; a quote that was not the
 # sentence the reasoning named). Now why, then the quote, then a verdict that follows from them; effort medium.
@@ -212,7 +235,7 @@ RUBRIC_ITEMS: dict[str, str] = {
     "tells_conditioned": "A person gives up a piece of what they know (a tell) only when its condition held in this turn's fiction. n/a when no tell "
                          "is given.",
     "world_moved": "The world moves off-scene: an unseen or soon note, or prose that shows something happening that the player did not cause. "
-                   "Answer yes or no; never n/a.",
+                   "n/a only when the turn passes no time (THIS TURN says the engine asked a question, or ruled the attempt impossible).",
     "no_leak": "Nothing leaked: no hidden truth, secret vocabulary or other unrevealed fact in the narration's own voice before the player has it; "
                "no character handing over hidden truth that no open tell allows (a character naming someone or saying what they know through "
                "an open tell is play, not a leak); and nothing of the engine's mechanism (ids, numbers the player should not see, talk of "
@@ -306,7 +329,10 @@ def make_pairs(run_a: str, run_b: str) -> Path:
     tb = {(r["iid"], r["turn"]): r for r in b["turns"]}
     c = load_corpus(a["corpus"])
     docs = {g["iid"]: json.loads(_blob(g["blob"])) for g in c["games"]}
-    na, nb = _slug(a["variant"]["note"] + "-" + short_model(a["role"]["model"])), _slug(b["variant"]["note"] + "-" + short_model(b["role"]["model"]))
+    def who(x: dict) -> str:
+        prof = (x["variant"].get("profile") or "")
+        return _slug(x["variant"]["note"] + "-" + (prof or short_model(x["role"]["model"])))
+    na, nb = who(a), who(b)
     pid = f"pr_{a['corpus'].removeprefix('nc_')}_{na}-vs-{nb}"
     rng = random.Random(pid)
     pairs = []

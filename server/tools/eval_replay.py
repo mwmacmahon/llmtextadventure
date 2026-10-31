@@ -917,6 +917,7 @@ def main() -> None:
     nr.add_argument("--feed", action="append", default=[], help="context setting, e.g. window_turns=6")
     nr.add_argument("--note", default="")
     nr.add_argument("--limit", type=int)
+    nr.add_argument("--profile", help="swap gumbo to this local model profile (server/profiles/<name>.yml) and narrate on it")
     rb = sub.add_parser("rubric", help="the judge model's checklist on every telling of narrator runs")
     rb.add_argument("runs", nargs="+")
     rb.add_argument("--judge", default="claude-sonnet-5-5")
@@ -946,7 +947,8 @@ def main() -> None:
             folder = ne.make_corpus(args.picks, args.purpose, args.title)
             print(f"narrator corpus {folder.name} -> {folder}")
         else:
-            asyncio.run(ne.narrate(args.corpus, dict(kv.split("=", 1) for kv in args.opt), dict(kv.split("=", 1) for kv in args.feed), args.note, args.limit))
+            asyncio.run(ne.narrate(args.corpus, dict(kv.split("=", 1) for kv in args.opt), dict(kv.split("=", 1) for kv in args.feed), args.note, args.limit,
+                                   args.profile))
         return
     if args.cmd == "export":
         folder = export_set(args.picks, args.any_model, args.purpose, args.title)
