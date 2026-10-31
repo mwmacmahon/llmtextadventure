@@ -892,6 +892,12 @@ def _apply_new(w: World, d: Declaration, policy: Policy, out: AppliedDeclaration
         if locus == w.locus("person", me_id):
             reject(d, "a new thing never appears straight in the player's hands: declare it in the scene, then MOVED", "unauthorized_addition")
             return
+        same = next((t for t in w.things if slug(t.name) == slug(d.name) and (t.location == locus or w.place_of(t.id) == w.split_locus(locus)[1])), None)
+        if same is not None:                                # the same thing reported again where it is (round 8: "Park's film case" twice)
+            if d.state and d.state != same.state:
+                same.state = d.state
+            out.applied.append(Change(path=f"world.things.{same.id}", text=f"{d.name}: already recorded as {same.id}" + (f"; state {d.state!r}" if d.state else "")))
+            return
         tid = d.id if d.id and d.id not in w.ids() else w.unique_id(d.id or d.name)
         w.things.append(Thing(id=tid, name=d.name, kind=kind_guess, location=locus, state=d.state,
                               tags=[t for t in d.tags if t not in ("container", "fixture", "system", "vehicle", "drone")],

@@ -1,0 +1,8 @@
+# The A3B thinking profile with twice the thinking room: the server closes the thinking at 3072 tokens, not 1536.
+# A trial (night of 2026-10-30): the station referee's thinking hit 1536 on every turn of runs 18–34, and a
+# per-request budget does not lift the server's cap (run 34 was byte-identical to run 29).
+model: Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf
+server: {ctx: 98304, ckpt: 512, kv: q8_0, think_budget: 3072}
+roles:
+  adjudicator: {thinking: true, thinking_budget: 3072}
+  referee: {thinking: true, thinking_budget: 3072}

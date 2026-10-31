@@ -46,12 +46,18 @@ def clip_words(text: str, n: int) -> str:
     return cut or text[:n]
 
 
+ROOM_WORDS = {"quarters", "room", "office", "cabin", "galley", "suite", "apartment", "flat", "bedroom", "kitchen", "cellar",
+              "basement", "attic", "study", "closet", "storeroom", "bathroom", "washroom", "lavatory", "loft", "hall", "ward"}
+
+
 def to_declaration(ch: Change) -> Declaration | None:
     """A game row the game did not take, as the world's typed shape."""
     if (ch.kind == "move" or (ch.kind == "set" and ch.field.strip().lower() == "location")) and ch.target and ch.value:
         return Declaration(verb="MOVED", raw=f"MOVED {ch.target} -> {ch.value}", id=ch.target, locus=ch.value)
     if ch.kind == "new" and ch.value:
         kind = ch.target.strip().lower() if ch.target.strip().lower() in ("thing", "person", "place") else "thing"
+        if not ch.target.strip() and ROOM_WORDS & set(re.findall(r"[a-z]+", ch.value.lower())):
+            kind = "place"                       # "new value=Park's quarters field=habitation_ring", no kind (Sonnet, round 8)
         return Declaration(verb="NEW", raw=f'NEW {kind} "{ch.value}" at {ch.field}', kind=kind, name=ch.value, locus=ch.field, state=ch.note, by=ch.who)
     if ch.kind == "set" and ch.target and ch.field:
         return Declaration(verb="SET", raw=f"SET {ch.target}.{ch.field} {ch.value}", id=ch.target, field=ch.field, value=ch.value, note=ch.note, by=ch.who)

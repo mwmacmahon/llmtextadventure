@@ -73,3 +73,33 @@ def test_a_nameless_character_named_later_is_renamed(games):
 
 def test_a_condition_is_cut_at_a_word():
     assert clip_words("wounded, shot in the body, oozing pale fluid, dragging one hind leg", 50) == "wounded, shot in the body, oozing pale fluid"
+
+
+def test_a_new_row_with_no_kind_and_a_room_word_is_a_room(games):
+    g = games["station"]
+    _, st = g.new_instance({})
+    s, rep, _ = apply(g, st, C(kind="new", target="", value="Park's quarters", field="habitation_ring", note="his bunk room"),
+                      C(kind="move", target="park", value="park_s_quarters"))
+    assert s.world.place("park_s_quarters") is not None and s.world.person("park").location == "park_s_quarters", rep.rejected
+
+
+def test_the_same_thing_reported_again_is_the_one_recorded(games):
+    g = games["station"]
+    _, st = g.new_instance({})
+    s, _, _ = apply(g, st, C(kind="new", target="thing", value="Park's film case", note="unplayed"))
+    s, _, _ = apply(g, s, C(kind="new", target="thing", value="Park's film case", field="habitation_ring", note="on his chest"))
+    cases = [t for t in s.world.things if t.name == "Park's film case"]
+    assert len(cases) == 1 and cases[0].state == "on his chest"
+
+
+def test_the_station_names_its_cameras(games):
+    g = games["station"]
+    _, st = g.new_instance({})
+    assert "cameras_habitation" in g.referee_rules(st) and "never a new camera" in g.referee_rules(st)
+
+
+def test_rosa_is_the_bartender(games):
+    g = games["noir"]
+    _, st = g.new_instance({})
+    s, _, _ = apply(g, st, C(kind="new", target="person", value="the bartender", note="black hair going iron"))
+    assert not any(q.name.lower().endswith("bartender") for q in s.people)

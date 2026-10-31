@@ -692,6 +692,10 @@ class StationGame(GameBase):
                        "A spot is not a room: a bunk, a bench, a panel is the room or module it is in (Park on her bunk → her quarters if recorded, else habitation_ring"
                        + ("; the reactor bus panel → reactor" if "reactor" in places else "") + ("; the sample bench → lab" if "lab" in places else "")
                        + "). The hull is closed: never a new module, hatch or way between modules.")
+        cams = sorted(t for t in things if t.startswith("cameras_"))
+        if cams:
+            out.append("- A module's cameras are one thing each, already listed: \"the habitation camera\", \"the ring cameras\" → "
+                       + (cams[1] if "cameras_habitation" not in cams else "cameras_habitation") + " (" + ", ".join(cams) + "); never a new camera.")
         if any(t.endswith("_drone") for t in things):
             out.append("- Drones are things, by id (" + ", ".join(sorted(t for t in things if t.endswith("_drone"))) + "), never crew; they move with move rows.")
         out.append("- An object the prose uses that no list has (a crew member's tablet, a wrench) is new: new thing value=Voss's tablet field=<the place it is in> note=<its state>. Never a set row on an id that is not listed.")
