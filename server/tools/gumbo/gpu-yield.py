@@ -7,7 +7,7 @@ model, so nobody has to log in to the box to do it.
                        stays up and reloads on its next prompt. Answers {"comfy": "freed" | "not running"}.
     GET  /models       {"active": name, "profiles": [{name, model, ctx, ckpt, kv, think_budget, present}],
                        "files": [*.gguf in the model directory]}
-    POST /use          {"profile": name, "model": file, "server": {ctx, ckpt, kv, think_budget}}: writes the
+    POST /use          {"profile": name, "model": file, "server": {ctx, ckpt, kv, think_budget, tensor_split}}: writes the
                        profile as profiles/<name>.env (the model must be a file in the model directory, the
                        server values must look like the knobs llama-game.sh reads), writes profiles/ACTIVE and
                        stops llama-server, which llama-game.sh starts again on it. {"profile": name} alone
@@ -40,6 +40,7 @@ SERVER_KEYS = {                                   # llama-game.sh's knobs and wh
     "ckpt": re.compile(r"^\d{2,6}$"),
     "kv": re.compile(r"^(f16|bf16|q8_0|q4_0|q4_1|q5_0|q5_1|iq4_nl)$"),
     "think_budget": re.compile(r"^-?\d{1,6}$"),
+    "tensor_split": re.compile(r"^\d{1,3},\d{1,3}$"),   # the 5090's share, the 3060's
 }
 
 
@@ -68,7 +69,7 @@ def models() -> dict:
     profiles = []
     for n in names:
         p = read_profile(n)
-        profiles.append({"name": n, "model": os.path.basename(p.get("MODEL", "")), "ctx": p.get("CTX"), "ckpt": p.get("CKPT"), "kv": p.get("KV"), "think_budget": p.get("THINK_BUDGET"),
+        profiles.append({"name": n, "model": os.path.basename(p.get("MODEL", "")), "ctx": p.get("CTX"), "ckpt": p.get("CKPT"), "kv": p.get("KV"), "think_budget": p.get("THINK_BUDGET"), "tensor_split": p.get("TENSOR_SPLIT"),
                          "present": bool(p.get("MODEL")) and os.path.isfile(p.get("MODEL", ""))})
     dirs = ({os.path.dirname(read_profile(n).get("MODEL", "")) for n in names} | {MODELS}) - {""}
     files = sorted({f for d in dirs if os.path.isdir(d) for f in os.listdir(d) if f.endswith(".gguf")})

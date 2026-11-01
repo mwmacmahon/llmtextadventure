@@ -380,6 +380,11 @@ all 27B of weight work on every token. Expect roughly a third of the A3B's token
 `qwen27b` (`tools/llm.py use qwen27b`). Also on hand: `qwen27b-q4` (i1-Q4_K_M, 16.5 GB, downloaded, not yet
 copied), `qwen27b-kv16` (f16 attention cache) and `qwen3-32b` (full attention, 16k a slot: see the profile).
 
+Both cards: a profile's `server: {tensor_split: "27,4"}` starts llama-server on the 5090 and the 3060 in that
+proportion (`--split-mode layer`; CUDA numbers the 5090 first, nvidia-smi the 3060). The 3060's memory is about 5x
+slower and a token passes through both cards in turn, so keep its share to what the 5090 cannot hold: a3b-q6-think
+(30.3 GB of weights) puts about 4 GB there.
+
 A profile that never comes up (the model does not fit, say) falls back: `llama-game.sh` keeps the last profile that
 answered `/health` in `profiles/LAST_GOOD`, and a start that dies before answering switches `ACTIVE` back to it and names
 the failed one in `profiles/FAILED`. Before 2026-11-01 it exited, systemd restarted it on the same profile, and it

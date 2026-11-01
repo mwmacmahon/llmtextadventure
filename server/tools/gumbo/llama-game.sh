@@ -10,7 +10,7 @@
 #   ~/textadventure/llama-game.sh            run in the foreground (Ctrl-C stops both processes)
 #   systemctl --user start textadventure-llm  the same, as a service (see textadventure-llm.service)
 #
-# The model and its sizes come from a profile: profiles/<name>.env (MODEL=, CTX=, CKPT=, KV=, THINK_BUDGET=),
+# The model and its sizes come from a profile: profiles/<name>.env (MODEL=, CTX=, CKPT=, KV=, THINK_BUDGET=, TENSOR_SPLIT=),
 # the active one named in profiles/ACTIVE. The profiles are written here by the helper (gpu-yield.py) from
 # the repo's server/profiles/<name>.yml when the game's machine swaps (server/tools/llm.py use <name>): it
 # writes the .env and ACTIVE and stops llama-server, and this script starts it again on the new profile.
@@ -30,7 +30,9 @@ PARALLEL="${PARALLEL:-3}"        # one slot per role: narrator 0, adjudicator 1,
 COMFY_URL="${COMFY_URL:-http://127.0.0.1:8188}"
 IDLE="${IDLE:-600}"              # seconds idle before the server sleeps: drops the model from VRAM, keeps the port, reloads on the next request
 YIELD_PORT="${YIELD_PORT:-8281}" # gpu-yield.py beside the server: POST /free-comfy, GET /models, POST /use
-export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"   # CUDA device 0 = the RTX 5090 on this box
+BASE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"   # CUDA device 0 = the RTX 5090 on this box (CUDA's order; nvidia-smi lists the 3060 first)
+DEFAULT_TENSOR_SPLIT="${TENSOR_SPLIT:-}"     # "27,4": the model across the 5090 and the 3060 in that proportion; empty = the 5090 alone.
+                                             # The 3060's memory is about 5x slower, so keep its share small (docs/LOCAL_LLM.md)
 DEFAULT_MODEL="${MODEL:-$HOME/llms/text-generation-webui/user_data/models/Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf}"
 DEFAULT_CTX="${CTX:-98304}"      # total; llama-server splits it evenly across slots (32k each)
 FIT_TARGET="${FIT_TARGET:-1536}" # CTX=auto: MiB llama.cpp leaves free on the GPU when it sizes the context to fit
@@ -43,6 +45,7 @@ DEFAULT_CKPT="${CKPT:-512}"      # recurrent-state checkpoint every N prompt tok
 
 load_profile() {                 # the defaults, then the active profile over them
   MODEL="$DEFAULT_MODEL"; CTX="$DEFAULT_CTX"; CKPT="$DEFAULT_CKPT"; KV="$DEFAULT_KV"; THINK_BUDGET="$DEFAULT_THINK_BUDGET"
+  TENSOR_SPLIT="$DEFAULT_TENSOR_SPLIT"
   ACTIVE="$(tr -d '[:space:]' 2>/dev/null < "$PROFILES/ACTIVE" || true)"
   if [ -n "$ACTIVE" ] && [ -f "$PROFILES/$ACTIVE.env" ]; then
     set -a; . "$PROFILES/$ACTIVE.env"; set +a
@@ -80,12 +83,18 @@ while true; do
   else
     CTX_ARGS=(--ctx-size "$CTX")
   fi
-  echo "llama-server :$PORT, profile $ACTIVE, $PARALLEL slots, ctx $CTX, ckpt $CKPT, kv $KV, think budget $THINK_BUDGET, idle sleep ${IDLE}s, model $(basename "$MODEL")"
+  if [ -n "$TENSOR_SPLIT" ]; then           # both cards, the 5090 first
+    export CUDA_VISIBLE_DEVICES="0,1"; SPLIT_ARGS=(--split-mode layer --tensor-split "$TENSOR_SPLIT")
+  else
+    export CUDA_VISIBLE_DEVICES="$BASE_DEVICES"; SPLIT_ARGS=()
+  fi
+  echo "llama-server :$PORT, profile $ACTIVE, $PARALLEL slots, ctx $CTX, ckpt $CKPT, kv $KV, think budget $THINK_BUDGET, cards ${TENSOR_SPLIT:-5090 only}, idle sleep ${IDLE}s, model $(basename "$MODEL")"
   "$LLAMA_BIN" \
     -m "$MODEL" \
     --host "$HOST" --port "$PORT" \
     --n-gpu-layers 999 \
     "${CTX_ARGS[@]}" \
+    ${SPLIT_ARGS[@]+"${SPLIT_ARGS[@]}"} \
     --batch-size 1024 \
     --parallel "$PARALLEL" \
     --jinja \

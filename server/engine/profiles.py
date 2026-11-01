@@ -34,7 +34,7 @@ log = logging.getLogger("ta.profiles")
 PROFILES_DIR = Path(__file__).resolve().parent.parent / "profiles"
 NAME = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 MODEL_FILE = re.compile(r"^[A-Za-z0-9._-]+\.gguf$")
-SERVER_KEYS = {"ctx", "ckpt", "kv", "think_budget"}       # llama-game.sh reads these as CTX, CKPT, KV, THINK_BUDGET
+SERVER_KEYS = {"ctx", "ckpt", "kv", "think_budget", "tensor_split"}   # llama-game.sh reads these as CTX, CKPT, KV, THINK_BUDGET, TENSOR_SPLIT
 REFRESH_EVERY = 60.0
 
 
