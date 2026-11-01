@@ -317,7 +317,9 @@ async def rubric(run_ref: str, judge_model: str = "claude-sonnet-5-5") -> Path:
 
 
 # ---- pairwise (a matchup: the same turns told by two variants, judged blind) ---------------------------------
-TAGS = ["voice", "pacing", "continuity", "played the directives", "broke the state", "leaked", "overran the clock"]
+# What decided a pick: where the two tellings differed, whichever side was better at it. Not faults of one telling
+# (the user, 11-01: "unclear if these are applying to the one you picked or didn't pick").
+TAGS = ["voice", "pacing", "continuity", "directives", "state", "leaks", "clock"]
 
 
 BRIEF_HEADS = ("Do not narrate past", "COMING (", "THIS TURN (")
@@ -401,7 +403,8 @@ PAIR_SYSTEM = ("You read two tellings of the same turn of a text adventure, writ
                "the better story for the player: the one you would rather read next in this game. Weigh what a reader of this game cares "
                "about: the voice, the pacing, keeping faith with what came before, playing what the turn required, not breaking the game's "
                "facts, not giving away what the player has not learned, not running past the time. A tie only when you truly cannot choose. "
-               "Give the reason first, then the choice, then the tags that apply (what decided it, or what one of them got wrong).")
+               "Give the reason first, then the choice, then the tags for what decided it: where the two differed in a way that made you "
+               "choose, whichever of them was the better at it.")
 
 
 def _values_from_user(limit: int = 12) -> str:
