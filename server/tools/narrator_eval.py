@@ -320,7 +320,8 @@ async def rubric(run_ref: str, judge_model: str = "claude-sonnet-5-5") -> Path:
 # Faults, marked on the telling that has them (the user, 11-01: "tags that should be underneath each story so you can be like
 # oof this one broke X"), each worded so it can only be a fault ("pacing could be good or bad").
 FAULTS = ["flat or wrong voice", "too slow", "too rushed", "contradicts the player", "didn't stop for the player's next move",
-          "contradicts earlier turns", "questionable logic", "skipped what the turn required", "broke the game's facts", "gave away a secret", "ran past the time"]
+          "contradicts earlier turns", "questionable logic", "skipped what the turn required", "broke the game's facts", "gave away a secret", "ran past the time",
+          "misused engine notes"]      # e.g. a soon: line for what its own brief already had scheduled (the user, 11-01)
 
 
 BRIEF_HEADS = ("Do not narrate past", "COMING (", "THIS TURN (")
@@ -416,7 +417,7 @@ class PairVerdict(BaseModel):
 PAIR_SYSTEM = ("You read two tellings of the same turn of a text adventure, written by two narrators from the same facts, and say which is "
                "the better story for the player: the one you would rather read next in this game. Weigh what a reader of this game cares "
                "about: the voice, the pacing, doing what the player said and stopping where the player should act next, things that make sense, keeping faith with what came before, playing what the turn required, not breaking the game's "
-               "facts, not giving away what the player has not learned, not running past the time. A tie only when you truly cannot choose. "
+               "facts, not giving away what the player has not learned, not running past the time, using the engine notes (soon:, unseen:, checks) only for what they are for. A tie only when you truly cannot choose. "
                "Give the reason first, then the choice, then for each telling the faults it has from the list (none is fine).")
 
 
