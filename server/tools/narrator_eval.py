@@ -357,10 +357,11 @@ def make_pairs(run_a: str, run_b: str) -> Path:
         doc = docs[ra["iid"]]
         prev = next((x["text"] for x in reversed(doc["transcript"]) if x["turn"] == ra["turn"] - 1 and x["role"] == "narrator"), "")
         st = stored_turn(doc, ra["turn"])
-        bulletin = _blob(ra["bulletin"], ".txt") if ra.get("bulletin") else ""
-        this_turn = brief_text(bulletin)
+        # each side's own brief: a local run (checks: told) was given the rolled results where an API run was asked to call them
+        brief_a, brief_b = (brief_text(_blob(r["bulletin"], ".txt")) if r.get("bulletin") else "" for r in (ra, rb))
         first = rng.choice(["A", "B"])
-        pairs.append({"key": f"{ra['iid']}:{ra['turn']}", "game": ra["game"], "player": st.get("player_text", ""), "this_turn": this_turn,
+        pairs.append({"key": f"{ra['iid']}:{ra['turn']}", "game": ra["game"], "player": st.get("player_text", ""),
+                      "this_turn": brief_a if brief_a == brief_b else "", "A_this_turn": brief_a, "B_this_turn": brief_b,
                       "previous": prev, "A": telling_of(ra), "B": telling_of(rb), "A_hash": telling_hash(ra), "B_hash": telling_hash(rb), "first": first})
     PAIRS.mkdir(parents=True, exist_ok=True)
     path = PAIRS / f"{pid}.json"
@@ -439,8 +440,13 @@ async def judge_pairs(pid: str, judge_model: str = "claude-sonnet-5-5") -> Path:
 
     async def one(pr: dict, order: str) -> dict:
         x, y = (pr["A"], pr["B"]) if order == "AB" else (pr["B"], pr["A"])
+        if pr["this_turn"] or "A_this_turn" not in pr:
+            told = f"[WHAT THE NARRATOR WAS TOLD THIS TURN]\n{pr['this_turn']}"
+        else:                                         # the two were told differently (a local run gets its checks already rolled)
+            told = (f"[WHAT NARRATOR ONE WAS TOLD THIS TURN]\n{pr[order[0] + '_this_turn']}\n\n"
+                    f"[WHAT NARRATOR TWO WAS TOLD THIS TURN]\n{pr[order[1] + '_this_turn']}")
         user = (f"[THE PREVIOUS TURN, as the player read it]\n{pr['previous'] or '(the opening)'}\n\n[THE PLAYER'S INPUT]\n{pr['player']}\n\n"
-                f"[WHAT THE NARRATOR WAS TOLD THIS TURN]\n{pr['this_turn']}\n\n[TELLING ONE]\n{x}\n\n[TELLING TWO]\n{y}")
+                f"{told}\n\n[TELLING ONE]\n{x}\n\n[TELLING TWO]\n{y}")
         async with sem:
             try:
                 v, _ = await prov.extract(role, system, [Msg("user", user)], PairVerdict)

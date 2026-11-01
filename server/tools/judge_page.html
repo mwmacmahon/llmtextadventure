@@ -38,6 +38,7 @@ textarea{width:100%;box-sizing:border-box;font:14px var(--body);background:var(-
 .faults label{font-size:.82rem;border:1px solid var(--rule);border-radius:12px;padding:2px 8px;cursor:pointer;user-select:none;background:var(--sheet)}
 .faults label:has(input:checked){border-color:var(--bad);color:var(--bad)}
 .faults input{margin:0 4px 0 0}
+.own{margin-top:12px;background:var(--paper)}
 .reveal{color:var(--ok);font:13px var(--mono)}
 @media (max-width:760px){.two{grid-template-columns:1fr}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -48,9 +49,9 @@ textarea{width:100%;box-sizing:border-box;font:14px var(--body);background:var(-
 <div class="ctx">
   <div class="player" id="player"></div>
   <details><summary>The previous turn, as the player read it</summary><pre id="previous"></pre></details>
-  <details><summary>What the narrator was told this turn</summary><pre id="thisturn"></pre></details>
+  <details id="shared"><summary>What the narrator was told this turn</summary><pre id="thisturn"></pre></details>
 </div>
-<div class="two"><section id="s1"><h2>First</h2><div class="prose" id="t1"></div><div class="faults" id="f1"></div></section><section id="s2"><h2>Second</h2><div class="prose" id="t2"></div><div class="faults" id="f2"></div></section></div>
+<div class="two"><section id="s1"><h2>First</h2><div class="prose" id="t1"></div><details class="own" id="o1" hidden><summary>What this narrator was told this turn</summary><pre id="b1t"></pre></details><div class="faults" id="f1"></div></section><section id="s2"><h2>Second</h2><div class="prose" id="t2"></div><details class="own" id="o2" hidden><summary>What this narrator was told this turn</summary><pre id="b2t"></pre></details><div class="faults" id="f2"></div></section></div>
 <p class="reveal" id="reveal"></p>
 </div>
 <div class="bar"><div class="in">
@@ -70,6 +71,9 @@ async function load(){
   if (!d.pair){ $("player").textContent = "Every pair in this matchup is judged."; $("t1").textContent = $("t2").textContent = ""; pair = null; return; }
   pair = d.pair; pick(null); $("reason").value = "";
   $("player").textContent = pair.player; $("previous").textContent = pair.previous || "(the opening)"; $("thisturn").textContent = pair.this_turn;
+  const own = !pair.this_turn && (pair.first_this_turn || pair.second_this_turn);   // told differently: each story carries its own brief
+  $("shared").hidden = !!own; $("o1").hidden = $("o2").hidden = !own;
+  $("b1t").textContent = pair.first_this_turn || ""; $("b2t").textContent = pair.second_this_turn || "";
   $("t1").textContent = pair.first; $("t2").textContent = pair.second;
   for (const n of ["1","2"]) $("f"+n).innerHTML = `<span class="lab">What went wrong in this one (if anything)</span>` +
     d.faults.map((t,i) => `<label><input type="checkbox" id="f${n}_${i}" value="${t}">${t}</label>`).join("");

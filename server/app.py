@@ -289,7 +289,9 @@ def judge_next(pid: str):
     blind = None
     if nxt:
         a, b = (nxt["A"], nxt["B"]) if nxt["first"] == "A" else (nxt["B"], nxt["A"])
-        blind = {"key": nxt["key"], "player": nxt["player"], "previous": nxt["previous"], "this_turn": nxt["this_turn"], "first": a, "second": b}
+        f, s_ = (nxt["first"], "B" if nxt["first"] == "A" else "A")
+        blind = {"key": nxt["key"], "player": nxt["player"], "previous": nxt["previous"], "this_turn": nxt["this_turn"], "first": a, "second": b,
+                 "first_this_turn": nxt.get(f + "_this_turn", ""), "second_this_turn": nxt.get(s_ + "_this_turn", "")}
     return {"total": len(P["pairs"]), "done": len(done), "faults": ne.FAULTS, "pair": blind}
 
 
