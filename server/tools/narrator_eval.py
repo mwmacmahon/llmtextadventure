@@ -320,6 +320,17 @@ async def rubric(run_ref: str, judge_model: str = "claude-sonnet-5-5") -> Path:
 TAGS = ["voice", "pacing", "continuity", "played the directives", "broke the state", "leaked", "overran the clock"]
 
 
+BRIEF_HEADS = ("Do not narrate past", "COMING (", "THIS TURN (")
+
+
+def brief_text(bulletin: str) -> str:
+    """The end of the bulletin that is about this turn: the clock's limit, what is coming, THIS TURN. Cut at the first
+    of those headers on a line of its own (COMING's own header says "THIS TURN says when", so a bare find cut mid-line)."""
+    cuts = [0] if bulletin.startswith(BRIEF_HEADS) else []
+    cuts += [i + 1 for h in BRIEF_HEADS if (i := bulletin.find("\n" + h)) >= 0]
+    return bulletin[min(cuts):] if cuts else ""
+
+
 def make_pairs(run_a: str, run_b: str) -> Path:
     """The blind pairs of a matchup: every corpus turn both runs told, the order shown fixed per pair at random (seeded,
     so the file is the same if made again)."""
@@ -344,7 +355,7 @@ def make_pairs(run_a: str, run_b: str) -> Path:
         prev = next((x["text"] for x in reversed(doc["transcript"]) if x["turn"] == ra["turn"] - 1 and x["role"] == "narrator"), "")
         st = stored_turn(doc, ra["turn"])
         bulletin = _blob(ra["bulletin"], ".txt") if ra.get("bulletin") else ""
-        this_turn = bulletin[bulletin.find("THIS TURN"):] if "THIS TURN" in bulletin else ""
+        this_turn = brief_text(bulletin)
         first = rng.choice(["A", "B"])
         pairs.append({"key": f"{ra['iid']}:{ra['turn']}", "game": ra["game"], "player": st.get("player_text", ""), "this_turn": this_turn,
                       "previous": prev, "A": telling_of(ra), "B": telling_of(rb), "A_hash": telling_hash(ra), "B_hash": telling_hash(rb), "first": first})
@@ -564,7 +575,7 @@ def rubric_sample(run_tag: str, n: int = 40) -> list[dict]:
         _, _, now = _earlier_and_now(r)
         out.append({"key": f"{t['iid']}:{t['turn']}:{i['item']}", "item": i["item"], "question": RUBRIC_ITEMS[i["item"]], "verdict": i["verdict"],
                     "quote": i["quote"], "why": i["why"], "telling": telling_of(r),
-                    "this_turn": now[now.find("THIS TURN"):] if "THIS TURN" in now else now[-3000:]})
+                    "this_turn": brief_text(now) or now[-3000:]})
     return out
 
 
