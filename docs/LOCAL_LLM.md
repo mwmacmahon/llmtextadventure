@@ -45,8 +45,8 @@ The game has its own llama-server on the GPU box, separate from bruba's `llm-man
 untouched): `server/tools/gumbo/llama-game.sh`, its helper `gpu-yield.py`, and the optional user
 unit `textadventure-llm.service`. It listens on **8280** (bruba's manager and servers use
 8080–8092, ComfyUI 8188, ollama 11434), binds all interfaces so the game can reach it from the
-MacBook now and from the Mac mini later, and runs the Qwen3.5-35B-A3B Q4 file with three slots,
-thinking off, q8_0 KV cache, flash attention and the model's rope base. Sampling is per role in
+MacBook now and from the Mac mini later, and runs one model for every role with three slots (the
+Qwen3.5-27B Q6 since 2026-11-01, when the Qwen3.5-35B-A3B was dropped as worse at holding the story), thinking off, q8_0 KV cache, flash attention and the model's rope base. Sampling is per role in
 `config.llamacpp.yml` (`temperature`, `top_p`, `top_k`, `min_p`, `repeat_penalty`, each sent with the
 request; unset ones fall back to the script's command line): the narrator on Qwen's general settings
 (0.7 / 0.8 / 20 / 0), the adjudicator and referee tight (0.2 / 0.5 / 20 / 0, repeat penalty 1.05) so
