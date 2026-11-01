@@ -1,0 +1,10 @@
+# qwen38-27b with thinking on for the narrator, the adjudicator and the referee (the summarizer stays off), at Qwen3.8's
+# reasoning_effort low, bounded at 1536 tokens of thinking a call (the server closes the block with the budget message
+# and the answer gets its own room). Sampling unchanged from the no-thinking baseline, so thinking is the one thing
+# changed (D66); the card's thinking sampler (1.0 / 0.95 / 20) is a later, separate step.
+model: Huihui-Qwen3.8-27B-abliterated-UD-Q5_K_XL.gguf
+server: {ctx: 98304, ckpt: 2048, kv: q8_0, think_budget: 1536}
+roles:
+  narrator: {thinking: true, thinking_budget: 1536, reasoning_effort: low}
+  adjudicator: {thinking: true, thinking_budget: 1536, reasoning_effort: low}
+  referee: {thinking: true, thinking_budget: 1536, reasoning_effort: low}

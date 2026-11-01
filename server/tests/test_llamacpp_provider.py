@@ -86,6 +86,31 @@ async def test_extract_sends_the_schema_as_a_grammar_and_parses_the_answer():
 
 
 @pytest.mark.asyncio
+async def test_a_thinking_narrator_streams_only_the_answer_with_its_own_room_and_the_effort():
+    """The narrator thinking (Qwen3.8, D66): the reasoning arrives as reasoning_content deltas and is never yielded;
+    the budget is added to max_tokens as for the structured roles; reasoning_effort rides in the template kwargs."""
+    seen: dict = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.update(json.loads(req.content))
+        body = _sse([
+            {"choices": [{"delta": {"reasoning_content": "Frank is hurt; keep it short."}, "finish_reason": None}]},
+            {"choices": [{"delta": {"content": "You lean harder."}, "finish_reason": None}]},
+            {"choices": [{"delta": {}, "finish_reason": "stop"}]},
+        ])
+        return httpx.Response(200, content=body, headers={"content-type": "text/event-stream"})
+
+    p = LlamaCppProvider(transport=httpx.MockTransport(handler))
+    events = [e async for e in p.stream(role(stop_sequences=[], thinking=True, thinking_budget=1024, reasoning_effort="low"), "S", [Msg("user", "x")])]
+    assert "".join(e.text for e in events if isinstance(e, TextDelta)) == "You lean harder."
+    assert seen["chat_template_kwargs"] == {"enable_thinking": True, "reasoning_effort": "low"}
+    assert seen["max_tokens"] == 64 + 1024 and seen["reasoning_budget_tokens"] == 1024
+    seen.clear()
+    _ = [e async for e in p.stream(role(stop_sequences=[], reasoning_effort="low"), "S", [Msg("user", "x")])]
+    assert seen["chat_template_kwargs"] == {"enable_thinking": False} and "reasoning_budget_tokens" not in seen
+
+
+@pytest.mark.asyncio
 async def test_extract_with_thinking_on_gives_the_answer_its_own_room_and_notes_a_forced_close():
     """One call: the model thinks, the server's budget closes the block if it runs long, the grammar takes over.
     The thinking spends from max_tokens, so the budget is added to it; the budget message in the reasoning says

@@ -125,6 +125,14 @@ class LlamaCppProvider:
             "chat_template_kwargs": {"enable_thinking": bool(role.thinking)},
             "timings_per_token": False,
         }
+        if role.thinking:
+            # the thinking spends from the same limit as the answer: give the answer its own room. The budget is
+            # enforced server-side on build 8580 (`--reasoning-budget`); newer builds take it per request too.
+            # Streamed (the narrator) or not, the same: the stream yields only the answer, never the reasoning.
+            body["max_tokens"] = role.max_tokens + role.thinking_budget
+            body["reasoning_budget_tokens"] = role.thinking_budget
+            if role.reasoning_effort:
+                body["chat_template_kwargs"]["reasoning_effort"] = role.reasoning_effort
         if role.slot is not None:
             body["id_slot"] = role.slot
         if role.stop_sequences:
@@ -209,11 +217,6 @@ class LlamaCppProvider:
         await self.prepare()
         body = self._body(role, system, messages)
         body["response_format"] = {"type": "json_schema", "json_schema": {"name": schema.__name__, "schema": inline_schema(schema.model_json_schema())}}
-        if role.thinking:
-            # the thinking spends from the same limit as the answer: give the answer its own room. The budget is
-            # enforced server-side on build 8580 (`--reasoning-budget`); newer builds take it per request too.
-            body["max_tokens"] = role.max_tokens + role.thinking_budget
-            body["reasoning_budget_tokens"] = role.thinking_budget
         retried = False
         async with self._client(role) as client:
             r = await client.post("/v1/chat/completions", json=body)

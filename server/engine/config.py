@@ -43,6 +43,9 @@ class RoleConfig(BaseModel):
     # that honour `reasoning_budget_tokens` (b9982+). Without it the budget ate the whole token limit and every
     # call came back empty (2026-10-29).
     thinking_budget: int = 1536
+    # Qwen3.8's chat template takes reasoning_effort (xhigh, its default, / medium / low) when thinking is on; sent
+    # only with thinking on, and only when set. Other models' templates ignore the kwarg.
+    reasoning_effort: Literal["low", "medium", "high", "xhigh"] | None = None
     # thinking roles: a structured call that truncates after the think block has looped under the grammar; it is
     # sent once more with this presence penalty (Qwen's remedy for repetition in thinking mode). Not applied to
     # every call: at 1.0 on every call the A3B referee lost ten rows of 74 (D34). 0 turns the retry off.
