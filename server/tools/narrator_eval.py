@@ -316,6 +316,38 @@ async def rubric(run_ref: str, judge_model: str = "claude-sonnet-5-5") -> Path:
     return path
 
 
+# ---- calling checks (D61: local narrators to call their own checks again) -----------------------------------
+def check_calls(run_ref: str) -> dict:
+    """How a run in called mode handled the checks THIS TURN asked it to call, counted from the record: the assessed
+    checks, how many it called, the turns where it called none (the engine's check_skipped), the calls it added. Whether
+    a call came before the outcome showed is the rubric's checks_at_beat, not counted here."""
+    from engine.narration import Assessment, Call, match_assessment
+    r = load_run(run_ref)
+    out = {"run": r["tag"], "turns": len(r["turns"]), "turns_asked": 0, "asked": 0, "called": 0, "turns_none_called": 0,
+           "added": 0, "told": 0, "problems": 0}
+    for t in r["turns"]:
+        brief = brief_text(_blob(t["bulletin"], ".txt")) if t.get("bulletin") else ""
+        # matched again here with today's rule (a repeat is a second roll), so runs made before the 11-01 fix count the same way
+        asked = [Assessment(stat=m[1], difficulty=m[2].replace(" ", "_"), target=m[3] or "", label=m[0])  # type: ignore[arg-type]
+                 for m in re.findall(r"\n- Assessed check, (.*) \((\w+), ([a-z ]+?) difficulty(?:, against ([^)]*))?\): when the fiction", brief)]
+        calls = [c["call"] for c in t.get("calls") or [] if (c.get("call") or {}).get("verb") == "CHECK"]
+        matched = 0
+        for c in calls:
+            a = match_assessment(Call(verb="CHECK", raw=c.get("raw", ""), stat=c.get("stat", ""), difficulty=c.get("difficulty") or None,
+                                      target=c.get("target", "")), asked)
+            if a is not None:
+                a.called, a.called_as, matched = True, c.get("difficulty") or "", matched + 1
+        out["told"] += len(t.get("told") or [])
+        out["problems"] += len(t.get("problems") or [])
+        if asked:
+            out["turns_asked"] += 1
+            out["asked"] += len(asked)
+            out["called"] += matched
+            out["turns_none_called"] += matched == 0
+        out["added"] += len(calls) - matched
+    return out
+
+
 # ---- pairwise (a matchup: the same turns told by two variants, judged blind) ---------------------------------
 # Faults, marked on the telling that has them (the user, 11-01: "tags that should be underneath each story so you can be like
 # oof this one broke X"), each worded so it can only be a fault ("pacing could be good or bad").

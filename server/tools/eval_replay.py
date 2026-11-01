@@ -928,8 +928,10 @@ def main() -> None:
     jp.add_argument("pairs")
     jp.add_argument("--judge", default="claude-sonnet-5-5")
     sub.add_parser("narrator-report", help="the narrator pages: rubric tallies, win rates, user-judge agreement")
+    cc = sub.add_parser("narrator-calls", help="how narrator runs in called mode handled the checks they were asked to call (D61)")
+    cc.add_argument("runs", nargs="+")
     args = ap.parse_args()
-    if args.cmd in ("rubric", "pairs", "judge-pairs", "narrator-report"):
+    if args.cmd in ("rubric", "pairs", "judge-pairs", "narrator-report", "narrator-calls"):
         import narrator_eval as ne
         if args.cmd == "rubric":
             for r in args.runs:
@@ -938,6 +940,11 @@ def main() -> None:
             ne.make_pairs(args.run_a, args.run_b)
         elif args.cmd == "judge-pairs":
             asyncio.run(ne.judge_pairs(args.pairs, args.judge))
+        elif args.cmd == "narrator-calls":
+            for r in args.runs:
+                c = ne.check_calls(r)
+                print(f"{c['run']}: asked {c['asked']} checks on {c['turns_asked']} turns, called {c['called']}; "
+                      f"called none on {c['turns_none_called']} turns; added {c['added']}; told {c['told']}; problems {c['problems']}")
         else:
             print(ne.report())
         return

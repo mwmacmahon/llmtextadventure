@@ -122,6 +122,24 @@ def test_run_check_merges_difficulty_and_marks_the_assessment():
     assert harder("low", "high") == "high" and match_assessment(Call(verb="CHECK", raw="", stat="tongue"), assessments) is None
 
 
+def test_a_repeated_call_is_a_second_roll_not_the_next_attempt():
+    # noir turn 2 (11-01): shoot (hands medium), get clear (muscle high), the crate (hands low); Sonnet fired twice
+    stats, rng = {"hands": 1, "muscle": 0}, random.Random(3)
+    shot, clear, crate = (Assessment(stat="hands", difficulty="medium", label="shoot"), Assessment(stat="muscle", difficulty="high", label="clear"),
+                          Assessment(stat="hands", difficulty="low", label="crate"))
+    got = [run_check(Call(verb="CHECK", raw="", stat=st, difficulty=d), n, stats, dice_d20, rng, [shot, clear, crate],
+                     lambda req, tgt: [], default_mechanic_line).data["label"]
+           for n, (st, d) in enumerate((("hands", "medium"), ("hands", "medium"), ("muscle", "high")), 1)]
+    assert got == ["shoot", "hands check", "clear"] and not crate.called      # the crate went unrolled, and the record says so
+    two = [Assessment(stat="hands", difficulty="medium", label="a"), Assessment(stat="hands", difficulty="medium", label="b")]
+    for _ in range(2):
+        run_check(Call(verb="CHECK", raw="", stat="hands", difficulty="medium"), 1, stats, dice_d20, rng, two, lambda req, tgt: [], default_mechanic_line)
+    assert all(a.called for a in two)                                          # two attempts at the same difficulty are both answered
+    raised = [Assessment(stat="hands", difficulty="low", label="crate")]
+    run_check(Call(verb="CHECK", raw="", stat="hands", difficulty="high"), 1, stats, dice_d20, rng, raised, lambda req, tgt: [], default_mechanic_line)
+    assert raised[0].called                                                    # the narrator may still call one harder
+
+
 def test_default_mechanic_line_forms():
     from engine.mechanics import CheckResult
     res = CheckResult(id="n1", label="x", stat="hands", difficulty="high", resolver="dice_d20", roll=6, total=8, target=14, margin=-6, outcome="failure")

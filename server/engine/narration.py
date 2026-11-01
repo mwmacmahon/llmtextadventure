@@ -176,6 +176,7 @@ class Assessment:
     target: str = ""
     label: str = ""
     called: bool = False
+    called_as: str = ""         # the difficulty the call that answered it named, to tell a repeat from a new attempt
 
 
 def harder(a: str, b: str) -> Tier:
@@ -183,13 +184,22 @@ def harder(a: str, b: str) -> Tier:
 
 
 def match_assessment(call: Call, assessments: list[Assessment]) -> Assessment | None:
-    """The uncalled assessment this call answers: same stat, and the same target when the call names one."""
+    """The uncalled assessment this call answers: same stat, and the same target when the call names one; else the one
+    with the same difficulty. A call that repeats one already answered (same stat and difficulty) with no uncalled
+    assessment at that difficulty is a second roll for the same attempt, not another attempt: Sonnet's second shot
+    (hands medium) must not use up the crate grab (hands low), which then went unrolled and unflagged (11-01)."""
     cands = [a for a in assessments if not a.called and a.stat == call.stat]
     if call.target:
         want = call.target.lower().replace(" ", "_")
         exact = [a for a in cands if a.target.lower() in (call.target.lower(), want)]
         if exact:
             return exact[0]
+    if call.difficulty:
+        same = [a for a in cands if a.difficulty == call.difficulty]
+        if same:
+            return same[0]
+        if any(a.called and a.stat == call.stat and a.called_as == call.difficulty for a in assessments):
+            return None
     return cands[0] if cands else None
 
 
@@ -204,7 +214,7 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
             return CallResult(text=f"[ENGINE] There is no stat {call.stat!r}; the stats are {', '.join(stats) or 'none'}. Call again with one of them, or play it without a roll.")
     a = match_assessment(call, assessments)
     if a is not None:
-        a.called = True
+        a.called, a.called_as = True, call.difficulty or ""
         difficulty: Tier = harder(a.difficulty, call.difficulty) if call.difficulty else a.difficulty
     else:
         difficulty = call.difficulty or "medium"  # type: ignore[assignment]
