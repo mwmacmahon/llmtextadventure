@@ -17,6 +17,8 @@
 # Edit profiles in the repo, not here. Values in the environment (the unit's Environment= lines) are the
 # defaults a profile overrides. A new copy of THIS script needs a service restart: a swap re-runs the loop
 # of the copy already running.
+# A profile that never comes up (out of VRAM at load, 2026-11-01: the A3B at Q6) falls back to the last profile that did
+# (profiles/LAST_GOOD) and is named in profiles/FAILED, instead of exiting into systemd's restart and failing again forever.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -72,7 +74,7 @@ while true; do
   load_profile
   [ -f "$MODEL" ] || { echo "profile $ACTIVE: no model at $MODEL" >&2; exit 1; }
   free_comfy
-  rm -f "$PROFILES/.switching"
+  rm -f "$PROFILES/.switching" "$PROFILES/.loaded"
   if [ "$CTX" = "auto" ]; then              # llama.cpp's --fit sizes the context to the free VRAM, less FIT_TARGET MiB
     CTX_ARGS=(--fit on --fit-target "$FIT_TARGET" --fit-ctx "$FIT_CTX")
   else
@@ -99,9 +101,27 @@ while true; do
     --temp 0.7 --top-p 0.8 --top-k 20 --min-p 0.0 &
   LLAMA_PID=$!
   echo "$LLAMA_PID" > "$PROFILES/.llama.pid"
+  (                                         # once it answers /health the profile is good: remember it as the fallback
+    while kill -0 "$LLAMA_PID" 2>/dev/null; do
+      if curl -s -m 2 -o /dev/null -f "http://127.0.0.1:$PORT/health"; then
+        touch "$PROFILES/.loaded"; echo "$ACTIVE" > "$PROFILES/LAST_GOOD"; rm -f "$PROFILES/FAILED"; exit 0
+      fi
+      sleep 2
+    done
+  ) &
+  WATCH_PID=$!
   set +e; wait "$LLAMA_PID"; CODE=$?; set -e
+  kill "$WATCH_PID" 2>/dev/null || true
   if [ -f "$PROFILES/.switching" ]; then     # the helper stopped it to swap the model: start again on the new profile
     echo "swapping to profile $(tr -d '[:space:]' < "$PROFILES/ACTIVE")"
+    sleep 2
+    continue
+  fi
+  GOOD="$(tr -d '[:space:]' 2>/dev/null < "$PROFILES/LAST_GOOD" || true)"
+  if [ ! -f "$PROFILES/.loaded" ] && [ -n "$GOOD" ] && [ "$GOOD" != "$ACTIVE" ] && [ -f "$PROFILES/$GOOD.env" ]; then
+    echo "profile $ACTIVE never came up (exit $CODE); back to $GOOD" >&2
+    echo "$ACTIVE" > "$PROFILES/FAILED"
+    echo "$GOOD" > "$PROFILES/ACTIVE"
     sleep 2
     continue
   fi

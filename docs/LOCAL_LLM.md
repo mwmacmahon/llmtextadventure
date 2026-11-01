@@ -380,6 +380,11 @@ all 27B of weight work on every token. Expect roughly a third of the A3B's token
 `qwen27b` (`tools/llm.py use qwen27b`). Also on hand: `qwen27b-q4` (i1-Q4_K_M, 16.5 GB, downloaded, not yet
 copied), `qwen27b-kv16` (f16 attention cache) and `qwen3-32b` (full attention, 16k a slot: see the profile).
 
+A profile that never comes up (the model does not fit, say) falls back: `llama-game.sh` keeps the last profile that
+answered `/health` in `profiles/LAST_GOOD`, and a start that dies before answering switches `ACTIVE` back to it and names
+the failed one in `profiles/FAILED`. Before 2026-11-01 it exited, systemd restarted it on the same profile, and it
+failed again every few seconds (the A3B at UD-Q6_K_XL on the 5090).
+
 **VRAM is allocated at load, not during play.** `llama-server` sizes the KV and recurrent-state buffers for
 the whole `CTX` up front; a long prompt grows nothing. What grows at runtime is the context checkpoints a
 hybrid model keeps so a slot can rewind its recurrent state (`--checkpoint-every-n-tokens`, the `CKPT`
