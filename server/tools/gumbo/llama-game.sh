@@ -41,7 +41,9 @@ DEFAULT_THINK_BUDGET="${THINK_BUDGET:--1}"   # llama.cpp --reasoning-budget: tok
                                   # closes the think block itself (-1 unlimited). Server-wide; roles with thinking off are untouched.
 DEFAULT_KV="${KV:-q8_0}"        # KV cache type for the attention layers (q8_0 halves it; f16 is the full cache: ~68 KB a token on the 27B)
 DEFAULT_CKPT="${CKPT:-512}"      # recurrent-state checkpoint every N prompt tokens (default 8192): a hybrid model can only rewind its
-                                  # state to a checkpoint, so this decides how much of a shared prefix a slot can reuse
+                                  # state to a checkpoint, so this decides how much of a shared prefix a slot can reuse.
+                                  # Builds since spring 2026 call it --checkpoint-min-step (checkpoints at user-message starts and the
+                                  # prompt's end, at least N apart); the flag is picked from the binary's --help below.
 
 load_profile() {                 # the defaults, then the active profile over them
   MODEL="$DEFAULT_MODEL"; CTX="$DEFAULT_CTX"; CKPT="$DEFAULT_CKPT"; KV="$DEFAULT_KV"; THINK_BUDGET="$DEFAULT_THINK_BUDGET"
@@ -55,6 +57,8 @@ load_profile() {                 # the defaults, then the active profile over th
 }
 
 [ -x "$LLAMA_BIN" ] || { echo "no llama-server at $LLAMA_BIN" >&2; exit 1; }
+if "$LLAMA_BIN" --help 2>&1 | grep -q -- "--checkpoint-every-n-tokens"; then CKPT_FLAG=--checkpoint-every-n-tokens
+else CKPT_FLAG=--checkpoint-min-step; fi
 
 # Ask ComfyUI for its VRAM. Best effort: a ComfyUI that is not running answers nothing and we go on.
 free_comfy() {
@@ -105,8 +109,7 @@ while true; do
     --flash-attn on \
     --no-context-shift \
     --sleep-idle-seconds "$IDLE" \
-    --checkpoint-every-n-tokens "$CKPT" \
-    --rope-freq-base 1000000 \
+    "$CKPT_FLAG" "$CKPT" \
     --temp 0.7 --top-p 0.8 --top-k 20 --min-p 0.0 &
   LLAMA_PID=$!
   echo "$LLAMA_PID" > "$PROFILES/.llama.pid"

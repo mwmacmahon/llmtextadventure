@@ -1,0 +1,10 @@
+# Qwen3.8-27B dense, abliterated (Huihui, official GGUF repo), UD-Q5_K_XL, 20.7 GB of weights. Same hybrid architecture as
+# the Qwen3.5-27B profile (64 layers: 16 blocks of 3 Gated DeltaNet + 1 gated attention), so qwen27b's sizes carry over:
+# ckpt 2048 for the recurrent-state checkpoints, q8_0 KV, 98304 total context (32k a slot). Thinking off for every role
+# (the launcher's enable_thinking=false); Qwen3.8's thinking closes at reasoning_effort low/medium, to be tried for the
+# structured roles once the provider can send the kwarg. Surveyed notes/MODELS-SURVEY-2026-11-01.md; needs llama.cpp
+# b12032 on the box (the Mar 29 build 8580 predates the Qwen3.8 template and MTP). First run: the D61 called-checks
+# baseline on the corpus and the noir/station sets, no MTP.
+model: Huihui-Qwen3.8-27B-abliterated-UD-Q5_K_XL.gguf
+server: {ctx: 98304, ckpt: 2048, kv: q8_0, think_budget: -1}
+roles: {}

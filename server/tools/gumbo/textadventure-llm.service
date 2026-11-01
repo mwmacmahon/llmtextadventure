@@ -14,6 +14,8 @@ WorkingDirectory=%h/textadventure
 ExecStart=%h/textadventure/llama-game.sh
 Restart=on-failure
 RestartSec=5
+# llama.cpp b12032 (2026-11-01), built beside the old b8580 (~/llms/llama.cpp); delete this line to go back.
+Environment=LLAMA_BIN=%h/llms/llama.cpp-b12032/build/bin/llama-server
 # The model is chosen by profile (profiles/*.env, profiles/ACTIVE; swap with server/tools/llm.py from the
 # game's machine), not here. Defaults a profile does not set can still be overridden here, e.g.:
 # Environment=PORT=8280
