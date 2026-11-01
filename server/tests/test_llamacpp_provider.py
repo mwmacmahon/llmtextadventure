@@ -111,6 +111,30 @@ async def test_a_thinking_narrator_streams_only_the_answer_with_its_own_room_and
 
 
 @pytest.mark.asyncio
+async def test_a_thinking_narrator_stops_at_the_call_in_its_answer_not_in_its_reasoning():
+    """b12032 matches stop strings in the reasoning too, so with thinking on the provider sends none and cuts the
+    answer at the closer itself, even split across deltas; the reasoning may mention the call freely."""
+    seen: dict = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.update(json.loads(req.content))
+        body = _sse([
+            {"choices": [{"delta": {"reasoning_content": "then end with <<CHECK hands medium>> and stop"}, "finish_reason": None}]},
+            {"choices": [{"delta": {"content": "You work the pick.\n<<CHECK hands medium>"}, "finish_reason": None}]},
+            {"choices": [{"delta": {"content": "> and the lock gives"}, "finish_reason": None}]},
+            {"choices": [{"delta": {"content": " way."}, "finish_reason": "stop"}]},
+        ])
+        return httpx.Response(200, content=body, headers={"content-type": "text/event-stream"})
+
+    p = LlamaCppProvider(transport=httpx.MockTransport(handler))
+    events = [e async for e in p.stream(role(thinking=True), "S", [Msg("user", "x")])]
+    assert "stop" not in seen
+    assert "".join(e.text for e in events if isinstance(e, TextDelta)) == "You work the pick.\n<<CHECK hands medium"
+    done = [e for e in events if isinstance(e, StreamDone)][0]
+    assert done.text == "You work the pick.\n<<CHECK hands medium" and done.stop_reason == "stop_sequence"
+
+
+@pytest.mark.asyncio
 async def test_extract_with_thinking_on_gives_the_answer_its_own_room_and_notes_a_forced_close():
     """One call: the model thinks, the server's budget closes the block if it runs long, the grammar takes over.
     The thinking spends from max_tokens, so the budget is added to it; the budget message in the reasoning says

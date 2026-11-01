@@ -186,7 +186,16 @@ class LlamaCppProvider:
         await self.prepare()
         body = self._body(role, system, messages)
         body["stream"] = True
+        # b12032 matches stop strings inside the reasoning too: a thinking narrator that planned "... then
+        # <<CHECK hands medium" stopped there with no prose (2026-11-01, D66). With thinking on, the stops are
+        # matched here, on the answer only, holding back a stop's length less one so a split stop is still caught.
+        stops = list(role.stop_sequences) if role.thinking and role.stop_sequences else []
+        if stops:
+            body.pop("stop", None)
+        hold = max((len(x) for x in stops), default=1) - 1
         text = ""
+        sent = 0
+        cut = False
         finish = None
         usage: Usage = Usage()
         async with self._client(role) as client:
@@ -201,13 +210,28 @@ class LlamaCppProvider:
                     chunk = json.loads(payload)
                     for choice in chunk.get("choices", []):
                         delta = (choice.get("delta") or {}).get("content")
-                        if delta:
+                        if delta and stops:
+                            text += delta
+                            at = min((i for i in (text.find(x) for x in stops) if i >= 0), default=-1)
+                            if at >= 0:
+                                text, cut, finish = text[:at], True, "stop"
+                            upto = len(text) if cut else max(sent, len(text) - hold)
+                            if upto > sent:
+                                yield TextDelta(text[sent:upto])
+                                sent = upto
+                            if cut:
+                                break
+                        elif delta:
                             text += delta
                             yield TextDelta(delta)
                         if choice.get("finish_reason"):
                             finish = choice["finish_reason"]
                     if chunk.get("usage") or chunk.get("timings"):
                         usage = _usage(chunk.get("usage"), chunk.get("timings"))
+                    if cut:
+                        break               # leaving the stream closes the request: the server stops generating
+        if stops and sent < len(text):
+            yield TextDelta(text[sent:])
         # llama.cpp says "stop" for both end-of-turn and a stop string; the text ends before the string either way
         stop_reason = "max_tokens" if finish == "length" else ("stop_sequence" if role.stop_sequences and finish == "stop" and _hit_stop(text, role) else "end_turn")
         usage.extra["model"] = role.model
