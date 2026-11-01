@@ -19,7 +19,7 @@ of 59 recorded turns, 2026-10-31).
 Two instruments, kept apart:
 - The rubric judges one telling: yes / no / n/a per item, each with the sentence that shows it, never a score.
 - Pairwise judgement ranks variants: the same turn told by A and by B, shown blind in random order; the better story
-  wins. A matchup's result is a win rate over the whole corpus (a tie counts half), with the reasons and tags under it.
+  wins. A matchup's result is a win rate over the whole corpus (a tie counts half), with the reasons and the faults marked under it.
   The user's judgements are the measurement; the judge model judges the same pairs in both orders, and the agreement
   between the two is reported beside both counts. No absolute prose scores anywhere.
 
@@ -317,9 +317,10 @@ async def rubric(run_ref: str, judge_model: str = "claude-sonnet-5-5") -> Path:
 
 
 # ---- pairwise (a matchup: the same turns told by two variants, judged blind) ---------------------------------
-# What decided a pick: where the two tellings differed, whichever side was better at it. Not faults of one telling
-# (the user, 11-01: "unclear if these are applying to the one you picked or didn't pick").
-TAGS = ["voice", "pacing", "continuity", "directives", "state", "leaks", "clock"]
+# Faults, marked on the telling that has them (the user, 11-01: "tags that should be underneath each story so you can be like
+# oof this one broke X"), each worded so it can only be a fault ("pacing could be good or bad").
+FAULTS = ["flat or wrong voice", "too slow", "too rushed", "contradicts earlier turns", "skipped what the turn required",
+          "broke the game's facts", "gave away a secret", "ran past the time"]
 
 
 BRIEF_HEADS = ("Do not narrate past", "COMING (", "THIS TURN (")
@@ -364,7 +365,7 @@ def make_pairs(run_a: str, run_b: str) -> Path:
     PAIRS.mkdir(parents=True, exist_ok=True)
     path = PAIRS / f"{pid}.json"
     path.write_text(json.dumps({"id": pid, "corpus": a["corpus"], "corpus_hash": a["corpus_hash"], "A": a["tag"], "B": b["tag"],
-                                "A_name": na, "B_name": nb, "tags": TAGS, "pairs": pairs}, indent=1, ensure_ascii=False))
+                                "A_name": na, "B_name": nb, "faults": FAULTS, "pairs": pairs}, indent=1, ensure_ascii=False))
     print(f"{len(pairs)} pairs -> {path}")
     return path
 
@@ -378,14 +379,16 @@ def user_judgements(pid: str) -> list[dict]:
     return [json.loads(x) for x in p.read_text().splitlines() if x.strip()] if p.exists() else []
 
 
-def record_judgement(pid: str, key: str, shown_choice: str, reason: str, tags: list[str], who: str = "user") -> dict:
-    """One human judgement, appended to judgements/<pid>.jsonl. `shown_choice` is what was clicked: first, second or tie."""
+def record_judgement(pid: str, key: str, shown_choice: str, reason: str, faults: dict[str, list[str]] | None = None, who: str = "user") -> dict:
+    """One human judgement, appended to judgements/<pid>.jsonl. `shown_choice` is what was clicked: first, second or tie;
+    `faults` is what was marked under each telling as shown ({"first": [...], "second": [...]}), stored by A / B."""
     P = load_pairs(pid)
     pr = next(p for p in P["pairs"] if p["key"] == key)
     second = "B" if pr["first"] == "A" else "A"
     choice = {"first": pr["first"], "second": second, "tie": "tie"}[shown_choice]
     row = {"pairs": pid, "corpus_hash": P["corpus_hash"], "key": key, "A_hash": pr["A_hash"], "B_hash": pr["B_hash"], "shown_first": pr["first"],
-           "choice": choice, "reason": reason.strip(), "tags": [t for t in tags if t in TAGS], "who": who,
+           "choice": choice, "reason": reason.strip(), "who": who,
+           "faults": {pr["first"]: _faults((faults or {}).get("first")), second: _faults((faults or {}).get("second"))},
            "when": dt.datetime.now().astimezone().isoformat(timespec="seconds")}
     JUDGEMENTS.mkdir(parents=True, exist_ok=True)
     with (JUDGEMENTS / f"{pid}.jsonl").open("a") as f:
@@ -393,27 +396,36 @@ def record_judgement(pid: str, key: str, shown_choice: str, reason: str, tags: l
     return {**row, "A_name": P["A_name"], "B_name": P["B_name"]}
 
 
+def _faults(xs: list[str] | None) -> list[str]:
+    return [x for x in xs or [] if x in FAULTS]
+
+
+def faults_line(faults: dict[str, list[str]] | None, names: dict[str, str]) -> str:
+    """'Haiku: too rushed; Sonnet: gave away a secret', for a report."""
+    return "; ".join(f"{names[k]}: {', '.join(v)}" for k, v in sorted((faults or {}).items()) if v)
+
+
 class PairVerdict(BaseModel):
     reason: str                                       # first: why, in a sentence or two, naming what decided it
     better: Literal["first", "second", "tie"]
-    tags: list[Literal[tuple(TAGS)]]                  # type: ignore[valid-type]
+    faults_one: list[Literal[tuple(FAULTS)]]          # type: ignore[valid-type]  # what telling one got wrong, if anything
+    faults_two: list[Literal[tuple(FAULTS)]]          # type: ignore[valid-type]
 
 
 PAIR_SYSTEM = ("You read two tellings of the same turn of a text adventure, written by two narrators from the same facts, and say which is "
                "the better story for the player: the one you would rather read next in this game. Weigh what a reader of this game cares "
                "about: the voice, the pacing, keeping faith with what came before, playing what the turn required, not breaking the game's "
                "facts, not giving away what the player has not learned, not running past the time. A tie only when you truly cannot choose. "
-               "Give the reason first, then the choice, then the tags for what decided it: where the two differed in a way that made you "
-               "choose, whichever of them was the better at it.")
+               "Give the reason first, then the choice, then for each telling the faults it has from the list (none is fine).")
 
 
 def _values_from_user(limit: int = 12) -> str:
-    """What the user has valued, from their past judgements' reasons and tags (any corpus), for the judge."""
+    """What the user has valued, from their past judgements' reasons (any corpus), for the judge."""
     rows = [r for p in sorted(JUDGEMENTS.glob("*.jsonl")) for r in user_judgements(p.stem) if r.get("reason")][-limit:]
     if not rows:
         return ""
     return ("\n\nWHAT THIS READER HAS VALUED (their reasons on earlier pairs):\n"
-            + "\n".join(f"- {r['reason']}" + (f" [{', '.join(r['tags'])}]" if r.get("tags") else "") for r in rows))
+            + "\n".join(f"- {r['reason']}" for r in rows))
 
 
 async def judge_pairs(pid: str, judge_model: str = "claude-sonnet-5-5") -> Path:
@@ -435,7 +447,8 @@ async def judge_pairs(pid: str, judge_model: str = "claude-sonnet-5-5") -> Path:
             except Exception as e:
                 return {"key": pr["key"], "order": order, "error": f"{type(e).__name__}: {e}"[:300]}
         pick = {"first": order[0], "second": order[1], "tie": "tie"}[v.better]
-        return {"key": pr["key"], "order": order, "choice": pick, "reason": v.reason, "tags": list(v.tags)}
+        return {"key": pr["key"], "order": order, "choice": pick, "reason": v.reason,
+                "faults": {order[0]: list(v.faults_one), order[1]: list(v.faults_two)}}
 
     res = await asyncio.gather(*(one(pr, o) for pr in P["pairs"] for o in ("AB", "BA")))
     JUDGE.mkdir(parents=True, exist_ok=True)
@@ -474,14 +487,14 @@ def matchup(pid: str) -> dict:
             "user": rate([u["choice"] for u in users.values()]), "judge": rate([c for c in jc.values() if c]),
             "agreement": {"n": len(both), "agree": agree, "rate": round(agree / len(both), 3) if both else None},
             "judge_order_flips": flips,
-            "user_reasons": [{"key": k, "choice": u["choice"], "reason": u["reason"], "tags": u["tags"]} for k, u in users.items()],
+            "user_reasons": [{"key": k, "choice": u["choice"], "reason": u["reason"], "faults": u.get("faults") or {}} for k, u in users.items()],
             "judge_reasons": [j for j in js if "choice" in j]}
 
 
 # ---- the report -----------------------------------------------------------------------------------------------
 def report() -> Path:
     """reports/index.html: per corpus, the rubric tally of every run (yes / no / n/a per item), and every matchup's
-    win rate by the user and by the judge, their agreement, and the reasons and tags behind them."""
+    win rate by the user and by the judge, their agreement, and the reasons and faults behind them."""
     import html as H
     from eval_report import CSS, page
     E = H.escape
@@ -537,12 +550,13 @@ def report() -> Path:
         for P in [p for p in pair_files if p["corpus"] == cid]:
             m = matchup(P["id"])
             u, j, a = m["user"], m["judge"], m["agreement"]
+            names = {"A": m["A"], "B": m["B"]}
             fmt = lambda x: f"{x['B_rate']:.0%} of {x['n']} ({x['B']}–{x['A']}, {x['tie']} tie)" if x["n"] else "not judged"  # noqa: E731
             agree = f"{a['rate']:.0%} of {a['n']}" if a["n"] else "-"
             mrows.append(f"<tr><td>{E(m['A'])}</td><td>{E(m['B'])}</td><td>{fmt(u)}</td><td>{fmt(j)}</td>"
                          f"<td>{agree}</td><td class='num'>{m['judge_order_flips']}</td></tr>")
-            ur = "".join(f"<div class='eng'><b>{E(x['choice'])}</b> {E(x['key'])}: {E(x['reason'] or '(no reason)')} {E(', '.join(x['tags']))}</div>" for x in m["user_reasons"])
-            jr = "".join(f"<div class='eng'><b>{E(x['choice'])}</b> {E(x['key'])} ({E(x['order'])}): {E(x['reason'])} {E(', '.join(x['tags']))}</div>" for x in m["judge_reasons"])
+            ur = "".join(f"<div class='eng'><b>{E(x['choice'])}</b> {E(x['key'])}: {E(x['reason'] or '(no reason)')} <span class='dim'>{E(faults_line(x['faults'], names))}</span></div>" for x in m["user_reasons"])
+            jr = "".join(f"<div class='eng'><b>{E(x['choice'])}</b> {E(x['key'])} ({E(x['order'])}): {E(x['reason'])} <span class='dim'>{E(faults_line(x.get('faults'), names))}</span></div>" for x in m["judge_reasons"])
             details.append(f"<details><summary>{E(m['A'])} vs {E(m['B'])}: reasons</summary><h3>The user</h3>{ur or '<p class=dim>none yet</p>'}"
                            f"<h3>The judge (both orders)</h3>{jr or '<p class=dim>none yet</p>'}</details>")
         if mrows:
