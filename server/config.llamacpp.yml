@@ -29,7 +29,7 @@ roles:
     slot: 0
     max_tokens: 2048
     # max_prompt_tokens: not needed here: the game reads the slot size from the server (/props) after any model swap
-    checks: told                   # the engine rolls the assessed checks first; this model writes outcomes before calling (ISSUES §0c)
+    checks: called                 # told (the engine rolls first) retired 2026-11-01 (D63); local calling is the next work (STATUS.md)
     temperature: 0.7
     top_p: 0.8
     top_k: 20
