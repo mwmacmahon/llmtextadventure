@@ -1,0 +1,7 @@
+# a3b-think on the Unsloth UD-Q5_K_XL instead of the UD-Q4_K_XL (the user, 11-01: "do at least one more run with an
+# actually higher quant a3b"). The fallback when the Q6 does not fit the 5090.
+model: Qwen3.5-35B-A3B-UD-Q5_K_XL.gguf
+server: {ctx: 98304, ckpt: 512, kv: q8_0, think_budget: 1536}
+roles:
+  adjudicator: {thinking: true, thinking_budget: 1536}
+  referee: {thinking: true, thinking_budget: 1536}
