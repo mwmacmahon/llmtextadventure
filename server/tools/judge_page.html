@@ -41,6 +41,7 @@ textarea{width:100%;box-sizing:border-box;font:14px var(--body);background:var(-
 .faults.good + .faults{margin-top:6px}
 .faults input{margin:0 4px 0 0}
 .own{margin-top:12px;background:var(--paper)}
+.misfit{margin:0;padding:8px 12px;border:1px dashed var(--muted);border-radius:6px;color:var(--muted);font-size:.88rem}
 .reveal{color:var(--ok);font:13px var(--mono)}
 @media (max-width:760px){.two{grid-template-columns:1fr}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -49,6 +50,7 @@ textarea{width:100%;box-sizing:border-box;font:14px var(--body);background:var(-
 <header><h1>Blind Pairs</h1><span class="dim" id="progress">loading</span><span class="dim" id="pid"></span></header>
 <p class="dim">The same turn told two ways. Pick the better story, and tick what each did well and what went wrong (optional). Names stay hidden until you choose. Keys: <kbd>1</kbd> first, <kbd>2</kbd> second, <kbd>0</kbd> tie, <kbd>Enter</kbd> submit (Shift+Enter for a new line in the reason).</p>
 <div class="ctx">
+  <p class="misfit" id="misfit" hidden></p>
   <div class="player" id="player"></div>
   <details><summary>The previous turn, as the player read it</summary><pre id="previous"></pre></details>
   <details id="shared"><summary>What the narrator was told this turn</summary><pre id="thisturn"></pre></details>
@@ -72,6 +74,7 @@ async function load(){
   $("progress").textContent = `${d.done} of ${d.total} judged`;
   if (!d.pair){ $("player").textContent = "Every pair in this matchup is judged."; $("t1").textContent = $("t2").textContent = ""; pair = null; return; }
   pair = d.pair; pick(null); $("reason").value = "";
+  $("misfit").hidden = !pair.misfit; $("misfit").textContent = pair.misfit ? `A misfit turn: ${pair.misfit}. The engine answers that; judge how each handles it, or skip with a tie.` : "";
   $("player").textContent = pair.player; $("previous").textContent = pair.previous || "(the opening)"; $("thisturn").textContent = pair.this_turn;
   const own = !pair.this_turn && (pair.first_this_turn || pair.second_this_turn);   // told differently: each story carries its own brief
   $("shared").hidden = !!own; $("o1").hidden = $("o2").hidden = !own;

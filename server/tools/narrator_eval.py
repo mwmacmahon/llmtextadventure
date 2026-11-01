@@ -102,15 +102,20 @@ def load_corpus(ref: str) -> dict:
     folder = p if p.is_dir() else CORPORA / ref
     c = json.loads((folder / "corpus.yml").read_text())
     c["_hash"] = hashlib.sha256((folder / "corpus.yml").read_bytes()).hexdigest()[:16]
+    # turns whose player line no longer fits the game (a script written in advance): labelled where shown, skipped by new
+    # runs; kept beside corpus.yml so the corpus hash, and every run made on it, stays the same
+    mf = folder / "misfit.json"
+    c["misfit"] = {f"{iid}:{t}": why for iid, ts in json.loads(mf.read_text()).items() if not iid.startswith("_")
+                   for t, why in ts.items()} if mf.exists() else {}
     return c
 
 
 def corpus_turns(c: dict) -> list[tuple[dict, dict, int]]:
-    """(game entry, its frozen export, turn) for every corpus turn."""
+    """(game entry, its frozen export, turn) for every corpus turn but the misfits."""
     out = []
     for g in c["games"]:
         doc = json.loads(_blob(g["blob"]))
-        out += [(g, doc, t) for t in g["turns"]]
+        out += [(g, doc, t) for t in g["turns"] if f"{g['iid']}:{t}" not in c.get("misfit", {})]
     return out
 
 
@@ -378,6 +383,7 @@ def make_pairs(run_a: str, run_b: str) -> Path:
     tb = {(r["iid"], r["turn"]): r for r in b["turns"]}
     c = load_corpus(a["corpus"])
     docs = {g["iid"]: json.loads(_blob(g["blob"])) for g in c["games"]}
+    misfit = c.get("misfit", {})
     def who(x: dict) -> str:
         prof = (x["variant"].get("profile") or "")
         return _slug(x["variant"]["note"] + "-" + (prof or short_model(x["role"]["model"])))
@@ -396,6 +402,7 @@ def make_pairs(run_a: str, run_b: str) -> Path:
         brief_a, brief_b = (brief_text(_blob(r["bulletin"], ".txt")) if r.get("bulletin") else "" for r in (ra, rb))
         first = rng.choice(["A", "B"])
         pairs.append({"key": f"{ra['iid']}:{ra['turn']}", "game": ra["game"], "player": st.get("player_text", ""),
+                      "misfit": misfit.get(f"{ra['iid']}:{ra['turn']}", ""),
                       "this_turn": brief_a if brief_a == brief_b else "", "A_this_turn": brief_a, "B_this_turn": brief_b,
                       "previous": prev, "A": telling_of(ra), "B": telling_of(rb), "A_hash": telling_hash(ra), "B_hash": telling_hash(rb), "first": first})
     PAIRS.mkdir(parents=True, exist_ok=True)
