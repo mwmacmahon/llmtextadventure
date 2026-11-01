@@ -322,6 +322,8 @@ async def rubric(run_ref: str, judge_model: str = "claude-sonnet-5-5") -> Path:
 FAULTS = ["flat or wrong voice", "too slow", "too rushed", "contradicts the player", "didn't stop for the player's next move",
           "contradicts earlier turns", "questionable logic", "skipped what the turn required", "broke the game's facts", "gave away a secret", "ran past the time",
           "misused engine notes"]      # e.g. a soon: line for what its own brief already had scheduled (the user, 11-01)
+# What a telling did well, in its own checklist under it (the user, 11-01: "a few positive tags in a separate section").
+STRENGTHS = ["great writing", "creative", "good game awareness", "characters came alive", "real tension"]
 
 
 BRIEF_HEADS = ("Do not narrate past", "COMING (", "THIS TURN (")
@@ -367,7 +369,7 @@ def make_pairs(run_a: str, run_b: str) -> Path:
     PAIRS.mkdir(parents=True, exist_ok=True)
     path = PAIRS / f"{pid}.json"
     path.write_text(json.dumps({"id": pid, "corpus": a["corpus"], "corpus_hash": a["corpus_hash"], "A": a["tag"], "B": b["tag"],
-                                "A_name": na, "B_name": nb, "faults": FAULTS, "pairs": pairs}, indent=1, ensure_ascii=False))
+                                "A_name": na, "B_name": nb, "faults": FAULTS, "strengths": STRENGTHS, "pairs": pairs}, indent=1, ensure_ascii=False))
     print(f"{len(pairs)} pairs -> {path}")
     return path
 
@@ -381,7 +383,8 @@ def user_judgements(pid: str) -> list[dict]:
     return [json.loads(x) for x in p.read_text().splitlines() if x.strip()] if p.exists() else []
 
 
-def record_judgement(pid: str, key: str, shown_choice: str, reason: str, faults: dict[str, list[str]] | None = None, who: str = "user") -> dict:
+def record_judgement(pid: str, key: str, shown_choice: str, reason: str, faults: dict[str, list[str]] | None = None, who: str = "user",
+                     strengths: dict[str, list[str]] | None = None) -> dict:
     """One human judgement, appended to judgements/<pid>.jsonl. `shown_choice` is what was clicked: first, second or tie;
     `faults` is what was marked under each telling as shown ({"first": [...], "second": [...]}), stored by A / B."""
     P = load_pairs(pid)
@@ -391,6 +394,7 @@ def record_judgement(pid: str, key: str, shown_choice: str, reason: str, faults:
     row = {"pairs": pid, "corpus_hash": P["corpus_hash"], "key": key, "A_hash": pr["A_hash"], "B_hash": pr["B_hash"], "shown_first": pr["first"],
            "choice": choice, "reason": reason.strip(), "who": who,
            "faults": {pr["first"]: _faults((faults or {}).get("first")), second: _faults((faults or {}).get("second"))},
+           "strengths": {pr["first"]: _faults((strengths or {}).get("first"), STRENGTHS), second: _faults((strengths or {}).get("second"), STRENGTHS)},
            "when": dt.datetime.now().astimezone().isoformat(timespec="seconds")}
     JUDGEMENTS.mkdir(parents=True, exist_ok=True)
     with (JUDGEMENTS / f"{pid}.jsonl").open("a") as f:
@@ -398,13 +402,13 @@ def record_judgement(pid: str, key: str, shown_choice: str, reason: str, faults:
     return {**row, "A_name": P["A_name"], "B_name": P["B_name"]}
 
 
-def _faults(xs: list[str] | None) -> list[str]:
-    return [x for x in xs or [] if x in FAULTS]
+def _faults(xs: list[str] | None, allowed: list[str] = FAULTS) -> list[str]:
+    return [x for x in xs or [] if x in allowed]
 
 
-def faults_line(faults: dict[str, list[str]] | None, names: dict[str, str]) -> str:
-    """'Haiku: too rushed; Sonnet: gave away a secret', for a report."""
-    return "; ".join(f"{names[k]}: {', '.join(v)}" for k, v in sorted((faults or {}).items()) if v)
+def faults_line(faults: dict[str, list[str]] | None, names: dict[str, str], word: str = "") -> str:
+    """'Haiku: too rushed; Sonnet: gave away a secret', for a report (word: 'did well' for the strengths)."""
+    return "; ".join(f"{names[k]}{' ' + word if word else ''}: {', '.join(v)}" for k, v in sorted((faults or {}).items()) if v)
 
 
 class PairVerdict(BaseModel):
@@ -412,13 +416,16 @@ class PairVerdict(BaseModel):
     better: Literal["first", "second", "tie"]
     faults_one: list[Literal[tuple(FAULTS)]]          # type: ignore[valid-type]  # what telling one got wrong, if anything
     faults_two: list[Literal[tuple(FAULTS)]]          # type: ignore[valid-type]
+    strengths_one: list[Literal[tuple(STRENGTHS)]]    # type: ignore[valid-type]  # what telling one did well, if anything
+    strengths_two: list[Literal[tuple(STRENGTHS)]]    # type: ignore[valid-type]
 
 
 PAIR_SYSTEM = ("You read two tellings of the same turn of a text adventure, written by two narrators from the same facts, and say which is "
                "the better story for the player: the one you would rather read next in this game. Weigh what a reader of this game cares "
                "about: the voice, the pacing, doing what the player said and stopping where the player should act next, things that make sense, keeping faith with what came before, playing what the turn required, not breaking the game's "
                "facts, not giving away what the player has not learned, not running past the time, using the engine notes (soon:, unseen:, checks) only for what they are for. A tie only when you truly cannot choose. "
-               "Give the reason first, then the choice, then for each telling the faults it has from the list (none is fine).")
+               "Give the reason first, then the choice, then for each telling the faults it has and what it did well, from the lists "
+               "(none is fine). Good game awareness means it knew when to stop for the player to choose.")
 
 
 def _values_from_user(limit: int = 12) -> str:
@@ -455,7 +462,8 @@ async def judge_pairs(pid: str, judge_model: str = "claude-sonnet-5-5") -> Path:
                 return {"key": pr["key"], "order": order, "error": f"{type(e).__name__}: {e}"[:300]}
         pick = {"first": order[0], "second": order[1], "tie": "tie"}[v.better]
         return {"key": pr["key"], "order": order, "choice": pick, "reason": v.reason,
-                "faults": {order[0]: list(v.faults_one), order[1]: list(v.faults_two)}}
+                "faults": {order[0]: list(v.faults_one), order[1]: list(v.faults_two)},
+                "strengths": {order[0]: list(v.strengths_one), order[1]: list(v.strengths_two)}}
 
     res = await asyncio.gather(*(one(pr, o) for pr in P["pairs"] for o in ("AB", "BA")))
     JUDGE.mkdir(parents=True, exist_ok=True)
@@ -494,7 +502,7 @@ def matchup(pid: str) -> dict:
             "user": rate([u["choice"] for u in users.values()]), "judge": rate([c for c in jc.values() if c]),
             "agreement": {"n": len(both), "agree": agree, "rate": round(agree / len(both), 3) if both else None},
             "judge_order_flips": flips,
-            "user_reasons": [{"key": k, "choice": u["choice"], "reason": u["reason"], "faults": u.get("faults") or {}} for k, u in users.items()],
+            "user_reasons": [{"key": k, "choice": u["choice"], "reason": u["reason"], "faults": u.get("faults") or {}, "strengths": u.get("strengths") or {}} for k, u in users.items()],
             "judge_reasons": [j for j in js if "choice" in j]}
 
 
@@ -562,8 +570,8 @@ def report() -> Path:
             agree = f"{a['rate']:.0%} of {a['n']}" if a["n"] else "-"
             mrows.append(f"<tr><td>{E(m['A'])}</td><td>{E(m['B'])}</td><td>{fmt(u)}</td><td>{fmt(j)}</td>"
                          f"<td>{agree}</td><td class='num'>{m['judge_order_flips']}</td></tr>")
-            ur = "".join(f"<div class='eng'><b>{E(x['choice'])}</b> {E(x['key'])}: {E(x['reason'] or '(no reason)')} <span class='dim'>{E(faults_line(x['faults'], names))}</span></div>" for x in m["user_reasons"])
-            jr = "".join(f"<div class='eng'><b>{E(x['choice'])}</b> {E(x['key'])} ({E(x['order'])}): {E(x['reason'])} <span class='dim'>{E(faults_line(x.get('faults'), names))}</span></div>" for x in m["judge_reasons"])
+            ur = "".join(f"<div class='eng'><b>{E(x['choice'])}</b> {E(x['key'])}: {E(x['reason'] or '(no reason)')} <span class='dim'>{E(faults_line(x['faults'], names))}</span> <span class='dim'>{E(faults_line(x['strengths'], names, 'did well'))}</span></div>" for x in m["user_reasons"])
+            jr = "".join(f"<div class='eng'><b>{E(x['choice'])}</b> {E(x['key'])} ({E(x['order'])}): {E(x['reason'])} <span class='dim'>{E(faults_line(x.get('faults'), names))}</span> <span class='dim'>{E(faults_line(x.get('strengths'), names, 'did well'))}</span></div>" for x in m["judge_reasons"])
             details.append(f"<details><summary>{E(m['A'])} vs {E(m['B'])}: reasons</summary><h3>The user</h3>{ur or '<p class=dim>none yet</p>'}"
                            f"<h3>The judge (both orders)</h3>{jr or '<p class=dim>none yet</p>'}</details>")
         if mrows:

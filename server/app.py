@@ -220,6 +220,7 @@ class JudgeInput(BaseModel):
     choice: str
     reason: str = ""
     faults: dict[str, list[str]] = {}     # marked under each telling as shown: {"first": [...], "second": [...]}
+    strengths: dict[str, list[str]] = {}  # the same, for what it did well
 
 
 @app.get("/dev/judge")
@@ -292,14 +293,14 @@ def judge_next(pid: str):
         f, s_ = (nxt["first"], "B" if nxt["first"] == "A" else "A")
         blind = {"key": nxt["key"], "player": nxt["player"], "previous": nxt["previous"], "this_turn": nxt["this_turn"], "first": a, "second": b,
                  "first_this_turn": nxt.get(f + "_this_turn", ""), "second_this_turn": nxt.get(s_ + "_this_turn", "")}
-    return {"total": len(P["pairs"]), "done": len(done), "faults": ne.FAULTS, "pair": blind}
+    return {"total": len(P["pairs"]), "done": len(done), "faults": ne.FAULTS, "strengths": ne.STRENGTHS, "pair": blind}
 
 
 @app.post("/dev/judge/{pid}")
 def judge_record(pid: str, body: JudgeInput):
     if body.choice not in ("first", "second", "tie"):
         raise HTTPException(422, "choice is first, second or tie")
-    row = _ne().record_judgement(pid, body.key, body.choice, body.reason, body.faults)
+    row = _ne().record_judgement(pid, body.key, body.choice, body.reason, body.faults, strengths=body.strengths)
     names = {"A": row["A_name"], "B": row["B_name"]}
     first = row["shown_first"]
     return {"recorded": True, "first_name": names[first], "second_name": names["B" if first == "A" else "A"], "choice": row["choice"]}

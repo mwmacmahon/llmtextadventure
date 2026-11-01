@@ -37,6 +37,8 @@ textarea{width:100%;box-sizing:border-box;font:14px var(--body);background:var(-
 .faults .lab{font-size:.8rem;color:var(--muted);width:100%}
 .faults label{font-size:.82rem;border:1px solid var(--rule);border-radius:12px;padding:2px 8px;cursor:pointer;user-select:none;background:var(--sheet)}
 .faults label:has(input:checked){border-color:var(--bad);color:var(--bad)}
+.faults.good label:has(input:checked){border-color:var(--ok);color:var(--ok)}
+.faults.good + .faults{margin-top:6px}
 .faults input{margin:0 4px 0 0}
 .own{margin-top:12px;background:var(--paper)}
 .reveal{color:var(--ok);font:13px var(--mono)}
@@ -45,13 +47,13 @@ textarea{width:100%;box-sizing:border-box;font:14px var(--body);background:var(-
 </style></head>
 <body><div class="wrap">
 <header><h1>Blind Pairs</h1><span class="dim" id="progress">loading</span><span class="dim" id="pid"></span></header>
-<p class="dim">The same turn told two ways. Pick the better story, and tick anything that went wrong under either one (optional). Names stay hidden until you choose. Keys: <kbd>1</kbd> first, <kbd>2</kbd> second, <kbd>0</kbd> tie, <kbd>Enter</kbd> submit (Shift+Enter for a new line in the reason).</p>
+<p class="dim">The same turn told two ways. Pick the better story, and tick what each did well and what went wrong (optional). Names stay hidden until you choose. Keys: <kbd>1</kbd> first, <kbd>2</kbd> second, <kbd>0</kbd> tie, <kbd>Enter</kbd> submit (Shift+Enter for a new line in the reason).</p>
 <div class="ctx">
   <div class="player" id="player"></div>
   <details><summary>The previous turn, as the player read it</summary><pre id="previous"></pre></details>
   <details id="shared"><summary>What the narrator was told this turn</summary><pre id="thisturn"></pre></details>
 </div>
-<div class="two"><section id="s1"><h2>First</h2><div class="prose" id="t1"></div><details class="own" id="o1" hidden><summary>What this narrator was told this turn</summary><pre id="b1t"></pre></details><div class="faults" id="f1"></div></section><section id="s2"><h2>Second</h2><div class="prose" id="t2"></div><details class="own" id="o2" hidden><summary>What this narrator was told this turn</summary><pre id="b2t"></pre></details><div class="faults" id="f2"></div></section></div>
+<div class="two"><section id="s1"><h2>First</h2><div class="prose" id="t1"></div><details class="own" id="o1" hidden><summary>What this narrator was told this turn</summary><pre id="b1t"></pre></details><div class="faults good" id="g1"></div><div class="faults" id="f1"></div></section><section id="s2"><h2>Second</h2><div class="prose" id="t2"></div><details class="own" id="o2" hidden><summary>What this narrator was told this turn</summary><pre id="b2t"></pre></details><div class="faults good" id="g2"></div><div class="faults" id="f2"></div></section></div>
 <p class="reveal" id="reveal"></p>
 </div>
 <div class="bar"><div class="in">
@@ -75,6 +77,8 @@ async function load(){
   $("shared").hidden = !!own; $("o1").hidden = $("o2").hidden = !own;
   $("b1t").textContent = pair.first_this_turn || ""; $("b2t").textContent = pair.second_this_turn || "";
   $("t1").textContent = pair.first; $("t2").textContent = pair.second;
+  for (const n of ["1","2"]) $("g"+n).innerHTML = `<span class="lab">What this one did well</span>` +
+    d.strengths.map((t,i) => `<label><input type="checkbox" id="g${n}_${i}" value="${t}">${t}</label>`).join("");
   for (const n of ["1","2"]) $("f"+n).innerHTML = `<span class="lab">What went wrong in this one (if anything)</span>` +
     d.faults.map((t,i) => `<label><input type="checkbox" id="f${n}_${i}" value="${t}">${t}</label>`).join("");
   window.scrollTo(0, 0);
@@ -83,8 +87,10 @@ async function submit(){
   if (!pair || !choice || busy) return; busy = true;
   const marked = n => [...document.querySelectorAll(`#f${n} input:checked`)].map(x => x.value);
   const faults = {first: marked(1), second: marked(2)};
+  const good = n => [...document.querySelectorAll(`#g${n} input:checked`)].map(x => x.value);
+  const strengths = {first: good(1), second: good(2)};
   const r = await fetch(`/dev/judge/${PID}`, {method: "POST", headers: {"content-type": "application/json"},
-    body: JSON.stringify({key: pair.key, choice, reason: $("reason").value, faults})});
+    body: JSON.stringify({key: pair.key, choice, reason: $("reason").value, faults, strengths})});
   const d = await r.json(); busy = false;
   $("reveal").textContent = r.ok ? `Recorded. First was ${d.first_name}, second was ${d.second_name}.` : `Not recorded: ${d.detail || r.status}. Try again.`;
   if (r.ok) load();

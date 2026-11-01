@@ -39,7 +39,9 @@ async def test_pairs_judgements_and_agreement(engine, fake, tmp_path, monkeypatc
     assert len(P["pairs"]) == 3 and P["pairs"][0]["player"] == "I look around."
     # the user clicks what was shown; the record says A or B
     for p, shown in zip(P["pairs"], ("first", "second", "tie")):
-        row = ne.record_judgement(pid, p["key"], shown, "because", {"first": ["too rushed", "not a fault"], "second": []})
+        row = ne.record_judgement(pid, p["key"], shown, "because", {"first": ["too rushed", "not a fault"], "second": []},
+                                  strengths={"second": ["creative", "not a strength"]})
+        assert row["strengths"]["B" if p["first"] == "A" else "A"] == ["creative"]
         want = {"first": p["first"], "second": "B" if p["first"] == "A" else "A", "tie": "tie"}[shown]
         assert row["choice"] == want and row["faults"] == {p["first"]: ["too rushed"], "B" if p["first"] == "A" else "A": []}
     users = {r["key"]: r["choice"] for r in ne.user_judgements(pid)}
