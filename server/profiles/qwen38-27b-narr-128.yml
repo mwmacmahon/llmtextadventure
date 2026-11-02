@@ -1,0 +1,7 @@
+# qwen38-27b, the narrator ladder's station check (D67): the base qwen38-27b-narr-think-512 (thinks on every request,
+# effort low) with one change: the cap at 128 tokens, below the 256 that matched 512 on noir, to find where the cap
+# starts to cost the story.
+model: Huihui-Qwen3.8-27B-abliterated-UD-Q5_K_XL.gguf
+server: {ctx: 98304, ckpt: 2048, kv: q8_0, think_budget: 128}
+roles:
+  narrator: {thinking: true, thinking_budget: 128, reasoning_effort: low}
