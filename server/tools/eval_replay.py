@@ -678,6 +678,15 @@ def grade_results(results: list[dict], gold: dict[str, dict]) -> None:
 
 
 def summarize_gold(results: list[dict]) -> dict:
+    """The key's totals, and the same per game when the set holds more than one (ISSUES E3: never only the sum)."""
+    out = _gold_totals(results)
+    games = sorted({r["game"] for r in results if r.get("gold") and r.get("game")})
+    if len(games) > 1:
+        out["by_game"] = {g: _gold_totals([r for r in results if r.get("game") == g]) for g in games}
+    return out
+
+
+def _gold_totals(results: list[dict]) -> dict:
     ref = [r["gold"]["referee"] for r in results if "referee" in r.get("gold", {})]
     adj = [r["gold"]["adjudicator"] for r in results if "adjudicator" in r.get("gold", {})]
     out: dict[str, Any] = {}

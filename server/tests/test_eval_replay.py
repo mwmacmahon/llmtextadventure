@@ -99,3 +99,15 @@ def test_the_graded_key_counts_required_errors_allowed_and_unjudged():
                                {"check": {"stat": "nerve", "difficulty": "low"}}, {"check": {"stat": "eye", "difficulty": "low"}}]})
     assert a["kind_ok"] and a["commands_ok"] and (a["checks"]["exact"], a["checks"]["stat_only"]) == (1, 1)
     assert a["checks"]["allowed"] == 1 and a["checks"]["errors"] == [{"stat": "eye", "difficulty": "low"}]
+
+
+def test_a_key_over_two_games_is_summed_and_split_by_game():
+    from tools.eval_replay import summarize_gold
+    def turn(game, hits, required, errors):
+        return {"game": game, "gold": {"referee": {"hits": hits, "required": required, "errors": [{}] * errors,
+                                                   "allowed": 0, "unjudged": []}}}
+    results = [turn("noir", 3, 4, 1), turn("noir", 2, 2, 0), turn("station", 1, 3, 2), {"game": "station"}]   # the last: not in the key
+    s = summarize_gold(results)
+    assert s["referee"]["required"] == "6/9" and s["referee"]["errors"] == 3
+    assert s["by_game"]["noir"]["referee"]["required"] == "5/6" and s["by_game"]["station"]["referee"]["required"] == "1/3"
+    assert "by_game" not in summarize_gold(results[:2])                            # one game: the sum is the game
