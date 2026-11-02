@@ -1,0 +1,7 @@
+# qwen38-27b, the overnight narrator ladder's combination (notes/OVERNIGHT-2026-11-01.md, D67): the two leads together,
+# thinking on every request capped at 256 (even with the 512 base on two runs, faster) and presence 1.5 (ahead of the
+# base on two runs). Effort low, sampling otherwise unchanged; the adjudicator and referee do not think.
+model: Huihui-Qwen3.8-27B-abliterated-UD-Q5_K_XL.gguf
+server: {ctx: 98304, ckpt: 2048, kv: q8_0, think_budget: 256}
+roles:
+  narrator: {thinking: true, thinking_budget: 256, reasoning_effort: low, presence_penalty: 1.5}
