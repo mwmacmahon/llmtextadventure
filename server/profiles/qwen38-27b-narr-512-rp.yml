@@ -1,0 +1,7 @@
+# qwen38-27b, the overnight narrator ladder (notes/OVERNIGHT-2026-11-01.md): the base qwen38-27b-narr-think-512 (thinks
+# on every request, at most 512 tokens, effort low) with one change: the roleplay community's Qwen3.5-27B sampler,
+# 0.8 with min-p 0.05 and the rest neutral (N3: top_p 1.0, top_k 0).
+model: Huihui-Qwen3.8-27B-abliterated-UD-Q5_K_XL.gguf
+server: {ctx: 98304, ckpt: 2048, kv: q8_0, think_budget: 512}
+roles:
+  narrator: {thinking: true, thinking_budget: 512, reasoning_effort: low, temperature: 0.8, top_p: 1.0, top_k: 0, min_p: 0.05}
