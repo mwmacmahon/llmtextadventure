@@ -59,6 +59,11 @@ class AnthropicProvider:
         }
         if role.effort:
             kw["output_config"] = {"effort": role.effort}
+        if role.thinking is not None:
+            # unset is the API's default (adaptive on the 5.x models). Sonnet 5.5 refuses "disabled" and turns
+            # thinking off with "between_tools" (no other field, effort high or below); Opus 5.5 cannot turn it off.
+            off = {"type": "between_tools"} if role.model.startswith("claude-sonnet-5-5") else {"type": "disabled"}
+            kw["thinking"] = {"type": "adaptive"} if role.thinking else off
         if role.stop_sequences:
             kw["stop_sequences"] = list(role.stop_sequences)
         return kw

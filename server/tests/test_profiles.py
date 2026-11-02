@@ -51,14 +51,14 @@ def test_config_role_wears_the_loaded_profile_s_overrides(monkeypatch, tmp_path:
     _write(tmp_path, "thinker", "model: a.gguf\nroles:\n  referee: {thinking: true, thinking_budget: 800, temperature: 0.3}\n")
     monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path)
     cfg = Config(roles={"referee": RoleConfig(provider="llamacpp", model="m", temperature=0.0), "narrator": RoleConfig(provider="llamacpp", model="m")})
-    assert cfg.role("referee").thinking is False                   # nothing loaded: the config as written
+    assert not cfg.role("referee").thinking                   # nothing loaded: the config as written
     monkeypatch.setenv("TA_PROFILE", "thinker")
     r = cfg.role("referee")
     assert (r.thinking, r.thinking_budget, r.temperature, r.model) == (True, 800, 0.3, "m")
-    assert cfg.role("narrator").thinking is False                  # no override for it
-    assert cfg.roles["referee"].thinking is False                  # the configured role itself is untouched
+    assert not cfg.role("narrator").thinking                  # no override for it
+    assert not cfg.roles["referee"].thinking                  # the configured role itself is untouched
     monkeypatch.setenv("TA_PROFILE", "nobody-wrote-this")
-    assert cfg.role("referee").thinking is False                   # a profile the repo lacks: no overrides, a warning
+    assert not cfg.role("referee").thinking                   # a profile the repo lacks: no overrides, a warning
 
 
 def test_helper_url_is_derived_from_the_llama_host_and_nothing_is_asked_without_one(monkeypatch):
@@ -101,7 +101,7 @@ def test_load_config_checks_every_repo_profile_and_asks_the_box_once(monkeypatch
     monkeypatch.setenv("TA_CONFIG", "config.llamacpp.yml")
     monkeypatch.setenv("TA_LLAMA_URL", "http://127.0.0.1:1")      # nothing listens: the warning, not a failure
     cfg = load_config()
-    assert cfg.role("referee").thinking is False
+    assert not cfg.role("referee").thinking
     monkeypatch.setenv("TA_PROFILE", "boxed")
     assert cfg.role("referee").thinking is True
     _write(tmp_path, "broken", "model: a.gguf\nroles: {referee: {no_such: 1}}\n")

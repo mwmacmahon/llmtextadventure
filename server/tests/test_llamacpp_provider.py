@@ -105,6 +105,8 @@ async def test_a_thinking_narrator_streams_only_the_answer_with_its_own_room_and
     assert "".join(e.text for e in events if isinstance(e, TextDelta)) == "You lean harder."
     assert seen["chat_template_kwargs"] == {"enable_thinking": True, "reasoning_effort": "low"}
     assert seen["max_tokens"] == 64 + 1024 and seen["reasoning_budget_tokens"] == 1024
+    done = [e for e in events if isinstance(e, StreamDone)][0]
+    assert done.usage.extra["thinking"] == {"reasoning_chars": len("Frank is hurt; keep it short."), "forced_close": False}
     seen.clear()
     _ = [e async for e in p.stream(role(stop_sequences=[], reasoning_effort="low"), "S", [Msg("user", "x")])]
     assert seen["chat_template_kwargs"] == {"enable_thinking": False} and "reasoning_budget_tokens" not in seen

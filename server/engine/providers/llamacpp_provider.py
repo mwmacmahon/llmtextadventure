@@ -197,6 +197,7 @@ class LlamaCppProvider:
         sent = 0
         cut = False
         finish = None
+        thought, thought_tail = 0, ""
         usage: Usage = Usage()
         async with self._client(role) as client:
             async with client.stream("POST", "/v1/chat/completions", json=body) as r:
@@ -210,6 +211,10 @@ class LlamaCppProvider:
                     chunk = json.loads(payload)
                     for choice in chunk.get("choices", []):
                         delta = (choice.get("delta") or {}).get("content")
+                        reasoning = (choice.get("delta") or {}).get("reasoning_content")
+                        if reasoning:           # never yielded; only how far it ran is kept (ISSUES N7)
+                            thought += len(reasoning)
+                            thought_tail = (thought_tail + reasoning)[-400:]
                         if delta and stops:
                             text += delta
                             at = min((i for i in (text.find(x) for x in stops) if i >= 0), default=-1)
@@ -235,6 +240,8 @@ class LlamaCppProvider:
         # llama.cpp says "stop" for both end-of-turn and a stop string; the text ends before the string either way
         stop_reason = "max_tokens" if finish == "length" else ("stop_sequence" if role.stop_sequences and finish == "stop" and _hit_stop(text, role) else "end_turn")
         usage.extra["model"] = role.model
+        if role.thinking:
+            usage.extra["thinking"] = {"reasoning_chars": thought, "forced_close": BUDGET_MARK in thought_tail}
         yield StreamDone(text=text, stop_reason=stop_reason, model=role.model, usage=usage)
 
     async def extract(self, role: RoleConfig, system: str, messages: list[Msg], schema: type[T]) -> tuple[T, Usage]:

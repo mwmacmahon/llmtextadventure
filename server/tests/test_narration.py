@@ -93,6 +93,29 @@ async def test_the_cap_and_a_bad_call_do_not_lose_the_turn():
 
 
 @pytest.mark.asyncio
+async def test_a_narrator_that_thinks_once_a_turn_continues_after_the_roll_without_thinking():
+    """think_after_call False (D66): the first request thinks, every continuation after a roll is sent thinking off;
+    by default every request keeps the role's own setting."""
+    asked: list = []
+
+    class Recording(FakeProvider):
+        def stream(self, role, system, messages):
+            asked.append(role.thinking)
+            return super().stream(role, system, messages)
+
+    parts = ["You lean harder.\n<<CHECK hands hard>>", "The hasp gives.\n<<CHECK nerve easy>>", "You are through."]
+    for after, want in ((False, [True, False, False]), (True, [True, True, True])):
+        asked.clear()
+        fp = Recording(delay=0)
+        fp.script = scripted(parts)
+        r = role().model_copy(update={"thinking": True, "think_after_call": after})
+        async for _ in narrate(fp, r, "system", [Msg("user", "[PLAYER]\nI try the trapdoor.")],
+                               lambda call, n: CallResult(text="[ENGINE] Roll: success."), max_calls=3):
+            pass
+        assert asked == want
+
+
+@pytest.mark.asyncio
 async def test_no_call_is_a_plain_stream():
     fp = FakeProvider(delay=0)
     fp.script = scripted(["Just prose, no brackets."])

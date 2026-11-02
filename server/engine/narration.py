@@ -75,6 +75,8 @@ def _add(usage: Usage, more: Usage) -> None:
     usage.output_tokens += more.output_tokens
     usage.cache_read_input_tokens += more.cache_read_input_tokens
     usage.cache_creation_input_tokens += more.cache_creation_input_tokens
+    if more.extra.get("thinking"):            # one entry per request that thought, in order
+        usage.extra.setdefault("thinking", []).append(more.extra["thinking"])
 
 
 async def narrate(provider: Provider, role: RoleConfig, system: str, messages: list[Msg], handler: CallHandler,
@@ -96,7 +98,8 @@ async def narrate(provider: Provider, role: RoleConfig, system: str, messages: l
     while True:
         requests += 1
         done: StreamDone | None = None
-        async for ev in provider.stream(role, system, msgs):
+        asked = role if requests == 1 or role.think_after_call else role.model_copy(update={"thinking": False})
+        async for ev in provider.stream(asked, system, msgs):
             if isinstance(ev, TextDelta):
                 vis = filt.feed(ev.text)
                 if vis:

@@ -35,7 +35,12 @@ class RoleConfig(BaseModel):
     # cache stays resident beside the other roles', whether the model may think, sampling temperature, auth.
     base_url: str = Field(default_factory=lambda: os.environ.get("TA_LLAMA_URL", "http://127.0.0.1:8080"))
     slot: int | None = None
-    thinking: bool = False
+    # Whether the model may think, the same on every provider (D66): True on, False off, None the provider's own
+    # default (llama.cpp: off; Sonnet 5.5: adaptive, the model decides, which is what every Sonnet run so far had).
+    thinking: bool | None = None
+    # narrator, called mode: False sends every continuation after a roll with thinking off, so a thinking narrator
+    # thinks once a turn, on its first request, instead of once more after each roll (D66).
+    think_after_call: bool = True
     # structured roles with thinking on: the grammar starts after the think block (llama-server 8580, probed D33),
     # so one call thinks and then fills the schema. The server bounds the thinking (`--reasoning-budget`, the
     # profile knob THINK_BUDGET) and closes the block itself when the budget runs out; this is that number, so
