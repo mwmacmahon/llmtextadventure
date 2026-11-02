@@ -92,6 +92,25 @@
         "8012"
       ],
       "port": 8012
+    },
+    {
+      "name": "api-local-fixed",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "TA_PROFILE=qwen38-27b-narr-think-512",
+        "TA_CONFIG=config.llamacpp.yml",
+        "TA_LLAMA_URL=http://192.168.0.215:8280",
+        "TA_LLAMA_PREPARE_URL=http://192.168.0.215:8281/free-comfy",
+        "server/.venv/bin/uvicorn",
+        "app:app",
+        "--app-dir",
+        "server",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8013"
+      ],
+      "port": 8013
     }
   ]
 }
