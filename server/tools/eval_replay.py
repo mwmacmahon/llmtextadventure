@@ -940,11 +940,15 @@ def main() -> None:
             ne.make_pairs(args.run_a, args.run_b)
         elif args.cmd == "judge-pairs":
             asyncio.run(ne.judge_pairs(args.pairs, args.judge))
+            m = ne.matchup(args.pairs)
+            for g, x in [*((g, x["judge"]) for g, x in m["by_game"].items()), ("all", m["judge"])]:
+                print(f"{g}: {m['A']} {x['A']}, {m['B']} {x['B']}, tie {x['tie']} (of {x['n']})")
         elif args.cmd == "narrator-calls":
             for r in args.runs:
                 c = ne.check_calls(r)
-                print(f"{c['run']}: asked {c['asked']} checks on {c['turns_asked']} turns, called {c['called']}; "
-                      f"called none on {c['turns_none_called']} turns; added {c['added']}; told {c['told']}; problems {c['problems']}")
+                for g, x in [*c["by_game"].items(), ("all", c)]:
+                    print(f"{c['run']} {g}: asked {x['asked']} checks on {x['turns_asked']} turns, called {x['called']}; "
+                          f"called none on {x['turns_none_called']} turns; added {x['added']}; told {x['told']}; problems {x['problems']}")
         else:
             print(ne.report())
         return

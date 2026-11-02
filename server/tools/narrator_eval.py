@@ -308,17 +308,35 @@ async def rubric(run_ref: str, judge_model: str = "claude-sonnet-5-5") -> Path:
                 return {"iid": r["iid"], "turn": r["turn"], "error": f"{type(e).__name__}: {e}"[:300]}
 
     out = await asyncio.gather(*(one(r) for r in d["turns"]))
-    tally: dict[str, dict[str, int]] = {k: {"yes": 0, "no": 0, "n/a": 0} for k in RUBRIC_ITEMS}
-    for r in out:
-        for i in r.get("items") or []:
-            tally[i["item"]][i["verdict"]] += 1
+    tallies = rubric_tallies(out, game_of(d))
     RUBRIC.mkdir(parents=True, exist_ok=True)
     path = RUBRIC / f"{d['tag']}.v{RUBRIC_VERSION}.json"
     path.write_text(json.dumps({"run": d["tag"], "corpus": d["corpus"], "rubric_version": RUBRIC_VERSION, "items": RUBRIC_ITEMS,
-                                "judge": judge_model, "harness": provenance(), "tally": tally, "turns": out}, indent=1, ensure_ascii=False))
-    print(json.dumps(tally))
+                                "judge": judge_model, "harness": provenance(), "tally": tallies["all"], "tally_by_game": tallies,
+                                "turns": out}, indent=1, ensure_ascii=False))
+    for g, t in tallies.items():
+        print(f"{g}: {json.dumps(t)}")
     print("written", path)
     return path
+
+
+def game_of(run: dict) -> dict[str, str]:
+    """Each turn's game by its key (iid:turn), from a narrator run."""
+    return {f"{t['iid']}:{t['turn']}": t["game"] for t in run["turns"]}
+
+
+def rubric_tallies(turns: list[dict], games: dict[str, str]) -> dict[str, dict[str, dict[str, int]]]:
+    """The rubric's yes / no / n/a per item for each game, then over all of them. A corpus of two games is never read as
+    one number alone: a setting can win one game and lose the other, and the sum hides it (ISSUES E2, D67)."""
+    out: dict[str, dict[str, dict[str, int]]] = {}
+    for g in sorted(set(games.values())) + ["all"]:
+        out[g] = {k: {"yes": 0, "no": 0, "n/a": 0} for k in RUBRIC_ITEMS}
+    for t in turns:
+        g = games.get(f"{t['iid']}:{t['turn']}")
+        for into in ([out[g]] if g else []) + [out["all"]]:
+            for i in t.get("items") or []:
+                into[i["item"]][i["verdict"]] += 1
+    return out
 
 
 # ---- calling checks (D61: local narrators to call their own checks again) -----------------------------------
@@ -328,9 +346,10 @@ def check_calls(run_ref: str) -> dict:
     a call came before the outcome showed is the rubric's checks_at_beat, not counted here."""
     from engine.narration import Assessment, Call, match_assessment
     r = load_run(run_ref)
-    out = {"run": r["tag"], "turns": len(r["turns"]), "turns_asked": 0, "asked": 0, "called": 0, "turns_none_called": 0,
-           "added": 0, "told": 0, "problems": 0}
+    zero = {"turns": 0, "turns_asked": 0, "asked": 0, "called": 0, "turns_none_called": 0, "added": 0, "told": 0, "problems": 0}
+    out: dict[str, Any] = {"run": r["tag"], **zero, "by_game": {g: dict(zero) for g in sorted({t["game"] for t in r["turns"]})}}
     for t in r["turns"]:
+        n = {"turns": 1, "turns_asked": 0, "asked": 0, "called": 0, "turns_none_called": 0, "added": 0, "told": 0, "problems": 0}
         brief = brief_text(_blob(t["bulletin"], ".txt")) if t.get("bulletin") else ""
         # matched again here with today's rule (a repeat is a second roll), so runs made before the 11-01 fix count the same way
         asked = [Assessment(stat=m[1], difficulty=m[2].replace(" ", "_"), target=m[3] or "", label=m[0])  # type: ignore[arg-type]
@@ -342,14 +361,14 @@ def check_calls(run_ref: str) -> dict:
                                       target=c.get("target", "")), asked)
             if a is not None:
                 a.called, a.called_as, matched = True, c.get("difficulty") or "", matched + 1
-        out["told"] += len(t.get("told") or [])
-        out["problems"] += len(t.get("problems") or [])
+        n["told"] = len(t.get("told") or [])
+        n["problems"] = len(t.get("problems") or [])
         if asked:
-            out["turns_asked"] += 1
-            out["asked"] += len(asked)
-            out["called"] += matched
-            out["turns_none_called"] += matched == 0
-        out["added"] += len(calls) - matched
+            n.update(turns_asked=1, asked=len(asked), called=matched, turns_none_called=int(matched == 0))
+        n["added"] = len(calls) - matched
+        for into in (out, out["by_game"][t["game"]]):
+            for k, v in n.items():
+                into[k] += v
     return out
 
 
@@ -534,11 +553,14 @@ def matchup(pid: str) -> dict:
         return {"n": n, "B_wins": round(b, 1), "B_rate": round(b / n, 3) if n else None,
                 "A": choices.count("A"), "B": choices.count("B"), "tie": choices.count("tie")}
     jc = {p["key"]: _judge_choice(js, p["key"]) for p in P["pairs"]}
+    game = {p["key"]: p.get("game", "?") for p in P["pairs"]}
+    by_game = {g: {"user": rate([u["choice"] for k, u in users.items() if game.get(k) == g]),
+                   "judge": rate([c for k, c in jc.items() if c and game[k] == g])} for g in sorted(set(game.values()))}
     both = [k for k in users if jc.get(k)]
     agree = sum(1 for k in both if users[k]["choice"] == jc[k])
     flips = sum(1 for p in P["pairs"] if jc.get(p["key"]) == "tie" and len({j["choice"] for j in js if j["key"] == p["key"] and "choice" in j}) > 1)
     return {"pairs": pid, "A": P["A_name"], "B": P["B_name"], "total": len(P["pairs"]),
-            "user": rate([u["choice"] for u in users.values()]), "judge": rate([c for c in jc.values() if c]),
+            "user": rate([u["choice"] for u in users.values()]), "judge": rate([c for c in jc.values() if c]), "by_game": by_game,
             "agreement": {"n": len(both), "agree": agree, "rate": round(agree / len(both), 3) if both else None},
             "judge_order_flips": flips,
             "user_reasons": [{"key": k, "choice": u["choice"], "reason": u["reason"], "faults": u.get("faults") or {}, "strengths": u.get("strengths") or {}} for k, u in users.items()],
@@ -569,14 +591,22 @@ def report() -> Path:
         cols = [r for r in crs if r["tag"] in rubrics]
         if cols:
             head = "".join(f"<th>{E(r['variant']['note'])}<br>{E(short_model(r['role']['model']))}</th>" for r in cols)
+            tallies = {r["tag"]: rubric_tallies(rubrics[r["tag"]]["turns"], game_of(r)) for r in cols}
+            games = sorted({g for r in cols for g in tallies[r["tag"]] if g != "all"})
+            sections = [(g, f"{g}, {sum(1 for t in crs[0]['turns'] if t['game'] == g)} turns") for g in games]
+            if len(games) > 1:                   # each game on its own first; the sum last, and labelled as one (ISSUES E2)
+                sections.append(("all", "all games summed (read each game first: a setting can win one and lose the other)"))
             rows = []
-            for item, text in RUBRIC_ITEMS.items():
-                cells = []
-                for r in cols:
-                    t = rubrics[r["tag"]]["tally"][item]
-                    judged = t["yes"] + t["no"]
-                    cells.append(f"<td class='num'>{t['yes']}/{judged}" + (f" <span class='rn'>({t['n/a']} n/a)</span>" if t["n/a"] else "") + "</td>")
-                rows.append(f"<tr><td title='{E(text)}'>{E(item.replace('_', ' '))}</td>{''.join(cells)}</tr>")
+            for g, label in sections:
+                if len(sections) > 1:
+                    rows.append(f"<tr><td colspan='{len(cols) + 1}'><b>{E(label)}</b></td></tr>")
+                for item, text in RUBRIC_ITEMS.items():
+                    cells = []
+                    for r in cols:
+                        t = tallies[r["tag"]].get(g, {}).get(item, {"yes": 0, "no": 0, "n/a": 0})
+                        judged = t["yes"] + t["no"]
+                        cells.append(f"<td class='num'>{t['yes']}/{judged}" + (f" <span class='rn'>({t['n/a']} n/a)</span>" if t["n/a"] else "") + "</td>")
+                    rows.append(f"<tr><td title='{E(text)}'>{E(item.replace('_', ' '))}</td>{''.join(cells)}</tr>")
             old = sorted({rubrics[r["tag"]]["rubric_version"] for r in cols if rubrics[r["tag"]]["rubric_version"] < RUBRIC_VERSION})
             if old:
                 body.append(f"<p class='lede'><b>Rubric version {', '.join(map(str, old))}, not the current {RUBRIC_VERSION}.</b> Version 1 counted any "
@@ -607,14 +637,17 @@ def report() -> Path:
             names = {"A": m["A"], "B": m["B"]}
             fmt = lambda x: f"{x['B_rate']:.0%} of {x['n']} ({x['B']}–{x['A']}, {x['tie']} tie)" if x["n"] else "not judged"  # noqa: E731
             agree = f"{a['rate']:.0%} of {a['n']}" if a["n"] else "-"
-            mrows.append(f"<tr><td>{E(m['A'])}</td><td>{E(m['B'])}</td><td>{fmt(u)}</td><td>{fmt(j)}</td>"
+            split = len(m["by_game"]) > 1
+            per = lambda who: "".join(f"<div><b>{E(g)}</b> {fmt(x[who])}</div>" for g, x in m["by_game"].items()) + (  # noqa: E731
+                f"<div class='dim'>all {fmt(m[who])}</div>" if split else "")
+            mrows.append(f"<tr><td>{E(m['A'])}</td><td>{E(m['B'])}</td><td>{per('user')}</td><td>{per('judge')}</td>"
                          f"<td>{agree}</td><td class='num'>{m['judge_order_flips']}</td></tr>")
             ur = "".join(f"<div class='eng'><b>{E(x['choice'])}</b> {E(x['key'])}: {E(x['reason'] or '(no reason)')} <span class='dim'>{E(faults_line(x['faults'], names))}</span> <span class='dim'>{E(faults_line(x['strengths'], names, 'did well'))}</span></div>" for x in m["user_reasons"])
             jr = "".join(f"<div class='eng'><b>{E(x['choice'])}</b> {E(x['key'])} ({E(x['order'])}): {E(x['reason'])} <span class='dim'>{E(faults_line(x.get('faults'), names))}</span> <span class='dim'>{E(faults_line(x.get('strengths'), names, 'did well'))}</span></div>" for x in m["judge_reasons"])
             details.append(f"<details><summary>{E(m['A'])} vs {E(m['B'])}: reasons</summary><h3>The user</h3>{ur or '<p class=dim>none yet</p>'}"
                            f"<h3>The judge (both orders)</h3>{jr or '<p class=dim>none yet</p>'}</details>")
         if mrows:
-            body.append("<h3>Matchups: B's win rate over A</h3><div class='scroll'><table><thead><tr><th>A</th><th>B</th><th>the user</th><th>the judge</th>"
+            body.append("<h3>Matchups: B's win rate over A, per game</h3><div class='scroll'><table><thead><tr><th>A</th><th>B</th><th>the user</th><th>the judge</th>"
                         "<th>agreement</th><th>judge changed its pick with the order</th></tr></thead><tbody>" + "".join(mrows) + "</tbody></table></div>" + "".join(details))
     REPORTS.mkdir(parents=True, exist_ok=True)
     extra = ".eng{font:13px/1.5 var(--mono);padding:2px 0 2px 10px;border-left:2px dotted var(--rule);overflow-wrap:anywhere}.eng b{font-weight:600}.dim{color:var(--muted)}</style>"

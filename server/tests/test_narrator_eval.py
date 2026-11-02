@@ -57,3 +57,25 @@ async def test_pairs_judgements_and_agreement(engine, fake, tmp_path, monkeypatc
     assert m["user"]["n"] == 3 and m["user"]["B_wins"] == sum(1.0 if c == "B" else 0.5 if c == "tie" else 0 for c in users.values())
     assert m["judge_order_flips"] == 1 and m["judge"]["tie"] >= 1
     assert m["agreement"]["n"] == 3 and m["agreement"]["agree"] == 1 + (users[k3] == "tie")
+
+
+def test_a_corpus_of_two_games_is_counted_per_game_as_well_as_summed(tmp_path, monkeypatch):
+    """ISSUES E2: a setting can win one game and lose the other; the sum alone hides it, so the matchup and the rubric
+    are counted per game, with the sum beside them."""
+    for name in ("PAIRS", "JUDGEMENTS", "JUDGE"):
+        monkeypatch.setattr(ne, name, tmp_path / name.lower())
+        (tmp_path / name.lower()).mkdir()
+    keys = [("n1", "noir"), ("n2", "noir"), ("s1", "station"), ("s2", "station")]
+    (ne.PAIRS / "p.json").write_text(json.dumps({"A_name": "x", "B_name": "y", "pairs": [{"key": k, "game": g} for k, g in keys]}))
+    picks = {"n1": "A", "n2": "A", "s1": "B", "s2": "B"}            # A wins noir, B wins station: even in the sum
+    (ne.JUDGE / "p.json").write_text(json.dumps({"judgements": [{"key": k, "order": o, "choice": c} for k, c in picks.items() for o in ("AB", "BA")]}))
+    m = ne.matchup("p")
+    assert (m["judge"]["A"], m["judge"]["B"]) == (2, 2)
+    assert (m["by_game"]["noir"]["judge"]["A"], m["by_game"]["noir"]["judge"]["B"]) == (2, 0)
+    assert (m["by_game"]["station"]["judge"]["A"], m["by_game"]["station"]["judge"]["B"]) == (0, 2)
+    run = {"turns": [{"iid": "i", "turn": 1, "game": "noir"}, {"iid": "j", "turn": 1, "game": "station"}]}
+    no = lambda: [{"item": "continuity", "verdict": "no"}]  # noqa: E731
+    t = ne.rubric_tallies([{"iid": "i", "turn": "1", "items": no()}, {"iid": "j", "turn": 1, "items": no()}, {"iid": "k", "turn": 1, "skipped": "x"}],
+                          ne.game_of(run))
+    assert list(t) == ["noir", "station", "all"]
+    assert (t["noir"]["continuity"]["no"], t["station"]["continuity"]["no"], t["all"]["continuity"]["no"]) == (1, 1, 2)
