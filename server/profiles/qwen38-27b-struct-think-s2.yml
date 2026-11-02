@@ -1,0 +1,9 @@
+# qwen38-27b, the structured roles' S2 (GENERATION-PARAMS-2026-11-01): the adjudicator and the referee think at
+# reasoning_effort low with Qwen's "precise" thinking sampler 0.6 / 0.95 / 20 instead of greedy (Qwen: thinking is not
+# for greedy decoding; at greedy the 1536 cap closed the referee's thinking on 13 of 14 station calls, D66). The
+# server budget stays the backstop. The narrator is untouched (no thinking); these runs grade the structured roles only.
+model: Huihui-Qwen3.8-27B-abliterated-UD-Q5_K_XL.gguf
+server: {ctx: 98304, ckpt: 2048, kv: q8_0, think_budget: 1536}
+roles:
+  adjudicator: {thinking: true, thinking_budget: 1536, reasoning_effort: low, temperature: 0.6, top_p: 0.95, top_k: 20, min_p: 0.0}
+  referee: {thinking: true, thinking_budget: 1536, reasoning_effort: low, temperature: 0.6, top_p: 0.95, top_k: 20, min_p: 0.0}

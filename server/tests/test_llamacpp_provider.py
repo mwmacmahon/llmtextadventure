@@ -281,3 +281,15 @@ async def test_the_slot_size_comes_from_the_server_and_is_kept_a_while():
     down = LlamaCppProvider(transport=httpx.MockTransport(lambda req: httpx.Response(503)))
     assert await down.context_tokens(r) is None
     lp._slot.clear()
+
+
+def test_the_other_samplers_are_sent_only_when_set():
+    """DRY, XTC, top-nσ, the penalty window and dynamic temperature (GENERATION-PARAMS §3): forwarded as llama-server's
+    own request fields when a role sets them, left to the server's defaults otherwise."""
+    p = LlamaCppProvider()
+    plain = p._body(role(), "S", [Msg("user", "x")])
+    assert not any(k.startswith(("dry_", "xtc_")) or k in ("top_n_sigma", "repeat_last_n", "dynatemp_range") for k in plain)
+    body = p._body(role(dry_multiplier=0.8, dry_allowed_length=4, dry_sequence_breakers=["{", "}", '"'], xtc_probability=0.5,
+                        top_n_sigma=1.0, repeat_last_n=1024), "S", [Msg("user", "x")])
+    assert body["dry_multiplier"] == 0.8 and body["dry_allowed_length"] == 4 and body["dry_sequence_breakers"] == ["{", "}", '"']
+    assert body["xtc_probability"] == 0.5 and body["top_n_sigma"] == 1.0 and body["repeat_last_n"] == 1024

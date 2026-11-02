@@ -71,6 +71,20 @@ class RoleConfig(BaseModel):
     min_p: float | None = None
     repeat_penalty: float | None = None # >1 discourages the loops that run a structured role into its token budget
     presence_penalty: float | None = None   # Qwen's remedy for endless repetition in thinking mode (0–2); the loops under the grammar after a think block (D34)
+    # llama.cpp's other samplers, sent only when set (GENERATION-PARAMS-2026-11-01 §3; unset is the server default):
+    # the penalties' look-back window; DRY (penalises extending a span already in the context; the breakers reset
+    # it, so the game's own markers and JSON punctuation can be exempt); XTC (drops the likeliest tokens when two
+    # clear the threshold; narrator only); top-nσ (a logit-space cut); dynamic temperature.
+    repeat_last_n: int | None = None
+    dry_multiplier: float | None = None
+    dry_base: float | None = None
+    dry_allowed_length: int | None = None
+    dry_penalty_last_n: int | None = None
+    dry_sequence_breakers: list[str] | None = None
+    xtc_probability: float | None = None
+    xtc_threshold: float | None = None
+    top_n_sigma: float | None = None
+    dynatemp_range: float | None = None
     api_key_env: str | None = None
 
 

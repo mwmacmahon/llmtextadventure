@@ -137,7 +137,9 @@ class LlamaCppProvider:
             body["id_slot"] = role.slot
         if role.stop_sequences:
             body["stop"] = list(role.stop_sequences)
-        for key in ("temperature", "top_p", "top_k", "min_p", "repeat_penalty", "presence_penalty"):
+        for key in ("temperature", "top_p", "top_k", "min_p", "repeat_penalty", "presence_penalty", "repeat_last_n",
+                    "dry_multiplier", "dry_base", "dry_allowed_length", "dry_penalty_last_n", "dry_sequence_breakers",
+                    "xtc_probability", "xtc_threshold", "top_n_sigma", "dynatemp_range"):
             if getattr(role, key) is not None:
                 body[key] = getattr(role, key)
         return body

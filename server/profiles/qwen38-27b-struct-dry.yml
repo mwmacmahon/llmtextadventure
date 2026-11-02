@@ -1,0 +1,8 @@
+# qwen38-27b, the structured roles' S1 (GENERATION-PARAMS-2026-11-01): no thinking, greedy as configured, plus DRY under
+# the grammar as the loop guard: a repeated row is penalised, repeated keys are not (JSON punctuation and newlines reset
+# the match). allowed_length 4 so short repeated values ("kind": "...) pass; window 2048 covers the answer.
+model: Huihui-Qwen3.8-27B-abliterated-UD-Q5_K_XL.gguf
+server: {ctx: 98304, ckpt: 2048, kv: q8_0, think_budget: -1}
+roles:
+  adjudicator: {dry_multiplier: 0.8, dry_allowed_length: 4, dry_penalty_last_n: 2048, dry_sequence_breakers: ["{", "}", "[", "]", "\"", ":", ",", "\n"]}
+  referee: {dry_multiplier: 0.8, dry_allowed_length: 4, dry_penalty_last_n: 2048, dry_sequence_breakers: ["{", "}", "[", "]", "\"", ":", ",", "\n"]}
