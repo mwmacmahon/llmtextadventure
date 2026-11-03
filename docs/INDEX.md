@@ -3,6 +3,9 @@
 Everything the project is made of, where it lives, and which parts are behind the build. Kept by hand; the date at
 the top is the last time someone checked it against the tree. **Checked: 2026-11-03 17:05.**
 
+Published as a page: [Project Index](https://claude.ai/artifact/CivViGMFsdW3qGvxFdejBr). Republish after editing this file:
+`python3 notes/scripts/md2page.py docs/INDEX.md <out.html> notes/scripts/index-head.html`, then publish `<out.html>` to that URL.
+
 Three kinds of place: the repo (`docs/`, `server/`), the gitignored `notes/` (decisions, issues, content, results,
 reports, scripts), and published pages (claude.ai artifacts, private to the owner).
 
