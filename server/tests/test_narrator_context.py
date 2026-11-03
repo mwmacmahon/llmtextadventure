@@ -204,14 +204,16 @@ async def test_a_typed_command_counts_only_when_the_input_asks_for_it(engine: En
     assert next(i for i in engine.store.load_state(iid)["inventory"] if i["id"] == "cigarettes")["count"] == 11
 
 
-def test_the_way_under_the_docks_must_be_found_first(engine: Engine):
+def test_the_way_under_the_docks_is_recorded_as_found_when_the_prose_takes_him_there(engine: Engine):
+    """Until D80 the move was refused until the flag was set; the prose went below anyway and the state drifted."""
     game = engine.games["noir"]
     state = game.load_state(engine.store.load_state(engine.create_instance("noir", {})))
     s2, rep, _ = apply_changes(game, state, ChangeReport.of(Change(kind="move", target="player", value="Under the docks"), log_line="x"), present=[], causes=[])
-    assert s2.player.location == "Rooftop shack" and "way in" in rep.rejected[0].reason
+    assert s2.player.location == "Under the docks" and s2.flags["under_docks_found"] is True and not rep.rejected
+    assert any("the way in" in a for a in rep.applied)
     state.flags["under_docks_found"] = True
-    s3, _, _ = apply_changes(game, state, ChangeReport.of(Change(kind="move", target="player", value="Under the docks"), log_line="x"), present=[], causes=[])
-    assert s3.player.location == "Under the docks"
+    s3, rep3, _ = apply_changes(game, state, ChangeReport.of(Change(kind="move", target="player", value="Under the docks"), log_line="x"), present=[], causes=[])
+    assert s3.player.location == "Under the docks" and not any("the way in" in a for a in rep3.applied)
     assert game._place(state, "the lake") == "The docks"
 
 
