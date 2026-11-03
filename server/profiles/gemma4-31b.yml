@@ -1,0 +1,9 @@
+# D74, the Gemma 4 31B candidate (survey rank 2, D63): gemma-4-31B-it-uncensored-heretic-Q5_K_M (llmfan46, Heretic v1.2.0,
+# 21.8 GB, on the box since 11-02). First a smoke: does llama.cpp's json_schema grammar hold on this model (issue #30256
+# said Gemma 4 opens its thought channel under it and needs a GBNF shim); if the structured roles parse, the full
+# candidate trial runs (both per-game sets, both referee sets, paired against the anchors). Context auto-sized to the
+# free VRAM (Gemma's KV is heavier than the Qwen hybrids'); thinking off everywhere; sampling the server's defaults,
+# so the one change against the anchors is the model (the card's 1.0 / 0.95 / 64 is a later ladder, not this run).
+model: gemma-4-31B-it-uncensored-heretic-Q5_K_M.gguf
+server: {ctx: auto, ckpt: 2048, kv: q8_0, think_budget: -1}
+roles: {}
