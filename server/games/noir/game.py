@@ -39,19 +39,26 @@ from engine.statepath import Actor
 from .state import pocket_key, pocket_word, COUNTED, Case, Condition, FoundPlace, Hidden, Item, NoirState, Note, Person, Player, Tell
 
 HEALTH_VALUES = ["fine", "hurt", "wounded", "critical", "dead"]
-DREAD_STEP = 10
-DREAD_WINDOW_TURNS = 10                # D73: nerves never end the game; no more than DREAD_WINDOW_CAP gained in any ten turns,
-DREAD_WINDOW_CAP = 20                  # so one long encounter stops adding and the rest of the night is still playable
-# nerves tier -> stat -> modifier (ALL = every stat): the price of a bad night, growing with the tier (a fear source: it does
-# not stack with shaken / terrified / coming apart; the worst one applies)
+DREAD_STEP = 25                        # a referee row moves dread by at most this (D75: meeting the thing itself is +15 to +25)
+ELDRITCH_MINUTES_PER_POINT = 2         # D75: while something wrong is in the room, +1 dread per 2 minutes (the sanity aura) ...
+ELDRITCH_TURN_CAP = 10                 # ... at most +10 a turn from it
+DECAY_MINUTES_PER_POINT = 20           # D75: on a turn when nothing frightened him, dread falls 1 per 20 minutes anywhere ...
+DECAY_MINUTES_PER_POINT_SAFE = 10      # ... and 1 per 10 somewhere safe
+SLEEP_RELIEF = 40                      # D75: a night in a bed (a safe place, SLEEP_MINUTES or more) takes 40 off
+SANITY_LOW = 50                        # D76: below this, high nerves bring hallucinations (the ghosts, the narrator's note); sanity is a
+                                       # placeholder at 100 until its mechanics are designed, so none of that occurs yet
+NICOTINE_FLOOR = 30                    # D75: in withdrawal nothing passive brings dread down, and it cannot sit below this
 # nerves tier -> what the narrator is told (D73: window dressing with a cost; nothing here ends the game)
 NERVES_NOTES: dict[str, str] = {
     "frightened": "Frank's nerves are going: let it show in the body (hands, breath, a step missed) and in what he half-sees, a face at a "
                   "window that is not there when he looks again, a sound that stops when he does. Nothing is explained.",
-    "coming apart": "Frank is coming apart: some of what he sees and hears is not there. A voice, a figure in a doorway, a whole conversation "
-                    "can turn out to be nobody; a street can be the wrong street; a half hour can go missing. Never say it is unreal: "
-                    "let the world correct him later. It costs him time, and now and then something from his pockets; never his life.",
+    "coming apart": "Frank is coming apart: his hands and his breath are not his own, he loses the thread of what people say, and every "
+                    "shadow is the wrong shape for a second before it is not. Nothing is explained; nothing he sees is false.",
 }
+# added to the coming-apart note only when sanity is low (D76): then some of what he perceives is not there
+SANITY_NOTE = ("And some of what he sees and hears is not there: a voice, a figure in a doorway, a whole conversation can turn out to be "
+               "nobody; a street can be the wrong street; a half hour can go missing. Never say it is unreal: let the world correct him "
+               "later. It costs him time, and now and then something from his pockets; never his life.")
 DREAD_MODS: dict[str, dict[str, int]] = {
     "rattled": {"nerve": -1},
     "frightened": {"nerve": -2, "hands": -1, "ALL": -1},
@@ -98,7 +105,7 @@ TRAIT_MODS: dict[str, tuple[str | None, tuple[str, ...], int]] = {
 
 AUTHORITY: dict[str, Actor] = {
     "clock": "engine", "player.stats": "engine", "player.proficiencies": "engine", "player.weaknesses": "engine",
-    "player.minutes_since_smoke": "engine", "player.baseline_dread": "engine", "player.drift_bank": "engine", "player.dread_gains": "engine", "player.dread_turn_start": "engine",
+    "player.minutes_since_smoke": "engine", "player.baseline_dread": "engine", "player.drift_bank": "engine", "player.sanity": "engine",
     "player.withdrawal_bank": "engine", "player.name": "engine", "player.description": "engine",
     "player.location": "narrator", "player.health": "narrator", "player.dread": "narrator", "player.conditions": "narrator",
     "inventory": "narrator", "people": "narrator",
@@ -147,6 +154,12 @@ def part_of_day(minute: int) -> str:
             else "afternoon" if h < 17 else "evening" if h < 20 else "night, dark")
 
 
+def _dread_rose(applied_line: str) -> bool:
+    """An ApplyReport line "player.dread: 40 -> 48" where the referee's row raised it."""
+    m = re.match(r"player\.dread: (-?\d+) -> (-?\d+)", applied_line)
+    return bool(m) and int(m.group(2)) > int(m.group(1))
+
+
 class NoirGame(GameBase):
     name = "noir"
     version = "0.1.0"
@@ -181,13 +194,13 @@ class NoirGame(GameBase):
         pl = sc["player"]
         player = Player(
             name=pl["name"], description=pl.get("description", ""), location=pl["location"], health=pl.get("health", "fine"),
-            dread=pl.get("dread", 20), baseline_dread=pl.get("baseline_dread", pl.get("dread", 20)), dread_turn_start=pl.get("dread", 20),
+            dread=pl.get("dread", 20), baseline_dread=pl.get("baseline_dread", pl.get("dread", 20)),
             conditions=[Condition(**c) for c in pl.get("conditions", [])],
             proficiencies=list(pl.get("proficiencies", [])), weaknesses=list(pl.get("weaknesses", [])), stats=dict(pl.get("stats", {})),
         )
         state = NoirState(
             case=Case(id=sc["id"], name=sc["name"], premise=sc["premise"], city_name=city["name"], city_description=city["description"],
-                      locations=city.get("locations", []), safe_locations=city.get("safe_locations", []),
+                      locations=city.get("locations", []), safe_locations=city.get("safe_locations", []), eldritch=sc.get("eldritch", ["creature"]),
                       narrator_flags=sc.get("narrator_flags", {})),
             clock=Clock(day=sc.get("start", {}).get("day", 1), minute=sc.get("start", {}).get("minute", 20 * 60)),
             player=player,
@@ -353,7 +366,10 @@ class NoirGame(GameBase):
         conds = ", ".join(c.name for c in p.conditions) or "none"
         lines.append(f"{p.name}: at {p.location or 'unknown'}; health {p.health}; nerves {p.dread_tier(p.dread)}; conditions: {conds}.")
         if p.dread_tier(p.dread) in NERVES_NOTES:                 # D73: what a bad night does to him, for the narrator
-            lines.append(NERVES_NOTES[p.dread_tier(p.dread)])
+            note = NERVES_NOTES[p.dread_tier(p.dread)]
+            if p.dread_tier(p.dread) == "coming apart" and p.sanity < SANITY_LOW:   # D76: hallucinations need low sanity too
+                note += " " + SANITY_NOTE
+            lines.append(note)
         if s.found_places:
             lines.append("Places found in play: " + "; ".join(f.name + (f" ({'off' if f.within.endswith('streets') else 'in'} {f.within})" if f.within else "") for f in s.found_places) + ".")
         lines.append("Pockets: " + ", ".join(it.render() + (f" ({it.note})" if it.note and it.loaded is None and it.id not in ("dollars",) else "") for it in s.inventory) + ".")
@@ -548,7 +564,7 @@ class NoirGame(GameBase):
             "Rows this game records:",
             "- move player <place>; move <person id> <place>: where they are when the prose ends. Someone still on the way (the creature dragging him toward the water, a man heading for the docks) has not arrived: that is a soon row with the minutes, and the move is reported on the turn they get there.",
             "- set player.health <" + "|".join(HEALTH_VALUES) + ">, only when the prose says Frank was hurt or treated.",
-            "- add player.dread ±n: 0 on an ordinary turn, including successes and calm conversations; +3 to +10 only when something frightened or hurt him (the creature, violence, a threat, a failure under danger, horror); -3 to -10 when he rests, drinks, wins clearly, reaches safety, or is treated kindly; a full night's sleep is -10. A cigarette's calm is the engine's (it lowers dread when he lights one): never count it here. The engine allows no more than +20 over any ten turns: a long encounter stops adding, and that is right.",
+            "- add player.dread ±n: 0 on an ordinary turn, including successes and calm conversations. Up, by how badly it would shake a tired man: +3 to +10 for a threat, a blow, a shot fired at him, or something wrong in a small way (a sound from under the floor, a smell, a shape seen for a second, a word nobody should know); +10 to +25 when he is badly hurt, fights for his life, or meets the thing itself or what it leaves behind; something he only imagined (what the nerves note describes) +1 to +2, never more. Down: -5 to -20 when he rests, drinks with someone he trusts, wins clearly, reaches safety or is treated kindly: an hour's drink and talk with a friend is -20, a clear win -5 to -10. The engine moves it with time as well (down when nothing frightens him, up while the thing is near) and handles a cigarette's calm: never count those here.",
             "- set player.conditions +<name> or -<name>: conditions with mechanical weight are " + ", ".join(k for k in CONDITION_MODS if k != WITHDRAWAL) + "; others are allowed as flavour; '" + WITHDRAWAL + "' is the engine's, never add or remove it. Remove only a condition the state lists.",
             "- add revolver.loaded -n: rounds Frank actually fired this turn (never as a lost item). add cigarettes.count -n: cigarettes Frank LIT this turn (finishing one lit earlier is nothing); the engine handles the rest of smoking. add dollars.count -n: dollars spent. add bullets.count ±n when the prose plainly says so. Matches are a book: striking matches changes nothing; gone matches only when the book is used up, given away or lost.",
             "- new thing value=<name> field=player (target thing, field player, always): a thing Frank picked up, was given, bought, borrowed, or found and kept, named as Frank would name it from what the prose shows (a small brass key, a folded slip of paper; never whose it is or what it opens until the prose says), note=what it looks like (or the count for several). gone <thing>: used up or destroyed; the revolver only on an explicit loss of the revolver. Reloading is a lever the engine applies: never report its rounds.",
@@ -693,13 +709,7 @@ class NoirGame(GameBase):
             elif v.isdigit():
                 kind, value = "add", str(int(v) - p.dread)
         if kind == "add" and is_player and field == "dread":
-            step = self._step(value)
-            if step is not None and step > 0:                     # the rolling cap: +20 at most over this turn and the nine before
-                room = DREAD_WINDOW_CAP - sum(p.dread_gains[-(DREAD_WINDOW_TURNS - 1):]) - max(0, p.dread - p.dread_turn_start)
-                if step > max(0, room):
-                    w.note(f"player.dread: +{step} capped to +{max(0, room)} (no more than +{DREAD_WINDOW_CAP} in {DREAD_WINDOW_TURNS} turns)")
-                    step = max(0, room)
-            new = w.nudge("player.dread", p.dread, step, DREAD_STEP)
+            new = w.nudge("player.dread", p.dread, self._step(value), DREAD_STEP)
             if new is not None:
                 p.dread = new
             return True
@@ -1373,18 +1383,19 @@ class NoirGame(GameBase):
 
     # ---- drift (after_turn) --------------------------------------------------
     def after_turn(self, state: NoirState, info: TurnInfo) -> NoirState:
-        """Nicotine: the counter runs with the clock; after three hours without, withdrawal (an engine
-        condition) and +1 dread per further hour. Dread drifts 1/30 min toward baseline only somewhere
-        safe, and only if nothing set it this turn."""
+        """Nicotine: the counter runs with the clock; after three hours without, withdrawal (an engine condition) and
+        +1 dread per further hour. Nerves (D75) move with the clock: down 1 per 20 minutes on a turn when nothing
+        frightened him (1 per 10 somewhere safe), a night in a bed takes SLEEP_RELIEF off, and while one of the case's
+        eldritch characters is where Frank is they rise 1 per 2 minutes; in withdrawal nothing passive brings them down
+        and they sit no lower than NICOTINE_FLOOR."""
+        if info.elapsed_minutes <= 0:
+            return state
         s = state.model_copy(deep=True)
         p = s.player
-        p.dread_gains = (p.dread_gains + [max(0, p.dread - p.dread_turn_start)])[-DREAD_WINDOW_TURNS:]   # the rolling window
-        p.dread_turn_start = p.dread
-        if info.elapsed_minutes <= 0:
-            return s
-        touched = {ln.split(":", 1)[0] for ln in info.applied}
         if p.health == "dead":
-            return s
+            return state
+        frightened = any(_dread_rose(ln) for ln in info.applied)     # a referee add this turn: no passive easing
+        aura = any(q.id in s.case.eldritch and q.status == "alive" and q.location and q.location == p.location for q in s.people)
         safe = p.location in s.case.safe_locations
         asleep = safe and info.elapsed_minutes >= SLEEP_MINUTES
         p.minutes_since_smoke += info.elapsed_minutes
@@ -1398,22 +1409,24 @@ class NoirGame(GameBase):
                     p.dread = min(100, p.dread + min(steps, WITHDRAWAL_DREAD_CAP))
         else:
             p.withdrawal_bank = 0
+        withdrawn = p.has_condition(WITHDRAWAL)
+        base = p.baseline_dread
+        if aura and not asleep:
+            p.dread = min(100, p.dread + min(ELDRITCH_TURN_CAP, info.elapsed_minutes // ELDRITCH_MINUTES_PER_POINT))
         if asleep:
-            # a night's sleep: halve the excess over baseline, and the fear words go with it
-            base = p.baseline_dread
-            if p.dread > base:
-                p.dread = base + (p.dread - base) // 2
+            p.dread = max(base, p.dread - SLEEP_RELIEF)
             p.conditions = [c for c in p.conditions if c.name not in FEAR_CONDITIONS]
             p.drift_bank = 0
-        elif safe and "player.dread" not in touched:
-            base = p.baseline_dread
+        elif not frightened and not aura and not withdrawn:
             p.drift_bank += info.elapsed_minutes
-            steps, p.drift_bank = divmod(p.drift_bank, DREAD_DRIFT_MINUTES_PER_POINT)
+            steps, p.drift_bank = divmod(p.drift_bank, DECAY_MINUTES_PER_POINT_SAFE if safe else DECAY_MINUTES_PER_POINT)
             if steps:
                 if p.dread > base:
                     p.dread = max(base, p.dread - steps)
                 elif p.dread < base:
                     p.dread = min(base, p.dread + steps)
+        if withdrawn and p.dread < NICOTINE_FLOOR:
+            p.dread = NICOTINE_FLOOR
         return s
 
     # ---- UI -----------------------------------------------------------------

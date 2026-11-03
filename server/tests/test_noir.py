@@ -109,7 +109,7 @@ def test_rows_pockets_and_body(game: NoirGame):
             C(kind="learned", target="player", value="The creature came apart into yellow grease."),
             C(kind="flag", target="harrow_knows", value="true"), C(kind="flag", target="bogus", value="true"))
     s2, rep = apply(game, st, d)
-    assert s2.item("revolver").loaded == 3 and s2.player.dread == 45            # nudge capped at 10
+    assert s2.item("revolver").loaded == 3 and s2.player.dread == min(35 + 25, 35 + 25)            # nudge capped at 25 (D75)
     assert s2.player.health == "hurt" and s2.player.has_condition("terrified") and not s2.player.has_condition(WITHDRAWAL)
     assert s2.item("dollars").count == 9 and s2.item("camera").name == "borrowed film camera"
     assert s2.notebook[-1].kind == "clue" and s2.flags["harrow_knows"] is True
@@ -119,7 +119,7 @@ def test_rows_pockets_and_body(game: NoirGame):
     d = ref(add("revolver", "loaded", "-5"), C(kind="gone", target="umbrella"), add("bullets", "count", "+6"), add("cigarettes", "count", "-2"))
     s3, rep = apply(game, s2, d)
     assert s3.item("revolver").loaded == 0 and s3.item("bullets").count == 9 and s3.item("cigarettes").count == 9
-    assert s3.player.minutes_since_smoke == 0 and s3.player.dread == 40          # smoke relief
+    assert s3.player.minutes_since_smoke == 0 and s3.player.dread == s2.player.dread - 5          # smoke relief
     assert any(r.reason == "not carried" for r in rep.rejected) and any("only 3 rounds" in r.reason for r in rep.rejected)
     # "rounds" as a lost thing does not take the revolver with them; only an explicit loss of the revolver does
     s3b, rep = apply(game, s3, ref(C(kind="gone", target="revolver rounds", note="3")))
@@ -185,23 +185,25 @@ def test_modifiers_from_conditions_health_dread_and_attitude(game: NoirGame):
 # ---- drift: nicotine and dread -------------------------------------------------
 
 def test_withdrawal_and_dread_drift(game: NoirGame):
+    """D75: dread eases with the clock when nothing frightened him; withdrawal stops the easing and sets a floor."""
     _, st = game.new_instance({})
+    d0 = st.player.dread                                                              # the case opens at 35, baseline 20
     info = lambda mins, applied=(): TurnInfo(turn=1, elapsed_minutes=mins, rng=random.Random(0), applied=list(applied))  # noqa: E731
-    st.player.location = "Frank's apartment"       # safe: dread drifts toward baseline 20 at 1/30 min
+    st.player.location = "Frank's apartment"       # safe: 1 point per 10 minutes toward the baseline
     st2 = game.after_turn(st, info(120))
-    assert st2.player.minutes_since_smoke == 120 and st2.player.dread == 31 and not st2.player.has_condition(WITHDRAWAL)
-    st3 = game.after_turn(st2, info(120))         # 240 min: withdrawal, +1 dread per hour of this turn (2), drift -4
-    assert st3.player.has_condition(WITHDRAWAL) and st3.player.dread == 29
+    assert st2.player.minutes_since_smoke == 120 and st2.player.dread == max(20, d0 - 12) and not st2.player.has_condition(WITHDRAWAL)
+    st3 = game.after_turn(st2, info(120))         # 240 min: withdrawal, +1 dread per hour of this turn (2), no easing, floor 30
+    assert st3.player.has_condition(WITHDRAWAL) and st3.player.dread == 30
     assert next(c for c in st3.player.conditions if c.name == WITHDRAWAL).source == "engine"
-    # somewhere unsafe, no drift down (withdrawal still bites); a referee dread write this turn blocks drift
-    st3.player.location = "Lowtown streets"
-    assert game.after_turn(st3, info(60)).player.dread == 30
-    st3.player.location = "Frank's office"
-    assert game.after_turn(st3, info(60, ["player.dread: 29 -> 40"])).player.dread == 30
-    assert game.after_turn(st3, info(0)).player.dread == st3.player.dread      # a zero-minute turn changes nothing but the window's bookkeeping (D73)
-    # smoking clears withdrawal and resets the counter (via the referee)
-    s4, _ = apply(game, st3, ref(add("cigarettes", "count", "-1")))
-    assert not s4.player.has_condition(WITHDRAWAL) and s4.player.minutes_since_smoke == 0 and s4.item("cigarettes").count == 10
+    st3.player.location = "Lowtown streets"       # still withdrawn: no easing anywhere, the craving still bites
+    assert game.after_turn(st3, info(60)).player.dread == 31
+    # a smoke clears the craving; then an hour on the street with nothing frightening eases 3, and a fright this turn eases nothing
+    st4 = st3.model_copy(deep=True); st4.player.minutes_since_smoke = 0; st4.player.conditions = [c for c in st4.player.conditions if c.name != WITHDRAWAL]
+    st4.player.dread = 50
+    assert game.after_turn(st4, info(60)).player.dread == 47
+    assert game.after_turn(st4, info(60, ["player.dread: 42 -> 50"])).player.dread == 50
+    assert game.after_turn(st4, info(60, ["player.dread: 55 -> 50"])).player.dread == 47      # a referee drop is not a fright
+    assert game.after_turn(st3, info(0)).player.dread == st3.player.dread                  # a zero-minute turn changes nothing
 
 
 # ---- commands ------------------------------------------------------------------
@@ -231,13 +233,13 @@ async def test_smoke_is_a_narrated_command(engine: Engine, fake: FakeProvider):
     bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
     assert "10 cigarettes" in bulletin and "Frank lights a cigarette" in bulletin
     st = state_of(engine, iid)
-    assert st.item("cigarettes").count == 10 and st.player.dread == 30 and st.player.minutes_since_smoke == 3   # the clock stops at the opening timer, 23:33
+    assert st.item("cigarettes").count == 10 and st.player.dread == 31 and st.player.minutes_since_smoke == 3   # the clock stops at the opening timer, 23:33; -5 for the smoke, +1 for three minutes with the thing in the shack (D75)
     assert not any("Smoked a cigarette." in ln for ln in st.log)           # the referee's log line stands alone
     # a referee that also reports the cigarette does not charge it twice: the command's referee_skip resets the field
     fake.hook = lambda schema, last: ref(add("cigarettes", "count", "-1"), add("player", "dread", "-3"), log_line="Frank smoked.") if schema is ChangeReport else None
     await command(engine, iid, "smoke")
     st = state_of(engine, iid)
-    assert st.item("cigarettes").count == 9 and st.player.dread == 22
+    assert st.item("cigarettes").count == 9 and st.player.dread == 25      # 31 - 5 (the lever) - 3 (the referee) + 2 (five minutes with the thing in the shack, D75)
     fake.hook = None
     doc = engine.store.load_state(iid)
     next(i for i in doc["inventory"] if i["id"] == "cigarettes")["count"] = 0
@@ -332,12 +334,12 @@ def test_sleep_resets_dread_and_fear(game: NoirGame):
     st.player.conditions += [Condition(name="shaken"), Condition(name="terrified")]
     info = TurnInfo(turn=5, elapsed_minutes=420, rng=random.Random(0), applied=[])
     st2 = game.after_turn(st, info)
-    assert st2.player.dread == 45 and not st2.player.has_condition("shaken") and not st2.player.has_condition("terrified")
+    assert st2.player.dread == 30 and not st2.player.has_condition("shaken") and not st2.player.has_condition("terrified")   # D75: a night takes 40 off (70 -> 30)
     assert st2.player.has_condition(WITHDRAWAL) and st2.player.withdrawal_bank == 0     # no craving dread while asleep
     # awake and out of cigarettes for a long time: withdrawal dread is capped per turn
     st2.player.location = "Lowtown streets"
     st3 = game.after_turn(st2, TurnInfo(turn=6, elapsed_minutes=300, rng=random.Random(0), applied=[]))
-    assert st3.player.dread == 48
+    assert st3.player.dread == 33      # D75: +3 craving at most a turn, no easing in withdrawal
 
 
 async def test_unknown_stat_falls_back_and_is_noted(engine: Engine, fake: FakeProvider):
@@ -370,32 +372,43 @@ async def test_nerves_break_once_and_never_end_the_game(engine: Engine, fake: Fa
     events = await play(engine, iid, "I keep going.")
     assert events[-1]["data"]["ending"] is None and "ending_broken" not in events[-1]["data"]["mechanics"]["events"]
     bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
-    assert "Frank is coming apart" in bulletin and "never his life" in bulletin     # the narrator's note at the top tier
+    assert "Frank is coming apart" in bulletin and "nothing he sees is false" in bulletin     # the narrator's note at the top tier; the hallucination clause needs low sanity (D76)
     events = await play(engine, iid, "I go back in.")
     assert events[-1]["event"] != "error" and engine.store.latest_turn(iid) == 3
 
 
-def test_dread_gains_capped_over_a_rolling_window(game: NoirGame):
-    """D73: no more than +20 over any ten turns, however long the encounter; the cap is the engine's, with a note."""
+def test_the_thing_nearby_wears_at_nerves_and_a_night_in_bed_restores_them(game: NoirGame):
+    """D75: the eldritch aura (+1 per 2 minutes while the creature is in the room, at most +10 a turn); sleep takes 40 off."""
     _, st = game.new_instance({})
-    d0 = st.player.dread                                                              # the case opens at 35
-    info = lambda t: TurnInfo(turn=t, elapsed_minutes=1, rng=random.Random(0))  # noqa: E731
-    st, rep = apply(game, st, ref(C(kind="add", target="player", field="dread", value="+10")))
-    assert st.player.dread == d0 + 10 and not any("capped" in n for n in rep.applied)
-    st = game.after_turn(st, info(1))
-    assert st.player.dread_gains == [10] and st.player.dread_turn_start == d0 + 10
-    st, rep = apply(game, st, ref(C(kind="add", target="player", field="dread", value="+8"), C(kind="add", target="player", field="dread", value="+8")))
-    assert st.player.dread == d0 + 20 and any("+8 capped to +2" in n for n in rep.applied)   # 10 + 8 + 2 = the window's 20
-    st = game.after_turn(st, info(2))
-    st, rep = apply(game, st, ref(C(kind="add", target="player", field="dread", value="+5")))
-    assert st.player.dread == d0 + 20 and any("capped to +0" in n for n in rep.applied)
-    for t in range(3, 12):                                                            # nine quiet turns: the first gain leaves the window
-        st = game.after_turn(st, info(t))
-    assert st.player.dread_gains == [10, 0, 0, 0, 0, 0, 0, 0, 0, 0] and sum(st.player.dread_gains[-9:]) == 0   # turn 2's gain is the oldest kept; it is outside the next write's nine
-    st, rep = apply(game, st, ref(C(kind="add", target="player", field="dread", value="+10")))
-    assert st.player.dread == d0 + 30 and not any("capped" in n for n in rep.applied)
-    st, _ = apply(game, st, ref(C(kind="add", target="player", field="dread", value="-10")))     # relief is never capped
-    assert st.player.dread == d0 + 20
+    info = lambda mins: TurnInfo(turn=1, elapsed_minutes=mins, rng=random.Random(0))  # noqa: E731
+    st.player.location = "Rooftop shack"; st.player.dread = 50
+    cr = st.person("creature"); cr.location = "Rooftop shack"; cr.status = "alive"
+    assert game.after_turn(st, info(10)).player.dread == 55
+    assert game.after_turn(st, info(60)).player.dread == 60                                  # the turn cap
+    cr.location = "Under the docks"
+    assert game.after_turn(st, info(60)).player.dread == 47                                  # nothing wrong nearby: 1 per 20 min
+    st.player.location = "Frank's apartment"; st.player.dread = 90
+    st.player.conditions.append(__import__("games.noir.state", fromlist=["Condition"]).Condition(name="shaken"))
+    slept = game.after_turn(st, info(480)).player
+    assert slept.dread == 50 and not slept.has_condition("shaken")
+    st.player.dread = 45
+    assert game.after_turn(st, info(480)).player.dread == 30                                 # 45 - 40 would pass the baseline, but eight hours without a cigarette is withdrawal: the floor
+    st.player.minutes_since_smoke = -480
+    assert game.after_turn(st, info(480)).player.dread == 20                                 # a smoke at bedtime: never below the baseline
+
+
+def test_hallucinations_need_low_sanity_as_well_as_high_nerves(game: NoirGame):
+    """D76: sanity is the long-term meter, a placeholder at 100; the coming-apart note gains its hallucination clause, and the
+    ghost happenings their chance, only below SANITY_LOW."""
+    _, st = game.new_instance({})
+    st.player.dread = 90
+    b = game.render_bulletin(st, "")
+    assert "Frank is coming apart" in b and "not there" not in b
+    st.player.sanity = 40
+    b = game.render_bulletin(st, "")
+    assert "Frank is coming apart" in b and "can turn out to be nobody" in b
+    ghosts = [sp for sp in st.hidden.spontaneous if sp.id in ("ghost_lead", "pocket_loss")]
+    assert len(ghosts) == 2 and all("player.sanity" in str(sp.when) for sp in ghosts)
 
 
 def test_advance_effect_moves_the_clock_across_midnight():
@@ -607,6 +620,6 @@ def test_dread_written_as_set_and_rows_about_the_clock(game: NoirGame):
     s2, rep = apply(game, st, ref(C(kind="set", target="player", field="dread", value="+3")))
     assert s2.player.dread == d0 + 3
     s3, rep = apply(game, s2, ref(C(kind="set", target="player", field="dread", value=str(d0 + 40))))
-    assert s3.player.dread == d0 + 13                                             # +10 at most a row
+    assert s3.player.dread == d0 + 28                                             # +25 at most a row (D75)
     s4, rep = apply(game, s3, ref(C(kind="set", target="player", field="time", value="Day 2, 19:45")))
     assert s4.clock == s3.clock and any(r.path == "clock" and "engine" in r.reason for r in rep.rejected)

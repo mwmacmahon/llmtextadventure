@@ -97,11 +97,11 @@ class Player(BaseModel):
     description: str = ""
     location: str = ""
     health: Health = "fine"
-    dread: int = 20                 # 0-100; narrator nudges, engine drifts; it never ends the game (D73): high dread is check
-                                    # penalties, ghosts and lost time
+    dread: int = 20                 # 0-100 (D73, D75): the referee adds for frights, the engine moves it with the clock (down when
+                                    # nothing frightens him, up while something wrong is near); it never ends the game
     baseline_dread: int = 20
-    dread_gains: list[int] = Field(default_factory=list)   # dread gained on each of the last turns (engine): the rolling cap
-    dread_turn_start: int = 20      # dread when this turn began (engine): this turn's gain so far
+    sanity: int = 100               # 0-100, D76: the long-term psychic condition (nerves are the short-term one). A placeholder
+                                    # for now: nothing moves it; below SANITY_LOW the high-nerves hallucinations switch on
     drift_bank: int = 0
     withdrawal_bank: int = 0
     conditions: list[Condition] = Field(default_factory=list)
@@ -148,6 +148,7 @@ class Case(BaseModel):
     city_description: str
     locations: list[str] = Field(default_factory=list)
     safe_locations: list[str] = Field(default_factory=list)
+    eldritch: list[str] = Field(default_factory=lambda: ["creature"])   # characters whose presence wears at nerves by the minute (D75)
     narrator_flags: dict[str, str] = Field(default_factory=dict)
 
 
