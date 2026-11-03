@@ -1,7 +1,7 @@
 # Project index
 
 Everything the project is made of, where it lives, and which parts are behind the build. Kept by hand; the date at
-the top is the last time someone checked it against the tree. **Checked: 2026-11-03 17:05.**
+the top is the last time someone checked it against the tree. **Checked: 2026-11-03 17:15.**
 
 Published as a page: [Project Index](https://claude.ai/artifact/CivViGMFsdW3qGvxFdejBr). Republish after editing this file:
 `python3 notes/scripts/md2page.py docs/INDEX.md <out.html> notes/scripts/index-head.html`, then publish `<out.html>` to that URL.
@@ -41,8 +41,8 @@ Regenerate: `cd notes/design/tools && ../../../server/.venv/bin/python gen_<page
 |---|---|---|---|
 | noir r12-long-plain, dbfacd123f36 | Sonnet | ended at turn 14 on the old dread ending (D71) | [Noir Long Round 1](https://claude.ai/artifact/1LX6yrzkj6BjkwPP7nM94Y) |
 | noir r12b-long-plain, 61ff10eda02a | Sonnet | 50 turns, no ending, shack to the brass key (D73 rules) | [Noir Long Round 2](https://claude.ai/artifact/2ShJpLi45XeibHMRRLwzWh) |
-| noir r12-long-reckless | Sonnet | running 16:39- (D75/D76 rules) | to publish when done |
-| station r12-long-plain | Sonnet | running 16:39-, the first 50-turn station game | to publish when done |
+| noir r12-long-reckless, 9613ea5aa8d1 | Sonnet | 50 turns, no ending; nerves pinned at 100 from turn 20 (D75 rules) | [Noir Long Round 3](https://claude.ai/artifact/RcDnBTmk6okmK141xqQsrG) |
+| station r12-long-plain, 7842ba38283c | Sonnet | 50 turns, no ending; alarm 6 to 59; one morning of the week (08:00 to 10:56) | [Station Long Round 1](https://claude.ai/artifact/5cjfcd5dcAjsYk2R3gun49) |
 | the local-narrated 25-turn rounds of 11-02 (r11L-*) | Qwen3.8 | read per game in ISSUES P1-P7 | `notes/playtests/2026-11-02-*r11L*` (not published) |
 
 Make a page: `server/.venv/bin/python server/tools/round_report.py <iid> --artifact --out <file> --title "…"`, publish the file.
