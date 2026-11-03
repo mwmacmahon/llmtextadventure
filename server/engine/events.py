@@ -223,6 +223,15 @@ def apply_effects(effects: list[dict], doc: dict, directives: list[str], log_pat
             sp.append(doc, log_path, e["log"])
         elif "directive" in e:
             directives.append(e["directive"])
+        elif "advance" in e:                        # the clock moves by n minutes (time lost: noir's ghosts, D73), days rolling over
+            clock_path = ctx.clock_path if ctx else "clock"
+            per_day = ctx.minutes_per_day if ctx else 1440
+            clk = sp.lookup(doc, clock_path, None)
+            if clk is None:
+                raise ValueError(f"advance: no clock at {clock_path!r}")
+            total = int(clk.get("minute", 0)) + int(e["advance"])
+            clk["day"] = int(clk.get("day", 1)) + total // per_day
+            clk["minute"] = total % per_day
         else:
             raise ValueError(f"unknown effect {eff!r}")
         applied.append(eff)

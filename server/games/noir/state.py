@@ -97,8 +97,11 @@ class Player(BaseModel):
     description: str = ""
     location: str = ""
     health: Health = "fine"
-    dread: int = 20                 # 0-100; narrator nudges, engine drifts, 100 ends the game
+    dread: int = 20                 # 0-100; narrator nudges, engine drifts; it never ends the game (D73): high dread is check
+                                    # penalties, ghosts and lost time
     baseline_dread: int = 20
+    dread_gains: list[int] = Field(default_factory=list)   # dread gained on each of the last turns (engine): the rolling cap
+    dread_turn_start: int = 20      # dread when this turn began (engine): this turn's gain so far
     drift_bank: int = 0
     withdrawal_bank: int = 0
     conditions: list[Condition] = Field(default_factory=list)

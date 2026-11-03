@@ -167,7 +167,7 @@ def test_modifiers_from_conditions_health_dread_and_attitude(game: NoirGame):
     assert {(m.label, m.value) for m in mods} == {("tired", -1), ("injured leg", -2), ("Easily winded", -2)}
     st.player.dread, st.player.health = 85, "wounded"
     mods = game.modifiers(st, CheckRequest(id="c1", label="shoot the revolver", stat="hands"), None)
-    assert {(m.label, m.value) for m in mods} == {("tired", -1), ("health wounded", -1), ("shaking hands", -1)}
+    assert {(m.label, m.value) for m in mods} == {("tired", -1), ("health wounded", -1), ("nerves coming apart", -2)}   # D73: the tier's own price
     st.item("revolver").loaded = 0
     assert ("empty revolver", -10) in {(m.label, m.value) for m in game.modifiers(st, CheckRequest(id="c1", label="fire the gun", stat="hands"), None)}
     st.person("brandt").attitude = -4
@@ -176,8 +176,8 @@ def test_modifiers_from_conditions_health_dread_and_attitude(game: NoirGame):
     # fear does not stack: shaken, terrified and dread on one nerve roll apply once, at the worst value
     st.player.conditions += [__import__("games.noir.state", fromlist=["Condition"]).Condition(name="shaken"), __import__("games.noir.state", fromlist=["Condition"]).Condition(name="terrified")]
     mods = game.modifiers(st, CheckRequest(id="c3", label="hold steady", stat="nerve"), None)
-    fear = [m for m in mods if m.label in ("shaken", "terrified", "dread")]
-    assert len(fear) == 1 and fear[0].value == -2
+    fear = [m for m in mods if m.label in ("shaken", "terrified", "nerves coming apart")]
+    assert len(fear) == 1 and fear[0].value == -3
     mods = game.modifiers(st, CheckRequest(id="c4", label="pick the lock on the side door", stat="hands"), None)
     assert ("Lockpicking expert", 2) in {(m.label, m.value) for m in mods}
 
@@ -198,7 +198,7 @@ def test_withdrawal_and_dread_drift(game: NoirGame):
     assert game.after_turn(st3, info(60)).player.dread == 30
     st3.player.location = "Frank's office"
     assert game.after_turn(st3, info(60, ["player.dread: 29 -> 40"])).player.dread == 30
-    assert game.after_turn(st3, info(0)) is st3
+    assert game.after_turn(st3, info(0)).player.dread == st3.player.dread      # a zero-minute turn changes nothing but the window's bookkeeping (D73)
     # smoking clears withdrawal and resets the counter (via the referee)
     s4, _ = apply(game, st3, ref(add("cigarettes", "count", "-1")))
     assert not s4.player.has_condition(WITHDRAWAL) and s4.player.minutes_since_smoke == 0 and s4.item("cigarettes").count == 10
@@ -350,7 +350,8 @@ async def test_unknown_stat_falls_back_and_is_noted(engine: Engine, fake: FakePr
     assert "drift" in mech
 
 
-async def test_ended_game_refuses_turns_and_nerves_end_in_two_stages(engine: Engine, fake: FakeProvider):
+async def test_nerves_break_once_and_never_end_the_game(engine: Engine, fake: FakeProvider):
+    """D73: breaking_point fires at 95 (dread back to 82, 'coming apart'); dread 100 is not an ending, the game goes on."""
     iid = engine.create_instance("noir", {})
     doc = engine.store.load_state(iid)
     doc["player"]["dread"] = 96
@@ -367,10 +368,42 @@ async def test_ended_game_refuses_turns_and_nerves_end_in_two_stages(engine: Eng
     doc["player"]["dread"] = 100
     engine.store.save_snapshot(iid, 1, doc)
     events = await play(engine, iid, "I keep going.")
-    assert events[-1]["data"]["ending"].startswith("Frank walked away")
+    assert events[-1]["data"]["ending"] is None and "ending_broken" not in events[-1]["data"]["mechanics"]["events"]
+    bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
+    assert "Frank is coming apart" in bulletin and "never his life" in bulletin     # the narrator's note at the top tier
     events = await play(engine, iid, "I go back in.")
-    assert events == [{"event": "error", "data": {"message": events[0]["data"]["message"], "step": "ended"}}] and "The story is over" in events[0]["data"]["message"]
-    assert engine.store.latest_turn(iid) == 2
+    assert events[-1]["event"] != "error" and engine.store.latest_turn(iid) == 3
+
+
+def test_dread_gains_capped_over_a_rolling_window(game: NoirGame):
+    """D73: no more than +20 over any ten turns, however long the encounter; the cap is the engine's, with a note."""
+    _, st = game.new_instance({})
+    d0 = st.player.dread                                                              # the case opens at 35
+    info = lambda t: TurnInfo(turn=t, elapsed_minutes=1, rng=random.Random(0))  # noqa: E731
+    st, rep = apply(game, st, ref(C(kind="add", target="player", field="dread", value="+10")))
+    assert st.player.dread == d0 + 10 and not any("capped" in n for n in rep.applied)
+    st = game.after_turn(st, info(1))
+    assert st.player.dread_gains == [10] and st.player.dread_turn_start == d0 + 10
+    st, rep = apply(game, st, ref(C(kind="add", target="player", field="dread", value="+8"), C(kind="add", target="player", field="dread", value="+8")))
+    assert st.player.dread == d0 + 20 and any("+8 capped to +2" in n for n in rep.applied)   # 10 + 8 + 2 = the window's 20
+    st = game.after_turn(st, info(2))
+    st, rep = apply(game, st, ref(C(kind="add", target="player", field="dread", value="+5")))
+    assert st.player.dread == d0 + 20 and any("capped to +0" in n for n in rep.applied)
+    for t in range(3, 12):                                                            # nine quiet turns: the first gain leaves the window
+        st = game.after_turn(st, info(t))
+    assert st.player.dread_gains == [10, 0, 0, 0, 0, 0, 0, 0, 0, 0] and sum(st.player.dread_gains[-9:]) == 0   # turn 2's gain is the oldest kept; it is outside the next write's nine
+    st, rep = apply(game, st, ref(C(kind="add", target="player", field="dread", value="+10")))
+    assert st.player.dread == d0 + 30 and not any("capped" in n for n in rep.applied)
+    st, _ = apply(game, st, ref(C(kind="add", target="player", field="dread", value="-10")))     # relief is never capped
+    assert st.player.dread == d0 + 20
+
+
+def test_advance_effect_moves_the_clock_across_midnight():
+    doc = {"clock": {"day": 1, "minute": 23 * 60 + 40}, "log": []}
+    ev.apply_effects([{"advance": 40}, {"log": "lost"}], doc, [], ctx=None)
+    assert doc["clock"] == {"day": 2, "minute": 20} and doc["log"] == ["lost"]
+    with pytest.raises(ValueError):
+        ev.apply_effects([{"advance": 5}], {"log": []}, [])
 
 
 # ---- things outside the pockets, and what people will tell --------------------
