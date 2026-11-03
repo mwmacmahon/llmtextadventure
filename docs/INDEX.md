@@ -1,7 +1,7 @@
 # Project index
 
 Everything the project is made of, where it lives, and which parts are behind the build. Kept by hand; the date at
-the top is the last time someone checked it against the tree. **Checked: 2026-11-03 17:15.**
+the top is the last time someone checked it against the tree. **Checked: 2026-11-03 18:00.**
 
 Published as a page: [Project Index](https://claude.ai/artifact/CivViGMFsdW3qGvxFdejBr). Republish after editing this file:
 `python3 notes/scripts/md2page.py docs/INDEX.md <out.html> notes/scripts/index-head.html`, then publish `<out.html>` to that URL.
@@ -15,7 +15,7 @@ reports, scripts), and published pages (claude.ai artifacts, private to the owne
 |---|---|---|---|
 | [Lowtown: Game Design](https://claude.ai/artifact/XBrdicwZAnn1SmGAtyu4xc) (noir) | `notes/design/tools/gen_noir_page.py` | 2026-11-03 | current (D73, D75, D76) |
 | [Station AI: Game Design](https://claude.ai/artifact/NPpFFzmeqjX35pJGqtWVeg) | `gen_station_page.py` | 2026-10-31 | current for the station; the shared engine text is behind (see Turn Anatomy) |
-| [Turn Anatomy](https://claude.ai/artifact/DdYxv5pvKFXsHyWYQZBbj4) (the flow, the master doc of a turn) | `gen_flow_page.py` | 2026-10-31 | **stale**: the tape and call report (D59), called checks on local (D61/D63), thinking per role and think_after_call (D66), the `advance` effect, the retell path's rejections (stream 4) |
+| [Turn Anatomy](https://claude.ai/artifact/DdYxv5pvKFXsHyWYQZBbj4) (the flow, the master doc of a turn) | `gen_flow_page.py` | 2026-11-03 (v27) | the guard text is current (D77/D79: rejection kinds, three retellings, FORCED); the captured turn is still 10-31, so the tape and call report (D59), called checks on local (D61/D63), thinking per role (D66) and the `advance` effect are not shown: recapture |
 | [The Structured World](https://claude.ai/artifact/5sBEXtLDqb2Rf6xkUd63aY) (the world rows) | `gen_world_page.py` | 2026-10-31 | current as far as the world code goes; the `advance` effect and the nerves notes are game-side |
 | [What the Models See](https://claude.ai/artifact/SPJqDK5jGLyYLxjikcWTNk) (a captured turn) | `capture.py` then `gen_data_page.py` | 2026-10-30 | **stale**: the bulletin, THIS TURN and the referee rules have all changed since (N8, D63, D73-76); recapture a turn |
 
@@ -28,6 +28,7 @@ Regenerate: `cd notes/design/tools && ../../../server/.venv/bin/python gen_<page
 |---|---|---|
 | Local Model Trials (31 Oct - 2 Nov) | [page](https://claude.ai/artifact/CPPqoRADBmUs22NYvCwx2U), source `notes/REPORT-trials-2026-11-02.html` | current to 11-02 evening |
 | The last five days, read back | `notes/RETRO-2026-11-03.md` | current; not published |
+| Notes to self: the narrator, the referee and the state (failure kinds, principles, ideas, the measure) | `notes/NOTES-narrator-and-state-2026-11-03.md` | living; add to it as rounds are read (D78) |
 | Narrator Measure | [page](https://claude.ai/artifact/TKWffZheyWLHYTbaucRRMj) | **stale** (10-31; rubric v4, the Qwen3.8 runs, the per-game sets are not on it): `eval_replay.py narrator-report`, republish |
 | Eval runs | [page](https://claude.ai/artifact/YMBpC78Ddfz5qBbPgXKHAH) | stale (10-31) |
 | The plan after the trials | `notes/NEXT-2026-11-02-after-the-trials.md` | the five streams of D71 supersede its order |
@@ -54,8 +55,8 @@ Every playtest also has a transcript `notes/playtests/<date>-<game>-<tag>.md` an
 |---|---|---|
 | `TESTING.md` | 2026-11-03 | current: sets, keys, runs, the narrator's measure, settling a setting (D67/D71) |
 | `LOCAL_LLM.md` | 2026-11-01 | **behind**: the `extra` flags and MTP profiles (D70), the GPU wait at start (L6), the Gemma profile |
-| `GAME_AUTHORING.md` | 2026-10-31 | **behind**: nerves on the clock, `eldritch:` and `sanity` (D75/D76), the `advance` effect, the nerves notes |
-| `ARCHITECTURE.md` | 2026-10-30 | **behind**: the tape (D59), thinking per role (D66), called mode as the only mode (D63) |
+| `GAME_AUTHORING.md` | 2026-11-03 (stream4) | the D77 writer rules are in; **behind**: nerves on the clock, `eldritch:` and `sanity` (D75/D76), the `advance` effect, the nerves notes |
+| `ARCHITECTURE.md` | 2026-11-03 (stream4) | the guard paragraph is current (D77/D79); **behind**: the tape (D59), thinking per role (D66), called mode as the only mode (D63) |
 | `INDEX.md` | this file | |
 
 ## 5. Notes (`notes/`, gitignored, the project's memory)
@@ -69,6 +70,7 @@ Every playtest also has a transcript `notes/playtests/<date>-<game>-<tag>.md` an
 - Content: `notes/content/noir/{prefix.md, scenarios/kessler-girl.yml}`, `notes/content/station/...`: the games' text and cases. The scenario files are the game design as much as the code is.
 - Results: `notes/eval/sets/` (test sets and keys), `notes/eval/runs/` (structured runs), `notes/eval/narrator/{corpora,runs,rubric,pairs,judge,judgements}/`, `notes/playtests/`, `notes/eval/reports/`.
 - Scripts kept from sessions: `notes/scripts/` (the run chains: anchors, the MTP and Gemma trials, the transfer, the run-file diff).
+- Branches: `2.0` is the line of work; `stream4` (worktree `../llmtextadventure-stream4`, its own server `api-stream4` on :8014 and its own `data/`) carries D77/D79 until it is merged.
 
 ## 6. Tools and scripts
 

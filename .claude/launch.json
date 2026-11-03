@@ -111,6 +111,20 @@
         "8013"
       ],
       "port": 8013
+    },
+    {
+      "name": "api-stream4",
+      "runtimeExecutable": "../llmtextadventure-stream4/server/.venv/bin/uvicorn",
+      "runtimeArgs": [
+        "app:app",
+        "--app-dir",
+        "../llmtextadventure-stream4/server",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8014"
+      ],
+      "port": 8014
     }
   ]
 }
