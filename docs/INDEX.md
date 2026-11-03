@@ -45,6 +45,7 @@ Regenerate: `cd notes/design/tools && ../../../server/.venv/bin/python gen_<page
 | noir r12-long-reckless, 9613ea5aa8d1 | Sonnet | 50 turns, no ending; nerves pinned at 100 from turn 20 (D75 rules) | [Noir Long Round 3](https://claude.ai/artifact/RcDnBTmk6okmK141xqQsrG) |
 | station r12-long-plain, 7842ba38283c | Sonnet | 50 turns, no ending; alarm 6 to 59; one morning of the week (08:00 to 10:56) | [Station Long Round 1](https://claude.ai/artifact/5cjfcd5dcAjsYk2R3gun49) |
 | noir r13-s4-reckless, 3138dd0248bc (branch stream4, 20 turns) | Sonnet | 9 of 20 turns retold, 7 at the docks gate: the gate now records instead of fighting (D80) | [Stream 4 Trial 1](https://claude.ai/artifact/Xq7zE1ma2DAm8tX8vaeDdZ) |
+| noir r13b-s4-reckless, fe2b4cf4d5a2 (branch stream4, 20 turns, after D80) | Sonnet | no retellings, no forced turn; the location followed the prose | [Stream 4 Trial 2](https://claude.ai/artifact/Jbj7ceQ8QbhEGKtiqGmUxy) |
 | the local-narrated 25-turn rounds of 11-02 (r11L-*) | Qwen3.8 | read per game in ISSUES P1-P7 | `notes/playtests/2026-11-02-*r11L*` (not published) |
 
 Make a page: `server/.venv/bin/python server/tools/round_report.py <iid> --artifact --out <file> --title "…"`, publish the file.
