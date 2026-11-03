@@ -316,3 +316,25 @@ it. **Pairs** rank two variants: the same turn from each, blind, judged by the u
 (keys 1, 2, 0 and Enter; each judgement goes to `notes/eval/narrator/judgements/` as it is made) and by the judge
 model in both orders; the report gives B's win rate over A from each, a tie counting half, and their agreement. There
 is no prose score: a single run is measured by its rubric; prose quality only ever by a matchup.
+
+### Settling a setting: ladders, anchors and the noise floor (D67, D71)
+
+What the overnight of 2026-11-02 taught, written down so the next sweep is run this way rather than that one.
+
+- **Two anchors, not one.** Before any variant, run the current settings twice on the set (`--note <game>-anchor1`,
+  `-anchor2`). Pair anchor 2 against anchor 1: that split is the **noise floor**, how far chance alone moves the score at
+  this set size (18 to 23 on 55 turns, with the rubric's state and continuity moving five or six). Every variant is paired
+  against both anchors; a result inside the floor against either is nothing. A single anchor is a draw that every
+  comparison inherits (on 11-02 the one anchor drew well on noir and badly on station, and every variant "lost on noir and
+  won on station").
+- **Per game, always.** A corpus per game; counts and pairs reported per game and never only as the sum.
+- **A ladder per knob, one knob at a time.** Three or more values with the current one among them (presence 0, 0.7,
+  1.5; a thinking cap 512, 256, 128), each run paired against both anchors and the rubric lined up across the values.
+  One new value against the current setting says whether the knob matters at all; it says nothing about the shape, and a
+  "lead" at one value (presence 1.5, 45 to 29 over two runs, p ≈ 0.08) cannot be adopted on its own.
+- **Size the set to the question.** About 37 decided pairs come out of a 57-turn run and about 100 out of 150 turns.
+  Settling a 70/30 needs about 47 decided pairs; a 65/35 about 85; a 60/40 about 195 (80% power); so on a 150-turn set
+  two runs settle a 60/40 and one settles a 65/35, per game. Nothing is adopted on a 60/40 that is not settled.
+- **Measure where the failure is.** The replay corpus has Sonnet's history behind every turn; a knob aimed at a failure of
+  the narrator's own history (repetition, loops: ISSUES P1, P2) is measured on live local-narrated rounds, not on replay.
+- **The judge is a model, in both orders**, Opus for the pairs of record (D69); the user's judgements are not a step.
