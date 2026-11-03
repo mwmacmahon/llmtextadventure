@@ -60,6 +60,17 @@ load_profile() {                 # the defaults, then the active profile over th
 if "$LLAMA_BIN" --help 2>&1 | grep -q -- "--checkpoint-every-n-tokens"; then CKPT_FLAG=--checkpoint-every-n-tokens
 else CKPT_FLAG=--checkpoint-min-step; fi
 
+# Wait for the GPU. At a cold boot (2026-11-02 21:37, ISSUES L6) the service started before CUDA was ready; llama-server
+# said "no CUDA-capable device is detected", ignored --n-gpu-layers and served the model from the CPU at 1.7 tok/s while
+# /health said ok. So no CUDA device, no server: wait up to GPU_WAIT seconds, then fail and let systemd try again.
+GPU_WAIT="${GPU_WAIT:-300}"
+waited=0
+until CUDA_VISIBLE_DEVICES="$BASE_DEVICES" "$LLAMA_BIN" --list-devices 2>/dev/null | grep -q "CUDA0"; do
+  if [ "$waited" -ge "$GPU_WAIT" ]; then echo "no CUDA device after ${GPU_WAIT}s; not starting on the CPU" >&2; exit 1; fi
+  [ "$waited" -eq 0 ] && echo "waiting for the GPU (CUDA device $BASE_DEVICES)"
+  sleep 5; waited=$((waited + 5))
+done
+
 # Ask ComfyUI for its VRAM. Best effort: a ComfyUI that is not running answers nothing and we go on.
 free_comfy() {
   if curl -s -m 3 -o /dev/null "$COMFY_URL/system_stats"; then
