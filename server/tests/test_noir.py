@@ -649,18 +649,24 @@ def test_things_here_in_full_and_elsewhere_compact(game: NoirGame):
     assert "Elsewhere: " in b and "and 3 more" in b and "crate 14" in b and "crate 0" not in b
 
 
-def test_a_gated_move_is_a_conflict_until_the_guard_forces_it(game: NoirGame):
-    """NV3/P3: the prose had Frank carried under the docks; the move used to be rejected and the narrator never told.
-    Now it is a conflict rejection carrying the rule and the fix (the guard retells on it), and on the guard's last
-    telling the flag is set and the move made, flagged FORCED."""
+def test_a_gated_move_is_accepted_and_sets_the_flag(game: NoirGame):
+    """NV3/P3, then D80: the prose had Frank carried under the docks; the move used to be rejected and the narrator never
+    told; as a conflict (trial 1 of stream 4) the retelling only taught the referee to drop the row while the prose stayed
+    below. Now the move is taken and the way in is recorded as found."""
     _, st = game.new_instance({})
     s2, rep = apply(game, st, ref(C(kind="move", target="player", value="Under the docks")))
-    assert s2.player.location == "Rooftop shack"
-    (rj,) = rep.rejected
-    assert rj.kind == "conflict" and rj.rule == "contradiction" and "not found a way into Under the docks" in rj.fix
-    s3, rep = apply(game, st, ref(C(kind="move", target="player", value="Under the docks")), force=True)
-    assert s3.player.location == "Under the docks" and s3.flags.get("under_docks_found") is True
-    assert not rep.rejected and any(a.startswith("FORCED player.location") for a in rep.applied) and "flags.under_docks_found: True" in rep.applied
+    assert s2.player.location == "Under the docks" and s2.flags.get("under_docks_found") is True
+    assert not rep.rejected and "flags.under_docks_found: True (the way in: the prose put him there)" in rep.applied
+
+
+def test_the_case_conditions_never_make_room(game: NoirGame):
+    """His bad leg is the scenario's; seven narrator conditions push the oldest narrator one out, never the case's."""
+    _, st = game.new_instance({})
+    assert [c.source for c in st.player.conditions] == ["case", "case"]
+    names = ["soaked", "terrified", "winded", "bleeding", "dazed", "limping", "deafened"]
+    s2, _ = apply(game, st, ref(*[C(kind="set", target="player", field="conditions", value=f"+{n}") for n in names]))
+    assert [c.name for c in s2.player.conditions][:2] == ["tired", "injured leg"]
+    assert [c.name for c in s2.player.conditions if c.source == "narrator"] == names[1:]
 
 
 def test_the_referee_is_told_the_gated_places(game: NoirGame):

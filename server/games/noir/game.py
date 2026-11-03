@@ -196,7 +196,7 @@ class NoirGame(GameBase):
         player = Player(
             name=pl["name"], description=pl.get("description", ""), location=pl["location"], health=pl.get("health", "fine"),
             dread=pl.get("dread", 20), baseline_dread=pl.get("baseline_dread", pl.get("dread", 20)),
-            conditions=[Condition(**c) for c in pl.get("conditions", [])],
+            conditions=[Condition(**({"source": "case"} | c)) for c in pl.get("conditions", [])],
             proficiencies=list(pl.get("proficiencies", [])), weaknesses=list(pl.get("weaknesses", [])), stats=dict(pl.get("stats", {})),
         )
         state = NoirState(
@@ -681,12 +681,10 @@ class NoirGame(GameBase):
             value = self._place(s, value) or value          # "Pier Street", "the anchor" → the listed place
         gate = (self.content.scenarios().get(s.case.id, {}).get("gated_places") or {}).get(value) if kind in ("move", "set") else None
         if gate and is_player and (kind == "move" or field == "location") and not s.flags.get(gate):
-            if not w.conflict("player.location", f"reachable only once the way in is found ({gate})", value, rule="contradiction",
-                              fix=f"Frank has not found a way into {value}: nothing in the case has opened it yet. This telling puts him there. "
-                                  f"Keep him at {p.location} and tell the attempt as far as it goes; the way in is part of the case."):
-                return True
-            s.flags[gate] = True                               # D77: the prose stands; the way in was found however it was found
-            w.note(f"flags.{gate}: True")
+            # D80: the prose has him there, so the way in was found, however it was found (carried, a door, a fall). The gate
+            # stops nothing; it records. A retelling only taught the referee to drop the row while the prose stayed below.
+            s.flags[gate] = True
+            w.note(f"flags.{gate}: True (the way in: the prose put him there)")
         if kind == "move" and is_player:
             if value in locs:
                 if w.set("player.location", p.location, value):

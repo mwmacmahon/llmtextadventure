@@ -196,28 +196,28 @@ LONG_A = ("You stand at the rail of the pier while the rain comes down in long g
           "had thought better of it, and you light a match that the wind takes before it reaches the cigarette.")
 
 
-async def test_a_conflict_the_game_refused_retells_and_the_last_telling_forces(engine: Engine, fake: FakeProvider):
-    """NV3: the prose carries Frank under the docks; the gate refuses the move. Before D77 the move was dropped and
-    the narrator never told. Now: a conflict rejection becomes an engine ruling, the guard retells with its fix, and
-    on the last telling the state follows the prose (the flag set, the move made) and the turn is flagged FORCED."""
+async def test_a_conflict_retells_and_the_last_telling_forces(engine: Engine, fake: FakeProvider):
+    """D77: the narration names the Congregation in Frank's own voice and the referee writes the clue. The engine's leak
+    ruling and the screened clue (a conflict) retell the turn; when every telling leaks, the last one is forced: the
+    clue is recorded, the turn flagged FORCED, loudly, and nothing is dropped on the floor."""
     engine.update_settings({"guard": {"mode": "gate", "max_retells": 2}})
     iid = engine.create_instance("noir", {})
     fake.canned["Adjudication"] = [LOOK]
-    fake.script = lambda system, messages: "The grey hands carry you down through the boards into the dark under the docks."
-    fake.hook = lambda schema, last: ChangeReport.of(Change(kind="move", target="player", value="Under the docks"), log_line="carried down") if schema is ChangeReport else None
-    events = await events_of(engine.play(iid, "I stop fighting."))
+    fake.script = lambda system, messages: "The Congregation keeps her somewhere under the docks, you are sure of it now."
+    fake.hook = lambda schema, last: ChangeReport.of(Change(kind="learned", target="player", value="The Congregation has June under the docks"), log_line="a thought") if schema is ChangeReport else None
+    events = await events_of(engine.play(iid, "I think it through."))
     kinds = [e["event"] for e in events]
     assert kinds.count("retell") == 2
     retell = next(e["data"] for e in events if e["event"] == "retell")
-    assert retell["rulings"][0]["rule"] == "contradiction" and "not found a way into Under the docks" in retell["hint"]
+    assert {r["rule"] for r in retell["rulings"]} == {"leak"} and "Congregation" in retell["hint"]
     assert "forced" in kinds
     done = events[-1]["data"]
     forced = done["mechanics"]["forced"]
-    assert forced["attempt"] == 2 and any(a.startswith("FORCED player.location") for a in forced["applied"])
+    assert forced["attempt"] == 2 and forced["rulings"] and forced["rulings"][0]["rule"] == "leak"
     assert done["mechanics"]["issues"][0].startswith("FORCED after 2 retellings")
     assert done["mechanics"]["rejected"] == []
     st = engine.games["noir"].load_state(engine.store.load_state(iid))
-    assert st.player.location == "Under the docks" and st.flags["under_docks_found"] is True
+    assert any("Congregation" in n.text for n in st.notebook)
     assert any(r["kind"] == "forced" for r in engine.store.ledger(iid, 1))
 
 

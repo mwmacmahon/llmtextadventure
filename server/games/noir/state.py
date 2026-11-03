@@ -57,7 +57,7 @@ class Tell(BaseModel):
 
 class Condition(BaseModel):
     name: str
-    source: Literal["narrator", "engine"] = "narrator"
+    source: Literal["narrator", "engine", "case"] = "narrator"   # case: the scenario gave it (his bad leg); it never makes room
 
 
 class Person(BaseModel):
