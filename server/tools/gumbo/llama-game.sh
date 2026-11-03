@@ -40,6 +40,8 @@ FIT_CTX="${FIT_CTX:-49152}"      # CTX=auto: the smallest total context it may s
 DEFAULT_THINK_BUDGET="${THINK_BUDGET:--1}"   # llama.cpp --reasoning-budget: tokens of thinking a request with thinking on may spend before the server
                                   # closes the think block itself (-1 unlimited). Server-wide; roles with thinking off are untouched.
 DEFAULT_KV="${KV:-q8_0}"        # KV cache type for the attention layers (q8_0 halves it; f16 is the full cache: ~68 KB a token on the 27B)
+DEFAULT_EXTRA="${EXTRA:-}"       # extra llama-server flags, verbatim, from the profile's `extra` (D70: "--spec-type draft-mtp
+                                  # --spec-draft-n-max 3" turns on the model's own MTP draft head; the helper allows flags and plain values only)
 DEFAULT_CKPT="${CKPT:-512}"      # recurrent-state checkpoint every N prompt tokens (default 8192): a hybrid model can only rewind its
                                   # state to a checkpoint, so this decides how much of a shared prefix a slot can reuse.
                                   # Builds since spring 2026 call it --checkpoint-min-step (checkpoints at user-message starts and the
@@ -47,7 +49,7 @@ DEFAULT_CKPT="${CKPT:-512}"      # recurrent-state checkpoint every N prompt tok
 
 load_profile() {                 # the defaults, then the active profile over them
   MODEL="$DEFAULT_MODEL"; CTX="$DEFAULT_CTX"; CKPT="$DEFAULT_CKPT"; KV="$DEFAULT_KV"; THINK_BUDGET="$DEFAULT_THINK_BUDGET"
-  TENSOR_SPLIT="$DEFAULT_TENSOR_SPLIT"
+  TENSOR_SPLIT="$DEFAULT_TENSOR_SPLIT"; EXTRA="$DEFAULT_EXTRA"
   ACTIVE="$(tr -d '[:space:]' 2>/dev/null < "$PROFILES/ACTIVE" || true)"
   if [ -n "$ACTIVE" ] && [ -f "$PROFILES/$ACTIVE.env" ]; then
     set -a; . "$PROFILES/$ACTIVE.env"; set +a
@@ -103,7 +105,8 @@ while true; do
   else
     export CUDA_VISIBLE_DEVICES="$BASE_DEVICES"; SPLIT_ARGS=()
   fi
-  echo "llama-server :$PORT, profile $ACTIVE, $PARALLEL slots, ctx $CTX, ckpt $CKPT, kv $KV, think budget $THINK_BUDGET, cards ${TENSOR_SPLIT:-5090 only}, idle sleep ${IDLE}s, model $(basename "$MODEL")"
+  read -ra EXTRA_ARGS <<< "$EXTRA"            # word-split on purpose: the profile's flags, as written
+  echo "llama-server :$PORT, profile $ACTIVE, $PARALLEL slots, ctx $CTX, ckpt $CKPT, kv $KV, think budget $THINK_BUDGET, cards ${TENSOR_SPLIT:-5090 only}, idle sleep ${IDLE}s, extra '${EXTRA}', model $(basename "$MODEL")"
   "$LLAMA_BIN" \
     -m "$MODEL" \
     --host "$HOST" --port "$PORT" \
@@ -121,6 +124,7 @@ while true; do
     --no-context-shift \
     --sleep-idle-seconds "$IDLE" \
     "$CKPT_FLAG" "$CKPT" \
+    ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} \
     --temp 0.7 --top-p 0.8 --top-k 20 --min-p 0.0 &
   LLAMA_PID=$!
   echo "$LLAMA_PID" > "$PROFILES/.llama.pid"

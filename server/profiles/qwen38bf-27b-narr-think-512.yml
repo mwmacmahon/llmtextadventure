@@ -1,0 +1,7 @@
+# D70 run 1: Blackfrost-AI's abliteration of Qwen3.8-27B (Q5_K_M, 19.5 GB, the MTP head embedded in the file), with the
+# base narrator settings of qwen38-27b-narr-think-512 and no MTP flags. "Is the file as good as the Huihui one": paired
+# against the per-game anchors before the draft head is turned on (qwen38bf-27b-mtp).
+model: Qwen3.8-27B-ABLITERATED-Q5_K_M.gguf
+server: {ctx: 98304, ckpt: 2048, kv: q8_0, think_budget: 512}
+roles:
+  narrator: {thinking: true, thinking_budget: 512, reasoning_effort: low, think_after_call: true}

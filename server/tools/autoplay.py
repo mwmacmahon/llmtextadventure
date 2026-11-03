@@ -121,7 +121,10 @@ async def _player_input(model: str, goal: str, opening: str, history: list[tuple
     system = ("You are playing a text adventure as the player. Your goal: " + goal + ". Each turn write only what you do next, as the player "
               "would type it: one to three sentences, first person, concrete, no commentary, no options. Use the game's own levers when they fit "
               "(you may write things like 'I seal the Lab hatches' or 'I nudge Park's implant toward calm'). Vary your approach: talk to people "
-              "through their assistants, read what they keep private, forge a line, apply pressure, watch. React to what just happened.")
+              "through their assistants, read what they keep private, forge a line, apply pressure, watch. React to what just happened. "
+              # ISSUES P7: the Opus player idled ("I watch and wait." 11 of 25 turns) and retried one stairway seven times
+              "Waiting is a last resort, never two turns running: if nothing is happening, make something happen. If an approach has "
+              "failed twice, do something different, not the same thing worded differently.")
     msgs = [Msg("user", "[OPENING]\n" + opening)]
     for text, prose in history[-8:]:
         msgs.append(Msg("assistant", text))

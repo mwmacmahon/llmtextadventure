@@ -1,0 +1,7 @@
+# D70 step 0, a smoke only: the Huihui file we run, with the MTP flags. Its load log lists "unused tensor blk.64.*", which is
+# the shape of Qwen3.8's 65th (MTP) block, so the head may be in this file too; if llama-server drafts from it, run 2
+# needs no second abliteration. If it refuses or drafts nothing, the Blackfrost file is the MTP candidate.
+model: Huihui-Qwen3.8-27B-abliterated-UD-Q5_K_XL.gguf
+server: {ctx: 98304, ckpt: 2048, kv: q8_0, think_budget: 512, extra: "--spec-type draft-mtp --spec-draft-n-max 3"}
+roles:
+  narrator: {thinking: true, thinking_budget: 512, reasoning_effort: low, think_after_call: true}

@@ -1,0 +1,7 @@
+# D70 run 2: qwen38bf-27b-narr-think-512 with the model's own MTP draft head on (llama.cpp --spec-type draft-mtp, three
+# drafted tokens a step). Same output by construction, fewer seconds: the structured roles are greedy, so their outputs
+# should match run 1 token for token; the narrator's timing and the server's draft acceptance rate are what to read.
+model: Qwen3.8-27B-ABLITERATED-Q5_K_M.gguf
+server: {ctx: 98304, ckpt: 2048, kv: q8_0, think_budget: 512, extra: "--spec-type draft-mtp --spec-draft-n-max 3"}
+roles:
+  narrator: {thinking: true, thinking_budget: 512, reasoning_effort: low, think_after_call: true}

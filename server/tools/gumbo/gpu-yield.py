@@ -24,6 +24,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import signal
 import sys
 import urllib.error
@@ -41,6 +42,9 @@ SERVER_KEYS = {                                   # llama-game.sh's knobs and wh
     "kv": re.compile(r"^(f16|bf16|q8_0|q4_0|q4_1|q5_0|q5_1|iq4_nl)$"),
     "think_budget": re.compile(r"^-?\d{1,6}$"),
     "tensor_split": re.compile(r"^\d{1,3},\d{1,3}$"),   # the 5090's share, the 3060's
+    # extra llama-server flags, word by word (D70: MTP is "--spec-type draft-mtp --spec-draft-n-max 3"); flags and plain
+    # values only, nothing the shell could read
+    "extra": re.compile(r"^--[a-z][a-z0-9-]*( [A-Za-z0-9_.,:-]+)?( --[a-z][a-z0-9-]*( [A-Za-z0-9_.,:-]+)?)*$"),
 }
 
 
@@ -92,7 +96,7 @@ def write_profile(name: str, model: str, server: dict) -> str | None:
         if not pat.match(str(v)):
             return f"server {k}={v!r} does not look like a {k}"
     lines = [f"# written by gpu-yield.py from server/profiles/{name}.yml on the game's machine; edit it there",
-             f"MODEL={os.path.join(MODELS, model)}"] + [f"{k.upper()}={server[k]}" for k in sorted(server)]
+             f"MODEL={os.path.join(MODELS, model)}"] + [f"{k.upper()}={shlex.quote(str(server[k]))}" for k in sorted(server)]
     os.makedirs(PROFILES, exist_ok=True)
     with open(os.path.join(PROFILES, f"{name}.env"), "w") as f:
         f.write("\n".join(lines) + "\n")
