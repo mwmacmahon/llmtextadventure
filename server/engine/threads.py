@@ -48,8 +48,9 @@ def load(doc: dict, path: str) -> list[Thread]:
 
 
 def apply_updates(doc: dict, path: str, opened: list[str], closed: list[ThreadClose], turn: int,
-                  max_open: int = 12) -> tuple[list[str], list[str]]:
-    """Mutates `doc`. Returns (applied lines, rejection reasons)."""
+                  max_open: int | None = None) -> tuple[list[str], list[str]]:
+    """Mutates `doc`. Returns (applied lines, rejection reasons). The store takes every thread the prose opens (D77:
+    a cap is on the view, `render`, never on what is recorded); `max_open` remains only for a game that wants one."""
     threads = load(doc, path)
     applied: list[str] = []
     rejected: list[str] = []
@@ -72,7 +73,7 @@ def apply_updates(doc: dict, path: str, opened: list[str], closed: list[ThreadCl
         if any(t.title.lower() == title.lower() and t.status == "open" for t in threads):
             rejected.append(f"threads: duplicate open thread {title!r}")
             continue
-        if open_count >= max_open:
+        if max_open is not None and open_count >= max_open:
             rejected.append(f"threads: too many open threads to add {title!r}")
             continue
         tid = slug(title, turn)
@@ -89,16 +90,22 @@ def apply_updates(doc: dict, path: str, opened: list[str], closed: list[ThreadCl
     return applied, rejected
 
 
-def render(threads: list[Thread], recent_closed: int = 3) -> list[str]:
-    """Bulletin lines: every open thread, then the most recently closed few."""
+def render(threads: list[Thread], recent_closed: int = 3, shown: int = 12) -> list[str]:
+    """Bulletin lines: the most recently opened `shown` open threads in full, the older open ones on one compact
+    line (id and a few words each, so they can still be closed), then the most recently closed few. The view is
+    cut; the store is not (D77)."""
     lines: list[str] = []
     open_ = [t for t in threads if t.status == "open"]
     closed = [t for t in threads if t.status != "open"]
     closed.sort(key=lambda t: t.closed_turn or 0)
     if open_:
+        recent = sorted(open_, key=lambda t: t.opened_turn)[-shown:]
+        older = [t for t in open_ if t not in recent]
         lines.append("Open threads (id: what is pending):")
-        for t in open_:
+        for t in recent:
             lines.append(f"- {t.id}: {t.title}")
+        if older:
+            lines.append(f"- and {len(older)} older still open: " + "; ".join(f"{t.id} ({' '.join(t.title.split()[:5])}…)" for t in older))
     if closed:
         lines.append("Recently settled:")
         for t in closed[-recent_closed:]:

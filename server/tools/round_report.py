@@ -40,7 +40,7 @@ OUT = ROOT / "notes" / "playtests"
 E = html.escape
 
 ROLE_LABEL = {"adjudicator": "Adjudicator", "narrator": "Narrator", "referee": "Referee", "summarizer": "Summarizer"}
-ENGINE_KINDS = {"clock", "event_fired", "event_expired", "happening", "pending", "unseen", "check", "command", "command_preview", "drift"}
+ENGINE_KINDS = {"clock", "event_fired", "event_expired", "happening", "pending", "unseen", "check", "command", "command_preview", "drift", "forced"}
 
 CSS = BASE_CSS + """
 .call{border:1px solid var(--rule);border-radius:7px;padding:10px 12px;display:grid;gap:8px;min-width:0;background:var(--sheet)}
@@ -229,6 +229,9 @@ def render_engine(r: dict) -> str:
         return f"<div class='eng'><b>unseen</b> {E(_short(p.get('fact', '')))}</div>"
     if k == "drift":
         return f"<div class='eng'><b>drift</b> {E('; '.join(p.get('changes') or []))}</div>"
+    if k == "forced":
+        return (f"<div class='sentback' style='border-color:var(--bad, #c0392b)'><b>FORCED after {p.get('attempt', '?')} retellings: the prose stands, the state follows it.</b> "
+                f"{E('; '.join((p.get('applied') or []) + [r.get('rule', '') + ': ' + r.get('what', '') for r in p.get('rulings') or []]))}</div>")
     if k in ("command", "command_preview"):
         return f"<div class='eng'><b>{E(k.replace('_', ' '))}</b> {E(p.get('id', ''))} {E(_short(p.get('args') or {}))} {'ok' if p.get('ok') else 'refused'}: {E(_short(p.get('text') or ''))}</div>"
     return f"<div class='eng'><b>{E(k)}</b> {E(_short(p))}</div>"
@@ -264,7 +267,12 @@ def render_delta(p: dict) -> str:
     for a in p.get("applied") or []:
         out.append(f"<div class='eng'><b>applied</b> {E(_short(a, 300))}</div>")
     for r in p.get("rejected") or []:
-        out.append(f"<div class='eng' style='color:var(--miss)'><b>refused</b> {E(r.get('path', ''))}: {E(r.get('reason', ''))}</div>")
+        kind = r.get("kind") or "fit"
+        colour = {"duplicate": "var(--muted)", "fit": "var(--miss)", "conflict": "var(--bad, #c0392b)"}.get(kind, "var(--miss)")
+        out.append(f"<div class='eng' style='color:{colour}'><b>{E(kind)}</b> {E(r.get('path', ''))}: {E(r.get('reason', ''))}</div>")
+    for a in p.get("applied") or []:
+        if a.startswith("FORCED "):
+            out.append(f"<div class='sentback' style='border-color:var(--bad, #c0392b)'><b>FORCED</b> {E(_short(a, 300))}</div>")
     return "".join(out)
 
 

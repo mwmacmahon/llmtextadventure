@@ -91,7 +91,16 @@ no assessed check went uncalled, and `check_ignored` when nothing was rolled. Mo
 is written and records the ruling; `rewrite` shows it, then retells once through the Rewrite path with
 the referee's fix as the instruction; `gate` holds the text and § lines back, sends `progress` events
 instead (a share of the instance's running-average narration length, capped at 90%, "slow" past
-120%, then "checking"), retells once on a serious ruling, and shows only the final telling. The mode
+120%, then "checking"), retells on a serious ruling up to `max_retells` times (three by default, D77), and shows
+only the final telling. On the last telling the prose wins: the referee's rows are applied with `force`, so a
+conflict (a gated place, an unseen note, a leaked clue) is landed instead of refused, and the turn is flagged
+`forced` in its mechanics row, its ledger and its issues (a FORCED line) for later analysis. Every rejection
+carries a kind (`engine/game.py: Rejection.kind`): `duplicate` (the state already says it, a no-op), `fit` (the
+row's shape or a bound; the engine makes room where it can: the oldest narrator condition goes, threads and the
+notebook are unbounded in the store and cut only in the bulletin) or `conflict` (the writer's `conflict()`: a
+ruling the guard retells on, carrying the rule and the fix). Two more engine rulings: `repetition`
+(`engine/repetition.py`, a telling sharing a fifth or more of its six-word shingles with one of the last six) and
+`fake_check` (a § line the engine did not write). The mode
 is a runtime setting (`GET/PATCH /api/settings`, persisted in `data/settings.json`, default from
 `config.yml` → `guard`); the UI's settings menu switches it and lists the roles' backends. Fork is export truncated at a turn and
 re-imported with an `origin`. Export format 1 is the four tables for one instance, self-contained.

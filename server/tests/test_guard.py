@@ -187,3 +187,66 @@ async def test_the_engine_rules_check_skipped_itself_when_no_assessed_check_is_c
     done = events[-1]["data"]
     assert done["mechanics"]["rewritten"]["by"] == "referee" and done["mechanics"]["rulings"] == []
     assert done["mechanics"]["calls"] and "shoulder" in done["text"]
+
+
+# ---- D77: a conflict retells; three tellings, then the prose wins and the turn is flagged ----------------
+
+LONG_A = ("You stand at the rail of the pier while the rain comes down in long grey ropes and the lake slaps the pilings "
+          "underneath you, and somewhere out past the breakwater a bell buoy rings once and then is quiet, as if it "
+          "had thought better of it, and you light a match that the wind takes before it reaches the cigarette.")
+
+
+async def test_a_conflict_the_game_refused_retells_and_the_last_telling_forces(engine: Engine, fake: FakeProvider):
+    """NV3: the prose carries Frank under the docks; the gate refuses the move. Before D77 the move was dropped and
+    the narrator never told. Now: a conflict rejection becomes an engine ruling, the guard retells with its fix, and
+    on the last telling the state follows the prose (the flag set, the move made) and the turn is flagged FORCED."""
+    engine.update_settings({"guard": {"mode": "gate", "max_retells": 2}})
+    iid = engine.create_instance("noir", {})
+    fake.canned["Adjudication"] = [LOOK]
+    fake.script = lambda system, messages: "The grey hands carry you down through the boards into the dark under the docks."
+    fake.hook = lambda schema, last: ChangeReport.of(Change(kind="move", target="player", value="Under the docks"), log_line="carried down") if schema is ChangeReport else None
+    events = await events_of(engine.play(iid, "I stop fighting."))
+    kinds = [e["event"] for e in events]
+    assert kinds.count("retell") == 2
+    retell = next(e["data"] for e in events if e["event"] == "retell")
+    assert retell["rulings"][0]["rule"] == "contradiction" and "not found a way into Under the docks" in retell["hint"]
+    assert "forced" in kinds
+    done = events[-1]["data"]
+    forced = done["mechanics"]["forced"]
+    assert forced["attempt"] == 2 and any(a.startswith("FORCED player.location") for a in forced["applied"])
+    assert done["mechanics"]["issues"][0].startswith("FORCED after 2 retellings")
+    assert done["mechanics"]["rejected"] == []
+    st = engine.games["noir"].load_state(engine.store.load_state(iid))
+    assert st.player.location == "Under the docks" and st.flags["under_docks_found"] is True
+    assert any(r["kind"] == "forced" for r in engine.store.ledger(iid, 1))
+
+
+async def test_a_telling_that_repeats_an_earlier_turn_is_retold(engine: Engine, fake: FakeProvider):
+    """P1: the engine sees a retold turn (word-shingle overlap) and rules on it; the narrator is asked for what is new."""
+    engine.update_settings({"guard": {"mode": "gate", "max_retells": 1}})
+    iid = engine.create_instance("noir", {})
+    fake.canned["Adjudication"] = [LOOK, LOOK]
+    fake.hook = lambda schema, last: ChangeReport.of(Change(kind="add", target="player", field="dread", value="+1"), log_line="rain") if schema is ChangeReport else None
+    fake.script = lambda system, messages: LONG_A
+    await events_of(engine.play(iid, "I wait at the rail."))
+    tellings = iter([LONG_A, "A gull lands on the rail beside you and looks at the match in your hand with one flat yellow eye."])
+    fake.script = lambda system, messages: next(tellings)
+    events = await events_of(engine.play(iid, "I wait some more."))
+    retell = next(e["data"] for e in events if e["event"] == "retell")
+    assert retell["rulings"][0]["rule"] == "repetition" and retell["rulings"][0]["of_turn"] == 1 and "nothing happens twice" in retell["hint"]
+    assert "gull" in events[-1]["data"]["text"] and events[-1]["data"]["mechanics"]["rulings"] == []
+
+
+async def test_a_self_written_mechanic_line_is_an_invented_roll(engine: Engine, fake: FakeProvider):
+    """P2: a § line the engine did not write is a fake check; the guard retells with the rule."""
+    engine.update_settings({"guard": {"mode": "gate", "max_retells": 1}})
+    iid = engine.create_instance("noir", {})
+    fake.canned["Adjudication"] = [LOOK]
+    tellings = iter(["You set your shoulder to the door.\n\n§ Hands, low. 12 - 3 = 9 against 10. Failure.\n\nIt holds.",
+                     "You set your shoulder to the door and it holds, as doors do."])
+    fake.script = lambda system, messages: next(tellings)
+    fake.hook = lambda schema, last: ChangeReport.of(log_line="the door held") if schema is ChangeReport else None
+    events = await events_of(engine.play(iid, "I shoulder the door."))
+    retell = next(e["data"] for e in events if e["event"] == "retell")
+    assert retell["rulings"][0]["rule"] == "fake_check" and "Never write a § line" in retell["hint"]
+    assert "§" not in events[-1]["data"]["text"]

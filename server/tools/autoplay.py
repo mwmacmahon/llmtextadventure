@@ -101,7 +101,7 @@ def _mechanics_lines(m: dict) -> list[str]:
     if m.get("applied"):
         out.append("applied: " + " | ".join(m["applied"]))
     if m.get("rejected"):
-        out.append("REJECTED: " + " | ".join(f"{r['path']} <- {r['reason']}: {str(r.get('value'))[:60]!r}" for r in m["rejected"]))
+        out.append("REJECTED: " + " | ".join(f"[{r.get('kind', 'fit')}] {r['path']} <- {r['reason']}: {str(r.get('value'))[:60]!r}" for r in m["rejected"]))
     if m.get("drift"):
         out.append("drift: " + " | ".join(m["drift"][:12]) + (" …" if len(m["drift"]) > 12 else ""))
     if m.get("rulings"):

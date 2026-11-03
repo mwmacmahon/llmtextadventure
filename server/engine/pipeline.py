@@ -39,6 +39,7 @@ from . import logs
 from . import pending as pend
 from . import spontaneous as spon
 from . import statepath as sp
+from . import repetition
 from . import threads as th
 from .config import Config
 from .brackets import STOP_SEQUENCES, Call, Note, StreamFilter, extract, is_mechanic_line, with_mechanic
@@ -260,6 +261,8 @@ class Engine:
                 yield {"event": "retell", "data": {"turn": done["turn"], "attempt": retells, "rulings": serious, "hint": fix}}
                 gen = self.rewrite_turn(iid, fix, by="referee")
                 continue
+            if done and (done.get("mechanics") or {}).get("forced"):
+                yield {"event": "forced", "data": {"turn": done["turn"], **done["mechanics"]["forced"]}}
             for ev in held:
                 yield ev
             return
@@ -533,6 +536,8 @@ class Engine:
         lever_outcomes: list[dict[str, Any]] | None = None
         referee_error: str | None = None
         leaked: list[str] = _hook(game, "leaked_terms", state, narration, player_text or "", default=[]) or []
+        # D77: the guard's last telling. The prose wins: conflicts are applied and flagged, the leaked word is learned.
+        force = replay is not None and replay.by == "referee" and replay.attempt >= int(self.settings["guard"]["max_retells"])
         if not getattr(game, "skip_referee", False) and adj is not None and adj.kind in ("action", "trivial"):
             yield {"event": "progress", "data": _progress("checking", len(narration), max(len(narration), 1))}
             try:
@@ -551,11 +556,14 @@ class Engine:
                     if out["status"] == "applied":
                         skip += lv.preview.referee_skip
                 screened = screen_unseen_clues(delta, narration, calls_block.get("notes", []))
-                for term in leaked:                     # a word the player has not learned does not reach his notebook either
+                for term in ([] if force else leaked):  # a word the player has not learned does not reach his notebook either
                     for c in [c for c in delta.changes if c.kind == "learned" and re.search(r"\b" + re.escape(term.lower()), c.value.lower())]:
                         delta.changes.remove(c)
                         screened.append(Rejection(path="notebook", reason=f"uses '{term}', which the player has not learned", value=c.value))
-                state, report, extras = apply_changes(game, state, delta, present=present, causes=causes, skip=skip)
+                state, report, extras = apply_changes(game, state, delta, present=present, causes=causes, skip=skip, force=force)
+                for r in screened:
+                    r.kind = "conflict"
+                    r.rule, r.fix = "leak", f"The player does not know the word in {r.value!r}; nothing they perceived said it."
                 report.rejected.extend(screened)
                 state = land_extras(game, state, delta.log_line, report, extras, turn=turn, notes=calls_block.get("notes", []), ledger=ledger)
                 issues = extras.issues
@@ -628,6 +636,26 @@ class Engine:
                             "fix": "When the fiction reaches each assessed attempt (" + ", ".join(skipped) + "), write its <<CHECK stat difficulty>> line and wait for the result; play what the result says instead of deciding the outcome yourself."})
             log.info("engine.ruling " + logs.kv(iid=iid, turn=turn, rule="check_skipped", serious=True, skipped=",".join(skipped)))
 
+        # D77: a conflict the game refused (a gated place, an unseen note, a leaked clue) is a ruling the guard retells on.
+        for rj in report.conflicts():
+            if rj.rule == "leak" and (leaked or any(r.get("rule") == "leak" for r in rulings)):
+                continue                                     # the leak ruling below says it, with every term
+            rulings.append({"rule": rj.rule or "contradiction", "serious": True, "by": "engine",
+                            "what": f"{rj.path}: {rj.reason} ({str(rj.value)[:80]})", "fix": rj.fix or rj.reason})
+            log.info("engine.ruling " + logs.kv(iid=iid, turn=turn, rule=rj.rule or "contradiction", serious=True, path=rj.path, reason=rj.reason))
+        earlier = [(r.turn, r.text) for r in self.store.transcript(iid) if r.role == "narrator" and r.turn < turn][-6:]
+        rep_ruling = repetition.ruling(narration, earlier)
+        if rep_ruling:                                   # P1: the engine can see a retold turn, so it rules on it
+            rulings.append(rep_ruling)
+            log.info("engine.ruling " + logs.kv(iid=iid, turn=turn, rule="repetition", serious=True, of_turn=rep_ruling["of_turn"], overlap=rep_ruling["overlap"]))
+        own_lines = sum(1 for ln in narration.splitlines() if ln.strip().startswith("§")) - sum(1 for c in calls_block.get("calls", []) if c.get("mechanic"))
+        if own_lines > 0:                                # P2: a § line the engine did not write is an invented roll
+            rulings.append({"rule": "fake_check", "serious": True, "by": "engine",
+                            "what": f"the narration carries {own_lines} § line{'s' if own_lines != 1 else ''} the engine did not write: an invented roll",
+                            "fix": "Never write a § line or a roll's numbers yourself; the engine writes them when you call <<CHECK stat difficulty>>. "
+                                   "Call the check and wait for its result, or tell the attempt in plain prose with no roll."})
+            log.info("engine.ruling " + logs.kv(iid=iid, turn=turn, rule="fake_check", serious=True, lines=own_lines))
+
         if leaked and not any(r.get("rule") == "leak" for r in rulings):
             rulings.append({"rule": "leak", "serious": True, "by": "engine",
                             "what": "the narration uses " + ", ".join(f"'{t}'" for t in leaked) + " in the player's own voice before the player has learned it",
@@ -661,6 +689,15 @@ class Engine:
         }
         if replay is not None:
             mechanics["rewritten"] = {"hint": replay.hint, "attempt": replay.attempt, "by": replay.by}
+        forced_lines = [a for a in report.applied if a.startswith("FORCED ")]
+        serious_left = [r for r in rulings if r.get("serious")]
+        if force and (forced_lines or serious_left):      # D77: the narrator won after the last retelling; say so, loudly
+            mechanics["forced"] = {"attempt": replay.attempt if replay else 0, "applied": forced_lines,
+                                   "rulings": [{"rule": r["rule"], "what": r.get("what", "")} for r in serious_left]}
+            mechanics["issues"] = [f"FORCED after {replay.attempt if replay else 0} retellings: the prose stands, the state follows it. "
+                                   + "; ".join(forced_lines + [f"{r['rule']}: {r.get('what', '')}" for r in serious_left])] + mechanics["issues"]
+            ledger("forced", mechanics["forced"])
+            log.warning("guard.forced " + logs.kv(iid=iid, turn=turn, attempt=replay.attempt if replay else 0, applied=len(forced_lines), rulings=len(serious_left)))
         self.store.append_transcript(iid, turn, "mechanics", json.dumps(mechanics))
 
         yield {
@@ -1452,11 +1489,11 @@ def land_extras(game: Any, state: BaseModel, log_line: str, report: ApplyReport,
             new.who = names.get(new.who.strip(), new.who)        # the narrator reads who by name, never by id
             dup = pend.duplicate_of(pitems, new)
             if dup is not None:
-                report.rejected.append(Rejection(path="pending", reason=f"already in motion as {dup.id}", value=new.what))
+                report.rejected.append(Rejection(path="pending", reason=f"already in motion as {dup.id}", value=new.what, kind="duplicate"))
                 continue
             sched = pend.scheduled_as(_events_of(game, doc), new, now_abs, clock.minutes_per_day)
             if sched is not None:
-                report.rejected.append(Rejection(path="pending", reason=f"the engine has it scheduled ({sched})", value=new.what))
+                report.rejected.append(Rejection(path="pending", reason=f"the engine has it scheduled ({sched})", value=new.what, kind="duplicate"))
                 continue
             src = "narrator" if any("soon:" in n.lower() for n in notes) else "referee"
             p = pend.add(pitems, new, now_abs=now_abs, minutes_per_day=clock.minutes_per_day, turn=turn, source=src)
@@ -1475,7 +1512,7 @@ def land_extras(game: Any, state: BaseModel, log_line: str, report: ApplyReport,
         lpath = getattr(game, "log_path", "log")
         last = (list(sp.lookup(doc, lpath, []) or []) or [""])[-1]
         if _same_line(last, log_line):    # a weak referee repeats last turn's line
-            report.rejected.append(Rejection(path="log", reason="the same as the last log line", value=log_line.strip()))
+            report.rejected.append(Rejection(path="log", reason="the same as the last log line", value=log_line.strip(), kind="duplicate"))
         else:
             sp.append(doc, lpath, f"{_clock_text(game, doc)}{log_line.strip()}")
     tpath = getattr(game, "threads_path", None)
@@ -1487,9 +1524,9 @@ def land_extras(game: Any, state: BaseModel, log_line: str, report: ApplyReport,
 
 
 def sp_rej(reason: str):
-    from .game import Rejection
+    from .game import Rejection, rejection_kind
     path, _, why = reason.partition(": ")
-    return Rejection(path=path, reason=why or reason)
+    return Rejection(path=path, reason=why or reason, kind=rejection_kind(why or reason))
 
 
 def _effect_paths(effects: list[dict]) -> list[str]:
@@ -1627,7 +1664,9 @@ def _this_turn_block(res: dict[str, Any]) -> str:
         for t in told:
             lines.append(f"- Rolled by the engine, {t['label']} ({t['stat']}, {t['difficulty']} difficulty{', against ' + t['target'] if t['target'] else ''}): "
                          f"{t['outcome'].upper()}. When the fiction reaches this attempt it ends in {t['outcome']}; play that and what follows from it. "
-                         "Never soften or reverse it, and write no check line for it.")
+                         "Never soften or reverse it, and write no check line for it."
+                         + (" A failure gives nothing: no name, no fact, no glimpse of what is hidden, no half-success; the attempt costs instead."
+                            if "fail" in t["outcome"] else ""))
     else:
         for a in res.get("assessments", []):
             lines.append(f"- Assessed check, {a.label} ({a.stat}, {a.difficulty.replace('_', ' ')} difficulty{', against ' + a.target if a.target else ''}): "

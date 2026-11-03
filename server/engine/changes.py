@@ -208,12 +208,13 @@ def merge_parts(parts: list[tuple[str, ChangeReport]]) -> tuple[ChangeReport, di
 
 
 def apply_changes(game: Any, state: BaseModel, report: ChangeReport, *, present: list[str], causes: list[str] | None,
-                  skip: list[str] | None = None) -> tuple[BaseModel, ApplyReport, Extras]:
-    """Land a ChangeReport. `skip`: targets or fields a lever already applied (the command's `referee_skip`)."""
+                  skip: list[str] | None = None, force: bool = False) -> tuple[BaseModel, ApplyReport, Extras]:
+    """Land a ChangeReport. `skip`: targets or fields a lever already applied (the command's `referee_skip`).
+    `force`: the guard's last telling (D77): a conflict is applied and flagged instead of rejected."""
     rep = ApplyReport()
     ex = Extras()
     s = state.model_copy(deep=True)
-    w = Writer(getattr(game, "authority", {}), rep)
+    w = Writer(getattr(game, "authority", {}), rep, force=force)
     allowed_flags: dict = _hook(game, "narrator_flags", s, default={}) or {}
     skip_set = {x.strip().lower() for x in (skip or []) if x.strip()}
     decls: list[Declaration] = []
@@ -309,4 +310,5 @@ def apply_changes(game: Any, state: BaseModel, report: ChangeReport, *, present:
         s = _hook(game, "land_declarations", s, decls, rep, causes, default=s) or s
     s = _hook(game, "apply_present", s, present, w, default=s) or s
     s = _hook(game, "after_changes", s, rep, default=s) or s
+    rep.sort_rejections()
     return s, rep, ex

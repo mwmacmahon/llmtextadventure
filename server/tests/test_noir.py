@@ -70,8 +70,8 @@ def ref(*rows: Change, log_line: str = "Something happened.", present: list[str]
     return ChangeReport.of(*rows, log_line=log_line, present=present)
 
 
-def apply(game: NoirGame, st, report: ChangeReport, present: list[str] | None = None):
-    s, rep, _ = apply_changes(game, st, report, present=list(present or []), causes=[])
+def apply(game: NoirGame, st, report: ChangeReport, present: list[str] | None = None, force: bool = False):
+    s, rep, _ = apply_changes(game, st, report, present=list(present or []), causes=[], force=force)
     return s, rep
 
 
@@ -430,7 +430,7 @@ def test_things_left_in_places_and_held_by_people(game: NoirGame):
     assert s2.thing("notebook").place == "Rooftop shack" and s2.thing("trench coat").held_by == "creature" and s2.thing("shoe").place == "Rooftop shack"
     assert {r.path for r in rep.rejected} == {"inventory.dollars", "things"} and s2.item("dollars").count == 14
     b = game.render_bulletin(s2, "")
-    assert "Not on Frank: revolver (6/6 rounds), at Rooftop shack;" in b and "trench coat, held by The thing in the shack (Rooftop shack)" in b
+    assert "Not on Frank, here: revolver (6/6 rounds), at Rooftop shack;" in b and "trench coat, held by The thing in the shack (Rooftop shack)" in b
     assert "it lies here" in game.not_carried(s2, "revolver") and any(p.title == "Not on him" for p in game.ui(s2).panels if hasattr(p, "title"))
     # picked up again, as it was; taken back from the thing; destroyed
     s3, rep = apply(game, s2, ref(C(kind="new", target="thing", value="revolver", field="player"), C(kind="move", target="trench coat", value="player"),
@@ -623,3 +623,48 @@ def test_dread_written_as_set_and_rows_about_the_clock(game: NoirGame):
     assert s3.player.dread == d0 + 28                                             # +25 at most a row (D75)
     s4, rep = apply(game, s3, ref(C(kind="set", target="player", field="time", value="Day 2, 19:45")))
     assert s4.clock == s3.clock and any(r.path == "clock" and "engine" in r.reason for r in rep.rejected)
+
+
+# ---- D77: the store is unbounded, the view is not; a conflict retells, the last telling forces ---------------
+
+def test_conditions_make_room_instead_of_refusing(game: NoirGame):
+    """D77 outcome 2: a seventh narrator condition pushes the oldest out; nothing the prose established is dropped silently."""
+    _, st = game.new_instance({})
+    names = ["soaked", "terrified", "winded", "bleeding", "dazed", "limping", "deafened"]
+    s2, rep = apply(game, st, ref(*[C(kind="set", target="player", field="conditions", value=f"+{n}") for n in names]))
+    have = [c.name for c in s2.player.conditions if c.source == "narrator"]
+    assert have == names[1:] and not [r for r in rep.rejected if "too many" in r.reason]
+    assert any("the oldest, making room" in a for a in rep.applied)
+
+
+def test_things_here_in_full_and_elsewhere_compact(game: NoirGame):
+    """The bulletin shows the things at Frank's location in full and the rest on one line; the store keeps all of them."""
+    _, st = game.new_instance({})
+    rows = [C(kind="new", target="thing", value=f"crate {i}", field="The docks") for i in range(15)]
+    rows.append(C(kind="new", target="thing", value="a wet shoe", field="Rooftop shack"))
+    s2, rep = apply(game, st, ref(*rows))
+    assert len(s2.things) == 16 and not [r for r in rep.rejected if "too many" in r.reason]
+    b = game.render_bulletin(s2, "")
+    assert "Not on Frank, here: a wet shoe, at Rooftop shack." in b
+    assert "Elsewhere: " in b and "and 3 more" in b and "crate 14" in b and "crate 0" not in b
+
+
+def test_a_gated_move_is_a_conflict_until_the_guard_forces_it(game: NoirGame):
+    """NV3/P3: the prose had Frank carried under the docks; the move used to be rejected and the narrator never told.
+    Now it is a conflict rejection carrying the rule and the fix (the guard retells on it), and on the guard's last
+    telling the flag is set and the move made, flagged FORCED."""
+    _, st = game.new_instance({})
+    s2, rep = apply(game, st, ref(C(kind="move", target="player", value="Under the docks")))
+    assert s2.player.location == "Rooftop shack"
+    (rj,) = rep.rejected
+    assert rj.kind == "conflict" and rj.rule == "contradiction" and "not found a way into Under the docks" in rj.fix
+    s3, rep = apply(game, st, ref(C(kind="move", target="player", value="Under the docks")), force=True)
+    assert s3.player.location == "Under the docks" and s3.flags.get("under_docks_found") is True
+    assert not rep.rejected and any(a.startswith("FORCED player.location") for a in rep.applied) and "flags.under_docks_found: True" in rep.applied
+
+
+def test_the_referee_is_told_the_gated_places(game: NoirGame):
+    _, st = game.new_instance({})
+    rules = game.referee_rules(st)
+    assert "Gated places: Under the docks needs the flag under_docks_found" in rules and "write the flag row" in rules
+    assert "Tension with people is small" in rules

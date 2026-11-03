@@ -115,7 +115,7 @@ class GuardConfig(BaseModel):
     """How the narrator is guarded (DESIGN2 §8). The runtime value lives in data/settings.json (the UI's
     settings menu); this is the default when that file does not say."""
     mode: Literal["log", "rewrite", "gate"] = "log"     # log: show, record rulings. rewrite: show, then retell. gate: hold, retell, then show.
-    max_retells: int = 1                                  # automatic retellings per turn, at most
+    max_retells: int = 3                                  # automatic retellings per turn, at most (D77: three, then the prose wins, flagged)
     default_chars: int = 1400                             # the progress estimate before an instance has its own average
 
 

@@ -230,7 +230,9 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
     sign = f"{mods:+d}" if mods else ""
     text = (f"[ENGINE] Check: {stat}, {difficulty.replace('_', ' ')} difficulty" + (f", against {target}" if target else "") +
             f". Rolled {res.roll}{sign} = {res.total} against {res.target}: {res.tier_text().upper()}. "
-            "Narrate that outcome; do not soften or reverse it.")
+            "Narrate that outcome; do not soften or reverse it."
+            + (" A failure gives nothing: no name, no fact, no glimpse of what is hidden, no half-success. The attempt costs instead (time, noise, notice, a hurt)."
+               if res.outcome in ("failure", "huge_failure", "critical_failure") else ""))
     causes = [target] if target and res.outcome in ("success", "huge_success", "critical_success") else []
     return CallResult(text=text, mechanic=render(res), data=res.model_dump(mode="json"), causes=causes)
 

@@ -64,7 +64,7 @@ NUDGE_STRESS = 12
 OVERRIDE_SUSPICION = 10               # meeting a sealed hatch and forcing it
 BLOCKED_SUSPICION = 5                 # meeting a sealed hatch on the way somewhere
 MAX_HISTORY = 40
-MAX_FINDINGS = 60
+MAX_FINDINGS = 500              # D77: the store is unbounded in practice; the bulletin shows the recent ones
 SEALABLE = ["Command", "Habitation ring", "Lab", "Cargo", "Reactor", "Medical"]
 
 AUTHORITY: dict[str, Actor] = {

@@ -369,6 +369,13 @@ retelling fixes it). They land in the mechanics row as `rulings`, and under the 
 serious one has the turn retold before (gate) or after (rewrite) the player sees it; the game's
 `referee_rules` need say nothing about them, the engine's instructions carry the table.
 
+A game's `apply_change` never drops a row the prose established (D77). Where the state already says it, `w.reject`
+with a reason the engine reads as a duplicate (`already …`); where a bound is reached, make room (noir drops its
+oldest narrator condition) or raise the bound and cut the bulletin instead; where the case forbids it (noir's gated
+places), `w.conflict(path, reason, value, rule=, fix=)`: it returns False and records a conflict the guard retells
+on, or True on the guard's last telling (`w.force`), when the game applies the row anyway and the engine flags the
+turn FORCED. The bulletin is a view: show what is near and recent, summarise the rest on one line.
+
 ```python
 def commands(self, state):
     return [CommandSpec(id="lamp", label="Lamp", mode="engine", hint="Switch the lamp.",
