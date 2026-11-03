@@ -177,7 +177,8 @@ class NoirGame(GameBase):
     mechanic_numbers = True                 # the § line shows the die: "Hands, low. 14 + 2 = 16 against 6. Success."
     adjudication_schema = AdjudicationV2    # targets and proposals; transitions stay empty until noir has a world
     fallback_stat = "nerve"
-    static_paths = ["case", "player.name", "player.description", "player.stats", "player.proficiencies", "player.weaknesses", "player.baseline_dread"]
+    static_paths = ["case", "player.name", "player.description", "player.stats", "player.proficiencies", "player.weaknesses", "player.baseline_dread",
+                    "player.sanity"]   # sanity is static until its mechanics exist (D76, ISSUES NV2)
 
     def __init__(self, content_dir: Path):
         self.content = Content(content_dir)
