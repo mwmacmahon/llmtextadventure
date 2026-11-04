@@ -125,6 +125,24 @@
         "8014"
       ],
       "port": 8014
+    },
+    {
+      "name": "api-local-follow",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "TA_CONFIG=config.llamacpp.yml",
+        "TA_LLAMA_URL=http://192.168.0.215:8280",
+        "TA_LLAMA_PREPARE_URL=http://192.168.0.215:8281/free-comfy",
+        "server/.venv/bin/uvicorn",
+        "app:app",
+        "--app-dir",
+        "server",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8013"
+      ],
+      "port": 8013
     }
   ]
 }
