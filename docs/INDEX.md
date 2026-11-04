@@ -1,7 +1,7 @@
 # Project index
 
 Everything the project is made of, where it lives, and which parts are behind the build. Kept by hand; the date at
-the top is the last time someone checked it against the tree. **Checked: 2026-11-03 18:00.**
+the top is the last time someone checked it against the tree. **Checked: 2026-11-04 01:30.**
 
 Published as a page: [Project Index](https://claude.ai/artifact/CivViGMFsdW3qGvxFdejBr). Republish after editing this file:
 `python3 notes/scripts/md2page.py docs/INDEX.md <out.html> notes/scripts/index-head.html`, then publish `<out.html>` to that URL.
@@ -27,6 +27,7 @@ Regenerate: `cd notes/design/tools && ../../../server/.venv/bin/python gen_<page
 | What | Where | State |
 |---|---|---|
 | Local Model Trials (31 Oct - 2 Nov) | [page](https://claude.ai/artifact/CPPqoRADBmUs22NYvCwx2U), source `notes/REPORT-trials-2026-11-02.html` | current to 11-02 evening |
+| Local Model Choice (the night of 3-4 Nov: Huihui vs Blackfrost vs Gemma 4 31B, per game, subagent judge, noise floor) | [page](https://claude.ai/artifact/9euRyRUrgyLUz2Ljx2uLGx), source `notes/REPORT-models-2026-11-04.html`, generator `notes/scripts/gen_model_report.py` | current (D70/D74/D86) |
 | The last five days, read back | `notes/RETRO-2026-11-03.md` | current; not published |
 | Notes to self: the narrator, the referee and the state (failure kinds, principles, ideas, the measure) | `notes/NOTES-narrator-and-state-2026-11-03.md` | living; add to it as rounds are read (D78) |
 | Narrator Measure | [page](https://claude.ai/artifact/TKWffZheyWLHYTbaucRRMj) | **stale** (10-31; rubric v4, the Qwen3.8 runs, the per-game sets are not on it): `eval_replay.py narrator-report`, republish |
@@ -72,7 +73,7 @@ Every playtest also has a transcript `notes/playtests/<date>-<game>-<tag>.md` an
 - Dated: `HANDOFF-2026-10-29/30.md`, `HANDOFF-2026-11-01-qwen38-trial.md`, `SESSION-2026-10-30-night.md`, `PLAYTEST-2026-10-29.md`, `OVERNIGHT-2026-11-01.md`, `GENERATION-PARAMS-2026-11-01.md`, `TRIAL-next-local-model.md`, `TASK-narrator-review.md`, `TASK-N5-fix-declines.md`.
 - Content: `notes/content/noir/{prefix.md, scenarios/kessler-girl.yml}`, `notes/content/station/...`: the games' text and cases. The scenario files are the game design as much as the code is.
 - Results: `notes/eval/sets/` (test sets and keys), `notes/eval/runs/` (structured runs), `notes/eval/narrator/{corpora,runs,rubric,pairs,judge,judgements}/`, `notes/playtests/`, `notes/eval/reports/`.
-- Scripts kept from sessions: `notes/scripts/` (the run chains: anchors, the MTP and Gemma trials, the transfer, the run-file diff).
+- Scripts kept from sessions: `notes/scripts/` (the run chains: anchors, the MTP and Gemma trials, the transfer, the run-file diff, `gen_model_report.py` for the model-choice page).
 - Branches: `2.0` is the line of work; `stream4` (D77-D81, the writing guide) was merged into it on 2026-11-03 19:34. The worktree `../llmtextadventure-stream4` and the `api-stream4` launch entry (:8014) remain for the next branch. Never `git add` a directory that holds a symlinked venv (D82).
 
 ## 6. Tools and scripts
@@ -105,3 +106,4 @@ Every playtest also has a transcript `notes/playtests/<date>-<game>-<tag>.md` an
 4. `WRITEUP-checks-and-decisions.md`: the adjudicator is the one local model, not the A3B.
 5. The station's own nerves analogue (the alarm) has not had D72-D76's reading; ISSUES NV2 covers the sanity discussion.
 6. The player UI (the web client) is a placeholder and needs heavy work (ISSUES U2); every line a model is handed needs the plain-language pass (ISSUES W1, high priority).
+7. The model choice (D86, the night of 11-03/04): the narrator stays on the Huihui file with MTP; the user confirms, then the long rounds with a subagent player on :8013 (D78) are the test of record. `judge-pairs` and `rubric` refuse API judges (D85).
