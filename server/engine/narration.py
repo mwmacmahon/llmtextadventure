@@ -22,11 +22,37 @@ from typing import Any, AsyncIterator, Awaitable, Callable
 from .brackets import (CLOSE_CALL, BracketError, Call, Declaration, Note, StreamFilter, extract, pending_call,
                        with_mechanic)
 from .config import RoleConfig
-from .mechanics import CheckRequest, CheckResult, Modifier, TIER_ORDER, Tier
+from .mechanics import CheckRequest, CheckResult, Modifier, TIER_ORDER, Tier, outcome_words
 from .providers.base import Msg, Provider, StreamDone, TextDelta, Usage
 
 CONTINUE = ("Continue the narration from exactly where you stopped. Do not repeat anything already written "
             "and do not restate the result in the engine's words; play it. Stop at the next reaction point.")
+
+WORD = re.compile(r"[a-z0-9']+")
+
+
+def drop_repeated_opening(cont: str, earlier: str) -> tuple[str, int]:
+    """A continuation that begins by retelling what was already written (Qwen after a check, Huihui station turn 19:
+    six paragraphs printed twice; ISSUES R10, 2026-11-04): drop its leading paragraphs whose 6-word phrases are mostly
+    in `earlier`. Returns (what is left, paragraphs dropped)."""
+    from .repetition import shingles
+    have = shingles(earlier, 6)
+    if not have:
+        return cont, 0
+    parts = re.split(r"(\n\s*\n)", cont)
+    dropped = i = 0
+    while i < len(parts):
+        p = parts[i]
+        if not p.strip():
+            i += 1
+            continue
+        mine = shingles(p, 6)
+        if len(WORD.findall(p.lower())) >= 8 and mine and len(mine & have) / len(mine) >= 0.5:
+            dropped += 1
+            i += 1
+            continue
+        break
+    return "".join(parts[i:]).lstrip("\n"), dropped
 
 
 @dataclass
@@ -99,12 +125,17 @@ async def narrate(provider: Provider, role: RoleConfig, system: str, messages: l
         requests += 1
         done: StreamDone | None = None
         asked = role if requests == 1 or role.think_after_call else role.model_copy(update={"thinking": False})
+        holding = requests > 1                     # a continuation is held back until it ends, so a retold opening can be dropped (R10)
+        held = ""
         async for ev in provider.stream(asked, system, msgs):
             if isinstance(ev, TextDelta):
                 vis = filt.feed(ev.text)
                 if vis:
-                    prose += vis
-                    yield Visible(vis)
+                    if holding:
+                        held += vis
+                    else:
+                        prose += vis
+                        yield Visible(vis)
             elif isinstance(ev, StreamDone):
                 done = ev
         assert done is not None
@@ -118,7 +149,11 @@ async def narrate(provider: Provider, role: RoleConfig, system: str, messages: l
             call, bad = None, str(e)
 
         if call is None and bad is None:
-            tail = filt.end()
+            tail = held + (filt.end() or "")
+            if holding:
+                tail, n = drop_repeated_opening(tail, prose)
+                if n:
+                    problems.append(f"continuation repeated {n} paragraph(s) already written; dropped")
             if tail:
                 prose += tail
                 yield Visible(tail)
@@ -128,6 +163,13 @@ async def narrate(provider: Provider, role: RoleConfig, system: str, messages: l
             break
 
         filt.end()                                  # drop the held call text
+        if holding:
+            held, n = drop_repeated_opening(held, prose)
+            if n:
+                problems.append(f"continuation repeated {n} paragraph(s) already written; dropped")
+            if held:
+                prose += held
+                yield Visible(held)
         raw += piece + CLOSE_CALL + "\n"
         if bad is not None:
             problems.append(f"unreadable call: {bad}")
@@ -229,8 +271,8 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
     mods = res.total - (res.roll or 0)
     sign = f"{mods:+d}" if mods else ""
     text = (f"[ENGINE] Check: {stat}, {difficulty.replace('_', ' ')} difficulty" + (f", against {target}" if target else "") +
-            f". Rolled {res.roll}{sign} = {res.total} against {res.target}: {res.tier_text().upper()}. "
-            "Narrate that outcome; do not soften or reverse it."
+            f". Rolled {res.roll}{sign} = {res.total} against {res.target}: {outcome_words(res.outcome)}. "
+            "Play that; do not soften or reverse it, and do not name the roll or its tier in the prose."
             + (" A failure gives nothing: no name, no fact, no glimpse of what is hidden, no half-success. The attempt costs instead (time, noise, notice, a hurt)."
                if res.outcome in ("failure", "huge_failure", "critical_failure") else ""))
     causes = [target] if target and res.outcome in ("success", "huge_success", "critical_success") else []

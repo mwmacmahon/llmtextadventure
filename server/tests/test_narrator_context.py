@@ -130,7 +130,7 @@ async def test_a_thing_the_player_does_not_carry_is_a_directive(engine: Engine, 
     seen: list = []
     fake.script = lambda system, messages: (seen.append(messages[-1].content), "You reach for a knife you do not have.")[1]
     events = await run(engine, iid, "I pull the knife from my boot and cut the rope.")
-    assert "NOT CARRIED: Frank is not carrying knife" in seen[0] and "carrying matches" not in seen[0]
+    assert "NOT CARRIED: Frank is not carrying knife: the game has no record of it" in seen[0] and "carrying matches" not in seen[0]
     assert "not carried: knife" in events[-1]["data"]["mechanics"]["issues"]
 
 

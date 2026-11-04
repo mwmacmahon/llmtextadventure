@@ -72,7 +72,8 @@ async def test_summary_written_at_slide_points_and_undone_with_its_turn(engine: 
     assert seen == [[1, 2], [3, 4]]
     notes = engine.store.transcript(iid, roles=["system_note"])
     assert [n.turn for n in notes] == [2, 4]
-    calls = [l["payload"] for l in engine.store.ledger(iid, 8) if l["kind"] == "model_call" and l["payload"].get("role") == "summarizer"]
+    # the summarizer's call row sits at the last covered turn, beside the summary row, so a retelling of turn 8 keeps it (ISSUES R11)
+    calls = [l["payload"] for l in engine.store.ledger(iid, 4) if l["kind"] == "model_call" and l["payload"].get("role") == "summarizer"]
     assert calls and calls[0]["covered"] == [3, 4] and calls[0]["previous_turn"] == 2 and "usage" in calls[0]
     assert not summary_plan(engine.store, iid, 3, 2).needed
     # undo past turn 4 drops the second summary; the first one still covers turns 1-2

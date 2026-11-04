@@ -50,10 +50,12 @@ SANITY_LOW = 50                        # D76: below this, high nerves bring hall
 NICOTINE_FLOOR = 30                    # D75: in withdrawal nothing passive brings dread down, and it cannot sit below this
 # nerves tier -> what the narrator is told (D73: window dressing with a cost; nothing here ends the game)
 NERVES_NOTES: dict[str, str] = {
-    "frightened": "Frank's nerves are going: let it show in the body (hands, breath, a step missed) and in what he half-sees, a face at a "
-                  "window that is not there when he looks again, a sound that stops when he does. Nothing is explained.",
-    "coming apart": "Frank is coming apart: his hands and his breath are not his own, he loses the thread of what people say, and every "
-                    "shadow is the wrong shape for a second before it is not. Nothing is explained; nothing he sees is false.",
+    "frightened": "Frank's nerves are going. Show it once this turn, in one small way, and not the way the last turn showed it: the body "
+                  "(hands, breath, a step missed), or on some turns, never every turn, something half-seen, a face at a window that is not "
+                  "there when he looks again, a sound that stops when he does. Nothing is explained.",
+    "coming apart": "Frank is coming apart. Show it once this turn, in one way, and not the way the last turn showed it: his hands or his "
+                    "breath not his own, the thread of what someone says lost, or a shadow the wrong shape for a second before it is not. "
+                    "Nothing is explained; nothing he sees is false.",
 }
 # added to the coming-apart note only when sanity is low (D76): then some of what he perceives is not there
 SANITY_NOTE = ("And some of what he sees and hears is not there: a voice, a figure in a doorway, a whole conversation can turn out to be "
@@ -353,12 +355,20 @@ class NoirGame(GameBase):
         key = re.sub(r"^(a|an|the|my|his|some|\d+)\s+", "", key).strip()
         if not key or state.item(key) is not None:
             return None
+        # a word of the name against what he carries, plural and singular as one ("loose round" is the "3 bullets (.38 rounds, loose in the
+        # coat pocket)"; Sonnet noir r12b turn 49 was told it was not there and the referee ruled a retell on top; ISSUES R7, 11-04)
+        words = {w.rstrip("s") for w in re.findall(r"[a-z]+", key) if len(w) > 3}
+        for it in state.inventory:
+            have = {w.rstrip("s") for w in re.findall(r"[a-z]+", f"{it.id} {it.name} {it.note or ''}".lower().replace("_", " "))}
+            if words & have:
+                return None
         lying = state.thing(key)
         if lying is not None and not lying.held_by and lying.place == state.player.location:
             return (f"{state.player.name} is not carrying {name.strip()}: it lies here, where he left it. Picking it up is part of the attempt; "
                     "play that, and the rest of the attempt with it in his hand.")
-        return (f"{state.player.name} is not carrying {name.strip()}: it is not in his pockets. When he reaches for it, it is not there; "
-                "play that, and the rest of the attempt without it.")
+        return (f"{state.player.name} is not carrying {name.strip()}: the game has no record of it in his pockets. If the story gave it to him and "
+                "he still has it, he has it: say so plainly in a few words and go on with the attempt. If the story never gave it to him, or he "
+                "lost it, he reaches for it and it is not there; play that, and the rest of the attempt without it.")
 
     # ---- bulletin (only what moves) -----------------------------------------
     def render_bulletin(self, state: NoirState, player_text: str) -> str:
@@ -599,7 +609,7 @@ class NoirGame(GameBase):
             "- add player.dread ±n: 0 on an ordinary turn, including successes and calm conversations. Up, by how badly it would shake a tired man. Tension with people is small: an interrogation, a threat in words, a hand on his wrist, bad news, a cell door: +0 to +2, and 0 again the turn after if nothing new frightens him. +3 to +10 for a blow, a shot fired at him, or something wrong in a small way (a sound from under the floor, a smell, a shape seen for a second, a word nobody should know); +10 to +25 when he is badly hurt, fights for his life, or meets the thing itself or what it leaves behind; something he only imagined (what the nerves note describes) +1 to +2, never more. Down: -5 to -20 when he rests, drinks with someone he trusts, wins clearly, reaches safety or is treated kindly: an hour's drink and talk with a friend is -20, a clear win -5 to -10. The engine moves it with time as well (down when nothing frightens him, up while the thing is near) and handles a cigarette's calm: never count those here.",
             "- set player.conditions +<name> or -<name>: conditions with mechanical weight are " + ", ".join(k for k in CONDITION_MODS if k != WITHDRAWAL) + "; others are allowed as flavour; '" + WITHDRAWAL + "' is the engine's, never add or remove it. Remove only a condition the state lists.",
             "- add revolver.loaded -n: rounds Frank actually fired this turn (never as a lost item). add cigarettes.count -n: cigarettes Frank LIT this turn (finishing one lit earlier is nothing); the engine handles the rest of smoking. add dollars.count -n: dollars spent. add bullets.count ±n when the prose plainly says so. Matches are a book: striking matches changes nothing; gone matches only when the book is used up, given away or lost.",
-            "- new thing value=<name> field=player (target thing, field player, always): a thing Frank picked up, was given, bought, borrowed, or found and kept, named as Frank would name it from what the prose shows (a small brass key, a folded slip of paper; never whose it is or what it opens until the prose says), note=what it looks like (or the count for several). gone <thing>: used up or destroyed; the revolver only on an explicit loss of the revolver. Reloading is a lever the engine applies: never report its rounds.",
+            "- new thing value=<name> field=player (target thing, field player, always): a thing Frank picked up, was given, bought, borrowed, pocketed, or found and kept (the map and the carbon copy he folds into his coat in the cell are two such rows; without them the engine tells the narrator next turn that he is not carrying them), named as Frank would name it from what the prose shows (a small brass key, a folded slip of paper; never whose it is or what it opens until the prose says), note=what it looks like (or the count for several). gone <thing>: used up or destroyed; the revolver only on an explicit loss of the revolver. Reloading is a lever the engine applies: never report its rounds.",
             "- move <thing> <place>: Frank dropped it or left it somewhere; it stays there (listed under 'Not on Frank'). move <thing> <person id>: he handed it over or it was taken from him. move <thing> player: he picked it up again or got it back. Counted things (dollars, bullets, cigarettes) go by add, never by move.",
             "- new thing value=<name> field=<place>: something that could matter again left lying in a listed place, not taken by Frank (a key left in a lock, a torn letter, evidence left where it was), named and described the same way. Never one of Frank's own things (his revolver, his notebook): those go by move <thing> <place>. Never a person or a creature, and never set dressing.",
             "- set <thing>.name <what it turned out to be>: the prose shows what a thing is (the small brass key opens warehouse 4's side door: set the small brass key.name the key to warehouse 4). set <thing>.note <what it looks like> when that changes. Frank's own kit keeps its name.",

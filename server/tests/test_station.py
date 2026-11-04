@@ -86,8 +86,10 @@ def test_crew_carry_bios_traits_trust_bonds_secrets_and_routines(game):
     assert "Traits: paranoid, sharp, stubborn." in prefix and "paranoid: assumes tampering first" in prefix
     assert "Hidden, could be learned the station reads her private task list: She has queued a full diagnostic" in prefix
     assert "Day: 07:30–18:00 Command (the comms desk and the raw logs)" in prefix
-    bulletin = game.render_bulletin(st, "")
+    bulletin = game.render_bulletin(st, "", numbers=True)          # the structured roles' view (state_for_models)
     assert "Crew alarm: quiet (6/100)" in bulletin and "trust in the station -2 (wary)" in bulletin
+    narr = game.render_bulletin(st, "")                           # the narrator reads words only (ISSUES R3b)
+    assert "Crew alarm: quiet." in narr and "trust in the station wary" in narr and "(6/100)" not in narr and "stress 1" not in narr
     assert "Routine: Command until 18:00, the comms desk and the raw logs; then Habitation ring." in bulletin
     # only the pieces open now are listed, by id; the diagnostic secret waits for its fuse
     assert "- Ilse Voss [voss]: voss_tablet if the station watches" in bulletin and "voss_diag" not in bulletin

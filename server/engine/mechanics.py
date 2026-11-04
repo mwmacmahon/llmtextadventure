@@ -57,6 +57,16 @@ class CheckResult(BaseModel):
         return self.outcome.replace("_", " ")
 
 
+OUTCOME_WORDS = {"critical_success": "it could not have gone better", "huge_success": "it goes very well", "success": "it works",
+                 "failure": "it fails", "huge_failure": "it fails badly", "critical_failure": "it goes as wrong as it can"}
+
+
+def outcome_words(outcome: str) -> str:
+    """A result as a sentence, not a tier name: Blackfrost wrote 'the huge success gives you more' into the story
+    (ISSUES R3b, 2026-11-04). The player-facing line keeps the tier; the narrator is told what happened."""
+    return OUTCOME_WORDS.get(outcome.replace(" ", "_"), outcome.replace("_", " "))
+
+
 Resolver = Callable[[random.Random, CheckRequest], CheckResult]
 
 

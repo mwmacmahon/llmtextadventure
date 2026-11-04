@@ -89,6 +89,10 @@ def test_commands_text_lists_typeable_commands_with_their_options():
     _, problem = _parse_command_args(spec, ["action=seal", "module=Bridge"])
     assert problem == "'Bridge' is not a module; the choices are Lab, Cargo."
     assert _parse_command_args(specs[1], []) == ({}, "")
+    # positional values in the spec's order (the local adjudicator's form, ISSUES R4): the same as named
+    assert _parse_command_args(spec, ["seal", "cargo"]) == ({"action": "seal", "module": "Cargo"}, "")
+    args, problem = _parse_command_args(spec, ["seal"])
+    assert args == {"action": "seal"} and problem == "Which module? (Lab, Cargo)"
 
 
 async def test_typed_lever_is_previewed_for_the_narrator_and_committed_after_the_prose(engine: Engine, fake: FakeProvider):

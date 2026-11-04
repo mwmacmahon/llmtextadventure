@@ -168,3 +168,17 @@ def test_default_mechanic_line_forms():
     res = CheckResult(id="n1", label="x", stat="hands", difficulty="high", resolver="dice_d20", roll=6, total=8, target=14, margin=-6, outcome="failure")
     assert default_mechanic_line(res) == "Hands, high. 6 + 2 = 8 against 14. Failure."
     assert default_mechanic_line(res, show_numbers=False) == "Hands check, high: failure."
+
+
+def test_a_continuation_that_retells_the_prose_before_the_call_is_trimmed():
+    from engine.narration import drop_repeated_opening
+    before = ("She is still at the terminal. Her hand is on the keyboard. She has not turned around since the sentence about the pod.\n\n"
+              "The assistant is in her ear. It has been quiet since the sentence about the manifest line and the recipient field.")
+    cont = ("She is still at the terminal. Her hand is on the keyboard. She has not turned around since the sentence about the pod.\n\n"
+            "The assistant is in her ear. It has been quiet since the sentence about the manifest line and the recipient field.\n\n"
+            "The Lab is quiet. The cabinet is open behind her and the frost is forming on the seam of the canister.")
+    left, n = drop_repeated_opening(cont, before)
+    assert n == 2 and left.startswith("The Lab is quiet.")
+    # nothing repeated: nothing dropped; a short line is never judged
+    assert drop_repeated_opening("She turns. \"No.\"", before) == ("She turns. \"No.\"", 0)
+    assert drop_repeated_opening(cont, "") == (cont, 0)

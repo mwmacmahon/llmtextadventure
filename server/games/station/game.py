@@ -495,11 +495,16 @@ class StationGame(GameBase):
         return {c.id: c.name for c in state.crew}
 
     # ---- bulletin (only what moves) -----------------------------------------
-    def render_bulletin(self, state: StationState, player_text: str) -> str:
+    def state_for_models(self, state: StationState) -> str:
+        """The referee and adjudicator read the numbers (their rows are numbers); the narrator reads words only (ISSUES R3b, 11-04:
+        Blackfrost wrote 'stress 85, breaking' into the story)."""
+        return self.render_bulletin(state, "", numbers=True)
+
+    def render_bulletin(self, state: StationState, player_text: str, numbers: bool = False) -> str:
         s = state
         lines: list[str] = []
         lines.append(f"Time: {s.clock.render()}")
-        lines.append(f"Crew alarm: {s.suspicion_tier(s.suspicion)} ({s.suspicion}/100). " + self._alarm_text(s))
+        lines.append(f"Crew alarm: {s.suspicion_tier(s.suspicion)}" + (f" ({s.suspicion}/100)" if numbers else "") + ". " + self._alarm_text(s))
 
         off = [sy for sy in s.systems if sy.status != "operational" or sy.control != "full"]
         if off:
@@ -514,12 +519,19 @@ class StationGame(GameBase):
         lines.append("Resources: " + ", ".join(f"{r.name} {r.level}" + (f" ({r.note})" if r.note else "") for r in s.resources) + ".")
         if s.sealed:
             lines.append("Hatches sealed by the AI (crew cannot pass without forcing an override): " + self._sealed_text(s) + ".")
+        stated = self._things_with_state(s)
+        if stated:                                   # what the referee recorded on things stays visible: the fixed cabinet fan lived only in the
+            lines.append("Things as they stand now: " + "; ".join(stated) + ".")   # window and was 'cut' again thirty turns later (R6)
 
         lines.append("")
         lines.append("Crew now:")
         for c in s.crew:
-            bits = [f"at {self._where(s, c) if c.location else 'unknown location'}", f"{c.health}" + (f" ({c.condition})" if c.condition else ""), f"mood {c.mood}", f"stress {c.stress} ({stress_word(c.stress)})",
-                    f"suspicion {c.suspicion} ({c.suspicion_word})", f"trust in the station {c.trust:+d} ({c.trust_word}{', an ally' if c.ally else ''})"]
+            if numbers:
+                bits = [f"at {self._where(s, c) if c.location else 'unknown location'}", f"{c.health}" + (f" ({c.condition})" if c.condition else ""), f"mood {c.mood}", f"stress {c.stress} ({stress_word(c.stress)})",
+                        f"suspicion {c.suspicion} ({c.suspicion_word})", f"trust in the station {c.trust:+d} ({c.trust_word}{', an ally' if c.ally else ''})"]
+            else:
+                bits = [f"at {self._where(s, c) if c.location else 'unknown location'}", f"{c.health}" + (f" ({c.condition})" if c.condition else ""), f"mood {c.mood}", f"stress {stress_word(c.stress)}",
+                        f"suspicion {c.suspicion_word}", f"trust in the station {c.trust_word}{', an ally' if c.ally else ''}"]
             lines.append(f"- {c.name}: " + ", ".join(bits) + ".")
             if c.disposition.agenda or c.disposition.behaviors:
                 lines.append(f"    Attitude {c.disposition.attitude}; agenda: {c.disposition.agenda}")
@@ -574,9 +586,41 @@ class StationGame(GameBase):
     def _alarm_text(s: StationState) -> str:
         tier = s.suspicion_tier(s.suspicion)
         return {"quiet": "Nobody is looking for anything; a wrong readout is a wrong readout.",
-                "doubt": "Doubt about equipment: readouts get a second look, panels get opened.",
-                "tampering": "Doubt about tampering: the crew compare notes, read raw logs, take things to manual.",
+                "doubt": "Doubt about equipment: readouts get a second look, panels get opened. Show one such act when the scene calls for it, not every turn.",
+                "tampering": "Doubt about tampering: the crew are inclined to compare notes, read raw logs and take things to manual. Show one such act when the scene calls for it, not every turn; they also eat, work, talk and rest.",
                 "hunting": "They are hunting for a cause and the station is on the list; isolating the core is being talked about."}[tier]
+
+    def _things_with_state(self, s: StationState) -> list[str]:
+        """Known things whose state, status, lock or open flag no longer reads as the scenario seeded it, and things the
+        referee added: what it recorded on them, where they are, as the narrator should read it (ISSUES R6)."""
+        if not s.world:
+            return []
+        sid = getattr(getattr(s, "scenario", None), "id", None)
+        spec = (self.content.scenarios().get(sid) or {}) if sid else {}
+        seeds = {t["id"]: (t.get("state", ""), {k: str(v) for k, v in (t.get("attributes") or {}).items()}) for t in (spec.get("world") or {}).get("things", [])}
+        watched = ("status", "open", "locked", "control")
+        out = []
+        for t in s.world.things:
+            if not t.known or "hatch" in t.tags:
+                continue
+            attrs = {k: str(a.value) for k, a in t.attributes.items() if k in watched and a.value not in (None, "")}
+            seed_state, seed_attrs = seeds.get(t.id, (None, None))
+            if seed_state is not None and t.state == seed_state and all(seed_attrs.get(k) == v for k, v in attrs.items()):
+                continue                                        # as seeded: the prefix and the scene already carry it
+            if seed_state is None and not t.state and not attrs:
+                continue
+            kind, _, ref = t.location.partition(":")
+            if kind == "place":
+                p = s.world.place(ref)
+                where = p.name if p is not None else ref
+            elif kind == "person":
+                c = next((c for c in s.crew if c.id == ref), None)
+                where = f"with {c.name}" if c else ref
+            else:
+                where = ref or "nowhere"
+            desc = ", ".join(([t.state] if t.state else []) + [f"{k} {v}" for k, v in attrs.items()])
+            out.append(f"{t.name} ({where}): {desc}")
+        return out[:12]
 
     def _sealed_text(self, s: StationState) -> str:
         out = []

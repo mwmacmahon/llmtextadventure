@@ -47,7 +47,7 @@ from .context import build_messages, summary_plan
 from .narration import (Assessment, CallResult, Mechanic, NarrationDone, Visible, default_mechanic_line, narrate,
                         run_check)
 from .game import ApplyReport, CommandResult, Game, GameBase, Rejection, TurnInfo
-from .mechanics import RESOLVERS, CheckRequest, CheckResult, rng_for
+from .mechanics import RESOLVERS, CheckRequest, CheckResult, outcome_words, rng_for
 from .providers import Msg, StreamDone, TextDelta, get_provider
 from .providers.base import Msg, Usage
 from .roles import (Adjudication, adjudicator_messages, referee_messages, summarizer_messages, NARRATOR_PROTOCOL)
@@ -411,7 +411,9 @@ class Engine:
             try:
                 text, meta = await self._summarize(game, state, plan, iid)
                 self.store.append_transcript(iid, plan.to_cover[-1], "system_note", text)
-                ledger("model_call", {"role": "summarizer", **meta, "covered": plan.to_cover, "previous_turn": plan.previous.turn if plan.previous else None, "text": text})
+                # stored at the last covered turn, like the summary row itself: a retelling of this turn deletes this turn's rows and does not
+                # summarize again (ISSUES R11, 11-04: five rounds lost the row)
+                self.store.append_ledger(iid, plan.to_cover[-1], "model_call", {"role": "summarizer", **meta, "covered": plan.to_cover, "previous_turn": plan.previous.turn if plan.previous else None, "text": text})
                 log.info("step " + logs.kv(iid=iid, turn=turn, step="summarize", model=meta["model"], seconds=meta["seconds"],
                                            covered=f"{plan.to_cover[0]}-{plan.to_cover[-1]}", chars=len(text), **logs.usage_kv(meta["usage"])))
                 yield {"event": "summary", "data": {"status": "done", "turns": plan.to_cover, "chars": len(text)}}
@@ -439,7 +441,7 @@ class Engine:
         scene_text = _hook(game, "scene_block", state, adj, "narrator", default="")
         coming = _pending_block(game, state, "narrator")
         bulletin = (((scene_text + "\n\n") if scene_text else "") + game.render_bulletin(state, player_text)
-                    + ((("\n\n" + coming) if coming else "")) + "\n\n" + _this_turn_block(res))
+                    + ((("\n\n" + coming) if coming else "")) + "\n\n" + _this_turn_block(res, _clock_now(state)))
         yield {"event": "bulletin", "data": {"turn": turn, "text": bulletin}}
         self.store.append_transcript(iid, turn, "bulletin", bulletin)
 
@@ -1494,6 +1496,9 @@ def _parse_command_args(spec: Any, raw: list[str]) -> tuple[dict[str, str], str]
         name, sep, value = str(item).partition("=")
         if sep and name.strip():            # a bare "," or "" from the model is noise, not an argument
             given[name.strip()] = value.strip()
+    if not given:                           # positional values, in the spec's order: the local adjudicator wrote ['park', 'calm'] and every
+        values = [str(x).strip() for x in raw if str(x).strip() and "=" not in str(x)]   # nudge became "Which crew member?" (ISSUES R4, 11-04)
+        given = {p.name: v for p, v in zip(spec.params, values)}
     args: dict[str, str] = {}
     for p in spec.params:
         v = given.get(p.name, "")
@@ -1651,6 +1656,17 @@ def _same_line(previous: str, line: str) -> bool:
 SLOT_MARGIN = 1024      # tokens kept free in a local slot beyond the narrator's max_tokens: a call's continuation, the estimate's error
 
 
+def _clock_now(state: Any) -> str:
+    """The clock as the game renders it, for THIS TURN's end-of-turn time (Sonnet noir did its own arithmetic and got
+    1:15, 2:41, 2:04 across turns 17-23; ISSUES R12)."""
+    clock = getattr(state, "clock", None)
+    render = getattr(clock, "render", None)
+    try:
+        return str(render()) if callable(render) else ""
+    except Exception:
+        return ""
+
+
 def _check_reminder(res: dict[str, Any], told: list[dict[str, Any]]) -> str:
     """The closing line of the narrator's last message when the turn has checks: recency is what a weaker
     model follows. Told: the results are given, play them. Called: stop at the first one and wait."""
@@ -1683,26 +1699,26 @@ def _soften_unreached(rulings: list[dict[str, Any]], res: dict[str, Any]) -> lis
     return out
 
 
-def _this_turn_block(res: dict[str, Any]) -> str:
+def _this_turn_block(res: dict[str, Any], clock_text: str = "") -> str:
     lines = ["THIS TURN (resolved by the engine; narrate these, do not re-decide them)"]
     adj = res.get("adjudication")
     if adj is not None:
-        lines.append(f"- The engine reads the player's input as: {adj.summary}")
+        lines.append(f"- The player's input, as the engine read it (for your orientation only; never restate it, begin with what comes of it): {adj.summary}")
     if res["elapsed"]:
         note = res.get("clock_note") or ""
         if "stopped at" in note and adj is not None and adj.time_minutes > res["elapsed"]:
             lines.append(f"- Time passes: about {res['elapsed']} minutes of the {adj.time_minutes} the player meant to spend; something falls due then (below). "
                          "Narrate up to that moment, in the fiction: the player's intent is simply not finished yet. Never mention minutes being given, the clock stopping, or the engine.")
         else:
-            lines.append(f"- Time passes: about {res['elapsed']} minutes. The clock above already includes it. Do not narrate beyond it.")
+            lines.append(f"- Time passes: about {res['elapsed']} minutes. The clock above already includes it" + (f": it reads {clock_text} when this turn ends" if clock_text else "") + ". Do not narrate beyond it.")
     elif adj is not None and adj.kind in ("action", "trivial"):
         lines.append("- No appreciable time passes.")
     told = res.get("told")
     if told:
         for t in told:
             lines.append(f"- Rolled by the engine, {t['label']} ({t['stat']}, {t['difficulty']} difficulty{', against ' + t['target'] if t['target'] else ''}): "
-                         f"{t['outcome'].upper()}. When the fiction reaches this attempt it ends in {t['outcome']}; play that and what follows from it. "
-                         "Never soften or reverse it, and write no check line for it."
+                         f"{outcome_words(t['outcome'])}. When the fiction reaches this attempt, play that and what follows from it. "
+                         "Never soften or reverse it, write no check line for it, and do not name the roll or its tier in the prose."
                          + (" A failure gives nothing: no name, no fact, no glimpse of what is hidden, no half-success; the attempt costs instead."
                             if "fail" in t["outcome"] else ""))
     else:
