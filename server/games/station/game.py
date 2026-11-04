@@ -64,7 +64,7 @@ NUDGE_STRESS = 12
 OVERRIDE_SUSPICION = 10               # meeting a sealed hatch and forcing it
 BLOCKED_SUSPICION = 5                 # meeting a sealed hatch on the way somewhere
 MAX_HISTORY = 40
-MAX_FINDINGS = 60
+MAX_FINDINGS = 500              # D77: the store is unbounded in practice; the bulletin shows the recent ones
 SEALABLE = ["Command", "Habitation ring", "Lab", "Cargo", "Reactor", "Medical"]
 
 AUTHORITY: dict[str, Actor] = {
@@ -327,6 +327,9 @@ class StationGame(GameBase):
             p = w.person(c.id)
             if p is None:
                 continue
+            if c.location == "Unknown":                                     # D81: the station lost track of them; the world keeps where they were last
+                p.status = "dead" if c.health == "dead" else "unknown"
+                continue
             pid = self._place_id(w, c.location)
             if not (p.location and pid and w.inside(p.location, pid)):     # in a room of that module: stays in the room
                 p.location = pid
@@ -342,7 +345,7 @@ class StationGame(GameBase):
             return
         for c in s.crew:
             p = s.world.person(c.id)
-            if p is not None and p.location:
+            if p is not None and p.location and p.status != "unknown":
                 c.location = self._place_name(s.world, s.world.top(p.location))   # the crew record keeps the module
 
     def _where(self, s: StationState, c: Any, ids: bool = False) -> str:
@@ -668,6 +671,7 @@ class StationGame(GameBase):
             "Targets: crew by id: " + ", ".join(f"{c.id} = {c.name}" for c in s.crew) + "; the station itself as player; systems by id: " + ", ".join(f"{self._sys_id(s, sy)} = {sy.name}" for sy in s.systems)
             + "; resources by id: " + ", ".join(f"{r.id} = {r.name}" for r in s.resources) + "; places, things, hatches and drones by the ids in brackets in the SCENE block.",
             "Rows this game records:",
+            "- move <crew id> Unknown: the prose had them leave where they were and did not show them arriving anywhere listed (gone from the feed, out a hatch, not where they were when the station looked). Write this rather than leaving them recorded where they no longer are; the station then asks after them next turn.",
             "- move <crew id> <place id or name from the SCENE>; move <drone id> <place>, only when the prose shows them arrive there. Someone or something still on the way is not a move: it is a soon row with the minutes until they arrive, and the move is reported on the turn they do. Crew move only through open hatches; a sealed hatch stops them unless the prose shows them force a manual override, which is its own row (below) before the move.",
             "- set <crew id>.mood <one or two words>, only if the narration changed it. set <crew id>.health <" + "|".join(HEALTH_VALUES) + ">, only if changed. "
             "set <crew id>.condition <a few words> for the body beyond the health word (bleeding from the hand, sedated, soaked), set again when it changes.",
@@ -875,6 +879,11 @@ class StationGame(GameBase):
         c = self._crew_of(s, target)
         if c is not None:
             if kind == "move" or (kind == "set" and field == "location"):
+                if value.strip().lower() == "unknown":            # D81: lost track of them; not a place the world has to allow
+                    if w.set(f"crew.{c.id}.location", c.location, "Unknown"):
+                        c.location = "Unknown"
+                        self._sync_world_from_crew(s)
+                    return True
                 if s.world is not None:
                     return False                                   # the world's rules decide (sealed hatches, overrides)
                 if value in locs:
@@ -1114,6 +1123,11 @@ class StationGame(GameBase):
         if decls:
             self._sync_world_from_crew(s)
             s.world, ad = apply_declarations(s.world, decls, self.world_policy, Cause(ids=list(causes or [])), clock_text=s.clock.render())
+            refused = {r.raw for r in ad.rejected}
+            for d in decls:                                       # D81: a lost crew member seen arriving somewhere is found again
+                q = s.world.person(d.id) if d.verb == "MOVED" and d.id else None
+                if q is not None and q.status == "unknown" and d.raw not in refused:
+                    q.status = "present"
             rep.applied.extend(c.text for c in ad.applied)
             for r in ad.rejected:
                 rep.rejected.append(Rejection(path="world", reason=r.reason + (f" [{r.ruling}]" if r.ruling else ""), value=r.raw))
@@ -1464,6 +1478,15 @@ class StationGame(GameBase):
             del s.hidden.recent[:-12]
             self._history(s, c, f"met the sealed hatch to {module} on the way to {r.place}")
 
+    def turn_directives(self, s: StationState) -> list[str]:
+        """D81: crew the station has lost track of; the narrator is asked to place them when the prose shows them."""
+        lost = [c.name for c in s.crew if c.location == "Unknown" and c.health != "dead"]
+        if not lost:
+            return []
+        return [f"WHERE {'IS' if len(lost) == 1 else 'ARE'} {', '.join(lost).upper()}? The station lost track of {'them' if len(lost) > 1 else 'them'} last turn: "
+                "the prose had them leave and did not say where they ended up. If this turn's prose shows them, make it plain which module they are in "
+                "(a listed one, or a room inside one), so the referee can record it."]
+
     # ---- UI -----------------------------------------------------------------
     def _where_table(self, s: StationState) -> Table:
         w = s.world
@@ -1485,6 +1508,10 @@ class StationGame(GameBase):
                          TableCell(text=", ".join(p.name.split()[-1] for p in people) or "—"),
                          TableCell(text=", ".join(notable) or "—"),
                          TableCell(text=feed, tone="ok" if feed == "ok" else "bad")])
+        lost = [c for c in s.crew if c.location == "Unknown" and c.health != "dead"]
+        if lost:
+            rows.append([TableCell(text="Unaccounted for", tone="warn"), TableCell(text=", ".join(c.name.split()[-1] for c in lost), tone="warn"),
+                         TableCell(text="not on any feed"), TableCell(text="—")])
         return Table(title="Where everyone is", columns=["Module", "People", "Of note", "Feed"], rows=rows)
 
     def _countdowns(self, s: StationState) -> list[Chip]:

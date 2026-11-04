@@ -597,7 +597,7 @@ class Policy(BaseModel):
     places: bool = False
     exits: bool = False                 # discoverable exits
     rooms: bool = False                 # a new place inside a recorded one (a crew member's quarters), even where the map is closed
-    max_new_places: int = 12            # places the narrator may add in one game
+    max_new_places: int = 40            # places the narrator may add in one game (D72/D77: sprawl over collapse)
     forbid_tags: list[str] = Field(default_factory=lambda: ["weapon"])
     forbid_names: list[str] = Field(default_factory=lambda: ["weapon", "gun", "pistol", "revolver", "rifle", "shotgun", "knife", "blade",
                                                             "grenade", "launcher", "explosive", "bomb"])   # a code backstop: no model is trusted to tag a pistol

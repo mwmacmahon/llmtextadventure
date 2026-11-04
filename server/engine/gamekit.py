@@ -58,10 +58,11 @@ class Writer:
     """Records authority-checked field writes. `set` returns whether the caller may apply the
     value (and logs the change when it differs); `nudge` clamps a step and a range."""
 
-    def __init__(self, authority: dict[str, Actor], report: ApplyReport, actor: Actor = "narrator"):
+    def __init__(self, authority: dict[str, Actor], report: ApplyReport, actor: Actor = "narrator", force: bool = False):
         self.authority = authority
         self.report = report
         self.actor = actor
+        self.force = force          # the last telling under the guard (D77): the prose wins, conflicts are applied and flagged
 
     def set(self, path: str, old: Any, new: Any) -> bool:
         if not may_write(path, self.actor, self.authority):
@@ -83,6 +84,16 @@ class Writer:
 
     def reject(self, path: str, reason: str, value: Any = None) -> None:
         self.report.rejected.append(Rejection(path=path, reason=reason, value=value))
+
+    def conflict(self, path: str, reason: str, value: Any, rule: str, fix: str) -> bool:
+        """The prose established something the case forbids (D77 outcome 3). Returns True when the caller must apply
+        it anyway: the guard's last telling (`force`), where the state follows the prose and the turn is flagged.
+        Otherwise records a conflict rejection carrying the rule and the fix, and the guard retells the turn."""
+        if self.force:
+            self.report.applied.append(f"FORCED {path}: {reason} ({value!r})")
+            return True
+        self.report.rejected.append(Rejection(path=path, reason=reason, value=value, kind="conflict", rule=rule, fix=fix))
+        return False
 
     def note(self, line: str) -> None:
         self.report.applied.append(line)

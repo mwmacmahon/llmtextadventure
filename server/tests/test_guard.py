@@ -89,15 +89,15 @@ async def test_gate_holds_the_prose_and_retells_once_on_a_serious_ruling(engine:
     shown = "".join(e["data"]["t"] for e in events if e["event"] == "text")
     assert "Szabo" not in shown and "rain keeps on" in shown
     retell = next(e["data"] for e in events if e["event"] == "retell")
-    assert retell["attempt"] == 1 and retell["rulings"][0]["rule"] == "leak" and retell["hint"] == "keep the man unnamed"
+    assert retell["attempt"] == 1 and retell["rulings"][0]["rule"] == "leak" and retell["hint"] == "Something the player must not learn got into the telling: the prose names the man in the cistern. keep the man unnamed Leave it out entirely: no hint, no paraphrase, no other name for the same thing, no knowing look, and nobody says it to the player's character this turn either."
     # progress came through while the prose was held: writing with an estimate, then checking
     stages = [e["data"]["stage"] for e in events if e["event"] == "progress"]
     assert stages[0] == "writing" and "checking" in stages
     done = events[-1]["data"]
     assert done["event"] if False else done["turn"] == 1 and engine.store.latest_turn(iid) == 1
-    assert done["mechanics"]["rewritten"] == {"hint": "keep the man unnamed", "attempt": 1, "by": "referee"}
+    assert done["mechanics"]["rewritten"] == {"hint": "Something the player must not learn got into the telling: the prose names the man in the cistern. keep the man unnamed Leave it out entirely: no hint, no paraphrase, no other name for the same thing, no knowing look, and nobody says it to the player's character this turn either.", "attempt": 1, "by": "referee"}
     assert done["mechanics"]["rulings"] == [] and "rain keeps on" in done["text"]
-    assert len(calls) == 2 and "RULING from the referee" in [r["payload"] for r in engine.store.ledger(iid, 1) if r["kind"] == "model_call" and r["payload"].get("role") == "narrator"][-1]["request"]["messages"][-1]["content"]
+    assert len(calls) == 2 and "IMPORTANT, A RETELLING: your previous telling of this turn was not accepted (the referee ruled on it).\n  Something the player must not learn got into the telling: the prose names the man in the cistern. keep the man unnamed Leave it out entirely" in [r["payload"] for r in engine.store.ledger(iid, 1) if r["kind"] == "model_call" and r["payload"].get("role") == "narrator"][-1]["request"]["messages"][-1]["content"]
     rw = next(r["payload"] for r in engine.store.ledger(iid, 1) if r["kind"] == "rewrite")
     assert rw["by"] == "referee" and "Szabo" in rw["history"][0]["narration"]
     # the player's row from the first telling is gone with it; one player line, one narration
@@ -187,3 +187,80 @@ async def test_the_engine_rules_check_skipped_itself_when_no_assessed_check_is_c
     done = events[-1]["data"]
     assert done["mechanics"]["rewritten"]["by"] == "referee" and done["mechanics"]["rulings"] == []
     assert done["mechanics"]["calls"] and "shoulder" in done["text"]
+
+
+# ---- D77: a conflict retells; three tellings, then the prose wins and the turn is flagged ----------------
+
+LONG_A = ("You stand at the rail of the pier while the rain comes down in long grey ropes and the lake slaps the pilings "
+          "underneath you, and somewhere out past the breakwater a bell buoy rings once and then is quiet, as if it "
+          "had thought better of it, and you light a match that the wind takes before it reaches the cigarette.")
+
+
+async def test_a_conflict_retells_and_the_last_telling_forces(engine: Engine, fake: FakeProvider):
+    """D77: the narration names the Congregation in Frank's own voice and the referee writes the clue. The engine's leak
+    ruling and the screened clue (a conflict) retell the turn; when every telling leaks, the last one is forced: the
+    clue is recorded, the turn flagged FORCED, loudly, and nothing is dropped on the floor."""
+    engine.update_settings({"guard": {"mode": "gate", "max_retells": 2}})
+    iid = engine.create_instance("noir", {})
+    fake.canned["Adjudication"] = [LOOK]
+    fake.script = lambda system, messages: "The Congregation keeps her somewhere under the docks, you are sure of it now."
+    fake.hook = lambda schema, last: ChangeReport.of(Change(kind="learned", target="player", value="The Congregation has June under the docks"), log_line="a thought") if schema is ChangeReport else None
+    events = await events_of(engine.play(iid, "I think it through."))
+    kinds = [e["event"] for e in events]
+    assert kinds.count("retell") == 2
+    retell = next(e["data"] for e in events if e["event"] == "retell")
+    assert {r["rule"] for r in retell["rulings"]} == {"leak"} and "Congregation" in retell["hint"]
+    assert "forced" in kinds
+    done = events[-1]["data"]
+    forced = done["mechanics"]["forced"]
+    assert forced["attempt"] == 2 and forced["rulings"] and forced["rulings"][0]["rule"] == "leak"
+    assert done["mechanics"]["issues"][0].startswith("FORCED after 2 retellings")
+    assert done["mechanics"]["rejected"] == []
+    st = engine.games["noir"].load_state(engine.store.load_state(iid))
+    assert any("Congregation" in n.text for n in st.notebook)
+    assert any(r["kind"] == "forced" for r in engine.store.ledger(iid, 1))
+
+
+async def test_a_telling_that_repeats_an_earlier_turn_is_retold(engine: Engine, fake: FakeProvider):
+    """P1: the engine sees a retold turn (word-shingle overlap) and rules on it; the narrator is asked for what is new."""
+    engine.update_settings({"guard": {"mode": "gate", "max_retells": 1}})
+    iid = engine.create_instance("noir", {})
+    fake.canned["Adjudication"] = [LOOK, LOOK]
+    fake.hook = lambda schema, last: ChangeReport.of(Change(kind="add", target="player", field="dread", value="+1"), log_line="rain") if schema is ChangeReport else None
+    fake.script = lambda system, messages: LONG_A
+    await events_of(engine.play(iid, "I wait at the rail."))
+    tellings = iter([LONG_A, "A gull lands on the rail beside you and looks at the match in your hand with one flat yellow eye."])
+    fake.script = lambda system, messages: next(tellings)
+    events = await events_of(engine.play(iid, "I wait some more."))
+    retell = next(e["data"] for e in events if e["event"] == "retell")
+    assert retell["rulings"][0]["rule"] == "repetition" and retell["rulings"][0]["of_turn"] == 1 and "nothing happens twice" in retell["hint"]
+    assert "gull" in events[-1]["data"]["text"] and events[-1]["data"]["mechanics"]["rulings"] == []
+
+
+async def test_a_self_written_mechanic_line_is_an_invented_roll(engine: Engine, fake: FakeProvider):
+    """P2: a § line the engine did not write is a fake check; the guard retells with the rule."""
+    engine.update_settings({"guard": {"mode": "gate", "max_retells": 1}})
+    iid = engine.create_instance("noir", {})
+    fake.canned["Adjudication"] = [LOOK]
+    tellings = iter(["You set your shoulder to the door.\n\n§ Hands, low. 12 - 3 = 9 against 10. Failure.\n\nIt holds.",
+                     "You set your shoulder to the door and it holds, as doors do."])
+    fake.script = lambda system, messages: next(tellings)
+    fake.hook = lambda schema, last: ChangeReport.of(log_line="the door held") if schema is ChangeReport else None
+    events = await events_of(engine.play(iid, "I shoulder the door."))
+    retell = next(e["data"] for e in events if e["event"] == "retell")
+    assert retell["rulings"][0]["rule"] == "fake_check" and "Never write a § line" in retell["hint"]
+    assert "§" not in events[-1]["data"]["text"]
+
+
+def test_the_retelling_note_has_one_paragraph_per_kind_of_problem():
+    """The user (11-03): a catch-all note is confusing; and a location problem must make the narrator pick a place and say it."""
+    from engine.pipeline import retell_note
+    note = retell_note([{"rule": "leak", "what": "the prose names Szabo", "fix": "Keep the man unnamed."},
+                        {"rule": "contradiction", "what": "player.location: Under the docks is not open to Frank yet", "fix": "a fix the note must not pass through"},
+                        {"rule": "repetition", "what": "this telling repeats turn 3", "fix": "Tell only what is new."}])
+    paras = note.split("\n  ")
+    assert len(paras) == 3
+    assert paras[0].startswith("Something the player must not learn got into the telling: the prose names Szabo.") and "no paraphrase" in paras[0]
+    assert paras[1].startswith("The telling put someone somewhere the game does not allow:") and "[[unseen: <name> is at <place>]]" in paras[1] and "Do not leave the place unsaid" in paras[1] and "under another name" in paras[1]
+    assert "must not pass through" not in paras[1] and "yours to decide" in paras[1]      # the note never tells the narrator where to keep someone
+    assert paras[2] == "this telling repeats turn 3. Tell only what is new."

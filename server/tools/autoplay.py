@@ -76,7 +76,7 @@ def _state_line(game: str, ui: dict) -> str:
                 people.append(f"{c['title'].split()[-1]} @{d.get('Location', '?')} susp {d.get('Suspicion', '?').split('/')[0]} trust {d.get('Trust', '?').split(' ')[0]} "
                               f"stress {d.get('Stress', '?').split('/')[0]} {b.get('mood', '')} secrets {d.get('Secrets', '')}")
             else:
-                people.append(f"{c['title']} @{d.get('Location', '?')} {b.get('attitude', '')}")
+                people.append(f"{c['title']} last seen {d.get('Last seen', d.get('Location', '?'))} {b.get('attitude', '')}")
         bits.append(" | ".join(people))
     coming = _panel(ui, "Coming")
     if coming:
@@ -101,7 +101,7 @@ def _mechanics_lines(m: dict) -> list[str]:
     if m.get("applied"):
         out.append("applied: " + " | ".join(m["applied"]))
     if m.get("rejected"):
-        out.append("REJECTED: " + " | ".join(f"{r['path']} <- {r['reason']}: {str(r.get('value'))[:60]!r}" for r in m["rejected"]))
+        out.append("REJECTED: " + " | ".join(f"[{r.get('kind', 'fit')}] {r['path']} <- {r['reason']}: {str(r.get('value'))[:60]!r}" for r in m["rejected"]))
     if m.get("drift"):
         out.append("drift: " + " | ".join(m["drift"][:12]) + (" …" if len(m["drift"]) > 12 else ""))
     if m.get("rulings"):

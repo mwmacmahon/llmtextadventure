@@ -280,3 +280,20 @@ async def test_usage_rollup_per_role_and_pricing(engine: Engine, fake: FakeProvi
     await command(engine, iid, "channel", crew="voss")
     assert engine.usage(iid)["calls"] == 6
     assert json.loads(engine.store.transcript(iid, roles=["mechanics"])[-1].text)["kind"] == "command"
+
+
+def test_threads_are_stored_without_a_cap_and_shown_with_one():
+    """D77: the cap moved from the store to the view. Sixteen open threads: all recorded; the twelve most recent in
+    full, the four older ones on one compact line with their ids, so the referee can still close them."""
+    from engine import threads as th
+    doc: dict = {"threads": []}
+    for turn in range(1, 9):
+        applied, rejected = th.apply_updates(doc, "threads", [f"thread number {2 * turn - 1} about something", f"thread number {2 * turn} about something else"], [], turn=turn)
+        assert not rejected and len(applied) == 2
+    threads = th.load(doc, "threads")
+    assert sum(1 for t in threads if t.status == "open") == 16
+    lines = th.render(threads)
+    full = [ln for ln in lines if ln.startswith("- ") and "older still open" not in ln]
+    assert len(full) == 12 and any("thread number 16" in ln for ln in full) and not any("thread number 1 about" in ln for ln in full)
+    older = next(ln for ln in lines if "older still open" in ln)
+    assert older.startswith("- and 4 older still open: ") and threads[0].id in older

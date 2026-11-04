@@ -11,6 +11,7 @@ implement: new_instance, load_state, frozen_prefix, render_bulletin, ui.
 from __future__ import annotations
 
 import random
+import re
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, runtime_checkable
 
@@ -149,15 +150,46 @@ class ClockSpec(BaseModel):
     cap_minutes: int = 240          # the most one turn may advance (the "don't jump 8 hours" rule)
 
 
+RejectionKind = Literal["duplicate", "fit", "conflict"]
+
+
 class Rejection(BaseModel):
+    """A row the engine did not land, and why. Three kinds (D77): `duplicate`, the state already says it (a no-op);
+    `fit`, the row's shape or a bound (the engine should have made it fit; it is noise, never a block); `conflict`,
+    the prose established something the case forbids (a gated place, a leaked word, an unseen note): the guard retells
+    the turn with `fix`, and on the last telling the state is forced to follow the prose and the turn is flagged."""
     path: str
     reason: str
     value: Any = None
+    kind: RejectionKind = "fit"
+    rule: str = ""              # conflict: the rule name the guard reports (contradiction, leak, unauthorized_addition)
+    fix: str = ""               # conflict: one sentence telling the narrator how to tell the turn again
+
+
+_DUPLICATE_REASONS = re.compile(r"already (in motion|recorded|carried|applied|resolved|failed|open|closed|told|\w+$)|the engine has it scheduled"
+                                r"|duplicate open thread|the same as the last log line|the row's own note takes it back|not a current condition"
+                                r"|restating|nothing added|no change", re.I)
+
+
+def rejection_kind(reason: str, kind: RejectionKind = "fit") -> RejectionKind:
+    """A rejection's kind from its reason when the writer did not say (D77): the reasons that mean "the state already
+    says it" are duplicates; a conflict is only ever declared by the writer; everything else is a fit."""
+    if kind == "conflict":
+        return kind
+    return "duplicate" if _DUPLICATE_REASONS.search(reason or "") else kind
 
 
 class ApplyReport(BaseModel):
     applied: list[str] = Field(default_factory=list)      # human-readable "crew.park.mood: anxious -> calm"
     rejected: list[Rejection] = Field(default_factory=list)
+
+    def sort_rejections(self) -> None:
+        """Give every rejection its kind (D77); the writer's own `conflict` rows keep theirs."""
+        for r in self.rejected:
+            r.kind = rejection_kind(r.reason, r.kind)
+
+    def conflicts(self) -> list[Rejection]:
+        return [r for r in self.rejected if r.kind == "conflict"]
 
 
 class CommandResult(BaseModel):
