@@ -33,3 +33,6 @@ notes/
 # Build artifacts
 *.egg-info/
 *.tsbuildinfo
+
+# a symlinked venv too (the stream4 worktree linked one in and git add took it, 2026-11-03)
+.venv
