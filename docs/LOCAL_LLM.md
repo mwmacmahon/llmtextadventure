@@ -45,12 +45,17 @@ The game has its own llama-server on the GPU box, separate from bruba's `llm-man
 untouched): `server/tools/gumbo/llama-game.sh`, its helper `gpu-yield.py`, and the optional user
 unit `textadventure-llm.service`. It listens on **8280** (bruba's manager and servers use
 8080–8092, ComfyUI 8188, ollama 11434), binds all interfaces so the game can reach it from the
-MacBook now and from the Mac mini later, and runs one model for every role with three slots (the
-Qwen3.5-27B Q6 since 2026-11-01, when the Qwen3.5-35B-A3B was dropped as worse at holding the story), thinking off, q8_0 KV cache, flash attention and the model's rope base. Sampling is per role in
+MacBook now and from the Mac mini later, and runs one model for every role with three slots, one per
+role (D88: two games at once put six prompt families on three slots and half the structured calls run cold,
+so long rounds run one at a time). The model is whatever profile is loaded (the Qwen3.5-27B Q6 from 2026-11-01,
+when the Qwen3.5-35B-A3B was dropped; since 11-02 the candidates are the Qwen3.8 27B finetunes, Huihui and
+Blackfrost, with MTP speculative decoding, and Gemma 4 31B; D86 names Huihui + MTP as the narrator candidate,
+unconfirmed, and D90 found both Qwen3.8 finetunes degenerate into a refrain late in a 50-turn round where Gemma
+and Sonnet do not), q8_0 KV cache, flash attention and the model's rope base. Sampling is per role in
 `config.llamacpp.yml` (`temperature`, `top_p`, `top_k`, `min_p`, `repeat_penalty`, each sent with the
 request; unset ones fall back to the script's command line): the narrator on Qwen's general settings
-(0.7 / 0.8 / 20 / 0), the adjudicator and referee tight (0.2 / 0.5 / 20 / 0, repeat penalty 1.05) so
-they follow the row format and do not loop under the grammar, the summarizer in between.
+(0.7 / 0.8 / 20 / 0, no repeat penalty), the adjudicator and referee greedy (temperature 0, repeat penalty
+1.0: a 1.05 penalty cost the referee ten rows of 90, D30), the summarizer in between.
 
 The GPU is shared both ways, as bruba's hub does for its services, without touching bruba:
 
@@ -107,15 +112,20 @@ processes.
 
    `TA_CONFIG=<file>` picks another config under `server/`; `base_url` per role overrides the URL.
    The smoke tool honours `TA_LLAMA_PREPARE_URL` the same way. From the Claude desktop app's preview,
-   `.claude/launch.json` has `api-local` (the API on :8011 against the GPU box) and `web-local` (the
-   UI on :5174 proxied to it), so a local game can run beside the Anthropic one on :8010/:5173.
+   `.claude/launch.json` has `api-local` (the API on :8011 against the GPU box), `api-local-fixed` (no
+   reload, for rounds) and `api-local-follow` (:8013, no TA_PROFILE: it follows whatever profile the box has
+   loaded, which the long rounds use), and `web-local` (the UI on :5174 proxied to it), so a local game can
+   run beside the Anthropic one on :8010/:5173.
 
-## Checks: told, not called
+## Checks: called, as on Sonnet (told retired, D63)
 
-`config.llamacpp.yml` sets the narrator's `checks: told`. Measured on 2026-10-29: asked to stop at
-`<<CHECK …>>` and wait, Qwen3.5 writes the line after the outcome it was meant to wait for (or not at
-all), so the roll arrives too late; given the rolled results in THIS TURN, it plays them. Sonnet calls
-checks at the right moment and keeps `called` (the default). `notes/PLAYTEST-2026-10-29.md` has the runs.
+`config.llamacpp.yml` sets the narrator's `checks: called`, the same as Sonnet. Told mode (the engine rolls
+the assessed checks first and THIS TURN gives the results) was built on 2026-10-29 because Qwen3.5-35B-A3B
+wrote the call after the outcome; it was retired on 2026-11-01 (D63) once the dense models called at the
+right moment, and blind pairs of told against called on the 27B came out even. The engine's answer to a
+call and a past roll in the window are given in words ("it goes very well"), never the tier name, since
+Blackfrost wrote "the huge success gives you more" into a story (D91). `notes/PLAYTEST-2026-10-29.md` has
+the original runs.
 
 ## What to watch in the log
 
@@ -324,6 +334,10 @@ roles:                                                          # laid over conf
   referee: {thinking: true, thinking_budget: 1536}
 ```
 
+The MTP profiles add `extra: "--spec-type draft-mtp --spec-draft-n-max 3"` to the server block (Qwen3.8's own draft
+head) and give the narrator a 512-token thinking budget with `think_after_call: true` (it thinks again after each
+check): see `qwen38-27b-mtp.yml`. `round_profile.py` shows how often that budget force-closes the reasoning.
+
 From the game's machine:
 
 ```
@@ -349,9 +363,11 @@ The context length is the profile's `ctx` (total; a third a slot) or `auto` (siz
 `FIT_TARGET` MiB and never below `FIT_CTX`); the game reads the slot size from the server (`/props`) and trims
 the narrator's window to it, so no role setting needs to change with the context.
 
-Profiles now: `a3b-think` (the settled A3B, D34), `a3b` (no thinking), `qwen27b` (the dense reference, no
-thinking), `qwen27b-kv16` (f16 cache), `qwen27b-auto` (fitted context), `qwen3-32b` (full attention, 21k a
-slot). A new model is a new file: copy the GGUF to the box's model directory, write the profile, `use` it.
+Profiles now (`ls server/profiles`): the A3B family (`a3b-think`, D34; `a3b`; the Q5/Q6 variants), the Qwen3.5-27B
+(`qwen27b`, `-kv16`, `-auto`), `qwen3-32b`, the Qwen3.8 27B finetunes (`qwen38-27b`, `qwen38-27b-think`,
+`qwen38-27b-mtp` Huihui with MTP, `qwen38bf-27b-mtp` Blackfrost with MTP, and the `qwen38-27b-narr-*` /
+`-struct-*` sampler and thinking variants of the 11-01 ladder) and `gemma4-31b`. A new model is a new file: copy
+the GGUF to the box's model directory, write the profile, `use` it.
 
 Installing the box side once (the user's to run; it replaces the two files; the service restart loads them, a
 swap alone does not):
@@ -361,7 +377,7 @@ scp server/tools/gumbo/llama-game.sh server/tools/gumbo/gpu-yield.py gumbo:~/tex
 ssh gumbo systemctl --user restart textadventure-llm
 ```
 
-## The next model: Qwen3.5-27B dense
+## The next model: Qwen3.5-27B dense (2026-10-29; the later candidates are in DECISIONS D63-D90)
 
 **Measured 2026-10-29 (evening), on the 5090:** at `CTX=98304` the 27B loads in 24 s and takes 26.1 of 32.6 GB:
 20.0 GB of weights, 3.3 GB of attention cache (16 layers, q8_0, about 34 KB a token across the slots), 0.45 GB

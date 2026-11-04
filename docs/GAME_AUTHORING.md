@@ -8,7 +8,7 @@ its state shape, its prose rules, and the hooks that make its state readable and
 Two games exist (`games/station`, `games/noir`); read whichever is closer to what you are
 building. `engine/gamekit.py` holds what they share: `Content` (prefix.md + scenarios/*.yml),
 `Clock`, `Writer` (authority-checked writes and bounded nudges into an `ApplyReport`),
-`apply_flags`, `threads_panel`, `hhmm`.
+`threads_panel`, `hhmm`.
 
 ## 1. Files
 
@@ -144,7 +144,7 @@ Optional, with defaults that do nothing:
 | `narrator_flags(state)` | `name -> meaning`: flags the referee may set; triggers read them |
 | `adjudication_rules(state)` | what the player can do, stat meanings, difficulty guidance. **Stable across turns** (it is the cached prefix); moving state goes in `state_for_models` |
 | `referee_rules(state)` | ids, places, allowed values, what counts as a thread here. Stable across turns, same reason |
-| `state_for_models(state)` | compact state text for the structured roles (default: the bulletin) |
+| `state_for_models(state)` | compact state text for the structured roles (default: the bulletin; the station overrides it to keep the crew numbers the narrator no longer sees) |
 | `modifiers(state, req, target_entity)` | situational check modifiers |
 | `apply_change(state, change, writer)` | land one referee row that names the game's fields (validate, clamp, write); False for rows that are not the game's (§8) |
 | `narrator_flags`, `apply_present`, `after_changes`, `land_declarations` | the flags the referee may set; mark present people; derived values after the rows; world rows (§8) |
@@ -166,7 +166,13 @@ only, as the station does; the narrator never writes numbers on either).
 to what moves: clock, meters, anything non-nominal, each entity's current condition and the
 last few things they learned, the recent log, flags in effect, open threads
 (`engine.threads.render`), recent happenings, and which scheduled event is next ("do not
-narrate past that moment"). Static material belongs in `frozen_prefix`.
+narrate past that moment"). Static material belongs in `frozen_prefix`. Words, not numbers, for
+the narrator (it echoes what it reads: "stress 85, breaking" went into a story); numbers for the
+structured roles through `state_for_models`. What the referee records on a thing must stay visible
+(the station lists things whose state differs from the seed as "Things as they stand now"), or it
+lives only in the window and the summary drops it. A standing note tied to a meter tier (nerves,
+alarm) is read on every turn in that tier: ask for one moment a turn, not every turn, or it becomes
+a refrain (D91).
 
 ## 6. Scenario YAML
 
@@ -396,7 +402,8 @@ narrator and the command is committed after the prose. Narrated mode: apply the 
 here, return `player_line`, `directive`, `minutes`, `summary`; clicked, the pipeline applies them
 and narrates; typed, the `directive` is given with the "unless not completed" clause and the
 effects are committed after the prose (the command's `minutes`, `entities` and `systems` win over
-the adjudicator's when typed).
+the adjudicator's when typed). The adjudicator writes a command's arguments as `name=value` pairs or as
+bare values in the spec's parameter order (the local models' habit); both are read.
 
 When a command's effect is something the narration could also report (smoking has both a Smoke
 command and a `cigarettes_smoked` referee field, because the narrator may have Frank light one
@@ -449,7 +456,7 @@ id: an id the narrator reads every turn is a word it will use. A game needs noth
 There is one referee call per turn and one schema for every game, `roles.ChangeReport`: a list of
 `Change` rows `{kind, target, field, value, who, note, minutes, hidden}` plus `present`, `log_line`
 and `confidence`. The kinds are fixed (`set`, `add`, `move`, `new`, `gone`, `learned`, `flag`,
-`thread_open`, `thread_close`, `soon`, `unseen`, `not_done`, `issue`); a game never adds fields. It
+`thread_open`, `thread_close`, `soon`, `unseen`, `not_done`, `issue`, `ruling`); a game never adds fields. It
 adds **vocabulary and bounds**:
 
 - `referee_rules(state)` lists the targets (ids as the state block shows them), the fields and the

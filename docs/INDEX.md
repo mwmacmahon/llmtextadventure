@@ -1,7 +1,7 @@
 # Project index
 
 Everything the project is made of, where it lives, and which parts are behind the build. Kept by hand; the date at
-the top is the last time someone checked it against the tree. **Checked: 2026-11-04 15:45.**
+the top is the last time someone checked it against the tree. **Checked: 2026-11-04 17:00.**
 
 Published as a page: [Project Index](https://claude.ai/artifact/CivViGMFsdW3qGvxFdejBr). Republish after editing this file:
 `python3 notes/scripts/md2page.py docs/INDEX.md <out.html> notes/scripts/index-head.html`, then publish `<out.html>` to that URL.
@@ -16,7 +16,7 @@ reports, scripts), and published pages (claude.ai artifacts, private to the owne
 | [Lowtown: Game Design](https://claude.ai/artifact/XBrdicwZAnn1SmGAtyu4xc) (noir) | `notes/design/tools/gen_noir_page.py` | 2026-11-03 | current (D73, D75, D76) |
 | [Station AI: Game Design](https://claude.ai/artifact/NPpFFzmeqjX35pJGqtWVeg) | `gen_station_page.py` | 2026-10-31 | current for the station; the shared engine text is behind (see Turn Anatomy) |
 | [Turn Anatomy](https://claude.ai/artifact/DdYxv5pvKFXsHyWYQZBbj4) (the flow, the master doc of a turn) | `gen_flow_page.py` | 2026-11-03 (v27) | the guard text is current (D77/D79: rejection kinds, three retellings, FORCED); the captured turn is still 10-31, so the tape and call report (D59), called checks on local (D61/D63), thinking per role (D66) and the `advance` effect are not shown: recapture |
-| [The Structured World](https://claude.ai/artifact/5sBEXtLDqb2Rf6xkUd63aY) (the world rows) | `gen_world_page.py` | 2026-10-31 | current as far as the world code goes; the `advance` effect and the nerves notes are game-side |
+| [The Structured World](https://claude.ai/artifact/5sBEXtLDqb2Rf6xkUd63aY) (the world rows) | `gen_world_page.py` | 2026-11-04 (D91: the station bulletin's "Things as they stand now", words-only crew lines, the tier notes) | current as far as the world code goes; the `advance` effect and the nerves notes are game-side |
 | [What the Models See](https://claude.ai/artifact/SPJqDK5jGLyYLxjikcWTNk) (a captured turn) | `capture.py` then `gen_data_page.py` | 2026-10-30 | **stale**: the bulletin, THIS TURN and the referee rules have all changed since (N8, D63, D73-76); recapture a turn |
 
 Regenerate: `cd notes/design/tools && ../../../server/.venv/bin/python gen_<page>_page.py`, then publish the HTML in
@@ -66,10 +66,10 @@ Every playtest also has a transcript `notes/playtests/<date>-<game>-<tag>.md` an
 | Doc | Last change | State |
 |---|---|---|
 | `TESTING.md` | 2026-11-04 | current: sets, keys, runs, the narrator's measure, settling a setting (D67/D71), the player's-eye read (D89) |
-| `LOCAL_LLM.md` | 2026-11-01 | **behind**: the `extra` flags and MTP profiles (D70), the GPU wait at start (L6), the Gemma profile |
-| `GAME_AUTHORING.md` | 2026-11-03 | the D77 writer rules are in; **behind**: nerves on the clock, `eldritch:` and `sanity` (D75/D76), the `advance` effect, the nerves notes |
-| `ARCHITECTURE.md` | 2026-11-03 | the guard paragraph is current (D77/D79); **behind**: the tape (D59), thinking per role (D66), called mode as the only mode (D63) |
-| `WRITING_FOR_MODELS.md` | 2026-11-03 | the style guide for every line a model is handed and for scenario text: dos, don'ts with the day's befores, a checklist; the spec for the plain-language pass (ISSUES W1) |
+| `LOCAL_LLM.md` | 2026-11-04 | **behind**: the `extra` flags and MTP profiles (D70), the GPU wait at start (L6), the Gemma profile |
+| `GAME_AUTHORING.md` | 2026-11-04 | the D77 writer rules are in; **behind**: nerves on the clock, `eldritch:` and `sanity` (D75/D76), the `advance` effect, the nerves notes |
+| `ARCHITECTURE.md` | 2026-11-04 | the guard paragraph is current (D77/D79); **behind**: the tape (D59), thinking per role (D66), called mode as the only mode (D63) |
+| `WRITING_FOR_MODELS.md` | 2026-11-04 | the style guide for every line a model is handed and for scenario text: dos, don'ts with the day's befores, a checklist; the spec for the plain-language pass (ISSUES W1) |
 | `INDEX.md` | this file | |
 
 ## 5. Notes (`notes/`, gitignored, the project's memory)
@@ -114,7 +114,7 @@ Every playtest also has a transcript `notes/playtests/<date>-<game>-<tag>.md` an
 
 ## 7. What needs updating (as of the check date)
 
-1. Turn Anatomy and What the Models See: regenerate after stream 4 lands (the retell path changes again); What the Models See needs a fresh capture.
+1. Turn Anatomy and What the Models See: behind D91 too (the THIS TURN orientation and end-of-turn clock lines, the check answer in words, the protocol's "end on the scene", the summarizer's wording); both need a fresh capture (`capture.py`, a live turn: free on :8013) because `gen_flow_page.py` reads `capture.json` from an old scratchpad that is gone.
 2. `ARCHITECTURE.md`, `GAME_AUTHORING.md`, `LOCAL_LLM.md`: the lines in §4.
 3. Narrator Measure and Eval runs pages: rebuild from the current runs or retire them in favour of the trials report.
 4. `WRITEUP-checks-and-decisions.md`: the adjudicator is the one local model, not the A3B.

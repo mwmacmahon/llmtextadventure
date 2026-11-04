@@ -62,6 +62,13 @@ fiction has moved, the state follows it (D80, D81); the note is for what can sti
   never learns of; the prose stands and the state lies. Retell, or accept and record (D77).
 - **Don't mention the mechanism in the player's view.** No "the engine", "THIS TURN", minutes granted, the clock
   stopping, the ruling, the retelling. The player reads a story.
+- **Don't hand the model a word you do not want back.** A tier name in the check answer ("HUGE SUCCESS") became "the
+  huge success gives you more" in the prose; a number in the crew line ("stress 85") became "stress 85, breaking";
+  "the player" in the summarizer's instruction became "The player is going to make it speak". Say it in the fiction's
+  words ("it goes very well", "close to breaking", Frank, the station), and the model has only those to echo (D91).
+- **Don't make a standing note a quota.** A tier note the bulletin repeats on every turn in tier ("let it show in what
+  he half-sees, a face at a window") is followed on every turn: eight turns of the same face. Say "at most once this
+  turn, where the scene gives it room, and not the way the last turn did" (D91).
 - **Don't send the whole store.** A list cut by count ("the last 8 notebook lines") hides what matters; a list
   unbounded in the prompt grows every turn. Show what is near and recent in full and summarise the rest on one line
   with ids (threads: twelve in full, "and 4 older still open: t3 (…), t5 (…)").
@@ -93,7 +100,10 @@ fiction has moved, the state follows it (D80, D81); the note is for what can sti
 
 ## How wording gets tested
 
-Not by reading it. By the long rounds (D78): a change to a line is adopted when the counts move the right way on
+First by a cold read: a fresh subagent reads every changed line as the model on its worst turn, against the other
+lines in the same request, and says what it would do with it (D91: the first such read found an orientation line that
+told the narrator to "begin with what comes of it", against the protocol's "stop before anything shows how it goes"). Then
+by the long rounds (D78): a change to a line is adopted when the counts move the right way on
 several rounds per game: fewer retellings that hide the problem, fewer FORCED turns, the awkward rows written, the
 meters in their intended ranges. The retelling note's first version (today) was judged by reading the ledger of one
 round, which is how all of the befores above were found; the second and third versions have not been through a round

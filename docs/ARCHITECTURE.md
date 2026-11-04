@@ -25,9 +25,18 @@ server/
   app.py                 FastAPI routes, SSE, static frontend
   config.yml             roles (provider, model, effort, cache TTL), context window, pricing, logging
   engine/
-    pipeline.py          the turn: adjudicate → resolve → [summarize] → narrate → referee → apply → drift
-    context.py           narrator message window, slide points, summary planning
-    roles.py             adjudicator / referee (ChangeReport rows) / summarizer schemas and prompts
+    pipeline.py          the turn: adjudicate → resolve → [summarize] → narrate → referee → apply → drift; the guard
+    context.py           narrator message window, slide points, summary planning; past rolls rendered in words
+    roles.py             adjudicator / referee (ChangeReport rows) / summarizer schemas and prompts; NARRATOR_WORLD, NARRATOR_PROTOCOL
+    narration.py         the narrator loop: stream, stop at a call, answer it, continue; a continuation's retold opening dropped
+    brackets.py          the narrator's channel: <<CHECK …>> calls, [[…]] notes, the StreamFilter, the § mark
+    world.py             places, things and people as rows with ids; scene(), annotate(), apply_declarations()
+    pending.py           timers set in motion in play (soon rows), fuses, what is due
+    repetition.py        the engine's repetition ruling (shingle overlap between tellings)
+    referee_passes.py    the split referee's three passes and their ids
+    profiles.py          the box's loaded model profile laid over the configured roles
+    tape.py              every model call of a turn recorded (exchange rows, blobs) for the call report
+    registry.py          the games the server knows
     changes.py           lands the referee's rows: engine kinds here, game kinds through apply_change, world kinds through the world
     game.py              Game protocol, GameBase hooks, UI widget vocabulary, commands
     statepath.py         dotted paths into state; field authority
@@ -42,7 +51,12 @@ server/
   games/<name>/          state.py (pydantic), game.py (hooks, UI); content loaded from content_root
                          station: the space-station AI game; noir: a detective with pockets, dice and nerves
   tools/play.py          terminal client for a running server (humans and playtest agents)
-  tools/autoplay.py      plays a game through a running server from a script of inputs or with a player model; writes a playtest report under notes/playtests/
+  tools/autoplay.py      plays a game through a running server from a script of inputs; its API player mode is not used (D84: players are Claude Code subagents)
+  tools/turn.py, PLAYER_BRIEF.md   a Claude Code subagent plays a round (new / play / finish), the same transcript and call report as autoplay (D84)
+  tools/READER_BRIEF.md  an Opus subagent reads a played round as a player and writes a take (D89)
+  tools/round_report.py  a page of every model call in a played game; round_read.py a light page a phone opens; round_counts.py the long-round counts; round_profile.py one line a turn with the chant measures (D90)
+  tools/narrator_eval.py, judge_pack.py   the narrator's measure (corpora, rubric, pairs) and pair judging by subagents (D84)
+  tools/local_smoke.py   cache survival on the local server; tools/gumbo/ the GPU box's scripts
   tools/authority_audit.py  who owns each state field and what can write it; fails on engine-owned holes
   profiles/*.yml         model profiles: the model file, what llama-server starts with, the role settings the game
                          lays over its config while that model is loaded (engine/profiles.py; docs/LOCAL_LLM.md)
@@ -51,7 +65,7 @@ server/
   tools/eval_report.py   hydrates eval runs of any format into readable pages (the pieces, names and how to read them: docs/TESTING.md): per turn, caught / missed / wrong / unjudged with the sentences that show it; a comparison per corpus
   tests/                 offline tests (fake provider); tests/live: opt-in live role evaluations
 web/                     Vite + React + TypeScript; renders the UI schema, knows no game
-docs/                    this file, GAME_AUTHORING.md, LOCAL_LLM.md
+docs/                    this file, GAME_AUTHORING.md, LOCAL_LLM.md, TESTING.md, WRITING_FOR_MODELS.md, INDEX.md (the master index)
 ```
 
 Content (system prompt, scenarios with events and happenings) is YAML and Markdown under
@@ -65,7 +79,7 @@ One SQLite file, four tables, all keyed by instance:
 |---|---|---|
 | `instance` | id, game, version, title, setup, `prefix_text`, origin | the frozen prefix is stored per instance so it never drifts mid-game |
 | `transcript` | seq, turn, role, text | roles: `player`, `bulletin`, `narrator`, `mechanics` (JSON), `system_note` (story so far), `command`, `result` |
-| `ledger` | seq, turn, kind, payload | kinds: `model_call`, `adjudication`, `check`, `event_fired`, `event_expired`, `happening`, `clock`, `verdict`, `delta`, `drift`, `pending` and `unseen` (things set in motion during play and facts out of the player's sight; `engine/pending.py`), `command_preview` (a typed lever as previewed for the narrator), `command` (clicked, or `typed: true` when a lever was committed after the prose, refused, or `not_completed`) |
+| `ledger` | seq, turn, kind, payload | kinds: `model_call`, `adjudication`, `check`, `event_fired`, `event_expired`, `happening`, `clock`, `verdict`, `delta`, `drift`, `pending` and `unseen` (things set in motion during play and facts out of the player's sight; `engine/pending.py`), `command_preview` (a typed lever as previewed for the narrator), `command` (clicked, or `typed: true` when a lever was committed after the prose, refused, or `not_completed`), `exchange` (one per model call: what was sent, by blob, and what came back; the call report reads them, D59), `rewrite` (a retold turn's earlier tellings) |
 | `snapshot` | turn, state | full state after every turn; turn 0 is the opening |
 
 Undo truncates all three per-turn tables after a turn. Rewrite (`Engine.rewrite_turn`, `POST
@@ -113,7 +127,7 @@ player text  ─or─  clicked command
   │                  engine mode: game resolves it, no model; command + result rows; snapshot. Done.
   │                  narrated mode: game applies hard effects, supplies a player line + directive
   ▼
-ADJUDICATE   Sonnet (was Haiku; see config.yml for the measurements), one messages.parse
+ADJUDICATE   one structured call (Sonnet in config.yml; the box's model in config.llamacpp.yml)
              2.0 games (`adjudication_schema = AdjudicationV2`): intents carry targets and a proposed transition,
              checks are assessed here and called by the narrator, and a focus names what the narrator should see against `Adjudication`
              kind (action | trivial | clarify | impossible), summary, time_minutes,
@@ -139,19 +153,22 @@ RESOLVE      engine, deterministic
              - happenings: roll the scenario's unscripted list against elapsed minutes
              - directives: clarify text, event and happening directives, command directive
   ▼
-SUMMARIZE    only when the window slides (context.summary_plan): the narrator's model writes the
+SUMMARIZE    only when the window slides (context.summary_plan): the summarizer role writes the
              story so far over the dropped turns, merged with the previous summary; stored as a
-             system_note at the last covered turn
+             system_note at the last covered turn, its ledger row there too (so a retelling of the
+             current turn cannot delete it); it names the protagonist as the story does, never "the player"
   ▼
 NARRATE      streamed. system = frozen prefix (cached, 1h). messages = [story so far]* +
-             window of past turns (no stale bulletins) + bulletin + THIS TURN block + player text
-             + a closing [ENGINE] line when the turn has checks. Cache breakpoints: the system
+             window of past turns (no stale bulletins) + bulletin + THIS TURN block (the attempt as the
+             engine read it, the minutes and the clock when the turn ends, the checks to call or the
+             results in words, the directives) + player text + a closing [ENGINE] line when the turn
+             has checks. Cache breakpoints: the system
              block and the last assistant message. Checks either way, per narrator role
              (`checks`): called, the narrator stops at <<CHECK …>> and the result comes back as a
              user message; told, the engine rolls the assessed checks first (same seed and order)
              and THIS TURN gives the results, for a model that writes outcomes before calling.
   ▼
-REFEREE      Sonnet (was Haiku; see config.yml for the measurements), one messages.parse against roles.ChangeReport, the same for every game
+REFEREE      one structured call (Sonnet, or the box's model) against roles.ChangeReport, the same for every game
              (split: three passes over one cached prompt, player / world / timers and rulings, merged by changes.merge_parts)
              rows {kind, target, field, value, who, note, minutes, hidden} + present, log_line, confidence
   ▼
@@ -184,8 +201,8 @@ move, no referee runs, and nothing is applied.
 |---|---|---|
 | system | rules + scenario briefing (fixed facts, hidden truth, scheduled spine) | yes, per instance, 1h |
 | story so far | latest `system_note` before the window, as a user message + ack | moves at slide points |
-| window | the last 12–17 completed turns, player text + narration; the engine's § lines never in the narrator's voice: a called check replays as the exchange that happened (prose to the call, the call, the engine's answer as a user message, the rest), told rolls and lever results go in that turn's user message as `[ENGINE]` lines | moves at slide points |
-| bulletin | only what moves: clock, meters, non-nominal systems, entity condition, recent log, flags, threads, recent happenings, next scheduled event, THIS TURN block | never |
+| window | the last 12–17 completed turns, player text + narration; the engine's § lines never in the narrator's voice: a called check replays as the exchange that happened (prose to the call, the call, the engine's answer as a user message, the rest), told rolls and lever results go in that turn's user message as `[ENGINE]` lines, a past roll in words without the die or the tier ("Hands, medium: it goes very well.", D91) | moves at slide points |
+| bulletin | only what moves: clock, meters (words for the narrator; the station keeps numbers for the structured roles), non-nominal systems, the station's things as they stand, entity condition, recent log, flags, threads, recent happenings, COMING (timers in motion), next scheduled event, THIS TURN block | never |
 
 **Window slide.** The window start moves in steps of `window_slide` (6) once more than
 `window_turns` (12) turns exist, so the cached message prefix is stable for six requests.
@@ -349,5 +366,6 @@ Branch `1.0` preserves the first engine; `main` stays there until 2.0 is playabl
   is" panel; `adjudication_schema = AdjudicationV2`. Older instances load with no world. Noir runs the
   same narration path with `AdjudicationV2` and no world yet (its transitions stay empty).
 
-Next: focus and story for the structured roles, rulings and the guard, crew schedules, decision D's
-meters, then noir on the world.
+Since then: rulings and the guard (D77-D81), crew routines and the meters (D36, D73-D76), the call report (D59),
+subagent players and judges (D84), the player's-eye read and the round profile (D89-D91). Next: the cause of the
+Qwen3.8 chant on long rounds (D90: sampler, MTP, thinking budget, window), pacing (ISSUES R14), noir on the world.

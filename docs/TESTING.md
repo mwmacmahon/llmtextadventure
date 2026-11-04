@@ -3,8 +3,8 @@
 How this project tests the models that read and judge the story (the adjudicator and the referee): what the pieces are,
 what they are called, how to write a test, how to run one, how to read the result, and the problems found so far with
 the decisions taken on them. The game's deterministic code has its own offline suite (`server/tests`, `pytest`); that
-suite needs no model and is not what this document is about. Live play with a player model (`tools/autoplay.py`,
-reports in `notes/playtests/`) is the third kind of test and is covered at the end.
+suite needs no model and is not what this document is about. Live play with a player (a Claude Code subagent through
+`tools/turn.py`, D84; reports in `notes/playtests/`) is the third kind of test and is covered at the end.
 
 All test data lives in `notes/eval/`, which is gitignored: it holds recorded play, hand judgements and model output, and
 it grows with every run. The tools that make and read it are in the repository (`server/tools/eval_replay.py`,
@@ -269,16 +269,20 @@ cut at the comma inside `{...}`. Quote any value with a comma.
 
 ## Live play tests
 
-`tools/autoplay.py` plays a game through the running server from a script or with a player model and writes a readable
-report to `notes/playtests/<date>-<game>-<tag>.md` (every turn's prose, the engine's mechanics, the state after it, a run
-table with cost). Use it to see a mechanic work end to end, then turn the interesting turns into a test set so a model or
-prompt change can be measured on them.
+A round is played by a Claude Code subagent (the Agent tool, model opus) handed `tools/PLAYER_BRIEF.md`; it plays
+through `tools/turn.py` (`new`, `play`, `finish`) and writes the same readable report as autoplay to
+`notes/playtests/<date>-<game>-<tag>.md` (every turn's prose, the engine's mechanics, the state after it, a run table).
+API player models are not used (D84: "players playing the game: Claude Code, not API calls"). `tools/autoplay.py` still
+plays from a script of inputs. Use a round to see a mechanic work end to end, then turn the interesting turns into a
+test set so a model or prompt change can be measured on them.
 
-Run rounds against a server that does not reload (`api-sonnet-fixed` in `.claude/launch.json`, port 8012,
-`TA_URL=http://127.0.0.1:8012`), so code can change while a round runs; restart it to pick up the change. Two rounds may
-run at once (the store holds a lock since D48). A scripted round goes off-script when the dice do (noir's opening grab
-puts Frank in the holding cell on most first moves); `--resume <iid> --script more.txt` continues a game from a state
-that suits the test, which is how the place tests of 2026-10-31 reached The Anchor.
+Run rounds against a server that does not reload (`api-sonnet-fixed` in `.claude/launch.json`, port 8012, the Sonnet
+roles, paid; `api-local-follow`, port 8013, the local roles, free, following the box's loaded profile), so code can
+change while a round runs; restart it to pick up the change. On the local box rounds run one at a time (D88: the three
+slots are one per role, and two games at once run half the structured calls cold). A scripted round goes off-script
+when the dice do (noir's opening grab puts Frank in the holding cell on most first moves); `--resume <iid> --script
+more.txt` continues a game from a state that suits the test, which is how the place tests of 2026-10-31 reached The
+Anchor.
 
 ### The call report: what each model saw and did (D59)
 
@@ -294,6 +298,12 @@ reads an exported game (exports carry their blobs). Games played before 2026-10-
 Trials show up here first: `referee.recent_turns` (D59, a test in progress) puts the last two turns at the head of
 the referee's message, fenced as past; the call report shows the block, and the eval harness replays it from each
 record's `recent`.
+
+Three more pages and tables from a round: `round_read.py <transcript.md>` makes a light page a phone opens (the call
+reports run 2-6 MB); `round_counts.py <iid>` gives one table row a round (retells, FORCED, rulings, rejections, clock,
+meter, pace, invention, repetition; D87); `round_profile.py <iid>` gives one line a turn (the narrator's context, output,
+requests, retells, reasoning and force-closes, the meter, and the chant measures: refrain % within the turn and copy %
+from the previous twelve turns; D90). Every long round gets a published call report and a light page (docs/INDEX.md §3).
 
 ### A player's-eye read of a round (D89)
 
@@ -314,7 +324,7 @@ The narrator has its own instruments, in `tools/narrator_eval.py`, run through `
 .venv/bin/python tools/eval_replay.py narrate <corpus> [--opt model=claude-haiku-5-5] [--feed window_turns=6] --note haiku
 .venv/bin/python tools/eval_replay.py rubric <narrator run> [...]
 .venv/bin/python tools/eval_replay.py pairs <run A> <run B>
-.venv/bin/python tools/eval_replay.py judge-pairs <pairs id>
+.venv/bin/python tools/judge_pack.py pack <pairs id>      # briefs for judging subagents; then `merge` (D84)
 .venv/bin/python tools/eval_replay.py narrator-report
 ```
 
@@ -322,9 +332,11 @@ A **corpus** freezes whole games (by blob) and lists their turns. **narrate** te
 variant, by the live path: a scratch copy of the game up to the turn before, under the same id so the dice roll the
 same, the stored adjudication, stopping before the referee. The request it builds equals the live one byte for byte
 (tests/test_narrator_replay.py). The **rubric** is a checklist per telling, yes / no / n/a with the sentence that shows
-it. **Pairs** rank two variants: the same turn from each, blind, judged by the user at `/dev/judge` on the game server
-(keys 1, 2, 0 and Enter; each judgement goes to `notes/eval/narrator/judgements/` as it is made) and by the judge
-model in both orders; the report gives B's win rate over A from each, a tie counting half, and their agreement. There
+it. **Pairs** rank two variants: the same turn from each, blind, judged by Opus subagents in both orders (`judge_pack.py pack` writes a self-contained brief per chunk, no chunk holds
+both orders of a pair, `merge` folds the verdicts into the judge record the reports read; D84), and, when wanted, by the
+user at `/dev/judge` on the game server (keys 1, 2, 0 and Enter; each judgement goes to
+`notes/eval/narrator/judgements/` as it is made); the report gives B's win rate over A from each, a tie counting half,
+and their agreement. `eval_replay.py judge-pairs` and `rubric` refuse an API judge unless `TA_API_JUDGE=1` (D85). There
 is no prose score: a single run is measured by its rubric; prose quality only ever by a matchup.
 
 ### Settling a setting: ladders, anchors and the noise floor (D67, D71)
@@ -347,4 +359,7 @@ What the overnight of 2026-11-02 taught, written down so the next sweep is run t
   two runs settle a 60/40 and one settles a 65/35, per game. Nothing is adopted on a 60/40 that is not settled.
 - **Measure where the failure is.** The replay corpus has Sonnet's history behind every turn; a knob aimed at a failure of
   the narrator's own history (repetition, loops: ISSUES P1, P2) is measured on live local-narrated rounds, not on replay.
-- **The judge is a model, in both orders**, Opus for the pairs of record (D69); the user's judgements are not a step.
+- **The judge is an Opus subagent, in both orders** (D84; before that the API Opus, D69); the user's judgements are not a step.
+- **A frozen-corpus pair test cannot see a drift.** The 11-01 sampler ladder measured single turns on a corpus with
+  Sonnet's history behind each; the Qwen3.8 chant needs twenty turns of the model's own prose in context (D90). A knob
+  aimed at a long-round failure is measured on long rounds, with `round_profile.py`'s refrain and copy columns.
