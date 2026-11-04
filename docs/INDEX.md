@@ -13,8 +13,8 @@ reports, scripts), and published pages (claude.ai artifacts, private to the owne
 
 | Page | Generator | Last regenerated | State |
 |---|---|---|---|
-| [Lowtown: Game Design](https://claude.ai/artifact/XBrdicwZAnn1SmGAtyu4xc) (noir) | `notes/design/tools/gen_noir_page.py` | 2026-11-03 | current (D73, D75, D76) |
-| [Station AI: Game Design](https://claude.ai/artifact/NPpFFzmeqjX35pJGqtWVeg) | `gen_station_page.py` | 2026-10-31 | current for the station; the shared engine text is behind (see Turn Anatomy) |
+| [Lowtown: Game Design](https://claude.ai/artifact/XBrdicwZAnn1SmGAtyu4xc) (noir) | `notes/design/tools/gen_noir_page.py` | 2026-11-04 | current (D73, D75, D76; D93 PACING paragraph in the prefix) |
+| [Station AI: Game Design](https://claude.ai/artifact/NPpFFzmeqjX35pJGqtWVeg) | `gen_station_page.py` | 2026-11-04 | current for the station (D93 PACING paragraph; the state shown is the DRY round 48c097a0db65); the shared engine text is behind (see Turn Anatomy) |
 | [Turn Anatomy](https://claude.ai/artifact/DdYxv5pvKFXsHyWYQZBbj4) (the flow, the master doc of a turn) | `gen_flow_page.py` | 2026-11-03 (v27) | the guard text is current (D77/D79: rejection kinds, three retellings, FORCED); the captured turn is still 10-31, so the tape and call report (D59), called checks on local (D61/D63), thinking per role (D66) and the `advance` effect are not shown: recapture |
 | [The Structured World](https://claude.ai/artifact/5sBEXtLDqb2Rf6xkUd63aY) (the world rows) | `gen_world_page.py` | 2026-11-04 (D91: the station bulletin's "Things as they stand now", words-only crew lines, the tier notes) | current as far as the world code goes; the `advance` effect and the nerves notes are game-side |
 | [What the Models See](https://claude.ai/artifact/SPJqDK5jGLyYLxjikcWTNk) (a captured turn) | `capture.py` then `gen_data_page.py` | 2026-10-30 | **stale**: the bulletin, THIS TURN and the referee rules have all changed since (N8, D63, D73-76); recapture a turn |
@@ -78,6 +78,7 @@ Every playtest also has a transcript `notes/playtests/<date>-<game>-<tag>.md` an
 - `ISSUES.md`: the open register at the top ("Open now"), dated fixes below. Groups: noir nerves (NV), local play (P), narrator eval (E/G/L), the narrator's feed (N), time (T), identity (I), the D56 review (R).
 - `STATUS.md`: resume blocks, newest first.
 - `RESEARCH-2026-11-04-late-round-degeneration.md`: the causes behind the eight player's-eye reads (D90): per-turn profiles, the chant measured (Qwen3.8 only, within-turn), nine engine and text faults traced to their lines, the fixes in order, the follow-up experiments.
+- `RESEARCH-2026-11-04-pacing-rules.md`: the user's pacing rules (D93) and the finding behind them (the spine was never silent; the clock never reached it), the lines built after the cold read, the list for after the model is pinned (the narrator's assistant, `[[time lost]]`, 2d6+N, dice glyphs).
 - `README.md`: four lines on the folder.
 - Design: `DESIGN.md` (the original, §15 the decision log before DECISIONS.md), `DESIGN2.md` and `DESIGN2-LOG.md` (the structured world).
 - Dated: `HANDOFF-2026-10-29/30.md`, `HANDOFF-2026-11-01-qwen38-trial.md`, `SESSION-2026-10-30-night.md`, `PLAYTEST-2026-10-29.md`, `OVERNIGHT-2026-11-01.md`, `GENERATION-PARAMS-2026-11-01.md`, `TRIAL-next-local-model.md`, `TASK-narrator-review.md`, `TASK-N5-fix-declines.md`.

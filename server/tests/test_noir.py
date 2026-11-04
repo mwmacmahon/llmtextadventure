@@ -253,7 +253,7 @@ async def test_smoke_is_a_narrated_command(engine: Engine, fake: FakeProvider):
 async def test_typed_turn_narrator_sees_roll_and_referee_updates_pockets(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("noir", {})
     fake.hook = lambda schema, last: (
-        Adjudication(kind="action", summary="Frank fires at the creature", time_minutes=1, risk="high",
+        Adjudication(kind="action", summary="Frank fires at the creature", time_minutes=1, tempo="fast", risk="high",
                      intents=[{"action": "shoot it", "check": {"label": "shoot the creature", "stat": "hands", "difficulty": "low"}}]) if issubclass(schema, Adjudication)
         else ref(add("revolver", "loaded", "-3"), add("player", "dread", "+10"), C(kind="move", target="player", value="Rooftop shack"), log_line="Frank fired three times.") if schema is ChangeReport
         else None)
@@ -358,7 +358,7 @@ async def test_nerves_break_once_and_never_end_the_game(engine: Engine, fake: Fa
     doc = engine.store.load_state(iid)
     doc["player"]["dread"] = 96
     engine.store.save_snapshot(iid, 0, doc)
-    fake.hook = lambda schema, last: Adjudication(kind="action", summary="wait", time_minutes=1, risk="none") if issubclass(schema, Adjudication) else None
+    fake.hook = lambda schema, last: Adjudication(kind="action", summary="wait", time_minutes=1, tempo="fast", risk="none") if issubclass(schema, Adjudication) else None   # fast: the pending must not come due (D93 floor)
     events = await play(engine, iid, "I stand there.")
     mech = events[-1]["data"]["mechanics"]
     assert mech["events"] == ["breaking_point"] and events[-1]["data"]["ending"] is None

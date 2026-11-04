@@ -305,6 +305,10 @@ class NoirGame(GameBase):
             b.append("Scheduled spine (the engine fires these when their conditions are met; the game state says which are next or done):")
             for e in spine:
                 b.append(f"- {e.id} ({e.when_text}): {e.description}")
+        b.append("")
+        b.append("PACING (no scene drags). A fight, chase or hard questioning lasts a few exchanges, then something gives. A talk that "
+                 "has stopped yielding ends: they leave, the door shuts, the line goes dead. When a scene is spent, put a new lead, "
+                 "person or place in front of Frank and stop there. Quiet passes in a line, never more time than THIS TURN gives.")
         return "\n".join(b)
 
     def entity_names(self, state: NoirState) -> dict[str, str]:
@@ -347,6 +351,9 @@ class NoirGame(GameBase):
             if re.search(pat, voice.lower()) and not re.search(pat, known):
                 out.append(term)
         return out
+
+    def player_name(self, state: NoirState) -> str:
+        return state.player.name
 
     def not_carried(self, state: NoirState, name: str) -> str | None:
         """The adjudicator's `carried` list checked against the pockets: what is not there is a directive."""

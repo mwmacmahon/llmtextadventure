@@ -44,7 +44,7 @@ from . import threads as th
 from .config import Config
 from .brackets import STOP_SEQUENCES, Call, Note, StreamFilter, extract, is_mechanic_line, with_mechanic
 from .context import build_messages, summary_plan
-from .narration import (Assessment, CallResult, Mechanic, NarrationDone, Visible, default_mechanic_line, narrate,
+from .narration import (Assessment, CallResult, Mechanic, NarrationDone, Visible, default_mechanic_line, fail_forward, narrate,
                         run_check)
 from .game import ApplyReport, CommandResult, Game, GameBase, Rejection, TurnInfo
 from .mechanics import RESOLVERS, CheckRequest, CheckResult, outcome_words, rng_for
@@ -330,7 +330,7 @@ class Engine:
                                                  "ui": game.ui(state).model_dump(mode="json")}}
                 return
             player_text = cmd_result.player_line or label
-            adj = Adjudication(kind="action", summary=cmd_result.summary or cmd_result.player_line or label,
+            adj = Adjudication(kind="action", summary=cmd_result.summary or cmd_result.player_line or label, tempo="fast",   # the command's own minutes stand
                                time_minutes=cmd_result.minutes, entities=cmd_result.entities, systems=cmd_result.systems, risk="medium")
             if cmd_result.directive:
                 extra_directives.append(cmd_result.directive)
@@ -425,7 +425,7 @@ class Engine:
 
         # ---- 3. narrate -----------------------------------------------------
         role = self.cfg.role("narrator")
-        handler = self._call_handler(game, state, iid, turn, res["assessments"])
+        handler = self._call_handler(game, state, iid, turn, res["assessments"], fail_streak=res.get("fail_streak", 0))
         # A narrator configured `checks: told` gets the assessed checks already rolled, in THIS TURN, instead of
         # being asked to stop and call them: a weaker model writes the outcome first and the call after it (or
         # never), so the roll arrives too late to matter. Same seed, same order, so a rewrite rolls the same.
@@ -932,6 +932,10 @@ class Engine:
                 if missing:
                     directives.append("NOT CARRIED: " + missing)
                     notes.append(f"not carried: {name}")
+            # a slow action costs at least the game's floor (D93): fifty turns of two-minute actions never reached the spine's second day
+            if clock and adj.kind == "action" and getattr(adj, "tempo", "slow") != "fast" and adj.time_minutes < clock.slow_minutes:
+                notes.append(f"slow turn: {adj.time_minutes} minutes raised to the floor of {clock.slow_minutes}")
+                adj.time_minutes = clock.slow_minutes
             # clock, stopping where an event would fire (any time in its trigger or fallback) so it fires on time
             if clock and adj.time_minutes > 0:
                 want = min(adj.time_minutes, clock.cap_minutes)
@@ -1006,9 +1010,27 @@ class Engine:
             + [p for h in happened for p in _effect_paths(h.effects_applied)]
         return {"state": new_state, "assessments": assessments, "fired": fired, "expired": expired, "happened": happened,
                 "elapsed": elapsed, "clock_note": clock_note, "directives": directives, "adjudication": adj, "effect_paths": effect_paths,
-                "notes": notes, "pending_fired": pending_fired, "pending_lapsed": pending_lapsed}
+                "notes": notes, "pending_fired": pending_fired, "pending_lapsed": pending_lapsed,
+                "fail_streak": self._fail_streak(iid, turn) if assessments else 0,
+                "player_name": _hook(game, "player_name", state, default="the player")}
 
-    def _call_handler(self, game: Game, state: BaseModel, iid: str, turn: int, assessments: list[Assessment]):
+    def _fail_streak(self, iid: str, turn: int, limit: int = 6) -> int:
+        """How many turns running, before this one, ended with every rolled check failed (D93: the second failure in a
+        row may not leave the scene where it was). A turn with no roll, or with any success, ends the run."""
+        n = 0
+        for t in range(turn - 1, max(0, turn - 1 - limit), -1):
+            rows = [r for r in self.store.ledger(iid, t)
+                    if r["kind"] == "model_call" and r["payload"].get("role") == "narrator" and not r["payload"].get("error")]
+            if not rows:
+                break
+            outcomes = [(c.get("result") or {}).get("outcome") for c in rows[-1]["payload"].get("calls", [])]
+            outcomes = [o for o in outcomes if o]
+            if not outcomes or any("fail" not in o for o in outcomes):
+                break
+            n += 1
+        return n
+
+    def _call_handler(self, game: Game, state: BaseModel, iid: str, turn: int, assessments: list[Assessment], fail_streak: int = 0):
         """Turn the narrator's calls into results (DESIGN2 §5): CHECK rolls with the assessment as the floor,
         LOOK asks the game for a record, ODDS is an oracle. Dice are seeded per turn, so a rewrite of the
         same turn rolls the same numbers in the same order."""
@@ -1027,7 +1049,8 @@ class Engine:
         def handler(call, n: int) -> CallResult:
             if call.verb == "CHECK":
                 return run_check(call, n, stats, resolver, rng, assessments, modifiers, render,
-                                 fallback_stat=getattr(game, "fallback_stat", None))
+                                 fallback_stat=getattr(game, "fallback_stat", None), fail_streak=fail_streak,
+                                 player=_hook(game, "player_name", state, default="the player"))
             if call.verb == "LOOK":
                 text = _hook(game, "look", state, call.ref, default=None)
                 if not text:
@@ -1719,7 +1742,8 @@ def _this_turn_block(res: dict[str, Any], clock_text: str = "") -> str:
             lines.append(f"- Rolled by the engine, {t['label']} ({t['stat']}, {t['difficulty']} difficulty{', against ' + t['target'] if t['target'] else ''}): "
                          f"{outcome_words(t['outcome'])}. When the fiction reaches this attempt, play that and what follows from it. "
                          "Play it in the story; never soften or reverse it, write no check line for it, and never mention dice, numbers or how well it rolled."
-                         + (" A failure gives nothing: no name, no fact, no glimpse of what is hidden, no half-success; the attempt costs instead."
+                         + ((fail_forward(res.get("player_name", "the player")) if res.get("fail_streak", 0) >= 1 else
+                             " A failure gives nothing: no name, no fact, no glimpse of what is hidden, no half-success; the attempt costs instead.")
                             if "fail" in t["outcome"] else ""))
     else:
         for a in res.get("assessments", []):

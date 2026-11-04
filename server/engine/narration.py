@@ -250,7 +250,8 @@ def match_assessment(call: Call, assessments: list[Assessment]) -> Assessment | 
 
 def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any, CheckRequest], CheckResult], rng: Any,
               assessments: list[Assessment], modifiers: Callable[[CheckRequest, str | None], list[Modifier]],
-              render: Callable[[CheckResult], str], *, fallback_stat: str | None = None) -> CallResult:
+              render: Callable[[CheckResult], str], *, fallback_stat: str | None = None, fail_streak: int = 0,
+              player: str = "the player") -> CallResult:
     stat = call.stat
     if stat not in stats:
         if fallback_stat and fallback_stat in stats:
@@ -273,10 +274,18 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
     text = (f"[ENGINE] Check: {stat}, {difficulty.replace('_', ' ')} difficulty" + (f", against {target}" if target else "") +
             f". Rolled {res.roll}{sign} = {res.total} against {res.target}: {outcome_words(res.outcome)}. "
             "Play that in the story; never soften or reverse it, and never mention dice, numbers or how well it rolled."
-            + (" A failure gives nothing: no name, no fact, no glimpse of what is hidden, no half-success. The attempt costs instead (time, noise, notice, a hurt)."
+            + ((fail_forward(player) if fail_streak >= 1 else
+                " A failure gives nothing: no name, no fact, no glimpse of what is hidden, no half-success. The attempt costs instead (time, noise, notice, a hurt).")
                if res.outcome in ("failure", "huge_failure", "critical_failure") else ""))
     causes = [target] if target and res.outcome in ("success", "huge_success", "critical_success") else []
     return CallResult(text=text, mechanic=render(res), data=res.model_dump(mode="json"), causes=causes)
+
+
+def fail_forward(player: str) -> str:
+    """The failure sentence when the last turn's rolls all failed too (D93): a scene is never stalled by failed checks
+    more than once in a row; the second failure costs something and moves the scene."""
+    return (f" Failed twice now. Make it cost {player} one real thing (a hurt, a loss, a way closed, someone coming), and close the"
+            f" same attempt: end with a different opening in front of {player}.")
 
 
 def default_mechanic_line(res: CheckResult, show_numbers: bool = True) -> str:

@@ -148,6 +148,7 @@ class ClockSpec(BaseModel):
     path: str = "clock"             # state path of {day, minute}
     minutes_per_day: int = 1440
     cap_minutes: int = 240          # the most one turn may advance (the "don't jump 8 hours" rule)
+    slow_minutes: int = 5           # the least a slow action costs (D93: a search, a talk, a walk; a fast beat in a fight is exempt)
 
 
 RejectionKind = Literal["duplicate", "fit", "conflict"]

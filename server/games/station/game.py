@@ -489,6 +489,10 @@ class StationGame(GameBase):
                      "Conditional ones light fuses: a timer the game state lists under COMING, which the crew can be talked or forced out of:")
             for e in spine:
                 b.append(f"- {e.id} ({e.when_text}): {e.description}")
+        b.append("")
+        b.append("PACING (the station's day moves). A crew member cornered gives up one thing, then acts instead of arguing on: walks "
+                 "out, goes over your head, does it anyway. When things have been quiet a while, someone with a reason acts. Quiet "
+                 "passes in a line, never past the time THIS TURN gives.")
         return "\n".join(b)
 
     def entity_names(self, state: StationState) -> dict[str, str]:
@@ -1521,6 +1525,9 @@ class StationGame(GameBase):
             s.hidden.recent.append(f"{s.clock.render()}: {c.name} went for {r.place}" + (f" ({r.doing})" if r.doing else "") + f" and found the hatch to {module} sealed. They could not pass; nobody told them why.")
             del s.hidden.recent[:-12]
             self._history(s, c, f"met the sealed hatch to {module} on the way to {r.place}")
+
+    def player_name(self, s: StationState) -> str:
+        return "the station"
 
     def turn_directives(self, s: StationState) -> list[str]:
         """D81: crew the station has lost track of; the narrator is asked to place them when the prose shows them."""

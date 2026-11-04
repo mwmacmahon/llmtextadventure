@@ -32,7 +32,7 @@ at the paths you declare:
 
 | declaration on the game class | what lives there |
 |---|---|
-| `clock = ClockSpec(path, minutes_per_day, cap_minutes)` | `{day, minute}` (`engine.gamekit.Clock`) |
+| `clock = ClockSpec(path, minutes_per_day, cap_minutes, slow_minutes)` | `{day, minute}` (`engine.gamekit.Clock`); `slow_minutes` (5) is the least a slow action costs (D93: the adjudicator's `tempo` is `slow` for everything but one beat of a fight or chase) |
 | `events_path` | `list[engine.events.Event]`, status included |
 | `spontaneous_path` (optional) | `list[engine.spontaneous.Spontaneous]` |
 | `recent_path` (optional) | narrator-only strings about recent happenings |
@@ -156,7 +156,8 @@ Optional, with defaults that do nothing:
 
 Declarations on the class: `clock`, `resolver`, `authority`, `events_path`, `spontaneous_path`,
 `recent_path`, `threads_path`, `log_path`, `skip_adjudication`, `skip_referee`, `fallback_stat`,
-`static_paths` (engine-owned fields the audit should not expect a writer for) and
+`static_paths` (engine-owned fields the audit should not expect a writer for), `player_name(state)` (the name the
+engine's lines call the player: Frank, the station) and
 `mechanic_numbers` (the engine's § line shows the die and the target, as noir does, or the tier
 only, as the station does; the narrator never writes numbers on either).
 
@@ -279,6 +280,14 @@ Rules of thumb:
   same tick if the clock jumped past both.
 - Every windowed event has a `fallback` or an `expires`, so the story has a floor when the player
   goes elsewhere.
+- An event the player can miss reaches them only through a form that does (D93, the user's rule): gate the
+  trigger on where the player is and give the fallback a reach, a telephone call, a note under the door, a
+  message in the queue, someone coming to find them. What happens elsewhere while the player hides in a safe
+  room stays elsewhere: no event burns the room down because they stayed in it. Noir's `szabo_calls_again`,
+  `faction_offer` and `ada_visit` are the pattern.
+- The game's pacing rules are the narrator's, not the engine's: the last paragraph of `frozen_prefix` says how
+  long a scene may run in this game (noir: no scene drags; a monster-chase game may say the opposite). The
+  engine's part is the clock floor and the fail-forward line (ARCHITECTURE, RESOLVE).
 - Flags named in triggers are either set by effects or declared in `narrator_flags`; that list
   is the contract between prose and script.
 - Branching beats: two events at the same `at` with mutual `expires: {fired: <sibling>}`.

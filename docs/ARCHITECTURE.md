@@ -146,7 +146,8 @@ LEVERS       each named command is previewed in order through game.run_command o
   ▼
 RESOLVE      engine, deterministic
              - checks: resolver(rng seeded by instance+turn, CheckRequest + game modifiers) → tier
-             - clock: advance by time_minutes, capped (ClockSpec.cap_minutes), stopped at the next
+             - clock: advance by time_minutes, raised to ClockSpec.slow_minutes for a slow action (the
+               adjudicator's tempo, D93), capped (ClockSpec.cap_minutes), stopped at the next
                scheduled event so it fires on time
              - events: tick every live event in priority order (trigger / fallback / expiry),
                apply effects, collect directives
@@ -220,8 +221,8 @@ lies and who believes them, beats in order.
   target per difficulty tier; margins of ±8 are huge. `threshold` takes 10. `weighted` rolls once
   against a probability. The RNG is seeded by instance id, turn and a salt, so a replayed turn
   rolls the same.
-- **Clock.** `{day, minute}` at a game-declared path; `cap_minutes` per turn; stops at the next
-  scheduled event.
+- **Clock.** `{day, minute}` at a game-declared path; `slow_minutes` the least a slow action costs (D93),
+  `cap_minutes` the most a turn may advance; stops at the next scheduled event.
 - **Events** (`events.py`). Data in the scenario file, status stored in the state so undo, fork
   and export carry it. Predicates: `at`, `flag`, `not_flag`, `flag_is`, `eq/ne/gte/lte/gt/lt`,
   `in`, `fired`, `not_fired`, `expired`, `turn_gte`, `all/any/not`. Effects: `set`, `add` (with
@@ -330,7 +331,10 @@ Branch `1.0` preserves the first engine; `main` stays there until 2.0 is playabl
 - `engine/narration.py`: the narrator loop. Stream; on a call, stop, run it, show a mechanics line,
   send one more request (history + the prose so far + the result + "continue from where you stopped");
   at most `GameBase.max_calls` stops per turn. `run_check` rolls with the adjudicator's assessment as the
-  floor (the harder of assessment and call).
+  floor (the harder of assessment and call). A failure's answer says the attempt gives nothing and costs; when the
+  previous turns' rolls all failed too (`Engine._fail_streak`, read from their narrator rows) it says instead
+  "Failed twice now. Make it cost Frank one real thing ... end with a different opening in front of Frank."
+  (D93: a scene is never stalled by failed checks more than once in a row).
 - One narration path for both games: resolve assesses checks instead of rolling them, THIS TURN lists the assessed checks as calls to make, the system prompt
   carries `roles.NARRATOR_WORLD` and `roles.NARRATOR_PROTOCOL`, the SSE stream has `mechanic` events, the
   transcript's narrator row is flat (prose plus `§` lines), and the ledger's narrator `model_call`

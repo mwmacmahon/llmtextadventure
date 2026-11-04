@@ -83,7 +83,7 @@ async def play(engine: Engine, iid: str, text: str) -> list[dict]:
 
 
 def action(summary: str, minutes: int) -> Adjudication:
-    return Adjudication(kind="action", summary=summary, time_minutes=minutes, risk="low", intents=[Intent(action=summary)])
+    return Adjudication(kind="action", summary=summary, time_minutes=minutes, tempo="fast", risk="low", intents=[Intent(action=summary)])   # fast: these tests count the minutes exactly (D93 floor)
 
 
 async def test_the_world_does_not_wait_end_to_end(engine: Engine, fake: FakeProvider):

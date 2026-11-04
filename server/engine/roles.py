@@ -40,6 +40,7 @@ class Adjudication(BaseModel):
     summary: str = Field(description="One sentence: what the player is doing, in the engine's terms.")
     clarify_question: str | None = Field(default=None, description="For kind=clarify or impossible: what to ask or tell the player, in plain words.")
     time_minutes: int = Field(description="How many minutes of in-game time the attempt takes. 0 for trivial/clarify/impossible. Typical actions are 2-30; waiting or long tasks can be more.")
+    tempo: Literal["fast", "slow"] = Field(default="slow", description="fast: one beat inside a fight or chase (a blow, a shot, a lunge): seconds. slow: everything else (a search, a talk, a walk, reading, working, watching, waiting).")
     intents: list[Intent] = Field(default_factory=list, description="The concrete attempts, usually one, at most three.")
     entities: list[str] = Field(default_factory=list, description="Ids of entities the player is interacting with or watching, exactly as listed.")
     systems: list[str] = Field(default_factory=list, description="Names of station/world systems involved, exactly as listed.")
@@ -109,6 +110,7 @@ Rules:
 - A check goes in its intent's `check` field (label, stat, difficulty), never in `action`, `targets` or `transition`; an intent that needs a check and has `check` null gets no roll at all.
 - Estimate time honestly. Reading a log is a minute; a conversation is ten; waiting for someone to sleep is hours. The state may list IMPENDING things due at a time; they fire on their own and the engine stops the clock at the first one that falls due, so never shorten an estimate to dodge one.
 - Waiting, watching for a while, or otherwise letting time pass is kind=action with time_minutes equal to the time waited, never trivial.
+- tempo=fast only for one beat inside a fight or chase (seconds); tempo=slow for everything else. The engine charges a slow turn at least five minutes.
 - When IMPENDING has something due within this input's time and the input tries to stop, escape or fight it, assess the check that decides that attempt.
 - carried: when the input has the player take out, use or hand over something of his own ("the knife from my boot", "I pay him", "I light my lighter"), name each such object in a word or two; the engine checks his pockets. Name only what this input mentions, never the whole pockets list. Empty otherwise.
 - Name entities and systems only from the lists given, by id or name exactly.
