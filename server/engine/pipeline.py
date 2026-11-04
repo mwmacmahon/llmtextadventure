@@ -371,8 +371,8 @@ class Engine:
             if replay.hint:
                 extra_directives.append(
                     f"IMPORTANT, A RETELLING: your previous telling of this turn was not accepted ({who} ruled on it).\n  {replay.hint.strip()}\n  "
-                    "Write the whole turn again from the same facts above, with that put right. Keep everything else as it was. "
-                    "Say nothing about this note, the ruling, or that this is a retelling.")
+                    "Write the whole turn again from the same facts above, with that put right. Change what putting it right forces you to change, "
+                    "and nothing else. Say nothing about this note, the ruling, or that this is a retelling.")
             else:
                 extra_directives.append(
                     "The player asked for this turn to be told again. That telling was set aside: tell it again from the same facts above, "
@@ -1370,7 +1370,8 @@ def _earlier_turns(store: Store, iid: str, n: int) -> list[tuple[int, str, str]]
 RETELL_LEADS = {
     # one paragraph per kind of problem (the user, 11-03: a catch-all note is confusing); {what} is what the referee or the
     # engine saw, {fix} is the sentence they wrote for the narrator
-    "leak": "Something the player must not learn got into the telling: {what}. {fix} Leave it out entirely: no hint, no paraphrase, no knowing look.",
+    "leak": "Something the player must not learn got into the telling: {what}. {fix} Leave it out entirely: no hint, no paraphrase, "
+            "no other name for the same thing, no knowing look, and nobody says it to the player's character this turn either.",
     "contradiction": "The telling contradicted the game state: {what}. {fix}",
     "unauthorized_addition": "The telling added something the rules do not allow: {what}. {fix} Tell it without that addition.",
     "directive_ignored": "A THIS TURN line was not played: {what}. {fix}",
@@ -1382,9 +1383,9 @@ RETELL_LEADS = {
     # unsaid; the failure mode is "not under the docks, just very clearly under the docks"
     "location": "The telling put someone somewhere the game does not allow: {what}. Where they are instead is yours to decide. "
                 "In this retelling, say plainly where they are when the turn ends: in the prose if the player's character can see where "
-                "they are, otherwise in a note line [[unseen: <name> is at <place>]]. Use one of the game's listed places, or a place of your own "
-                "with a word on where it is (a back room at the station, a yard by the warehouses, a stretch of shore). "
-                "Do not leave the place unsaid, and do not describe the forbidden place without naming it.",
+                "they are, otherwise in a note line [[unseen: <name> is at <place>]]. Use one of the places listed in the game state above, "
+                "or a place of your own with a word on where it is (a back room at the station, a yard by the warehouses, a stretch of shore). "
+                "Do not leave the place unsaid, and do not put them in the forbidden place under another name or description.",
 }
 
 

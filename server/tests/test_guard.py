@@ -89,13 +89,13 @@ async def test_gate_holds_the_prose_and_retells_once_on_a_serious_ruling(engine:
     shown = "".join(e["data"]["t"] for e in events if e["event"] == "text")
     assert "Szabo" not in shown and "rain keeps on" in shown
     retell = next(e["data"] for e in events if e["event"] == "retell")
-    assert retell["attempt"] == 1 and retell["rulings"][0]["rule"] == "leak" and retell["hint"] == "Something the player must not learn got into the telling: the prose names the man in the cistern. keep the man unnamed Leave it out entirely: no hint, no paraphrase, no knowing look."
+    assert retell["attempt"] == 1 and retell["rulings"][0]["rule"] == "leak" and retell["hint"] == "Something the player must not learn got into the telling: the prose names the man in the cistern. keep the man unnamed Leave it out entirely: no hint, no paraphrase, no other name for the same thing, no knowing look, and nobody says it to the player's character this turn either."
     # progress came through while the prose was held: writing with an estimate, then checking
     stages = [e["data"]["stage"] for e in events if e["event"] == "progress"]
     assert stages[0] == "writing" and "checking" in stages
     done = events[-1]["data"]
     assert done["event"] if False else done["turn"] == 1 and engine.store.latest_turn(iid) == 1
-    assert done["mechanics"]["rewritten"] == {"hint": "Something the player must not learn got into the telling: the prose names the man in the cistern. keep the man unnamed Leave it out entirely: no hint, no paraphrase, no knowing look.", "attempt": 1, "by": "referee"}
+    assert done["mechanics"]["rewritten"] == {"hint": "Something the player must not learn got into the telling: the prose names the man in the cistern. keep the man unnamed Leave it out entirely: no hint, no paraphrase, no other name for the same thing, no knowing look, and nobody says it to the player's character this turn either.", "attempt": 1, "by": "referee"}
     assert done["mechanics"]["rulings"] == [] and "rain keeps on" in done["text"]
     assert len(calls) == 2 and "IMPORTANT, A RETELLING: your previous telling of this turn was not accepted (the referee ruled on it).\n  Something the player must not learn got into the telling: the prose names the man in the cistern. keep the man unnamed Leave it out entirely" in [r["payload"] for r in engine.store.ledger(iid, 1) if r["kind"] == "model_call" and r["payload"].get("role") == "narrator"][-1]["request"]["messages"][-1]["content"]
     rw = next(r["payload"] for r in engine.store.ledger(iid, 1) if r["kind"] == "rewrite")
@@ -261,6 +261,6 @@ def test_the_retelling_note_has_one_paragraph_per_kind_of_problem():
     paras = note.split("\n  ")
     assert len(paras) == 3
     assert paras[0].startswith("Something the player must not learn got into the telling: the prose names Szabo.") and "no paraphrase" in paras[0]
-    assert paras[1].startswith("The telling put someone somewhere the game does not allow:") and "[[unseen: <name> is at <place>]]" in paras[1] and "Do not leave the place unsaid" in paras[1]
+    assert paras[1].startswith("The telling put someone somewhere the game does not allow:") and "[[unseen: <name> is at <place>]]" in paras[1] and "Do not leave the place unsaid" in paras[1] and "under another name" in paras[1]
     assert "must not pass through" not in paras[1] and "yours to decide" in paras[1]      # the note never tells the narrator where to keep someone
     assert paras[2] == "this telling repeats turn 3. Tell only what is new."
