@@ -89,15 +89,15 @@ async def test_gate_holds_the_prose_and_retells_once_on_a_serious_ruling(engine:
     shown = "".join(e["data"]["t"] for e in events if e["event"] == "text")
     assert "Szabo" not in shown and "rain keeps on" in shown
     retell = next(e["data"] for e in events if e["event"] == "retell")
-    assert retell["attempt"] == 1 and retell["rulings"][0]["rule"] == "leak" and retell["hint"] == "keep the man unnamed"
+    assert retell["attempt"] == 1 and retell["rulings"][0]["rule"] == "leak" and retell["hint"] == "The problem: the prose names the man in the cistern. What to do: keep the man unnamed"
     # progress came through while the prose was held: writing with an estimate, then checking
     stages = [e["data"]["stage"] for e in events if e["event"] == "progress"]
     assert stages[0] == "writing" and "checking" in stages
     done = events[-1]["data"]
     assert done["event"] if False else done["turn"] == 1 and engine.store.latest_turn(iid) == 1
-    assert done["mechanics"]["rewritten"] == {"hint": "keep the man unnamed", "attempt": 1, "by": "referee"}
+    assert done["mechanics"]["rewritten"] == {"hint": "The problem: the prose names the man in the cistern. What to do: keep the man unnamed", "attempt": 1, "by": "referee"}
     assert done["mechanics"]["rulings"] == [] and "rain keeps on" in done["text"]
-    assert len(calls) == 2 and "RULING from the referee" in [r["payload"] for r in engine.store.ledger(iid, 1) if r["kind"] == "model_call" and r["payload"].get("role") == "narrator"][-1]["request"]["messages"][-1]["content"]
+    assert len(calls) == 2 and "IMPORTANT, A RETELLING: your previous telling of this turn was not accepted (the referee ruled on it). The problem: the prose names the man in the cistern. What to do: keep the man unnamed" in [r["payload"] for r in engine.store.ledger(iid, 1) if r["kind"] == "model_call" and r["payload"].get("role") == "narrator"][-1]["request"]["messages"][-1]["content"]
     rw = next(r["payload"] for r in engine.store.ledger(iid, 1) if r["kind"] == "rewrite")
     assert rw["by"] == "referee" and "Szabo" in rw["history"][0]["narration"]
     # the player's row from the first telling is gone with it; one player line, one narration

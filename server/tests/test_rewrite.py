@@ -98,7 +98,7 @@ async def test_rewrite_retells_the_last_turn_with_the_ruling_same_facts_same_dic
     assert rw["hint"].startswith("Frank never fired") and rw["attempt"] == 1
     assert rw["history"][0]["attempt"] == 0 and "fires twice" in rw["history"][0]["narration"]   # the first telling is kept
     req = narrator_requests(engine, iid, 1)[-1]["request"]["messages"][-1]["content"]
-    assert "RULING from the player on your previous telling of this turn: Frank never fired" in req and "Reload" in req
+    assert "IMPORTANT, A RETELLING: your previous telling of this turn was not accepted (the player ruled on it). Frank never fired" in req and "Reload" in req
     assert "gun still cold" in seen["referee_saw"] and "fires twice" not in seen["referee_saw"]
     prose = engine.store.transcript(iid, roles=["narrator"])[-1].text
     assert "gun still cold" in prose and "fires twice" not in prose

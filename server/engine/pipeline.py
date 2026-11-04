@@ -257,7 +257,8 @@ class Engine:
             serious = [r for r in ((done or {}).get("mechanics") or {}).get("rulings", []) if r.get("serious")] if done else []
             if serious and mode != "log" and retells < max_retells and (done or {}).get("mechanics", {}).get("kind") != "command":
                 retells += 1
-                fix = " ".join((r.get("fix") or r.get("what") or "").strip() for r in serious).strip()
+                fix = " ".join(f"The problem: {(r.get('what') or '').strip().rstrip('.')}. What to do: {(r.get('fix') or r.get('what') or '').strip()}"
+                               for r in serious).strip()
                 yield {"event": "retell", "data": {"turn": done["turn"], "attempt": retells, "rulings": serious, "hint": fix}}
                 gen = self.rewrite_turn(iid, fix, by="referee")
                 continue
@@ -370,8 +371,10 @@ class Engine:
             who = "the referee" if replay.by == "referee" else "the player"
             if replay.hint:
                 extra_directives.append(
-                    f"RULING from {who} on your previous telling of this turn: {replay.hint.strip()} That telling was set aside. "
-                    "Tell this turn again from the same facts above, keeping to the ruling. Do not mention the ruling or that this is a retelling.")
+                    f"IMPORTANT, A RETELLING: your previous telling of this turn was not accepted ({who} ruled on it). {replay.hint.strip()} "
+                    "Write the whole turn again from the same facts above. Keep everything that was not the problem. If the player's character "
+                    "moves, name the place he ends up in, in the prose; if the problem was something the player must not learn, leave it out "
+                    "entirely rather than hinting at it. Say nothing about this note, the ruling, or that this is a retelling.")
             else:
                 extra_directives.append(
                     "The player asked for this turn to be told again. That telling was set aside: tell it again from the same facts above, "
