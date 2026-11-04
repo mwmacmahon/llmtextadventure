@@ -59,6 +59,7 @@ Every playtest also has a transcript `notes/playtests/<date>-<game>-<tag>.md` an
 | `LOCAL_LLM.md` | 2026-11-01 | **behind**: the `extra` flags and MTP profiles (D70), the GPU wait at start (L6), the Gemma profile |
 | `GAME_AUTHORING.md` | 2026-11-03 (stream4) | the D77 writer rules are in; **behind**: nerves on the clock, `eldritch:` and `sanity` (D75/D76), the `advance` effect, the nerves notes |
 | `ARCHITECTURE.md` | 2026-11-03 (stream4) | the guard paragraph is current (D77/D79); **behind**: the tape (D59), thinking per role (D66), called mode as the only mode (D63) |
+| `WRITING_FOR_MODELS.md` (on stream4 until merged) | 2026-11-03 | the style guide for every line a model is handed and for scenario text: dos, don'ts with the day's befores, a checklist; the spec for the plain-language pass (ISSUES W1) |
 | `INDEX.md` | this file | |
 
 ## 5. Notes (`notes/`, gitignored, the project's memory)
