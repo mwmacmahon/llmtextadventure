@@ -1,7 +1,7 @@
 # Project index
 
 Everything the project is made of, where it lives, and which parts are behind the build. Kept by hand; the date at
-the top is the last time someone checked it against the tree. **Checked: 2026-11-04 17:00.**
+the top is the last time someone checked it against the tree. **Checked: 2026-11-04 22:40.**
 
 Published as a page: [Project Index](https://claude.ai/artifact/CivViGMFsdW3qGvxFdejBr). Republish after editing this file:
 `python3 notes/scripts/md2page.py docs/INDEX.md <out.html> notes/scripts/index-head.html`, then publish `<out.html>` to that URL.
