@@ -1,7 +1,7 @@
 # Project index
 
 Everything the project is made of, where it lives, and which parts are behind the build. Kept by hand; the date at
-the top is the last time someone checked it against the tree. **Checked: 2026-11-04 22:40.**
+the top is the last time someone checked it against the tree. **Checked: 2026-11-04 17:25 EST.**
 
 Published as a page: [Project Index](https://claude.ai/artifact/CivViGMFsdW3qGvxFdejBr). Republish after editing this file:
 `python3 notes/scripts/md2page.py docs/INDEX.md <out.html> notes/scripts/index-head.html`, then publish `<out.html>` to that URL.
@@ -54,6 +54,7 @@ Regenerate: `cd notes/design/tools && ../../../server/.venv/bin/python gen_<page
 | noir r14L-gm-plain, 0bc7dcdd2afc (alone) | Gemma 4 31B | ended at turn 35: June got out (D87) | [Gemma Long Round, Noir](https://claude.ai/artifact/V2AQjb4FJnkZUE1mi3jzVA); [light, opens on a phone](https://claude.ai/artifact/RYhYUVvhwQ8YmK8kEB7WRV) |
 | station r14L-gm-plain, 94b1421de70a (alone) | Gemma 4 31B | 50 turns, no ending; alarm flat at 57-58 for the last 30 turns (D87) | [Gemma Long Round, Station](https://claude.ai/artifact/DD1qTnpCk68Uqrw7upKP9g); [light, opens on a phone](https://claude.ai/artifact/JfyURRNENpBoEy35qmaKwh) |
 | station r15L-hh-dry-plain, 48c097a0db65 (alone; D92 experiment 1: DRY on the narrator, pre-D93 code) | Huihui + MTP + DRY | 50 turns, no ending; Day 1 08:00 to 11:16; refrain 0-2 on every turn (the chant gone), late turns still long | [Huihui + DRY Round, Station](https://claude.ai/artifact/WNvoGK8v3kyTVgKdEvZ8PM); [light, opens on a phone](https://claude.ai/artifact/PZisGzgTPR1v4qwyQi8egB); [read as a player](https://claude.ai/artifact/FmhEkfBznXZWi3wtt7pSzx) (D92: R4 held; R18 the canister recorded twice) |
+| noir r15L-hh-dry-plain, 2d5812dcf065 (alone; D92 experiment 1 on D93's lines) | Huihui + MTP + DRY | 50 turns, no ending; Day 1 evening to Day 2 08:17; refrain 0-5 on every turn (the within-turn chant gone), copy to 44 late, five turns end mid-sentence, turn 49 leaks the narrator's planning (R19) | [Huihui + DRY Round, Noir](https://claude.ai/artifact/RQyHVdegyXdBNSmq34c2xf); [light, opens on a phone](https://claude.ai/artifact/XCEV8cUc2Qqv4nwZf6E7Ky); [read as a player](https://claude.ai/artifact/TjxMqv7PBTkLS9KzKm6psy) (D92 read 2: a chant across turns by the reader's measure; the fail-forward line read and not obeyed, R14) |
 | the six r14L rounds and the Sonnet noir r12b and station r12 rounds, read as a player (D89) | one Opus reader a round | the narration alone, turn by turn; the brief `server/tools/READER_BRIEF.md` on the page | [Six Rounds Read](https://claude.ai/artifact/S4xzunL3nhtmzF9UeypB95) (106 KB, opens on a phone) |
 | the local-narrated 25-turn rounds of 11-02 (r11L-*) | Qwen3.8 | read per game in ISSUES P1-P7 | `notes/playtests/2026-11-02-*r11L*` (not published) |
 
