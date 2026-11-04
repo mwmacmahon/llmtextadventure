@@ -1,6 +1,6 @@
 """Pair judging by subagents, not API calls (D84; the user, 2026-11-03: "judging should stay a subagent thing").
 
-    judge_pack.py pack <pairs id> [--out DIR] [--chunk 30] [--skip-done]
+    judge_pack.py pack <pairs id> [--out DIR] [--chunk 12] [--skip-done] [--sample 36 --seed 1]
         writes DIR/<pairs id>/chunk-NN.md, a self-contained brief for one judging subagent (the judge's instructions,
         the reader's values, then every item: the previous turn, the player's input, what the narrator was told, the two
         tellings in the order to read them), and the verdict file each subagent must write (verdicts-NN.json).
@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import sys
 from pathlib import Path
 
@@ -48,14 +49,21 @@ def done_keys(pid: str) -> set[tuple[str, str]]:
     return {(j["key"], j["order"]) for j in json.loads(p.read_text())["judgements"] if "choice" in j}
 
 
-def pack(pid: str, out: Path, chunk: int, skip_done: bool, orders: str = "both", first: int = 1) -> None:
+def pack(pid: str, out: Path, chunk: int, skip_done: bool, orders: str = "both", first: int = 1,
+         sample: int | None = None, seed: int = 1) -> None:
     """No chunk holds both orders of a pair (a judge that sees the swap next to the original is not judging twice):
     all the AB items come first, then all the BA items, so they fall in different chunks. `orders` limits the pack to
-    one order; `first` numbers the chunks from there, so a second pack adds to a first without overwriting."""
+    one order; `first` numbers the chunks from there, so a second pack adds to a first without overwriting. `sample`
+    packs a seeded random subset of the pairs (both orders of the same pairs; D94: 36 a matchup), reproducible, so a
+    later pack with --skip-done can add the rest."""
     P = load_pairs(pid)
     done = done_keys(pid) if skip_done else set()
     wanted = ("AB", "BA") if orders == "both" else (orders,)
-    items = [(pr, o) for o in wanted for pr in P["pairs"] if (pr["key"], o) not in done]
+    pairs = P["pairs"]
+    if sample is not None and sample < len(pairs):
+        pairs = random.Random(f"{pid}:{seed}").sample(pairs, sample)
+        pairs.sort(key=lambda pr: pr["key"])
+    items = [(pr, o) for o in wanted for pr in pairs if (pr["key"], o) not in done]
     d = out / pid
     d.mkdir(parents=True, exist_ok=True)
     if first == 1:
@@ -119,10 +127,11 @@ def main() -> None:
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("pack"); p.add_argument("pid"); p.add_argument("--out", type=Path, default=DEFAULT_OUT); p.add_argument("--chunk", type=int, default=12); p.add_argument("--skip-done", action="store_true")
     p.add_argument("--orders", choices=["both", "AB", "BA"], default="both"); p.add_argument("--first", type=int, default=1)
+    p.add_argument("--sample", type=int, help="pack a seeded random subset of this many pairs, both orders (D94: 36)"); p.add_argument("--seed", type=int, default=1)
     m = sub.add_parser("merge"); m.add_argument("pid"); m.add_argument("--out", type=Path, default=DEFAULT_OUT); m.add_argument("--judge", default="subagent:claude-opus-5-5")
     a = ap.parse_args()
     if a.cmd == "pack":
-        pack(a.pid, a.out, a.chunk, a.skip_done, a.orders, a.first)
+        pack(a.pid, a.out, a.chunk, a.skip_done, a.orders, a.first, a.sample, a.seed)
     else:
         merge(a.pid, a.out, a.judge)
 
