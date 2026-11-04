@@ -1,7 +1,7 @@
 # Project index
 
 Everything the project is made of, where it lives, and which parts are behind the build. Kept by hand; the date at
-the top is the last time someone checked it against the tree. **Checked: 2026-11-04 01:30.**
+the top is the last time someone checked it against the tree. **Checked: 2026-11-04 14:10.**
 
 Published as a page: [Project Index](https://claude.ai/artifact/CivViGMFsdW3qGvxFdejBr). Republish after editing this file:
 `python3 notes/scripts/md2page.py docs/INDEX.md <out.html> notes/scripts/index-head.html`, then publish `<out.html>` to that URL.
@@ -53,10 +53,11 @@ Regenerate: `cd notes/design/tools && ../../../server/.venv/bin/python gen_<page
 | station r14L-bf-plain, d0211bf0fe7a (1-35 two at once, 36-44 alone) | Blackfrost + MTP | ended at turn 44: cut out (D87) | [Blackfrost Long Round, Station](https://claude.ai/artifact/CDMbm6wFDX7pcB9dvbz6HD); [light, opens on a phone](https://claude.ai/artifact/AdTdRi9YezN45nmfnLroe1) |
 | noir r14L-gm-plain, 0bc7dcdd2afc (alone) | Gemma 4 31B | ended at turn 35: June got out (D87) | [Gemma Long Round, Noir](https://claude.ai/artifact/V2AQjb4FJnkZUE1mi3jzVA); [light, opens on a phone](https://claude.ai/artifact/RYhYUVvhwQ8YmK8kEB7WRV) |
 | station r14L-gm-plain, 94b1421de70a (alone) | Gemma 4 31B | 50 turns, no ending; alarm flat at 57-58 for the last 30 turns (D87) | [Gemma Long Round, Station](https://claude.ai/artifact/DD1qTnpCk68Uqrw7upKP9g); [light, opens on a phone](https://claude.ai/artifact/JfyURRNENpBoEy35qmaKwh) |
+| the six r14L rounds above, read as a player (D89) | one Opus reader a round | the narration alone, turn by turn; the brief `server/tools/READER_BRIEF.md` on the page | [Six Rounds Read](https://claude.ai/artifact/S4xzunL3nhtmzF9UeypB95) (82 KB, opens on a phone) |
 | the local-narrated 25-turn rounds of 11-02 (r11L-*) | Qwen3.8 | read per game in ISSUES P1-P7 | `notes/playtests/2026-11-02-*r11L*` (not published) |
 
 Read a round on a phone: `server/.venv/bin/python server/tools/round_read.py <transcript.md> --out <file> --title "…" --calls <call report URL>` (the call reports run 2-6 MB and the phone viewer will not open them; the light page is about a tenth the size).
-Count a round: `server/.venv/bin/python server/tools/round_counts.py <iid> ...` (D87; one table row a round). Long rounds run one game at a time on the box (D88).
+Count a round: `server/.venv/bin/python server/tools/round_counts.py <iid> ...` (D87; one table row a round). Read a round as a player: hand `server/tools/READER_BRIEF.md` to an Opus subagent (D89); the take goes to `notes/playtests/reads/`. Long rounds run one game at a time on the box (D88).
 Make a page: `server/.venv/bin/python server/tools/round_report.py <iid> --artifact --out <file> --title "…"`, publish the file.
 Every playtest also has a transcript `notes/playtests/<date>-<game>-<tag>.md` and a standalone `.html`.
 
@@ -64,7 +65,7 @@ Every playtest also has a transcript `notes/playtests/<date>-<game>-<tag>.md` an
 
 | Doc | Last change | State |
 |---|---|---|
-| `TESTING.md` | 2026-11-03 | current: sets, keys, runs, the narrator's measure, settling a setting (D67/D71) |
+| `TESTING.md` | 2026-11-04 | current: sets, keys, runs, the narrator's measure, settling a setting (D67/D71), the player's-eye read (D89) |
 | `LOCAL_LLM.md` | 2026-11-01 | **behind**: the `extra` flags and MTP profiles (D70), the GPU wait at start (L6), the Gemma profile |
 | `GAME_AUTHORING.md` | 2026-11-03 | the D77 writer rules are in; **behind**: nerves on the clock, `eldritch:` and `sanity` (D75/D76), the `advance` effect, the nerves notes |
 | `ARCHITECTURE.md` | 2026-11-03 | the guard paragraph is current (D77/D79); **behind**: the tape (D59), thinking per role (D66), called mode as the only mode (D63) |
@@ -88,6 +89,7 @@ Every playtest also has a transcript `notes/playtests/<date>-<game>-<tag>.md` an
 
 | Tool | Does |
 |---|---|
+| `server/tools/READER_BRIEF.md` | the reader's brief: an Opus subagent reads one round as a player, the narration alone, and writes a take with fixed headings (D89); the draft we iterate on |
 | `server/tools/turn.py`, `PLAYER_BRIEF.md` | a Claude Code subagent plays a round (`new`, `play`, `finish`), the same transcript and call report as autoplay (D84); the brief is what the subagent is handed |
 | `server/tools/judge_pack.py` | pair judging by Opus subagents: `pack` writes chunk briefs, `merge` writes the judge file the reports read (D84); never the API judge again |
 | `server/tools/autoplay.py` | plays a scripted round through a running server; `--player <api model>` is retired (D84: players are subagents) |

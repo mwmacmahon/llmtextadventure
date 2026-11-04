@@ -295,6 +295,16 @@ Trials show up here first: `referee.recent_turns` (D59, a test in progress) puts
 the referee's message, fenced as past; the call report shows the block, and the eval harness replays it from each
 record's `recent`.
 
+### A player's-eye read of a round (D89)
+
+After a long round, one Opus subagent reads the transcript as a player would (the narration alone, the panels and
+mechanics skipped, nothing else in the repository) and writes a take with fixed headings: in a sentence, the arc,
+where it went off, where it shone, the late turns, would I keep playing, and a line a turn with flags. The brief it is
+handed is `server/tools/READER_BRIEF.md`, the same pattern as the player's brief; it is the draft we iterate on, so a
+change to what readers look for goes there, not into a prompt typed into a session. The take goes to
+`notes/playtests/reads/<round>.md` and a light page. Readers describe and do not guess at causes; the causes (prompt,
+parameters, context) are worked out from several takes, never from one.
+
 ## The narrator's measure (D60)
 
 The narrator has its own instruments, in `tools/narrator_eval.py`, run through `eval_replay.py`:
