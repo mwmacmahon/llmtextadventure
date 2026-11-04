@@ -1,7 +1,7 @@
 # Project index
 
 Everything the project is made of, where it lives, and which parts are behind the build. Kept by hand; the date at
-the top is the last time someone checked it against the tree. **Checked: 2026-11-04 14:10.**
+the top is the last time someone checked it against the tree. **Checked: 2026-11-04 14:20.**
 
 Published as a page: [Project Index](https://claude.ai/artifact/CivViGMFsdW3qGvxFdejBr). Republish after editing this file:
 `python3 notes/scripts/md2page.py docs/INDEX.md <out.html> notes/scripts/index-head.html`, then publish `<out.html>` to that URL.
@@ -42,9 +42,9 @@ Regenerate: `cd notes/design/tools && ../../../server/.venv/bin/python gen_<page
 | Round | Narrator | Result | Page |
 |---|---|---|---|
 | noir r12-long-plain, dbfacd123f36 | Sonnet | ended at turn 14 on the old dread ending (D71) | [Noir Long Round 1](https://claude.ai/artifact/1LX6yrzkj6BjkwPP7nM94Y) |
-| noir r12b-long-plain, 61ff10eda02a | Sonnet | 50 turns, no ending, shack to the brass key (D73 rules) | [Noir Long Round 2](https://claude.ai/artifact/2ShJpLi45XeibHMRRLwzWh) |
+| noir r12b-long-plain, 61ff10eda02a | Sonnet | 50 turns, no ending, shack to the brass key (D73 rules) | [Noir Long Round 2](https://claude.ai/artifact/2ShJpLi45XeibHMRRLwzWh); [light, opens on a phone](https://claude.ai/artifact/5q4N6jeo6KKd9WXScsY1Le) |
 | noir r12-long-reckless, 9613ea5aa8d1 | Sonnet | 50 turns, no ending; nerves pinned at 100 from turn 20 (D75 rules) | [Noir Long Round 3](https://claude.ai/artifact/RcDnBTmk6okmK141xqQsrG) |
-| station r12-long-plain, 7842ba38283c | Sonnet | 50 turns, no ending; alarm 6 to 59; one morning of the week (08:00 to 10:56) | [Station Long Round 1](https://claude.ai/artifact/5cjfcd5dcAjsYk2R3gun49) |
+| station r12-long-plain, 7842ba38283c | Sonnet | 50 turns, no ending; alarm 6 to 59; one morning of the week (08:00 to 10:56) | [Station Long Round 1](https://claude.ai/artifact/5cjfcd5dcAjsYk2R3gun49); [light, opens on a phone](https://claude.ai/artifact/YB4ufFE4L8KhozHjeX67V7) |
 | noir r13-s4-reckless, 3138dd0248bc (branch stream4, 20 turns) | Sonnet | 9 of 20 turns retold, 7 at the docks gate: the gate now records instead of fighting (D80) | [Stream 4 Trial 1](https://claude.ai/artifact/Xq7zE1ma2DAm8tX8vaeDdZ) |
 | noir r13b-s4-reckless, fe2b4cf4d5a2 (branch stream4, 20 turns, after D80) | Sonnet | no retellings, no forced turn; the location followed the prose | [Stream 4 Trial 2](https://claude.ai/artifact/Jbj7ceQ8QbhEGKtiqGmUxy) |
 | noir r14L-hh-plain, 74d61ff5f0ce (two games at once, D88) | Huihui + MTP | 50 turns, no ending; loops from about turn 27 (D87) | [Huihui Long Round, Noir](https://claude.ai/artifact/GMT3aMS3YdBcobpdaHiZv2); [light, opens on a phone](https://claude.ai/artifact/Vmaxwem89uuBL6GjUyvpWY) |
@@ -53,7 +53,7 @@ Regenerate: `cd notes/design/tools && ../../../server/.venv/bin/python gen_<page
 | station r14L-bf-plain, d0211bf0fe7a (1-35 two at once, 36-44 alone) | Blackfrost + MTP | ended at turn 44: cut out (D87) | [Blackfrost Long Round, Station](https://claude.ai/artifact/CDMbm6wFDX7pcB9dvbz6HD); [light, opens on a phone](https://claude.ai/artifact/AdTdRi9YezN45nmfnLroe1) |
 | noir r14L-gm-plain, 0bc7dcdd2afc (alone) | Gemma 4 31B | ended at turn 35: June got out (D87) | [Gemma Long Round, Noir](https://claude.ai/artifact/V2AQjb4FJnkZUE1mi3jzVA); [light, opens on a phone](https://claude.ai/artifact/RYhYUVvhwQ8YmK8kEB7WRV) |
 | station r14L-gm-plain, 94b1421de70a (alone) | Gemma 4 31B | 50 turns, no ending; alarm flat at 57-58 for the last 30 turns (D87) | [Gemma Long Round, Station](https://claude.ai/artifact/DD1qTnpCk68Uqrw7upKP9g); [light, opens on a phone](https://claude.ai/artifact/JfyURRNENpBoEy35qmaKwh) |
-| the six r14L rounds above, read as a player (D89) | one Opus reader a round | the narration alone, turn by turn; the brief `server/tools/READER_BRIEF.md` on the page | [Six Rounds Read](https://claude.ai/artifact/S4xzunL3nhtmzF9UeypB95) (82 KB, opens on a phone) |
+| the six r14L rounds and the Sonnet noir r12b and station r12 rounds, read as a player (D89) | one Opus reader a round | the narration alone, turn by turn; the brief `server/tools/READER_BRIEF.md` on the page | [Six Rounds Read](https://claude.ai/artifact/S4xzunL3nhtmzF9UeypB95) (106 KB, opens on a phone) |
 | the local-narrated 25-turn rounds of 11-02 (r11L-*) | Qwen3.8 | read per game in ISSUES P1-P7 | `notes/playtests/2026-11-02-*r11L*` (not published) |
 
 Read a round on a phone: `server/.venv/bin/python server/tools/round_read.py <transcript.md> --out <file> --title "…" --calls <call report URL>` (the call reports run 2-6 MB and the phone viewer will not open them; the light page is about a tenth the size).
