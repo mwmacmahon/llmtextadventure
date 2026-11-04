@@ -1219,9 +1219,9 @@ class StationGame(GameBase):
             "The state block records: the clock; each crew member's location, health, mood, stress, suspicion and trust in the station; "
             "what each crew member knows (their facts) and what the station has learned about them; the station's findings; system status "
             "and control; resources; sealed hatches; the player-visible log, one line per turn; open and settled threads; which scripted "
-            "events have happened and what is coming. Do not restate those. Do keep: what the player's assistants have actually said to "
+            "events have happened and what is coming. Do not restate those. Do keep: what the station's assistants have actually said to "
             "each crew member and in what voice; every lie the station told and who believes it; every threat it made and how it was taken; "
-            "which crew member talks to the station and how; the texture of the station (sounds, routines, jokes); anything the player did "
+            "which crew member talks to the station and how; the texture of the station (sounds, routines, jokes); anything the station did "
             "through drones, lights or doors that a crew member half-noticed."
         )
 

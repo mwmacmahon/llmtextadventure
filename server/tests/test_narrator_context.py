@@ -100,7 +100,8 @@ async def test_history_replays_a_called_check_and_never_puts_section_lines_in_th
 def test_history_moves_told_and_lever_lines_into_the_turns_user_message():
     msgs = history_turn("I smoke.", "You light up.\n\n§ Smoke: 10 cigarettes left.\n\n§ Nerve, low. 12 against 7. Success.")
     assert [m.role for m in msgs] == ["user", "assistant"] and msgs[1].content == "You light up."
-    assert msgs[0].content == "[PLAYER]\nI smoke.\n[ENGINE] Smoke: 10 cigarettes left.\n[ENGINE] Nerve, low. 12 against 7. Success."
+    # a told roll is remembered in words, not the die and the tier name (D91, the cold reader)
+    assert msgs[0].content == "[PLAYER]\nI smoke.\n[ENGINE] Smoke: 10 cigarettes left.\n[ENGINE] Nerve, low: it works."
 
 
 def test_a_clue_copied_from_an_unseen_note_is_dropped_before_apply():
@@ -130,7 +131,7 @@ async def test_a_thing_the_player_does_not_carry_is_a_directive(engine: Engine, 
     seen: list = []
     fake.script = lambda system, messages: (seen.append(messages[-1].content), "You reach for a knife you do not have.")[1]
     events = await run(engine, iid, "I pull the knife from my boot and cut the rope.")
-    assert "NOT CARRIED: Frank is not carrying knife: the game has no record of it" in seen[0] and "carrying matches" not in seen[0]
+    assert "NOT CARRIED: knife is not in Frank's pockets list" in seen[0] and "matches is not in" not in seen[0]
     assert "not carried: knife" in events[-1]["data"]["mechanics"]["issues"]
 
 

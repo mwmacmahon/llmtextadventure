@@ -58,7 +58,8 @@ class CheckResult(BaseModel):
 
 
 OUTCOME_WORDS = {"critical_success": "it could not have gone better", "huge_success": "it goes very well", "success": "it works",
-                 "failure": "it fails", "huge_failure": "it fails badly", "critical_failure": "it goes as wrong as it can"}
+                 "failure": "it fails", "huge_failure": "it fails badly",
+                 "critical_failure": "it goes badly wrong and costs something real (a hurt, noise, notice, something lost); it ends nothing"}
 
 
 def outcome_words(outcome: str) -> str:

@@ -22,6 +22,8 @@ for good: they come back through the summary once the window's own start passes 
 """
 from __future__ import annotations
 
+import re
+
 from dataclasses import dataclass, field
 
 from .providers.base import Msg
@@ -65,6 +67,22 @@ class BuiltContext:
 MECHANIC_PREFIX = "§ "
 
 
+_TIERS = ("critical success", "huge success", "success", "critical failure", "huge failure", "failure")
+
+
+def soften_mechanic(m: str) -> str:
+    """A past roll as the narrator should remember it: the attempt and how it went, in words, without the die and the
+    tier name ("Hands, medium. 12 + 2 = 14 against 13. Huge success." -> "Hands, medium: it goes very well."). A dozen
+    tier names in the window outweighed the instruction not to name them (the cold reader, 2026-11-04, D91)."""
+    from .mechanics import outcome_words
+    low = m.lower().rstrip(". ")
+    tier = next((t for t in _TIERS if low.endswith(t)), None)
+    head = re.match(r"^([^.:]+?)(?:\s*check)?\s*[.:]", m)
+    if tier is None or head is None:
+        return m
+    return f"{head.group(1).strip()}: {outcome_words(tier.replace(' ', '_'))}."
+
+
 def history_turn(player: str, narration: str, recorded: dict | None = None) -> list[Msg]:
     """One past turn as the narrator should remember it. The engine's § lines are never in the narrator's
     voice: a check it called comes back as the exchange that happened (its prose up to the call, the call,
@@ -78,7 +96,7 @@ def history_turn(player: str, narration: str, recorded: dict | None = None) -> l
     called = [m.strip() for m in (recorded or {}).get("call_mechanics", [])]
     use_exchange = any(e["role"] == "user" for e in exchange)
     pre = [m for m in mech if not (use_exchange and m.strip() in called)]
-    user = f"{PLAYER_TAG}\n{player}" + ("".join(f"\n[ENGINE] {m}" for m in pre) if pre else "")
+    user = f"{PLAYER_TAG}\n{player}" + ("".join(f"\n[ENGINE] {soften_mechanic(m)}" for m in pre) if pre else "")
     out = [Msg("user", user)]
     if use_exchange:
         out += [Msg(e["role"], e["text"]) for e in exchange if e["text"].strip()]

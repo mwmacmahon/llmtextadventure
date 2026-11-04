@@ -1703,14 +1703,14 @@ def _this_turn_block(res: dict[str, Any], clock_text: str = "") -> str:
     lines = ["THIS TURN (resolved by the engine; narrate these, do not re-decide them)"]
     adj = res.get("adjudication")
     if adj is not None:
-        lines.append(f"- The player's input, as the engine read it (for your orientation only; never restate it, begin with what comes of it): {adj.summary}")
+        lines.append(f"- What the player is attempting, as the engine read it: {adj.summary} Tell the attempt in the story's own words, not these.")
     if res["elapsed"]:
         note = res.get("clock_note") or ""
         if "stopped at" in note and adj is not None and adj.time_minutes > res["elapsed"]:
             lines.append(f"- Time passes: about {res['elapsed']} minutes of the {adj.time_minutes} the player meant to spend; something falls due then (below). "
                          "Narrate up to that moment, in the fiction: the player's intent is simply not finished yet. Never mention minutes being given, the clock stopping, or the engine.")
         else:
-            lines.append(f"- Time passes: about {res['elapsed']} minutes. The clock above already includes it" + (f": it reads {clock_text} when this turn ends" if clock_text else "") + ". Do not narrate beyond it.")
+            lines.append(f"- Time passes: about {res['elapsed']} minutes" + (f"; the clock reads {clock_text} when this turn ends (the clock above shows the end)" if clock_text else ". The clock above already includes it") + ". Stop the prose there; never run past it.")
     elif adj is not None and adj.kind in ("action", "trivial"):
         lines.append("- No appreciable time passes.")
     told = res.get("told")
@@ -1718,7 +1718,7 @@ def _this_turn_block(res: dict[str, Any], clock_text: str = "") -> str:
         for t in told:
             lines.append(f"- Rolled by the engine, {t['label']} ({t['stat']}, {t['difficulty']} difficulty{', against ' + t['target'] if t['target'] else ''}): "
                          f"{outcome_words(t['outcome'])}. When the fiction reaches this attempt, play that and what follows from it. "
-                         "Never soften or reverse it, write no check line for it, and do not name the roll or its tier in the prose."
+                         "Play it in the story; never soften or reverse it, write no check line for it, and never mention dice, numbers or how well it rolled."
                          + (" A failure gives nothing: no name, no fact, no glimpse of what is hidden, no half-success; the attempt costs instead."
                             if "fail" in t["outcome"] else ""))
     else:
