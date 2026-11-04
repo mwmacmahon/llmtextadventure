@@ -404,3 +404,24 @@ def test_saved_games_take_scenario_edits_and_old_saves_still_load(game):
     loaded = game.load_state(old)
     assert loaded.crew_by_id("okafor").trust == 0 and loaded.crew_by_id("okafor").secrets and loaded.findings == []
     assert game.render_bulletin(loaded, "") and game.ui(loaded)
+
+
+def test_the_referee_may_lose_a_crew_member_and_the_station_asks_after_them(game: StationGame):
+    """D81: wherever the prose is canon the state can say "unknown" instead of keeping a stale place. A crew member moved to
+    Unknown drops off the module rows (the world marks them unknown, keeping where they were last), the table lists them as
+    unaccounted for, the next turn's directives ask after them, and a move to a listed module brings them back."""
+    st = fresh(game)
+    voss = next(c for c in st.crew if c.id == "voss")
+    before = voss.location
+    s2, rep, _ = rows(game, st, Change(kind="move", target="voss", value="unknown"))
+    v2 = next(c for c in s2.crew if c.id == "voss")
+    assert v2.location == "Unknown" and not rep.rejected and s2.world.person("voss").status == "unknown"
+    table = game._where_table(s2)
+    cells = [[c.text for c in r] for r in table.rows]
+    assert any(r[0] == "Unaccounted for" and "Voss" in r[1] for r in cells) and not any("Voss" in r[1] for r in cells if r[0] != "Unaccounted for")
+    (d,) = game.turn_directives(s2)
+    assert d.startswith("WHERE IS") and "VOSS" in d and "which module" in d
+    assert "move <crew id> Unknown" in game.referee_rules(s2)
+    s3, rep3, _ = rows(game, s2, Change(kind="move", target="voss", value=before))
+    v3 = next(c for c in s3.crew if c.id == "voss")
+    assert v3.location == before and s3.world.person("voss").status == "present" and game.turn_directives(s3) == []

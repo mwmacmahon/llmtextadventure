@@ -257,8 +257,7 @@ class Engine:
             serious = [r for r in ((done or {}).get("mechanics") or {}).get("rulings", []) if r.get("serious")] if done else []
             if serious and mode != "log" and retells < max_retells and (done or {}).get("mechanics", {}).get("kind") != "command":
                 retells += 1
-                fix = " ".join(f"The problem: {(r.get('what') or '').strip().rstrip('.')}. What to do: {(r.get('fix') or r.get('what') or '').strip()}"
-                               for r in serious).strip()
+                fix = retell_note(serious)
                 yield {"event": "retell", "data": {"turn": done["turn"], "attempt": retells, "rulings": serious, "hint": fix}}
                 gen = self.rewrite_turn(iid, fix, by="referee")
                 continue
@@ -371,10 +370,9 @@ class Engine:
             who = "the referee" if replay.by == "referee" else "the player"
             if replay.hint:
                 extra_directives.append(
-                    f"IMPORTANT, A RETELLING: your previous telling of this turn was not accepted ({who} ruled on it). {replay.hint.strip()} "
-                    "Write the whole turn again from the same facts above. Keep everything that was not the problem. If the player's character "
-                    "moves, name the place he ends up in, in the prose; if the problem was something the player must not learn, leave it out "
-                    "entirely rather than hinting at it. Say nothing about this note, the ruling, or that this is a retelling.")
+                    f"IMPORTANT, A RETELLING: your previous telling of this turn was not accepted ({who} ruled on it).\n  {replay.hint.strip()}\n  "
+                    "Write the whole turn again from the same facts above, with that put right. Keep everything else as it was. "
+                    "Say nothing about this note, the ruling, or that this is a retelling.")
             else:
                 extra_directives.append(
                     "The player asked for this turn to be told again. That telling was set aside: tell it again from the same facts above, "
@@ -895,6 +893,7 @@ class Engine:
                  extra_directives: list[str] | None = None) -> dict[str, Any]:
         doc = state.model_dump(mode="json")
         directives: list[str] = list(extra_directives or [])
+        directives.extend(_hook(game, "turn_directives", state, default=[]) or [])     # the game's own standing lines (noir: "where is Frank?")
         assessments: list[Assessment] = []
         happened: list[spon.Happened] = []
         notes: list[str] = []
@@ -1366,6 +1365,40 @@ def _earlier_turns(store: Store, iid: str, n: int) -> list[tuple[int, str, str]]
     done = sorted(t for t, p in by_turn.items() if "player" in p and "narrator" in p)[-n:]
     return [(t, by_turn[t]["player"], re.sub(r"\n§ .*", "", by_turn[t]["narrator"])) for t in done]
 
+
+
+RETELL_LEADS = {
+    # one paragraph per kind of problem (the user, 11-03: a catch-all note is confusing); {what} is what the referee or the
+    # engine saw, {fix} is the sentence they wrote for the narrator
+    "leak": "Something the player must not learn got into the telling: {what}. {fix} Leave it out entirely: no hint, no paraphrase, no knowing look.",
+    "contradiction": "The telling contradicted the game state: {what}. {fix}",
+    "unauthorized_addition": "The telling added something the rules do not allow: {what}. {fix} Tell it without that addition.",
+    "directive_ignored": "A THIS TURN line was not played: {what}. {fix}",
+    "check_skipped": "An attempt the dice decide was decided in the prose instead: {what}. {fix}",
+    "check_ignored": "A rolled result was not played: {what}. {fix}",
+    "repetition": "{what}. {fix}",
+    "fake_check": "{what}. {fix}",
+    # a problem about where someone is (the user, 11-03): the retelling must pick a place and say it, never leave it
+    # unsaid; the failure mode is "not under the docks, just very clearly under the docks"
+    "location": "The telling put someone somewhere the game does not allow: {what}. {fix} In this retelling, say plainly where they are "
+                "when the turn ends: in the prose if the player's character can see where they are, otherwise in a note line "
+                "[[unseen: <name> is at <place>]], naming a listed place or a new place inside one. Do not leave the place unsaid, "
+                "and do not describe the forbidden place without naming it.",
+}
+
+
+def retell_note(rulings: list[dict]) -> str:
+    """The retelling's instruction: one paragraph per serious ruling, each shaped for its kind of problem."""
+    paras = []
+    for r in rulings:
+        what = (r.get("what") or "").strip().rstrip(".")
+        fix = (r.get("fix") or "").strip()
+        rule = r.get("rule") or ""
+        if "location" in what.lower() or "location" in fix.lower():
+            rule = "location"
+        lead = RETELL_LEADS.get(rule, "The problem: {what}. What to do: {fix}")
+        paras.append(" ".join(lead.format(what=what, fix=fix).split()))
+    return "\n  ".join(paras)
 
 
 @dataclass

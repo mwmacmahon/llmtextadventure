@@ -207,7 +207,7 @@ class NoirGame(GameBase):
             player=player,
             inventory=[Item(**i) for i in sc.get("inventory", [])],
             things=[Item(**i) for i in sc.get("things", [])],
-            people=[Person(**p) for p in sc.get("people", [])],
+            people=[Person(**({"seen_at": p.get("location", "")} | p)) for p in sc.get("people", [])],   # the case file says where they are
             log=[sc.get("opening_log", "The case begins.")],
             threads=[th.Thread(id=t["id"], title=t["title"], opened_turn=0) for t in sc.get("threads", [])],
             hidden=Hidden(events=[Event.model_validate(e) for e in sc.get("events", [])],
@@ -365,7 +365,8 @@ class NoirGame(GameBase):
         s, p = state, state.player
         lines: list[str] = [f"Time: {s.clock.render()}, {part_of_day(s.clock.minute)}"]
         conds = ", ".join(c.name for c in p.conditions) or "none"
-        lines.append(f"{p.name}: at {p.location or 'unknown'}; health {p.health}; nerves {p.dread_tier(p.dread)}; conditions: {conds}.")
+        where = "a place the game has lost track of (say where he is this turn)" if p.location == "Unknown" else (p.location or "unknown")
+        lines.append(f"{p.name}: at {where}; health {p.health}; nerves {p.dread_tier(p.dread)}; conditions: {conds}.")
         if p.dread_tier(p.dread) in NERVES_NOTES:                 # D73: what a bad night does to him, for the narrator
             note = NERVES_NOTES[p.dread_tier(p.dread)]
             if p.dread_tier(p.dread) == "coming apart" and p.sanity < SANITY_LOW:   # D76: hallucinations need low sanity too
@@ -501,6 +502,15 @@ class NoirGame(GameBase):
     def locations(self, state: NoirState) -> list[str]:
         return list(state.places)
 
+    LOST_TRACK = ("WHERE IS FRANK? Last turn he moved and the prose did not say where he ended up, so the game does not know where he is. "
+                  "This turn, pick where he is and say it: in the prose if Frank can tell where he is, otherwise in a line [[unseen: Frank is at <place>]]. "
+                  "Name one of the listed places or a new place inside one (a room, a yard, a stretch of shore). Never leave it unsaid.")
+
+    def turn_directives(self, s: NoirState) -> list[str]:
+        """Standing THIS TURN lines the state itself calls for (the user, 11-03: the referee may say Frank moved without
+        knowing where; the next turn then asks the narrator to place him)."""
+        return [self.LOST_TRACK] if s.player.location == "Unknown" else []
+
     def _gate_lines(self, s: NoirState) -> list[str]:
         """The gated places and their flags, so the referee writes the flag row when the prose shows the way in."""
         gates = self.content.scenarios().get(s.case.id, {}).get("gated_places") or {}
@@ -584,6 +594,7 @@ class NoirGame(GameBase):
             "Places: " + ", ".join(s.places) + ". A move or a location value is one of these. A spot inside a listed place (a booth, a desk, the stairs) is that place. A room inside one (an office, an upstairs room) and a place the prose introduces that lies inside none of them (a bar on another street, a garage he is driven to) are new: new place value=<its name> field=<the listed place it is inside, or the district streets it lies off>, then the move. If the prose only says he is out on the street, use that district's streets.",
             "Rows this game records:",
             "- move player <place>; move <person id> <place>: where they are when the prose ends. Someone still on the way (the creature dragging him toward the water, a man heading for the docks) has not arrived: that is a soon row with the minutes, and the move is reported on the turn they get there.",
+            "- move player Unknown: the prose had Frank leave where he was (dragged, carried, knocked out and moved, lost in the dark, on the way somewhere) and did not show him arriving at a listed place. Write this rather than leaving him recorded where he no longer is; the engine then asks the narrator to say where he is next turn.",
             "- set player.health <" + "|".join(HEALTH_VALUES) + ">, only when the prose says Frank was hurt or treated.",
             "- add player.dread ±n: 0 on an ordinary turn, including successes and calm conversations. Up, by how badly it would shake a tired man. Tension with people is small: an interrogation, a threat in words, a hand on his wrist, bad news, a cell door: +0 to +2, and 0 again the turn after if nothing new frightens him. +3 to +10 for a blow, a shot fired at him, or something wrong in a small way (a sound from under the floor, a smell, a shape seen for a second, a word nobody should know); +10 to +25 when he is badly hurt, fights for his life, or meets the thing itself or what it leaves behind; something he only imagined (what the nerves note describes) +1 to +2, never more. Down: -5 to -20 when he rests, drinks with someone he trusts, wins clearly, reaches safety or is treated kindly: an hour's drink and talk with a friend is -20, a clear win -5 to -10. The engine moves it with time as well (down when nothing frightens him, up while the thing is near) and handles a cigarette's calm: never count those here.",
             "- set player.conditions +<name> or -<name>: conditions with mechanical weight are " + ", ".join(k for k in CONDITION_MODS if k != WITHDRAWAL) + "; others are allowed as flavour; '" + WITHDRAWAL + "' is the engine's, never add or remove it. Remove only a condition the state lists.",
@@ -1406,7 +1417,8 @@ class NoirGame(GameBase):
 
     # ---- drift (after_turn) --------------------------------------------------
     def after_turn(self, state: NoirState, info: TurnInfo) -> NoirState:
-        """Nicotine: the counter runs with the clock; after three hours without, withdrawal (an engine condition) and
+        """U1: the player's cards show where Frank last saw a person, so each turn the people where he is are marked seen there.
+        Nicotine: the counter runs with the clock; after three hours without, withdrawal (an engine condition) and
         +1 dread per further hour. Nerves (D75) move with the clock: down 1 per 20 minutes on a turn when nothing
         frightened him (1 per 10 somewhere safe), a night in a bed takes SLEEP_RELIEF off, and while one of the case's
         eldritch characters is where Frank is they rise 1 per 2 minutes; in withdrawal nothing passive brings them down
@@ -1415,6 +1427,9 @@ class NoirGame(GameBase):
             return state
         s = state.model_copy(deep=True)
         p = s.player
+        for q in s.people:                                   # U1: seen where Frank is, this turn
+            if q.met and q.location and q.location != "Unknown" and self._same_spot(s, q.location, p.location):
+                q.seen_at = q.location
         if p.health == "dead":
             return state
         frightened = any(_dread_rose(ln) for ln in info.applied)     # a referee add this turn: no passive easing
@@ -1493,7 +1508,7 @@ class NoirGame(GameBase):
                         EntityCard(
                             id=q.id, title=q.name, subtitle=f"{q.role} · {q.location or 'unknown'}",
                             badges=[Chip(label="attitude", value=q.attitude_word), *([Chip(label="status", value=q.status)] if q.status != "alive" else [])],
-                            details=[Chip(label="Location", value=q.location or "unknown"), Chip(label="Attitude", value=f"{q.attitude_word} ({q.attitude:+d})"),
+                            details=[Chip(label="Last seen", value=q.seen_at or "unknown"), Chip(label="Attitude", value=f"{q.attitude_word} ({q.attitude:+d})"),
                                      ],
                             notes=q.facts,
                         )

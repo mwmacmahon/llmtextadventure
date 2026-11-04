@@ -674,3 +674,33 @@ def test_the_referee_is_told_the_gated_places(game: NoirGame):
     rules = game.referee_rules(st)
     assert "Gated places: Under the docks needs the flag under_docks_found" in rules and "write the flag row" in rules
     assert "Tension with people is small" in rules
+
+
+def test_the_referee_may_lose_frank_and_the_next_turn_asks_where_he_is(game: NoirGame):
+    """The user (11-03): a way for the referee to say the player moved without knowing where; the next turn's directives
+    then tell the narrator to place him. "Unknown" is a listed place; it carries the request."""
+    _, st = game.new_instance({})
+    s2, rep = apply(game, st, ref(C(kind="move", target="player", value="Unknown")))
+    assert s2.player.location == "Unknown" and not rep.rejected
+    assert game.turn_directives(s2) == [game.LOST_TRACK] and "WHERE IS FRANK?" in game.LOST_TRACK and "[[unseen: Frank is at <place>]]" in game.LOST_TRACK
+    assert "lost track of" in game.render_bulletin(s2, "")
+    assert "move player Unknown" in game.referee_rules(s2)
+    s3, _ = apply(game, s2, ref(C(kind="move", target="player", value="Police station")))
+    assert s3.player.location == "Police station" and game.turn_directives(s3) == []
+
+
+def test_the_cards_show_where_frank_last_saw_someone_not_where_they_are(game: NoirGame):
+    """U1: the creature leaves the shack while Frank is out cold; its card keeps saying Rooftop shack until he sees it again."""
+    from engine.game import TurnInfo
+    _, st = game.new_instance({})
+    cr = st.person("creature")
+    assert cr.seen_at == "Rooftop shack"
+    s2, _ = apply(game, st, ref(C(kind="move", target="creature", value="Under the docks")))
+    s2 = game.after_turn(s2, TurnInfo(turn=1, elapsed_minutes=1, rng=__import__("random").Random(1), applied=[]))
+    cards = next(p for p in game.ui(s2).panels if getattr(p, "type", "") == "entity_cards")
+    card = next(c for c in cards.cards if "thing" in c.title.lower())
+    details = {d.label: d.value for d in card.details}
+    assert "Location" not in details and details["Last seen"] == "Rooftop shack" and s2.person("creature").location == "Under the docks"
+    s3, _ = apply(game, s2, ref(C(kind="move", target="player", value="Under the docks")))
+    s3 = game.after_turn(s3, TurnInfo(turn=2, elapsed_minutes=1, rng=__import__("random").Random(2), applied=[]))
+    assert s3.person("creature").seen_at == "Under the docks"

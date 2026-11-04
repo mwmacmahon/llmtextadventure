@@ -66,7 +66,8 @@ class Person(BaseModel):
     role: str
     description: str = ""           # fixed; the prefix
     aliases: list[str] = Field(default_factory=list)    # script: what the prose calls them besides the name ("the creature", "the caller")
-    location: str = ""
+    location: str = ""              # where they are (the referee's); the player never sees this directly
+    seen_at: str = ""               # where Frank last saw them (U1): what the player's card shows
     attitude: int = 0               # -5..5 toward Frank
     mood: str = ""                  # a word for how they are right now; the referee may set it
     condition: str = ""             # their body's state in a few words ("wounded, crawling"); a character, human or not (D46)
