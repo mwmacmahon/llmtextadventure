@@ -1,7 +1,7 @@
 # Project index
 
 Everything the project is made of, where it lives, and which parts are behind the build. Kept by hand; the date at
-the top is the last time someone checked it against the tree. **Checked: 2026-11-04 14:20.**
+the top is the last time someone checked it against the tree. **Checked: 2026-11-04 15:45.**
 
 Published as a page: [Project Index](https://claude.ai/artifact/CivViGMFsdW3qGvxFdejBr). Republish after editing this file:
 `python3 notes/scripts/md2page.py docs/INDEX.md <out.html> notes/scripts/index-head.html`, then publish `<out.html>` to that URL.
@@ -74,9 +74,10 @@ Every playtest also has a transcript `notes/playtests/<date>-<game>-<tag>.md` an
 
 ## 5. Notes (`notes/`, gitignored, the project's memory)
 
-- `DECISIONS.md`: every decision with why, evidence and alternatives, D1-D76. Newest at the end.
+- `DECISIONS.md`: every decision with why, evidence and alternatives, D1-D90. Newest at the end.
 - `ISSUES.md`: the open register at the top ("Open now"), dated fixes below. Groups: noir nerves (NV), local play (P), narrator eval (E/G/L), the narrator's feed (N), time (T), identity (I), the D56 review (R).
 - `STATUS.md`: resume blocks, newest first.
+- `RESEARCH-2026-11-04-late-round-degeneration.md`: the causes behind the eight player's-eye reads (D90): per-turn profiles, the chant measured (Qwen3.8 only, within-turn), nine engine and text faults traced to their lines, the fixes in order, the follow-up experiments.
 - `README.md`: four lines on the folder.
 - Design: `DESIGN.md` (the original, §15 the decision log before DECISIONS.md), `DESIGN2.md` and `DESIGN2-LOG.md` (the structured world).
 - Dated: `HANDOFF-2026-10-29/30.md`, `HANDOFF-2026-11-01-qwen38-trial.md`, `SESSION-2026-10-30-night.md`, `PLAYTEST-2026-10-29.md`, `OVERNIGHT-2026-11-01.md`, `GENERATION-PARAMS-2026-11-01.md`, `TRIAL-next-local-model.md`, `TASK-narrator-review.md`, `TASK-N5-fix-declines.md`.
@@ -98,6 +99,7 @@ Every playtest also has a transcript `notes/playtests/<date>-<game>-<tag>.md` an
 | `server/tools/eval_report.py` | a page for any structured run |
 | `server/tools/round_report.py` | a page of every model call in a played game |
 | `server/tools/round_read.py` | a played round as a light page a phone can open: the turn.py transcript, each turn's input and prose, mechanics folded |
+| `server/tools/round_profile.py` | one line a turn of a played round: the narrator's context, output, requests, retells, reasoning and force-closes, the meter, and the chant measures refrain % and copy % (D90) |
 | `server/tools/round_counts.py` | the long-round counts (retells, FORCED, rulings, rejections, clock, meter, pace, invention, repetition) for one or more instances, as a table (D87) |
 | `server/tools/llm.py` | `use <profile>` swaps the box's model; `show`, `status` |
 | `server/tools/local_smoke.py` | three roles against a local server, cache check |
