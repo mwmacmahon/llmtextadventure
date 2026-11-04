@@ -1382,7 +1382,8 @@ RETELL_LEADS = {
     # unsaid; the failure mode is "not under the docks, just very clearly under the docks"
     "location": "The telling put someone somewhere the game does not allow: {what}. Where they are instead is yours to decide. "
                 "In this retelling, say plainly where they are when the turn ends: in the prose if the player's character can see where "
-                "they are, otherwise in a note line [[unseen: <name> is at <place>]], naming a listed place or a new place inside one. "
+                "they are, otherwise in a note line [[unseen: <name> is at <place>]]. Use one of the game's listed places, or a place of your own "
+                "with a word on where it is (a back room at the station, a yard by the warehouses, a stretch of shore). "
                 "Do not leave the place unsaid, and do not describe the forbidden place without naming it.",
 }
 

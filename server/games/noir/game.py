@@ -504,7 +504,7 @@ class NoirGame(GameBase):
 
     LOST_TRACK = ("WHERE IS FRANK? Last turn he moved and the prose did not say where he ended up, so the game does not know where he is. "
                   "This turn, pick where he is and say it: in the prose if Frank can tell where he is, otherwise in a line [[unseen: Frank is at <place>]]. "
-                  "Name one of the listed places or a new place inside one (a room, a yard, a stretch of shore). Never leave it unsaid.")
+                  "Use one of the listed places, or a place of your own with a word on where it is (a back room at the station, a yard by the warehouses, a stretch of shore). Never leave it unsaid.")
 
     def turn_directives(self, s: NoirState) -> list[str]:
         """Standing THIS TURN lines the state itself calls for (the user, 11-03: the referee may say Frank moved without
