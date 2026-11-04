@@ -48,17 +48,22 @@ def done_keys(pid: str) -> set[tuple[str, str]]:
     return {(j["key"], j["order"]) for j in json.loads(p.read_text())["judgements"] if "choice" in j}
 
 
-def pack(pid: str, out: Path, chunk: int, skip_done: bool) -> None:
+def pack(pid: str, out: Path, chunk: int, skip_done: bool, orders: str = "both", first: int = 1) -> None:
+    """No chunk holds both orders of a pair (a judge that sees the swap next to the original is not judging twice):
+    all the AB items come first, then all the BA items, so they fall in different chunks. `orders` limits the pack to
+    one order; `first` numbers the chunks from there, so a second pack adds to a first without overwriting."""
     P = load_pairs(pid)
     done = done_keys(pid) if skip_done else set()
-    items = [(pr, o) for pr in P["pairs"] for o in ("AB", "BA") if (pr["key"], o) not in done]
+    wanted = ("AB", "BA") if orders == "both" else (orders,)
+    items = [(pr, o) for o in wanted for pr in P["pairs"] if (pr["key"], o) not in done]
     d = out / pid
     d.mkdir(parents=True, exist_ok=True)
-    for old in d.glob("chunk-*.md"):
-        old.unlink()
+    if first == 1:
+        for old in d.glob("chunk-*.md"):
+            old.unlink()
     system = PAIR_SYSTEM + _values_from_user()
-    n = 0
-    for n, start in enumerate(range(0, len(items), chunk), 1):
+    n = first - 1
+    for n, start in enumerate(range(0, len(items), chunk), first):
         part = items[start:start + chunk]
         lines = [f"# Judge {len(part)} pairs of tellings (chunk {n:02d} of {pid})", "",
                  "You are the judge. Read the instructions, then every item, and write ONE file when you are done:", "",
@@ -75,7 +80,7 @@ def pack(pid: str, out: Path, chunk: int, skip_done: bool) -> None:
         for i, (pr, o) in enumerate(part, 1):
             lines += [f"### Item {i}: key {pr['key']}, order {o}", "", item_text(pr, o), ""]
         (d / f"chunk-{n:02d}.md").write_text("\n".join(lines))
-    print(f"{pid}: {len(items)} items ({len(done)} already judged) in {n} chunks under {d}")
+    print(f"{pid}: {len(items)} items ({len(done)} already judged) in chunks {first}-{n} under {d}")
 
 
 def merge(pid: str, out: Path, judge: str) -> None:
@@ -112,11 +117,12 @@ def merge(pid: str, out: Path, judge: str) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
-    p = sub.add_parser("pack"); p.add_argument("pid"); p.add_argument("--out", type=Path, default=DEFAULT_OUT); p.add_argument("--chunk", type=int, default=30); p.add_argument("--skip-done", action="store_true")
+    p = sub.add_parser("pack"); p.add_argument("pid"); p.add_argument("--out", type=Path, default=DEFAULT_OUT); p.add_argument("--chunk", type=int, default=12); p.add_argument("--skip-done", action="store_true")
+    p.add_argument("--orders", choices=["both", "AB", "BA"], default="both"); p.add_argument("--first", type=int, default=1)
     m = sub.add_parser("merge"); m.add_argument("pid"); m.add_argument("--out", type=Path, default=DEFAULT_OUT); m.add_argument("--judge", default="subagent:claude-opus-5-5")
     a = ap.parse_args()
     if a.cmd == "pack":
-        pack(a.pid, a.out, a.chunk, a.skip_done)
+        pack(a.pid, a.out, a.chunk, a.skip_done, a.orders, a.first)
     else:
         merge(a.pid, a.out, a.judge)
 
