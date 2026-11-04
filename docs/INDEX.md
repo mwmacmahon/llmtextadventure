@@ -101,3 +101,4 @@ Every playtest also has a transcript `notes/playtests/<date>-<game>-<tag>.md` an
 3. Narrator Measure and Eval runs pages: rebuild from the current runs or retire them in favour of the trials report.
 4. `WRITEUP-checks-and-decisions.md`: the adjudicator is the one local model, not the A3B.
 5. The station's own nerves analogue (the alarm) has not had D72-D76's reading; ISSUES NV2 covers the sanity discussion.
+6. The player UI (the web client) is a placeholder and needs heavy work (ISSUES U2); every line a model is handed needs the plain-language pass (ISSUES W1, high priority).
