@@ -57,9 +57,9 @@ Every playtest also has a transcript `notes/playtests/<date>-<game>-<tag>.md` an
 |---|---|---|
 | `TESTING.md` | 2026-11-03 | current: sets, keys, runs, the narrator's measure, settling a setting (D67/D71) |
 | `LOCAL_LLM.md` | 2026-11-01 | **behind**: the `extra` flags and MTP profiles (D70), the GPU wait at start (L6), the Gemma profile |
-| `GAME_AUTHORING.md` | 2026-11-03 (stream4) | the D77 writer rules are in; **behind**: nerves on the clock, `eldritch:` and `sanity` (D75/D76), the `advance` effect, the nerves notes |
-| `ARCHITECTURE.md` | 2026-11-03 (stream4) | the guard paragraph is current (D77/D79); **behind**: the tape (D59), thinking per role (D66), called mode as the only mode (D63) |
-| `WRITING_FOR_MODELS.md` (on stream4 until merged) | 2026-11-03 | the style guide for every line a model is handed and for scenario text: dos, don'ts with the day's befores, a checklist; the spec for the plain-language pass (ISSUES W1) |
+| `GAME_AUTHORING.md` | 2026-11-03 | the D77 writer rules are in; **behind**: nerves on the clock, `eldritch:` and `sanity` (D75/D76), the `advance` effect, the nerves notes |
+| `ARCHITECTURE.md` | 2026-11-03 | the guard paragraph is current (D77/D79); **behind**: the tape (D59), thinking per role (D66), called mode as the only mode (D63) |
+| `WRITING_FOR_MODELS.md` | 2026-11-03 | the style guide for every line a model is handed and for scenario text: dos, don'ts with the day's befores, a checklist; the spec for the plain-language pass (ISSUES W1) |
 | `INDEX.md` | this file | |
 
 ## 5. Notes (`notes/`, gitignored, the project's memory)
@@ -73,7 +73,7 @@ Every playtest also has a transcript `notes/playtests/<date>-<game>-<tag>.md` an
 - Content: `notes/content/noir/{prefix.md, scenarios/kessler-girl.yml}`, `notes/content/station/...`: the games' text and cases. The scenario files are the game design as much as the code is.
 - Results: `notes/eval/sets/` (test sets and keys), `notes/eval/runs/` (structured runs), `notes/eval/narrator/{corpora,runs,rubric,pairs,judge,judgements}/`, `notes/playtests/`, `notes/eval/reports/`.
 - Scripts kept from sessions: `notes/scripts/` (the run chains: anchors, the MTP and Gemma trials, the transfer, the run-file diff).
-- Branches: `2.0` is the line of work; `stream4` (worktree `../llmtextadventure-stream4`, its own server `api-stream4` on :8014 and its own `data/`) carries D77/D79 until it is merged.
+- Branches: `2.0` is the line of work; `stream4` (D77-D81, the writing guide) was merged into it on 2026-11-03 19:34. The worktree `../llmtextadventure-stream4` and the `api-stream4` launch entry (:8014) remain for the next branch. Never `git add` a directory that holds a symlinked venv (D82).
 
 ## 6. Tools and scripts
 
