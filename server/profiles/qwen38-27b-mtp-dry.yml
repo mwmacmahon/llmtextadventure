@@ -1,0 +1,9 @@
+# R1 experiment 1 (D92): qwen38-27b-mtp exactly (Huihui, MTP draft head, 512-token thinking on every request) with one
+# change, DRY on the narrator: 0.8 / 1.75 / 2 over the last 2048 tokens, the game's markers and line ends as breakers
+# (the 11-01 ladder's N4 settings, qwen38-27b-narr-512-dry). The box stays on qwen38-27b-mtp (same model file, same
+# server block); the game is started with TA_PROFILE=qwen38-27b-mtp-dry so only the request changes. Measure: the
+# refrain and copy columns of tools/round_profile.py over a 50-turn station round against 515e54c89a0a.
+model: Huihui-Qwen3.8-27B-abliterated-UD-Q5_K_XL.gguf
+server: {ctx: 98304, ckpt: 2048, kv: q8_0, think_budget: 512, extra: "--spec-type draft-mtp --spec-draft-n-max 3"}
+roles:
+  narrator: {thinking: true, thinking_budget: 512, reasoning_effort: low, think_after_call: true, dry_multiplier: 0.8, dry_base: 1.75, dry_allowed_length: 2, dry_penalty_last_n: 2048, dry_sequence_breakers: ["\n", ":", "\"", "*", "<<", ">>", "[[", "]]"]}
