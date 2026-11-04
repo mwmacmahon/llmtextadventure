@@ -79,7 +79,9 @@ Every playtest also has a transcript `notes/playtests/<date>-<game>-<tag>.md` an
 
 | Tool | Does |
 |---|---|
-| `server/tools/autoplay.py` | plays a round through a running server; `--player <model>` lets a model play; writes the transcript and the call report |
+| `server/tools/turn.py`, `PLAYER_BRIEF.md` | a Claude Code subagent plays a round (`new`, `play`, `finish`), the same transcript and call report as autoplay (D84); the brief is what the subagent is handed |
+| `server/tools/judge_pack.py` | pair judging by Opus subagents: `pack` writes chunk briefs, `merge` writes the judge file the reports read (D84); never the API judge again |
+| `server/tools/autoplay.py` | plays a scripted round through a running server; `--player <api model>` is retired (D84: players are subagents) |
 | `server/tools/eval_replay.py` | the test harness: `run` (structured sets), `grade`, `check`, `narrate`, `rubric`, `pairs`, `judge-pairs --judge`, `narrator-calls`, `narrator-corpus`, `narrator-report`, `reapply` |
 | `server/tools/narrator_eval.py` | the narrator measure's library (corpora, replay, rubric, pairs, judge) |
 | `server/tools/eval_report.py` | a page for any structured run |
