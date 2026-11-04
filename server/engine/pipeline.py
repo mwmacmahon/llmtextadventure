@@ -1380,10 +1380,10 @@ RETELL_LEADS = {
     "fake_check": "{what}. {fix}",
     # a problem about where someone is (the user, 11-03): the retelling must pick a place and say it, never leave it
     # unsaid; the failure mode is "not under the docks, just very clearly under the docks"
-    "location": "The telling put someone somewhere the game does not allow: {what}. {fix} In this retelling, say plainly where they are "
-                "when the turn ends: in the prose if the player's character can see where they are, otherwise in a note line "
-                "[[unseen: <name> is at <place>]], naming a listed place or a new place inside one. Do not leave the place unsaid, "
-                "and do not describe the forbidden place without naming it.",
+    "location": "The telling put someone somewhere the game does not allow: {what}. Where they are instead is yours to decide. "
+                "In this retelling, say plainly where they are when the turn ends: in the prose if the player's character can see where "
+                "they are, otherwise in a note line [[unseen: <name> is at <place>]], naming a listed place or a new place inside one. "
+                "Do not leave the place unsaid, and do not describe the forbidden place without naming it.",
 }
 
 

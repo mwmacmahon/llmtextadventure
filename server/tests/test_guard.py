@@ -256,10 +256,11 @@ def test_the_retelling_note_has_one_paragraph_per_kind_of_problem():
     """The user (11-03): a catch-all note is confusing; and a location problem must make the narrator pick a place and say it."""
     from engine.pipeline import retell_note
     note = retell_note([{"rule": "leak", "what": "the prose names Szabo", "fix": "Keep the man unnamed."},
-                        {"rule": "contradiction", "what": "player.location: reachable only once the way in is found (Under the docks)", "fix": "Keep him at Rooftop shack."},
+                        {"rule": "contradiction", "what": "player.location: Under the docks is not open to Frank yet", "fix": "a fix the note must not pass through"},
                         {"rule": "repetition", "what": "this telling repeats turn 3", "fix": "Tell only what is new."}])
     paras = note.split("\n  ")
     assert len(paras) == 3
     assert paras[0].startswith("Something the player must not learn got into the telling: the prose names Szabo.") and "no paraphrase" in paras[0]
     assert paras[1].startswith("The telling put someone somewhere the game does not allow:") and "[[unseen: <name> is at <place>]]" in paras[1] and "Do not leave the place unsaid" in paras[1]
+    assert "must not pass through" not in paras[1] and "yours to decide" in paras[1]      # the note never tells the narrator where to keep someone
     assert paras[2] == "this telling repeats turn 3. Tell only what is new."
