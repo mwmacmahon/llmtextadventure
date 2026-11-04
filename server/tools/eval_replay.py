@@ -942,6 +942,13 @@ def main() -> None:
     args = ap.parse_args()
     if args.cmd in ("rubric", "pairs", "judge-pairs", "narrator-report", "narrator-calls"):
         import narrator_eval as ne
+        if args.cmd in ("rubric", "judge-pairs") and not os.environ.get("TA_API_JUDGE"):
+            # D84 (2026-11-03): judging is a Claude Code subagent's job, never an API call. The night's API judge
+            # runs spent over $100 and hit the key's monthly limit. tools/judge_pack.py packs pairs for subagents.
+            # A deliberate, user-sanctioned API judging sets TA_API_JUDGE=1.
+            print(f"refused: {args.cmd} with an API judge ({args.judge}) is off (D84); pack the pairs for subagents with "
+                  "tools/judge_pack.py, or set TA_API_JUDGE=1 only when the user has said so", file=sys.stderr)
+            sys.exit(3)
         if args.cmd == "rubric":
             for r in args.runs:
                 asyncio.run(ne.rubric(r, args.judge))
