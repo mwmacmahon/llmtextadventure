@@ -47,14 +47,15 @@ Regenerate: `cd notes/design/tools && ../../../server/.venv/bin/python gen_<page
 | station r12-long-plain, 7842ba38283c | Sonnet | 50 turns, no ending; alarm 6 to 59; one morning of the week (08:00 to 10:56) | [Station Long Round 1](https://claude.ai/artifact/5cjfcd5dcAjsYk2R3gun49) |
 | noir r13-s4-reckless, 3138dd0248bc (branch stream4, 20 turns) | Sonnet | 9 of 20 turns retold, 7 at the docks gate: the gate now records instead of fighting (D80) | [Stream 4 Trial 1](https://claude.ai/artifact/Xq7zE1ma2DAm8tX8vaeDdZ) |
 | noir r13b-s4-reckless, fe2b4cf4d5a2 (branch stream4, 20 turns, after D80) | Sonnet | no retellings, no forced turn; the location followed the prose | [Stream 4 Trial 2](https://claude.ai/artifact/Jbj7ceQ8QbhEGKtiqGmUxy) |
-| noir r14L-hh-plain, 74d61ff5f0ce (two games at once, D88) | Huihui + MTP | 50 turns, no ending; loops from about turn 27 (D87) | [Huihui Long Round, Noir](https://claude.ai/artifact/GMT3aMS3YdBcobpdaHiZv2) |
-| station r14L-hh-plain, 515e54c89a0a (two at once, D88) | Huihui + MTP | 50 turns, no ending; Day 1 08:00 to 14:01; loops from about turn 30 (D87) | [Huihui Long Round, Station](https://claude.ai/artifact/TPJyU1AKsUiB2rToktNPi8) |
-| noir r14L-bf-plain, dce736f0e85c (1-41 two at once, 42-50 alone) | Blackfrost + MTP | 50 turns, no ending; nerves pinned 95-100 (D87) | [Blackfrost Long Round, Noir](https://claude.ai/artifact/8wEHWJqXuYyJoBtyqNa4Jo) |
-| station r14L-bf-plain, d0211bf0fe7a (1-35 two at once, 36-44 alone) | Blackfrost + MTP | ended at turn 44: cut out (D87) | [Blackfrost Long Round, Station](https://claude.ai/artifact/CDMbm6wFDX7pcB9dvbz6HD) |
-| noir r14L-gm-plain, 0bc7dcdd2afc (alone) | Gemma 4 31B | ended at turn 35: June got out (D87) | [Gemma Long Round, Noir](https://claude.ai/artifact/V2AQjb4FJnkZUE1mi3jzVA) |
-| station r14L-gm-plain, 94b1421de70a (alone) | Gemma 4 31B | 50 turns, no ending; alarm flat at 57-58 for the last 30 turns (D87) | [Gemma Long Round, Station](https://claude.ai/artifact/DD1qTnpCk68Uqrw7upKP9g) |
+| noir r14L-hh-plain, 74d61ff5f0ce (two games at once, D88) | Huihui + MTP | 50 turns, no ending; loops from about turn 27 (D87) | [Huihui Long Round, Noir](https://claude.ai/artifact/GMT3aMS3YdBcobpdaHiZv2); [light, opens on a phone](https://claude.ai/artifact/Vmaxwem89uuBL6GjUyvpWY) |
+| station r14L-hh-plain, 515e54c89a0a (two at once, D88) | Huihui + MTP | 50 turns, no ending; Day 1 08:00 to 14:01; loops from about turn 30 (D87) | [Huihui Long Round, Station](https://claude.ai/artifact/TPJyU1AKsUiB2rToktNPi8); [light, opens on a phone](https://claude.ai/artifact/FQy9h1SSkrYUDaUmUeMUdt) |
+| noir r14L-bf-plain, dce736f0e85c (1-41 two at once, 42-50 alone) | Blackfrost + MTP | 50 turns, no ending; nerves pinned 95-100 (D87) | [Blackfrost Long Round, Noir](https://claude.ai/artifact/8wEHWJqXuYyJoBtyqNa4Jo); [light, opens on a phone](https://claude.ai/artifact/5jJSBPbCazWCjLbhevrdKs) |
+| station r14L-bf-plain, d0211bf0fe7a (1-35 two at once, 36-44 alone) | Blackfrost + MTP | ended at turn 44: cut out (D87) | [Blackfrost Long Round, Station](https://claude.ai/artifact/CDMbm6wFDX7pcB9dvbz6HD); [light, opens on a phone](https://claude.ai/artifact/AdTdRi9YezN45nmfnLroe1) |
+| noir r14L-gm-plain, 0bc7dcdd2afc (alone) | Gemma 4 31B | ended at turn 35: June got out (D87) | [Gemma Long Round, Noir](https://claude.ai/artifact/V2AQjb4FJnkZUE1mi3jzVA); [light, opens on a phone](https://claude.ai/artifact/RYhYUVvhwQ8YmK8kEB7WRV) |
+| station r14L-gm-plain, 94b1421de70a (alone) | Gemma 4 31B | 50 turns, no ending; alarm flat at 57-58 for the last 30 turns (D87) | [Gemma Long Round, Station](https://claude.ai/artifact/DD1qTnpCk68Uqrw7upKP9g); [light, opens on a phone](https://claude.ai/artifact/JfyURRNENpBoEy35qmaKwh) |
 | the local-narrated 25-turn rounds of 11-02 (r11L-*) | Qwen3.8 | read per game in ISSUES P1-P7 | `notes/playtests/2026-11-02-*r11L*` (not published) |
 
+Read a round on a phone: `server/.venv/bin/python server/tools/round_read.py <transcript.md> --out <file> --title "…" --calls <call report URL>` (the call reports run 2-6 MB and the phone viewer will not open them; the light page is about a tenth the size).
 Count a round: `server/.venv/bin/python server/tools/round_counts.py <iid> ...` (D87; one table row a round). Long rounds run one game at a time on the box (D88).
 Make a page: `server/.venv/bin/python server/tools/round_report.py <iid> --artifact --out <file> --title "…"`, publish the file.
 Every playtest also has a transcript `notes/playtests/<date>-<game>-<tag>.md` and a standalone `.html`.
@@ -94,6 +95,7 @@ Every playtest also has a transcript `notes/playtests/<date>-<game>-<tag>.md` an
 | `server/tools/narrator_eval.py` | the narrator measure's library (corpora, replay, rubric, pairs, judge) |
 | `server/tools/eval_report.py` | a page for any structured run |
 | `server/tools/round_report.py` | a page of every model call in a played game |
+| `server/tools/round_read.py` | a played round as a light page a phone can open: the turn.py transcript, each turn's input and prose, mechanics folded |
 | `server/tools/round_counts.py` | the long-round counts (retells, FORCED, rulings, rejections, clock, meter, pace, invention, repetition) for one or more instances, as a table (D87) |
 | `server/tools/llm.py` | `use <profile>` swaps the box's model; `show`, `status` |
 | `server/tools/local_smoke.py` | three roles against a local server, cache check |
