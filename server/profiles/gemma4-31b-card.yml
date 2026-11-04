@@ -1,0 +1,7 @@
+# D94 (2026-11-04), the Gemma ladder rung G1: gemma4-31b with the model card's sampler on the narrator, 1.0 / 0.95 / 64 / 0,
+# in place of the Qwen line (0.7 / 0.8 / 20 / 0) every Gemma run so far took from config.llamacpp.yml (profile roles {}).
+# Same model file and server block as gemma4-31b: the box stays loaded; TA_PROFILE=gemma4-31b-card picks the role line.
+model: gemma-4-31B-it-uncensored-heretic-Q5_K_M.gguf
+server: {ctx: auto, ckpt: 2048, kv: q8_0, think_budget: -1}
+roles:
+  narrator: {temperature: 1.0, top_p: 0.95, top_k: 64, min_p: 0.0}

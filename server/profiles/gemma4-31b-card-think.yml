@@ -1,0 +1,7 @@
+# D94, the Gemma ladder rung G3: G1's sampler with the narrator thinking, at most 512 tokens (parity with the Huihui base,
+# qwen38-27b-narr-think-512, which thinks on every request; every Gemma run so far had thinking off). The server block
+# differs (think_budget 512), so this rung is a box restart: tools/llm.py use gemma4-31b-card-think.
+model: gemma-4-31B-it-uncensored-heretic-Q5_K_M.gguf
+server: {ctx: auto, ckpt: 2048, kv: q8_0, think_budget: 512}
+roles:
+  narrator: {temperature: 1.0, top_p: 0.95, top_k: 64, min_p: 0.0, thinking: true, thinking_budget: 512, think_after_call: true}
