@@ -1,0 +1,8 @@
+# D98 fallback (2026-11-05): if the thinking rounds fail again, this runs in their place. The card's temperature 1.0 with
+# the top_p / top_k cut replaced by min_p 0.05: the cut keeps the tokens within 5% of the likeliest one's probability,
+# so a flat spot stays wide and a sure spot stays narrow. Aimed at Gemma's flat voice and tics without raising the
+# temperature (1.2 lost both games). Not yet tried on Gemma; same server block as gemma4-31b-card, no box restart.
+model: gemma-4-31B-it-uncensored-heretic-Q5_K_M.gguf
+server: {ctx: auto, ckpt: 2048, kv: q8_0, think_budget: -1}
+roles:
+  narrator: {temperature: 1.0, top_p: 1.0, top_k: 0, min_p: 0.05}
