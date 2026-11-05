@@ -59,6 +59,12 @@ NARRATOR_RUN_FORMAT = 1
 CONCURRENCY = 4
 
 
+def _box_down(err: str | None) -> bool:
+    """The box's server is gone or reloading (a crash and its restart), not a fault of the telling (ISSUES L8, L9)."""
+    return bool(err) and any(k in err for k in ("All connection attempts failed", "peer closed connection", "503 Service Unavailable",
+                                                 "Connection refused", "ConnectError", "RemoteProtocolError"))
+
+
 def _blob(bid: str, suffix: str = ".json") -> str:
     return (BLOBS / f"{bid}{suffix}").read_text()
 
@@ -140,8 +146,18 @@ def use_profile(profile: str) -> None:
     os.environ.setdefault("TA_LLAMA_URL", SERVER)
 
 
-async def narrate(corpus_ref: str, opts: dict[str, str], feed: dict[str, str], note: str = "", limit: int | None = None,
-                  profile: str | None = None) -> Path:
+async def narrate(corpus_ref: str | None, opts: dict[str, str], feed: dict[str, str], note: str = "", limit: int | None = None,
+                  profile: str | None = None, resume: str | None = None) -> Path:
+    """Tell the corpus turns again. On a local box the run stops at the first box failure (a crash or its restart) and
+    saves the turns it finished, marked incomplete; `resume` tells the missing turns into the same run file, on the same
+    variant, and only when the box serves the model the run began on. No retries: a crash is reported, never looped on."""
+    prev = load_run(resume) if resume else None
+    if prev:
+        v = prev["variant"]
+        corpus_ref, opts, feed, note, limit = prev["corpus"], v["opts"], v["feed"], v["note"], v.get("limit")
+        have = profile or os.environ.get("TA_PROFILE")
+        if v.get("profile") != have:
+            raise SystemExit(f"resume: {prev['tag']} ran on profile {v.get('profile')!r}; this is {have!r} (set TA_PROFILE)")
     if profile:
         use_profile(profile)
     cfg = load_config()
@@ -149,13 +165,31 @@ async def narrate(corpus_ref: str, opts: dict[str, str], feed: dict[str, str], n
     c = load_corpus(corpus_ref)
     vcfg = _variant_cfg(cfg, opts, feed)
     role = vcfg.roles["narrator"]
-    items = corpus_turns(c)[:limit] if limit else corpus_turns(c)
+    every = corpus_turns(c)[:limit] if limit else corpus_turns(c)
+    order = {(g["iid"], t): i for i, (g, _, t) in enumerate(every)}
+    items = every
+    if prev:
+        if prev["corpus_hash"] != c["_hash"]:
+            raise SystemExit(f"resume: corpus {c['id']} changed since {prev['tag']}")
+        if role.provider == "llamacpp":
+            from tools.llm import loaded
+            now = loaded()
+            if not now:
+                raise SystemExit("resume: the box is not answering")
+            if now["model"] != prev["served"]:
+                raise SystemExit(f"resume: the box serves {now['model']}; {prev['tag']} ran on {prev['served']}")
+        done = {(r["iid"], r["turn"]) for r in prev["turns"]}
+        items = [x for x in every if (x[0]["iid"], x[2]) not in done]
+        print(f"resume {prev['tag']}: {len(done)} turns done, {len(items)} to tell")
     print(f"corpus {c['id']}: {len(items)} turns; narrator {role.provider} {role.model}; feed {feed or 'as configured'}")
     sem = asyncio.Semaphore(1 if role.provider == "llamacpp" else CONCURRENCY)    # the box has one slot per role
     started = dt.datetime.now().astimezone().isoformat(timespec="seconds")
+    stopped: dict = {}
 
-    async def one(g: dict, doc: dict, turn: int) -> dict:
+    async def one(g: dict, doc: dict, turn: int) -> dict | None:
         async with sem:
+            if stopped:                                     # the box went down earlier: leave the turn for a resume
+                return None
             calls: list[dict] = []
             token = RECORDER.set(lambda ex: calls.append(exchange_json("narrator", ex)))
             t0 = time.monotonic()
@@ -165,6 +199,11 @@ async def narrate(corpus_ref: str, opts: dict[str, str], feed: dict[str, str], n
                 out = {"error": f"{type(e).__name__}: {e}"[:400]}
             finally:
                 RECORDER.reset(token)
+            if role.provider == "llamacpp" and _box_down(out.get("error")):
+                stopped.update(iid=g["iid"], turn=turn, error=out["error"],
+                               at=dt.datetime.now().astimezone().isoformat(timespec="seconds"))
+                print(f"  {g['iid']}:{turn} BOX DOWN, stopping: {out['error'][:120]}")
+                return None
             tape = out.pop("tape", [])
             rec = {"iid": g["iid"], "turn": turn, "game": g["game"], "seconds_wall": round(time.monotonic() - t0, 1), **out,
                    "requests": [{"system": put_blob(x["system"]), "messages": [{"role": m["role"], "content": put_blob(m["content"])} for m in x["messages"]],
@@ -175,30 +214,46 @@ async def narrate(corpus_ref: str, opts: dict[str, str], feed: dict[str, str], n
             return rec
 
     t0 = time.monotonic()
-    results = await asyncio.gather(*(one(g, doc, t) for g, doc, t in items))
-    day = started[:10].replace("-", "")
+    fresh = [r for r in await asyncio.gather(*(one(g, doc, t) for g, doc, t in items)) if r is not None]
+    results = sorted((prev["turns"] if prev else []) + fresh, key=lambda r: order.get((r["iid"], r["turn"]), len(order)))
+    segment = {"started": started, "argv": sys.argv[1:], "harness": provenance(), "told": len(fresh),
+               "wall_seconds": round(time.monotonic() - t0), "stopped": stopped or None}
     note = note or "-".join(f"{k}{v}" for k, v in {**opts, **feed}.items() if k != "model") or "baseline"
-    # a profile names the model the box loaded; the local config's role names one model whatever is loaded (the 27B ran
-    # as "a3b" on 2026-10-31 until this)
-    served = None
-    if profile or os.environ.get("TA_PROFILE"):
-        from engine import profiles
-        served = profiles.load(profile or os.environ["TA_PROFILE"]).model
-    name = _slug(profile or os.environ.get("TA_PROFILE", "")) if served else short_model(role.model)
-    rid = f"narr_{day}-{_nn(RUNS, f'narr_{day}-'):02d}_{name}_on_{c['id'].removeprefix('nc_')}_{_slug(note)}"
+    if prev:
+        rid, served = prev["tag"], prev["served"]
+    else:
+        day = started[:10].replace("-", "")
+        # a profile names the model the box loaded; the local config's role names one model whatever is loaded (the 27B
+        # ran as "a3b" on 2026-10-31 until this)
+        served = None
+        if profile or os.environ.get("TA_PROFILE"):
+            from engine import profiles
+            served = profiles.load(profile or os.environ["TA_PROFILE"]).model
+        name = _slug(profile or os.environ.get("TA_PROFILE", "")) if served else short_model(role.model)
+        rid = f"narr_{day}-{_nn(RUNS, f'narr_{day}-'):02d}_{name}_on_{c['id'].removeprefix('nc_')}_{_slug(note)}"
+        served = served or role.model
+    segments = (prev.get("segments") or [{k: prev.get(k) for k in ("started", "argv", "harness")} | {
+        "told": len(prev["turns"]), "wall_seconds": (prev.get("summary") or {}).get("wall_seconds"), "stopped": None}] if prev else []) + [segment]
+    missing = len(every) - len(results)
     usage = {k: sum((r.get("usage") or {}).get(k, 0) for r in results) for k in ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")}
     RUNS.mkdir(parents=True, exist_ok=True)
     out = RUNS / f"{rid}.json"
     out.write_text(json.dumps({"format": NARRATOR_RUN_FORMAT, "kind": "narrator", "tag": rid, "corpus": c["id"], "corpus_hash": c["_hash"],
-                               "started": started, "argv": sys.argv[1:], "harness": provenance(),
-                               "variant": {"opts": opts, "feed": feed, "note": note, "profile": profile or os.environ.get("TA_PROFILE")},
-                               "role": role.model_dump(mode="json"), "served": served or role.model, "context": vcfg.context.model_dump(mode="json"),
-                               "summary": {"turns": len(results), "errors": sum(1 for r in results if r.get("error")),
+                               "started": prev["started"] if prev else started, "argv": prev["argv"] if prev else sys.argv[1:],
+                               "harness": prev["harness"] if prev else provenance(),
+                               "variant": {"opts": opts, "feed": feed, "note": note, "profile": profile or os.environ.get("TA_PROFILE"), "limit": limit},
+                               "role": role.model_dump(mode="json"), "served": served, "context": vcfg.context.model_dump(mode="json"),
+                               "complete": missing == 0, "segments": segments,
+                               "summary": {"turns": len(results), "missing": missing, "errors": sum(1 for r in results if r.get("error")),
                                            "chars_avg": round(sum(len(r.get("text", "")) for r in results) / max(1, len(results))),
                                            "seconds_avg": round(sum(r.get("seconds", 0) for r in results) / max(1, len(results)), 1),
-                                           "usage": usage, "wall_seconds": round(time.monotonic() - t0)},
+                                           "usage": usage, "wall_seconds": sum(sg.get("wall_seconds") or 0 for sg in segments)},
                                "turns": results}, indent=1, ensure_ascii=False))
     print("written", out)
+    if missing:
+        print(f"INCOMPLETE: {missing} of {len(every)} turns not told" + (f"; the box went down at {stopped['iid']}:{stopped['turn']}" if stopped else "")
+              + f". Resume, once the box is back on the same model:\n  eval_replay.py narrate --resume {rid}")
+        raise SystemExit(3)
     return out
 
 
@@ -399,6 +454,9 @@ def make_pairs(run_a: str, run_b: str) -> Path:
     a, b = load_run(run_a), load_run(run_b)
     if a["corpus"] != b["corpus"]:
         raise SystemExit(f"different corpora: {a['corpus']} and {b['corpus']}")
+    for x in (a, b):                                    # a stopped run would skew the sample to the turns it reached
+        if x.get("complete") is False:
+            raise SystemExit(f"{x['tag']} is incomplete ({x['summary']['missing']} turns not told); resume it first: eval_replay.py narrate --resume {x['tag']}")
     tb = {(r["iid"], r["turn"]): r for r in b["turns"]}
     c = load_corpus(a["corpus"])
     docs = {g["iid"]: json.loads(_blob(g["blob"])) for g in c["games"]}

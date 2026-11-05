@@ -79,3 +79,69 @@ def test_a_corpus_of_two_games_is_counted_per_game_as_well_as_summed(tmp_path, m
                           ne.game_of(run))
     assert list(t) == ["noir", "station", "all"]
     assert (t["noir"]["continuity"]["no"], t["station"]["continuity"]["no"], t["all"]["continuity"]["no"]) == (1, 1, 2)
+
+
+def test_box_down_reads_the_crash_errors_only():
+    assert ne._box_down("narrator failed: All connection attempts failed")
+    assert ne._box_down("narrator failed: Server error '503 Service Unavailable' for url 'http://x/v1/chat/completions'")
+    assert ne._box_down("narrator failed: peer closed connection without sending complete message body (incomplete chunked read)")
+    assert not ne._box_down(None)
+    assert not ne._box_down("narrator failed: ValidationError: 1 validation error")
+
+
+async def test_a_box_crash_stops_the_run_and_a_resume_tells_only_the_missing_turns(tmp_path, monkeypatch):
+    """No retries (ISSUES L9): the first box failure stops the run, the finished turns are saved and marked incomplete,
+    and --resume tells the rest into the same file, refusing a box that serves another model."""
+    import asyncio
+    from types import SimpleNamespace as NS
+    import pytest
+    import tools.llm
+    for name in ("CORPORA", "RUNS"):
+        monkeypatch.setattr(ne, name, tmp_path / name.lower())
+    monkeypatch.setattr(ne, "BLOBS", tmp_path / "blobs")
+    monkeypatch.setattr(eval_replay, "BLOBS", tmp_path / "blobs")
+    monkeypatch.delenv("TA_PROFILE", raising=False)
+    blob = eval_replay.put_blob(json.dumps({"instance": "x"}), ".json")
+    (ne.CORPORA / "nc_t").mkdir(parents=True)
+    (ne.CORPORA / "nc_t" / "corpus.yml").write_text(json.dumps({"id": "nc_t", "games": [{"iid": "g1", "game": "noir", "blob": blob, "turns": [1, 2, 3, 4, 5]}]}))
+    role = NS(provider="llamacpp", model="gemma.gguf", model_dump=lambda mode: {"provider": "llamacpp"})
+    monkeypatch.setattr(ne, "load_config", lambda: NS(resolve=lambda x: x, server=NS(content_root="c")))
+    monkeypatch.setattr(ne, "load_games", lambda p: {})
+    monkeypatch.setattr(ne, "_variant_cfg", lambda cfg, o, f: NS(roles={"narrator": role}, context=NS(model_dump=lambda mode: {})))
+    monkeypatch.setattr(ne, "provenance", lambda: {})
+    told: list[int] = []
+    box = {"down_at": 3}
+
+    async def narrate_turn(cfg, games, doc, turn):
+        if turn == box["down_at"]:
+            return {"error": "narrator failed: All connection attempts failed"}
+        told.append(turn)
+        return {"text": f"turn {turn}", "seconds": 1.0}
+    monkeypatch.setattr(ne, "narrate_turn", narrate_turn)
+
+    with pytest.raises(SystemExit) as stop:
+        await ne.narrate("nc_t", {}, {}, "base")
+    assert stop.value.code == 3 and told == [1, 2]                 # nothing sent after the crash
+    run = json.loads(next(ne.RUNS.glob("*.json")).read_text())
+    assert not run["complete"] and run["summary"]["missing"] == 3 and [t["turn"] for t in run["turns"]] == [1, 2]
+    assert run["segments"][0]["stopped"]["turn"] == 3 and not any(t.get("error") for t in run["turns"])
+
+    monkeypatch.setattr(tools.llm, "loaded", lambda: {"model": "qwen.gguf"})
+    with pytest.raises(SystemExit, match="serves qwen.gguf"):
+        await ne.narrate(None, {}, {}, resume=run["tag"])
+    monkeypatch.setattr(tools.llm, "loaded", lambda: {"model": "gemma.gguf"})
+    box["down_at"] = None
+    out = await ne.narrate(None, {}, {}, resume=run["tag"])
+    done = json.loads(out.read_text())
+    assert told == [1, 2, 3, 4, 5] and done["complete"] and done["tag"] == run["tag"]
+    assert [t["turn"] for t in done["turns"]] == [1, 2, 3, 4, 5] and len(done["segments"]) == 2
+    assert len(list(ne.RUNS.glob("*.json"))) == 1
+
+
+def test_an_incomplete_run_is_not_paired(tmp_path, monkeypatch):
+    import pytest
+    monkeypatch.setattr(ne, "RUNS", tmp_path)
+    for tag, complete in (("ra", True), ("rb", False)):
+        (tmp_path / f"{tag}.json").write_text(json.dumps({"tag": tag, "corpus": "nc_t", "complete": complete, "summary": {"missing": 4}, "turns": []}))
+    with pytest.raises(SystemExit, match="rb is incomplete"):
+        ne.make_pairs("ra", "rb")

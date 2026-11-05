@@ -921,7 +921,8 @@ def main() -> None:
     nc.add_argument("--purpose", default="")
     nc.add_argument("--title", default="")
     nr = sub.add_parser("narrate", help="tell every corpus turn again through a narrator variant")
-    nr.add_argument("corpus")
+    nr.add_argument("corpus", nargs="?", help="the corpus (not with --resume)")
+    nr.add_argument("--resume", help="an incomplete narrate run: tell its missing turns into the same file, on its own variant")
     nr.add_argument("--opt", action="append", default=[], help="narrator role option, e.g. model=claude-haiku-5-5")
     nr.add_argument("--feed", action="append", default=[], help="context setting, e.g. window_turns=6")
     nr.add_argument("--note", default="")
@@ -974,8 +975,10 @@ def main() -> None:
             folder = ne.make_corpus(args.picks, args.purpose, args.title)
             print(f"narrator corpus {folder.name} -> {folder}")
         else:
+            if bool(args.corpus) == bool(args.resume):
+                raise SystemExit("narrate: give a corpus or --resume <run>, not both")
             asyncio.run(ne.narrate(args.corpus, dict(kv.split("=", 1) for kv in args.opt), dict(kv.split("=", 1) for kv in args.feed), args.note, args.limit,
-                                   args.profile))
+                                   args.profile, args.resume))
         return
     if args.cmd == "export":
         folder = export_set(args.picks, args.any_model, args.purpose, args.title)
