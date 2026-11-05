@@ -47,7 +47,7 @@ from .context import build_messages, summary_plan
 from .narration import (Assessment, CallResult, Mechanic, NarrationDone, Visible, default_mechanic_line, fail_forward, narrate,
                         run_check)
 from .game import ApplyReport, CommandResult, Game, GameBase, Rejection, TurnInfo
-from .assistant_view import build_view, match_stakes, render_stakes, stakes_model
+from .assistant_view import build_view, complications, match_stakes, render_stakes, stakes_model
 from .mechanics import RESOLVERS, CheckRequest, CheckResult, outcome_words, rng_for
 from .providers import Msg, StreamDone, TextDelta, get_provider
 from .providers.base import Msg, Usage
@@ -854,10 +854,10 @@ class Engine:
         rows = [r for t in range(max(1, lo), turn) for r in self.store.ledger(iid, t)]
         tr = [{"turn": r.turn, "role": r.role, "text": r.text} for r in self.store.transcript(iid) if r.turn < turn]
         v = build_view(game, state, fresh, turn=turn, snaps=snaps, ledger=rows, tr=tr, adj=adj.model_dump(mode="json"),
-                       player=player_text, impending=_pending_block(game, state, "adjudicator"))
+                       player=player_text, impending=_pending_block(game, state, "engine"))
         system, user = render_stakes(v)
         t0 = time.monotonic()
-        plan, usage = await provider.extract(role, system, [Msg("user", user)], stakes_model())
+        plan, usage = await provider.extract(role, system, [Msg("user", user)], stakes_model(complications(v)))
         meta = {"provider": provider.name, "model": usage.extra.get("model") or role.model, "seconds": round(time.monotonic() - t0, 2),
                 "usage": asdict(usage), "signals": v["signal_nums"]}
         return plan.model_dump(), meta

@@ -30,9 +30,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from round_report import load  # noqa: E402
 
-from engine.assistant_view import PLAYER, RULES, build_view, common_blocks, render_stakes as stakes_text, stakes_model  # noqa: E402
+from engine.assistant_view import PLAYER, RULES, build_view, common_blocks, complications, render_stakes as stakes_text, stakes_model  # noqa: E402
 
 K = 2                     # beats a turn at most (D103 §9: start 2)
+# the engine's gate (D109): a mark past on a rut signal. The failure streak is not one: it is the cost table's signal
+# (D105 amended point 5; choose_cost shuts the way on a second failure running), so it neither opens the gate nor is shown.
+BEAT_MARKS = ("still", "place", "copy")
+FAIL_LINE = "Turns running where every attempt"
+
+
+def gate(v: dict) -> list[str]:
+    return [k for k in v["signal_nums"]["past_the_mark"] if k in BEAT_MARKS]
 DB = Path("/Users/dadbook/source/old/llmtextadventure/data/textadventure.sqlite3")
 
 KIND_TEXT = {
@@ -47,13 +55,17 @@ GAME_KIND_TEXT = {"station": {"cast_acts": "a crew member's own choice, anywhere
                               "new": "a new compartment inside a listed module, or a new thread (no new people in this game)"}}
 KINDS = tuple(KIND_TEXT)
 
-BEATS_SYSTEM = """You are the narrator's assistant for a text adventure. You read the whole game, more of it than the writer is shown, and the player's latest move. The engine has found that the story has stood still too long: the SIGNALS below are past the mark where earlier rounds went wrong. So this turn the world acts, and you decide how: what is true at the end of this turn that the player's move alone would not make true. A writer then writes the turn from what you decide. You never write the story.
+BEATS_SYSTEM = """You are the narrator's assistant for a text adventure. You read the whole game, more of it than the writer is shown, and the player's latest move. The engine has found that the story has stood still too long: at least one of the SIGNALS below is past the mark where earlier rounds went wrong. So this turn the world acts, and you decide how: what is true at the end of this turn, whichever way any roll goes, that the player's move alone would not make true. A writer then writes the turn from what you decide. You never write the story.
 
 {player}
 
-Add one thing, or two, each one of these kinds:
+Add one thing, or two. Each is one of these kinds:
 {kinds}
-Choose what would move this story from where it stands: read THE LAST THREE TELLINGS for where it is stuck, and pick what changes that, not what the move already does. While threads are open, bringing back something from earlier is better than making something new. What you add is a fact about how the world stands at the end of this turn, not a scene: who, where, what is true, what they want, what they know, which thread it touches, how many minutes it takes. It must not settle or undo what the player is attempting this turn; a roll decides that. The writer decides how it is shown, what is said, and in what order. Never write prose, dialogue or advice.
+Choose what would move this story from where it stands: read THE LAST THREE TELLINGS for where it is stuck, and pick what changes that, not what the move already does. While threads are open, bringing back something from earlier is better than making something new. An event comes early only where its conditions can be met now; the cast's Hidden lines and Tells still hold. What you add is a fact about how the world stands at the end of this turn, not a scene: who, where, what is true, what they want, what they know, which thread it touches, how many minutes it takes.
+
+What you add never settles or undoes what the player is attempting this turn, and never says where the attempt ends up; a roll decides that.
+
+Cost is not a kind: nothing you add is a price the player pays for this move; time_lost is the world holding them up, not their body failing. The writer decides how it is shown, what is said, and in what order. Never write prose, dialogue or advice.
 
 {rules}"""
 
@@ -62,11 +74,11 @@ def _beat_model(kinds: tuple[str, ...]) -> type[BaseModel]:
     return create_model(
         "Beat",
         kind=(Literal[kinds], Field(description="One of the kinds in the instructions.")),  # type: ignore[valid-type]
-        ref=(str, Field(description="Only for event_now (the event's id from THE CASE AHEAD) and pending_early (the id from IMPENDING). Empty for every other kind.")),
+        ref=(str, Field(description="Only for a kind that names an event: its id, as THE CASE AHEAD or IMPENDING lists it. Empty for every other kind.")),
         who=(str, Field(description="The person it is about, by id or name as the game lists them; empty when it is about a place or thing.")),
         where=(str, Field(description="Where it is true at the end of this turn: a place the game lists, or for a new place its name and the listed place it lies in.")),
         what=(str, Field(description="The changed state, as 'X is / has / knows / wants ...', one plain sentence. Not an action in progress. "
-                                     "Right: 'Dooley has a car on its way to the far docks.' Wrong: 'Dooley grabs his radio and barks an order.'")),
+                                     "Right: '<person> is now at <place> and wants <thing>.' Wrong: '<person> grabs a radio and barks an order.'")),
         wants=(str, Field(description="What the person wants, in a few words; empty when no person.")),
         knows=(str, Field(description="What the person knows that matters here, in a few words, or empty.")),
         thread=(str, Field(description="The open thread it touches, by id as listed, or for a new thread its title; empty only when it touches none.")),
@@ -102,23 +114,24 @@ def view(iid: str, turn: int) -> dict[str, Any]:
     adj = next((r["payload"] for r in ledger if r["kind"] == "adjudication" and r["turn"] == turn), {}) or {}
     player = next((r["text"] for r in tr if r["turn"] == turn and r["role"] == "player"), "")
     return build_view(game, state, fresh, turn=turn, snaps=snaps, ledger=[r for r in ledger if r["turn"] < turn],
-                      tr=[r for r in tr if r["turn"] < turn], adj=adj, player=player, impending=_pending_block(game, state, "adjudicator"))
+                      tr=[r for r in tr if r["turn"] < turn], adj=adj, player=player, impending=_pending_block(game, state, "engine"))
 
 
 def render_beats(iid: str, turn: int) -> tuple[str, str, dict, type[BaseModel]]:
     v = view(iid, turn)
     ktext = {**KIND_TEXT, **GAME_KIND_TEXT.get(v["game"], {})}
-    system = BEATS_SYSTEM.format(player=PLAYER[v["game"]], rules=RULES[v["game"]], kinds="\n".join(f"- {k}: {ktext[k]}." for k in KINDS))
+    kinds = tuple(k for k in KINDS if k != "pending_early" or v["impending"])     # offered only when something is impending
+    system = BEATS_SYSTEM.format(player=PLAYER[v["game"]], rules=RULES[v["game"]], kinds="\n".join(f"- {k}: {ktext[k]}." for k in kinds))
     user = (common_blocks(v)
-            + "[SIGNALS]\n" + "\n".join("- " + x for x in v["signals"]) + "\n\n"
+            + "[SIGNALS]\n" + "\n".join("- " + x for x in v["signals"] if not x.startswith(FAIL_LINE)) + "\n\n"
             + "[THE PLAYER'S MOVE THIS TURN]\n" + v["player"].strip())
-    return system, user, v, beats_model(KINDS)
+    return system, user, v, beats_model(kinds)
 
 
 def render_stakes(iid: str, turn: int) -> tuple[str, str, dict, type[BaseModel]]:
     v = view(iid, turn)
     system, user = stakes_text(v)
-    return system, user, v, stakes_model()
+    return system, user, v, stakes_model(complications(v))
 
 
 # ---- running ---------------------------------------------------------------------------------------------------
@@ -140,7 +153,7 @@ async def _run(out: Path, specs: list[str], which: str) -> None:
                 row: dict[str, Any] = {"probe": which, "iid": iid, "turn": turn, "game": v["game"], "signals": v["signal_nums"],
                                        "assessed": [i["check"]["label"] for i in v["adj"].get("intents") or [] if i.get("check")],
                                        "prompt_chars": len(system) + len(user)}
-                if which == "beats" and not v["signal_nums"]["past_the_mark"]:
+                if which == "beats" and not gate(v):
                     row["gated"] = False            # the engine's gate: nothing past the mark, no call
                     f.write(json.dumps(row) + "\n"); f.flush()
                     print(iid, turn, "gate closed")
@@ -154,7 +167,7 @@ async def _run(out: Path, specs: list[str], which: str) -> None:
                 f.write(json.dumps(row) + "\n"); f.flush()
                 a_ = row.get("answer") or {}
                 if which == "beats":
-                    print(iid, turn, v["signal_nums"]["past_the_mark"], [(x.get("kind"), x.get("what", "")[:60]) for x in a_.get("beats") or []], row.get("error", ""))
+                    print(iid, turn, gate(v), [(x.get("kind"), x.get("what", "")[:60]) for x in a_.get("beats") or []], row.get("error", ""))
                 else:
                     print(iid, turn, [(c.get("label"), c.get("failure_outcome", "")[:40], c.get("complication")) for c in a_.get("checks") or []], row.get("error", ""))
 

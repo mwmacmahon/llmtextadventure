@@ -49,24 +49,29 @@ STAKES_SYSTEM = """You are the narrator's assistant for a text adventure. The en
 
 {player}
 
-For each assessed check (numbered in THE ENGINE'S READING, with its label): what success gains (a fact about how things stand, not a scene) and how many minutes it takes; what failure leaves standing (the attempt's own outcome, as a fact: he does not buy it; the lock holds), how many minutes it takes, and whether failure also brings a complication of one of these kinds: none, pending_early (something under IMPENDING happens now), cast_acts (a person acts on their own reasons), callback (something from MADE UP IN PLAY or an open thread comes back), time_lost (time passes the player did not choose to spend). A failure gives nothing of what was sought: no name, no fact, no glimpse of what is hidden, no half-success. What a failure costs the player the engine decides separately; do not write a cost.
+For each assessed check (numbered in THE ENGINE'S READING, with its label): what success gains (a fact about how things stand, not a scene) and how many minutes it takes; what failure leaves standing (the attempt's own outcome, as a fact about the attempt only, not harm or loss to the player's side: he does not buy it; the lock holds; he does not get through), how many minutes it takes, and whether failure also brings a complication of one of these kinds: none, {pending}cast_acts (a person who is here, or could reach here in the minutes the failure takes, acts on their own reasons), callback (something from MADE UP IN PLAY or an open thread comes back), new (a new person, place or thread, under the rules below), time_lost (time passes the player did not choose to spend). A success gains what was sought; of a person's Hidden line, only what its Tells allow. A failure, and its complication, give nothing of what was sought: no name, no fact, no glimpse of what is hidden, no half-success. What a failure costs the player the engine decides separately; do not write a cost.
 
 Stake every assessed check, and name the pivotal one: the check this turn turns on. Then, under fiat, settle in the open any other attempt in the move that needs no roll: what it is and how it comes out.
 
 {rules}"""
 
-COMPLICATIONS = ("none", "pending_early", "cast_acts", "callback", "time_lost")
+COMPLICATIONS = ("none", "pending_early", "cast_acts", "callback", "new", "time_lost")
 
 
-def stakes_model() -> type[BaseModel]:
+def complications(v: dict | None = None) -> tuple[str, ...]:
+    """The complication kinds for a view: pending_early only when something is impending (a weak model picks an offered kind)."""
+    return tuple(k for k in COMPLICATIONS if k != "pending_early" or (v is None or bool(v.get("impending"))))
+
+
+def stakes_model(kinds: tuple[str, ...] = COMPLICATIONS) -> type[BaseModel]:
     stake = create_model(
         "Stake",
         label=(str, Field(description="The check's label, copied from after 'label:' in THE ENGINE'S READING.")),
         success_gain=(str, Field(description="What success gains: how things stand if it works, one plain sentence. Not a scene.")),
         success_minutes=(int, Field(description="Minutes the attempt takes when it works.")),
-        failure_outcome=(str, Field(description="What failure leaves standing, as a fact: the attempt's own outcome ('Dooley does not buy it'). One plain sentence.")),
+        failure_outcome=(str, Field(description="What failure leaves standing, as a fact about the attempt only, never harm or loss to the player's side ('Dooley does not buy it'; 'the lock holds'). One plain sentence.")),
         failure_minutes=(int, Field(description="Minutes the attempt takes when it fails.")),
-        complication=(Literal[COMPLICATIONS], Field(description="What else failure brings, a kind from the instructions, or none.")),  # type: ignore[valid-type]
+        complication=(Literal[kinds], Field(description="What else failure brings, a kind from the instructions, or none.")),  # type: ignore[valid-type]
         complication_what=(str, Field(description="The complication as a fact about how things stand; empty when none.")),
     )
     fiat = create_model("Fiat",
@@ -254,9 +259,10 @@ def build_view(game: Any, state: Any, fresh: Any, *, turn: int, snaps: dict[int,
     """Everything the assistant sees for one turn, as named blocks. `state` is the game as it stands before the narrator
     writes; `fresh` a new instance (to tell the cast from the made-up); `snaps` the stored states of the last turns by
     turn; `ledger` and `tr` the instance's ledger rows and transcript rows (dicts with turn, role, text) before this turn;
-    `impending` the IMPENDING block with ids (pipeline._pending_block for a structured role)."""
+    `impending` the IMPENDING block with ids (pipeline._pending_block, audience "engine")."""
     state_text = _strip_narrator(game.state_for_models(state) if hasattr(game, "state_for_models") else game.render_bulletin(state, ""))
     impending = _strip_narrator(re.sub(r"^IMPENDING[^\n]*\n?", "", impending.strip().split("BEHIND THE SCENES")[0].strip()).strip())
+    impending = "\n".join(ln for ln in impending.splitlines() if "CAME DUE THIS TURN" not in ln and "; by engine;" not in ln)   # THE CASE AHEAD has those
     by: dict[int, dict[str, str]] = {}
     for r in tr:
         by.setdefault(r["turn"], {})[r["role"]] = r["text"]
@@ -287,10 +293,9 @@ def common_blocks(v: dict) -> str:
 
 def render_stakes(v: dict) -> tuple[str, str]:
     """The stakes call's system and user text for a view."""
-    system = STAKES_SYSTEM.format(player=PLAYER[v["game"]], rules=RULES[v["game"]])
-    streak = [ln for ln in v["signals"] if ln.startswith("Turns running where every attempt")]
-    user = (common_blocks(v) + "[SIGNALS]\n" + "\n".join("- " + x for x in streak) + "\n\n"
-            + "[THE PLAYER'S MOVE THIS TURN]\n" + v["player"].strip())
+    pending = "pending_early (something under IMPENDING happens now, by its id), " if "pending_early" in complications(v) else ""
+    system = STAKES_SYSTEM.format(player=PLAYER[v["game"]], rules=RULES[v["game"]], pending=pending)
+    user = common_blocks(v) + "[THE PLAYER'S MOVE THIS TURN]\n" + v["player"].strip()     # no signals: the streak was the cost's reason to vary
     return system, user
 
 
