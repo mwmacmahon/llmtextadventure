@@ -302,7 +302,9 @@ def render_stakes(v: dict) -> tuple[str, str]:
 # ---- the branch the engine replies with ------------------------------------------------------------------------
 
 def _norm(label: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", (label or "").lower()).strip()
+    """A label as copied: case, punctuation and a trailing "(eye, medium)" (Qwen appends the stat and difficulty) aside."""
+    label = re.sub(r"\s*\([^()]*\)\s*$", "", label or "")
+    return re.sub(r"[^a-z0-9]+", " ", label.lower()).strip()
 
 
 def match_stakes(answer: dict, labels: list[str]) -> list[dict | None]:

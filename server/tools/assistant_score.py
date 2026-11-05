@@ -23,6 +23,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from assistant_probe import view  # noqa: E402
 from round_report import load  # noqa: E402
 
+from engine.assistant_view import _norm  # noqa: E402
+
 STALLS = {("9dce9a64a572", 32, 50), ("1203fb26899b", 3, 14), ("a400e91272af", 34, 50), ("2d5812dcf065", 20, 31)}
 NAMES = {"9dce9a64a572": "card noir (Gemma)", "1203fb26899b": "min_p noir (Gemma)", "a400e91272af": "card station (Gemma)",
          "2d5812dcf065": "DRY noir (Qwen)"}
@@ -55,7 +57,7 @@ def _ctx(iid: str, turn: int) -> dict:
 
 
 def score(run: Path, out: Path) -> None:
-    models = sorted(p.name for p in run.iterdir() if p.is_dir())
+    models = sorted(p.name for p in run.iterdir() if (p / "stakes.jsonl").exists())
     ctx: dict = {}
     md = [f"# The D109 probes, scored ({', '.join(models)})\n", "Counts only, per model and round; no ranking (D99, D71).\n",
           "## The beats (gated turns only)\n",
@@ -85,7 +87,7 @@ def score(run: Path, out: Path) -> None:
             md.append(f"| {m} | {NAMES.get(iid, iid)} | {len(rs)} | {len(called)} | {len(ok)} | {len(called) - len(ok)} | {len(beats)} | "
                       f"{', '.join(f'{k} {n}' for k, n in kinds.most_common()) or '-'} | {miss} | {bad_t} | {bad_w} | {bad_r} |")
     md += ["\n## The stakes\n",
-           "| model | round | arm | turns | errors | assessed | staked | labels copied | complications | outcome writes harm or loss | outcome repeats the turn before | pivotal a label | fiat |",
+           "| model | round | arm | turns | errors | assessed | staked | labels copied (stat suffix allowed) | complications | outcome writes harm or loss | outcome repeats the turn before | pivotal a label | fiat |",
            "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for m in models:
         by = defaultdict(list)
@@ -96,7 +98,7 @@ def score(run: Path, out: Path) -> None:
             ok = [r for r in rs if r.get("answer")]
             assessed = sum(len(r.get("assessed") or []) for r in ok)
             checks = [c for r in ok for c in r["answer"].get("checks") or []]
-            labels = sum(1 for r in ok for c in r["answer"].get("checks") or [] if c.get("label") in (r.get("assessed") or []))
+            labels = sum(1 for r in ok for c in r["answer"].get("checks") or [] if _norm(c.get("label", "")) in {_norm(x) for x in r.get("assessed") or []})
             harm = sum(1 for c in checks if HARM.search(c.get("failure_outcome", "")))
             rep = 0
             prev: set = set()
@@ -106,7 +108,7 @@ def score(run: Path, out: Path) -> None:
                     rep += 1
                 prev = now or prev
             comp = Counter(c.get("complication") for c in checks)
-            piv = sum(1 for r in ok if r["answer"].get("pivotal") in (r.get("assessed") or []))
+            piv = sum(1 for r in ok if _norm(r["answer"].get("pivotal", "")) in {_norm(x) for x in r.get("assessed") or []})
             fiat = sum(len(r["answer"].get("fiat") or []) for r in ok)
             md.append(f"| {m} | {NAMES.get(iid, iid)} | {a} | {len(rs)} | {len(rs) - len(ok)} | {assessed} | {len(checks)} | {labels} | "
                       f"{', '.join(f'{k} {n}' for k, n in comp.most_common())} | {harm} of {len(checks)} | {rep} of {max(0, len(ok) - 1)} | "

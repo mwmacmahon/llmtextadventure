@@ -100,6 +100,8 @@ def test_a_stake_matches_its_check_by_label_else_by_order():
     assert [s["label"] for s in match_stakes(a, ["Talk to Dooley.", "pick the lock"])] == ["talk to Dooley", "Pick the lock"]
     assert [s["label"] for s in match_stakes(a, ["x", "y"])] == ["Pick the lock", "talk to Dooley"]      # counts agree: by order
     assert match_stakes({"checks": [{"label": "zz"}]}, ["x", "y"]) == [None, None]
+    q = {"checks": [{"label": "Crawl to door on bad leg (muscle, high)"}, {"label": "Dig film from ear (hands, medium)"}]}
+    assert [s["label"][:4] for s in match_stakes(q, ["Dig film from ear", "Crawl to door on bad leg"])] == ["Dig ", "Craw"]   # Qwen's copy
 
 
 def test_the_branch_text_never_carries_the_other_future():
