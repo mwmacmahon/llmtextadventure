@@ -28,6 +28,7 @@ Regenerate: `cd notes/design/tools && ../../../server/.venv/bin/python gen_<page
 |---|---|---|
 | Local Model Trials (31 Oct - 2 Nov) | [page](https://claude.ai/artifact/CPPqoRADBmUs22NYvCwx2U), source `notes/REPORT-trials-2026-11-02.html` | current to 11-02 evening |
 | Local Model Choice (the night of 3-4 Nov: Huihui vs Blackfrost vs Gemma 4 31B, per game, subagent judge, noise floor) | [page](https://claude.ai/artifact/9euRyRUrgyLUz2Ljx2uLGx), source `notes/REPORT-models-2026-11-04.html`, generator `notes/scripts/gen_model_report.py` | current (D70/D74/D86) |
+| Gemma 4 31B on long games: four settings, eight rounds (the night of 4-5 Nov, D98) | [page](https://claude.ai/artifact/FTuD8hGiZUgSBvu1EZPwYu), source `notes/REPORT-gemma-settings-2026-11-05.md` | current; closed D98: no sampler moves the prose, thinking out |
 | The last five days, read back | `notes/RETRO-2026-11-03.md` | current; not published |
 | Notes to self: the narrator, the referee and the state (failure kinds, principles, ideas, the measure) | `notes/NOTES-narrator-and-state-2026-11-03.md` | living; add to it as rounds are read (D78) |
 | Narrator Measure | [page](https://claude.ai/artifact/TKWffZheyWLHYTbaucRRMj) | **stale** (10-31; rubric v4, the Qwen3.8 runs, the per-game sets are not on it): `eval_replay.py narrator-report`, republish |
