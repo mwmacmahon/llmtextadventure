@@ -129,8 +129,15 @@ def score(brief: Path, stakes: Path, out: Path, reads_dir: Path) -> None:
         labels = [i["check"]["label"] for i in c["assessed"] if i.get("check")]
         no_roll = [i for i in c["assessed"] if not i.get("check")]
         checks = a.get("checks") or []
-        in_table = sum(1 for ch in checks if any(fact in (ch.get("failure_cost") or "") for _k, fact in c["costs"]))
-        kinds = [next((k for k, fact in c["costs"] if fact in (ch.get("failure_cost") or "")), "?") for ch in checks]
+        def match(fc: str) -> str:
+            fc = (fc or "").strip()
+            hit = next((k for k, fact in c["costs"] if fact in fc), None)                 # the sentence copied
+            if hit is None:                                                               # or only the kind named ("trace (light)")
+                hit = next((k for k, _f in c["costs"] if re.match(rf"^{re.escape(k)}\b", fc)), None)
+                return f"{hit} (kind only)" if hit else "?"
+            return hit
+        kinds = [match(ch.get("failure_cost")) for ch in checks]
+        in_table = sum(1 for k in kinds if k != "?")
         rows_s.append({"iid": r["iid"], "turn": r["turn"], "arm": arm(r["iid"], r["turn"]), "n_assessed": len(labels), "n_staked": len(checks),
                        "labels_ok": sum(1 for ch in checks if ch.get("label") in labels), "cost_in_table": in_table, "cost_kinds": kinds,
                        "complications": [ch.get("complication") for ch in checks], "pivotal_ok": (a.get("pivotal") in labels) if labels else None,
@@ -170,7 +177,7 @@ def score(brief: Path, stakes: Path, out: Path, reads_dir: Path) -> None:
             if not rs:
                 continue
             ok = sorted([x for x in rs if "error" not in x], key=lambda x: x["turn"])
-            seq = [k for x in ok for k in x["cost_kinds"]]
+            seq = [k.replace(" (kind only)", "") for x in ok for k in x["cost_kinds"]]
             same = sum(1 for i in range(1, len(seq)) if seq[i] == seq[i - 1])
             comp = Counter(c for x in ok for c in x["complications"])
             md.append(f"| {NAMES[iid]} | {A} | {len(rs)} | {len(rs) - len(ok)} | {sum(x['n_assessed'] for x in ok)} | {sum(x['n_staked'] for x in ok)} | {sum(x['labels_ok'] for x in ok)} | "
