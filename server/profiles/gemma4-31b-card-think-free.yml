@@ -1,0 +1,8 @@
+# D98 (2026-11-05), overnight long rounds: G3 with the budget lifted. G3 (512) cut the thought on 176 of 330 requests and
+# Gemma 4 has no trained budget (the forced close leaks the plan into prose, R19), so the ceiling here is 4096: room for the
+# whole thought, with the forced closes counted to show it is rarely reached. Same server block as gemma4-31b-card
+# (think_budget -1 server-wide; the per-request budget is the role's), so no box restart against the card rung.
+model: gemma-4-31B-it-uncensored-heretic-Q5_K_M.gguf
+server: {ctx: auto, ckpt: 2048, kv: q8_0, think_budget: -1}
+roles:
+  narrator: {temperature: 1.0, top_p: 0.95, top_k: 64, min_p: 0.0, thinking: true, thinking_budget: 4096, think_after_call: true}
