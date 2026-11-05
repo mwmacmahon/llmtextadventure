@@ -105,6 +105,9 @@ class Player(BaseModel):
                                     # for now: nothing moves it; below SANITY_LOW the high-nerves hallucinations switch on
     drift_bank: int = 0
     withdrawal_bank: int = 0
+    nerves_wait: int = 0              # plan A (D103): turns before the nerves note goes out again (the engine times the flicker)
+    nerves_shown_turn: int = 0        # the last turn it went out, for the referee and the reads
+    nerves_shown_tier: str = ""       # the tier it went out at; a rise to a worse tier shows at once
     conditions: list[Condition] = Field(default_factory=list)
     proficiencies: list[str] = Field(default_factory=list)
     weaknesses: list[str] = Field(default_factory=list)

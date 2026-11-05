@@ -52,7 +52,8 @@ from .providers import Msg, StreamDone, TextDelta, get_provider
 from .providers.base import Msg, Usage
 from .roles import (Adjudication, adjudicator_messages, referee_messages, summarizer_messages, NARRATOR_PROTOCOL)
 from .roles import NARRATOR_WORLD, REFEREE_PARTS, ChangeReport, referee_part_messages
-from .changes import apply_changes, merge_parts, screen_unseen_clues
+from .assistant import choose_cost, default_cost_options, recent_costs
+from .changes import apply_changes, merge_parts, quoted_in_prose, quotes_of, says_result_played, screen_unseen_clues
 from .store import Store
 from .tape import PART, Taped, exchange_row
 
@@ -547,6 +548,12 @@ class Engine:
                 for_referee = narration
                 if calls_block.get("notes"):
                     for_referee += "\n\n[NARRATOR'S NOTES: facts it decided, what is happening unseen (unseen:), what it set in motion (soon:)]\n" + "\n".join(f"- {n}" for n in calls_block["notes"])
+                uncalled_now = [a for a in res["assessments"] if not a.called]
+                if uncalled_now and calls_block.get("calls"):     # K2 stopgap: some called, some not; none called is the engine's own ruling
+                    for_referee += ("\n\n[CHECKS NOT CALLED: the engine assessed these attempts as needing a roll, and the narrator called no check for them]\n"
+                                    + "\n".join(f"- {a.label}" + ("" if a.label.strip().lower() == a.stat else f" ({a.stat})") for a in uncalled_now)
+                                    + "\nFor each one the prose plays as succeeding with no roll of its own, write a check_skipped ruling that names it. "
+                                      "If the prose settles it inside a check that was called, or leaves it unsettled, write no ruling.")
                 delta, meta = await self._referee(game, state, res["directives"], player_text, for_referee, adj, levers=_lever_lines(levers), iid=iid)
                 delta_json = delta.model_dump(mode="json")
                 ledger("verdict", {**delta_json, "_call": meta})
@@ -625,6 +632,35 @@ class Engine:
                     delta_json.setdefault("issues", []).append(f"referee ruled {r['rule']} with {'no check rolled' if r['rule'] == 'check_ignored' else 'every assessed check rolled'}: {r.get('what', '')}")
                 log.info("referee.ruling.dismissed " + logs.kv(iid=iid, turn=turn, rule=r.get("rule"), what=r.get("what", "")[:120]))
                 continue
+            if r.get("rule") == "repeated_beat":
+                # The referee's repeat (the user, 11-05): two quotes, this turn's sentence and an earlier turn's; the engine
+                # drops the ruling unless one is in this prose and another in an earlier narration.
+                said = f"{r.get('what', '')} {r.get('fix', '')}"
+                before = "\n\n".join(t.text for t in self.store.transcript(iid, roles=["narrator"]) if turn - 4 <= t.turn < turn)
+                quotes = quotes_of(said)
+                here = [q for q in quotes if quoted_in_prose(f'"{q}"', narration)]
+                there = [q for q in quotes if q not in here and quoted_in_prose(f'"{q}"', before)]
+                if here and there:                           # the retelling note carries this turn's words only, never the earlier ones
+                    r = {**r, "what": f'"{here[0]}"', "referee_what": r.get("what", "")}
+                if not (here and there):
+                    why = "it quotes fewer than two sentences" if len(quotes) < 2 else ("no quote is in this turn's prose" if not here else "no quote is in an earlier turn")
+                    if delta_json is not None:
+                        delta_json.setdefault("issues", []).append(f"referee ruled repeated_beat, dropped: {why}: {r.get('what', '')}")
+                    log.info("referee.ruling.dismissed " + logs.kv(iid=iid, turn=turn, rule="repeated_beat", why=why, what=r.get("what", "")[:120]))
+                    continue
+            if r.get("rule") == "check_ignored":
+                # K1: the row quotes the sentence that should have played the result; the engine drops it when the quote
+                # is missing or not in the prose, or when the row's own words say the result was played.
+                said = f"{r.get('what', '')} {r.get('fix', '')}"
+                found = quoted_in_prose(said, narration)
+                why = ("its own text says the result was played" if says_result_played(said)
+                       else "it quotes no sentence of the prose" if found is None
+                       else "the sentence it quotes is not in the prose" if not found else "")
+                if why:
+                    if delta_json is not None:
+                        delta_json.setdefault("issues", []).append(f"referee ruled check_ignored, dropped: {why}: {r.get('what', '')}")
+                    log.info("referee.ruling.dismissed " + logs.kv(iid=iid, turn=turn, rule="check_ignored", why=why, what=r.get("what", "")[:120]))
+                    continue
             rulings.append(r)
         rulings = _soften_unreached(rulings, res)
         for r in rulings:
@@ -686,7 +722,8 @@ class Engine:
                       + [f"lever {o['id']} not completed: {o['text']}" for o in lever_outcomes if o["status"] == "not_completed"]
                       + [f"assessed check not called: {a}" for a in calls_block.get("assessed_not_called", [])]
                       + [f"narrator: {p}" for p in calls_block.get("problems", [])],
-            "calls": [{"call": c["call"].get("raw"), "mechanic": c.get("mechanic"), "outcome": (c.get("result") or {}).get("outcome")} for c in calls_block.get("calls", [])],
+            "calls": [{"call": c["call"].get("raw"), "mechanic": c.get("mechanic"), "outcome": (c.get("result") or {}).get("outcome"),
+                       **({"cost": (c.get("result") or {})["cost"]} if (c.get("result") or {}).get("cost") else {})} for c in calls_block.get("calls", [])],
             "declarations": [d.get("raw") for d in calls_block.get("declarations", [])],
             "notes": calls_block.get("notes", []),
         }
@@ -1030,6 +1067,16 @@ class Engine:
             n += 1
         return n
 
+    def _recent_calls(self, iid: str, turn: int, limit: int = 4) -> list[list[dict]]:
+        """The final telling's calls of the last few turns, oldest first (for the costs already paid)."""
+        out: list[list[dict]] = []
+        for t in range(max(1, turn - limit), turn):
+            rows = [r for r in self.store.ledger(iid, t)
+                    if r["kind"] == "model_call" and r["payload"].get("role") == "narrator" and not r["payload"].get("error")]
+            if rows:
+                out.append(rows[-1]["payload"].get("calls", []))
+        return out
+
     def _call_handler(self, game: Game, state: BaseModel, iid: str, turn: int, assessments: list[Assessment], fail_streak: int = 0):
         """Turn the narrator's calls into results (DESIGN2 §5): CHECK rolls with the assessment as the floor,
         LOOK asks the game for a record, ODDS is an oracle. Dice are seeded per turn, so a rewrite of the
@@ -1046,11 +1093,25 @@ class Engine:
             line = _hook(game, "render_mechanic", state, res, default=None)
             return line or default_mechanic_line(res, show_numbers=show_numbers)
 
+        # plan A (D103): a failed roll's cost is the engine's choice, from the game's options, never the same kind as the
+        # last few costs (this turn's included); its own seed, so the dice fall as they did before the costs existed.
+        recent = recent_costs(self._recent_calls(iid, turn))
+        cost_rng = rng_for(iid, turn, "costs")
+
+        def cost_for(roll: dict, label: str, target: str) -> dict | None:
+            options = _hook(game, "cost_options", state, roll, label, target, default=None)
+            if options is None:
+                options = default_cost_options(state, roll, label, target)
+            cost = choose_cost(options, roll, recent=recent, rng=cost_rng, fail_streak=fail_streak)
+            if cost:
+                recent.append(cost)
+            return cost
+
         def handler(call, n: int) -> CallResult:
             if call.verb == "CHECK":
                 return run_check(call, n, stats, resolver, rng, assessments, modifiers, render,
                                  fallback_stat=getattr(game, "fallback_stat", None), fail_streak=fail_streak,
-                                 player=_hook(game, "player_name", state, default="the player"))
+                                 player=_hook(game, "player_name", state, default="the player"), cost_for=cost_for)
             if call.verb == "LOOK":
                 text = _hook(game, "look", state, call.ref, default=None)
                 if not text:
@@ -1402,6 +1463,7 @@ RETELL_LEADS = {
     "directive_ignored": "A THIS TURN line was not played: {what}. {fix}",
     "check_skipped": "An attempt the dice decide was decided in the prose instead: {what}. {fix}",
     "check_ignored": "A rolled result was not played: {what}. {fix}",
+    "repeated_beat": "This sentence tells again what an earlier turn already told: {what}. Tell that moment differently, or move past it. Keep the rest of the turn as it was.",
     "repetition": "{what}. {fix}",
     "fake_check": "{what}. {fix}",
     # a problem about where someone is (the user, 11-03): the retelling must pick a place and say it, never leave it

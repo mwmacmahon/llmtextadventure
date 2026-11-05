@@ -141,6 +141,61 @@ def takes_itself_back(ch: Change) -> bool:
             or (ch.kind == "move" and bool(_NOT_ARRIVED.search(note))))     # "walking toward Reactor; not yet arrived": the move is next turn's
 
 
+# N5 (2026-11-05): the referee's own phrasing for "I noticed this but it is not worth telling again". A serious
+# ruling whose fix says so is recorded, softened, and never retold. One list; an instruction never matches
+# ("Minor: do not mention a hat" is an instruction, so "minor" counts only when it is the whole fix).
+_DECLINES_WHOLE = {"", "none", "na", "n a", "minor", "nothing", "no fix", "no change", "no retell", "no retelling"}
+_DECLINES = re.compile(r"\bno (retell|retelling|fix|fixing|change|changes|correction|rewrite)s? (is |are )?(needed|required|necessary)\b"
+                       r"|\b(does not|doesn't|do not|don't|need not|needn't) (need (a |to be )?)?(retell|retelling|retold|fix|fixing|rewrite)\b"
+                       r"|\bnot worth (a )?(retell|retelling|fixing|telling again)\b"
+                       r"|\bnothing to (fix|change|retell|correct)\b"
+                       r"|^\s*no (retell|retelling)\b"
+                       r"|\brecord(ed)? only\b", re.I)
+# K1 (2026-11-05): a check_ignored row whose own words say the result was played ("which correctly plays the failure",
+# "however, the result (no information) was played"; 8 of 18 such retells in the D98 rounds).
+_SAYS_PLAYED = re.compile(r"\bcorrectly (play|plays|played|playing|reflects|shows)\b"
+                          r"|\b(is|was|were|does|did|has been|have been)\s+(?!not\b)(correctly\s+|properly\s+)?play(ed|s)?\b(?!\s+(as|like)\b)"
+                          r"|\bplays? (the|its) (failure|result|success|roll|outcome) correctly\b"
+                          r"|\b(is |was )?consistent with the (roll|result|failure|check|outcome)\b"
+                          r"|\bprose play(s|ed) (a |the )?(huge |critical )?(failure|success)\b"
+                          r"|\bwhich (is correct|happened)\b", re.I)
+_QUOTED = re.compile(r'"([^"]{8,})"|\u201c([^\u201d]{8,})\u201d')
+
+
+def fix_declines(text: str) -> bool:
+    """True when a ruling's fix says there is nothing to tell again (N5)."""
+    t = (text or "").strip()
+    if re.sub(r"[^a-z ]", " ", t.lower()).split() == [] or " ".join(re.sub(r"[^a-z ]", " ", t.lower()).split()) in _DECLINES_WHOLE:
+        return True
+    return bool(_DECLINES.search(t))
+
+
+def says_result_played(text: str) -> bool:
+    """True when a check_ignored row's own text says the prose played the result (K1)."""
+    return bool(_SAYS_PLAYED.search(text or ""))
+
+
+def _norm(text: str) -> str:
+    t = (text or "").lower().replace("\u2019", "'").replace("\u2018", "'").replace("\u201c", '"').replace("\u201d", '"')
+    return " ".join(re.sub(r"[^a-z0-9' ]", " ", t).split())
+
+
+def quotes_of(text: str) -> list[str]:
+    """The passages a ruling quotes, in double quotes (straight or curly), eight characters or more."""
+    return [a or b for a, b in _QUOTED.findall(text or "")]
+
+
+def quoted_in_prose(text: str, prose: str) -> bool | None:
+    """K1: a check_ignored row quotes the sentence that should have played the result. None when the row quotes nothing;
+    True when every quoted passage (split at an ellipsis) is in the prose; False when one is not."""
+    quotes = [a or b for a, b in _QUOTED.findall(text or "")]
+    if not quotes:
+        return None
+    body = _norm(prose)
+    parts = [p for q in quotes for p in re.split(r"\.\.\.|\u2026", q) if len(_norm(p).split()) >= 2]
+    return bool(parts) and all(_norm(p) in body for p in parts)
+
+
 def screen_unseen_clues(report: ChangeReport, prose: str, notes: list[str]) -> list[Rejection]:
     """A clue is what the player perceived. A `learned player` row whose words come from an unseen note (the
     narrator's [[unseen: …]] lines or the referee's own unseen rows) and not from the prose is the referee
@@ -262,7 +317,10 @@ def apply_changes(game: Any, state: BaseModel, report: ChangeReport, *, present:
             if rule not in RULES:                      # a rule the table does not know is an observation, not a verdict
                 ex.issues.append(f"{rule}: {what}")
             else:
-                ex.rulings.append({"rule": rule, "what": what, "fix": fix, "serious": rule in SERIOUS_RULES})
+                row = {"rule": rule, "what": what, "fix": fix, "serious": rule in SERIOUS_RULES}
+                if row["serious"] and fix_declines(fix):       # N5: noticed, not worth a retell: recorded, softened
+                    row.update(serious=False, softened=True, softened_by="fix_declines")
+                ex.rulings.append(row)
         elif k == "thread_open":
             if (ch.value or ch.note).strip():
                 ex.threads_opened.append((ch.value or ch.note).strip())

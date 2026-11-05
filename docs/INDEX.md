@@ -13,14 +13,14 @@ reports, scripts), and published pages (claude.ai artifacts, private to the owne
 
 | Page | Generator | Last regenerated | State |
 |---|---|---|---|
-| [Lowtown: Game Design](https://claude.ai/artifact/XBrdicwZAnn1SmGAtyu4xc) (noir) | `notes/design/tools/gen_noir_page.py` | 2026-11-04 | current (D73, D75, D76; D93 PACING paragraph in the prefix) |
-| [Station AI: Game Design](https://claude.ai/artifact/NPpFFzmeqjX35pJGqtWVeg) | `gen_station_page.py` | 2026-11-04 | current for the station (D93 PACING paragraph; the state shown is the DRY round 48c097a0db65); the shared engine text is behind (see Turn Anatomy) |
-| [Turn Anatomy](https://claude.ai/artifact/DdYxv5pvKFXsHyWYQZBbj4) (the flow, the master doc of a turn) | `gen_flow_page.py` | 2026-11-03 (v27) | the guard text is current (D77/D79: rejection kinds, three retellings, FORCED); the captured turn is still 10-31, so the tape and call report (D59), called checks on local (D61/D63), thinking per role (D66) and the `advance` effect are not shown: recapture |
-| [The Structured World](https://claude.ai/artifact/5sBEXtLDqb2Rf6xkUd63aY) (the world rows) | `gen_world_page.py` | 2026-11-04 (D91: the station bulletin's "Things as they stand now", words-only crew lines, the tier notes) | current as far as the world code goes; the `advance` effect and the nerves notes are game-side |
-| [What the Models See](https://claude.ai/artifact/SPJqDK5jGLyYLxjikcWTNk) (a captured turn) | `capture.py` then `gen_data_page.py` | 2026-10-30 | **stale**: the bulletin, THIS TURN and the referee rules have all changed since (N8, D63, D73-76); recapture a turn |
+| [Lowtown: Game Design](https://claude.ai/artifact/XBrdicwZAnn1SmGAtyu4xc) (noir) | `notes/design/tools/gen_noir_page.py` | 2026-11-05 | current (D104: the nerves note on the engine's clock, what a failure costs; the capture instance's turn 17 on Gemma base) |
+| [Station AI: Game Design](https://claude.ai/artifact/NPpFFzmeqjX35pJGqtWVeg) | `gen_station_page.py` | 2026-11-05 | current (D104: what a failure costs; the state shown is the min_p round f6914a2fefaa) |
+| [Turn Anatomy](https://claude.ai/artifact/DdYxv5pvKFXsHyWYQZBbj4) (the flow, the master doc of a turn) | `capture.py` then `gen_flow_page.py` | 2026-11-05 (v28) | current: one Gemma base turn on the D104 build (the engine's cost on a failure, K1 dropping a ruling, the referee's repeated_beat rule) |
+| [The Structured World](https://claude.ai/artifact/5sBEXtLDqb2Rf6xkUd63aY) (the world rows) | `gen_world_page.py` | 2026-11-05 | current (regenerated on the D104 build) |
+| [What the Models See](https://claude.ai/artifact/SPJqDK5jGLyYLxjikcWTNk) (a captured turn) | `capture.py` then `gen_data_page.py` | 2026-11-05 | current: the same captured Gemma base turn |
 
 Regenerate: `cd notes/design/tools && ../../../server/.venv/bin/python gen_<page>_page.py`, then publish the HTML in
-`notes/design/` to the page's URL (the Artifact tool, `url=`). `data` needs `capture.py` first (a live turn, paid).
+`notes/design/` to the page's URL (the Artifact tool, `url=`). `capture.py` reads the latest rolled turn of the capture instance "one-referee check noir (fork)" (5d2c8f539dbf) into `notes/design/capture.json`; play one turn on it first (the local model, free).
 
 ## 2. Reports and write-ups
 
@@ -130,10 +130,10 @@ Every playtest also has a transcript `notes/playtests/<date>-<game>-<tag>.md` an
 
 ## 7. What needs updating (as of the check date)
 
-1. Turn Anatomy and What the Models See: behind D91 too (the THIS TURN orientation and end-of-turn clock lines, the check answer in words, the protocol's "end on the scene", the summarizer's wording); both need a fresh capture (`capture.py`, a live turn: free on :8013) because `gen_flow_page.py` reads `capture.json` from an old scratchpad that is gone.
+1. (Done 2026-11-05, D104: Turn Anatomy and What the Models See recaptured on the current build.)
 2. `ARCHITECTURE.md`, `GAME_AUTHORING.md`, `LOCAL_LLM.md`: the lines in §4.
 3. Narrator Measure and Eval runs pages: rebuild from the current runs or retire them in favour of the trials report.
 4. `WRITEUP-checks-and-decisions.md`: the adjudicator is the one local model, not the A3B.
 5. The station's own nerves analogue (the alarm) has not had D72-D76's reading; ISSUES NV2 covers the sanity discussion.
 6. The player UI (the web client) is a placeholder and needs heavy work (ISSUES U2); every line a model is handed needs the plain-language pass (ISSUES W1, high priority).
-7. The model choice (D86, the night of 11-03/04): the narrator stays on the Huihui file with MTP; the user confirms, then the long rounds with a subagent player on :8013 (D78) are the test of record. `judge-pairs` and `rubric` refuse API judges (D85).
+7. The model choice: Gemma 4 31B on its base sampler is the working profile (D101); the narrator's assistant is designed (D103, notes/ASSISTANT-DESIGN-2026-11-05.md) and plan A built (D104), its measure next.

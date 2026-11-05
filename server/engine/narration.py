@@ -251,7 +251,7 @@ def match_assessment(call: Call, assessments: list[Assessment]) -> Assessment | 
 def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any, CheckRequest], CheckResult], rng: Any,
               assessments: list[Assessment], modifiers: Callable[[CheckRequest, str | None], list[Modifier]],
               render: Callable[[CheckResult], str], *, fallback_stat: str | None = None, fail_streak: int = 0,
-              player: str = "the player") -> CallResult:
+              player: str = "the player", cost_for: Callable[[dict, str, str], dict | None] | None = None) -> CallResult:
     stat = call.stat
     if stat not in stats:
         if fallback_stat and fallback_stat in stats:
@@ -271,14 +271,23 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
     res = resolver(rng, req)
     mods = res.total - (res.roll or 0)
     sign = f"{mods:+d}" if mods else ""
+    data = res.model_dump(mode="json")
+    failed = res.outcome in ("failure", "huge_failure", "critical_failure")
+    cost = cost_for(data, label, target or "") if (failed and cost_for) else None      # plan A (D103): the engine picks the cost
+    if cost:
+        data["cost"] = {k: cost[k] for k in ("kind", "fact", "detail") if cost.get(k)}
+        tail = (" A failure gives nothing of what was sought: no name, no fact, no glimpse of what is hidden, no half-success. The scene"
+                f" still moves. What it costs, the engine has chosen: {cost['fact']} Play that cost, and no other: no further hurt, nothing else lost.")
+    elif failed:
+        tail = (fail_forward(player) if fail_streak >= 1 else
+                " A failure gives nothing: no name, no fact, no glimpse of what is hidden, no half-success. The attempt costs instead (time, noise, notice, a hurt).")
+    else:
+        tail = ""
     text = (f"[ENGINE] Check: {stat}, {difficulty.replace('_', ' ')} difficulty" + (f", against {target}" if target else "") +
             f". Rolled {res.roll}{sign} = {res.total} against {res.target}: {outcome_words(res.outcome)}. "
-            "Play that in the story; never soften or reverse it, and never mention dice, numbers or how well it rolled."
-            + ((fail_forward(player) if fail_streak >= 1 else
-                " A failure gives nothing: no name, no fact, no glimpse of what is hidden, no half-success. The attempt costs instead (time, noise, notice, a hurt).")
-               if res.outcome in ("failure", "huge_failure", "critical_failure") else ""))
+            "Play that in the story; never soften or reverse it, and never mention dice, numbers or how well it rolled." + tail)
     causes = [target] if target and res.outcome in ("success", "huge_success", "critical_success") else []
-    return CallResult(text=text, mechanic=render(res), data=res.model_dump(mode="json"), causes=causes)
+    return CallResult(text=text, mechanic=render(res), data=data, causes=causes)
 
 
 def fail_forward(player: str) -> str:

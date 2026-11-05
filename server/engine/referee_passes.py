@@ -262,12 +262,15 @@ not_done: one of the player's commands listed under LEVERS that the prose shows 
         "focus": "whether the narration broke a rule the engine acts on. Check four things: did it reveal something the player's "
                  "character cannot know, or show what its own unseen note says is out of sight (leak)? did it contradict the state "
                  "(contradiction)? did it ignore a directive it was given (directive_ignored)? did it skip an assessed check while "
-                 "playing the attempt as succeeding, or ignore a called check's result (check_skipped, check_ignored)? Most turns break none.",
+                 "playing the attempt as succeeding, or ignore a called check's result (check_skipped, check_ignored)? did it tell again, "
+                 "as if new, a moment an earlier turn already told (repeated_beat)? Most turns break none.",
         "guide": """\
 ruling: one row for each rule the prose broke; what happened in a sentence, and retell as one sentence the narrator follows to tell the turn again correctly.
   "[[unseen: Tobiah cuts the mooring line]]", then "from the gallery the keeper watches Tobiah slash the rope." -> {"kind": "ruling", "rule": "leak", "what": "the keeper watched what the unseen note puts out of sight", "retell": "Keep the cutting out of the keeper's sight: he hears only the boat knock loose against the slip."}
   State: the flare case is empty; prose: "the keeper fires a flare." -> {"kind": "ruling", "rule": "contradiction", "what": "a flare fired from an empty case", "retell": "The case is empty: the keeper finds no flare to fire."}
-  "§ strength check: failure" then "the shutter slams shut under his shoulder." -> {"kind": "ruling", "rule": "check_ignored", "what": "a failed strength check played as success", "retell": "Play the failure: the shutter will not close against the wind."}
+  "§ strength check: failure" then "the shutter slams shut under his shoulder." -> {"kind": "ruling", "rule": "check_ignored", "what": "\\"the shutter slams shut under his shoulder\\" plays a failed strength check as success", "retell": "Play the failure: the shutter will not close against the wind."}
+  Earlier turn: "his knee buckles on the wet stair"; this turn: "the knee goes out under him again on the kerb." -> {"kind": "ruling", "rule": "repeated_beat", "what": "\\"the knee goes out under him again on the kerb\\" plays again \\"his knee buckles on the wet stair\\"", "retell": "Leave the knee out of this turn; play the walk without it."}
+  A check_ignored row quotes, in double quotes, the prose's own words that play the attempt. A repeated_beat row quotes this turn's words and the earlier turn's. Quote one unbroken run of at least six words exactly as written, with no quote marks inside it and no "...". A wound or loss still felt is not a repeat. A slip not worth telling the turn again is drift, never a serious rule.
   Not a ruling: the § lines themselves (the engine's own, correct by definition); a choice the narrator made that breaks no rule; something merely unlikely.
 issue: anything else the engine should know that is not a ruling, in a sentence. Rare.""",
     },

@@ -50,13 +50,25 @@ SANITY_LOW = 50                        # D76: below this, high nerves bring hall
 NICOTINE_FLOOR = 30                    # D75: in withdrawal nothing passive brings dread down, and it cannot sit below this
 # nerves tier -> what the narrator is told (D73: window dressing with a cost; nothing here ends the game)
 NERVES_NOTES: dict[str, str] = {
-    "frightened": "Frank's nerves are going. At most once this turn, where the scene gives it room, and not the way the last turn did: the "
-                  "body (hands, breath, a step missed), or on some turns, never every turn, something half-seen, a face at a window that is "
-                  "not there when he looks again, a sound that stops when he does. Nothing is explained.",
-    "coming apart": "Frank is coming apart. At most once this turn, where the scene gives it room, and not the way the last turn did: his "
-                    "hands or his breath not his own, the thread of what someone says lost, or a shadow the wrong shape for a second before "
-                    "it is not.",
+    "frightened": "Frank's nerves are going. Once this turn, where the scene gives it room: the body (hands, breath, a step missed), or "
+                  "something seen or heard that is gone when he looks again. Nothing is explained.",
+    "coming apart": "Frank is coming apart. Once this turn, where the scene gives it room: his hands or his breath not his own, the "
+                    "thread of what someone says lost, or something seen that is gone when he looks again.",
 }
+# plan A (D103, E1): the engine times the flicker. The note goes out once in this many turns at the tier; the turns between
+# get NERVES_QUIET instead. D91's "at most once this turn, not the way the last turn did" was the narrator's to keep and
+# was not kept (a flicker on nearly every nerves-100 turn in all four D98 noir rounds).
+NERVES_EVERY: dict[str, int] = {"frightened": 6, "coming apart": 4}
+NERVES_QUIET = "This turn Frank holds his nerves down: they are still there, but nothing he does gives them away."
+
+
+def nerves_due(p) -> bool:
+    """Plan A: the nerves note goes out this turn (its cooldown has run, or the nerves rose to a worse tier)."""
+    tier = p.dread_tier(p.dread)
+    if tier not in NERVES_NOTES:
+        return False
+    order = list(NERVES_NOTES)
+    return p.nerves_wait == 0 or p.nerves_shown_tier not in order or order.index(tier) > order.index(p.nerves_shown_tier)
 # added to the coming-apart note only when sanity is low (D76): then some of what he perceives is not there
 SANITY_NOTE = ("And some of what he sees and hears is not there: a voice, a figure in a doorway, a whole conversation can turn out to be "
                "nobody; a street can be the wrong street; a half hour can go missing. Never say it is unreal: let the world correct him "
@@ -355,6 +367,42 @@ class NoirGame(GameBase):
     def player_name(self, state: NoirState) -> str:
         return state.player.name
 
+    # plan A (D103): what a failed check can cost Frank, for engine/assistant.choose_cost. The body is one cost of
+    # several and the heaviest; the bad leg is one wound of five and never the same wound twice running.
+    LOSABLE = {"cigarettes": 2, "matches": 2, "dollars": 2, "bullets": 2, "pencil": 2}   # never the lockpicks (his trade), the revolver or the notebook
+    WOUNDS = (("hand", "a torn palm; his grip is worse for a while"), ("ribs", "a bruised rib that catches when he breathes"),
+              ("shoulder", "a wrenched shoulder"), ("face", "a split lip"), ("leg", "the bad leg jarred: it aches, and it holds"))
+    PHYSICAL = ("muscle", "hands")
+
+    def cost_options(self, state: NoirState, roll: dict, label: str = "", target: str = "") -> list[dict]:
+        from engine.assistant import WAY_CLOSED
+        s, p = state, state.player
+        out: list[dict] = [dict(WAY_CLOSED)]
+        people = [q for q in s.people if q.status == "alive" and q.id not in s.case.eldritch]     # the thing in the dark keeps no grudges
+        who = next((q for q in people if q.id == target), None) if target else None
+        here = [q for q in people if q.met and q.location and self._same_spot(s, q.location, p.location)]
+        if who is None and here:
+            who = here[0]
+        if who is not None:
+            out.append({"kind": "tell", "weight": 1, "detail": who.id,
+                        "fact": f"{who.name} sees what {p.name} was trying, and will remember it."})
+        else:
+            out.append({"kind": "tell", "weight": 1, "fact": f"It makes noise: anyone near enough knows someone was here, though not who."})
+        for it in s.inventory:
+            w = self.LOSABLE.get(it.id)
+            if w is None or it.count <= 0:
+                continue
+            if it.id == "dollars":
+                out.append({"kind": "thing", "weight": w, "detail": it.id, "fact": f"{p.name} loses ${min(it.count, 5)}."})
+            elif it.id == "bullets":                      # the loose rounds, never the ones in the cylinder
+                out.append({"kind": "thing", "weight": w, "detail": it.id, "fact": f"{p.name} loses the loose bullets from his coat pocket; the gun keeps its load."})
+            else:
+                out.append({"kind": "thing", "weight": w, "detail": it.id, "fact": f"{p.name} loses the {it.name} he carries."})
+        if roll.get("stat") in self.PHYSICAL:
+            for part, words in self.WOUNDS:
+                out.append({"kind": "wound", "weight": 2, "detail": part, "fact": f"{p.name} is hurt: {words}. It slows him; it does not stop him."})
+        return out
+
     def not_carried(self, state: NoirState, name: str) -> str | None:
         """The adjudicator's `carried` list checked against the pockets: what is not there is a directive."""
         key = re.sub(r"\(.*?\)", "", name).strip().lower()           # as the pockets render it: "revolver (6/6 rounds)", "3 bullets", "$14"
@@ -387,7 +435,9 @@ class NoirGame(GameBase):
         conds = ", ".join(c.name for c in p.conditions) or "none"
         where = "a place the game has lost track of (say where he is this turn)" if p.location == "Unknown" else (p.location or "unknown")
         lines.append(f"{p.name}: at {where}; health {p.health}; nerves {p.dread_tier(p.dread)}; conditions: {conds}.")
-        if p.dread_tier(p.dread) in NERVES_NOTES:                 # D73: what a bad night does to him, for the narrator
+        if p.dread_tier(p.dread) in NERVES_NOTES and not nerves_due(p):     # plan A: not this turn; the engine times it
+            lines.append(NERVES_QUIET)
+        elif p.dread_tier(p.dread) in NERVES_NOTES:                 # D73: what a bad night does to him, for the narrator
             note = NERVES_NOTES[p.dread_tier(p.dread)]
             if p.dread_tier(p.dread) == "coming apart":
                 note += (" " + SANITY_NOTE) if p.sanity < SANITY_LOW else " Nothing is explained; nothing he sees is false."   # D76: hallucinations need low sanity too
@@ -1433,7 +1483,9 @@ class NoirGame(GameBase):
         s = state.model_copy(deep=True)
         s.player.location = state.case.safe_locations[0]
         s.player.dread = min(100, s.player.baseline_dread + 30)
-        return [s]
+        q = state.model_copy(deep=True)                      # plan A: nerves at the top, where the flicker's clock runs
+        q.player.dread = 100
+        return [s, q]
 
     # ---- drift (after_turn) --------------------------------------------------
     def after_turn(self, state: NoirState, info: TurnInfo) -> NoirState:
@@ -1443,6 +1495,14 @@ class NoirGame(GameBase):
         frightened him (1 per 10 somewhere safe), a night in a bed takes SLEEP_RELIEF off, and while one of the case's
         eldritch characters is where Frank is they rise 1 per 2 minutes; in withdrawal nothing passive brings them down
         and they sit no lower than NICOTINE_FLOOR."""
+        tier = state.player.dread_tier(state.player.dread)
+        if tier in NERVES_NOTES or state.player.nerves_wait:          # plan A: the flicker's clock runs every turn, timed or not
+            state = state.model_copy(deep=True)
+            q = state.player
+            if nerves_due(q):                                         # the note went out this turn (the tier as it stands now)
+                q.nerves_wait, q.nerves_shown_turn, q.nerves_shown_tier = NERVES_EVERY[tier] - 1, info.turn, tier
+            else:
+                q.nerves_wait = max(0, q.nerves_wait - 1)
         if info.elapsed_minutes <= 0:
             return state
         s = state.model_copy(deep=True)

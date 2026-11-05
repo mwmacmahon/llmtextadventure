@@ -1529,6 +1529,19 @@ class StationGame(GameBase):
     def player_name(self, s: StationState) -> str:
         return "the station"
 
+    def cost_options(self, s: StationState, roll: dict, label: str = "", target: str = "") -> list[dict]:
+        """Plan A (D103): what a failed check can cost the station, for engine/assistant.choose_cost. No system
+        mishap: a failure is noticed, leaves a trace, or closes the way (the card round's electrical mishap on every
+        failure was the narrator's own pick)."""
+        from engine.assistant import WAY_CLOSED
+        out: list[dict] = [dict(WAY_CLOSED),
+                           {"kind": "trace", "weight": 1, "fact": "It leaves a trace in the station's own logs: anyone who checks will find it."}]
+        who = s.crew_by_id(target) if target else None
+        if who is not None and who.health != "dead":
+            out.append({"kind": "tell", "weight": 2, "detail": who.id,
+                        "fact": f"{who.name} notices what was tried, and it stays with them."})
+        return out
+
     def turn_directives(self, s: StationState) -> list[str]:
         """D81: crew the station has lost track of; the narrator is asked to place them when the prose shows them."""
         lost = [c.name for c in s.crew if c.location == "Unknown" and c.health != "dead"]
