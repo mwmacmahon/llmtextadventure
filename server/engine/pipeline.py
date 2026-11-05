@@ -47,6 +47,7 @@ from .context import build_messages, summary_plan
 from .narration import (Assessment, CallResult, Mechanic, NarrationDone, Visible, default_mechanic_line, fail_forward, narrate,
                         run_check)
 from .game import ApplyReport, CommandResult, Game, GameBase, Rejection, TurnInfo
+from .assistant_view import build_view, match_stakes, render_stakes, stakes_model
 from .mechanics import RESOLVERS, CheckRequest, CheckResult, outcome_words, rng_for
 from .providers import Msg, StreamDone, TextDelta, get_provider
 from .providers.base import Msg, Usage
@@ -424,6 +425,24 @@ class Engine:
                 log.exception("step.failed " + logs.kv(iid=iid, turn=turn, step="summarize"))
                 yield {"event": "summary", "data": {"status": "failed", "turns": plan.to_cover, "error": str(e)}}
 
+        # ---- 2c. the assistant's stakes (D109, ASSISTANT-DESIGN §12 step 1): both futures of each assessed check, written
+        #          before the prose; the cost stays the engine's. Shadow logs them; live makes the reply to a call the branch.
+        nrole = self.cfg.role("narrator")
+        if nrole.stakes != "off" and nrole.checks == "called" and res["assessments"] and adj is not None:
+            try:
+                answer, meta = await self._stakes(game, state, iid, turn, adj, player_text or "")
+                staked = match_stakes(answer, [a.label for a in res["assessments"]])
+                if nrole.stakes == "live":
+                    for a, st in zip(res["assessments"], staked):
+                        a.stake = st
+                ledger("model_call", {"role": "assistant", "part": "stakes", "mode": nrole.stakes, **meta, "answer": answer,
+                                      "labels": [a.label for a in res["assessments"]], "matched": [st is not None for st in staked]})
+                log.info("step " + logs.kv(iid=iid, turn=turn, step="stakes", mode=nrole.stakes, model=meta["model"], seconds=meta["seconds"],
+                                           staked=sum(1 for st in staked if st), assessed=len(staked), **logs.usage_kv(meta["usage"])))
+            except Exception as e:                     # the stakes are help, never a reason to lose the turn
+                ledger("model_call", {"role": "assistant", "part": "stakes", "error": repr(e)})
+                log.exception("step.failed " + logs.kv(iid=iid, turn=turn, step="stakes"))
+
         # ---- 3. narrate -----------------------------------------------------
         role = self.cfg.role("narrator")
         handler = self._call_handler(game, state, iid, turn, res["assessments"], fail_streak=res.get("fail_streak", 0))
@@ -548,6 +567,11 @@ class Engine:
                 for_referee = narration
                 if calls_block.get("notes"):
                     for_referee += "\n\n[NARRATOR'S NOTES: facts it decided, what is happening unseen (unseen:), what it set in motion (soon:)]\n" + "\n".join(f"- {n}" for n in calls_block["notes"])
+                branches = [c for c in calls_block.get("calls", []) if (c.get("result") or {}).get("stake")]
+                if branches:                                  # D109 §12 step 6: a called check whose result was not played
+                    for_referee += ("\n\n[WHAT EACH CALLED CHECK DECIDED: the engine's answer to the call, which the prose must play]\n"
+                                    + "\n".join(f"- {c['call'].get('raw')}: {str((c['result']).get('outcome', '')).replace('_', ' ')}. {c['result']['stake']['text']}"
+                                                 + (f" Cost: {c['result']['cost']['fact']}" if c["result"].get("cost") else "") for c in branches))
                 uncalled_now = [a for a in res["assessments"] if not a.called]
                 if uncalled_now and calls_block.get("calls"):     # K2 stopgap: some called, some not; none called is the engine's own ruling
                     for_referee += ("\n\n[CHECKS NOT CALLED: the engine assessed these attempts as needing a roll, and the narrator called no check for them]\n"
@@ -723,7 +747,8 @@ class Engine:
                       + [f"assessed check not called: {a}" for a in calls_block.get("assessed_not_called", [])]
                       + [f"narrator: {p}" for p in calls_block.get("problems", [])],
             "calls": [{"call": c["call"].get("raw"), "mechanic": c.get("mechanic"), "outcome": (c.get("result") or {}).get("outcome"),
-                       **({"cost": (c.get("result") or {})["cost"]} if (c.get("result") or {}).get("cost") else {})} for c in calls_block.get("calls", [])],
+                       **({"cost": (c.get("result") or {})["cost"]} if (c.get("result") or {}).get("cost") else {}),
+                       **({"stake": (c.get("result") or {})["stake"]} if (c.get("result") or {}).get("stake") else {})} for c in calls_block.get("calls", [])],
             "declarations": [d.get("raw") for d in calls_block.get("declarations", [])],
             "notes": calls_block.get("notes", []),
         }
@@ -812,6 +837,30 @@ class Engine:
         if tape is None:
             return provider
         return Taped(provider, lambda label, ex: tape("exchange", exchange_row(self.store.put_blob, label, ex)), step)
+
+    async def _stakes(self, game: Game, state: BaseModel, iid: str, turn: int, adj: Adjudication, player_text: str) -> tuple[dict, dict]:
+        """The assistant's stakes call (D109): the engine's view of the game (engine/assistant_view.py, the 5a probes' view),
+        on the assistant role when one is configured, else on the adjudicator's settings and slot."""
+        role = self.cfg.role("assistant") if "assistant" in self.cfg.roles else self.cfg.role("adjudicator")
+        provider = self._provider(role, iid, "assistant")
+        _, fresh = game.new_instance({})
+        lo = max(0, turn - 14)
+        snaps: dict[int, dict] = {}
+        for t in range(lo, turn):
+            try:
+                snaps[t] = self.store.load_state(iid, t)
+            except KeyError:
+                pass
+        rows = [r for t in range(max(1, lo), turn) for r in self.store.ledger(iid, t)]
+        tr = [{"turn": r.turn, "role": r.role, "text": r.text} for r in self.store.transcript(iid) if r.turn < turn]
+        v = build_view(game, state, fresh, turn=turn, snaps=snaps, ledger=rows, tr=tr, adj=adj.model_dump(mode="json"),
+                       player=player_text, impending=_pending_block(game, state, "adjudicator"))
+        system, user = render_stakes(v)
+        t0 = time.monotonic()
+        plan, usage = await provider.extract(role, system, [Msg("user", user)], stakes_model())
+        meta = {"provider": provider.name, "model": usage.extra.get("model") or role.model, "seconds": round(time.monotonic() - t0, 2),
+                "usage": asdict(usage), "signals": v["signal_nums"]}
+        return plan.model_dump(), meta
 
     async def _adjudicate(self, game: Game, state: BaseModel, iid: str, player_text: str) -> tuple[Adjudication, dict]:
         role = self.cfg.role("adjudicator")

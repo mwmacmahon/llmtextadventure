@@ -21,6 +21,7 @@ from typing import Any, AsyncIterator, Awaitable, Callable
 
 from .brackets import (CLOSE_CALL, BracketError, Call, Declaration, Note, StreamFilter, extract, pending_call,
                        with_mechanic)
+from .assistant_view import branch_text
 from .config import RoleConfig
 from .mechanics import CheckRequest, CheckResult, Modifier, TIER_ORDER, Tier, outcome_words
 from .providers.base import Msg, Provider, StreamDone, TextDelta, Usage
@@ -222,6 +223,7 @@ class Assessment:
     label: str = ""
     called: bool = False
     called_as: str = ""         # the difficulty the call that answered it named, to tell a repeat from a new attempt
+    stake: dict | None = None   # the assistant's two futures for it (D109), live mode only; the reply carries the matched branch
 
 
 def harder(a: str, b: str) -> Tier:
@@ -274,10 +276,21 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
     data = res.model_dump(mode="json")
     failed = res.outcome in ("failure", "huge_failure", "critical_failure")
     cost = cost_for(data, label, target or "") if (failed and cost_for) else None      # plan A (D103): the engine picks the cost
+    stake = a.stake if a is not None else None                                           # D109: the assistant's branch, live
+    branch = branch_text(stake, failed) if stake else ""
+    if stake:
+        data["stake"] = {"branch": "failure" if failed else "success", "text": branch.strip(),
+                         "minutes": int(stake.get("failure_minutes" if failed else "success_minutes") or 0)}
     if cost:
         data["cost"] = {k: cost[k] for k in ("kind", "fact", "detail") if cost.get(k)}
         tail = (" A failure gives nothing of what was sought: no name, no fact, no glimpse of what is hidden, no half-success. The scene"
-                f" still moves. What it costs, the engine has chosen: {cost['fact']} Play that cost, and no other: no further hurt, nothing else lost.")
+                f" still moves.{branch} What it costs, the engine has chosen: {cost['fact']} Play "
+                + ("that outcome and that cost" if branch else "that cost") + ", and no other: no further hurt, nothing else lost.")
+    elif failed and branch:
+        tail = (" A failure gives nothing of what was sought: no name, no fact, no glimpse of what is hidden, no half-success. The scene"
+                f" still moves.{branch} Play that outcome.")
+    elif branch:
+        tail = branch + " Play that."
     elif failed:
         tail = (fail_forward(player) if fail_streak >= 1 else
                 " A failure gives nothing: no name, no fact, no glimpse of what is hidden, no half-success. The attempt costs instead (time, noise, notice, a hurt).")

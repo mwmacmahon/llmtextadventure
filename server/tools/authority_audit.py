@@ -162,6 +162,17 @@ def audit(game: GameBase) -> dict[str, Any]:
                     writers[pat].add("after_turn")
                 cur = after
 
+    # the referee's present list (who the telling placed with the player), from each probe state, with its first person
+    if hasattr(game, "apply_present"):
+        from engine.game import ApplyReport
+        from engine.gamekit import Writer
+        for start in probes:
+            people = [q.id for q in getattr(start, "people", [])][:1]
+            cur = start.model_copy(deep=True)
+            after = game.apply_present(cur, people, Writer(getattr(game, "authority", {}), ApplyReport(), actor="engine"))
+            for pat in diff_patterns(start.model_dump(mode="json"), after.model_dump(mode="json")):
+                writers[pat].add("present")
+
     # classify every pattern
     rows: dict[str, dict[str, Any]] = {}
     for cp, gp in leaves(doc):

@@ -66,6 +66,25 @@ def test_noir_costs_the_body_only_on_physical_rolls_and_never_the_revolver(game:
     assert not [o for o in run if o["kind"] == "thing" and o["detail"] in ("revolver", "notebook", "trench_coat")]
 
 
+def test_the_witness_is_only_someone_the_last_telling_had_with_frank(game: NoirGame):
+    """H6 (D109): the state placed Brandt in the cell long after he left; "Brandt sees what Frank was trying" was staked
+    on eight of thirteen checks. Only the referee's present list of the last telling names a witness now."""
+    from engine.game import ApplyReport
+    from engine.gamekit import Writer
+    _, st = game.new_instance({})
+    a, b = [q for q in st.people if q.status == "alive" and q.id not in st.case.eldritch][:2]
+    for q in (a, b):
+        q.met, q.location = True, st.player.location           # the state says both are here
+    tells = lambda s, target="": [o for o in game.cost_options(s, {"stat": "tongue", "outcome": "failure"}, "", target) if o["kind"] == "tell"]
+    assert "detail" not in tells(st)[0]                         # nobody in the last telling: noise, no name
+    st = game.apply_present(st, [b.id], Writer(game.authority, ApplyReport(), actor="engine"))
+    assert st.player.with_him == [b.id]
+    assert tells(st)[0]["detail"] == b.id
+    assert tells(st, a.id)[0]["detail"] == b.id                 # a target the telling did not have is not the witness
+    st = game.apply_present(st, [], Writer(game.authority, ApplyReport(), actor="engine"))
+    assert st.player.with_him == [] and "detail" not in tells(st, b.id)[0]
+
+
 def test_the_nerves_note_goes_out_once_in_four_turns_at_the_top(game: NoirGame):
     _, st = game.new_instance({})
     st.player.dread = 100

@@ -108,6 +108,7 @@ class Player(BaseModel):
     nerves_wait: int = 0              # plan A (D103): turns before the nerves note goes out again (the engine times the flicker)
     nerves_shown_turn: int = 0        # the last turn it went out, for the referee and the reads
     nerves_shown_tier: str = ""       # the tier it went out at; a rise to a worse tier shows at once
+    with_him: list[str] = Field(default_factory=list)   # ids the last telling placed with him (the referee's present); the cost table's witnesses (H6)
     conditions: list[Condition] = Field(default_factory=list)
     proficiencies: list[str] = Field(default_factory=list)
     weaknesses: list[str] = Field(default_factory=list)

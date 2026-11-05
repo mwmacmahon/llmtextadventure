@@ -31,6 +31,9 @@ class RoleConfig(BaseModel):
     # narrator only: "called" asks it to stop at each assessed check and wait for the roll; "told" rolls them
     # before the prose and gives the results in THIS TURN (for a model that writes the outcome before the call)
     checks: Literal["called", "told"] = "called"
+    # narrator, called mode (D109, ASSISTANT-DESIGN §12): the assistant stakes each assessed check before the prose, both
+    # futures; off: no call; shadow: called and logged, the engine's reply unchanged; live: the reply to a call is the branch
+    stakes: Literal["off", "shadow", "live"] = "off"
     # llamacpp only (engine/providers/llamacpp_provider.py): the server, the slot this role is pinned to so its
     # cache stays resident beside the other roles', whether the model may think, sampling temperature, auth.
     base_url: str = Field(default_factory=lambda: os.environ.get("TA_LLAMA_URL", "http://127.0.0.1:8080"))

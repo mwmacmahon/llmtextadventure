@@ -379,8 +379,10 @@ class NoirGame(GameBase):
         s, p = state, state.player
         out: list[dict] = [dict(WAY_CLOSED)]
         people = [q for q in s.people if q.status == "alive" and q.id not in s.case.eldritch]     # the thing in the dark keeps no grudges
-        who = next((q for q in people if q.id == target), None) if target else None
-        here = [q for q in people if q.met and q.location and self._same_spot(s, q.location, p.location)]
+        # a witness only from the last telling (H6, D109): the state's locations go stale, and "Brandt sees what Frank was trying"
+        # was staked on eight of thirteen cell checks with Brandt long gone; the target counts only when that telling had them too
+        here = [q for pid in p.with_him for q in people if q.id == pid]
+        who = next((q for q in here if q.id == target), None) if target else None
         if who is None and here:
             who = here[0]
         if who is not None:
@@ -1193,6 +1195,10 @@ class NoirGame(GameBase):
         return within.get(a) == b or within.get(b) == a
 
     def apply_present(self, s: NoirState, present: list[str], w: Writer) -> NoirState:
+        with_him = [pid for pid in present if s.person(pid) is not None]
+        if with_him != s.player.with_him:
+            w.note(f"player.with_him: {s.player.with_him} -> {with_him}")
+            s.player.with_him = with_him
         for pid in present:
             q = s.person(pid)
             if q:                           # talked about, not met: Rosa's word about Szabo, who is out on the streets (10-31)
