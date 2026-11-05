@@ -91,7 +91,7 @@ STAKES_SYSTEM = """You are the narrator's assistant for a text adventure. The en
 
 {player}
 
-For each assessed check (numbered in THE ENGINE'S READING, with its label): what success gains (a fact about how things stand, not a scene) and how many minutes it takes; what failure costs, as one line copied from COSTS THE STATE CAN PAY, how many minutes it takes, and whether failure also brings a complication of one of these kinds: none, pending_early (something under IMPENDING happens now), cast_acts (a person acts on their own reasons), callback (something from MADE UP IN PLAY or an open thread comes back), time_lost (time passes the player did not choose to spend). A failure gives nothing of what was sought: no name, no fact, no glimpse of what is hidden, no half-success. Vary the cost: look at THE LAST THREE TELLINGS and the SIGNALS and do not stake the kind of cost the writer just played; a run of failures is the reason to stake a cost of a different kind, not the same one again.
+For each assessed check (numbered in THE ENGINE'S READING, with its label): what success gains (a fact about how things stand, not a scene) and how many minutes it takes; what failure leaves standing (the attempt's own outcome, as a fact: he does not buy it; the lock holds), what it costs, as one line copied from COSTS THE STATE CAN PAY, how many minutes it takes, and whether failure also brings a complication of one of these kinds: none, pending_early (something under IMPENDING happens now), cast_acts (a person acts on their own reasons), callback (something from MADE UP IN PLAY or an open thread comes back), time_lost (time passes the player did not choose to spend). A failure gives nothing of what was sought: no name, no fact, no glimpse of what is hidden, no half-success. Vary the cost: look at THE LAST THREE TELLINGS and the SIGNALS and do not stake the kind of cost the writer just played; a run of failures is the reason to stake a cost of a different kind, not the same one again.
 
 Stake every assessed check, and name the pivotal one: the check this turn turns on, the one the engine may keep when it keeps only one. Then, under fiat, settle in the open any other attempt in the move that needs no roll: what it is and how it comes out.
 
@@ -139,6 +139,7 @@ def stakes_model() -> type[BaseModel]:
         label=(str, Field(description="The check's label, copied from after 'label:' in THE ENGINE'S READING.")),
         success_gain=(str, Field(description="What success gains: how things stand if it works, one plain sentence. Not a scene.")),
         success_minutes=(int, Field(description="Minutes the attempt takes when it works.")),
+        failure_outcome=(str, Field(description="What failure leaves standing, as a fact: the attempt's own outcome ('Dooley does not buy it'), before its cost. One plain sentence.")),
         failure_cost=(str, Field(description="One line copied from COSTS THE STATE CAN PAY.")),
         failure_minutes=(int, Field(description="Minutes the attempt takes when it fails.")),
         complication=(Literal["none", "event_now", "pending_early", "cast_acts", "callback", "new", "time_lost"], Field(description="What else failure brings, a kind from the instructions, or none.")),
