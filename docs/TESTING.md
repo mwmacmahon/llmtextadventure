@@ -284,6 +284,32 @@ when the dice do (noir's opening grab puts Frank in the holding cell on most fir
 more.txt` continues a game from a state that suits the test, which is how the place tests of 2026-10-31 reached The
 Anchor.
 
+### Comparing long rounds: the runbook (D89, D99; the user, 2026-11-05)
+
+The measure that fits each kind of change, the change card, adoption and reporting rules: `docs/MEASURING.md`.
+
+A long round (50 turns, an Opus player subagent) yields three kinds of evidence, and a write-up says which kind each
+claim rests on:
+
+1. **Counts** (`tools/round_profile.py <iid> --md`, `tools/round_counts.py <iid>`): failure measures. Refrain and copy
+   (the chant), retells, forced closes, seconds, words, the meter, the clock, rulings and rejections. Comparable across
+   rounds; they say what went wrong, never which round was better.
+2. **The read** (`tools/READER_BRIEF.md`, one Opus subagent per round, the narration alone): catches the big mistakes,
+   and its timeline (one row a turn: time, place, beat, check, scene, plot, flags) is the round's trajectory, made so
+   that rounds of one game can be set side by side without reading the transcripts. A read is one reader on one round:
+   its "would I keep playing" is never compared with another read's to rank rounds.
+3. **The comparison** (`tools/round_pairs.py pack <game> <tag-a> <tag-b>`, then one Opus subagent per order handed
+   `pair-NN/AB/brief.md` and another `pair-NN/BA/brief.md`; `round_pairs.py merge <game>`): two whole rounds read
+   blind, judged on how the game went, creative beats, keeping faith, playing the player's move, the late turns and the
+   writing, plus an overall call; a call counts only when both orders agree. This is the only relative quality measure
+   for long rounds. One round per setting means an agreed win says this round beat that round; attributing it to the
+   setting needs repeats (D71).
+
+Per round: play (PLAYER_BRIEF.md), counts, `tools/round_report.py <iid> --artifact` (the call report),
+`tools/round_read.py <transcript> --out ... --calls <url>` (the light page), the read, then DECISIONS and STATUS. Per
+batch: pack every pair of rounds of each game, run the judges, merge, and write up with the timelines beside each
+other. Judging is by subagents, never API calls (D84).
+
 ### The call report: what each model saw and did (D59)
 
 Every live turn records each model call it makes on the turn's tape (`engine/tape.py`): an `exchange` ledger row per

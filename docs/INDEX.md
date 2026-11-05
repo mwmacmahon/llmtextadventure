@@ -76,7 +76,8 @@ Every playtest also has a transcript `notes/playtests/<date>-<game>-<tag>.md` an
 
 | Doc | Last change | State |
 |---|---|---|
-| `TESTING.md` | 2026-11-04 | current: sets, keys, runs, the narrator's measure, settling a setting (D67/D71), the player's-eye read (D89) |
+| `MEASURING.md` | 2026-11-05 | first draft, to relitigate: the change card, the measure per kind of change (per-turn pairs, keyed test sets, long rounds with counts, the read's timeline and blind round pairs), the long-round protocol, adoption and reporting rules |
+| `TESTING.md` | 2026-11-05 | current: sets, keys, runs, the narrator's measure, settling a setting (D67/D71), the player's-eye read (D89), the long-round runbook (D99) |
 | `LOCAL_LLM.md` | 2026-11-04 | **behind**: the `extra` flags and MTP profiles (D70), the GPU wait at start (L6), the Gemma profile |
 | `GAME_AUTHORING.md` | 2026-11-04 | the D77 writer rules are in; **behind**: nerves on the clock, `eldritch:` and `sanity` (D75/D76), the `advance` effect, the nerves notes |
 | `ARCHITECTURE.md` | 2026-11-04 | the guard paragraph is current (D77/D79); **behind**: the tape (D59), thinking per role (D66), called mode as the only mode (D63) |

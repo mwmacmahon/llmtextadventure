@@ -46,7 +46,10 @@ Every finding carries turn numbers and, where you can, a short quote.
    being done again, a fact forgotten, a name that changed.
 3. **Pacing and length.** Turns that go nowhere; turns that burn hours in a paragraph; turns that run too long. WORDS
    gives every turn's length: say where the turns balloon and whether the extra words carried anything (new events,
-   new information) or were padding (restating the room, the panel, the last turn).
+   new information) or were padding (restating the room, the panel, the last turn). Scenes too: one that ran on past
+   its point, one cut off before it had one, a situation the game handled well or badly (a fight, a standoff, a search,
+   a conversation that should have ended), a plot development that landed or was thrown away. These go in the timeline
+   as well as the take.
 4. **Voice.** Does the voice the opening set hold through the round, or does it flatten, drift to another register,
    lecture, summarise, address the player out of character, or turn into a report?
 5. **Language degradation.** Especially late. Punctuation going strange (runs of commas, dashes or ellipses, missing
@@ -70,7 +73,7 @@ strengths are *great writing, creative, good game awareness, characters came ali
 
 ## The take
 
-Write it to OUT, markdown, 800 to 1500 words, under these headings, in this order:
+Write it to OUT, markdown, 800 to 1500 words before the timeline, under these headings, in this order:
 
 - **In a sentence.** How this round read, as a player.
 - **The arc.** Where the story went, five to eight sentences, with turn numbers.
@@ -78,8 +81,21 @@ Write it to OUT, markdown, 800 to 1500 words, under these headings, in this orde
 - **Where it shone.** Likewise.
 - **The late turns.** What changed after about turn 30: length, language, repetition, pace, with turns.
 - **Would I keep playing?** A plain answer and why, three sentences at most.
-- **Turn by turn.** One line a turn: a few words on what happened, then any flag in brackets
-  (`[long] [repeat] [contradiction] [off-voice] [degraded] [stall] [acted for me] [secret?] [invention]`).
+- **The timeline.** A table, one row a turn, every turn, so that someone who has not read the transcript can see how
+  the game went and set it beside another round's. Columns, in this order:
+  `turn | time | where | beat | check | scene | plot | flags`
+  - *time*: the clock from the panel. *where*: the place, in a word or two.
+  - *beat*: what happened, in at most ten words, as a story beat ("Rosa names Szabo's room", "knee fails on the stairs").
+  - *check*: the roll the player saw, as `Eye S`, `Muscle F`, `Tongue huge F`, `crit S`, or `-` if none.
+  - *scene*: `new` when the scene changes, `cont` while it continues, `long` when it has run past its point, `short`
+    when it was cut off before it had one.
+  - *plot*: `+` when the turn moved the case or the crisis (a lead, a reveal, a door opened, a person turned), `-` when
+    it took progress away, blank otherwise.
+  - *flags*: any of `long repeat contradiction off-voice degraded stall acted-for-me secret? invention logic handled
+    mishandled`, space-separated, or blank. `handled` and `mishandled` are for a situation the game played well or badly
+    (say which in the beat).
+  Keep the cells short; the table is read at a glance and compared across rounds. Flag words are the same words every
+  reader uses, so do not invent new ones.
 
 Describe what you saw; do not guess at causes (the prompt, the parameters, the context window). The causes are our
 job, and a guess in the take becomes a fact in the next reader's head. Quote the transcript, not your memory of it.
