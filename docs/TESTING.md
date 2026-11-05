@@ -322,6 +322,7 @@ The narrator has its own instruments, in `tools/narrator_eval.py`, run through `
 ```
 .venv/bin/python tools/eval_replay.py narrator-corpus <iid> [<iid>:3,5,8 ...] --purpose mixed --title "…"
 .venv/bin/python tools/eval_replay.py narrate <corpus> [--opt model=claude-haiku-5-5] [--feed window_turns=6] --note haiku
+.venv/bin/python tools/eval_replay.py narrate --resume <narrator run>      # tell the turns a stopped run missed (D96)
 .venv/bin/python tools/eval_replay.py rubric <narrator run> [...]
 .venv/bin/python tools/eval_replay.py pairs <run A> <run B>
 .venv/bin/python tools/judge_pack.py pack <pairs id>      # briefs for judging subagents; then `merge` (D84)
@@ -331,7 +332,9 @@ The narrator has its own instruments, in `tools/narrator_eval.py`, run through `
 A **corpus** freezes whole games (by blob) and lists their turns. **narrate** tells every turn again through one
 variant, by the live path: a scratch copy of the game up to the turn before, under the same id so the dice roll the
 same, the stored adjudication, stopping before the referee. The request it builds equals the live one byte for byte
-(tests/test_narrator_replay.py). The **rubric** is a checklist per telling, yes / no / n/a with the sentence that shows
+(tests/test_narrator_replay.py). On the local box a run stops at the first box failure (a crash or its restart), saves
+the turns it finished marked incomplete, and exits 3, with no retry. `--resume` tells the missing turns into the same file on the
+same variant, only when the box serves the same model; `pairs` refuses an incomplete run (D96). The **rubric** is a checklist per telling, yes / no / n/a with the sentence that shows
 it. **Pairs** rank two variants: the same turn from each, blind, judged by Opus subagents in both orders (`judge_pack.py pack` writes a self-contained brief per chunk, no chunk holds
 both orders of a pair, `merge` folds the verdicts into the judge record the reports read; D84), and, when wanted, by the
 user at `/dev/judge` on the game server (keys 1, 2, 0 and Enter; each judgement goes to
