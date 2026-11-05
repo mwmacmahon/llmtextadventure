@@ -273,7 +273,7 @@ def build_view(game: Any, state: Any, fresh: Any, *, turn: int, snaps: dict[int,
     sig_lines, sig_nums = _signals(game.name, turn, ledger, tr, snaps)
     who = ([f"{q.id} = {q.name}" for q in state.people if q.met or q.id in {p.id for p in fresh.people}] if game.name == "noir"
            else [f"{c.id} = {c.name}" for c in state.crew])
-    return {"game": game.name, "state_text": state_text, "sections": _sections(state_text), "who": who,
+    return {"game": game.name, "state": state, "state_text": state_text, "sections": _sections(state_text), "who": who,
             "impending": impending, "ahead": _case_ahead(game, state), "hidden_cast": _hidden_cast(game, state),
             "invented": _invented(game, state, fresh), "tellings": tellings, "reading": _reading(adj), "adj": adj,
             "signals": sig_lines, "signal_nums": sig_nums, "player": player}
