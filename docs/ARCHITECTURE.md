@@ -257,7 +257,7 @@ summary at one level, bulletin scope as constants, the focus filter for the stat
 thing or place, directive economy. Not yet: own-prose distance, the focus filter on the bulletin, prefix split, pull
 for clues and threads, levels and the config table. The base they all sit on is the bulletin as named sections
 with items (the game names the sections, the engine assembles the string by the dials), which replaces the single
-string `render_bulletin` returns the next time it is touched. Design: `notes/DESIGN-context-modules-2026-11-06.md`.
+string `render_bulletin` returns the next time it is touched. The front end is the profile picker: a profile (`server/profiles/<name>.yml`) grows into the whole configuration of a play (provider and model per role, sampler and thinking, the dials, the module levels), the settings menu lists profiles with a card each and switches them (a local one through the box's helper), and every turn's mechanics row carries the profile's name. Design: `notes/DESIGN-context-modules-2026-11-06.md`.
 
 **Window slide.** The window start moves in steps of `window_slide` (6) once more than
 `window_turns` (12) turns exist, so the cached message prefix is stable for six requests.
