@@ -143,3 +143,14 @@ def test_a_failed_conversation_costs_the_conversation_not_a_noise(game: NoirGame
     st = game.apply_present(st, [], Writer(game.authority, ApplyReport(), actor="engine"))
     kinds = [o["kind"] for o in game.cost_options(st, {"stat": "tongue", "outcome": "failure"}, "", "")]
     assert "noise" not in kinds and "talk" not in kinds                          # nobody to talk to, and words make no noise
+
+
+def test_a_retry_is_the_same_label_or_the_same_target_and_stat():
+    """D125 (Fable): failing to hit Szabo and then failing to bluff him is two attempts, not a retry."""
+    from engine.pipeline import is_retry
+    hit = {"label": "Knock Szabo down", "about": "szabo", "stat": "muscle"}
+    assert not is_retry(hit, label="Bluff Szabo about the police", about="szabo", stat="tongue")
+    assert is_retry(hit, label="Shove Szabo into the wall", about="szabo", stat="muscle")      # same target, same stat
+    assert is_retry(hit, label="knock szabo down (muscle, high)", about="", stat="muscle")     # same label
+    assert not is_retry({}, label="Knock Szabo down", about="szabo", stat="muscle")
+    assert not is_retry(hit, label="", about="", stat="muscle")

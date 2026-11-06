@@ -1130,7 +1130,8 @@ class Engine:
             for c in calls:
                 r = c.get("result") or {}
                 if r.get("outcome") in FAILURES:
-                    last_fail = {"label": r.get("label") or "", "about": r.get("about") or (c.get("call") or {}).get("target") or ""}
+                    last_fail = {"label": r.get("label") or "", "about": r.get("about") or (c.get("call") or {}).get("target") or "",
+                                 "stat": r.get("stat") or ""}
         cost_rng = rng_for(iid, turn, "costs")
 
         def cost_for(roll: dict, label: str, target: str) -> dict | None:
@@ -1138,10 +1139,10 @@ class Engine:
             if options is None:
                 options = default_cost_options(state, roll, label, target)
             about = roll.get("about") or target
-            retry = bool(last_fail) and ((bool(about) and about == last_fail.get("about")) or _norm_label(label) == _norm_label(last_fail.get("label", "")))
+            retry = is_retry(last_fail, label=label, about=about, stat=roll.get("stat") or "")
             cost = choose_cost(options, roll, recent=recent, rng=cost_rng, fail_streak=fail_streak, round_costs=round_costs, retry=retry)
             if roll.get("outcome") in FAILURES:
-                last_fail.clear(); last_fail.update({"label": label, "about": about})
+                last_fail.clear(); last_fail.update({"label": label, "about": about, "stat": roll.get("stat") or ""})
             if cost:
                 recent.append(cost)
                 round_costs.append(cost)
@@ -1349,6 +1350,16 @@ def recover_misplaced_checks(adj: AssistantReading, stats: dict) -> list[str]:
             intent.transition = ""                         # it held the check, not a transition
         out.append(f"{stat.lower()} {tier}")
     return out
+
+
+def is_retry(last_fail: dict, *, label: str, about: str, stat: str) -> bool:
+    """A retry of the attempt that just failed (D122, narrowed in D125 by Fable): the same label, or the same target with
+    the same stat. A different attempt on the same person (failing to hit Szabo, then failing to bluff him) is not one."""
+    if not last_fail:
+        return False
+    if _norm_label(label) and _norm_label(label) == _norm_label(last_fail.get("label", "")):
+        return True
+    return bool(about) and about == last_fail.get("about") and bool(stat) and stat == last_fail.get("stat")
 
 
 def _norm_label(label: str) -> str:
