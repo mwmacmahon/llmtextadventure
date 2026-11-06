@@ -177,3 +177,38 @@ def test_a_label_with_an_unearned_hidden_term_becomes_its_stat():
     adj, _ = asyncio.run(eng._adjudicate(g, st, "", "I ask the thing what it did with June."))
     assert adj.intents[0].check.label == "tongue"
     p.canned.clear()
+
+
+def test_every_visible_field_with_an_unearned_hidden_term_is_scrubbed():
+    """D116: the guard runs over every adjudication text the narrator or player can see, not the label only."""
+    from engine.pipeline import scrub_hidden
+    from engine.roles import FiatOutcome, Focus
+    cfg = load_config()
+    g = load_games(cfg.resolve(cfg.server.content_root))["noir"]
+    _, st = g.new_instance({})
+    adj = AdjudicationStaked(
+        kind="action", summary="Frank questions the shepherd.", clarify_question="Which cistern?", time_minutes=5, risk="low", notes="It is a shepherd.",
+        focus=Focus(topics=["the Congregation", "the roof"]),
+        fiat=[FiatOutcome(attempt="read the note", outcome="It names the Congregation."), FiatOutcome(attempt="light up", outcome="He smokes.")],
+        intents=[IntentStaked(action="ask it", check=CheckStaked(label="ask it about June", stat="tongue", difficulty="high",
+                                                               success_gain="It says June is under warehouse 4.", failure_outcome="It says nothing.",
+                                                               complication="cast_acts", complication_what="Dooley arrives.")),
+                 IntentStaked(action="hold the gun on it", check=CheckStaked(label="hold steady", stat="nerve", difficulty="medium",
+                                                                           success_gain="Frank's hand stays steady.", failure_outcome="The gun wavers."))])
+    n = scrub_hidden(g, st, adj, "I ask the thing what it did with June.")
+    first, second = adj.intents[0].check, adj.intents[1].check
+    assert first.success_gain == "" and first.failure_outcome == "" and first.complication == "none"      # the whole stake goes
+    assert second.success_gain == "Frank's hand stays steady."                                         # a clean one stays
+    assert [c["label"] for c in adjudication_stakes(adj)["checks"]] == ["hold steady"]
+    assert "shepherd" not in adj.summary and adj.clarify_question == "What exactly are you trying to do?" and adj.notes is None
+    assert adj.focus.topics == ["the roof"] and [f.attempt for f in adj.fiat] == ["light up"]
+    assert n == {"stake": 1, "fiat": 1, "summary": 1, "clarify": 1, "notes": 1, "topics": 1}
+
+
+def test_a_hidden_term_the_player_used_is_not_scrubbed():
+    from engine.pipeline import scrub_hidden
+    cfg = load_config()
+    g = load_games(cfg.resolve(cfg.server.content_root))["noir"]
+    _, st = g.new_instance({})
+    adj = AdjudicationStaked(kind="action", summary="Frank asks about the Congregation.", time_minutes=5, risk="low")
+    assert scrub_hidden(g, st, adj, "I ask her about the Congregation.") == {} and "Congregation" in adj.summary

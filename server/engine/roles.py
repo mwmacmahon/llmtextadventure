@@ -127,7 +127,7 @@ ADJUDICATOR_STAKES = """STAKES. While this section is here you also write what e
 - The label, the failure and the complication never name the player's own condition; time_lost is time, not a symptom.
 - pivotal: the label of the check this input turns on. fiat: each other attempt in the input that needs no roll and is not a listed command, and how it comes out; a fiat read or look gives only what the state already shows the player. A listed command is never fiat: it goes under `commands`, and the engine decides how it comes out. fiat never changes what a person thinks or feels.
 - THE CASE AHEAD is never pending_early: only IMPENDING is.
-- summary, notes, focus, every check's label, success_gain, fiat and complication_what name nothing from WHAT THE CAST HIDE, THE CASE AHEAD or the hidden truth that the player has not learned, beyond what a success's Tells allow."""
+- summary, clarify_question, notes, focus, every check's label, success_gain, failure_outcome, complication_what and fiat name nothing from WHAT THE CAST HIDE, THE CASE AHEAD or the hidden truth that the player has not learned, beyond what a success's Tells allow."""
 
 
 NARRATOR_PROTOCOL = """ENGINE PROTOCOL. A few kinds of line are for the engine, each on a line of its own; the player never sees them.

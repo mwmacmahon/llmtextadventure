@@ -849,16 +849,12 @@ class Engine:
             log.info("adjudicate.retry " + logs.kv(iid=iid, why=retry))
         if recovered:
             log.info("adjudicate.recovered_checks " + logs.kv(iid=iid, checks=recovered))
-        # a label is shown to the narrator and the player; one carrying a word of the hidden truth not yet learned (the
-        # stakes' view shows the adjudicator the cast's secrets, D115: "Interrogating the shepherd") becomes its stat
-        for i in adj.intents:
-            if i.check and _hook(game, "leaked_terms", state, i.check.label, player_text, default=[]):
-                i.check.label = i.check.stat
+        scrubbed = scrub_hidden(game, state, adj, player_text)
         adj.time_minutes = max(0, int(adj.time_minutes))
         if adj.kind in ("clarify", "impossible", "trivial"):
             adj.time_minutes = 0
             adj.intents = [i.model_copy(update={"check": None}) for i in adj.intents]
-        meta = {"provider": provider.name, "model": usage.extra.get("model") or role.model, "seconds": round(time.monotonic() - t0, 2), "usage": asdict(usage)}
+        meta = {"provider": provider.name, "model": usage.extra.get("model") or role.model, "seconds": round(time.monotonic() - t0, 2), "usage": asdict(usage), **({"scrubbed": scrubbed} if scrubbed else {})}
         if retry:
             meta["retry"] = retry
         return adj, meta
@@ -1341,6 +1337,48 @@ def recover_misplaced_checks(adj: Adjudication, stats: dict) -> list[str]:
             intent.transition = ""                         # it held the check, not a transition
         out.append(f"{stat.lower()} {tier}")
     return out
+
+
+def scrub_hidden(game: Game, state: BaseModel, adj: Any, player_text: str) -> dict[str, int]:
+    """D115-D116: the stakes' view shows the adjudicator the cast's secrets (by design: a success's gain needs the Hidden
+    line), so every text it writes that the narrator or the player can see is run through the game's leaked_terms hook
+    (a word of the hidden truth not yet learned, outside quoted speech). A label becomes its stat; a check whose futures
+    carry one loses its stakes (it is called as before, the reply unstaked); a fiat entry is dropped; the summary falls
+    back to the player's own words; the clarify question to a plain one; notes and topics are dropped. Returns counts."""
+    def leaks(text: str | None) -> bool:
+        return bool(text) and bool(_hook(game, "leaked_terms", state, text, player_text, default=[]))
+    n: dict[str, int] = {}
+    def hit(k: str) -> None:
+        n[k] = n.get(k, 0) + 1
+    for i in adj.intents:
+        c = i.check
+        if c is None:
+            continue
+        if leaks(c.label):
+            c.label = c.stat; hit("label")
+        if any(leaks(getattr(c, f, "")) for f in ("success_gain", "failure_outcome", "complication_what")):
+            for f, v in (("success_gain", ""), ("failure_outcome", ""), ("complication_what", ""), ("complication", "none")):
+                if hasattr(c, f):
+                    setattr(c, f, v)
+            hit("stake")
+    if getattr(adj, "fiat", None):
+        kept = [f for f in adj.fiat if not (leaks(f.attempt) or leaks(f.outcome))]
+        if len(kept) < len(adj.fiat):
+            n["fiat"] = len(adj.fiat) - len(kept)
+            adj.fiat = kept
+    if leaks(adj.summary):
+        adj.summary = "The player: " + player_text.strip()[:200]; hit("summary")
+    if leaks(adj.clarify_question):
+        adj.clarify_question = "What exactly are you trying to do?"; hit("clarify")
+    if leaks(adj.notes):
+        adj.notes = None; hit("notes")
+    focus = getattr(adj, "focus", None)
+    if focus is not None and focus.topics:
+        kept_t = [t for t in focus.topics if not leaks(t)]
+        if len(kept_t) < len(focus.topics):
+            n["topics"] = len(focus.topics) - len(kept_t)
+            focus.topics = kept_t
+    return n
 
 
 def adjudicator_inputs(game: Game, state: BaseModel, recent: list[Msg], player_text: str, stakes: bool = False) -> tuple[str, list[Msg], type]:
