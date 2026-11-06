@@ -212,3 +212,24 @@ def test_a_hidden_term_the_player_used_is_not_scrubbed():
     _, st = g.new_instance({})
     adj = AdjudicationStaked(kind="action", summary="Frank asks about the Congregation.", time_minutes=5, risk="low")
     assert scrub_hidden(g, st, adj, "I ask her about the Congregation.") == {} and "Congregation" in adj.summary
+
+
+def test_engine_words_come_out_of_the_futures():
+    """A14 (D118): an id or a block name in a bracketed aside is stripped from a future; a plain aside stays."""
+    from engine.pipeline import scrub_hidden, strip_engine_words
+    assert strip_engine_words("Emil reveals a piece of his hidden knowledge (szabo_inside), such as June's status.") == "Emil reveals a piece of his hidden knowledge, such as June's status."
+    assert strip_engine_words("June reveals who runs it (as per her Tells).") == "June reveals who runs it."
+    assert strip_engine_words("The door holds (for now).") == "The door holds (for now)."
+    cfg = load_config()
+    g = load_games(cfg.resolve(cfg.server.content_root))["station"]
+    _, st = g.new_instance({})
+    adj = _staked()
+    adj.intents[0].check.complication_what = "Voss starts toward the lab (p2 comes early)."
+    n = scrub_hidden(g, st, adj, "I ask Park to open the log.")
+    assert adj.intents[0].check.complication_what == "Voss starts toward the lab." and n.get("engine_words") == 1
+
+
+def test_a_bare_id_comes_out_of_a_future():
+    from engine.pipeline import strip_engine_words
+    assert strip_engine_words("The station discovers voss_home: a message from a partner.") == "The station discovers: a message from a partner."
+    assert "_" not in strip_engine_words("The station discovers the 'lindqvist_offbooks' fact: it was sent off the books.")

@@ -1339,6 +1339,22 @@ def recover_misplaced_checks(adj: Adjudication, stats: dict) -> list[str]:
     return out
 
 
+# A14 (D118): a future is read by the narrator as the branch, so the engine's own words come out of it: a bracketed
+# aside holding an id (snake_case) or a block or field name ("(szabo_inside)", "(as per her Tells)").
+_ENGINE_ASIDE = re.compile(r"\s*[(\[][^()\[\]]*?(?:\b[a-z]+_[a-z0-9_]+\b|\bTells?\b|\bHidden\b|\bIMPENDING\b|\bCASE AHEAD\b|\bMADE UP IN PLAY\b|\bp\d+\b)[^()\[\]]*[)\]]")
+
+
+_BARE_ID = re.compile(r"\s*['\"]?\b[a-z]+_[a-z0-9_]+\b['\"]?")
+
+
+def strip_engine_words(text: str) -> str:
+    t = _ENGINE_ASIDE.sub("", text or "")
+    t = _BARE_ID.sub("", t)                                   # "discovers voss_home: a message" -> "discovers: a message"
+    t = re.sub(r"\bof \(([^()]*)\)", r"of \1", t)             # "the existence of (his daughter is ill)" once the id is gone
+    t = re.sub(r"\s{2,}", " ", t)
+    return re.sub(r"\s+([.,;:])", r"\1", t).strip()
+
+
 def scrub_hidden(game: Game, state: BaseModel, adj: Any, player_text: str) -> dict[str, int]:
     """D115-D116: the stakes' view shows the adjudicator the cast's secrets (by design: a success's gain needs the Hidden
     line), so every text it writes that the narrator or the player can see is run through the game's leaked_terms hook
@@ -1354,6 +1370,10 @@ def scrub_hidden(game: Game, state: BaseModel, adj: Any, player_text: str) -> di
         c = i.check
         if c is None:
             continue
+        for f in ("success_gain", "failure_outcome", "complication_what"):
+            v = getattr(c, f, None)
+            if v and strip_engine_words(v) != v:
+                setattr(c, f, strip_engine_words(v)); hit("engine_words")
         if leaks(c.label):
             c.label = c.stat; hit("label")
         if any(leaks(getattr(c, f, "")) for f in ("success_gain", "failure_outcome", "complication_what")):
