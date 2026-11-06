@@ -1540,6 +1540,9 @@ class StationGame(GameBase):
         if who is not None and who.health != "dead":
             out.append({"kind": "tell", "weight": 2, "detail": who.id,
                         "fact": f"{who.name} notices what was tried, and it stays with them."})
+            if roll.get("stat") == "influence":                 # a failed word costs the conversation (A15, D122)
+                out.append({"kind": "talk", "weight": 1, "detail": who.id,
+                            "fact": f"{who.name} is done listening to the station on this for now: the next try on them starts from worse."})
         return out
 
     def turn_directives(self, s: StationState) -> list[str]:

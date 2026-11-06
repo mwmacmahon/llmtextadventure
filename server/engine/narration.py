@@ -224,6 +224,7 @@ class Assessment:
     called: bool = False
     called_as: str = ""         # the difficulty the call that answered it named, to tell a repeat from a new attempt
     stake: dict | None = None   # the assistant's two futures for it (D109), live mode only; the reply carries the matched branch
+    about: str = ""            # who or what the attempt is aimed at (the intent's first target id): a retry of the same attempt shuts the way (D122)
 
 
 def harder(a: str, b: str) -> Tier:
@@ -274,6 +275,7 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
     mods = res.total - (res.roll or 0)
     sign = f"{mods:+d}" if mods else ""
     data = res.model_dump(mode="json")
+    data["about"] = (a.about if a and a.about else target) or ""       # D122: what the attempt was aimed at, for telling a retry
     failed = res.outcome in ("failure", "huge_failure", "critical_failure")
     cost = cost_for(data, label, target or "") if (failed and cost_for) else None      # plan A (D103): the engine picks the cost
     stake = a.stake if a is not None else None                                           # D109: the assistant's branch, live

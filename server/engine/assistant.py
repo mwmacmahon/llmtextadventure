@@ -5,10 +5,11 @@ The narrator used to be told "the attempt costs instead (time, noise, notice, a 
 nearly every time (noir: the knee on most failed Muscle rolls, "nine of the last ten turns end with Frank worse off";
 the station: an electrical mishap on every failure). Now each game offers the costs its state can pay, and
 `choose_cost` picks one: never a cost of the same kind as the last few, the heavier kinds only on the worse rolls,
-and on a second failure running the cost that closes the way (a scene is not stalled by failures twice, D93).
+and on a retry of the attempt that just failed the cost that closes the way (a scene is not stalled by the same failure twice,
+D93; on any two failures running until D122).
 The narrator is handed the chosen cost as a fact to play, not advice (D103 §2: advice lines were ignored).
 
-A cost option is a dict: kind (tell | way_closed | thing | wound | trace, or the game's own), weight (1 is light),
+A cost option is a dict: kind (tell | noise | talk | way_closed | thing | wound | trace, or the game's own), weight (1 is light),
 fact (the sentence the narrator is handed), and optional detail (what the referee should see, for variety: the part
 of the body, the thing lost)."""
 from __future__ import annotations
@@ -19,7 +20,8 @@ FAILURES = ("failure", "huge_failure", "critical_failure")
 # the heaviest weight an outcome may cost; a second failure running may cost one step more
 MAX_WEIGHT = {"failure": 1, "huge_failure": 2, "critical_failure": 2}
 RECENT = 3              # costs of these kinds in the last RECENT costs are not chosen again while another kind is open
-ROUND_CAP = {"thing": 2}  # D115 (Fable): a kind paid this many times in the round is not offered again (four torn pockets in one noir round)
+ROUND_CAP = {"thing": 2, "noise": 2}  # a kind paid this many times in the round is not offered again: four torn pockets (D115), the
+                                      # noise that gives Frank away seven times in a live round (A15, D122)
 
 WAY_CLOSED = {"kind": "way_closed", "weight": 1,
               "fact": "That way is shut here now: trying the same thing again will not work."}
@@ -42,21 +44,24 @@ def recent_costs(rows: list[list[dict]]) -> list[dict]:
 
 
 def choose_cost(options: list[dict], roll: dict, *, recent: list[dict], rng: Any, fail_streak: int = 0,
-                round_costs: list[dict] | None = None) -> dict | None:
+                round_costs: list[dict] | None = None, retry: bool = False) -> dict | None:
     """The cost of a failed roll, from the game's options. None for a roll that did not fail or a game with no options.
-    `round_costs`: every cost paid this round so far; a kind at its ROUND_CAP is not offered again."""
+    `round_costs`: every cost paid this round so far; a kind at its ROUND_CAP is not offered again. `retry`: this
+    attempt repeats the last failed one (same target or label); only then does the way shut (A15, D122: "that way is
+    shut" on any two failures running carried 15 of 23 costs in the first live round)."""
     outcome = roll.get("outcome") or ""
     if outcome not in FAILURES or not options:
         return None
+    if retry:
+        closing = [o for o in options if o["kind"] == "way_closed"]
+        if closing:
+            return dict(closing[0])
+    options = [o for o in options if o["kind"] != "way_closed"] or options
     if round_costs:
         paid = [c.get("kind") for c in round_costs]
         options = [o for o in options if paid.count(o["kind"]) < ROUND_CAP.get(o["kind"], 10 ** 6)] or options
     cap = MAX_WEIGHT.get(outcome, 1) + (1 if fail_streak >= 1 else 0)
     fit = [o for o in options if int(o.get("weight", 1)) <= cap] or [min(options, key=lambda o: int(o.get("weight", 1)))]
-    if fail_streak >= 1:                                  # a second failure running: the way closes, the scene moves
-        closing = [o for o in fit if o["kind"] == "way_closed"]
-        if closing:
-            return dict(closing[0])
     last_kinds = [c.get("kind") for c in recent[-RECENT:]]
     last_details = {c.get("detail") for c in recent if c.get("detail")}
     fresh = [o for o in fit if o["kind"] not in last_kinds and (not o.get("detail") or o["detail"] not in last_details)]

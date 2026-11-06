@@ -43,12 +43,22 @@ def test_never_the_same_kind_or_wound_as_the_last_few():
         assert c["kind"] == "thing"          # wound was last; the thing is the only other heavy cost
     recent = [{"kind": "way_closed"}, {"kind": "tell"}]
     c = choose_cost(OPTS[:2], {"outcome": "failure"}, recent=recent, rng=random.Random(1))
-    assert c["kind"] == "way_closed"         # both used: fall back to anything but the very last
+    assert c["kind"] == "tell"               # the way shuts only on a retry (D122): tell is the only light cost left
 
 
-def test_a_second_failure_running_closes_the_way():
+def test_only_a_retry_of_the_failed_attempt_closes_the_way():
+    """A15, D122: the way shuts on a retry of the same attempt, never on a first try, whatever the streak."""
     for seed in range(10):
-        assert choose_cost(OPTS, {"outcome": "failure"}, recent=[], rng=random.Random(seed), fail_streak=1)["kind"] == "way_closed"
+        assert choose_cost(OPTS, {"outcome": "failure"}, recent=[], rng=random.Random(seed), retry=True)["kind"] == "way_closed"
+        assert choose_cost(OPTS, {"outcome": "failure"}, recent=[], rng=random.Random(seed), fail_streak=1)["kind"] != "way_closed"
+        assert choose_cost(OPTS, {"outcome": "failure"}, recent=[], rng=random.Random(seed))["kind"] != "way_closed"
+
+
+def test_the_noise_kind_is_capped_per_round():
+    opts = [{"kind": "noise", "weight": 1, "fact": "n"}, {"kind": "tell", "weight": 1, "fact": "t"}]
+    paid = [{"kind": "noise"}, {"kind": "noise"}]
+    for seed in range(10):
+        assert choose_cost(opts, {"outcome": "failure"}, recent=[], rng=random.Random(seed), round_costs=paid)["kind"] == "tell"
 
 
 @pytest.fixture
@@ -75,8 +85,8 @@ def test_the_witness_is_only_someone_the_last_telling_had_with_frank(game: NoirG
     a, b = [q for q in st.people if q.status == "alive" and q.id not in st.case.eldritch][:2]
     for q in (a, b):
         q.met, q.location = True, st.player.location           # the state says both are here
-    tells = lambda s, target="": [o for o in game.cost_options(s, {"stat": "tongue", "outcome": "failure"}, "", target) if o["kind"] == "tell"]
-    assert "detail" not in tells(st)[0]                         # nobody in the last telling: noise, no name
+    tells = lambda s, target="": [o for o in game.cost_options(s, {"stat": "eye", "outcome": "failure"}, "", target) if o["kind"] in ("tell", "noise")]
+    assert "detail" not in tells(st)[0] and tells(st)[0]["kind"] == "noise"     # nobody in the last telling: noise, no name
     st = game.apply_present(st, [b.id], Writer(game.authority, ApplyReport(), actor="engine"))
     assert st.player.with_him == [b.id]
     assert tells(st)[0]["detail"] == b.id
@@ -118,3 +128,18 @@ def test_the_thing_kind_is_capped_per_round():
         assert c["kind"] == "tell"
     only = [opts[0]]                                 # nothing else on offer: the cap gives way rather than leave no cost
     assert choose_cost(only, {"outcome": "failure"}, recent=[], rng=random.Random(1), round_costs=paid)["kind"] == "thing"
+
+
+def test_a_failed_conversation_costs_the_conversation_not_a_noise(game: NoirGame):
+    """A15, D122: a tongue roll against someone in the scene offers the talk cost and never the noise."""
+    from engine.game import ApplyReport
+    from engine.gamekit import Writer
+    _, st = game.new_instance({})
+    q = [p for p in st.people if p.status == "alive" and p.id not in st.case.eldritch][0]
+    q.met, q.location = True, st.player.location
+    st = game.apply_present(st, [q.id], Writer(game.authority, ApplyReport(), actor="engine"))
+    kinds = [o["kind"] for o in game.cost_options(st, {"stat": "tongue", "outcome": "failure"}, "", q.id)]
+    assert "talk" in kinds and "noise" not in kinds
+    st = game.apply_present(st, [], Writer(game.authority, ApplyReport(), actor="engine"))
+    kinds = [o["kind"] for o in game.cost_options(st, {"stat": "tongue", "outcome": "failure"}, "", "")]
+    assert "noise" not in kinds and "talk" not in kinds                          # nobody to talk to, and words make no noise

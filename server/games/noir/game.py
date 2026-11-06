@@ -373,6 +373,7 @@ class NoirGame(GameBase):
     WOUNDS = (("hand", "a torn palm; his grip is worse for a while"), ("ribs", "a bruised rib that catches when he breathes"),
               ("shoulder", "a wrenched shoulder"), ("face", "a split lip"), ("leg", "the bad leg jarred: it aches, and it holds"))
     PHYSICAL = ("muscle", "hands")
+    SOCIAL = ("tongue",)
 
     def cost_options(self, state: NoirState, roll: dict, label: str = "", target: str = "") -> list[dict]:
         from engine.assistant import WAY_CLOSED
@@ -385,11 +386,17 @@ class NoirGame(GameBase):
         who = next((q for q in here if q.id == target), None) if target else None
         if who is None and here:
             who = here[0]
+        talk = roll.get("stat") in self.SOCIAL
+        target_here = next((q for q in here if q.id == target), None) if target else None
+        if talk and target_here is not None:
+            # a failed conversation costs the conversation, not a crash (A15, D122): the person, not the room, pays it back
+            out.append({"kind": "talk", "weight": 1, "detail": target_here.id,
+                        "fact": f"{target_here.name} has had enough of {p.name}'s questions for now: pressing them again tonight gets less, not more."})
         if who is not None:
             out.append({"kind": "tell", "weight": 1, "detail": who.id,
                         "fact": f"{who.name} sees what {p.name} was trying, and will remember it."})
-        else:
-            out.append({"kind": "tell", "weight": 1, "fact": f"It makes noise: anyone near enough knows someone was here, though not who."})
+        elif not talk:                                   # a failed word makes no noise
+            out.append({"kind": "noise", "weight": 1, "fact": f"It makes noise: anyone near enough knows someone was here, though not who."})
         for it in s.inventory:
             w = self.LOSABLE.get(it.id)
             if w is None or it.count <= 0:

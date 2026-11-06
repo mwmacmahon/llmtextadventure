@@ -54,7 +54,7 @@ from .providers.base import Msg, Usage
 from .roles import (ADJUDICATOR_STAKES, Adjudication, AdjudicationStaked, AdjudicationV2, adjudicator_messages, referee_messages,
                     summarizer_messages, NARRATOR_PROTOCOL)
 from .roles import NARRATOR_WORLD, REFEREE_PARTS, ChangeReport, referee_part_messages
-from .assistant import choose_cost, default_cost_options, recent_costs
+from .assistant import FAILURES, choose_cost, default_cost_options, recent_costs
 from .changes import apply_changes, merge_parts, quoted_in_prose, quotes_of, says_result_played, screen_unseen_clues
 from .store import Store
 from .tape import PART, Taped, exchange_row
@@ -989,7 +989,8 @@ class Engine:
                         notes.append(f"adjudicator named unknown stat {stat!r} for {intent.check.label!r}; check dropped")
                         continue
                 assessments.append(Assessment(stat=stat, difficulty=intent.check.difficulty, target=intent.check.target_entity or "",
-                                              label=intent.check.label))
+                                              label=intent.check.label,
+                                              about=intent.check.target_entity or next(iter(getattr(intent, "targets", None) or []), "")))
             for name in getattr(adj, "carried", []) or []:   # the input leans on something in the player's pockets: is it there?
                 missing = _hook(game, "not_carried", state, name, default=None)
                 if missing:
@@ -1123,13 +1124,24 @@ class Engine:
         # last few costs (this turn's included); its own seed, so the dice fall as they did before the costs existed.
         recent = recent_costs(self._recent_calls(iid, turn))
         round_costs = recent_costs(self._recent_calls(iid, turn, limit=turn))     # the round's, for ROUND_CAP (D115)
+        # the last failed attempt, so the way shuts only on a retry of it (A15, D122): same target, or the same label
+        last_fail: dict = {}
+        for calls in self._recent_calls(iid, turn):
+            for c in calls:
+                r = c.get("result") or {}
+                if r.get("outcome") in FAILURES:
+                    last_fail = {"label": r.get("label") or "", "about": r.get("about") or (c.get("call") or {}).get("target") or ""}
         cost_rng = rng_for(iid, turn, "costs")
 
         def cost_for(roll: dict, label: str, target: str) -> dict | None:
             options = _hook(game, "cost_options", state, roll, label, target, default=None)
             if options is None:
                 options = default_cost_options(state, roll, label, target)
-            cost = choose_cost(options, roll, recent=recent, rng=cost_rng, fail_streak=fail_streak, round_costs=round_costs)
+            about = roll.get("about") or target
+            retry = bool(last_fail) and ((bool(about) and about == last_fail.get("about")) or _norm_label(label) == _norm_label(last_fail.get("label", "")))
+            cost = choose_cost(options, roll, recent=recent, rng=cost_rng, fail_streak=fail_streak, round_costs=round_costs, retry=retry)
+            if roll.get("outcome") in FAILURES:
+                last_fail.clear(); last_fail.update({"label": label, "about": about})
             if cost:
                 recent.append(cost)
                 round_costs.append(cost)
@@ -1337,6 +1349,10 @@ def recover_misplaced_checks(adj: Adjudication, stats: dict) -> list[str]:
             intent.transition = ""                         # it held the check, not a transition
         out.append(f"{stat.lower()} {tier}")
     return out
+
+
+def _norm_label(label: str) -> str:
+    return " ".join(re.findall(r"[a-z0-9]+", re.sub(r"\s*\(.*?\)\s*$", "", (label or "").lower())))
 
 
 # A14 (D118): a future is read by the narrator as the branch, so the engine's own words come out of it: a bracketed
