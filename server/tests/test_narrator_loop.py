@@ -16,7 +16,7 @@ from engine.config import load_config  # noqa: E402
 from engine.pipeline import Engine  # noqa: E402
 from engine.providers.fake import FakeProvider  # noqa: E402
 from engine.registry import load_games  # noqa: E402
-from engine.roles import Adjudication, CheckProposal, Intent  # noqa: E402
+from engine.roles import AssistantReading, CheckProposal, Intent  # noqa: E402
 from engine.store import Store  # noqa: E402
 
 
@@ -45,7 +45,7 @@ async def _turn(engine: Engine, iid: str, text: str) -> list[dict]:
 
 async def test_a_called_check_is_rolled_and_shown(engine: Engine, calls_on, monkeypatch):
     iid = engine.create_instance("station", {})
-    FakeProvider.canned["Adjudication"] = [Adjudication(
+    FakeProvider.canned["AssistantReading"] = [AssistantReading(
         kind="action", summary="The AI tries to talk Park into checking on Lindqvist.", time_minutes=5, risk="low",
         intents=[Intent(action="talk Park into it", check=CheckProposal(label="talk Park into it", stat="influence", difficulty="medium", target_entity="park"))],
         entities=["park"])]
@@ -82,7 +82,7 @@ async def test_a_called_check_is_rolled_and_shown(engine: Engine, calls_on, monk
 
 async def test_an_assessed_check_never_called_is_flagged(engine: Engine, calls_on):
     iid = engine.create_instance("station", {})
-    FakeProvider.canned["Adjudication"] = [Adjudication(
+    FakeProvider.canned["AssistantReading"] = [AssistantReading(
         kind="action", summary="The AI forges a message.", time_minutes=5, risk="medium",
         intents=[Intent(action="forge the message", check=CheckProposal(label="forge the message", stat="forgery", difficulty="high"))])]
     FakeProvider.script = lambda system, messages: "The message writes itself and nobody questions it."

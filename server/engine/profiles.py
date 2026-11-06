@@ -59,6 +59,12 @@ class Profile(BaseModel):
             raise ValueError(f"model {v!r}: a .gguf file name, no path")
         return v
 
+    @field_validator("roles", mode="before")
+    @classmethod
+    def _roles(cls, v: Any) -> Any:
+        from .config import canon_roles               # D124: an old profile's "adjudicator" overrides are the assistant's
+        return canon_roles(v)
+
     @field_validator("server")
     @classmethod
     def _server(cls, v: dict) -> dict:

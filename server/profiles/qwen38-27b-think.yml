@@ -6,5 +6,5 @@ model: Huihui-Qwen3.8-27B-abliterated-UD-Q5_K_XL.gguf
 server: {ctx: 98304, ckpt: 2048, kv: q8_0, think_budget: 1536}
 roles:
   narrator: {thinking: true, thinking_budget: 1536, reasoning_effort: low}
-  adjudicator: {thinking: true, thinking_budget: 1536, reasoning_effort: low}
+  assistant: {thinking: true, thinking_budget: 1536, reasoning_effort: low}
   referee: {thinking: true, thinking_budget: 1536, reasoning_effort: low}

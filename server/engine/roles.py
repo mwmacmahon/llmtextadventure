@@ -35,7 +35,7 @@ class CommandPick(BaseModel):
     args: list[str] = Field(default_factory=list, description="One 'name=value' per parameter, values from the listed options exactly. Empty if the command has no parameters.")
 
 
-class Adjudication(BaseModel):
+class AssistantReading(BaseModel):
     kind: Kind = Field(description="action: a real attempt. trivial: looking/thinking/asking the interface, no time or risk. clarify: ambiguous, ask. impossible: cannot be done with the player's means.")
     summary: str = Field(description="One sentence: what the player is doing, in the engine's terms.")
     clarify_question: str | None = Field(default=None, description="For kind=clarify or impossible: what to ask or tell the player, in plain words.")
@@ -49,7 +49,7 @@ class Adjudication(BaseModel):
     commands: list[CommandPick] = Field(default_factory=list, description="Every listed engine command the input plainly asks for, in the order the input gives them. Empty when it asks for none.")
 
     @classmethod
-    def example(cls, player_text: str) -> "Adjudication":
+    def example(cls, player_text: str) -> "AssistantReading":
         return cls(kind="action", summary=f"The player attempts: {player_text[:80]}", time_minutes=5, intents=[Intent(action=player_text[:80])], risk="low")
 
 
@@ -73,7 +73,7 @@ class Focus(BaseModel):
     topics: list[str] = Field(default_factory=list, description="Subjects worth looking up in the case or scenario file, in a few words each.")
 
 
-class AdjudicationV2(Adjudication):
+class AssistantReadingV2(AssistantReading):
     """2.0 schema: proposals and focus. Checks are assessed here and called by the narrator when the
     fiction reaches them (DESIGN2 §5); the adjudicator never decides whether a transition happens."""
     intents: list[IntentV2] = Field(default_factory=list, description="The concrete attempts, usually one, at most three. For each uncertain one, assess the check (stat, difficulty, target); the narrator calls it at the right moment.")
@@ -81,7 +81,7 @@ class AdjudicationV2(Adjudication):
     carried: list[str] = Field(default_factory=list, description="Only the objects this input itself names and relies on the player's character already carrying (\"the knife from my boot\" → knife; \"I pay him\" → money), in a word or two each. Never a copy of the pockets list; not clothes being worn, body parts, or things in the scene. Usually empty.")
 
     @classmethod
-    def example(cls, player_text: str) -> "AdjudicationV2":
+    def example(cls, player_text: str) -> "AssistantReadingV2":
         return cls(kind="action", summary=f"The player attempts: {player_text[:80]}", time_minutes=5, intents=[IntentV2(action=player_text[:80])], risk="low")
 
 
@@ -109,14 +109,14 @@ class FiatOutcome(BaseModel):
     outcome: str = Field(description="How it comes out, one plain sentence.")
 
 
-class AdjudicationStaked(AdjudicationV2):
-    """AdjudicationV2 with the stakes (D115): used only while the narrator's stakes dial is on."""
+class AssistantReadingStaked(AssistantReadingV2):
+    """AssistantReadingV2 with the stakes (D115): used only while the narrator's stakes dial is on."""
     intents: list[IntentStaked] = Field(default_factory=list, description="The concrete attempts, usually one, at most three. For each uncertain one, assess the check (stat, difficulty, target) and write both its futures; the narrator calls it at the right moment.")
     pivotal: str = Field(default="", description="The label of the check this input turns on, copied from its check; empty when no check is assessed.")
     fiat: list[FiatOutcome] = Field(default_factory=list, description="Each other attempt in the input that needs no roll and is no listed command (those go under commands), settled in the open. Usually empty.")
 
     @classmethod
-    def example(cls, player_text: str) -> "AdjudicationStaked":
+    def example(cls, player_text: str) -> "AssistantReadingStaked":
         return cls(kind="action", summary=f"The player attempts: {player_text[:80]}", time_minutes=5, intents=[IntentStaked(action=player_text[:80])], risk="low")
 
 
@@ -321,3 +321,9 @@ def summarizer_messages(previous: str | None, turns: list[tuple[int, list[tuple[
     parts.append("[TURNS TO FOLD IN]\n" + "\n\n".join(body))
     parts.append("Write the story so far now.")
     return system, [Msg("user", "\n\n".join(parts))]
+
+
+# D124: the old names of the assistant's schema (the adjudicator's, before the rename), so old imports and tools load.
+Adjudication = AssistantReading
+AdjudicationV2 = AssistantReadingV2
+AdjudicationStaked = AssistantReadingStaked

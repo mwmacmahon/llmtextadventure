@@ -32,7 +32,7 @@ at the paths you declare:
 
 | declaration on the game class | what lives there |
 |---|---|
-| `clock = ClockSpec(path, minutes_per_day, cap_minutes, slow_minutes)` | `{day, minute}` (`engine.gamekit.Clock`); `slow_minutes` (5) is the least a slow action costs (D93: the adjudicator's `tempo` is `slow` for everything but one beat of a fight or chase) |
+| `clock = ClockSpec(path, minutes_per_day, cap_minutes, slow_minutes)` | `{day, minute}` (`engine.gamekit.Clock`); `slow_minutes` (5) is the least a slow action costs (D93: the assistant's `tempo` is `slow` for everything but one beat of a fight or chase) |
 | `events_path` | `list[engine.events.Event]`, status included |
 | `spontaneous_path` (optional) | `list[engine.spontaneous.Spontaneous]` |
 | `recent_path` (optional) | narrator-only strings about recent happenings |
@@ -140,7 +140,7 @@ Optional, with defaults that do nothing:
 | hook | purpose |
 |---|---|
 | `stats(state)` | the player's stat block, `name -> modifier`; empty means no checks |
-| `entity_ids`, `locations`, `system_names` | the vocabularies the adjudicator and referee must use exactly |
+| `entity_ids`, `locations`, `system_names` | the vocabularies the assistant and referee must use exactly |
 | `narrator_flags(state)` | `name -> meaning`: flags the referee may set; triggers read them |
 | `adjudication_rules(state)` | what the player can do, stat meanings, difficulty guidance. **Stable across turns** (it is the cached prefix); moving state goes in `state_for_models`. Never put a condition in a difficulty example ("at a run on a bad leg"): the model learns the condition as the reason for a check and assesses every move of a hurt player; name the threat instead ("a run with something behind him") |
 | `referee_rules(state)` | ids, places, allowed values, what counts as a thread here. Stable across turns, same reason |
@@ -154,7 +154,7 @@ Optional, with defaults that do nothing:
 | `audit_probes(state)` | extra starting states for the authority audit (§3) |
 | `ending(state)` | a string when the game is over (the UI locks input) |
 | `cost_options(state, roll, label, target)` | what a failed roll may cost here: a list of `{kind, weight, fact, detail?}` the state can pay (a way shut, being noticed, a thing from the pockets, a wound). The engine picks one (`engine/assistant.py`: a plain failure a weight-1 cost, a huge or critical failure the heaviest that fits; never a kind among the last three costs, never a kind past its per-round cap; a second failure running always shuts the way) and hands the narrator the fact. Default: the way closes, or the attempt is noticed |
-| `leaked_terms(state, text, player_text)` | the words of the hidden truth the text uses in its own voice (outside quoted speech) before the player has learned them. In the narration it is a serious leak ruling (§8); in the adjudication, when the stakes dial shows the adjudicator the cast's secrets, the field is scrubbed before the narrator sees it (a label becomes its stat, a staked check loses its futures) |
+| `leaked_terms(state, text, player_text)` | the words of the hidden truth the text uses in its own voice (outside quoted speech) before the player has learned them. In the narration it is a serious leak ruling (§8); in the adjudication, when the stakes dial shows the assistant the cast's secrets, the field is scrubbed before the narrator sees it (a label becomes its stat, a staked check loses its futures) |
 
 Declarations on the class: `clock`, `resolver`, `authority`, `events_path`, `spontaneous_path`,
 `recent_path`, `threads_path`, `log_path`, `skip_adjudication`, `skip_referee`, `fallback_stat`,
@@ -376,7 +376,7 @@ Every tracked quantity changes in exactly one place. Decide which of three kinds
 | **the engine alone** (nobody reports it) | resolve, event effects, `after_turn` | the clock, dice, drift, withdrawal |
 
 A command reaches `run_command` two ways, and both must work for every command: the player
-**clicks** it in the side panel, or **types** it. The adjudicator is shown `commands(state)`
+**clicks** it in the side panel, or **types** it. The assistant is shown `commands(state)`
 (id, parameters with their options, hint) and lists every one the input plainly asks for under
 `Adjudication.commands`, in the order the input gives them. A **clicked** command applies at once.
 A **typed** one is a lever the player proposes: the pipeline runs `run_command` for each on a
@@ -423,7 +423,7 @@ narrator and the command is committed after the prose. Narrated mode: apply the 
 here, return `player_line`, `directive`, `minutes`, `summary`; clicked, the pipeline applies them
 and narrates; typed, the `directive` is given with the "unless not completed" clause and the
 effects are committed after the prose (the command's `minutes`, `entities` and `systems` win over
-the adjudicator's when typed). The adjudicator writes a command's arguments as `name=value` pairs or as
+the assistant's when typed). The assistant writes a command's arguments as `name=value` pairs or as
 bare values in the spec's parameter order (the local models' habit); both are read.
 
 When a command's effect is something the narration could also report (smoking has both a Smoke
@@ -434,11 +434,11 @@ helper (`_smoke`) called from both paths. Give the referee a rule that the engin
 command ("never list rounds under items_lost for a reload").
 
 Checklist for a new tracked quantity: (1) pick its row in the table; (2) a command gets a
-`CommandSpec` with a `hint` the adjudicator can match (and `words`: the input must contain one for a typed
+`CommandSpec` with a `hint` the assistant can match (and `words`: the input must contain one for a typed
 pick to count, so "strike a match" is not Smoke) and a `run_command` branch that refuses
 with a sentence the narrator can say; (3) a referee field is required-with-sentinel (§8) and
 bounded in `apply_change`; (4) never pre-rule a command's preconditions in `adjudication_rules`
-(the command refuses and the narrator plays it blocked; tell the adjudicator to set the command
+(the command refuses and the narrator plays it blocked; tell the assistant to set the command
 anyway); a preconditions line is for attempts that are not commands (shooting with an empty
 gun); (5) a test for the
 clicked path, the typed path (preview, then commit), the blocked lever and the referee's veto; a

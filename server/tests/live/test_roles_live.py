@@ -26,7 +26,7 @@ import pytest
 from engine.config import load_config
 from engine.pipeline import Engine
 from engine.registry import load_games
-from engine.roles import Adjudication, ChangeReport
+from engine.roles import AssistantReading, ChangeReport
 from engine.store import Store
 from engine.threads import Thread
 
@@ -104,7 +104,7 @@ def _run(case: Case, call: Callable[[], Any]) -> Result:
 
 # ---- adjudicator ------------------------------------------------------------
 
-def _has_check(a: Adjudication, stat: str, target: str | None = None) -> bool:
+def _has_check(a: AssistantReading, stat: str, target: str | None = None) -> bool:
     return any(i.check and i.check.stat == stat and (target is None or i.check.target_entity == target) for i in a.intents)
 
 
@@ -153,7 +153,7 @@ async def test_adjudicator_live(tmp_path: Path):
     iid = eng.create_instance("station", {})
     state = game.load_state(eng.store.load_state(iid))
     results: list[Result] = []
-    model = eng.cfg.role("adjudicator").model
+    model = eng.cfg.role("assistant").model
     for case in ADJUDICATOR_CASES:
         for _ in range(REPEAT):
             async def call(case=case):
@@ -409,7 +409,7 @@ async def test_noir_adjudicator_live(tmp_path: Path):
     game = eng.games["noir"]
     iid = eng.create_instance("noir", {})
     results: list[Result] = []
-    model = eng.cfg.role("adjudicator").model
+    model = eng.cfg.role("assistant").model
     for case in NOIR_ADJUDICATOR_CASES:
         for _ in range(REPEAT):
             state = game.load_state(eng.store.load_state(iid))

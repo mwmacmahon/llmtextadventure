@@ -214,7 +214,7 @@ async def _run(out: Path, specs: list[str], which: str) -> None:
     from engine.providers.base import Msg
     from engine.providers.factory import get_provider
     cfg = load_config()
-    role = cfg.role("adjudicator")          # the structured roles' settings: greedy, no penalties (D30)
+    role = cfg.role("assistant")            # the structured roles' settings: greedy, no penalties (D30)
     provider = get_provider(role)
     render = {"beats": render_beats, "narrow": render_narrow, "stakes": render_stakes}[which]
     with out.open("a") as f:

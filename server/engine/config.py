@@ -3,11 +3,11 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from engine import profiles
 
@@ -122,6 +122,20 @@ class GuardConfig(BaseModel):
     default_chars: int = 1400                             # the progress estimate before an instance has its own average
 
 
+# D124: the adjudicator is the narrator's assistant (ASSISTANT-DESIGN §1). The old role key still loads, as an alias, so an
+# old config, profile or tool keeps working; the stored ledger kind "adjudication" is unchanged.
+ROLE_ALIASES = {"adjudicator": "assistant"}
+
+
+def canon_role(name: str) -> str:
+    return ROLE_ALIASES.get(name, name)
+
+
+def canon_roles(roles: dict) -> dict:
+    """A roles mapping with old keys renamed, in their place (llama-server slots follow config order)."""
+    return {canon_role(k): v for k, v in roles.items()} if isinstance(roles, dict) else roles
+
+
 class Config(BaseModel):
     server: ServerConfig = Field(default_factory=ServerConfig)
     guard: GuardConfig = Field(default_factory=GuardConfig)
@@ -137,9 +151,17 @@ class Config(BaseModel):
         return (g("input_tokens") * p.input + g("output_tokens") * p.output
                 + g("cache_read_input_tokens") * p.cache_read + g("cache_creation_input_tokens") * p.cache_write) / 1_000_000
 
+    @model_validator(mode="before")
+    @classmethod
+    def _alias_roles(cls, data: Any) -> Any:
+        if isinstance(data, dict) and isinstance(data.get("roles"), dict):
+            data = {**data, "roles": canon_roles(data["roles"])}
+        return data
+
     def role(self, name: str) -> RoleConfig:
         """The configured role, with the loaded model profile's overrides for it laid over (engine/profiles.py):
         thinking, budgets, sampling follow the model on the box, not an edit to this file."""
+        name = canon_role(name)
         r = self.roles[name]
         prof = profiles.active_profile()
         ov = prof.roles.get(name) if prof else None

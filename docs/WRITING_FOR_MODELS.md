@@ -1,7 +1,7 @@
 # Writing for the models: dos, don'ts and style
 
 Every line the engine hands a model is an instruction with one job. The narrator reads to write prose; the referee
-reads prose to write rows; the adjudicator reads the player to name an attempt; the summarizer folds turns. A line
+reads prose to write rows; the assistant reads the player to name an attempt; the summarizer folds turns. A line
 that is clear to us and vague to them costs a turn, a retelling, or twenty turns of drift. This doc is the style
 guide for those lines: the standing instructions, THIS TURN, the engine's answers to calls, the retelling note, the
 bulletin's framing, and the scenario text a game is written in. Different games lock different things down, but the

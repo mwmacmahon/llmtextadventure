@@ -12,9 +12,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from test_guard import LOOK, engine, events_of, fake  # noqa: E402,F401
 from engine.pipeline import Engine, doc_upto, narrate_turn, narrator_inputs  # noqa: E402
 from engine.providers.fake import FakeProvider  # noqa: E402
-from engine.roles import Adjudication, CheckProposal, Intent  # noqa: E402
+from engine.roles import AssistantReading, CheckProposal, Intent  # noqa: E402
 
-SHOT = Adjudication(kind="action", summary="Frank fires at the thing", time_minutes=1, risk="high",
+SHOT = AssistantReading(kind="action", summary="Frank fires at the thing", time_minutes=1, risk="high",
                     intents=[Intent(action="fire at the thing", check=CheckProposal(label="fire at the thing", stat="hands", difficulty="medium"))])
 
 
@@ -30,7 +30,7 @@ async def test_the_rebuilt_request_is_the_live_one_byte_for_byte(engine: Engine,
                      "You wait by the door."])
     fake.script = lambda system, messages: next(tellings)
     for adj, text in ((LOOK, "I look around."), (SHOT, "I fire at it."), (LOOK, "I wait.")):
-        fake.canned["Adjudication"] = [adj]
+        fake.canned["AssistantReading"] = [adj]
         await events_of(engine.play(iid, text))
     doc = engine.store.export_instance(iid)
     for turn in (1, 2, 3):
@@ -44,7 +44,7 @@ async def test_a_replayed_turn_rolls_the_same_dice_and_stops_before_the_referee(
     iid = engine.create_instance("noir", {})
     tellings = iter(["You fire.\n<<CHECK hands medium>>\nIGNORED", "It reels back into the dark."])
     fake.script = lambda system, messages: next(tellings)
-    fake.canned["Adjudication"] = [SHOT]
+    fake.canned["AssistantReading"] = [SHOT]
     events = await events_of(engine.play(iid, "I fire at it."))
     live = next(e["data"] for e in events if e["event"] == "mechanic")["text"]
     doc = engine.store.export_instance(iid)

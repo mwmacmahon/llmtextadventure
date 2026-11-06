@@ -19,7 +19,7 @@ async def test_a_reply_that_does_not_parse_is_asked_for_once_more(engine: Engine
     calls = {"n": 0}
 
     def hook(schema, last):
-        if schema.__name__.startswith("Adjudication"):
+        if schema.__name__.startswith("AssistantReading"):
             calls["n"] += 1
             if calls["n"] == 1:
                 raise RuntimeError("structured extraction truncated at max_tokens=2048")
@@ -36,7 +36,7 @@ async def test_a_failed_turn_leaves_no_transcript_and_the_next_takes_its_number(
     iid = engine.create_instance("noir", {})
 
     def broken(schema, last):
-        if schema.__name__.startswith("Adjudication"):
+        if schema.__name__.startswith("AssistantReading"):
             raise RuntimeError("structured extraction truncated at max_tokens=2048")
         return None
     fake.hook = broken
@@ -45,7 +45,7 @@ async def test_a_failed_turn_leaves_no_transcript_and_the_next_takes_its_number(
     assert [r for r in engine.store.transcript(iid) if r.turn == 1] == []
     assert any(r["kind"] == "turn_failed" for r in engine.store.ledger(iid, 1))
     fake.hook = None
-    fake.canned["Adjudication"] = [LOOK]
+    fake.canned["AssistantReading"] = [LOOK]
     fake.script = lambda system, messages: "The shack is empty."
     await events_of(engine.play(iid, "I look again."))
     players = [r for r in engine.store.transcript(iid) if r.role == "player"]

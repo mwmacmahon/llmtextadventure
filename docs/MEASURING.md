@@ -18,7 +18,7 @@ Every change that is meant to improve play gets a card in `notes/DECISIONS.md` (
 
 | Field | Meaning |
 |---|---|
-| What | the change, where (model, sampler, narrator prompt, referee, adjudicator, assistant, engine rule, game text) |
+| What | the change, where (model, sampler, narrator prompt, referee, assistant, assistant, engine rule, game text) |
 | Claim | what it should improve, in the player's terms (the chant stops; scenes end when they should; the referee stops inventing people) |
 | Measure | which of the measures below would show it, and the number that would count as a win |
 | Game(s) | noir, station, or both; results are never pooled across games |
@@ -32,7 +32,7 @@ A change without a card is an experiment, and its result cannot adopt anything.
 | Kind of change | Measure | Unit | Decides on |
 |---|---|---|---|
 | Narrator prose and turn behaviour: a prompt line, a sampler, a model, DRY, thinking | **Per-turn pairs on a fixed corpus**: `eval_replay.py narrate` on the corpus for each arm, `pairs`, `judge_pack.py pack --sample 36`, Opus subagents judge both orders, `merge` | a turn, same input to both arms | agreed wins over the D71 noise floor, per game |
-| Structured roles: referee, adjudicator, assistant, clue screening | **Test sets with answer keys**: `eval_replay.py` runs scored against `gold.yml` (gray areas tagged, re-graded on every run) | a turn with a known right answer | score change beyond the set's known variance, per game |
+| Structured roles: referee, assistant, assistant, clue screening | **Test sets with answer keys**: `eval_replay.py` runs scored against `gold.yml` (gray areas tagged, re-graded on every run) | a turn with a known right answer | score change beyond the set's known variance, per game |
 | Engine and game rules: pacing, meters, timers, checks, the bulletin, scene handling | **Long rounds**: counts (`round_profile`, `round_counts`), the read with its timeline, and **blind round pairs** (`round_pairs.py`) against the baseline rounds; unit tests for the mechanics themselves | a 50-turn round | agreed overall wins in both orders on at least two rounds per arm per game; the timelines say where |
 | A model swap | all three: test sets first (free), then per-turn pairs, then long rounds | | each measure on its own terms; a model loses on any one |
 | Speed, cost, crashes | counts: seconds a turn, tokens, the box's journal | | a hard constraint, not a quality measure (D98: thinking out on crashes) |

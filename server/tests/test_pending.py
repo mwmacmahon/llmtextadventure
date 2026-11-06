@@ -18,7 +18,7 @@ from engine.pipeline import Engine  # noqa: E402
 from engine.providers.fake import FakeProvider  # noqa: E402
 from engine.providers.factory import get_provider  # noqa: E402
 from engine.registry import load_games  # noqa: E402
-from engine.roles import Adjudication, Change, ChangeReport, Intent  # noqa: E402
+from engine.roles import AssistantReading, Change, ChangeReport, Intent  # noqa: E402
 from engine.store import Store  # noqa: E402
 
 
@@ -82,8 +82,8 @@ async def play(engine: Engine, iid: str, text: str) -> list[dict]:
     return [e async for e in engine.run_turn(iid, text)]
 
 
-def action(summary: str, minutes: int) -> Adjudication:
-    return Adjudication(kind="action", summary=summary, time_minutes=minutes, tempo="fast", risk="low", intents=[Intent(action=summary)])   # fast: these tests count the minutes exactly (D93 floor)
+def action(summary: str, minutes: int) -> AssistantReading:
+    return AssistantReading(kind="action", summary=summary, time_minutes=minutes, tempo="fast", risk="low", intents=[Intent(action=summary)])   # fast: these tests count the minutes exactly (D93 floor)
 
 
 async def test_the_world_does_not_wait_end_to_end(engine: Engine, fake: FakeProvider):
@@ -94,7 +94,7 @@ async def test_the_world_does_not_wait_end_to_end(engine: Engine, fake: FakeProv
     seen: dict = {}
 
     # turn 1: the narrator sets something in motion in plain words; the referee types it
-    fake.canned["Adjudication"] = [action("Frank sits down and doodles in his notebook.", 10)]
+    fake.canned["AssistantReading"] = [action("Frank sits down and doodles in his notebook.", 10)]
     FakeProvider.script = lambda system, messages: (
         "You sit on the cot and draw the thing's outline from memory.\n"
         "[[unseen: the creature slides along the wall, between Frank and the door]]\n"
@@ -129,7 +129,7 @@ async def test_the_world_does_not_wait_end_to_end(engine: Engine, fake: FakeProv
     assert row["action"] == "new" and row["unless"] == "Frank leaves the shack"
 
     # turn 2: a long action; the clock stops where the attack falls due and the narrator is told DUE NOW
-    fake.canned["Adjudication"] = [action("Frank keeps drawing, carefully.", 10)]
+    fake.canned["AssistantReading"] = [action("Frank keeps drawing, carefully.", 10)]
     FakeProvider.script = lambda system, messages: "It comes off the wall all at once."
 
     def referee2(schema, last):
@@ -154,7 +154,7 @@ async def test_the_world_does_not_wait_end_to_end(engine: Engine, fake: FakeProv
 
     # turn 3: a short action; the new pending is listed as impending for the referee and as coming for the narrator,
     # and the referee settles it because the prose pre-empted it
-    fake.canned["Adjudication"] = [action("Frank goes down the fire escape.", 2)]
+    fake.canned["AssistantReading"] = [action("Frank goes down the fire escape.", 2)]
     FakeProvider.script = lambda system, messages: "You take the fire escape three rungs at a time."
 
     def referee3(schema, last):
@@ -174,7 +174,7 @@ async def test_the_world_does_not_wait_end_to_end(engine: Engine, fake: FakeProv
 
 async def test_a_hidden_pending_fires_unseen(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("station", {})
-    fake.canned["Adjudication"] = [action("The AI watches the Lab.", 2), action("The AI keeps watching.", 2), action("The AI waits and listens.", 30)]
+    fake.canned["AssistantReading"] = [action("The AI watches the Lab.", 2), action("The AI keeps watching.", 2), action("The AI waits and listens.", 30)]
     FakeProvider.script = lambda system, messages: "You watch."
     first = {"done": False}
 
@@ -210,7 +210,7 @@ async def test_pre_pending_instances_still_load_and_run(engine: Engine, fake: Fa
     doc["hidden"].pop("pending", None)
     doc["hidden"].pop("recent", None)
     engine.store.save_snapshot(iid, 0, doc)
-    fake.canned["Adjudication"] = [action("Frank looks around.", 2)]
+    fake.canned["AssistantReading"] = [action("Frank looks around.", 2)]
     FakeProvider.script = lambda system, messages: "Rain."
     events = await play(engine, iid, "I look around.")
     assert events[-1]["event"] == "done" and events[-1]["data"]["mechanics"]["pending"] == {"fired": [], "new": [], "resolved": [], "lapsed": []}

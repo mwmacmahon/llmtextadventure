@@ -56,7 +56,7 @@ def inputs(cfg, store, games, title: str):
     sysN = game.frozen_prefix(state) + "\n\n" + NARRATOR_WORLD + "\n\n" + NARRATOR_PROTOCOL
     msgsN = [Msg(m["role"], m["content"]) for m in nar["request"]["messages"]]
     return {
-        "adjudicator": (sysA, msgsA, game.adjudication_schema),
+        "assistant": (sysA, msgsA, game.adjudication_schema),
         "referee": (sysR, msgsR, ChangeReport),
         "narrator": (sysN, msgsN, None),
     }, f"{row.title} · turn {turn} · {row.game}"
@@ -77,7 +77,7 @@ async def run_role(provider, role_cfg, name, system, msgs, schema):
         return name, time.monotonic() - t0, done.usage, head, note
     out, usage = await provider.extract(role_cfg, system, msgs, schema)
     d = out.model_dump()
-    if name == "adjudicator":
+    if name == "assistant":
         head = f"kind={d.get('kind')} minutes={d.get('time_minutes')} intents={len(d.get('intents') or [])} command={d.get('command') or d.get('commands')} clarify={bool(d.get('clarify_question'))}"
     else:
         head = f"rows={len(d.get('changes') or [])} kinds={sorted({c['kind'] for c in d.get('changes') or []})} log={str(d.get('log_line'))[:80]!r}"
@@ -105,11 +105,11 @@ async def main():
     ins, label = inputs(cfg, store, games, a.instance)
     provider = LlamaCppProvider()
     nar_role = cfg.role("narrator").model_copy(update={"stop_sequences": list(STOP_SEQUENCES)})
-    roles = {"adjudicator": cfg.role("adjudicator"), "referee": cfg.role("referee"), "narrator": nar_role}
+    roles = {"assistant": cfg.role("assistant"), "referee": cfg.role("referee"), "narrator": nar_role}
     print(f"server {a.url} · {label}")
     for n, (system, msgs, _) in ins.items():
         print(f"  {n}: slot {roles[n].slot}, system {len(system)} chars, {len(msgs)} messages")
-    order = ["adjudicator", "narrator", "referee"]
+    order = ["assistant", "narrator", "referee"]
     for i in range(a.rounds):
         print(f"\n--- round {i + 1}, turn order")
         t0 = time.monotonic()

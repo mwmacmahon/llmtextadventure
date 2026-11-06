@@ -10,7 +10,7 @@ provider's place in the engine.
 - Every provider receives a flattened transcript: a system string and alternating user/assistant
   text, no tool calls (`server/engine/context.py`). A local model sees the same conversation Claude
   sees.
-- Two roles need structured output (adjudicator, referee), both single-shot extractions against a
+- Two roles need structured output (assistant, referee), both single-shot extractions against a
   pydantic schema. The provider sends the schema as `response_format: json_schema`; llama.cpp
   compiles it to a grammar, so the JSON is valid by construction. The only failure is truncation
   (`finish_reason: length`), which raises and the pipeline reports as a failed step.
@@ -22,12 +22,12 @@ provider's place in the engine.
 
 ## One slot per role: contexts survive, generation stays sequential
 
-The pipeline runs adjudicator, narrator, referee one after another; nothing generates concurrently
+The pipeline runs assistant, narrator, referee one after another; nothing generates concurrently
 (the user's call: simultaneous generation on one GPU would be a disaster). What each role needs is
 for its own context to survive until its next call. `llama-server --parallel 3` gives three slots,
 each with its own KV cache (and recurrent state, for hybrid models such as Qwen3.5-35B-A3B). The
 provider sends `id_slot` and `cache_prompt: true`, so the narrator's frozen prefix stays on slot 0
-between turns, the adjudicator's stable system prompt on slot 1, the referee's on slot 2. The
+between turns, the assistant's stable system prompt on slot 1, the referee's on slot 2. The
 summarizer shares slot 0 (it runs rarely and replaces the narrator's context when it does).
 
 `slot` is set per role in the config; `TA_PROVIDER=llamacpp` with the ordinary `config.yml`
@@ -54,7 +54,7 @@ unconfirmed, and D90 found both Qwen3.8 finetunes degenerate into a refrain late
 and Sonnet do not), q8_0 KV cache, flash attention and the model's rope base. Sampling is per role in
 `config.llamacpp.yml` (`temperature`, `top_p`, `top_k`, `min_p`, `repeat_penalty`, each sent with the
 request; unset ones fall back to the script's command line): the narrator on Qwen's general settings
-(0.7 / 0.8 / 20 / 0, no repeat penalty), the adjudicator and referee greedy (temperature 0, repeat penalty
+(0.7 / 0.8 / 20 / 0, no repeat penalty), the assistant and referee greedy (temperature 0, repeat penalty
 1.0: a 1.05 penalty cost the referee ten rows of 90, D30), the summarizer in between.
 
 The GPU is shared both ways, as bruba's hub does for its services, without touching bruba:
@@ -154,7 +154,7 @@ checkpoint inside the prefix, which for a 5k-token narrator prompt was nothing. 
 Without it, the narrator re-processed about 5k tokens a turn, 2.5 s at this model's prefill speed.
 
 
-- Schema grammar + a 3B-active MoE: whether the adjudicator's intents and the referee's rows come
+- Schema grammar + a 3B-active MoE: whether the assistant's intents and the referee's rows come
   back as sensible as Sonnet's. The live cases in `server/tests/live/` run against any provider the
   config names; `TA_LIVE=1 TA_CONFIG=config.llamacpp.yml uv run pytest -s tests/live` writes the
   scorecard.
@@ -172,7 +172,7 @@ expected answer, one JSON line per turn (a test set: `notes/eval/sets/<test set 
 not right). `run` builds exactly what the live pipeline sends (`pipeline.adjudicator_inputs`,
 `pipeline.referee_inputs`), calls whatever `TA_CONFIG` names with any `--opt key=value` overrides on the
 role (temperature, top_k, thinking, model…) or a whole profile (`--profile`), lands the replayed report on the same state through
-`apply_changes` so the shims and the engine's rejections are exercised too, and scores: the adjudicator
+`apply_changes` so the shims and the engine's rejections are exercised too, and scores: the assistant
 on kind, time, the (stat, difficulty) checks, commands and carried; the referee on rows by (kind, target,
 field, value) with word overlap for the text kinds, on the applied lines by path and exactly, and on what
 the engine rejected. Every run is written to `notes/eval/runs/<run id>.json` with each turn's diff; `-v`
@@ -191,7 +191,7 @@ TA_CONFIG=config.llamacpp.yml TA_LLAMA_URL=http://192.168.0.215:8280 TA_LLAMA_PR
 Sonnet against Sonnet's rows while being right more often where they disagreed. the test set's `key.yml`
 judges each corpus turn by hand against the rules as they stand: `required` rows (the state must carry
 them; alternatives in `any:`), `allowed` rows (a fair call either way), `forbidden` rows (wrong, with
-why), and for the adjudicator the required checks as accepted stats and difficulty ranges. A reported row
+why), and for the assistant the required checks as accepted stats and difficulty ranges. A reported row
 is a hit, an error, allowed, or unjudged (graded by nobody yet: add it to the key). Rows are compared as
 the engine reads them ("add player.revolver.loaded -1" is "add revolver.loaded -1"), required items are
 met by the best assignment, a repeat of a hit is a duplicate. `run` grades against the key as it goes;
@@ -200,7 +200,7 @@ turns (18 old Sonnet turns, 6 new ones that exercise tells and things outside th
 
 Graded (2026-10-29 night; the old 18 turns carry 75 required rows and 19 checks, v2's 24 turns 90 and 24):
 
-| run | referee required | errors | adjudicator checks | errors |
+| run | referee required | errors | assistant checks | errors |
 |---|---|---|---|---|
 | Sonnet, one call (four runs) | 57–62 / 75 | 5–8 | 16–17 / 17–19 | 0 |
 | Sonnet, split referee (three runs) | 68–70 / 75 | 4–11 | | |
@@ -221,7 +221,7 @@ Graded (2026-10-29 night; the old 18 turns carry 75 required rows and 19 checks,
 Sonnet 3.4–3.9 one call, 5.6 split; Opus 5.0 and 7.9; A3B 3.3–3.5 (it decodes at 116–129 tokens a second,
 3B active parameters); the 27B 13.7–14.6 one call at 46–50 tokens a second, 21.3 with every field required
 and 35.9 split under that rule (three passes in turn on one slot; the single call is the local baseline).
-Adjudicator: Sonnet 4.0, Opus 5.4, A3B 2.2–2.5, 27B 6.0 (before it wrote `intents`) to 8.3. The 27B
+Assistant: Sonnet 4.0, Opus 5.4, A3B 2.2–2.5, 27B 6.0 (before it wrote `intents`) to 8.3. The 27B
 referee is about four times Sonnet per call, not twenty; it writes about twice Sonnet's output (620–670
 tokens against ~350, mostly the `who` and `note` sentences), and prefill is 0.3–1.1 s. The 27B's 23 errors
 in the last run against 13 are the same families as before (an `unseen` row for something in plain sight, a
@@ -229,21 +229,21 @@ move reported a turn early, a ruling that a rolled check was ignored) with fewer
 against 52); one run each at temperature 0.2, so the gap is within the noise until the unjudged rows are keyed.
 
 **Every local model once on the v2 key (2026-10-29, 18:30–18:46, same prompts, same sampling 0.2/0.5/20/1.05):**
-seconds a call referee / adjudicator, then tokens a second: 27B Q6_K 13.7 / 8.3 at 50; 27B Q4_K_M 12.0 / 6.9 at
+seconds a call referee / assistant, then tokens a second: 27B Q6_K 13.7 / 8.3 at 50; 27B Q4_K_M 12.0 / 6.9 at
 59; Qwen3-32B 9.7 / 6.1 at 55 (it writes a third less); A3B 3.5 / 3.2 at 131. The Q4 scores the same as the Q6
 (66/90, 23/24 checks) 18% faster and 5 GB smaller (21.2 GB loaded), so it is the dense model to tune. The 32B is
 the fastest dense model and the weakest judge of the three (an older generation; full attention bought nothing
 at these prompt sizes). The A3B is four times faster than any of them and half the referee (45/90), with the
-adjudicator at 18 of 24. Hosted, for scale: Sonnet split 5.6 / 4.0 s at 85/90 and 24/24; Opus 7.9 / 5.4 s at
+assistant at 18 of 24. Hosted, for scale: Sonnet split 5.6 / 4.0 s at 85/90 and 24/24; Opus 7.9 / 5.4 s at
 90/90 and 22/24. One run each; the hosted runs leave no row unjudged because the key was written from them.
 
 **Sampling (swept on the A3B, 2026-10-29, one run a setting):** the repeat penalty of 1.05 cost the referee
 about ten required rows of 90; without it, greedy decoding met 56/90 with no call truncated, temperature 0.2
 the same with two calls run into the 1536-token budget, and Qwen's general advice (0.6 / 0.95 / 20 / min_p 0.05)
-fewer with two truncations. The adjudicator sat at 18–22 of 24 whatever the setting. `config.llamacpp.yml`
+fewer with two truncations. The assistant sat at 18–22 of 24 whatever the setting. `config.llamacpp.yml`
 now sets the structured roles to temperature 0 and repeat_penalty 1.0; the dense models start from that.
 
-The A3B adjudicator with `check` last is as good as either hosted model; its referee is the weak part
+The A3B assistant with `check` last is as good as either hosted model; its referee is the weak part
 (half the required rows, about two errors a turn). The key was written by Opus from every run's rows, so
 read a close Opus–Sonnet gap with that in mind.
 
@@ -272,7 +272,7 @@ nothing else, and two things make it workable:
 
 **Measured on the v2 key, like for like on the turns every run completed:**
 
-| run | referee s/call | hits | errors | unjudged | adjudicator exact / commands | s/call |
+| run | referee s/call | hits | errors | unjudged | assistant exact / commands | s/call |
 |---|---|---|---|---|---|---|
 | A3B, no thinking (greedy) | 3.5 | 35 / 65 | 10 | 33 | 18 / 17 / 24 | 3.2 |
 | A3B, two-pass, budget 1536 | 11.7 | 39 / 65 | 6 | 31 | 24 / 21 / 24 | 11.2 |
@@ -286,7 +286,7 @@ What it says: one call does what two-pass did, in one call. The 27B gains nothin
 and pays two to three times the latency (at 50 tokens a second a 1536 budget is 30 s of every call): it stays the
 no-thinking dense reference. The A3B's budget is 1536, not 512: at 512 the thinking is cut on 40 of 46 calls and
 the referee sprays rows again (unjudged triples, errors double). With thinking the A3B sits beside the 27B
-without: three seconds faster a call, fewer required rows, a third of the errors, the better adjudicator.
+without: three seconds faster a call, fewer required rows, a third of the errors, the better assistant.
 
 **More room does not help (2026-10-30, D53).** The station referee's thinking reaches the 1536 cap on every turn. The
 role's `thinking_budget` is only a request: run with `--opt thinking_budget=3072` it was byte-identical to 1536, because
@@ -332,7 +332,7 @@ llama-server starts with on the box, and the role settings the game uses while t
 model: Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf                          # a file in the box's model directory
 server: {ctx: 98304, ckpt: 512, kv: q8_0, think_budget: 1536}   # llama-game.sh's knobs
 roles:                                                          # laid over config.llamacpp.yml while loaded
-  adjudicator: {thinking: true, thinking_budget: 1536}
+  assistant: {thinking: true, thinking_budget: 1536}
   referee: {thinking: true, thinking_budget: 1536}
 ```
 

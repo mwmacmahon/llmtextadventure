@@ -16,7 +16,7 @@ from engine.pipeline import Engine  # noqa: E402
 from engine.providers.fake import FakeProvider  # noqa: E402
 from engine.providers.factory import get_provider  # noqa: E402
 from engine.registry import load_games  # noqa: E402
-from engine.roles import Adjudication, Intent  # noqa: E402
+from engine.roles import AssistantReading, Intent  # noqa: E402
 from engine.store import Store  # noqa: E402
 
 
@@ -43,8 +43,8 @@ async def play(engine: Engine, iid: str, text: str) -> list[dict]:
 
 async def test_a_slow_action_costs_the_floor_and_a_fast_beat_does_not(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("station", {})
-    slow = Adjudication(kind="action", summary="The station reads Voss's files", time_minutes=2, risk="low", intents=[Intent(action="read")])
-    fake.canned["Adjudication"] = [slow, slow, Adjudication(kind="action", summary="The station slams the hatch", time_minutes=1, tempo="fast", risk="low", intents=[Intent(action="slam")])]
+    slow = AssistantReading(kind="action", summary="The station reads Voss's files", time_minutes=2, risk="low", intents=[Intent(action="read")])
+    fake.canned["AssistantReading"] = [slow, slow, AssistantReading(kind="action", summary="The station slams the hatch", time_minutes=1, tempo="fast", risk="low", intents=[Intent(action="slam")])]
     first = await play(engine, iid, "I read Voss's files.")           # 08:00: the clock stops at the 08:02 status report, floor or no floor
     assert first[-1]["data"]["mechanics"]["elapsed"] == 2
     second = await play(engine, iid, "I read the rest of them.")
@@ -52,7 +52,7 @@ async def test_a_slow_action_costs_the_floor_and_a_fast_beat_does_not(engine: En
     assert "slow turn: 2 minutes raised to the floor of 5" in second[-1]["data"]["mechanics"]["issues"]     # the engine's note on the turn
     fast = await play(engine, iid, "I slam the hatch.")
     assert fast[-1]["data"]["mechanics"]["elapsed"] == 1
-    assert Adjudication(kind="action", summary="s", time_minutes=3, risk="low").tempo == "slow"       # the default: the floor applies unless the adjudicator says fast
+    assert AssistantReading(kind="action", summary="s", time_minutes=3, risk="low").tempo == "slow"       # the default: the floor applies unless the adjudicator says fast
 
 
 def _failed(stat: str = "hands") -> CheckResult:

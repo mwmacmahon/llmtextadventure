@@ -14,7 +14,7 @@ from engine.pipeline import Engine  # noqa: E402
 from engine.providers.fake import FakeProvider  # noqa: E402
 from engine.providers.factory import get_provider  # noqa: E402
 from engine.registry import load_games  # noqa: E402
-from engine.roles import Adjudication, Change, ChangeReport, CheckProposal, Intent  # noqa: E402
+from engine.roles import AssistantReading, Change, ChangeReport, CheckProposal, Intent  # noqa: E402
 from engine.store import Store  # noqa: E402
 
 
@@ -69,7 +69,7 @@ async def test_default_turn_runs_all_steps(engine: Engine, fake: FakeProvider):
 
 async def test_check_is_rolled_and_told_to_narrator(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("station", {})
-    fake.canned["Adjudication"] = [Adjudication(
+    fake.canned["AssistantReading"] = [AssistantReading(
         kind="action", summary="nudge Park calmer", time_minutes=10, risk="low", entities=["park"],
         intents=[Intent(action="soothe Park through his implant", check=CheckProposal(label="calm Park", stat="influence", difficulty="medium", target_entity="park"))],
     )]
@@ -90,7 +90,7 @@ async def test_check_is_rolled_and_told_to_narrator(engine: Engine, fake: FakePr
     assert narrator_call["calls"][0]["result"]["outcome"] == c["outcome"]
     # replay: same instance+turn -> same roll, even though the roll now happens inside the prose
     engine.undo(iid)
-    fake.canned["Adjudication"] = [Adjudication(
+    fake.canned["AssistantReading"] = [AssistantReading(
         kind="action", summary="nudge Park calmer", time_minutes=10, risk="low",
         intents=[Intent(action="x", check=CheckProposal(label="calm Park", stat="influence", difficulty="medium", target_entity="park"))],
     )]
@@ -104,7 +104,7 @@ async def test_check_is_rolled_and_told_to_narrator(engine: Engine, fake: FakePr
 
 async def test_clarify_does_not_advance_time_or_run_referee(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("station", {})
-    fake.canned["Adjudication"] = [Adjudication(kind="clarify", summary="unclear", clarify_question="Which door?", time_minutes=30, risk="none")]
+    fake.canned["AssistantReading"] = [AssistantReading(kind="clarify", summary="unclear", clarify_question="Which door?", time_minutes=30, risk="none")]
     events = await play(engine, iid, "open the door")
     kinds = [e["event"] for e in events]
     assert "referee" not in kinds
@@ -115,7 +115,7 @@ async def test_clarify_does_not_advance_time_or_run_referee(engine: Engine, fake
 
 async def test_referee_delta_respects_authority_and_bounds(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("station", {})
-    fake.canned["Adjudication"] = [Adjudication(kind="action", summary="talk to Voss", time_minutes=1, risk="low", intents=[Intent(action="talk to Voss")])]
+    fake.canned["AssistantReading"] = [AssistantReading(kind="action", summary="talk to Voss", time_minutes=1, risk="low", intents=[Intent(action="talk to Voss")])]
     C = Change
     fake.canned["ChangeReport"] = [ChangeReport.of(
         C(kind="flag", target="voss_found_forgery", value="true"), C(kind="flag", target="not_a_flag", value="true"),
@@ -149,7 +149,7 @@ async def test_referee_delta_respects_authority_and_bounds(engine: Engine, fake:
 
 async def test_scripted_spine_and_ending_over_a_long_day(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("station", {})
-    fake.hook = lambda schema, last: Adjudication(kind="action", summary="wait", time_minutes=240, risk="none") if issubclass(schema, Adjudication) else None
+    fake.hook = lambda schema, last: AssistantReading(kind="action", summary="wait", time_minutes=240, risk="none") if issubclass(schema, AssistantReading) else None
     fired: list[str] = []
     for _ in range(4):
         events = await play(engine, iid, "I wait and watch.")
@@ -164,11 +164,11 @@ async def test_scripted_spine_and_ending_over_a_long_day(engine: Engine, fake: F
     # Branch: secure the canister before 14:30 and the lindqvist_opens event expires instead.
     bid = engine.fork(iid, at_turn=1)
     fake.hook = lambda schema, last: (
-        Adjudication(kind="action", summary="lock it", time_minutes=5, risk="low") if issubclass(schema, Adjudication)
+        AssistantReading(kind="action", summary="lock it", time_minutes=5, risk="low") if issubclass(schema, AssistantReading)
         else ChangeReport.of(Change(kind="flag", target="canister_secured", value="true"), log_line="The canister is sealed in a locker.") if schema is ChangeReport
         else None)
     await play(engine, bid, "I have a loader drone lock the canister in the Cargo safe.")
-    fake.hook = lambda schema, last: Adjudication(kind="action", summary="wait", time_minutes=240, risk="none") if issubclass(schema, Adjudication) else None
+    fake.hook = lambda schema, last: AssistantReading(kind="action", summary="wait", time_minutes=240, risk="none") if issubclass(schema, AssistantReading) else None
     exp: list[str] = []
     for _ in range(4):
         events = await play(engine, bid, "I wait.")
@@ -180,7 +180,7 @@ async def test_scripted_spine_and_ending_over_a_long_day(engine: Engine, fake: F
 
     # Ending: push crew suspicion past 90 through the referee; the ending event fires next tick.
     fake.hook = lambda schema, last: (
-        Adjudication(kind="action", summary="blunder", time_minutes=1, risk="high") if issubclass(schema, Adjudication)
+        AssistantReading(kind="action", summary="blunder", time_minutes=1, risk="high") if issubclass(schema, AssistantReading)
         else ChangeReport.of(*[Change(kind="add", target=c, field="suspicion", value="+10") for c in ("okafor", "reyes", "lindqvist", "park", "voss")], log_line="Everyone saw.") if schema is ChangeReport
         else None)
     for _ in range(12):

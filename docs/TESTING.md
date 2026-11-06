@@ -1,6 +1,6 @@
 # Testing the model roles
 
-How this project tests the models that read and judge the story (the adjudicator and the referee): what the pieces are,
+How this project tests the models that read and judge the story (the assistant and the referee): what the pieces are,
 what they are called, how to write a test, how to run one, how to read the result, and the problems found so far with
 the decisions taken on them. The game's deterministic code has its own offline suite (`server/tests`, `pytest`); that
 suite needs no model and is not what this document is about. Live play with a player (a Claude Code subagent through
@@ -91,7 +91,7 @@ Each turn in `key.yml`, keyed `"<instance id>:<turn>"`:
       - {kind: gone, target: notebook, quote: "...", why: it lies on the shack floor; a plain gone loses it for good}
     gray:       # defensible, not ideal: tallied apart, never an error
       - {kind: unseen, words: [lye], quote: "...", why: "...", tags: [narrator-note-says-unseen]}
-  adjudicator:
+  assistant:
     kind: action
     checks: {required: [{stat: [hands], difficulty: [medium, high]}], allowed: [], forbidden: []}
 ```
@@ -127,7 +127,7 @@ with no quote, and turns judged in one place and not the other:
 `place-granularity`). `level: easy|hard` marks difficulty. Do not use `difficulty` for that: in a check pattern it already
 means the check's difficulty.
 
-**The adjudicator's checks** are judged against the player's words: which stat, at which difficulties, a fair reading of
+**The assistant's checks** are judged against the player's words: which stat, at which difficulties, a fair reading of
 the attempt allows.
 
 **Revising the key.** Whenever a report shows a reasonable reading the key does not allow, change the key that day: make it
@@ -154,7 +154,7 @@ that answered, so the slip shows in the name.
 `run` takes a test set id (or a path to its folder), names the run, grades it against the set's key, and writes
 everything: the commit and whether the tree had uncommitted changes, the test set and the key as they were (by content
 hash, into `blobs/`), every model call (the prompt, the raw reply, the reasoning, any error), every row, what the engine
-applied and refused. `--opt key=value` overrides one role setting and goes into the run's note (`--opt stakes=true` replays the adjudicator on its staked schema, the prompt a live turn with the narrator's stakes dial on sends; the key grades labels, stats and difficulties, not the futures, so a staked run's score says nothing about the stakes' quality: that is what the shadow and live rounds' reads are for, INDEX §3); `--note` adds words to the
+applied and refused. `--opt key=value` overrides one role setting and goes into the run's note (`--opt stakes=true` replays the assistant on its staked schema, the prompt a live turn with the narrator's stakes dial on sends; the key grades labels, stats and difficulties, not the futures, so a staked run's score says nothing about the stakes' quality: that is what the shadow and live rounds' reads are for, INDEX §3); `--note` adds words to the
 run id. Then rebuild and republish the reports:
 
 ```
@@ -174,7 +174,7 @@ for k in 1 2 3; do TA_LLAMA_PREPARE_URL=http://192.168.0.215:8281/free-comfy \
 On 2026-10-30 the A3B station band was 19–25 of 48. Sonnet samples, so its repeats already spread (station 44–48,
 noir 65–68 that night); one Sonnet run per change is enough to catch a regression, not to rank two close ones.
 
-A run replays the referee and the adjudicator with **today's prompts** on the **recorded** turn. That is the point (a
+A run replays the referee and the assistant with **today's prompts** on the **recorded** turn. That is the point (a
 prompt change is measured on fixed input) and the catch (see "An old test set meets a new prompt").
 
 **An engine change is measured free, on rows already written.** A run lands the referee's rows as a turn does: the
@@ -195,7 +195,7 @@ own and never repeat exactly.
 ## Reading a report
 
 **The index** lists every run, newest first: test set, model, required items caught, rows the key forbids, rows it does
-not cover yet, gray items met and gray rows written, the adjudicator's checks.
+not cover yet, gray items met and gray rows written, the assistant's checks.
 
 **A run page**, one section per turn:
 1. *The situation*: the key's `why` for the turn.

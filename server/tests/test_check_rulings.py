@@ -17,7 +17,7 @@ from engine.pipeline import Engine  # noqa: E402
 from engine.providers.fake import FakeProvider  # noqa: E402
 from engine.providers.factory import get_provider  # noqa: E402
 from engine.registry import load_games  # noqa: E402
-from engine.roles import Adjudication, Change, ChangeReport, CheckProposal, Intent  # noqa: E402
+from engine.roles import AssistantReading, Change, ChangeReport, CheckProposal, Intent  # noqa: E402
 from engine.store import Store  # noqa: E402
 
 
@@ -81,8 +81,8 @@ def fake() -> FakeProvider:
     FakeProvider.script = None
 
 
-def _adj(*checks: tuple[str, str, str]) -> Adjudication:
-    return Adjudication(kind="action", summary="The AI works on the crew.", time_minutes=5, risk="low",
+def _adj(*checks: tuple[str, str, str]) -> AssistantReading:
+    return AssistantReading(kind="action", summary="The AI works on the crew.", time_minutes=5, risk="low",
                         intents=[Intent(action=label, check=CheckProposal(label=label, stat=stat, difficulty=diff)) for label, stat, diff in checks])
 
 
@@ -108,7 +108,7 @@ THEN = "Park shakes his head and walks off, and the log stays shut."
 async def test_check_ignored_is_kept_only_with_a_quote_from_the_prose(engine: Engine, fake: FakeProvider, what: str, kept: bool):
     engine.update_settings({"guard": {"mode": "log"}})
     iid = engine.create_instance("station", {})
-    fake.canned["Adjudication"] = [_adj(("talk Park round", "influence", "low"))]
+    fake.canned["AssistantReading"] = [_adj(("talk Park round", "influence", "low"))]
     fake.script = _narrate("You put it to Park.", THEN)
     fake.hook = lambda schema, last: ChangeReport.of(Change(kind="ruling", field="check_ignored", value=what, note="Play the result."), log_line="x") if schema is ChangeReport else None
     mech = (await _play(engine, iid, "I ask Park to open the log."))[-1]["data"]["mechanics"]
@@ -119,7 +119,7 @@ async def test_check_ignored_is_kept_only_with_a_quote_from_the_prose(engine: En
 async def test_a_serious_ruling_whose_fix_declines_is_not_retold(engine: Engine, fake: FakeProvider):
     engine.update_settings({"guard": {"mode": "gate", "max_retells": 1}})
     iid = engine.create_instance("station", {})
-    fake.canned["Adjudication"] = [_adj()]
+    fake.canned["AssistantReading"] = [_adj()]
     fake.script = lambda system, messages: "The corridor hums."
     fake.hook = lambda schema, last: ChangeReport.of(Change(kind="ruling", field="contradiction", value="the hatch is drawn open", note="No retelling needed."), log_line="x") if schema is ChangeReport else None
     events = await _play(engine, iid, "I listen.")
@@ -131,7 +131,7 @@ async def test_a_serious_ruling_whose_fix_declines_is_not_retold(engine: Engine,
 async def test_the_referee_is_shown_the_checks_left_uncalled(engine: Engine, fake: FakeProvider):
     engine.update_settings({"guard": {"mode": "log"}})
     iid = engine.create_instance("station", {})
-    fake.canned["Adjudication"] = [_adj(("talk Park round", "influence", "low"), ("slip the log past Voss", "subtlety", "medium"))]
+    fake.canned["AssistantReading"] = [_adj(("talk Park round", "influence", "low"), ("slip the log past Voss", "subtlety", "medium"))]
     fake.script = _narrate("You put it to Park.", "Park agrees, and Voss never looks up.")
     seen: list[str] = []
     fake.hook = lambda schema, last: (seen.append(last), ChangeReport.of(log_line="x"))[1] if schema is ChangeReport else None
@@ -142,7 +142,7 @@ async def test_the_referee_is_shown_the_checks_left_uncalled(engine: Engine, fak
 async def test_no_uncalled_block_when_nothing_was_called(engine: Engine, fake: FakeProvider):
     engine.update_settings({"guard": {"mode": "log"}})
     iid = engine.create_instance("station", {})
-    fake.canned["Adjudication"] = [_adj(("talk Park round", "influence", "low"))]
+    fake.canned["AssistantReading"] = [_adj(("talk Park round", "influence", "low"))]
     fake.script = lambda system, messages: "Park agrees at once."
     seen: list[str] = []
     fake.hook = lambda schema, last: (seen.append(last), ChangeReport.of(log_line="x"))[1] if schema is ChangeReport else None
@@ -163,7 +163,7 @@ EARLIER = "Rain on the glass. His knee buckles on the wet stair and he catches t
 async def test_repeated_beat_needs_this_turn_and_an_earlier_one_quoted(engine: Engine, fake: FakeProvider, what: str, kept: bool):
     engine.update_settings({"guard": {"mode": "log"}})
     iid = engine.create_instance("station", {})
-    fake.canned["Adjudication"] = [_adj(), _adj()]
+    fake.canned["AssistantReading"] = [_adj(), _adj()]
     tellings = iter([EARLIER, "Down the corridor, the knee goes out under him again."])
     fake.script = lambda system, messages: next(tellings)
     rows = iter([ChangeReport.of(log_line="x"),

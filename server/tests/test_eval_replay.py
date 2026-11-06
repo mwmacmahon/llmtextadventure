@@ -51,9 +51,9 @@ def test_adjudication_scores_kind_time_checks_commands_and_carried():
 
 def test_a_check_written_into_the_wrong_field_is_recovered_only_with_a_stat_and_a_tier():
     from engine.pipeline import recover_misplaced_checks
-    from engine.roles import AdjudicationV2, CheckProposal, IntentV2
+    from engine.roles import AssistantReadingV2, CheckProposal, IntentV2
     stats = {"eye": 2, "wits": 2, "tongue": 1, "hands": 2, "muscle": -1, "nerve": 0}
-    adj = AdjudicationV2(kind="action", summary="s", time_minutes=1, risk="high", intents=[
+    adj = AssistantReadingV2(kind="action", summary="s", time_minutes=1, risk="high", intents=[
         IntentV2(action="shoot", transition="hands check (medium)"),
         IntentV2(action="move", transition="muscle (-1) high"),
         IntentV2(action="climb", transition="a very high muscle check"),

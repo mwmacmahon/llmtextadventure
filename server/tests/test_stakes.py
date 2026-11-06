@@ -15,7 +15,7 @@ from engine.pipeline import Engine, adjudicator_inputs  # noqa: E402
 from engine.providers.fake import FakeProvider  # noqa: E402
 from engine.providers.factory import get_provider  # noqa: E402
 from engine.registry import load_games  # noqa: E402
-from engine.roles import (Adjudication, AdjudicationStaked, AdjudicationV2, ChangeReport, CheckProposal, CheckStaked,  # noqa: E402
+from engine.roles import (AssistantReading, AssistantReadingStaked, AssistantReadingV2, ChangeReport, CheckProposal, CheckStaked,  # noqa: E402
                           Intent, IntentStaked)
 from engine.store import Store  # noqa: E402
 
@@ -46,8 +46,8 @@ def _stakes():
                                           "fiat": [], "pivotal": "talk Park round", "reason": "x"})
 
 
-def _staked() -> AdjudicationStaked:
-    return AdjudicationStaked(kind="action", summary="The AI works on Park.", time_minutes=5, risk="low", pivotal="talk Park round",
+def _staked() -> AssistantReadingStaked:
+    return AssistantReadingStaked(kind="action", summary="The AI works on Park.", time_minutes=5, risk="low", pivotal="talk Park round",
                               intents=[IntentStaked(action="talk Park round", check=CheckStaked(
                                   label="talk Park round", stat="influence", difficulty="low", success_gain=GAIN, success_minutes=5,
                                   failure_outcome=OUTCOME, failure_minutes=8, complication="cast_acts", complication_what=COMP))])
@@ -58,10 +58,10 @@ async def _turn(engine: Engine, fake: FakeProvider, mode: str):
     engine.cfg.roles["narrator"].stakes = mode
     iid = engine.create_instance("station", {})
     if mode == "off":
-        fake.canned["Adjudication"] = [Adjudication(kind="action", summary="The AI works on Park.", time_minutes=5, risk="low",
+        fake.canned["AssistantReading"] = [AssistantReading(kind="action", summary="The AI works on Park.", time_minutes=5, risk="low",
                                                     intents=[Intent(action="talk Park round", check=CheckProposal(label="talk Park round", stat="influence", difficulty="low"))])]
     else:
-        fake.canned["AdjudicationStaked"] = [_staked()]
+        fake.canned["AssistantReadingStaked"] = [_staked()]
     replies: list[str] = []
     seen: list[str] = []
     schemas: list[str] = []
@@ -91,12 +91,12 @@ async def test_off_by_default_no_stakes(engine: Engine, fake: FakeProvider):
     assert load_config().role("narrator").stakes == "off"
     mech, replies, seen, rows, schemas = await _turn(engine, fake, "off")
     assert rows == [] and "stake" not in mech["calls"][0] and "What it gains" not in replies[0] and "What failure leaves" not in replies[0]
-    assert "AdjudicationStaked" not in schemas
+    assert "AssistantReadingStaked" not in schemas
 
 
 async def test_shadow_logs_the_stakes_from_the_one_call_and_leaves_the_reply(engine: Engine, fake: FakeProvider):
     mech, replies, seen, rows, schemas = await _turn(engine, fake, "shadow")
-    assert schemas.count("AdjudicationStaked") == 1 and "Stakes" not in schemas          # one call, not two (D115)
+    assert schemas.count("AssistantReadingStaked") == 1 and "Stakes" not in schemas          # one call, not two (D115)
     assert len(rows) == 1 and rows[0]["payload"]["mode"] == "shadow" and rows[0]["payload"]["matched"] == [True] and rows[0]["payload"]["merged"]
     assert rows[0]["payload"]["answer"]["checks"][0]["failure_outcome"] == OUTCOME and rows[0]["payload"]["answer"]["pivotal"] == "talk Park round"
     assert "stake" not in mech["calls"][0] and GAIN not in replies[0] and OUTCOME not in replies[0]
@@ -125,7 +125,7 @@ def test_the_dial_off_prompt_is_unchanged_and_on_adds_the_stakes():
         _, st = g.new_instance({})
         sys0, msgs0, sch0 = adjudicator_inputs(g, st, [], "I look around.")
         sys1, msgs1, sch1 = adjudicator_inputs(g, st, [], "I look around.", stakes=True)
-        assert sch0 is AdjudicationV2 and sch1 is AdjudicationStaked and "STAKES." not in sys0 and "STAKES." in sys1
+        assert sch0 is AssistantReadingV2 and sch1 is AssistantReadingStaked and "STAKES." not in sys0 and "STAKES." in sys1
         assert sys1.startswith(sys0)                                           # the stakes rules extend the cached prefix
         assert "[WHO IS WHO" in msgs1[-1].content and "[WHO IS WHO" not in msgs0[-1].content
         assert msgs0[-1].content.endswith("I look around.") and msgs1[-1].content.endswith("I look around.")
@@ -171,8 +171,8 @@ def test_a_label_with_an_unearned_hidden_term_becomes_its_stat():
     eng = Engine(cfg, Store(Path(tempfile.mkdtemp()) / "t.sqlite3"), load_games(cfg.resolve(cfg.server.content_root)))
     g = eng.games["noir"]
     _, st = g.new_instance({})
-    p = get_provider(cfg.role("adjudicator"))
-    p.canned["Adjudication"] = [Adjudication(kind="action", summary="x", time_minutes=5, risk="low",
+    p = get_provider(cfg.role("assistant"))
+    p.canned["AssistantReading"] = [AssistantReading(kind="action", summary="x", time_minutes=5, risk="low",
                                              intents=[Intent(action="ask it", check=CheckProposal(label="Interrogating the shepherd", stat="tongue", difficulty="high"))])]
     adj, _ = asyncio.run(eng._adjudicate(g, st, "", "I ask the thing what it did with June."))
     assert adj.intents[0].check.label == "tongue"
@@ -186,7 +186,7 @@ def test_every_visible_field_with_an_unearned_hidden_term_is_scrubbed():
     cfg = load_config()
     g = load_games(cfg.resolve(cfg.server.content_root))["noir"]
     _, st = g.new_instance({})
-    adj = AdjudicationStaked(
+    adj = AssistantReadingStaked(
         kind="action", summary="Frank questions the shepherd.", clarify_question="Which cistern?", time_minutes=5, risk="low", notes="It is a shepherd.",
         focus=Focus(topics=["the Congregation", "the roof"]),
         fiat=[FiatOutcome(attempt="read the note", outcome="It names the Congregation."), FiatOutcome(attempt="light up", outcome="He smokes.")],
@@ -210,7 +210,7 @@ def test_a_hidden_term_the_player_used_is_not_scrubbed():
     cfg = load_config()
     g = load_games(cfg.resolve(cfg.server.content_root))["noir"]
     _, st = g.new_instance({})
-    adj = AdjudicationStaked(kind="action", summary="Frank asks about the Congregation.", time_minutes=5, risk="low")
+    adj = AssistantReadingStaked(kind="action", summary="Frank asks about the Congregation.", time_minutes=5, risk="low")
     assert scrub_hidden(g, st, adj, "I ask her about the Congregation.") == {} and "Congregation" in adj.summary
 
 

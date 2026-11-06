@@ -249,8 +249,8 @@ def test_inline_schema_resolves_refs_and_closes_objects():
     """pydantic's $ref/$defs become inline objects with additionalProperties false, list and object keys required;
     the sibling description on a $ref node is kept; a recursive schema is refused."""
     from engine.providers.llamacpp_provider import inline_schema
-    from engine.roles import Adjudication
-    js = inline_schema(Adjudication.model_json_schema())
+    from engine.roles import AssistantReading
+    js = inline_schema(AssistantReading.model_json_schema())
     assert "$defs" not in js and "$ref" not in json.dumps(js)
     assert js["additionalProperties"] is False and {"kind", "summary", "intents", "commands"} <= set(js["required"])   # lists too: a grammar may not skip them
     intent = js["properties"]["intents"]["items"]

@@ -556,7 +556,7 @@ def _earlier_of(rec: dict, n: int) -> list[tuple[int, str, str]]:
 async def _replay_roles(rec: dict, game, state, exp: dict, res: dict, current: dict, cfg, roles: set[str], opts: dict[str, str]) -> None:
     if "adjudicator" in roles:
         current["role"] = "adjudicator"                              # graded by the key; scored against the old answer only where it is sound
-        role = _role_with(cfg, "adjudicator", opts)
+        role = _role_with(cfg, "assistant", opts)
         provider = get_provider(role)
         recent = [Msg(**m) for m in rec["recent"]]
         system, msgs, schema = adjudicator_inputs(game, state, recent, rec["player_text"], stakes=str(opts.get("stakes", "")).lower() == "true")
@@ -773,7 +773,7 @@ async def run(args: argparse.Namespace) -> None:
         os.environ.setdefault("TA_LLAMA_URL", SERVER)
     cfg = load_config()
     games = load_games(cfg.resolve(cfg.server.content_root))
-    roles = {"adjudicator", "referee"} if args.role == "both" else {args.role}
+    roles = {"adjudicator", "referee"} if args.role == "both" else {"adjudicator" if args.role == "assistant" else args.role}
     opts = dict(kv.split("=", 1) for kv in args.opt)
     tset = find_set(args.set)
     turns_path = tset["_dir"] / "turns.jsonl"
@@ -898,7 +898,8 @@ def main() -> None:
     ex.add_argument("--any-model", action="store_true", help="keep turns whose referee was not Sonnet")
     rn = sub.add_parser("run", help="replay a test set through a model setup and grade it")
     rn.add_argument("set", help="a test set id (ts_…), its folder, or an old name")
-    rn.add_argument("--role", choices=["adjudicator", "referee", "both"], default="both")
+    rn.add_argument("--role", choices=["adjudicator", "assistant", "referee", "both"], default="both",
+                    help="assistant is the adjudicator's name since D124; the eval sets and runs keep \"adjudicator\"")
     rn.add_argument("--profile", help="swap the box to this profile (server/profiles/<name>.yml) and run under its role settings")
     rn.add_argument("--opt", action="append", default=[], help="role option override on top, e.g. temperature=0 thinking=true model=…")
     rn.add_argument("--turns", nargs="*", help="only these: '3' or 'iid:3'")

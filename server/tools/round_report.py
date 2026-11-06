@@ -39,15 +39,15 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 OUT = ROOT / "notes" / "playtests"
 E = html.escape
 
-ROLE_LABEL = {"adjudicator": "Adjudicator", "narrator": "Narrator", "referee": "Referee", "summarizer": "Summarizer"}
+ROLE_LABEL = {"assistant": "Assistant", "adjudicator": "Assistant", "narrator": "Narrator", "referee": "Referee", "summarizer": "Summarizer"}
 ENGINE_KINDS = {"clock", "event_fired", "event_expired", "happening", "pending", "unseen", "check", "command", "command_preview", "drift", "forced"}
 
 CSS = BASE_CSS + """
 .call{border:1px solid var(--rule);border-radius:7px;padding:10px 12px;display:grid;gap:8px;min-width:0;background:var(--sheet)}
 .call > header{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline}
 .call .who{font:600 12px var(--mono);letter-spacing:.06em;text-transform:uppercase}
-.call.adjudicator .who{color:var(--unj)} .call.narrator .who{color:var(--ok)} .call.referee .who{color:var(--gray)} .call.summarizer .who{color:var(--muted)}
-.call.adjudicator{border-left:3px solid var(--unj)} .call.narrator{border-left:3px solid var(--ok)} .call.referee{border-left:3px solid var(--gray)}
+.call.adjudicator .who,.call.assistant .who{color:var(--unj)} .call.narrator .who{color:var(--ok)} .call.referee .who{color:var(--gray)} .call.summarizer .who{color:var(--muted)}
+.call.adjudicator,.call.assistant{border-left:3px solid var(--unj)} .call.narrator{border-left:3px solid var(--ok)} .call.referee{border-left:3px solid var(--gray)}
 .call.err{border-color:var(--bad)}
 .dim{color:var(--muted);font-size:.85rem}
 .msg{display:grid;grid-template-columns:4.6rem 1fr;gap:6px;align-items:start;min-width:0} .msg > *{min-width:0}

@@ -4,5 +4,5 @@
 model: Qwen3.5-35B-A3B-UD-Q6_K_XL.gguf
 server: {ctx: 98304, ckpt: 512, kv: q8_0, think_budget: 1536, tensor_split: "27,4"}
 roles:
-  adjudicator: {thinking: true, thinking_budget: 1536}
+  assistant: {thinking: true, thinking_budget: 1536}
   referee: {thinking: true, thinking_budget: 1536}

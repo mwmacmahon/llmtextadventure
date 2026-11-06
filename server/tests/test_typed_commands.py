@@ -18,7 +18,7 @@ from engine.pipeline import Engine, _commands_text, _parse_command_args  # noqa:
 from engine.providers.fake import FakeProvider  # noqa: E402
 from engine.providers.factory import get_provider  # noqa: E402
 from engine.registry import load_games  # noqa: E402
-from engine.roles import Adjudication, CheckProposal, CommandPick, Intent, adjudicator_messages  # noqa: E402
+from engine.roles import AssistantReading, CheckProposal, CommandPick, Intent, adjudicator_messages  # noqa: E402
 from engine.store import Store  # noqa: E402
 from engine.roles import Change, ChangeReport  # noqa: E402
 
@@ -52,16 +52,16 @@ def state_of(engine: Engine, iid: str):
     return engine.games[inst.game].load_state(engine.store.load_state(iid))
 
 
-def adj(command: str, *args: str, kind: str = "action", minutes: int = 2) -> Adjudication:
+def adj(command: str, *args: str, kind: str = "action", minutes: int = 2) -> AssistantReading:
     """What the adjudicator returns for an input that asks for one command and nothing else: the command,
     and one intent for the attempt with no check (an action never has an empty intents list)."""
-    return Adjudication(kind=kind, summary=f"typed {command}", time_minutes=minutes, risk="low", commands=[CommandPick(id=command, args=list(args))],
+    return AssistantReading(kind=kind, summary=f"typed {command}", time_minutes=minutes, risk="low", commands=[CommandPick(id=command, args=list(args))],
                         intents=[Intent(action=f"typed {command}")])
 
 
-def adj2(*picks: tuple[str, ...], kind: str = "action", minutes: int = 2) -> Adjudication:
+def adj2(*picks: tuple[str, ...], kind: str = "action", minutes: int = 2) -> AssistantReading:
     """Several levers in one input, in order: each pick is (id, 'name=value', ...)."""
-    return Adjudication(kind=kind, summary="typed several", time_minutes=minutes, risk="low",
+    return AssistantReading(kind=kind, summary="typed several", time_minutes=minutes, risk="low",
                         commands=[CommandPick(id=p[0], args=list(p[1:])) for p in picks], intents=[Intent(action="typed several")])
 
 
@@ -97,7 +97,7 @@ def test_commands_text_lists_typeable_commands_with_their_options():
 
 async def test_typed_lever_is_previewed_for_the_narrator_and_committed_after_the_prose(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("station", {})
-    fake.canned["Adjudication"] = [adj("hatches", "action=seal", "module=Cargo")]
+    fake.canned["AssistantReading"] = [adj("hatches", "action=seal", "module=Cargo")]
     events = await play(engine, iid, "Seal the hatches to Cargo, quietly.")
     kinds = [e["event"] for e in events]
     assert kinds[0] == "adjudication" and kinds[-1] == "done" and "mechanic" in kinds
@@ -126,7 +126,7 @@ async def test_typed_lever_is_previewed_for_the_narrator_and_committed_after_the
 
 async def test_typed_narrated_command_uses_its_directive_and_skips_the_adjudicated_time(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("station", {})
-    fake.canned["Adjudication"] = [adj("power", "action=cut", "system=Life Support", minutes=1)]
+    fake.canned["AssistantReading"] = [adj("power", "action=cut", "system=Life Support", minutes=1)]
     events = await play(engine, iid, "Cut the power to life support.")
     a = events[0]["data"]
     assert a["time_minutes"] == 5 and a["systems"] == ["Life Support"]      # the command's own minutes and systems win
@@ -140,7 +140,7 @@ async def test_a_refused_lever_is_played_as_blocked_with_time_passing(engine: En
     doc = engine.store.load_state(iid)
     next(x for x in doc["systems"] if x["name"] == "Doors")["control"] = "manual_override"
     engine.store.save_snapshot(iid, 0, doc)
-    fake.canned["Adjudication"] = [adj("hatches", "action=seal", "module=Cargo", minutes=3)]
+    fake.canned["AssistantReading"] = [adj("hatches", "action=seal", "module=Cargo", minutes=3)]
     events = await play(engine, iid, "Seal Cargo.")
     a = events[0]["data"]
     assert a["kind"] == "action" and a["time_minutes"] == 3 and a["commands"][0]["id"] == "hatches"     # the attempt is still an action in the fiction
@@ -163,7 +163,7 @@ async def test_the_referee_can_veto_a_lever_the_prose_did_not_complete(engine: E
     bl = next(i for i in doc["inventory"] if i["id"] == "bullets")
     rv["loaded"], bl["count"] = 2, 10
     engine.store.save_snapshot(iid, 0, doc)
-    fake.canned["Adjudication"] = [adj("reload", minutes=1)]
+    fake.canned["AssistantReading"] = [adj("reload", minutes=1)]
     seen: dict = {}
 
     def hook(schema, last):
@@ -186,7 +186,7 @@ async def test_the_referee_can_veto_a_lever_the_prose_did_not_complete(engine: E
 
 async def test_missing_parameter_becomes_a_clarify_turn(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("station", {})
-    fake.canned["Adjudication"] = [adj("hatches", "action=seal")]
+    fake.canned["AssistantReading"] = [adj("hatches", "action=seal")]
     events = await play(engine, iid, "Seal the hatches.")
     a = events[0]["data"]
     assert a["kind"] == "clarify" and a["clarify_question"].startswith("Which module?") and "Cargo" in a["clarify_question"]
@@ -195,7 +195,7 @@ async def test_missing_parameter_becomes_a_clarify_turn(engine: Engine, fake: Fa
 
 async def test_untypeable_and_unknown_commands_are_ignored(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("noir", {})
-    fake.canned["Adjudication"] = [adj("notebook", kind="trivial", minutes=0), adj("teleport")]
+    fake.canned["AssistantReading"] = [adj("notebook", kind="trivial", minutes=0), adj("teleport")]
     for text in ("I read my notes.", "I teleport."):
         events = await play(engine, iid, text)
         assert events[0]["data"]["commands"] == [] and events[-1]["event"] == "done"
@@ -209,7 +209,7 @@ async def test_typed_reload_moves_bullets_through_the_command(engine: Engine, fa
     bl = next(i for i in doc["inventory"] if i["id"] == "bullets")
     rv["loaded"], bl["count"] = 2, 10
     engine.store.save_snapshot(iid, 0, doc)
-    fake.canned["Adjudication"] = [adj("reload", kind="trivial", minutes=0)]
+    fake.canned["AssistantReading"] = [adj("reload", kind="trivial", minutes=0)]
     events = await play(engine, iid, "I reload the revolver.")
     a = events[0]["data"]
     assert a["kind"] == "action" and a["commands"][0]["id"] == "reload"            # trivial becomes action once the engine did something
@@ -219,7 +219,7 @@ async def test_typed_reload_moves_bullets_through_the_command(engine: Engine, fa
     bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
     assert "You thumb 4 rounds into the cylinder" in bulletin
     # already full: the game refuses, the narrator plays the attempt as blocked, nothing changes
-    fake.canned["Adjudication"] = [adj("reload")]
+    fake.canned["AssistantReading"] = [adj("reload")]
     events = await play(engine, iid, "I reload again.")
     assert events[0]["data"]["kind"] == "action"
     bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
@@ -230,7 +230,7 @@ async def test_typed_reload_moves_bullets_through_the_command(engine: Engine, fa
 async def test_typed_smoke_is_charged_once_even_if_the_referee_also_reports_it(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("noir", {})
     before = state_of(engine, iid).item("cigarettes").count
-    fake.canned["Adjudication"] = [adj("smoke", minutes=5)]
+    fake.canned["AssistantReading"] = [adj("smoke", minutes=5)]
     fake.hook = lambda schema, last: ChangeReport.of(Change(kind="add", target="cigarettes", field="count", value="-1"), log_line="x") if schema is ChangeReport else None
     events = await play(engine, iid, "I light a cigarette.")
     assert events[-1]["event"] == "done"
@@ -243,7 +243,7 @@ async def test_two_levers_are_previewed_in_order_and_the_second_sees_the_first(e
     """Seal Cargo, then release it: the release is CLEAR only because the preview of the seal came first.
     Both commit in order after the prose; the player sees one § line each."""
     iid = engine.create_instance("station", {})
-    fake.canned["Adjudication"] = [adj2(("hatches", "action=seal", "module=Cargo"), ("hatches", "action=release", "module=Cargo"))]
+    fake.canned["AssistantReading"] = [adj2(("hatches", "action=seal", "module=Cargo"), ("hatches", "action=release", "module=Cargo"))]
     events = await play(engine, iid, "Seal Cargo for a moment, then release it again.")
     a = events[0]["data"]
     assert [c["id"] for c in a["commands"]] == ["hatches", "hatches"]
@@ -259,7 +259,7 @@ async def test_two_levers_are_previewed_in_order_and_the_second_sees_the_first(e
     assert done["mechanics"]["applied"][:2] == ["command hatches", "command hatches"] and [o["status"] for o in done["mechanics"]["levers"]] == ["applied", "applied"]
     assert done["text"].index("§ Hatches to Cargo sealed") < done["text"].index("§ Hatches to Cargo released")
     # a second seal straight after a seal is BLOCKED in the preview, because the working copy already has it sealed
-    fake.canned["Adjudication"] = [adj2(("hatches", "action=seal", "module=Lab"), ("hatches", "action=seal", "module=Lab"))]
+    fake.canned["AssistantReading"] = [adj2(("hatches", "action=seal", "module=Lab"), ("hatches", "action=seal", "module=Lab"))]
     events = await play(engine, iid, "Seal the Lab. Seal it again.")
     bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
     assert "Seal Lab: CLEAR" in bulletin and "Seal Lab: BLOCKED. Lab is already sealed." in bulletin
@@ -274,7 +274,7 @@ async def test_the_referee_can_veto_one_of_two_levers(engine: Engine, fake: Fake
     rv["loaded"], bl["count"] = 2, 10
     engine.store.save_snapshot(iid, 0, doc)
     cigs = next(i for i in doc["inventory"] if i["id"] == "cigarettes")["count"]
-    fake.canned["Adjudication"] = [adj2(("reload",), ("smoke",), minutes=3)]
+    fake.canned["AssistantReading"] = [adj2(("reload",), ("smoke",), minutes=3)]
     seen: dict = {}
 
     def hook(schema, last):
@@ -298,18 +298,18 @@ async def test_an_action_with_no_intents_is_asked_again_once(engine: Engine, fak
     """The model returned the commands and dropped the intents (seen live: a reload beside a run on a bad leg,
     no muscle check). The engine asks once more, naming the gap, and keeps the answer that has intents."""
     iid = engine.create_instance("noir", {})
-    bare = Adjudication(kind="action", summary="reload and run", time_minutes=3, risk="high", commands=[CommandPick(id="smoke")])
+    bare = AssistantReading(kind="action", summary="reload and run", time_minutes=3, risk="high", commands=[CommandPick(id="smoke")])
     full = bare.model_copy(update={"intents": [Intent(action="run down the fire ladder on the bad leg",
                                                       check=CheckProposal(label="run on the bad leg", stat="muscle", difficulty="high", target_entity=None))]})
-    fake.canned["Adjudication"] = [bare, full]
+    fake.canned["AssistantReading"] = [bare, full]
     events = await play(engine, iid, "I light a cigarette and go down the ladder as fast as I can.")
     a = events[0]["data"]
     assert [c["id"] for c in a["commands"]] == ["smoke"] and a["intents"][0]["check"]["stat"] == "muscle"
-    assert not fake.canned["Adjudication"]                                     # both canned answers were consumed
+    assert not fake.canned["AssistantReading"]                                     # both canned answers were consumed
     row = next(l["payload"] for l in engine.store.ledger(iid, 1) if l["kind"] == "adjudication")
     assert row["_call"]["retry"] == "no_intents" and row["intents"]
     # when the second answer is no better, the first stands and the turn still runs
-    fake.canned["Adjudication"] = [bare, bare]
+    fake.canned["AssistantReading"] = [bare, bare]
     events = await play(engine, iid, "I light another one and go.")
     assert events[0]["data"]["intents"] == [] and events[-1]["event"] == "done"
 

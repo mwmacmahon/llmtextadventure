@@ -11,7 +11,7 @@ import pytest
 from engine.config import load_config
 from engine.registry import load_games
 from engine.changes import apply_changes
-from engine.roles import AdjudicationV2, Change, ChangeReport, Focus
+from engine.roles import AssistantReadingV2, Change, ChangeReport, Focus
 from games.station.game import StationGame
 
 
@@ -38,7 +38,7 @@ def test_new_instance_builds_the_world(game):
 
 def test_scenes_for_the_two_audiences(game):
     st = fresh(game)
-    adj = AdjudicationV2(kind="action", summary="x", time_minutes=1, risk="low", entities=["lindqvist"], focus=Focus(places=["lab"]))
+    adj = AssistantReadingV2(kind="action", summary="x", time_minutes=1, risk="low", entities=["lindqvist"], focus=Focus(places=["lab"]))
     prose = game.scene_block(st, adj, "narrator")
     assert "[" not in prose and "Attention: Lab." in prose and "Dr. Maja Lindqvist, Lead biologist: mood excited" in prose
     assert "Hatches: Habitation ring (hatch, open); Cargo (hatch, open)." in prose
@@ -56,7 +56,7 @@ def test_sealing_locks_hatches_and_the_scene_says_so(game):
     w = st2.world
     assert w.exit_locked(w.exit_between("lab", "cargo")) is True and w.exit_locked(w.exit_between("habitation_ring", "lab")) is True
     assert not w.reachable("lab", "cargo") and w.reachable("command", "habitation_ring")
-    prose = game.scene_block(st2, AdjudicationV2(kind="action", summary="x", time_minutes=1, risk="low", focus=Focus(places=["lab"])), "narrator")
+    prose = game.scene_block(st2, AssistantReadingV2(kind="action", summary="x", time_minutes=1, risk="low", focus=Focus(places=["lab"])), "narrator")
     assert "Hatches: Habitation ring (hatch, locked); Cargo (hatch, locked)." in prose
     st3, _ = game.run_command(st2, "hatches", {"action": "release", "module": "Lab"})
     assert st3.world.reachable("lab", "cargo")

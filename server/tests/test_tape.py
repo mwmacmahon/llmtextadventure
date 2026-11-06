@@ -22,18 +22,18 @@ def _tape(rows):
 
 async def test_every_call_of_a_turn_is_on_the_tape(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("noir", {})
-    fake.canned["Adjudication"] = [LOOK]
+    fake.canned["AssistantReading"] = [LOOK]
     fake.script = lambda system, messages: "The shack is empty and the rain keeps on."
     await events_of(engine.play(iid, "I look around."))
     tape = _tape(engine.store.ledger(iid, 1))
     roles = [x["role"] for x in tape]
-    assert roles[0] == "adjudicator" and "narrator" in roles and roles[-1] == "referee"
+    assert roles[0] == "assistant" and "narrator" in roles and roles[-1] == "referee"
     nar = next(x for x in tape if x["role"] == "narrator")
     blobs = engine.store.blobs([nar["system"], *(m["content"] for m in nar["messages"])])
     assert "CASE FILE" in blobs[nar["system"]] and "[PLAYER]" in blobs[nar["messages"][-1]["content"]]
     assert nar["content"].startswith("The shack is empty")
     # the frozen prefix is one blob however many turns sent it
-    fake.canned["Adjudication"] = [LOOK]
+    fake.canned["AssistantReading"] = [LOOK]
     await events_of(engine.play(iid, "I look again."))
     nar2 = next(x for x in _tape(engine.store.ledger(iid, 2)) if x["role"] == "narrator")
     assert nar2["system"] == nar["system"]
@@ -42,7 +42,7 @@ async def test_every_call_of_a_turn_is_on_the_tape(engine: Engine, fake: FakePro
 async def test_a_retold_turn_keeps_the_first_tellings_calls(engine: Engine, fake: FakeProvider):
     engine.update_settings({"guard": {"mode": "gate", "max_retells": 1}})
     iid = engine.create_instance("noir", {})
-    fake.canned["Adjudication"] = [LOOK]
+    fake.canned["AssistantReading"] = [LOOK]
     tellings = iter(["The man in the cistern is Emil Szabo, you realise.", "The shack is empty and the rain keeps on."])
     fake.script = lambda system, messages: next(tellings)
 
@@ -56,10 +56,10 @@ async def test_a_retold_turn_keeps_the_first_tellings_calls(engine: Engine, fake
     await events_of(engine.play(iid, "I look around."))
     rows = engine.store.ledger(iid, 1)
     first = next(r["payload"] for r in rows if r["kind"] == "rewrite")["history"][0]["ledger"]
-    assert [x["role"] for x in _tape(first)][:1] == ["adjudicator"]
+    assert [x["role"] for x in _tape(first)][:1] == ["assistant"]
     assert any(x["role"] == "narrator" and "Szabo" in x["content"] for x in _tape(first))
     second = _tape(rows)
-    assert all(x["role"] != "adjudicator" for x in second)          # a retelling keeps the stored adjudication
+    assert all(x["role"] != "assistant" for x in second)          # a retelling keeps the stored adjudication
     assert any(x["role"] == "narrator" and "rain keeps on" in x["content"] for x in second)
     # an export carries every blob both tellings name, and an import into another store brings them back
     doc = engine.store.export_instance(iid)
@@ -78,7 +78,7 @@ async def test_trial_the_referee_reads_earlier_turns_fenced_as_past(engine: Engi
     tellings = iter(["A woman in a green coat watches from the stairwell.", "She is gone when you look back.", "Rain."])
     fake.script = lambda system, messages: next(tellings)
     for text in ("I look around.", "I look for the woman.", "I wait."):
-        fake.canned["Adjudication"] = [LOOK]
+        fake.canned["AssistantReading"] = [LOOK]
         await events_of(engine.play(iid, text))
 
     def referee_user(turn: int) -> str:
@@ -99,7 +99,7 @@ async def test_the_call_report_shows_every_call_and_the_telling_sent_back(engine
     from round_report import build
     engine.update_settings({"guard": {"mode": "gate", "max_retells": 1}})
     iid = engine.create_instance("noir", {})
-    fake.canned["Adjudication"] = [LOOK]
+    fake.canned["AssistantReading"] = [LOOK]
     tellings = iter(["The man in the cistern is Emil Szabo, you realise.", "The shack is empty and the rain keeps on."])
     fake.script = lambda system, messages: next(tellings)
     fake.hook = lambda schema, last: (ChangeReport.of(Change(kind="ruling", field="leak", value="names the man", note="keep the man unnamed"), log_line="x")
@@ -107,6 +107,6 @@ async def test_the_call_report_shows_every_call_and_the_telling_sent_back(engine
     await events_of(engine.play(iid, "I look around."))
     doc = engine.store.export_instance(iid)
     page = build(doc["instance"], doc["ledger"], doc["blobs"], doc["transcript"], "t")
-    assert page.count("class='call adjudicator") == 1 and page.count("class='call narrator") == 2
+    assert page.count("class='call assistant") == 1 and page.count("class='call narrator") == 2
     assert "First telling (sent back)" in page and "keep the man unnamed" in page and "What it read:" in page
     assert all(h in page for h in doc["blobs"])          # every prompt text is in the page once, by hash

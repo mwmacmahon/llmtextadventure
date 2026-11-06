@@ -21,7 +21,7 @@ from engine.pipeline import Engine  # noqa: E402
 from engine.providers.fake import FakeProvider  # noqa: E402
 from engine.providers.factory import get_provider  # noqa: E402
 from engine.registry import load_games  # noqa: E402
-from engine.roles import Adjudication, Change, ChangeReport, Intent  # noqa: E402
+from engine.roles import AssistantReading, Change, ChangeReport, Intent  # noqa: E402
 from engine.store import Store  # noqa: E402
 from games.station.game import StationGame  # noqa: E402
 
@@ -70,8 +70,8 @@ async def play(engine: Engine, iid: str, text: str) -> list[dict]:
     return [e async for e in engine.run_turn(iid, text)]
 
 
-def action(summary: str, minutes: int) -> Adjudication:
-    return Adjudication(kind="action", summary=summary, time_minutes=minutes, risk="low", intents=[Intent(action=summary)])
+def action(summary: str, minutes: int) -> AssistantReading:
+    return AssistantReading(kind="action", summary=summary, time_minutes=minutes, risk="low", intents=[Intent(action=summary)])
 
 
 # ---- the crew as people ---------------------------------------------------------
@@ -300,7 +300,7 @@ async def test_a_tier_lights_a_fuse_the_secret_shows_it_and_the_engine_lapses_it
     st.suspicion = game._derived_alarm(st)
     st.flags["crew_said_tampering"] = True
     engine.store.save_snapshot(iid, 0, st.model_dump(mode="json"))
-    fake.canned["Adjudication"] = [action("The AI watches.", 5), action("The AI reads Voss's task list.", 5), action("The AI waits.", 30)]
+    fake.canned["AssistantReading"] = [action("The AI watches.", 5), action("The AI reads Voss's task list.", 5), action("The AI waits.", 30)]
     FakeProvider.script = lambda system, messages: "You watch."
     events = await play(engine, iid, "I watch.")
     res = next(e for e in events if e["event"] == "resolution")["data"]

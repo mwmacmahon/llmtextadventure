@@ -47,7 +47,7 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
     setErr(null);
     setPending(pendingText);
     setStreaming("");
-    setStage("adjudicating…");
+    setStage("the assistant reads the move…");
     let acc = "";
     try {
       for await (const ev of gen) {

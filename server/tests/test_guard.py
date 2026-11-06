@@ -17,7 +17,7 @@ from engine.pipeline import Engine, _progress  # noqa: E402
 from engine.providers.fake import FakeProvider  # noqa: E402
 from engine.providers.factory import get_provider  # noqa: E402
 from engine.registry import load_games  # noqa: E402
-from engine.roles import Adjudication, Change, ChangeReport, Intent  # noqa: E402
+from engine.roles import AssistantReading, Change, ChangeReport, Intent  # noqa: E402
 from engine.store import Store  # noqa: E402
 
 
@@ -46,7 +46,7 @@ async def events_of(gen):
     return [e async for e in gen]
 
 
-LOOK = Adjudication(kind="action", summary="Frank looks around", time_minutes=2, risk="low", intents=[Intent(action="look around")])
+LOOK = AssistantReading(kind="action", summary="Frank looks around", time_minutes=2, risk="low", intents=[Intent(action="look around")])
 
 
 def test_ruling_rows_land_as_rulings_with_the_severity_table(engine: Engine):
@@ -68,7 +68,7 @@ def test_ruling_rows_land_as_rulings_with_the_severity_table(engine: Engine):
 async def test_gate_holds_the_prose_and_retells_once_on_a_serious_ruling(engine: Engine, fake: FakeProvider):
     engine.update_settings({"guard": {"mode": "gate", "max_retells": 1}})
     iid = engine.create_instance("noir", {})
-    fake.canned["Adjudication"] = [LOOK]
+    fake.canned["AssistantReading"] = [LOOK]
     tellings = iter(["The man in the cistern is Emil Szabo, you realise.", "The shack is empty and the rain keeps on."])
     fake.script = lambda system, messages: next(tellings)
     calls: list[str] = []
@@ -108,7 +108,7 @@ async def test_gate_holds_the_prose_and_retells_once_on_a_serious_ruling(engine:
 async def test_log_mode_shows_and_records_but_never_retells(engine: Engine, fake: FakeProvider):
     engine.update_settings({"guard": {"mode": "log"}})
     iid = engine.create_instance("noir", {})
-    fake.canned["Adjudication"] = [LOOK]
+    fake.canned["AssistantReading"] = [LOOK]
     fake.script = lambda system, messages: "The man in the cistern is Emil Szabo."
     fake.hook = lambda schema, last: ChangeReport.of(Change(kind="ruling", field="leak", value="names the man", note="keep him unnamed"), log_line="x") if schema is ChangeReport else None
     events = await events_of(engine.play(iid, "I look around."))
@@ -122,7 +122,7 @@ async def test_log_mode_shows_and_records_but_never_retells(engine: Engine, fake
 async def test_a_second_serious_ruling_is_shown_not_retold_again(engine: Engine, fake: FakeProvider):
     engine.update_settings({"guard": {"mode": "gate", "max_retells": 1}})
     iid = engine.create_instance("noir", {})
-    fake.canned["Adjudication"] = [LOOK]
+    fake.canned["AssistantReading"] = [LOOK]
     fake.script = lambda system, messages: "Still Szabo."
     fake.hook = lambda schema, last: ChangeReport.of(Change(kind="ruling", field="leak", value="still names him", note="unname him"), log_line="x") if schema is ChangeReport else None
     events = await events_of(engine.play(iid, "I look around."))
@@ -133,7 +133,7 @@ async def test_a_second_serious_ruling_is_shown_not_retold_again(engine: Engine,
 
 async def test_a_player_rewrite_with_an_empty_box_just_tells_it_again(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("noir", {})
-    fake.canned["Adjudication"] = [LOOK]
+    fake.canned["AssistantReading"] = [LOOK]
     tellings = iter(["First telling.", "Second telling."])
     fake.script = lambda system, messages: next(tellings)
     await events_of(engine.play(iid, "I look around."))
@@ -174,7 +174,7 @@ async def test_the_engine_rules_check_skipped_itself_when_no_assessed_check_is_c
     from engine.roles import CheckProposal
     engine.update_settings({"guard": {"mode": "gate", "max_retells": 1}})
     iid = engine.create_instance("noir", {})
-    fake.canned["Adjudication"] = [Adjudication(kind="action", summary="Frank forces the shutter", time_minutes=2, risk="low",
+    fake.canned["AssistantReading"] = [AssistantReading(kind="action", summary="Frank forces the shutter", time_minutes=2, risk="low",
                                                 intents=[Intent(action="force the shutter", check=CheckProposal(label="force the shutter", stat="hands (+2)", difficulty="low"))])]
     tellings = iter(["The shutter gives at once and you are through.", "You set your shoulder to the shutter.\n<<CHECK hands low>>", "It gives on the second try."])
     fake.script = lambda system, messages: next(tellings)
@@ -202,7 +202,7 @@ async def test_a_conflict_retells_and_the_last_telling_forces(engine: Engine, fa
     clue is recorded, the turn flagged FORCED, loudly, and nothing is dropped on the floor."""
     engine.update_settings({"guard": {"mode": "gate", "max_retells": 2}})
     iid = engine.create_instance("noir", {})
-    fake.canned["Adjudication"] = [LOOK]
+    fake.canned["AssistantReading"] = [LOOK]
     fake.script = lambda system, messages: "The Congregation keeps her somewhere under the docks, you are sure of it now."
     fake.hook = lambda schema, last: ChangeReport.of(Change(kind="learned", target="player", value="The Congregation has June under the docks"), log_line="a thought") if schema is ChangeReport else None
     events = await events_of(engine.play(iid, "I think it through."))
@@ -225,7 +225,7 @@ async def test_a_telling_that_repeats_an_earlier_turn_is_retold(engine: Engine, 
     """P1: the engine sees a retold turn (word-shingle overlap) and rules on it; the narrator is asked for what is new."""
     engine.update_settings({"guard": {"mode": "gate", "max_retells": 1}})
     iid = engine.create_instance("noir", {})
-    fake.canned["Adjudication"] = [LOOK, LOOK]
+    fake.canned["AssistantReading"] = [LOOK, LOOK]
     fake.hook = lambda schema, last: ChangeReport.of(Change(kind="add", target="player", field="dread", value="+1"), log_line="rain") if schema is ChangeReport else None
     fake.script = lambda system, messages: LONG_A
     await events_of(engine.play(iid, "I wait at the rail."))
@@ -241,7 +241,7 @@ async def test_a_self_written_mechanic_line_is_an_invented_roll(engine: Engine, 
     """P2: a § line the engine did not write is a fake check; the guard retells with the rule."""
     engine.update_settings({"guard": {"mode": "gate", "max_retells": 1}})
     iid = engine.create_instance("noir", {})
-    fake.canned["Adjudication"] = [LOOK]
+    fake.canned["AssistantReading"] = [LOOK]
     tellings = iter(["You set your shoulder to the door.\n\n§ Hands, low. 12 - 3 = 9 against 10. Failure.\n\nIt holds.",
                      "You set your shoulder to the door and it holds, as doors do."])
     fake.script = lambda system, messages: next(tellings)

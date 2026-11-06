@@ -24,7 +24,7 @@ async def test_pairs_judgements_and_agreement(engine, fake, tmp_path, monkeypatc
     iid = engine.create_instance("noir", {})
     fake.script = lambda system, messages: "Rain."
     for text in ("I look around.", "I wait.", "I listen."):
-        fake.canned["Adjudication"] = [LOOK]
+        fake.canned["AssistantReading"] = [LOOK]
         await events_of(engine.play(iid, text))
     doc = engine.store.export_instance(iid)
     blob = eval_replay.put_blob(json.dumps(doc), ".json")

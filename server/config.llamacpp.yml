@@ -37,7 +37,7 @@ roles:
     min_p: 0.0
     repeat_penalty: 1.0
     timeout_seconds: 240
-  adjudicator:
+  assistant:
     provider: llamacpp
     model: qwen3.5-27b
     slot: 1

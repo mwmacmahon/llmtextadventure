@@ -32,7 +32,7 @@ from engine.game import (
 from engine.gamekit import Clock, Content, Writer, threads_panel
 from engine.mechanics import CheckRequest, Modifier
 from engine.pending import Pending
-from engine.roles import AdjudicationV2, Change
+from engine.roles import AssistantReadingV2, Change
 from engine.spontaneous import Spontaneous
 from engine.statepath import Actor
 
@@ -189,7 +189,7 @@ class NoirGame(GameBase):
     threads_path = "threads"
     log_path = "log"
     mechanic_numbers = True                 # the § line shows the die: "Hands, low. 14 + 2 = 16 against 6. Success."
-    adjudication_schema = AdjudicationV2    # targets and proposals; transitions stay empty until noir has a world
+    adjudication_schema = AssistantReadingV2    # targets and proposals; transitions stay empty until noir has a world
     fallback_stat = "nerve"
     static_paths = ["case", "player.name", "player.description", "player.stats", "player.proficiencies", "player.weaknesses", "player.baseline_dread",
                     "player.sanity"]   # sanity is static until its mechanics exist (D76, ISSUES NV2)

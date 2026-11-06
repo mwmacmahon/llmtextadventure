@@ -51,7 +51,7 @@ from .assistant_view import RULES as STAKES_RULES, adjudication_stakes, match_st
 from .mechanics import RESOLVERS, CheckRequest, CheckResult, outcome_words, rng_for
 from .providers import Msg, StreamDone, TextDelta, get_provider
 from .providers.base import Msg, Usage
-from .roles import (ADJUDICATOR_STAKES, Adjudication, AdjudicationStaked, AdjudicationV2, adjudicator_messages, referee_messages,
+from .roles import (ADJUDICATOR_STAKES, AssistantReading, AssistantReadingStaked, AssistantReadingV2, adjudicator_messages, referee_messages,
                     summarizer_messages, NARRATOR_PROTOCOL)
 from .roles import NARRATOR_WORLD, REFEREE_PARTS, ChangeReport, referee_part_messages
 from .assistant import FAILURES, choose_cost, default_cost_options, recent_costs
@@ -59,7 +59,7 @@ from .changes import apply_changes, merge_parts, quoted_in_prose, quotes_of, say
 from .store import Store
 from .tape import PART, Taped, exchange_row
 
-MODEL_CALL_KINDS = {"model_call": None, "adjudication": "adjudicator", "verdict": "referee"}
+MODEL_CALL_KINDS = {"model_call": None, "adjudication": "assistant", "verdict": "referee"}
 log = logs.get("pipeline")
 
 
@@ -298,7 +298,7 @@ class Engine:
                                          chars=len(player_text or "")))
 
         # ---- 0. command (clicked) ------------------------------------------
-        adj: Adjudication | None = None
+        adj: AssistantReading | None = None
         cmd_result: CommandResult | None = None
         extra_directives: list[str] = []
         if command is not None:
@@ -333,7 +333,7 @@ class Engine:
                                                  "ui": game.ui(state).model_dump(mode="json")}}
                 return
             player_text = cmd_result.player_line or label
-            adj = Adjudication(kind="action", summary=cmd_result.summary or cmd_result.player_line or label, tempo="fast",   # the command's own minutes stand
+            adj = AssistantReading(kind="action", summary=cmd_result.summary or cmd_result.player_line or label, tempo="fast",   # the command's own minutes stand
                                time_minutes=cmd_result.minutes, entities=cmd_result.entities, systems=cmd_result.systems, risk="medium")
             if cmd_result.directive:
                 extra_directives.append(cmd_result.directive)
@@ -358,7 +358,7 @@ class Engine:
                                            kind=adj.kind, minutes=adj.time_minutes, checks=sum(1 for i in adj.intents if i.check),
                                            **logs.usage_kv(meta["usage"])))
             except Exception as e:
-                ledger("model_call", {"role": "adjudicator", "error": repr(e)})
+                ledger("model_call", {"role": "assistant", "error": repr(e)})
                 log.exception("step.failed " + logs.kv(iid=iid, turn=turn, step="adjudicate"))
                 self._fail_turn(iid, turn, ledger, "adjudicate", e)
                 yield {"event": "error", "data": {"message": f"adjudicator failed: {e}", "step": "adjudicate"}}
@@ -436,7 +436,7 @@ class Engine:
             if nrole.stakes == "live":
                 for a, st in zip(res["assessments"], staked):
                     a.stake = st
-            ledger("model_call", {"role": "adjudicator", "part": "stakes", "mode": nrole.stakes, "merged": True, "answer": answer,
+            ledger("model_call", {"role": "assistant", "part": "stakes", "mode": nrole.stakes, "merged": True, "answer": answer,
                                   "labels": [a.label for a in res["assessments"]], "matched": [st is not None for st in staked]})
             log.info("step " + logs.kv(iid=iid, turn=turn, step="stakes", mode=nrole.stakes, staked=sum(1 for st in staked if st), assessed=len(staked)))
 
@@ -793,9 +793,9 @@ class Engine:
             yield {"event": "error", "data": {"message": "only a typed turn can be retold; this one was a clicked command", "step": "rewrite"}}
             return
         game = self.games[inst.game]
-        schema = getattr(game, "adjudication_schema", Adjudication)
-        if issubclass(schema, AdjudicationV2) and "pivotal" in adj_row:       # a stored adjudication with its stakes (D115)
-            schema = AdjudicationStaked
+        schema = getattr(game, "adjudication_schema", AssistantReading)
+        if issubclass(schema, AssistantReadingV2) and "pivotal" in adj_row:       # a stored adjudication with its stakes (D115)
+            schema = AssistantReadingStaked
         adj = schema.model_validate({k: v for k, v in adj_row.items() if k != "_call"})
         transcript = [r for r in self.store.transcript(iid) if r.turn == turn]
         player_text = next((r.text for r in transcript if r.role == "player"), None)
@@ -815,7 +815,7 @@ class Engine:
         self.store.truncate_after_turn(iid, turn - 1)
         call = dict(adj_row.get("_call") or {})
         if not call.get("model"):                 # the row came from an earlier rewrite that kept no call meta
-            role = self.cfg.role("adjudicator")
+            role = self.cfg.role("assistant")
             call = {"provider": role.provider, "model": role.model}
         async for ev in self.run_turn(iid, player_text, replay=Replay(adjudication=adj, hint=hint, attempt=attempt, history=history, call=call, by=by)):
             yield ev
@@ -837,9 +837,9 @@ class Engine:
             return provider
         return Taped(provider, lambda label, ex: tape("exchange", exchange_row(self.store.put_blob, label, ex)), step)
 
-    async def _adjudicate(self, game: Game, state: BaseModel, iid: str, player_text: str) -> tuple[Adjudication, dict]:
-        role = self.cfg.role("adjudicator")
-        provider = self._provider(role, iid, "adjudicator")
+    async def _adjudicate(self, game: Game, state: BaseModel, iid: str, player_text: str) -> tuple[AssistantReading, dict]:
+        role = self.cfg.role("assistant")
+        provider = self._provider(role, iid, "assistant")
         recent = _recent_prose(self.store, iid, turns=2)
         nrole = self.cfg.role("narrator")
         system, msgs, schema = adjudicator_inputs(game, state, recent, player_text, stakes=nrole.stakes != "off" and nrole.checks == "called")
@@ -859,8 +859,8 @@ class Engine:
             meta["retry"] = retry
         return adj, meta
 
-    def _preview_levers(self, game: Game, state: BaseModel, adj: Adjudication, iid: str, turn: int, ledger: Any,
-                        player_text: str = "") -> tuple[Adjudication, list["PendingLever"]]:
+    def _preview_levers(self, game: Game, state: BaseModel, adj: AssistantReading, iid: str, turn: int, ledger: Any,
+                        player_text: str = "") -> tuple[AssistantReading, list["PendingLever"]]:
         """The adjudicator named levers (typed commands), in the order the input gave them. Run the
         game's own `run_command` for each on a working copy that the turn does not keep, so the second
         preview sees the first's effect (seal, then release): the narrator is told exactly what each
@@ -954,7 +954,7 @@ class Engine:
         log.info("command.typed " + logs.kv(iid=iid, turn=turn, id=lever.id, mode=lever.mode, args=json.dumps(lever.args)))
         return new_state, {"id": lever.id, "status": "applied", "text": (res.text or lever.label).strip()}
 
-    def _resolve(self, game: Game, state: BaseModel, adj: Adjudication | None, iid: str, turn: int,
+    def _resolve(self, game: Game, state: BaseModel, adj: AssistantReading | None, iid: str, turn: int,
                  extra_directives: list[str] | None = None) -> dict[str, Any]:
         doc = state.model_dump(mode="json")
         directives: list[str] = list(extra_directives or [])
@@ -1181,7 +1181,7 @@ class Engine:
                       "usage": asdict(done.usage), "note": done.note}
 
     async def _referee(self, game: Game, state: BaseModel, directives: list[str], player_text: str, narration: str,
-                       adj: Adjudication | None = None, levers: list[str] | None = None, iid: str | None = None) -> tuple[ChangeReport, dict]:
+                       adj: AssistantReading | None = None, levers: list[str] | None = None, iid: str | None = None) -> tuple[ChangeReport, dict]:
         role = self.cfg.role("referee")
         provider = self._provider(role, iid, "referee")
         recent = _earlier_turns(self.store, iid, role.recent_turns) if iid else []
@@ -1196,7 +1196,7 @@ class Engine:
 
 
 # ---- helpers ---------------------------------------------------------------
-def _engine_state_text(game: Game, state: BaseModel, adj: Adjudication | None) -> str:
+def _engine_state_text(game: Game, state: BaseModel, adj: AssistantReading | None) -> str:
     """The state as the structured roles read it: the scene block (games that have one), the state block,
     then IMPENDING with ids."""
     state_text = _hook(game, "state_for_models", state, default=game.render_bulletin(state, ""))
@@ -1317,7 +1317,7 @@ async def _extract_focused(provider: Any, role: Any, system: str, msgs: list[Msg
 _TIER = r"(very[ _-]?low|very[ _-]?high|low|medium|high)"
 
 
-def recover_misplaced_checks(adj: Adjudication, stats: dict) -> list[str]:
+def recover_misplaced_checks(adj: AssistantReading, stats: dict) -> list[str]:
     """A weak model writes the check it means into the wrong field ("transition": "hands check (medium)")
     and leaves `check` null. Shape, not meaning: when an intent has no check and its own text names one of
     the game's stats with a difficulty tier beside it, that is the check. Nothing is inferred from a stat
@@ -1424,10 +1424,10 @@ def adjudicator_inputs(game: Game, state: BaseModel, recent: list[Msg], player_t
     (stable across turns, so still the cached prefix) and the message the assistant's view; off, all is as before."""
     rules = _hook(game, "adjudication_rules", state, default="")
     state_text = _engine_state_text(game, state, None)
-    schema = getattr(game, "adjudication_schema", Adjudication)
+    schema = getattr(game, "adjudication_schema", AssistantReading)
     extra = ""
-    if stakes and issubclass(schema, AdjudicationV2):
-        schema = AdjudicationStaked
+    if stakes and issubclass(schema, AssistantReadingV2):
+        schema = AssistantReadingStaked
         _, fresh = game.new_instance({})
         extra = stakes_blocks(game, state, fresh)
     system, msgs = adjudicator_messages(rules, state_text, recent, player_text, _commands_text(_hook(game, "commands", state, default=[])), extra=extra)
@@ -1438,7 +1438,7 @@ def adjudicator_inputs(game: Game, state: BaseModel, recent: list[Msg], player_t
 
 
 def referee_inputs(game: Game, state: BaseModel, directives: list[str], player_text: str, narration: str,
-                   adj: Adjudication | None = None, levers: list[str] | None = None,
+                   adj: AssistantReading | None = None, levers: list[str] | None = None,
                    recent: list[tuple[int, str, str]] | None = None) -> tuple[str, list[Msg]]:
     """Everything the referee is sent (see adjudicator_inputs). `recent`: the TRIAL earlier turns (D59)."""
     rules = _hook(game, "referee_rules", state, default="")
@@ -1505,7 +1505,7 @@ def _scratch_engine(cfg: Config, games: dict[str, Game], doc: dict, turn: int) -
 
 
 def _replay_of(game: Game, st: dict) -> Replay:
-    schema = getattr(game, "adjudication_schema", Adjudication)
+    schema = getattr(game, "adjudication_schema", AssistantReading)
     return Replay(adjudication=schema.model_validate(st["adjudication"]), hint="", attempt=0, history=[],
                   call=st["call"], by="eval", stop_after_narration=True)
 
@@ -1614,7 +1614,7 @@ class Replay:
     adjudicator call), the levers are previewed again on the same state, the dice come from the same seed
     (`rng_for(iid, turn)`), and the player's ruling joins THIS TURN as a directive. Only the words change,
     then the referee reads them again (DESIGN2 §8, the manual half)."""
-    adjudication: Adjudication
+    adjudication: AssistantReading
     hint: str
     attempt: int                      # 1 for the first rewrite of a turn
     history: list[dict[str, Any]]     # every earlier telling of this turn: {attempt, hint, narration, mechanics, ledger}

@@ -16,7 +16,7 @@ from engine.pipeline import Engine  # noqa: E402
 from engine.providers.fake import FakeProvider  # noqa: E402
 from engine.providers.factory import get_provider  # noqa: E402
 from engine.registry import load_games  # noqa: E402
-from engine.roles import Adjudication, Change, ChangeReport, CheckProposal, CommandPick, Intent  # noqa: E402
+from engine.roles import AssistantReading, Change, ChangeReport, CheckProposal, CommandPick, Intent  # noqa: E402
 from engine.store import Store  # noqa: E402
 
 
@@ -49,7 +49,7 @@ def narrator_requests(engine: Engine, iid: str, turn: int) -> list[dict]:
     return [r["payload"] for r in engine.store.ledger(iid, turn) if r["kind"] == "model_call" and r["payload"].get("role") == "narrator"]
 
 
-RELOAD = Adjudication(kind="action", summary="Frank reloads and runs for the ladder", time_minutes=3, risk="high",
+RELOAD = AssistantReading(kind="action", summary="Frank reloads and runs for the ladder", time_minutes=3, risk="high",
                       commands=[CommandPick(id="reload")],
                       intents=[Intent(action="run for the ladder on the bad leg", check=CheckProposal(label="run on the bad leg", stat="muscle", difficulty="high"))])
 
@@ -60,7 +60,7 @@ async def test_rewrite_retells_the_last_turn_with_the_ruling_same_facts_same_dic
     next(i for i in doc["inventory"] if i["id"] == "revolver")["loaded"] = 2
     next(i for i in doc["inventory"] if i["id"] == "bullets")["count"] = 10
     engine.store.save_snapshot(iid, 0, doc)
-    fake.canned["Adjudication"] = [RELOAD]
+    fake.canned["AssistantReading"] = [RELOAD]
     fake.script = lambda system, messages: ("Frank thumbs the rounds in and runs.\n<<CHECK muscle high>>" if not messages[-1].content.startswith("[ENGINE]")
                                              else "He makes the ladder, and fires twice into the dark for no reason.")
     seen: dict = {}
@@ -80,7 +80,7 @@ async def test_rewrite_retells_the_last_turn_with_the_ruling_same_facts_same_dic
     assert st.item("revolver").loaded == 6                                           # the lever landed
 
     # the ruling: no shots were fired. Same adjudication, same dice; new words; the referee reads them again.
-    fake.canned["Adjudication"] = []                                                  # the adjudicator must not be called
+    fake.canned["AssistantReading"] = []                                                  # the adjudicator must not be called
     fake.script = lambda system, messages: ("Frank thumbs the rounds in and runs.\n<<CHECK muscle high>>" if not messages[-1].content.startswith("[ENGINE]")
                                              else "He makes the ladder with the gun still cold in his hand.")
     assert "fires twice" in seen["referee_saw"]
@@ -89,7 +89,7 @@ async def test_rewrite_retells_the_last_turn_with_the_ruling_same_facts_same_dic
     assert second[-1]["event"] == "done" and second[-1]["data"]["turn"] == 1 and engine.store.latest_turn(iid) == 1
     roll_after = next(e["data"]["text"] for e in second if e["event"] == "mechanic" and "muscle" in e["data"]["text"].lower())
     assert roll_after == roll_before                                                   # same seed, same dice
-    assert fake.canned["Adjudication"] == []                                           # nothing was popped: no adjudicator call
+    assert fake.canned["AssistantReading"] == []                                           # nothing was popped: no adjudicator call
     rows = engine.store.ledger(iid, 1)
     adj_row = next(r["payload"] for r in rows if r["kind"] == "adjudication")
     assert adj_row["_call"]["replayed"] is True and adj_row["_call"]["attempt"] == 1 and adj_row["_call"]["model"] == "fake"
@@ -122,7 +122,7 @@ async def test_rewrite_refuses_what_it_cannot_retell(engine: Engine, fake: FakeP
     if engine.store.latest_turn(iid) == 1:
         out = (await events_of(engine.rewrite_turn(iid, "x")))[0]
         assert out["event"] == "error" and "clicked" in out["data"]["message"]
-    fake.canned["Adjudication"] = [Adjudication(kind="trivial", summary="looks", time_minutes=0, risk="none")]
+    fake.canned["AssistantReading"] = [AssistantReading(kind="trivial", summary="looks", time_minutes=0, risk="none")]
     await events_of(engine.run_turn(iid, "I look around."))
     out = await events_of(engine.rewrite_turn(iid, "   "))                # an empty ruling is allowed: just tell it again
     assert out[0]["event"] == "rewrite" and out[0]["data"]["hint"] == "" and out[-1]["event"] == "done"

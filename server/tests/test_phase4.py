@@ -19,7 +19,7 @@ from engine.pipeline import Engine  # noqa: E402
 from engine.providers.fake import FakeProvider  # noqa: E402
 from engine.providers.factory import get_provider  # noqa: E402
 from engine.registry import load_games  # noqa: E402
-from engine.roles import Adjudication, Intent  # noqa: E402
+from engine.roles import AssistantReading, Intent  # noqa: E402
 from engine.store import Store  # noqa: E402
 from engine.roles import Change, ChangeReport  # noqa: E402
 
@@ -146,7 +146,7 @@ async def test_happening_in_a_turn_reaches_narrator_and_mechanics(engine: Engine
     doc["hidden"]["spontaneous"] = [spon.Spontaneous(id="sure_thing", chance_per_hour=1.0, who=["reyes"], directive="Reyes hums.",
                                                      reason="He is happy.", visible=True, effects=[{"set": ["crew.reyes.mood", "humming"]}]).model_dump(mode="json")]
     engine.store.save_snapshot(iid, 0, doc)
-    fake.canned["Adjudication"] = [Adjudication(kind="action", summary="wait an hour", time_minutes=60, risk="none", intents=[Intent(action="wait an hour")])]
+    fake.canned["AssistantReading"] = [AssistantReading(kind="action", summary="wait an hour", time_minutes=60, risk="none", intents=[Intent(action="wait an hour")])]
     events = await play(engine, iid, "I wait an hour.")
     res = next(e for e in events if e["event"] == "resolution")["data"]
     assert [h["id"] for h in res["happened"]] == ["sure_thing"]
@@ -248,13 +248,13 @@ def test_stress_and_mood_drift_toward_baseline(engine: Engine):
 async def test_drift_is_applied_and_ledgered_after_a_turn(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("station", {})
     fake.hook = lambda schema, last: (
-        Adjudication(kind="action", summary="wait", time_minutes=120, risk="none") if issubclass(schema, Adjudication)
+        AssistantReading(kind="action", summary="wait", time_minutes=120, risk="none") if issubclass(schema, AssistantReading)
         else ChangeReport.of(Change(kind="add", target="park", field="stress", value="+15"), Change(kind="set", target="park", field="mood", value="panicky"), log_line="Park panicked.") if schema is ChangeReport
         else None)
     await play(engine, iid, "I wait and watch Park.")
     st = state_of(engine, iid)
     assert st.crew_by_id("park").stress == 70 and st.crew_by_id("park").mood == "panicky"   # referee's write wins this turn
-    fake.hook = lambda schema, last: Adjudication(kind="action", summary="wait", time_minutes=120, risk="none") if issubclass(schema, Adjudication) else None
+    fake.hook = lambda schema, last: AssistantReading(kind="action", summary="wait", time_minutes=120, risk="none") if issubclass(schema, AssistantReading) else None
     events = await play(engine, iid, "I wait.")
     st = state_of(engine, iid)
     assert st.crew_by_id("park").stress == 64
@@ -269,7 +269,7 @@ async def test_usage_rollup_per_role_and_pricing(engine: Engine, fake: FakeProvi
     await play(engine, iid, "I look around.")
     await play(engine, iid, "I look again.")
     u = engine.usage(iid)
-    assert set(u["roles"]) == {"adjudicator", "narrator", "referee"}
+    assert set(u["roles"]) == {"assistant", "narrator", "referee"}
     assert all(r["calls"] == 2 for r in u["roles"].values()) and u["calls"] == 6
     assert u["roles"]["narrator"]["usage"]["input_tokens"] > 0
     assert u["priced"] is False and u["usd"] == 0          # the fake model has no price

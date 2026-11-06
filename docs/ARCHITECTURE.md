@@ -27,10 +27,10 @@ server/
   engine/
     pipeline.py          the turn: adjudicate → resolve → [summarize] → narrate → referee → apply → drift; the guard
     context.py           narrator message window, slide points, summary planning; past rolls rendered in words
-    roles.py             adjudicator / referee (ChangeReport rows) / summarizer schemas and prompts; NARRATOR_WORLD, NARRATOR_PROTOCOL
+    roles.py             assistant / referee (ChangeReport rows) / summarizer schemas and prompts; NARRATOR_WORLD, NARRATOR_PROTOCOL
     narration.py         the narrator loop: stream, stop at a call, answer it, continue; a continuation's retold opening dropped
     assistant.py         what a failed roll costs: the game's cost options, the recent-kinds rule, the way shut on a second failure running, the per-round caps
-    assistant_view.py    the adjudicator's extra view when the stakes dial is on (who is who, the case ahead, what the cast hide, made up in play), the branch text, the stall signals
+    assistant_view.py    the assistant's extra view when the stakes dial is on (who is who, the case ahead, what the cast hide, made up in play), the branch text, the stall signals
     brackets.py          the narrator's channel: <<CHECK …>> calls, [[…]] notes, the StreamFilter, the § mark
     world.py             places, things and people as rows with ids; scene(), annotate(), apply_declarations()
     pending.py           timers set in motion in play (soon rows), fuses, what is due
@@ -63,7 +63,7 @@ server/
   profiles/*.yml         model profiles: the model file, what llama-server starts with, the role settings the game
                          lays over its config while that model is loaded (engine/profiles.py; docs/LOCAL_LLM.md)
   tools/llm.py           the local model on the GPU box: status, send a profile and swap to it
-  tools/eval_replay.py   replays stored turns through the adjudicator and referee on any model, scores them, grades them against the hand-judged key (docs/LOCAL_LLM.md)
+  tools/eval_replay.py   replays stored turns through the assistant and referee on any model, scores them, grades them against the hand-judged key (docs/LOCAL_LLM.md)
   tools/eval_report.py   hydrates eval runs of any format into readable pages (the pieces, names and how to read them: docs/TESTING.md): per turn, caught / missed / wrong / unjudged with the sentences that show it; a comparison per corpus
   tests/                 offline tests (fake provider); tests/live: opt-in live role evaluations
 web/                     Vite + React + TypeScript; renders the UI schema, knows no game
@@ -86,7 +86,7 @@ One SQLite file, four tables, all keyed by instance:
 
 Undo truncates all three per-turn tables after a turn. Rewrite (`Engine.rewrite_turn`, `POST
 …/rewrite {hint}`) is undo of the last turn plus a replay of it through `run_turn` with a `Replay`:
-the stored adjudication (no adjudicator call), the levers previewed again on the same state, the
+the stored adjudication (no assistant call), the levers previewed again on the same state, the
 same dice seed, and the player's ruling as a THIS TURN directive; the narrator and the referee run
 again and the new telling replaces the old, whose prose and mechanics stay in the turn's `rewrite`
 ledger row (`history`, one entry per earlier telling). Only a typed turn can be retold. The player's
@@ -147,7 +147,7 @@ ADJUDICATE   one structured call (Sonnet in config.yml; the box's model in confi
              listed command, settled in the open). The STAKES rules join the cached system text; the user
              message gains the assistant's view (who is who, the case ahead, what the cast hide, made up in
              play; `assistant_view.stakes_blocks`). Off, the prompt is byte for byte what it was. Because the
-             view shows the adjudicator the cast's secrets, every field the narrator or the player can see is run
+             view shows the assistant the cast's secrets, every field the narrator or the player can see is run
              through the game's `leaked_terms` hook (`pipeline.scrub_hidden`): a label carrying an unearned
              hidden word becomes its stat, a check whose futures carry one loses its stakes (called unstaked),
              a fiat entry is dropped, the summary falls back to the player's words, the clarify question to a
@@ -165,7 +165,7 @@ RESOLVE      engine, deterministic
              - checks: assessed, not rolled: each becomes a THIS TURN line the narrator must call at its beat
                (told mode rolls them here, same seed and order)
              - clock: advance by time_minutes, raised to ClockSpec.slow_minutes for a slow action (the
-               adjudicator's tempo, D93), capped (ClockSpec.cap_minutes), stopped at the next
+               assistant's tempo, D93), capped (ClockSpec.cap_minutes), stopped at the next
                scheduled event so it fires on time
              - events: tick every live event in priority order (trigger / fallback / expiry),
                apply effects, collect directives
@@ -188,9 +188,9 @@ NARRATE      streamed. system = frozen prefix (cached, 1h). messages = [story so
              and THIS TURN gives the results, for a model that writes outcomes before calling. Both
              configs run called; told is the fallback dial.
              THE ROLL, at each call (narration.run_check): rng seeded by instance, turn and a salt; the
-             adjudicator's assessment is the floor (the harder of assessment and call); the game's
+             assistant's assessment is the floor (the harder of assessment and call); the game's
              modifiers apply. The reply is one [ENGINE] line: the result in words, never the die for a
-             local narrator; with the stakes live, the branch the adjudicator wrote for that result
+             local narrator; with the stakes live, the branch the assistant wrote for that result
              ("What it gains, as the engine holds it: …" or "What failure leaves standing …", with its
              complication), the minutes of that branch, and on a failure the engine's cost. The cost
              (engine/assistant.choose_cost) comes from the game's `cost_options` (kinds with weights and
@@ -299,7 +299,7 @@ lies and who believes them, beats in order.
 ## 7. Providers and roles
 
 `Provider.stream(role, system, messages)` for prose and `Provider.extract(role, system,
-messages, schema)` for structured output. Roles (`narrator`, `adjudicator`, `referee`,
+messages, schema)` for structured output. Roles (`narrator`, `assistant` (the adjudicator until D124; the old key still loads), `referee`,
 `summarizer`) are configured independently: provider, model, `max_tokens`, `effort`, cache TTL,
 refusal fallback. The Anthropic provider uses `messages.parse(output_format=schema)` for
 extraction and places cache breakpoints on the system block and the last assistant message.
@@ -355,7 +355,7 @@ provider, model or role option, landed with `apply_changes`, and scored per role
 `notes/eval/runs/`. Scores against that answer only say how far a model agrees with it; each test set's answer
 key (`notes/eval/sets/<test set id>/key.yml`, judged by hand: required, allowed, forbidden and gray rows and checks per turn)
 says how far it is right, and `eval_replay.py grade` re-grades stored runs against it with no model
-calls. `run --opt stakes=true` replays the adjudicator on its staked schema (the prompt a live turn with the
+calls. `run --opt stakes=true` replays the assistant on its staked schema (the prompt a live turn with the
 stakes dial on sends); the key grades labels, stats and difficulties, not the futures.
 
 Every run records itself in full (`RUN_FORMAT` 2): the commit, the corpus and the key it used by content hash
@@ -385,12 +385,12 @@ Branch `1.0` preserves the first engine; `main` stays there until 2.0 is playabl
   hides both from the player; `§ ` marks a mechanics line in the stored transcript.
 - `engine/narration.py`: the narrator loop. Stream; on a call, stop, run it, show a mechanics line,
   send one more request (history + the prose so far + the result + "continue from where you stopped");
-  at most `GameBase.max_calls` stops per turn. `run_check` rolls with the adjudicator's assessment as the
+  at most `GameBase.max_calls` stops per turn. `run_check` rolls with the assistant's assessment as the
   floor (the harder of assessment and call). A failure's answer carries the engine's cost (engine/assistant.py,
   from the game's `cost_options`); when the previous turns' rolls all failed too (`Engine._fail_streak`, read
   from their narrator rows) the way shuts and the answer adds "Failed twice now. Make it cost Frank one real
   thing ... end with a different opening in front of Frank." (a scene is never stalled by failed checks more
-  than once in a row). With the narrator's stakes dial live, the answer leads with the branch the adjudicator
+  than once in a row). With the narrator's stakes dial live, the answer leads with the branch the assistant
   wrote for that result (§4, NARRATE).
 - One narration path for both games: resolve assesses checks instead of rolling them, THIS TURN lists the assessed checks as calls to make, the system prompt
   carries `roles.NARRATOR_WORLD` and `roles.NARRATOR_PROTOCOL`, the SSE stream has `mechanic` events, the
@@ -408,7 +408,7 @@ Branch `1.0` preserves the first engine; `main` stays there until 2.0 is playabl
 
 - The narrator is never asked for ids: `scene(audience="narrator")` is prose; calls take a stat and a
   difficulty (a name only when needed); square-bracket lines from the narrator are plain-English notes
-  handed to the referee. Code resolves names (`World.find`); the adjudicator's assessed target wins
+  handed to the referee. Code resolves names (`World.find`); the assistant's assessed target wins
   over a called name.
 - One referee, one row type (DESIGN2 §18 A, 2026-10-28): `roles.ChangeReport` for every game; `engine/changes.py`
   lands the engine's kinds, hands the game its own through `apply_change`, and sends world rows (moves, new
@@ -431,10 +431,10 @@ Since then: rulings and the guard (D77-D81), crew routines and the meters (D36, 
 subagent players and judges (D84), the player's-eye read and the round profile (D89-D91), Gemma 4 31B on its base
 sampler as the one model for every role (D98, D101), the engine's cost on a failure and the timed nerves note
 (D103-D104), the stakes: designed (D103), probed (D108-D111; model-written beats failed the bar and stayed engine
-rules), in shadow (D113-D114), merged into the adjudicator's one call with the hidden-word guard (D115-D116),
+rules), in shadow (D113-D114), merged into the assistant's one call with the hidden-word guard (D115-D116),
 engine words stripped (D118), live on noir (D119). Next: the cost table's monotony (A15: the way-shut rule on a
 retry only, a cap on the noise cost, a cost for a failed conversation), the ending that never fires (END1), the
 time rules of notes/DESIGN-time-and-attempts-2026-11-06.md §3, then the context modules (§5: the bulletin as
 sections first, then the focus filter and the prefix split, then the window and own-prose levels for a move off
-Gemma), the rename of the adjudicator to the assistant (one mechanical commit; the stored ledger kind stays), noir on
+Gemma), the rename of the assistant to the assistant (one mechanical commit; the stored ledger kind stays), noir on
 the world.

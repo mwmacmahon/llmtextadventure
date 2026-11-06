@@ -17,7 +17,7 @@ from engine.pipeline import Engine, _named_present, _same_line  # noqa: E402
 from engine.providers.fake import FakeProvider  # noqa: E402
 from engine.providers.factory import get_provider  # noqa: E402
 from engine.registry import load_games  # noqa: E402
-from engine.roles import Adjudication, AdjudicationV2, Change, ChangeReport, CheckProposal, Intent, IntentV2  # noqa: E402
+from engine.roles import AssistantReading, AssistantReadingV2, Change, ChangeReport, CheckProposal, Intent, IntentV2  # noqa: E402
 from engine.store import Store  # noqa: E402
 from games.noir.game import part_of_day  # noqa: E402
 
@@ -39,8 +39,8 @@ def fake() -> FakeProvider:
     p.canned.clear(); p.hook = None; p.script = None
 
 
-def force(label: str = "force the shutter", stat: str = "hands") -> Adjudication:
-    return Adjudication(kind="action", summary="Frank forces the shutter", time_minutes=1, risk="low",
+def force(label: str = "force the shutter", stat: str = "hands") -> AssistantReading:
+    return AssistantReading(kind="action", summary="Frank forces the shutter", time_minutes=1, risk="low",
                         intents=[Intent(action=label, check=CheckProposal(label=label, stat=stat, difficulty="low"))])
 
 
@@ -51,7 +51,7 @@ async def run(engine: Engine, iid: str, text: str) -> list[dict]:
 async def test_told_checks_are_rolled_before_the_prose_and_shown_after_it(engine: Engine, fake: FakeProvider):
     engine.cfg.role("narrator").checks = "told"
     iid = engine.create_instance("noir", {})
-    fake.canned["Adjudication"] = [force()]
+    fake.canned["AssistantReading"] = [force()]
     seen: list = []
     fake.script = lambda system, messages: (seen.append(messages[-1].content), "You set your shoulder to it and it goes.")[1]
     events = await run(engine, iid, "I force the shutter.")
@@ -68,7 +68,7 @@ async def test_told_checks_are_rolled_before_the_prose_and_shown_after_it(engine
 
 async def test_called_checks_end_the_message_with_the_call_to_make(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("noir", {})
-    fake.canned["Adjudication"] = [force()]
+    fake.canned["AssistantReading"] = [force()]
     seen: list = []
     tellings = iter(["You set your shoulder to the shutter.\n<<CHECK hands low>>", "It gives on the second try."])
     fake.script = lambda system, messages: (seen.append(messages), next(tellings))[1]
@@ -82,7 +82,7 @@ async def test_called_checks_end_the_message_with_the_call_to_make(engine: Engin
 
 async def test_history_replays_a_called_check_and_never_puts_section_lines_in_the_narrators_voice(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("noir", {})
-    fake.canned["Adjudication"] = [force(), Adjudication(kind="action", summary="Frank looks around", time_minutes=1, risk="low", intents=[Intent(action="look")])]
+    fake.canned["AssistantReading"] = [force(), AssistantReading(kind="action", summary="Frank looks around", time_minutes=1, risk="low", intents=[Intent(action="look")])]
     seen: list = []
     tellings = iter(["You set your shoulder to the shutter.\n[[unseen: a man watches from the street]]\n<<CHECK hands low>>", "It gives.", "The roof is empty."])
     fake.script = lambda system, messages: (seen.append(messages), next(tellings))[1]
@@ -126,7 +126,7 @@ def test_a_thread_closes_only_with_a_reason_and_a_repeated_log_line_is_the_same_
 
 async def test_a_thing_the_player_does_not_carry_is_a_directive(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("noir", {})
-    fake.canned["Adjudication"] = [AdjudicationV2(kind="action", summary="Frank cuts the rope", time_minutes=1, risk="low",
+    fake.canned["AssistantReading"] = [AssistantReadingV2(kind="action", summary="Frank cuts the rope", time_minutes=1, risk="low",
                                                   intents=[IntentV2(action="cut the rope")], carried=["knife", "matches"])]
     seen: list = []
     fake.script = lambda system, messages: (seen.append(messages[-1].content), "You reach for a knife you do not have.")[1]
@@ -156,7 +156,7 @@ def test_places_resolve_as_the_prose_names_them_and_present_is_not_a_meeting(eng
 async def test_the_engine_rules_a_secret_word_in_the_players_voice_and_keeps_it_out_of_the_notebook(engine: Engine, fake: FakeProvider):
     engine.update_settings({"guard": {"mode": "log"}})
     iid = engine.create_instance("noir", {})
-    fake.canned["Adjudication"] = [Adjudication(kind="action", summary="Frank looks at the remains", time_minutes=1, risk="low", intents=[Intent(action="look")])]
+    fake.canned["AssistantReading"] = [AssistantReading(kind="action", summary="Frank looks at the remains", time_minutes=1, risk="low", intents=[Intent(action="look")])]
     fake.script = lambda system, messages: 'It was a shepherd, grown in a tank. "The Congregation sends them," the dying man says.'
     fake.hook = lambda schema, last: ChangeReport.of(Change(kind="learned", target="player", value="The thing was a shepherd from a tank."), log_line="x") if schema is ChangeReport else None
     done = (await run(engine, iid, "I look at it."))[-1]["data"]
@@ -169,7 +169,7 @@ async def test_the_engine_rules_a_secret_word_in_the_players_voice_and_keeps_it_
 async def test_a_check_ruling_the_engine_knows_is_impossible_is_an_issue_not_a_retell(engine: Engine, fake: FakeProvider):
     engine.update_settings({"guard": {"mode": "gate", "max_retells": 1}})
     iid = engine.create_instance("noir", {})
-    fake.canned["Adjudication"] = [Adjudication(kind="action", summary="Frank fires", time_minutes=1, risk="low", intents=[Intent(action="fire")])]
+    fake.canned["AssistantReading"] = [AssistantReading(kind="action", summary="Frank fires", time_minutes=1, risk="low", intents=[Intent(action="fire")])]
     fake.script = lambda system, messages: "The shot takes it in the mouth."
     fake.hook = lambda schema, last: ChangeReport.of(Change(kind="ruling", field="check_skipped", value="no check for the shot", note="call a check"),
                                                      Change(kind="thread_close", target="t0-find-june", note="the creature is dead but the search for June continues"),
@@ -186,7 +186,7 @@ async def test_a_reload_is_not_undone_by_the_referee_reporting_old_shots(engine:
     doc = engine.store.load_state(iid)
     next(i for i in doc["inventory"] if i["id"] == "revolver")["loaded"] = 4
     engine.store.save_snapshot(iid, 0, doc)
-    fake.canned["Adjudication"] = [AdjudicationV2(kind="action", summary="Frank reloads and looks", time_minutes=2, risk="low",
+    fake.canned["AssistantReading"] = [AssistantReadingV2(kind="action", summary="Frank reloads and looks", time_minutes=2, risk="low",
                                                   intents=[IntentV2(action="look")], commands=[{"id": "reload", "args": []}])]
     fake.script = lambda system, messages: "You thumb two rounds in and look around."
     fake.hook = lambda schema, last: ChangeReport.of(Change(kind="add", target="revolver.loaded", value="-2"), log_line="x") if schema is ChangeReport else None
@@ -197,7 +197,7 @@ async def test_a_reload_is_not_undone_by_the_referee_reporting_old_shots(engine:
 
 async def test_a_typed_command_counts_only_when_the_input_asks_for_it(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("noir", {})
-    fake.canned["Adjudication"] = [AdjudicationV2(kind="action", summary="Frank strikes a match", time_minutes=1, risk="low",
+    fake.canned["AssistantReading"] = [AssistantReadingV2(kind="action", summary="Frank strikes a match", time_minutes=1, risk="low",
                                                   intents=[IntentV2(action="strike a match")], commands=[{"id": "smoke", "args": []}])]
     fake.script = lambda system, messages: "The match flares."
     events = await run(engine, iid, "I strike a match and look at it.")

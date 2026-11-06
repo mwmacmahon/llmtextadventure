@@ -37,7 +37,7 @@ from engine.game import (
 )
 from engine.gamekit import Content, Writer, hhmm, threads_panel
 from engine.mechanics import CheckRequest, Modifier
-from engine.roles import AdjudicationV2, Change
+from engine.roles import AssistantReadingV2, Change
 from engine.spontaneous import Spontaneous
 from engine.statepath import Actor
 from engine.world import Attr, Cause, Exit, Person, Place, Policy, Thing, Vantage, Vocab, World, apply_declarations, scene
@@ -162,7 +162,7 @@ class StationGame(GameBase):
                     "crew.*.relationships", "crew.*.bio", "crew.*.traits", "crew.*.routine", "crew.*.secrets.*.what", "crew.*.secrets.*.how",
                     "crew.*.secrets.*.needs", "crew.*.secrets.*.leverage", "crew.*.secrets.*.reveals", "hidden.terms"]
     # 2.0 (DESIGN2): the narrator stops to roll; the adjudicator names targets and a focus; the world holds the station
-    adjudication_schema = AdjudicationV2
+    adjudication_schema = AssistantReadingV2
     mechanic_numbers = False               # the § line gives the tier only: "Influence check, high: huge failure."
     world_policy = WORLD_POLICY
 

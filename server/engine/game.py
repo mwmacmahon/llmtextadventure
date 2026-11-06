@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 
 from .events import Event
 from .mechanics import CheckRequest, Modifier
-from .roles import Adjudication
+from .roles import AssistantReading
 from .statepath import Actor
 
 # ---------------------------------------------------------------------------
@@ -261,7 +261,7 @@ class GameBase:
     fallback_stat: str | None = None                  # when the adjudicator names a stat that does not exist, roll this one instead of dropping the check
     static_paths: list[str] = []                      # engine-owned paths set at instance creation and never written again (tools/authority_audit.py skips them)
     # --- 2.0 (DESIGN2 §4-§5) ----------------------------------------------
-    adjudication_schema: type[Adjudication] = Adjudication   # AdjudicationV2 for games with proposals and focus
+    adjudication_schema: type[AssistantReading] = AssistantReading   # AssistantReadingV2 for games with proposals and focus
     max_calls: int = 3                                # stops per turn before the engine answers "no more calls"
 
     # --- optional content hooks ---------------------------------------------

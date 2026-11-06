@@ -18,7 +18,7 @@ from engine.providers.fake import FakeProvider  # noqa: E402
 from engine.providers.factory import get_provider  # noqa: E402
 from engine.registry import load_games  # noqa: E402
 from engine.changes import apply_changes  # noqa: E402
-from engine.roles import Adjudication, Change, ChangeReport  # noqa: E402
+from engine.roles import AssistantReading, Change, ChangeReport  # noqa: E402
 from engine.store import Store  # noqa: E402
 from games.noir.game import WITHDRAWAL, NoirGame  # noqa: E402
 
@@ -253,8 +253,8 @@ async def test_smoke_is_a_narrated_command(engine: Engine, fake: FakeProvider):
 async def test_typed_turn_narrator_sees_roll_and_referee_updates_pockets(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("noir", {})
     fake.hook = lambda schema, last: (
-        Adjudication(kind="action", summary="Frank fires at the creature", time_minutes=1, tempo="fast", risk="high",
-                     intents=[{"action": "shoot it", "check": {"label": "shoot the creature", "stat": "hands", "difficulty": "low"}}]) if issubclass(schema, Adjudication)
+        AssistantReading(kind="action", summary="Frank fires at the creature", time_minutes=1, tempo="fast", risk="high",
+                     intents=[{"action": "shoot it", "check": {"label": "shoot the creature", "stat": "hands", "difficulty": "low"}}]) if issubclass(schema, AssistantReading)
         else ref(add("revolver", "loaded", "-3"), add("player", "dread", "+10"), C(kind="move", target="player", value="Rooftop shack"), log_line="Frank fired three times.") if schema is ChangeReport
         else None)
     FakeProvider.script = lambda system, messages: ("The shots go where they go." if messages[-1].content.startswith("[ENGINE]")
@@ -313,11 +313,11 @@ def test_has_predicate_and_anchor_meeting_fallback(game: NoirGame):
 async def test_ending_when_june_is_rescued(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("noir", {})
     fake.hook = lambda schema, last: (
-        Adjudication(kind="action", summary="get June out", time_minutes=20, risk="high") if issubclass(schema, Adjudication)
+        AssistantReading(kind="action", summary="get June out", time_minutes=20, risk="high") if issubclass(schema, AssistantReading)
         else ref(C(kind="flag", target="june_rescued", value="true"), log_line="Frank got June out.") if schema is ChangeReport
         else None)
     await play(engine, iid, "I carry June up the drain and into the cab.")
-    fake.hook = lambda schema, last: Adjudication(kind="action", summary="wait", time_minutes=1, risk="none") if issubclass(schema, Adjudication) else None
+    fake.hook = lambda schema, last: AssistantReading(kind="action", summary="wait", time_minutes=1, risk="none") if issubclass(schema, AssistantReading) else None
     events = await play(engine, iid, "I light a cigarette.")
     assert events[-1]["data"]["ending"].startswith("You got June Kessler out")
     bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
@@ -344,7 +344,7 @@ def test_sleep_resets_dread_and_fear(game: NoirGame):
 
 async def test_unknown_stat_falls_back_and_is_noted(engine: Engine, fake: FakeProvider):
     iid = engine.create_instance("noir", {})
-    fake.canned["Adjudication"] = [Adjudication(kind="action", summary="Frank runs", time_minutes=2, risk="medium",
+    fake.canned["AssistantReading"] = [AssistantReading(kind="action", summary="Frank runs", time_minutes=2, risk="medium",
                                                 intents=[{"action": "run", "check": {"label": "get through the door", "stat": "muzzle", "difficulty": "medium"}}])]
     events = await play(engine, iid, "I scramble through the door.")
     mech = events[-1]["data"]["mechanics"]
@@ -358,7 +358,7 @@ async def test_nerves_break_once_and_never_end_the_game(engine: Engine, fake: Fa
     doc = engine.store.load_state(iid)
     doc["player"]["dread"] = 96
     engine.store.save_snapshot(iid, 0, doc)
-    fake.hook = lambda schema, last: Adjudication(kind="action", summary="wait", time_minutes=1, tempo="fast", risk="none") if issubclass(schema, Adjudication) else None   # fast: the pending must not come due (D93 floor)
+    fake.hook = lambda schema, last: AssistantReading(kind="action", summary="wait", time_minutes=1, tempo="fast", risk="none") if issubclass(schema, AssistantReading) else None   # fast: the pending must not come due (D93 floor)
     events = await play(engine, iid, "I stand there.")
     mech = events[-1]["data"]["mechanics"]
     assert mech["events"] == ["breaking_point"] and events[-1]["data"]["ending"] is None

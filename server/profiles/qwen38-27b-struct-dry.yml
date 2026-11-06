@@ -4,5 +4,5 @@
 model: Huihui-Qwen3.8-27B-abliterated-UD-Q5_K_XL.gguf
 server: {ctx: 98304, ckpt: 2048, kv: q8_0, think_budget: -1}
 roles:
-  adjudicator: {dry_multiplier: 0.8, dry_allowed_length: 4, dry_penalty_last_n: 2048, dry_sequence_breakers: ["{", "}", "[", "]", "\"", ":", ",", "\n"]}
+  assistant: {dry_multiplier: 0.8, dry_allowed_length: 4, dry_penalty_last_n: 2048, dry_sequence_breakers: ["{", "}", "[", "]", "\"", ":", ",", "\n"]}
   referee: {dry_multiplier: 0.8, dry_allowed_length: 4, dry_penalty_last_n: 2048, dry_sequence_breakers: ["{", "}", "[", "]", "\"", ":", ",", "\n"]}
