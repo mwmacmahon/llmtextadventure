@@ -177,6 +177,16 @@ lives only in the window and the summary drops it. A standing note tied to a met
 alarm) is read on every turn in that tier: ask for one moment a turn, not every turn, or it becomes
 a refrain (D91).
 
+The tails (how many clues, log lines, facts per person, threads, things elsewhere) are the engine's *bulletin
+scope* module, one of the narrator's context modules (ARCHITECTURE §5); today they are constants in each game's
+`render_bulletin`. The contract they move to: the hook returns named sections, each a heading and a list of items
+(people, with their facts as sub-items; notebook; log; threads; things; behind the scenes; the standing notes),
+and the engine assembles the string, cutting each section by the module's level and by the adjudication's focus.
+Write new bulletin material as a section with items, not as prose, so the cut can apply to it. Static material
+(voice, the case, the spine) stays in `frozen_prefix`; the cast's hidden lines and tells will move out of it to a
+per-scene block for the people present (the *prefix split* module), so keep them as structured fields, never
+folded into prose.
+
 ## 6. Scenario YAML
 
 ```yaml

@@ -245,6 +245,20 @@ what is in view. The adjudication's focus is not otherwise used to cut the bulle
 (every cast member's hidden line and tells, the hidden truth, the spine) is never cut. The narrator can pull
 one record it lacks with a `<<LOOK name>>` call.
 
+**Context modules.** The narrator's context is managed as a set of named modules, each a dial on the narrator
+role with levels (off, light, full) whose numbers live in one table in config; a model profile names levels, and
+nothing in the engine branches on the model name. The modules: *window* (turns verbatim, slide, token budget),
+*summary* (how dropped turns fold, the story-so-far's length), *own-prose distance* (how much of the narrator's own
+earlier prose stays verbatim before it becomes summary), *bulletin scope* (the tails above), *focus filter* (people,
+threads, clues and things in the adjudication's focus in full, the rest one line or absent), *prefix split* (the
+cast's secrets and tells out of the cached prefix, delivered per scene for the people present), *pull* (what the
+narrator may ask for with a LOOK), *directive economy* (THIS TURN's size: `checks`, `stakes`). Built today: window,
+summary at one level, bulletin scope as constants, the focus filter for the station's scene only, pull for a person,
+thing or place, directive economy. Not yet: own-prose distance, the focus filter on the bulletin, prefix split, pull
+for clues and threads, levels and the config table. The base they all sit on is the bulletin as named sections
+with items (the game names the sections, the engine assembles the string by the dials), which replaces the single
+string `render_bulletin` returns the next time it is touched. Design: `notes/DESIGN-context-modules-2026-11-06.md`.
+
 **Window slide.** The window start moves in steps of `window_slide` (6) once more than
 `window_turns` (12) turns exist, so the cached message prefix is stable for six requests.
 The summarizer runs at exactly those points, over exactly the turns that dropped out.
@@ -420,5 +434,7 @@ sampler as the one model for every role (D98, D101), the engine's cost on a fail
 rules), in shadow (D113-D114), merged into the adjudicator's one call with the hidden-word guard (D115-D116),
 engine words stripped (D118), live on noir (D119). Next: the cost table's monotony (A15: the way-shut rule on a
 retry only, a cap on the noise cost, a cost for a failed conversation), the ending that never fires (END1), the
-time rules of notes/DESIGN-time-and-attempts-2026-11-06.md §3, the narrator's view cut by the adjudication's
-focus (§5 above), noir on the world.
+time rules of notes/DESIGN-time-and-attempts-2026-11-06.md §3, then the context modules (§5: the bulletin as
+sections first, then the focus filter and the prefix split, then the window and own-prose levels for a move off
+Gemma), the rename of the adjudicator to the assistant (one mechanical commit; the stored ledger kind stays), noir on
+the world.
