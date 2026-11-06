@@ -59,7 +59,13 @@ def choose_cost(options: list[dict], roll: dict, *, recent: list[dict], rng: Any
     options = [o for o in options if o["kind"] != "way_closed"] or options
     if round_costs:
         paid = [c.get("kind") for c in round_costs]
-        options = [o for o in options if paid.count(o["kind"]) < ROUND_CAP.get(o["kind"], 10 ** 6)] or options
+        gone = {(c.get("kind"), c.get("detail")) for c in round_costs if c.get("kind") == "thing" and c.get("detail")}
+        options = [o for o in options if (o["kind"], o.get("detail")) not in gone] or options      # the same thing is not lost twice a round
+        under = [o for o in options if paid.count(o["kind"]) < ROUND_CAP.get(o["kind"], 10 ** 6)]
+        if not under:                                    # every kind at its cap: the least paid, never the whole list again (D128)
+            least = min(paid.count(o["kind"]) for o in options)
+            under = [o for o in options if paid.count(o["kind"]) == least]
+        options = under
     cap = MAX_WEIGHT.get(outcome, 1) + (1 if fail_streak >= 1 else 0)
     fit = [o for o in options if int(o.get("weight", 1)) <= cap] or [min(options, key=lambda o: int(o.get("weight", 1)))]
     last_kinds = [c.get("kind") for c in recent[-RECENT:]]

@@ -149,7 +149,7 @@ def test_a_failed_conversation_costs_the_conversation_not_a_noise(game: NoirGame
     from engine.assistant import choose_cost
     opts = game.cost_options(st, {"stat": "tongue", "outcome": "failure"}, "", "")
     for seed in range(10):
-        assert choose_cost(opts, {"outcome": "failure", "stat": "tongue"}, recent=[], rng=random.Random(seed))["kind"] == "talk"
+        assert choose_cost(opts, {"outcome": "failure", "stat": "tongue"}, recent=[], rng=random.Random(seed))["kind"] in ("talk", "time")   # never a thing or a noise
 
 
 def test_a_retry_is_the_same_label_or_the_same_target_and_stat():
@@ -177,3 +177,22 @@ def test_the_station_rotates_its_light_costs():
         c = choose_cost(opts, {"outcome": "failure"}, recent=recent, rng=random.Random(seed))
         kinds.append(c["kind"]); recent.append(c)
     assert len(set(kinds)) == 3 and "way_closed" not in kinds and all(a != b for a, b in zip(kinds, kinds[1:]))
+
+
+def test_a_capped_round_never_falls_back_to_the_capped_kinds():
+    """D128: the r20L round paid noise five times and things five times past their caps of two, because when every option
+    was capped the cap fell back to the whole list. Now noir has an uncapped light cost (time), the fallback is the least
+    paid kind, and the same thing is not lost twice."""
+    import random
+    from engine.assistant import choose_cost
+    opts = [{"kind": "noise", "weight": 1, "fact": "n"}, {"kind": "time", "weight": 1, "fact": "t"},
+            {"kind": "thing", "weight": 2, "detail": "cigarettes", "fact": "c"}, {"kind": "thing", "weight": 2, "detail": "pencil", "fact": "p"}]
+    paid = [{"kind": "noise"}, {"kind": "noise"}, {"kind": "thing", "detail": "cigarettes"}]
+    for seed in range(10):
+        assert choose_cost(opts, {"outcome": "failure"}, recent=[], rng=random.Random(seed), round_costs=paid)["kind"] == "time"
+        c = choose_cost(opts, {"outcome": "critical_failure"}, recent=[], rng=random.Random(seed), round_costs=paid)
+        assert c.get("detail") != "cigarettes"
+    only = [{"kind": "noise", "weight": 1, "fact": "n"}, {"kind": "thing", "weight": 1, "detail": "x", "fact": "x"}]
+    paid2 = [{"kind": "noise"}] * 3 + [{"kind": "thing", "detail": "y"}] * 2
+    for seed in range(10):
+        assert choose_cost(only, {"outcome": "failure"}, recent=[], rng=random.Random(seed), round_costs=paid2)["kind"] == "thing"   # the least paid

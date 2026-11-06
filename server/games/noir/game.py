@@ -378,7 +378,9 @@ class NoirGame(GameBase):
     def cost_options(self, state: NoirState, roll: dict, label: str = "", target: str = "") -> list[dict]:
         from engine.assistant import WAY_CLOSED
         s, p = state, state.player
-        out: list[dict] = [dict(WAY_CLOSED)]
+        out: list[dict] = [dict(WAY_CLOSED),
+                           # D128: a light cost no round cap reaches, so a capped round never falls back to the same noise again
+                           {"kind": "time", "weight": 1, "fact": f"It eats time: the minutes run on while {state.player.name} gets nowhere with it."}]
         people = [q for q in s.people if q.status == "alive" and q.id not in s.case.eldritch]     # the thing in the dark keeps no grudges
         # a witness only from the last telling (H6, D109): the state's locations go stale, and "Brandt sees what Frank was trying"
         # was staked on eight of thirteen cell checks with Brandt long gone; the target counts only when that telling had them too
