@@ -387,11 +387,17 @@ class NoirGame(GameBase):
         if who is None and here:
             who = here[0]
         talk = roll.get("stat") in self.SOCIAL
-        target_here = next((q for q in here if q.id == target), None) if target else None
-        if talk and target_here is not None:
-            # a failed conversation costs the conversation, not a crash (A15, D122): the person, not the room, pays it back
-            out.append({"kind": "talk", "weight": 1, "detail": target_here.id,
-                        "fact": f"{target_here.name} has had enough of {p.name}'s questions for now: pressing them again tonight gets less, not more."})
+        if talk:
+            # a failed conversation costs the conversation, not a crash (A15, D122). The person talked to is there by the nature
+            # of the attempt, so the target counts even when the last telling had not listed them (D126: with nobody listed,
+            # a failed word fell through to losing the cigarettes)
+            spoken = next((q for q in people if q.id == target), None) if target else None
+            if spoken is not None:
+                out.append({"kind": "talk", "weight": 1, "detail": spoken.id,
+                            "fact": f"{spoken.name} has had enough of {p.name}'s questions for now: pressing them again tonight gets less, not more."})
+            else:
+                out.append({"kind": "talk", "weight": 1,
+                            "fact": f"The talk goes nowhere: whoever {p.name} was working on closes up on this for now."})
         if who is not None:
             out.append({"kind": "tell", "weight": 1, "detail": who.id,
                         "fact": f"{who.name} sees what {p.name} was trying, and will remember it."})

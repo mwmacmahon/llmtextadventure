@@ -141,8 +141,15 @@ def test_a_failed_conversation_costs_the_conversation_not_a_noise(game: NoirGame
     kinds = [o["kind"] for o in game.cost_options(st, {"stat": "tongue", "outcome": "failure"}, "", q.id)]
     assert "talk" in kinds and "noise" not in kinds
     st = game.apply_present(st, [], Writer(game.authority, ApplyReport(), actor="engine"))
+    talk = [o for o in game.cost_options(st, {"stat": "tongue", "outcome": "failure"}, "", q.id) if o["kind"] == "talk"]
+    assert talk and talk[0]["detail"] == q.id                                    # the target counts though the last telling had not listed them
     kinds = [o["kind"] for o in game.cost_options(st, {"stat": "tongue", "outcome": "failure"}, "", "")]
-    assert "noise" not in kinds and "talk" not in kinds                          # nobody to talk to, and words make no noise
+    assert "noise" not in kinds and "talk" in kinds                              # no target: a plain talk cost, never a lost thing for a failed word
+    import random
+    from engine.assistant import choose_cost
+    opts = game.cost_options(st, {"stat": "tongue", "outcome": "failure"}, "", "")
+    for seed in range(10):
+        assert choose_cost(opts, {"outcome": "failure", "stat": "tongue"}, recent=[], rng=random.Random(seed))["kind"] == "talk"
 
 
 def test_a_retry_is_the_same_label_or_the_same_target_and_stat():
