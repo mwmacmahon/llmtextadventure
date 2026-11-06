@@ -165,6 +165,12 @@ def load_config(path: Path | None = None) -> Config:
             r.provider = forced  # type: ignore[assignment]
             if forced == "llamacpp" and r.slot is None:
                 r.slot = i
+    # TA_STAKES=off|shadow|live sets the narrator's stakes dial (D109) for one server, so a shadow round needs no edit to
+    # the shared config (D111: 5c, the stakes in shadow on Gemma rounds)
+    stakes = os.environ.get("TA_STAKES")
+    if stakes and "narrator" in cfg.roles:
+        cfg.roles["narrator"].stakes = stakes  # type: ignore[assignment]
+        RoleConfig.model_validate(cfg.roles["narrator"].model_dump())      # a typo fails at load, not in a turn
     # every profile in the repo must be sound before play (a typo in an override fails here, not in a turn), and
     # when a role runs on a llama-server, the box is asked once which profile it has loaded
     for name in profiles.names():

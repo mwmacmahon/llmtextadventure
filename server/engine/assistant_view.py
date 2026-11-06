@@ -23,7 +23,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, create_model
 
 # where earlier rounds stalled (provisional, D103 §9; the numbers are logged beside every answer so they get their own rate)
-STALL = {"still": 5, "place": 6, "fails": 2, "copy": 25}
+STALL = {"still": 5, "place": 6, "fails": 2, "copy": 25, "plot": 10}
 
 # sentences in the state block that speak to the narrator, not about the world; the assistant is not the narrator
 NARRATOR_LINES = ("Frank is coming apart.", "Frank's nerves are going.", "This turn Frank holds his nerves down", "Do not narrate past")
@@ -186,6 +186,52 @@ def _moved_key(game_name: str, d: dict) -> str:
     return json.dumps(keep, sort_keys=True, default=str)
 
 
+# The station's stall mark (D111, A2): its stalls are the clock moving while the plot stands, nobody failing a roll and
+# nobody staying put (the crew move, the AI never does). The plot moves when a thread is settled (resolved or failed),
+# a scripted event fires, or one more of an unfired event's own conditions holds (the clock's conditions, "at" and
+# "turn_gte", do not count: time alone is the stall). A thread opened is not the plot moving: in the card station
+# stall the referee opened one every few turns ("Reyes's decision on ...") while no event fired after turn 1.
+_CLOCK_OPS = frozenset({"at", "turn_gte"})
+
+
+def _cond_leaves(pred: Any) -> list[dict]:
+    if not isinstance(pred, dict) or len(pred) != 1:
+        return []
+    (op, arg), = pred.items()
+    if op in ("all", "any"):
+        return [x for q in arg for x in _cond_leaves(q)]
+    if op == "not":
+        return _cond_leaves(arg)
+    return [] if op in _CLOCK_OPS else [pred]
+
+
+def _plot_key(d: dict, turn: int) -> tuple[set, set, dict]:
+    from engine.events import Event, evaluate
+    evs = []
+    for e in ((d.get("hidden") or {}).get("events") or []):
+        try:
+            evs.append(Event.model_validate(e))
+        except Exception:
+            pass
+    near: dict[str, int] = {}
+    for e in evs:
+        if e.fired or e.expired or not e.trigger:
+            continue
+        n = 0
+        for leaf in _cond_leaves(e.trigger):
+            try:
+                n += bool(evaluate(leaf, d, evs, turn))
+            except Exception:
+                pass
+        near[e.id] = n
+    settled = {t.get("id") for t in d.get("threads", []) if t.get("status") not in (None, "open")}
+    return settled, {e.id for e in evs if e.fired}, near
+
+
+def _plot_moved(a: tuple, b: tuple) -> bool:
+    return bool(b[0] - a[0]) or bool(b[1] - a[1]) or any(n > a[2].get(k, 0) for k, n in b[2].items())
+
+
 def _signals(game_name: str, turn: int, ledger, tr, snaps) -> tuple[list[str], dict]:
     still = 0
     for t in range(turn - 1, 0, -1):
@@ -223,15 +269,24 @@ def _signals(game_name: str, turn: int, ledger, tr, snaps) -> tuple[list[str], d
         last = g(words(narr[turn - 1]))
         prev = set().union(*[g(words(narr[t])) for t in range(turn - 13, turn - 1) if t in narr]) if turn > 2 else set()
         copy = round(len(last & prev) / max(1, len(last)) * 100)
-    nums = {"still": still, "place": same + 1, "fails": streak, "minutes3": elapsed, "copy": copy}
+    plot = 0
+    for t in range(turn - 1, 0, -1):
+        if t in snaps and t - 1 in snaps and not _plot_moved(_plot_key(snaps[t - 1], t - 1), _plot_key(snaps[t], t)):
+            plot += 1
+        else:
+            break
+    nums = {"still": still, "place": same + 1, "fails": streak, "minutes3": elapsed, "copy": copy, "plot": plot}
     tag = lambda key: " [past the mark]" if nums[key] >= STALL[key] else ""   # noqa: E731
     lines = [f"Turns since anything in THE GAME NOW changed (someone moved, something learned, a thread opened or settled): {still}{tag('still')}"]
     if game_name == "noir":
         lines.append(f"Turns in the same place: {same + 1}{tag('place')}")
+    else:
+        lines.append(f"Turns since a thread was settled or a scripted event fired or came a condition closer (the clock alone does not count): {plot}{tag('plot')}")
     lines += [f"Turns running where every attempt the dice decided failed: {streak}{tag('fails')}",
               f"Minutes the clock moved over the last three turns: {elapsed}",
               f"How much of the last turn's wording repeats the twelve turns before it: {copy}%{tag('copy')}"]
-    nums["past_the_mark"] = [k for k in ("still", "place", "fails", "copy") if nums[k] >= STALL[k] and (k != "place" or game_name == "noir")]
+    nums["past_the_mark"] = [k for k in ("still", "place", "fails", "copy", "plot") if nums[k] >= STALL[k]
+                             and (k != "place" or game_name == "noir") and (k != "plot" or game_name == "station")]
     return lines, nums
 
 
@@ -339,3 +394,37 @@ def branch_text(stake: dict, failed: bool) -> str:
     if comp:
         text += f" And with it: {comp}"
     return text
+
+
+# ---- the beats' engine check (D111) ---------------------------------------------------------------------------
+# A beat that settles the player's attempt before the roll was 16 of D110's 18 harmful beats, nearly always a person the
+# attempt was aimed at deciding it (Brandt "has decided to let Frank go"; Dooley arriving after the bribe). The engine
+# drops a beat whose person is someone a rolled attempt this turn is aimed at, before anything is committed. Words
+# that name a kind of person rather than one ("the man", "the sergeant", "the thing") do not count as a name.
+GENERIC = frozenset("the a an and of in at on man men woman women boy girl thing person people sergeant chief detective officer "
+                    "mister miss mrs inside from with".split())
+
+
+def _name_words(s: str | None) -> set[str]:
+    return {w for w in re.findall(r"[a-z]+", (s or "").lower().replace("_", " ")) if len(w) >= 3 and w not in GENERIC}
+
+
+def attempt_words(adj: dict) -> set[str]:
+    """The name words of what the move's rolled attempts are aimed at: each assessed intent's targets, its check's
+    target entity, and the words of the attempt itself (an attempt names its person: 'bribe the desk sergeant to
+    contact Dooley')."""
+    out: set[str] = set()
+    for i in adj.get("intents") or []:
+        if not i.get("check"):
+            continue
+        out |= _name_words(i.get("action"))
+        for t in i.get("targets") or []:
+            out |= _name_words(t)
+        out |= _name_words((i.get("check") or {}).get("target_entity"))
+    return out
+
+
+def beat_settles(beat: dict, adj: dict) -> bool:
+    """True when the beat is about someone a rolled attempt this turn is aimed at (D111): what that person does is
+    the roll's to decide."""
+    return bool(_name_words(beat.get("who")) & attempt_words(adj))

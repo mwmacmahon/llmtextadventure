@@ -117,8 +117,19 @@ def score(run: Path, out: Path) -> None:
     print(out.read_text())
 
 
+def _shown(r: dict) -> str:
+    """The beats as the engine would hand them on: for the narrow probe (D111) the kept beat only, without its minutes
+    (Gemma wrote 500 and 2e15 on two turns; a live build clamps them, and the reader judges the fact, not the number)."""
+    if "kept" not in r:
+        return "```json\n" + json.dumps(r.get("answer"), indent=1, ensure_ascii=False) + "\n```"
+    if not r["kept"]:
+        return "none this turn"
+    return "```json\n" + json.dumps({"beats": [{k: v for k, v in b.items() if k != "minutes"} for b in r["kept"]]}, indent=1, ensure_ascii=False) + "\n```"
+
+
 def pack(run: Path, model: str, out: Path) -> None:
-    rs = [r for r in rows(run / model / "beats.jsonl") if r.get("gated") is not False]
+    src = run / model / ("narrow.jsonl" if (run / model / "narrow.jsonl").exists() else "beats.jsonl")   # D111's narrow probe
+    rs = [r for r in rows(src) if r.get("gated") is not False]
     lines = ["# The beats probe: one stuck stretch at a time\n",
              "Each turn: the player's move, the narration of the turn before, the narration as played, and the next turn's "
              "narration, then THE BEATS: what the assistant would have made true before that narration was written. The "
@@ -138,8 +149,7 @@ def pack(run: Path, model: str, out: Path) -> None:
                   "**The player:** " + (by.get(t, {}).get("player", "") or "").strip() + "\n",
                   "**The narration as played:**\n\n" + nar(t) + "\n",
                   "**The next turn's narration:**\n\n" + (nar(t + 1) or "(none)") + "\n",
-                  "**THE BEATS:** " + ("(error: " + r["error"] + ")" if r.get("error") else
-                                       "```json\n" + json.dumps(r.get("answer"), indent=1, ensure_ascii=False) + "\n```") + "\n"]
+                  "**THE BEATS:** " + ("(error: " + r["error"] + ")" if r.get("error") else _shown(r)) + "\n"]
     out.write_text("\n".join(lines))
     print(out, len(rs), "turns")
 
