@@ -47,11 +47,12 @@ from .context import build_messages, summary_plan
 from .narration import (Assessment, CallResult, Mechanic, NarrationDone, Visible, default_mechanic_line, fail_forward, narrate,
                         run_check)
 from .game import ApplyReport, CommandResult, Game, GameBase, Rejection, TurnInfo
-from .assistant_view import build_view, complications, match_stakes, render_stakes, stakes_model
+from .assistant_view import RULES as STAKES_RULES, adjudication_stakes, match_stakes, stakes_blocks
 from .mechanics import RESOLVERS, CheckRequest, CheckResult, outcome_words, rng_for
 from .providers import Msg, StreamDone, TextDelta, get_provider
 from .providers.base import Msg, Usage
-from .roles import (Adjudication, adjudicator_messages, referee_messages, summarizer_messages, NARRATOR_PROTOCOL)
+from .roles import (ADJUDICATOR_STAKES, Adjudication, AdjudicationStaked, AdjudicationV2, adjudicator_messages, referee_messages,
+                    summarizer_messages, NARRATOR_PROTOCOL)
 from .roles import NARRATOR_WORLD, REFEREE_PARTS, ChangeReport, referee_part_messages
 from .assistant import choose_cost, default_cost_options, recent_costs
 from .changes import apply_changes, merge_parts, quoted_in_prose, quotes_of, says_result_played, screen_unseen_clues
@@ -425,23 +426,19 @@ class Engine:
                 log.exception("step.failed " + logs.kv(iid=iid, turn=turn, step="summarize"))
                 yield {"event": "summary", "data": {"status": "failed", "turns": plan.to_cover, "error": str(e)}}
 
-        # ---- 2c. the assistant's stakes (D109, ASSISTANT-DESIGN §12 step 1): both futures of each assessed check, written
-        #          before the prose; the cost stays the engine's. Shadow logs them; live makes the reply to a call the branch.
+        # ---- 2c. the stakes (D109; in the adjudication since D115, ASSISTANT-DESIGN §8): both futures of each assessed
+        #          check, written by the adjudicator before the prose; the cost stays the engine's. Shadow logs them; live
+        #          makes the reply to a call the branch.
         nrole = self.cfg.role("narrator")
         if nrole.stakes != "off" and nrole.checks == "called" and res["assessments"] and adj is not None:
-            try:
-                answer, meta = await self._stakes(game, state, iid, turn, adj, player_text or "")
-                staked = match_stakes(answer, [a.label for a in res["assessments"]])
-                if nrole.stakes == "live":
-                    for a, st in zip(res["assessments"], staked):
-                        a.stake = st
-                ledger("model_call", {"role": "assistant", "part": "stakes", "mode": nrole.stakes, **meta, "answer": answer,
-                                      "labels": [a.label for a in res["assessments"]], "matched": [st is not None for st in staked]})
-                log.info("step " + logs.kv(iid=iid, turn=turn, step="stakes", mode=nrole.stakes, model=meta["model"], seconds=meta["seconds"],
-                                           staked=sum(1 for st in staked if st), assessed=len(staked), **logs.usage_kv(meta["usage"])))
-            except Exception as e:                     # the stakes are help, never a reason to lose the turn
-                ledger("model_call", {"role": "assistant", "part": "stakes", "error": repr(e)})
-                log.exception("step.failed " + logs.kv(iid=iid, turn=turn, step="stakes"))
+            answer = adjudication_stakes(adj)
+            staked = match_stakes(answer, [a.label for a in res["assessments"]])
+            if nrole.stakes == "live":
+                for a, st in zip(res["assessments"], staked):
+                    a.stake = st
+            ledger("model_call", {"role": "adjudicator", "part": "stakes", "mode": nrole.stakes, "merged": True, "answer": answer,
+                                  "labels": [a.label for a in res["assessments"]], "matched": [st is not None for st in staked]})
+            log.info("step " + logs.kv(iid=iid, turn=turn, step="stakes", mode=nrole.stakes, staked=sum(1 for st in staked if st), assessed=len(staked)))
 
         # ---- 3. narrate -----------------------------------------------------
         role = self.cfg.role("narrator")
@@ -797,6 +794,8 @@ class Engine:
             return
         game = self.games[inst.game]
         schema = getattr(game, "adjudication_schema", Adjudication)
+        if issubclass(schema, AdjudicationV2) and "pivotal" in adj_row:       # a stored adjudication with its stakes (D115)
+            schema = AdjudicationStaked
         adj = schema.model_validate({k: v for k, v in adj_row.items() if k != "_call"})
         transcript = [r for r in self.store.transcript(iid) if r.turn == turn]
         player_text = next((r.text for r in transcript if r.role == "player"), None)
@@ -838,41 +837,23 @@ class Engine:
             return provider
         return Taped(provider, lambda label, ex: tape("exchange", exchange_row(self.store.put_blob, label, ex)), step)
 
-    async def _stakes(self, game: Game, state: BaseModel, iid: str, turn: int, adj: Adjudication, player_text: str) -> tuple[dict, dict]:
-        """The assistant's stakes call (D109): the engine's view of the game (engine/assistant_view.py, the 5a probes' view),
-        on the assistant role when one is configured, else on the adjudicator's settings and slot."""
-        role = self.cfg.role("assistant") if "assistant" in self.cfg.roles else self.cfg.role("adjudicator")
-        provider = self._provider(role, iid, "assistant")
-        _, fresh = game.new_instance({})
-        lo = max(0, turn - 14)
-        snaps: dict[int, dict] = {}
-        for t in range(lo, turn):
-            try:
-                snaps[t] = self.store.load_state(iid, t)
-            except KeyError:
-                pass
-        rows = [r for t in range(max(1, lo), turn) for r in self.store.ledger(iid, t)]
-        tr = [{"turn": r.turn, "role": r.role, "text": r.text} for r in self.store.transcript(iid) if r.turn < turn]
-        v = build_view(game, state, fresh, turn=turn, snaps=snaps, ledger=rows, tr=tr, adj=adj.model_dump(mode="json"),
-                       player=player_text, impending=_pending_block(game, state, "engine"))
-        system, user = render_stakes(v)
-        t0 = time.monotonic()
-        plan, usage = await provider.extract(role, system, [Msg("user", user)], stakes_model(complications(v)))
-        meta = {"provider": provider.name, "model": usage.extra.get("model") or role.model, "seconds": round(time.monotonic() - t0, 2),
-                "usage": asdict(usage), "signals": v["signal_nums"]}
-        return plan.model_dump(), meta
-
     async def _adjudicate(self, game: Game, state: BaseModel, iid: str, player_text: str) -> tuple[Adjudication, dict]:
         role = self.cfg.role("adjudicator")
         provider = self._provider(role, iid, "adjudicator")
         recent = _recent_prose(self.store, iid, turns=2)
-        system, msgs, schema = adjudicator_inputs(game, state, recent, player_text)
+        nrole = self.cfg.role("narrator")
+        system, msgs, schema = adjudicator_inputs(game, state, recent, player_text, stakes=nrole.stakes != "off" and nrole.checks == "called")
         t0 = time.monotonic()
         adj, usage, retry, recovered = await extract_adjudication(provider, role, system, msgs, schema, _hook(game, "stats", state, default={}))
         if retry:
             log.info("adjudicate.retry " + logs.kv(iid=iid, why=retry))
         if recovered:
             log.info("adjudicate.recovered_checks " + logs.kv(iid=iid, checks=recovered))
+        # a label is shown to the narrator and the player; one carrying a word of the hidden truth not yet learned (the
+        # stakes' view shows the adjudicator the cast's secrets, D115: "Interrogating the shepherd") becomes its stat
+        for i in adj.intents:
+            if i.check and _hook(game, "leaked_terms", state, i.check.label, player_text, default=[]):
+                i.check.label = i.check.stat
         adj.time_minutes = max(0, int(adj.time_minutes))
         if adj.kind in ("clarify", "impossible", "trivial"):
             adj.time_minutes = 0
@@ -1145,15 +1126,17 @@ class Engine:
         # plan A (D103): a failed roll's cost is the engine's choice, from the game's options, never the same kind as the
         # last few costs (this turn's included); its own seed, so the dice fall as they did before the costs existed.
         recent = recent_costs(self._recent_calls(iid, turn))
+        round_costs = recent_costs(self._recent_calls(iid, turn, limit=turn))     # the round's, for ROUND_CAP (D115)
         cost_rng = rng_for(iid, turn, "costs")
 
         def cost_for(roll: dict, label: str, target: str) -> dict | None:
             options = _hook(game, "cost_options", state, roll, label, target, default=None)
             if options is None:
                 options = default_cost_options(state, roll, label, target)
-            cost = choose_cost(options, roll, recent=recent, rng=cost_rng, fail_streak=fail_streak)
+            cost = choose_cost(options, roll, recent=recent, rng=cost_rng, fail_streak=fail_streak, round_costs=round_costs)
             if cost:
                 recent.append(cost)
+                round_costs.append(cost)
             return cost
 
         def handler(call, n: int) -> CallResult:
@@ -1333,7 +1316,7 @@ def recover_misplaced_checks(adj: Adjudication, stats: dict) -> list[str]:
     named without a tier. Returns what was recovered, as 'stat difficulty' strings."""
     if not stats:
         return []
-    from .roles import CheckProposal
+    from .roles import CheckProposal, CheckStaked, IntentStaked
     names = "|".join(re.escape(k) for k in sorted(stats, key=len, reverse=True))
     pats = [re.compile(rf"\b({names})\b(?:\s*\([+-]?\d+\))?[\s,:-]*(?:check|roll|test)?[\s,:(-]*{_TIER}\b", re.I),
             re.compile(rf"\b{_TIER}\b[\s,:-]*(?:difficulty\s*)?({names})\b(?:\s*\([+-]?\d+\))?\s*(?:check|roll|test)\b", re.I)]
@@ -1351,7 +1334,8 @@ def recover_misplaced_checks(adj: Adjudication, stats: dict) -> list[str]:
         if not stat:
             continue
         tier = re.sub(r"[ -]", "_", tier.lower())
-        intent.check = CheckProposal(label=intent.action[:60], stat=stat.lower(), difficulty=tier)
+        kind = CheckStaked if isinstance(intent, IntentStaked) else CheckProposal     # a recovered check has no futures (D115)
+        intent.check = kind(label=intent.action[:60], stat=stat.lower(), difficulty=tier)
         transition = getattr(intent, "transition", "") or ""
         if transition and (pats[0].search(transition) or pats[1].search(transition)):
             intent.transition = ""                         # it held the check, not a transition
@@ -1359,13 +1343,24 @@ def recover_misplaced_checks(adj: Adjudication, stats: dict) -> list[str]:
     return out
 
 
-def adjudicator_inputs(game: Game, state: BaseModel, recent: list[Msg], player_text: str) -> tuple[str, list[Msg], type]:
+def adjudicator_inputs(game: Game, state: BaseModel, recent: list[Msg], player_text: str, stakes: bool = False) -> tuple[str, list[Msg], type]:
     """Everything the adjudicator is sent, built from a state and an input alone, so a stored turn can be
-    replayed outside the pipeline (tools/eval_replay.py) and get exactly what the live turn got."""
+    replayed outside the pipeline (tools/eval_replay.py) and get exactly what the live turn got. `stakes` (the
+    narrator's dial on, D115): each assessed check carries both its futures, the system text gains the STAKES rules
+    (stable across turns, so still the cached prefix) and the message the assistant's view; off, all is as before."""
     rules = _hook(game, "adjudication_rules", state, default="")
     state_text = _engine_state_text(game, state, None)
-    system, msgs = adjudicator_messages(rules, state_text, recent, player_text, _commands_text(_hook(game, "commands", state, default=[])))
-    return system, msgs, getattr(game, "adjudication_schema", Adjudication)
+    schema = getattr(game, "adjudication_schema", Adjudication)
+    extra = ""
+    if stakes and issubclass(schema, AdjudicationV2):
+        schema = AdjudicationStaked
+        _, fresh = game.new_instance({})
+        extra = stakes_blocks(game, state, fresh)
+    system, msgs = adjudicator_messages(rules, state_text, recent, player_text, _commands_text(_hook(game, "commands", state, default=[])), extra=extra)
+    if extra:
+        game_rules = STAKES_RULES.get(game.name, "").replace("The rules of this game.", "In the futures, complications and fiat you write, these rules hold.", 1)
+        system += "\n\n" + ADJUDICATOR_STAKES + ("\n\n" + game_rules if game_rules else "")
+    return system, msgs, schema
 
 
 def referee_inputs(game: Game, state: BaseModel, directives: list[str], player_text: str, narration: str,

@@ -631,7 +631,7 @@ class NoirGame(GameBase):
             "wits": "deduction, knowing a thing, seeing through a story, remembering",
             "tongue": "talking: persuading, bluffing, bargaining, intimidating, charming",
             "hands": "locks, the revolver, careful quick work, sleight of hand",
-            "muscle": "fighting, climbing, running, forcing, enduring pain",
+            "muscle": "fighting, climbing, running, forcing, enduring pain when something forces it (a fight, a fall, a wound dressed)",
             "nerve": "keeping it together when something is wrong; resisting fear",
         }
         lines = [
@@ -643,9 +643,9 @@ class NoirGame(GameBase):
             lines.append(f"- {k} ({v:+d}): {stat_help.get(k, '')}")
         lines += [
             "",
-            "Difficulty guidance: very_low = a competent man rarely fails; low = a careful try usually works; medium = a real chance of failing; high = against a locked door, a hostile man, a wary witness, or at a run on a bad leg; very_high = nearly impossible without an edge.",
+            "Difficulty guidance: very_low = a competent man rarely fails; low = a careful try usually works; medium = a real chance of failing; high = against a locked door, a hostile man, a wary witness, or at a run with something behind him; very_high = nearly impossible without an edge.",
             "Checks: one per real risk. Talking to a friend or a client needs none; getting anything about the case out of a witness, a stranger, a neutral or a hostile person is a tongue check against them, even over a bought drink (name them in target_entity). Searching a scene for something hidden is eye. Picking a lock is always a hands check (high against a serious door). Shooting is hands; fighting hand to hand is muscle; facing something that should not exist is nerve.",
-            "Firing the revolver is impossible if it holds 0 rounds; paying more dollars than he carries is impossible. Say so in clarify_question. Reloading and smoking are commands: always list them under commands when asked, full cylinder or empty pack included; the engine refuses and the narrator plays it. A command is never an intent and never replaces the rest of the input: the run on the bad leg, the shot, the search or the conversation beside it is still an intent with its check.",
+            "Firing the revolver is impossible if it holds 0 rounds; paying more dollars than he carries is impossible. Say so in clarify_question. Reloading and smoking are commands: always list them under commands when asked, full cylinder or empty pack included; the engine refuses and the narrator plays it. A command is never an intent and never replaces the rest of the input: the run, the shot, the search or the conversation beside it is still an intent with its check.",
             "target_entity only for a listed person the player names or the scene identifies; an unnamed stranger has no id, so leave target_entity null for him.",
             "Stats are exactly the six listed; never invent one.",
             "Time: a look around is 2 minutes; a search 15-30; a conversation 10-20; walking across a district 10; Midtown to Lowtown or Uptown 30 (10 by cab); sleeping 6-8 hours; waiting is however long he waits.",

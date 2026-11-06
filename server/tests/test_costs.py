@@ -105,3 +105,16 @@ def test_a_rise_to_a_worse_tier_shows_at_once(game: NoirGame):
     st = game.after_turn(st, TurnInfo(turn=1, elapsed_minutes=5, rng=random.Random(1)))
     st.player.dread = 100
     assert "Frank is coming apart" in game.render_bulletin(st, "")
+
+
+def test_the_thing_kind_is_capped_per_round():
+    """D115: a kind at its ROUND_CAP is not offered again (the noir shadow round lost four things through torn pockets)."""
+    import random
+    from engine.assistant import ROUND_CAP, choose_cost
+    opts = [{"kind": "thing", "weight": 1, "detail": "pencil", "fact": "x"}, {"kind": "tell", "weight": 1, "fact": "y"}]
+    paid = [{"kind": "thing", "detail": d} for d in ("dollars", "bullets")][:ROUND_CAP["thing"]]
+    for seed in range(20):
+        c = choose_cost(opts, {"outcome": "failure"}, recent=[], rng=random.Random(seed), round_costs=paid)
+        assert c["kind"] == "tell"
+    only = [opts[0]]                                 # nothing else on offer: the cap gives way rather than leave no cost
+    assert choose_cost(only, {"outcome": "failure"}, recent=[], rng=random.Random(1), round_costs=paid)["kind"] == "thing"

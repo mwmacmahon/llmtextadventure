@@ -41,7 +41,7 @@ RULES = {
              "piece of a person's Hidden line they have not earned by its Tells: what you add can point somewhere, never answer the question. "
              "Nobody new carries a gun."),
     "station": ("The rules of this game. The crew listed are the only people aboard; nobody new arrives. A new place is a compartment inside "
-                "one of the station's listed modules. Nothing you add reveals a crew member's secret outright. The station cannot make a "
+                "one of the station's listed modules. Nothing you add reveals a crew member's secret, or any piece of one, beyond what its How allows. The station cannot make a "
                 "person do anything; it can only change what is around them."),
 }
 
@@ -428,3 +428,27 @@ def beat_settles(beat: dict, adj: dict) -> bool:
     """True when the beat is about someone a rolled attempt this turn is aimed at (D111): what that person does is
     the roll's to decide."""
     return bool(_name_words(beat.get("who")) & attempt_words(adj))
+
+
+# ---- the stakes in the adjudication (D115; ASSISTANT-DESIGN §8: one call, not two) ----------------------------
+def stakes_blocks(game: Any, state: Any, fresh: Any) -> str:
+    """What the adjudicator is shown more while the stakes dial is on: the assistant's view, from the state alone (so a
+    graded replay builds the same prompt as the live turn). Its own message already holds the state with IMPENDING and
+    the last two turns of prose."""
+    who = ([f"{q.id} = {q.name}" for q in state.people if q.met or q.id in {p.id for p in fresh.people}] if game.name == "noir"
+           else [f"{c.id} = {c.name}" for c in state.crew])
+    ahead, hidden, invented = _case_ahead(game, state), _hidden_cast(game, state), _invented(game, state, fresh)
+    return ("[WHO IS WHO: id = name]\n" + ("; ".join(who) or "nobody") + "\n\n"
+            + "[THE CASE AHEAD: scripted, not yet happened; each fires when its conditions are met, or in its reach form later]\n" + ("\n".join(ahead) or "nothing left") + "\n\n"
+            + ("[WHAT THE CAST HIDE: what each knows and gives up only piece by piece, as its conditions are met]\n" + "\n".join(hidden) + "\n\n" if hidden else "")
+            + "[MADE UP IN PLAY]\n" + ("\n".join("- " + x for x in invented) or "nothing yet") + "\n\n")
+
+
+def adjudication_stakes(adj: Any) -> dict:
+    """The stakes as the adjudication wrote them, in the shape the separate call had (D109), so match_stakes,
+    branch_text, the ledger and the scorers read them unchanged."""
+    d = adj.model_dump(mode="json") if hasattr(adj, "model_dump") else dict(adj)
+    keys = ("success_gain", "success_minutes", "failure_outcome", "failure_minutes", "complication", "complication_what")
+    checks = [{"label": c["label"], **{k: c.get(k) for k in keys}} for i in d.get("intents") or []
+              if (c := i.get("check")) and (c.get("failure_outcome") or c.get("success_gain"))]      # a recovered check has no futures
+    return {"checks": checks, "pivotal": d.get("pivotal", ""), "fiat": d.get("fiat") or []}

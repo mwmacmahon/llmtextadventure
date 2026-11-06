@@ -503,7 +503,7 @@ def load_gold(path: Path) -> dict[str, dict]:
 # changes nothing can be measured (A3B at temperature 0 is byte-identical run to run: repeats measure nothing).
 PERTURB = {"1": "These rules are complete for this game.", "2": "Nothing here changes the row format above.",
            "3": "Read the rules above as written.", "4": "The engine checks every row against the state."}
-HARNESS_OPTS = {"perturb"}
+HARNESS_OPTS = {"perturb", "stakes"}      # stakes=true: the adjudicator with the stakes fields (D115)
 
 
 def _role_with(cfg, name: str, opts: dict[str, str]):
@@ -559,7 +559,7 @@ async def _replay_roles(rec: dict, game, state, exp: dict, res: dict, current: d
         role = _role_with(cfg, "adjudicator", opts)
         provider = get_provider(role)
         recent = [Msg(**m) for m in rec["recent"]]
-        system, msgs, schema = adjudicator_inputs(game, state, recent, rec["player_text"])
+        system, msgs, schema = adjudicator_inputs(game, state, recent, rec["player_text"], stakes=str(opts.get("stakes", "")).lower() == "true")
         t0 = time.monotonic()
         try:
             adj, usage, retry, recovered = await extract_adjudication(provider, role, system, msgs, schema, _hook(game, "stats", state, default={}))

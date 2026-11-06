@@ -19,6 +19,7 @@ FAILURES = ("failure", "huge_failure", "critical_failure")
 # the heaviest weight an outcome may cost; a second failure running may cost one step more
 MAX_WEIGHT = {"failure": 1, "huge_failure": 2, "critical_failure": 2}
 RECENT = 3              # costs of these kinds in the last RECENT costs are not chosen again while another kind is open
+ROUND_CAP = {"thing": 2}  # D115 (Fable): a kind paid this many times in the round is not offered again (four torn pockets in one noir round)
 
 WAY_CLOSED = {"kind": "way_closed", "weight": 1,
               "fact": "That way is shut here now: trying the same thing again will not work."}
@@ -40,11 +41,16 @@ def recent_costs(rows: list[list[dict]]) -> list[dict]:
     return out
 
 
-def choose_cost(options: list[dict], roll: dict, *, recent: list[dict], rng: Any, fail_streak: int = 0) -> dict | None:
-    """The cost of a failed roll, from the game's options. None for a roll that did not fail or a game with no options."""
+def choose_cost(options: list[dict], roll: dict, *, recent: list[dict], rng: Any, fail_streak: int = 0,
+                round_costs: list[dict] | None = None) -> dict | None:
+    """The cost of a failed roll, from the game's options. None for a roll that did not fail or a game with no options.
+    `round_costs`: every cost paid this round so far; a kind at its ROUND_CAP is not offered again."""
     outcome = roll.get("outcome") or ""
     if outcome not in FAILURES or not options:
         return None
+    if round_costs:
+        paid = [c.get("kind") for c in round_costs]
+        options = [o for o in options if paid.count(o["kind"]) < ROUND_CAP.get(o["kind"], 10 ** 6)] or options
     cap = MAX_WEIGHT.get(outcome, 1) + (1 if fail_streak >= 1 else 0)
     fit = [o for o in options if int(o.get("weight", 1)) <= cap] or [min(options, key=lambda o: int(o.get("weight", 1)))]
     if fail_streak >= 1:                                  # a second failure running: the way closes, the scene moves

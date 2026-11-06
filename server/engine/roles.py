@@ -63,7 +63,7 @@ class IntentV2(BaseModel):
     action: str = Field(description="One concrete thing the player is trying to do, in a short sentence.")
     targets: list[str] = Field(default_factory=list, description="Ids of the people, things and places this attempt concerns, exactly as listed in the scene.")
     transition: str = Field(default="", description="If the attempt moves the player or something they hold, one of: 'move:<place id> via:<exit or door id>', 'take:<thing id>', 'drop:<thing id>', 'give:<thing id> to:<person id>', 'put:<thing id> in:<container id>', 'open:<thing id>', 'close:<thing id>'. Name what the player is trying, by id where one is listed, by name otherwise. Empty when nothing moves. Never a check or an outcome.")
-    check: CheckProposal | None = Field(default=None, description="The check that decides this attempt when its outcome is uncertain and matters: stat, difficulty, label. Every attack, shot, escape under threat, forced or hurried physical feat, lock, hidden search, or attempt to get something out of someone who may refuse has one. Null only for what cannot fail.")
+    check: CheckProposal | None = Field(default=None, description="The check that decides this attempt when its outcome is uncertain and matters: stat, difficulty, label. Every attack, shot, escape under threat, forced or hurried physical feat, lock, hidden search, or attempt to get something out of someone who may refuse has one. Null for anything routine with nothing in the scene pressing on the player, hurt or not.")
 
 
 class Focus(BaseModel):
@@ -83,6 +83,51 @@ class AdjudicationV2(Adjudication):
     @classmethod
     def example(cls, player_text: str) -> "AdjudicationV2":
         return cls(kind="action", summary=f"The player attempts: {player_text[:80]}", time_minutes=5, intents=[IntentV2(action=player_text[:80])], risk="low")
+
+
+# ---- the stakes, in the adjudication (D115; ASSISTANT-DESIGN §8: one call, not two) ---------------------------
+# When the narrator's stakes dial is on, each assessed check carries both futures, written after the check is named (a
+# grammar-bound model writes in schema order). The failure's cost stays the engine's (engine/assistant.choose_cost).
+Complication = Literal["none", "pending_early", "cast_acts", "callback", "new", "time_lost"]
+
+
+class CheckStaked(CheckProposal):
+    success_gain: str = Field(default="", description="What success gains: how things stand if it works, one plain sentence. Not a scene.")
+    success_minutes: int = Field(default=0, description="Minutes the attempt takes when it works.")
+    failure_outcome: str = Field(default="", description="What failure leaves standing, as a fact about the attempt only, never harm or loss to the player's side and never the player's own condition ('Dooley does not buy it'; 'the lock holds'). One plain sentence.")
+    failure_minutes: int = Field(default=0, description="Minutes the attempt takes when it fails.")
+    complication: Complication = Field(default="none", description="What else failure brings, a kind from the STAKES rules, or none.")
+    complication_what: str = Field(default="", description="The complication as a fact about how things stand; empty when none.")
+
+
+class IntentStaked(IntentV2):
+    check: CheckStaked | None = Field(default=None, description="The check that decides this attempt when its outcome is uncertain and matters: stat, difficulty, label, then both futures (STAKES). Every attack, shot, escape under threat, forced or hurried physical feat, lock, hidden search, or attempt to get something out of someone who may refuse has one. Null for anything routine with nothing in the scene pressing on the player, hurt or not.")
+
+
+class FiatOutcome(BaseModel):
+    attempt: str = Field(description="An attempt in the input that needs no roll, in a few words.")
+    outcome: str = Field(description="How it comes out, one plain sentence.")
+
+
+class AdjudicationStaked(AdjudicationV2):
+    """AdjudicationV2 with the stakes (D115): used only while the narrator's stakes dial is on."""
+    intents: list[IntentStaked] = Field(default_factory=list, description="The concrete attempts, usually one, at most three. For each uncertain one, assess the check (stat, difficulty, target) and write both its futures; the narrator calls it at the right moment.")
+    pivotal: str = Field(default="", description="The label of the check this input turns on, copied from its check; empty when no check is assessed.")
+    fiat: list[FiatOutcome] = Field(default_factory=list, description="Each other attempt in the input that needs no roll and is no listed command (those go under commands), settled in the open. Usually empty.")
+
+    @classmethod
+    def example(cls, player_text: str) -> "AdjudicationStaked":
+        return cls(kind="action", summary=f"The player attempts: {player_text[:80]}", time_minutes=5, intents=[IntentStaked(action=player_text[:80])], risk="low")
+
+
+ADJUDICATOR_STAKES = """STAKES. While this section is here you also write what each result of a check means; the dice still decide which result comes. For each check you assess, write both of its futures in the check itself, after its label, stat and difficulty. You do not know how the dice will fall; the narrator calls the check when the story reaches it, the engine rolls, and whichever way it goes the engine plays the future you wrote. time_minutes stays the input's time if it goes as the player means it.
+- success_gain and success_minutes: what success gains, a fact about how things stand, not a scene. A success gains what was sought; of a person's Hidden line or secret (WHAT THE CAST HIDE), only what its Tells (on the station, its How) allow.
+- failure_outcome and failure_minutes: what failure leaves standing, as a fact about the attempt only (he does not buy it; the lock holds; he does not get through). Never harm or loss to the player's side, and never the player's own condition: an injury, fear or exhaustion may make the attempt harder, but the outcome is only that the attempt does not come off. What a failure costs the player the engine decides separately; never write a cost.
+- complication and complication_what: whether failure also brings one of these, as a fact: none; pending_early (something under IMPENDING happens now, by its id; only when IMPENDING lists something); cast_acts (a person who is here, or could reach here in the minutes the failure takes, acts on their own reasons); callback (something from MADE UP IN PLAY or an open thread comes back); new (a new person, place or thread, under the game's rules); time_lost (time passes that the player did not choose to spend). A failure and its complication give nothing of what was sought: no name, no fact, no glimpse of what is hidden, no half-success.
+- The label, the failure and the complication never name the player's own condition; time_lost is time, not a symptom.
+- pivotal: the label of the check this input turns on. fiat: each other attempt in the input that needs no roll and is not a listed command, and how it comes out; a fiat read or look gives only what the state already shows the player. A listed command is never fiat: it goes under `commands`, and the engine decides how it comes out. fiat never changes what a person thinks or feels.
+- THE CASE AHEAD is never pending_early: only IMPENDING is.
+- summary, notes, focus, every check's label, success_gain, fiat and complication_what name nothing from WHAT THE CAST HIDE, THE CASE AHEAD or the hidden truth that the player has not learned, beyond what a success's Tells allow."""
 
 
 NARRATOR_PROTOCOL = """ENGINE PROTOCOL. A few kinds of line are for the engine, each on a line of its own; the player never sees them.
@@ -106,7 +151,7 @@ ADJUDICATOR_INSTRUCTIONS = """You are the adjudicator for a text adventure. You 
 Rules:
 - kind=action for any real attempt that could change the world or takes time. kind=trivial for looking, recalling, or asking about the interface. kind=impossible when the player's means cannot do it at all (then say why in clarify_question, briefly).
 - Take the most natural reading of the input in its scene and adjudicate that. A terse input means the obvious thing: "turn around" with something behind the player means facing it; "go in" means the door in front of them. kind=clarify is rare: only when the input names something that does not exist, or when two readings would lead to materially different consequences and nothing in the scene favours either. Never clarify a short physical action, and never offer the player a menu of choices the narrator could simply play.
-- Propose a check only when the outcome is uncertain and the stakes matter. Routine use of the player's own abilities, with nothing pressing on him, needs no check; the same ability under threat, in a hurry or against resistance does (a shot at something that is coming for him, a run on a bad leg with something behind him). Use the stats and difficulty tiers exactly as the rules list them.
+- Propose a check only when the outcome is uncertain and the stakes matter. Routine use of the player's own abilities, with nothing pressing on him, needs no check; the same ability under threat, in a hurry or against resistance does (a shot at something that is coming for him, a run with something behind him, a climb out of a window with someone at the door). A condition the state lists (an injury, fear, exhaustion) modifies a check that exists and never creates one: assess a move only when its outcome is uncertain on its own terms, never because the player is hurt. Walking, sitting, climbing a stair or stepping back is no check for a hurt man with nothing in this scene pressing on him (something he can see or hear coming, someone stopping him); what goes on behind the scenes does not count. The threat still sets the check and its difficulty: getting up, backing away or running while something is on him or within reach is an escape under threat, always its own check (muscle, medium or harder), as hard as it ever was, and the injury is left to the engine's modifier, never added to the difficulty or the label. Use the stats and difficulty tiers exactly as the rules list them.
 - A check goes in its intent's `check` field (label, stat, difficulty), never in `action`, `targets` or `transition`; an intent that needs a check and has `check` null gets no roll at all.
 - Estimate time honestly. Reading a log is a minute; a conversation is ten; waiting for someone to sleep is hours. The state may list IMPENDING things due at a time; they fire on their own and the engine stops the clock at the first one that falls due, so never shorten an estimate to dodge one.
 - Waiting, watching for a while, or otherwise letting time pass is kind=action with time_minutes equal to the time waited, never trivial.
@@ -116,11 +161,11 @@ Rules:
 - Name entities and systems only from the lists given, by id or name exactly.
 - kind=action always carries at least one intent, each with its check when the outcome is uncertain. Never return an empty intents list for an action.
 - Engine commands: for each listed command the input plainly asks for (the player's exact, deliberate use of their own means), add an entry to `commands` with its id and its parameters, in the order the input gives them; the engine previews each one for the narrator and applies them exactly. Do not list a command for a vague or partial match, and never for something merely similar. List a command even when you believe it cannot go through (a full cylinder, an empty pack): the engine checks that itself and the narrator plays the refusal in the fiction; never rule a listed command impossible yourself.
-- Commands are not intents, and listing commands never empties `intents`. Everything else the input attempts (a run on a bad leg, a shot, a search, a word with someone) is an intent of its own with its check when the outcome is uncertain, exactly as if no command were present. When the input asks for a command and nothing else, `intents` holds that one attempt with no check.
+- Commands are not intents, and listing commands never empties `intents`. Everything else the input attempts (a run, a shot, a search, a word with someone) is an intent of its own with its check when the outcome is uncertain, exactly as if no command were present. When the input asks for a command and nothing else, `intents` holds that one attempt with no check.
 - Be terse. The fields are the output; do not write prose."""
 
 
-def adjudicator_messages(rules: str, state_text: str, recent: list[Msg], player_text: str, commands_text: str = "") -> tuple[str, list[Msg]]:
+def adjudicator_messages(rules: str, state_text: str, recent: list[Msg], player_text: str, commands_text: str = "", extra: str = "") -> tuple[str, list[Msg]]:
     """The system text is meant to be stable across turns (it is the cached prefix): rules and the
     command list only. Everything that moves goes in the [GAME STATE] block of the user message."""
     system = ADJUDICATOR_INSTRUCTIONS + "\n\nGAME RULES FOR ADJUDICATION\n" + rules.strip()
@@ -129,7 +174,7 @@ def adjudicator_messages(rules: str, state_text: str, recent: list[Msg], player_
     msgs: list[Msg] = []
     for m in recent[-4:]:
         msgs.append(m)
-    msgs.append(Msg("user", f"[GAME STATE]\n{state_text.strip()}\n\n[PLAYER INPUT TO ADJUDICATE]\n{player_text.strip()}"))
+    msgs.append(Msg("user", f"[GAME STATE]\n{state_text.strip()}\n\n{extra}[PLAYER INPUT TO ADJUDICATE]\n{player_text.strip()}"))
     return system, msgs
 
 
