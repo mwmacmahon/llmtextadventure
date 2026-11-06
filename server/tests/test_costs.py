@@ -161,3 +161,19 @@ def test_a_retry_is_the_same_label_or_the_same_target_and_stat():
     assert is_retry(hit, label="knock szabo down (muscle, high)", about="", stat="muscle")     # same label
     assert not is_retry({}, label="Knock Szabo down", about="szabo", stat="muscle")
     assert not is_retry(hit, label="", about="", stat="muscle")
+
+
+def test_the_station_rotates_its_light_costs():
+    """D127: a plain station failure has three light kinds, so the never-the-same-kind rule can rotate them."""
+    import random
+    from engine.assistant import choose_cost
+    cfg = load_config()
+    st_game = load_games(cfg.resolve(cfg.server.content_root))["station"]
+    _, st = st_game.new_instance({})
+    opts = st_game.cost_options(st, {"stat": "systems", "outcome": "failure"}, "", "")
+    recent: list[dict] = []
+    kinds = []
+    for seed in range(6):
+        c = choose_cost(opts, {"outcome": "failure"}, recent=recent, rng=random.Random(seed))
+        kinds.append(c["kind"]); recent.append(c)
+    assert len(set(kinds)) == 3 and "way_closed" not in kinds and all(a != b for a, b in zip(kinds, kinds[1:]))

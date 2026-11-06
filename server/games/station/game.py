@@ -1534,8 +1534,12 @@ class StationGame(GameBase):
         mishap: a failure is noticed, leaves a trace, or closes the way (the card round's electrical mishap on every
         failure was the narrator's own pick)."""
         from engine.assistant import WAY_CLOSED
+        # D127: with the way shut only on a retry (D122), a plain failure had one light cost, the trace, every time; two more
+        # the station's state can pay, so the costs rotate
         out: list[dict] = [dict(WAY_CLOSED),
-                           {"kind": "trace", "weight": 1, "fact": "It leaves a trace in the station's own logs: anyone who checks will find it."}]
+                           {"kind": "trace", "weight": 1, "fact": "It leaves a trace in the station's own logs: anyone who checks will find it."},
+                           {"kind": "fault", "weight": 1, "fact": "A fault flag goes up on the shared board: the crew can see that something went wrong, not what."},
+                           {"kind": "reset", "weight": 1, "fact": "The system drops into a reset and nothing more can be tried through it for the next twenty minutes."}]
         who = s.crew_by_id(target) if target else None
         if who is not None and who.health != "dead":
             out.append({"kind": "tell", "weight": 2, "detail": who.id,
