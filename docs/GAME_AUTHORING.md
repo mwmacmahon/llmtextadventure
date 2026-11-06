@@ -142,7 +142,7 @@ Optional, with defaults that do nothing:
 | `stats(state)` | the player's stat block, `name -> modifier`; empty means no checks |
 | `entity_ids`, `locations`, `system_names` | the vocabularies the adjudicator and referee must use exactly |
 | `narrator_flags(state)` | `name -> meaning`: flags the referee may set; triggers read them |
-| `adjudication_rules(state)` | what the player can do, stat meanings, difficulty guidance. **Stable across turns** (it is the cached prefix); moving state goes in `state_for_models` |
+| `adjudication_rules(state)` | what the player can do, stat meanings, difficulty guidance. **Stable across turns** (it is the cached prefix); moving state goes in `state_for_models`. Never put a condition in a difficulty example ("at a run on a bad leg"): the model learns the condition as the reason for a check and assesses every move of a hurt player; name the threat instead ("a run with something behind him") |
 | `referee_rules(state)` | ids, places, allowed values, what counts as a thread here. Stable across turns, same reason |
 | `state_for_models(state)` | compact state text for the structured roles (default: the bulletin; the station overrides it to keep the crew numbers the narrator no longer sees) |
 | `modifiers(state, req, target_entity)` | situational check modifiers |
@@ -153,6 +153,8 @@ Optional, with defaults that do nothing:
 | `commands(state)` / `run_command(state, id, args)` | commands, clicked or typed; engine or narrated mode (§7) |
 | `audit_probes(state)` | extra starting states for the authority audit (§3) |
 | `ending(state)` | a string when the game is over (the UI locks input) |
+| `cost_options(state, roll, label, target)` | what a failed roll may cost here: a list of `{kind, weight, fact, detail?}` the state can pay (a way shut, being noticed, a thing from the pockets, a wound). The engine picks one (`engine/assistant.py`: a plain failure a weight-1 cost, a huge or critical failure the heaviest that fits; never a kind among the last three costs, never a kind past its per-round cap; a second failure running always shuts the way) and hands the narrator the fact. Default: the way closes, or the attempt is noticed |
+| `leaked_terms(state, text, player_text)` | the words of the hidden truth the text uses in its own voice (outside quoted speech) before the player has learned them. In the narration it is a serious leak ruling (§8); in the adjudication, when the stakes dial shows the adjudicator the cast's secrets, the field is scrubbed before the narrator sees it (a label becomes its stat, a staked check loses its futures) |
 
 Declarations on the class: `clock`, `resolver`, `authority`, `events_path`, `spontaneous_path`,
 `recent_path`, `threads_path`, `log_path`, `skip_adjudication`, `skip_referee`, `fallback_stat`,

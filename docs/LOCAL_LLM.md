@@ -65,6 +65,8 @@ The GPU is shared both ways, as bruba's hub does for its services, without touch
   is `POST /free-comfy`; the game calls it before invoking the model (`TA_LLAMA_PREPARE_URL`, at
   most once a minute), so a server that slept into a GPU ComfyUI has since filled reloads into a
   free one.
+- **Waiting for the GPU.** At boot the CUDA device can come up after the unit; the script waits up to
+  `GPU_WAIT` seconds for it rather than starting on the CPU, then fails and lets systemd try again (L6).
 - **Giving it back.** `--sleep-idle-seconds` (`IDLE`, default 600): after ten minutes without a
   request the server drops the model from VRAM and keeps the port; the next request reloads it,
   about half a minute, and the roles' prompts are re-paid once. Set `IDLE=-1` to never sleep.
@@ -366,7 +368,11 @@ the narrator's window to it, so no role setting needs to change with the context
 Profiles now (`ls server/profiles`): the A3B family (`a3b-think`, D34; `a3b`; the Q5/Q6 variants), the Qwen3.5-27B
 (`qwen27b`, `-kv16`, `-auto`), `qwen3-32b`, the Qwen3.8 27B finetunes (`qwen38-27b`, `qwen38-27b-think`,
 `qwen38-27b-mtp` Huihui with MTP, `qwen38bf-27b-mtp` Blackfrost with MTP, and the `qwen38-27b-narr-*` /
-`-struct-*` sampler and thinking variants of the 11-01 ladder) and `gemma4-31b`. A new model is a new file: copy
+`-struct-*` sampler and thinking variants of the 11-01 ladder) and the Gemma 4 31B family. `gemma4-31b` is the
+working profile for every role (D101): the heretic-decensored Q5_K_M, thinking off (`think_budget: -1`; the model
+has no trained budget, so a forced close leaks its planning), the server's default sampler, `ctx: auto`. The
+`gemma4-31b-card*` variants (the model card's 1.0 / 0.95 / 64, `-minp`, `-think`, `-think-free`) were the D98
+ladder: no sampler moved the prose, thinking cost three times the turn time, so none is used. A new model is a new file: copy
 the GGUF to the box's model directory, write the profile, `use` it.
 
 Installing the box side once (the user's to run; it replaces the two files; the service restart loads them, a

@@ -29,6 +29,8 @@ server/
     context.py           narrator message window, slide points, summary planning; past rolls rendered in words
     roles.py             adjudicator / referee (ChangeReport rows) / summarizer schemas and prompts; NARRATOR_WORLD, NARRATOR_PROTOCOL
     narration.py         the narrator loop: stream, stop at a call, answer it, continue; a continuation's retold opening dropped
+    assistant.py         what a failed roll costs: the game's cost options, the recent-kinds rule, the way shut on a second failure running, the per-round caps
+    assistant_view.py    the adjudicator's extra view when the stakes dial is on (who is who, the case ahead, what the cast hide, made up in play), the branch text, the stall signals
     brackets.py          the narrator's channel: <<CHECK …>> calls, [[…]] notes, the StreamFilter, the § mark
     world.py             places, things and people as rows with ids; scene(), annotate(), apply_declarations()
     pending.py           timers set in motion in play (soon rows), fuses, what is due
@@ -137,6 +139,21 @@ ADJUDICATE   one structured call (Sonnet in config.yml; the box's model in confi
              no intents is sent back once with the gap named (`_call.retry = "no_intents"`)
              system prompt = instructions + game rules + command list, stable per instance (cached);
              the moving state is the [GAME STATE] block in the user message
+             with the narrator's `stakes` dial on (shadow or live) and `checks: called`, the schema is
+             `AdjudicationStaked`: each assessed check also carries both its futures (success_gain and
+             success_minutes, failure_outcome and failure_minutes, a complication kind and its fact), written
+             after the check's label and difficulty so a grammar-bound model names the check before its futures;
+             plus `pivotal` (the label the input turns on) and `fiat` (attempts that need no roll and are no
+             listed command, settled in the open). The STAKES rules join the cached system text; the user
+             message gains the assistant's view (who is who, the case ahead, what the cast hide, made up in
+             play; `assistant_view.stakes_blocks`). Off, the prompt is byte for byte what it was. Because the
+             view shows the adjudicator the cast's secrets, every field the narrator or the player can see is run
+             through the game's `leaked_terms` hook (`pipeline.scrub_hidden`): a label carrying an unearned
+             hidden word becomes its stat, a check whose futures carry one loses its stakes (called unstaked),
+             a fiat entry is dropped, the summary falls back to the player's words, the clarify question to a
+             plain one; and the engine's own words (bracketed ids, block and field names) are stripped from
+             the futures (`strip_engine_words`). The stakes are then matched to the assessments by label, else
+             by order; shadow logs them, live attaches them to the assessment the narrator's call will answer.
   ▼
 LEVERS       each named command is previewed in order through game.run_command on one working copy the
              turn does not keep (the second preview sees the first's effect): the narrator gets one THIS
@@ -145,7 +162,8 @@ LEVERS       each named command is previewed in order through game.run_command o
              referee reported a not_done row for; one § line each; mechanics.levers
   ▼
 RESOLVE      engine, deterministic
-             - checks: resolver(rng seeded by instance+turn, CheckRequest + game modifiers) → tier
+             - checks: assessed, not rolled: each becomes a THIS TURN line the narrator must call at its beat
+               (told mode rolls them here, same seed and order)
              - clock: advance by time_minutes, raised to ClockSpec.slow_minutes for a slow action (the
                adjudicator's tempo, D93), capped (ClockSpec.cap_minutes), stopped at the next
                scheduled event so it fires on time
@@ -167,7 +185,19 @@ NARRATE      streamed. system = frozen prefix (cached, 1h). messages = [story so
              block and the last assistant message. Checks either way, per narrator role
              (`checks`): called, the narrator stops at <<CHECK …>> and the result comes back as a
              user message; told, the engine rolls the assessed checks first (same seed and order)
-             and THIS TURN gives the results, for a model that writes outcomes before calling.
+             and THIS TURN gives the results, for a model that writes outcomes before calling. Both
+             configs run called; told is the fallback dial.
+             THE ROLL, at each call (narration.run_check): rng seeded by instance, turn and a salt; the
+             adjudicator's assessment is the floor (the harder of assessment and call); the game's
+             modifiers apply. The reply is one [ENGINE] line: the result in words, never the die for a
+             local narrator; with the stakes live, the branch the adjudicator wrote for that result
+             ("What it gains, as the engine holds it: …" or "What failure leaves standing …", with its
+             complication), the minutes of that branch, and on a failure the engine's cost. The cost
+             (engine/assistant.choose_cost) comes from the game's `cost_options` (kinds with weights and
+             a fact): a plain failure pays a weight-1 cost, a huge or critical failure the heaviest that
+             fits, never a kind among the last three costs, never a kind past its per-round cap (things:
+             two a round), and a second failure running shuts the way (way_closed) and adds the
+             fail-forward line. An unstaked check gets the words alone.
   ▼
 REFEREE      one structured call (Sonnet, or the box's model) against roles.ChangeReport, the same for every game
              (split: three passes over one cached prompt, player / world / timers and rulings, merged by changes.merge_parts)
@@ -204,6 +234,16 @@ move, no referee runs, and nothing is applied.
 | story so far | latest `system_note` before the window, as a user message + ack | moves at slide points |
 | window | the last 12–17 completed turns, player text + narration; the engine's § lines never in the narrator's voice: a called check replays as the exchange that happened (prose to the call, the call, the engine's answer as a user message, the rest), told rolls and lever results go in that turn's user message as `[ENGINE]` lines, a past roll in words without the die or the tier ("Hands, medium: it goes very well.", D91) | moves at slide points |
 | bulletin | only what moves: clock, meters (words for the narrator; the station keeps numbers for the structured roles), non-nominal systems, the station's things as they stand, entity condition, recent log, flags, threads, recent happenings, COMING (timers in motion), next scheduled event, THIS TURN block | never |
+
+**What the bulletin cuts.** The store is unbounded; the view is cut by fixed tails, not by judgment: noir
+lists only people Frank has met (their last four facts; heard-of people two), tells only for the people in
+the scene, the last eight notebook clues, six log lines, eight behind-the-scenes facts, twelve things
+elsewhere; the station lists all five crew with routine and last six facts, the last eight findings; both
+show the twelve newest open threads in full with older ones on one compact line and the last three settled.
+The station's SCENE is the one judgment-based cut: the adjudication's focus place and the camera feeds decide
+what is in view. The adjudication's focus is not otherwise used to cut the bulletin, and the frozen prefix
+(every cast member's hidden line and tells, the hidden truth, the spine) is never cut. The narrator can pull
+one record it lacks with a `<<LOOK name>>` call.
 
 **Window slide.** The window start moves in steps of `window_slide` (6) once more than
 `window_turns` (12) turns exist, so the cached message prefix is stable for six requests.
@@ -301,7 +341,8 @@ provider, model or role option, landed with `apply_changes`, and scored per role
 `notes/eval/runs/`. Scores against that answer only say how far a model agrees with it; each test set's answer
 key (`notes/eval/sets/<test set id>/key.yml`, judged by hand: required, allowed, forbidden and gray rows and checks per turn)
 says how far it is right, and `eval_replay.py grade` re-grades stored runs against it with no model
-calls.
+calls. `run --opt stakes=true` replays the adjudicator on its staked schema (the prompt a live turn with the
+stakes dial on sends); the key grades labels, stats and difficulties, not the futures.
 
 Every run records itself in full (`RUN_FORMAT` 2): the commit, the corpus and the key it used by content hash
 (copied once into `notes/eval/blobs/`), every model call (the prompts as blob ids, the raw reply, the reasoning,
@@ -331,10 +372,12 @@ Branch `1.0` preserves the first engine; `main` stays there until 2.0 is playabl
 - `engine/narration.py`: the narrator loop. Stream; on a call, stop, run it, show a mechanics line,
   send one more request (history + the prose so far + the result + "continue from where you stopped");
   at most `GameBase.max_calls` stops per turn. `run_check` rolls with the adjudicator's assessment as the
-  floor (the harder of assessment and call). A failure's answer says the attempt gives nothing and costs; when the
-  previous turns' rolls all failed too (`Engine._fail_streak`, read from their narrator rows) it says instead
-  "Failed twice now. Make it cost Frank one real thing ... end with a different opening in front of Frank."
-  (D93: a scene is never stalled by failed checks more than once in a row).
+  floor (the harder of assessment and call). A failure's answer carries the engine's cost (engine/assistant.py,
+  from the game's `cost_options`); when the previous turns' rolls all failed too (`Engine._fail_streak`, read
+  from their narrator rows) the way shuts and the answer adds "Failed twice now. Make it cost Frank one real
+  thing ... end with a different opening in front of Frank." (a scene is never stalled by failed checks more
+  than once in a row). With the narrator's stakes dial live, the answer leads with the branch the adjudicator
+  wrote for that result (§4, NARRATE).
 - One narration path for both games: resolve assesses checks instead of rolling them, THIS TURN lists the assessed checks as calls to make, the system prompt
   carries `roles.NARRATOR_WORLD` and `roles.NARRATOR_PROTOCOL`, the SSE stream has `mechanic` events, the
   transcript's narrator row is flat (prose plus `§` lines), and the ledger's narrator `model_call`
@@ -371,5 +414,11 @@ Branch `1.0` preserves the first engine; `main` stays there until 2.0 is playabl
   same narration path with `AdjudicationV2` and no world yet (its transitions stay empty).
 
 Since then: rulings and the guard (D77-D81), crew routines and the meters (D36, D73-D76), the call report (D59),
-subagent players and judges (D84), the player's-eye read and the round profile (D89-D91). Next: the cause of the
-Qwen3.8 chant on long rounds (D90: sampler, MTP, thinking budget, window), pacing (ISSUES R14), noir on the world.
+subagent players and judges (D84), the player's-eye read and the round profile (D89-D91), Gemma 4 31B on its base
+sampler as the one model for every role (D98, D101), the engine's cost on a failure and the timed nerves note
+(D103-D104), the stakes: designed (D103), probed (D108-D111; model-written beats failed the bar and stayed engine
+rules), in shadow (D113-D114), merged into the adjudicator's one call with the hidden-word guard (D115-D116),
+engine words stripped (D118), live on noir (D119). Next: the cost table's monotony (A15: the way-shut rule on a
+retry only, a cap on the noise cost, a cost for a failed conversation), the ending that never fires (END1), the
+time rules of notes/DESIGN-time-and-attempts-2026-11-06.md §3, the narrator's view cut by the adjudication's
+focus (§5 above), noir on the world.

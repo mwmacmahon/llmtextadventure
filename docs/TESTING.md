@@ -154,7 +154,7 @@ that answered, so the slip shows in the name.
 `run` takes a test set id (or a path to its folder), names the run, grades it against the set's key, and writes
 everything: the commit and whether the tree had uncommitted changes, the test set and the key as they were (by content
 hash, into `blobs/`), every model call (the prompt, the raw reply, the reasoning, any error), every row, what the engine
-applied and refused. `--opt key=value` overrides one role setting and goes into the run's note; `--note` adds words to the
+applied and refused. `--opt key=value` overrides one role setting and goes into the run's note (`--opt stakes=true` replays the adjudicator on its staked schema, the prompt a live turn with the narrator's stakes dial on sends; the key grades labels, stats and difficulties, not the futures, so a staked run's score says nothing about the stakes' quality: that is what the shadow and live rounds' reads are for, INDEX §3); `--note` adds words to the
 run id. Then rebuild and republish the reports:
 
 ```
