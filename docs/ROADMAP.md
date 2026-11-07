@@ -80,10 +80,14 @@ Inside 1e as well, the station's half of the same rule (the owner, 2026-11-07; t
 model**. The AI's visual and control elements (cameras, doors, power, comms, drones, the auto-doc) sit behind a hacking
 progress bar, with the GUI to match; "work on the cameras" is a lever that spends a block of time (two hours unless an
 event interrupts it, the fraction credited, D58's stop), progress at a fixed rate modified by visible state, dice only
-for detection against the alarm, the narrator handed a montage turn. To decide in the station's design before code:
-which systems are projects, with rate and block; a fixed block per project (recommended) or chosen; one project at a
-time to start; what modifies the rate; detection as one roll per block. The gating of panels and controls behind
-progress is the station's design change; the block and the interrupt are the time rules.
+for detection against the alarm, the narrator handed a montage turn. Decided (the owner, 2026-11-07): every system is a
+project with its own rate and block, harder modules slower (cameras and microphones are the easiest, four hours each at
+default speed, two blocks of two; the crew implants' nudge the hardest); one project at a time, with parallel hacking
+left as a future unlockable in a self-upgrade system (ISSUES B19); events fired by crew suspicion such as "hardened
+security" halve the hacking speed; detection is one roll per block at a very low chance by default (cameras and
+microphones 2% a block), higher once security has been updated. Open: a fixed block per project or one the player
+chooses. The gating of panels and controls behind progress is the station's design change; the block and the
+interrupt are the time rules. The record is the time doc §4, "Decided".
 
 ## Stage 2. Parity
 
