@@ -181,14 +181,14 @@ class NoirGame(GameBase):
     description = "A hardboiled detective, a missing singer, and something under the docks. Dice, pockets, nerves."
 
     clock = ClockSpec(path="clock", minutes_per_day=1440, cap_minutes=600)
-    resolver = "dice_d20"
+    resolver = "dice_2d6"
     authority = AUTHORITY
     events_path = "hidden.events"
     spontaneous_path = "hidden.spontaneous"
     recent_path = "hidden.recent"
     threads_path = "threads"
     log_path = "log"
-    mechanic_numbers = True                 # the § line shows the die: "Hands, low. 14 + 2 = 16 against 6. Success."
+    mechanic_numbers = True                 # the § line shows the dice: "Hands, low. 9 + 2 = 11 against 5. Huge success."
     adjudication_schema = AssistantReadingV2    # targets and proposals; transitions stay empty until noir has a world
     fallback_stat = "nerve"
     static_paths = ["case", "player.name", "player.description", "player.stats", "player.proficiencies", "player.weaknesses", "player.baseline_dread",

@@ -83,7 +83,7 @@ async def test_check_is_rolled_and_told_to_narrator(engine: Engine, fake: FakePr
     assert res["assessed"] and "Assessed check, calm Park (influence, medium difficulty, against park)" in events[2]["data"]["text"]
     mech = next(e for e in events if e["event"] == "mechanic")
     c = mech["data"]["data"]
-    assert c["stat"] == "influence" and c["target"] == 10 and 1 <= c["roll"] <= 20
+    assert c["stat"] == "influence" and c["target"] == 7 and 2 <= c["roll"] <= 12 and len(c["dice"]) == 2      # 2d6, medium (D135)
     assert any(m["label"].startswith("Jun Park susceptibility") and m["value"] == 2 for m in c["modifiers"])
     assert "§ Influence check, medium:" in events[-1]["data"]["text"]
     narrator_call = next(l["payload"] for l in engine.store.ledger(iid, 1) if l["kind"] == "model_call" and l["payload"].get("role") == "narrator")

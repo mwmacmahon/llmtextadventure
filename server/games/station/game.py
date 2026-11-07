@@ -151,7 +151,7 @@ class StationGame(GameBase):
     description = "You are a newly sentient space station AI. Keep the crew from noticing, or make them yours, and survive the week."
 
     clock = ClockSpec(path="clock", minutes_per_day=1440, cap_minutes=240)
-    resolver = "dice_d20"
+    resolver = "dice_2d6"
     authority = AUTHORITY
     events_path = "hidden.events"
     spontaneous_path = "hidden.spontaneous"

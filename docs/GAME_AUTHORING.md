@@ -156,7 +156,7 @@ Optional, with defaults that do nothing:
 | `cost_options(state, roll, label, target)` | what a failed roll may cost here: a list of `{kind, weight, fact, detail?}` the state can pay (a way shut, being noticed, a thing from the pockets, a wound). The engine picks one (`engine/assistant.py`: a plain failure a weight-1 cost, a huge or critical failure the heaviest that fits; never a kind among the last three costs, never a kind past its per-round cap; a second failure running always shuts the way) and hands the narrator the fact. Default: the way closes, or the attempt is noticed |
 | `leaked_terms(state, text, player_text)` | the words of the hidden truth the text uses in its own voice (outside quoted speech) before the player has learned them. In the narration it is a serious leak ruling (§8); in the adjudication, when the stakes dial shows the assistant the cast's secrets, the field is scrubbed before the narrator sees it (a label becomes its stat, a staked check loses its futures) |
 
-Declarations on the class: `clock`, `resolver`, `authority`, `events_path`, `spontaneous_path`,
+Declarations on the class: `clock`, `resolver` (a key in `mechanics.RESOLVERS`; both games name `dice_2d6`), `authority`, `events_path`, `spontaneous_path`,
 `recent_path`, `threads_path`, `log_path`, `skip_adjudication`, `skip_referee`, `fallback_stat`,
 `static_paths` (engine-owned fields the audit should not expect a writer for), `player_name(state)` (the name the
 engine's lines call the player: Frank, the station) and

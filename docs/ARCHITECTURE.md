@@ -42,7 +42,7 @@ server/
     changes.py           lands the referee's rows: engine kinds here, game kinds through apply_change, world kinds through the world
     game.py              Game protocol, GameBase hooks, UI widget vocabulary, commands
     statepath.py         dotted paths into state; field authority
-    mechanics.py         checks and resolvers (d20, threshold, weighted), seeded RNG
+    mechanics.py         checks and resolvers (2d6, d20, threshold, weighted), seeded RNG
     events.py            scripted events: predicates, effects, fallbacks, expiry, tick
     spontaneous.py       unscripted happenings with chance per in-game hour
     threads.py           the story's record of commitments
@@ -271,8 +271,18 @@ lies and who believes them, beats in order.
 ## 6. Mechanics
 
 - **Checks.** `CheckRequest(stat, difficulty, base, modifiers)` → resolver → `CheckResult` with
-  an outcome tier (`critical_failure … critical_success`). `dice_d20`: roll + base + modifiers vs a
-  target per difficulty tier; margins of ±8 are huge. `threshold` takes 10. `weighted` rolls once
+  an outcome tier (`critical_failure … critical_success`). Both games use `dice_2d6`: 2d6 + the stat +
+  modifiers against a target per tier, with penalties summed to no worse than -3 and bonuses to no better
+  than +5 (a cap that bites is listed among the modifiers); the result keeps both faces.
+
+  | tier | very low | low | medium | high | very high |
+  |---|---|---|---|---|---|
+  | target | 3 | 5 | 7 | 9 | 11 |
+  | odds at a stat of +1 | 97% | 92% | 72% | 42% | 17% |
+
+  Double ones are a critical failure and double sixes a critical success whatever the sum; otherwise a
+  miss by three or more is a huge failure and a make by three or more a huge success. `dice_d20` (the
+  old table, margins of ±8 huge) stays for a game that names it. `threshold` takes 10. `weighted` rolls once
   against a probability. The RNG is seeded by instance id, turn and a salt, so a replayed turn
   rolls the same.
 - **Clock.** `{day, minute}` at a game-declared path; `slow_minutes` the least a slow action costs (D93),

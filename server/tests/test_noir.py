@@ -265,7 +265,7 @@ async def test_typed_turn_narrator_sees_roll_and_referee_updates_pockets(engine:
     assert "Assessed check, shoot the creature (hands, low difficulty): when the fiction reaches this attempt, write <<CHECK hands low>>" in bulletin and "Rolled" not in bulletin
     mech = events[-1]["data"]["mechanics"]
     assert mech["calls"][0]["outcome"] is not None and mech["elapsed"] == 1
-    assert "§ Hands, low." in events[-1]["data"]["text"] and "against 6." in events[-1]["data"]["text"]       # noir's § line shows the die
+    assert "§ Hands, low." in events[-1]["data"]["text"] and "against 5." in events[-1]["data"]["text"]       # noir's § line shows the dice (2d6, low: D135)
     st = state_of(engine, iid)
     assert st.item("revolver").loaded == 3 and st.player.dread == 45
     assert "inventory.revolver.loaded: 6 -> 3" in mech["applied"]

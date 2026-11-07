@@ -16,13 +16,13 @@ reports, scripts), and published pages (claude.ai artifacts, private to the owne
 
 | Page | Generator | Last regenerated | State |
 |---|---|---|---|
-| [Lowtown: Game Design](https://claude.ai/artifact/XBrdicwZAnn1SmGAtyu4xc) (noir) | `notes/design/tools/gen_noir_page.py` | 2026-11-07 | current: the D128 build on the capture instance, turn 20; the field tables fixed (each field its own comment); no D-numbers |
-| [Station AI: Game Design](https://claude.ai/artifact/NPpFFzmeqjX35pJGqtWVeg) | `gen_station_page.py` | 2026-11-07 | current: the D128 build (the station's costs rotate); the state shown is the shadow round 2004e52394dc, turn 39; no D-numbers |
-| [Before the Prose](https://claude.ai/artifact/DdYxv5pvKFXsHyWYQZBbj4) (how a turn runs, part one; was Turn Anatomy) | `capture.py` then `gen_flow_page.py` | 2026-11-07 | current: the capture instance's turn 20 with the stakes live (a staked check, its branch reply and the cost); model labels from the ledger; no history |
+| [Lowtown: Game Design](https://claude.ai/artifact/XBrdicwZAnn1SmGAtyu4xc) (noir) | `notes/design/tools/gen_noir_page.py` | 2026-11-07 | current: the D135 build (checks as 2d6) on the capture instance, turn 21; the field tables fixed (each field its own comment); no D-numbers |
+| [Station AI: Game Design](https://claude.ai/artifact/NPpFFzmeqjX35pJGqtWVeg) | `gen_station_page.py` | 2026-11-07 | current: the D135 build (2d6 plus a capability; the station's costs rotate); the state shown is the shadow round 2004e52394dc, turn 39; no D-numbers |
+| [Before the Prose](https://claude.ai/artifact/DdYxv5pvKFXsHyWYQZBbj4) (how a turn runs, part one; was Turn Anatomy) | `capture.py` then `gen_flow_page.py` | 2026-11-07 | current: the capture instance's turn 21, rolled on 2d6 with the stakes live (a staked check, the penalty cap, its branch reply and the cost); model labels from the ledger; no history |
 | [After the Prose](https://claude.ai/artifact/4dZUcbzdD6TbNa2w73ehKv) (how a turn runs, part two) | `gen_flow_page.py` | 2026-11-07 | current: the referee, apply, the player's ruling, on the same turn |
 | [The Assistant](https://claude.ai/artifact/VsUermEwjvrRZyEqB1vXN3) | `gen_assistant_page.py` | 2026-11-07 | current: who decides what, the stakes rules and a staked check, the cost tables per kind of roll, the guard, the stall marks, the dials |
-| [The Structured World](https://claude.ai/artifact/5sBEXtLDqb2Rf6xkUd63aY) (the world rows) | `gen_world_page.py` | 2026-11-07 | current: the D128 build; a section on what a failure costs; no history |
-| [What the Models See](https://claude.ai/artifact/SPJqDK5jGLyYLxjikcWTNk) (a captured turn) | `capture.py` then `gen_data_page.py` | 2026-11-07 | current: the same staked turn, models from the ledger, the schema used |
+| [The Structured World](https://claude.ai/artifact/5sBEXtLDqb2Rf6xkUd63aY) (the world rows) | `gen_world_page.py` | 2026-11-07 | current: the D135 build; a section on what a failure costs; no history |
+| [What the Models See](https://claude.ai/artifact/SPJqDK5jGLyYLxjikcWTNk) (a captured turn) | `capture.py` then `gen_data_page.py` | 2026-11-07 | current: the same staked turn (2d6), models from the ledger, the schema used |
 
 Regenerate: `cd notes/design/tools && ../../../server/.venv/bin/python gen_<page>_page.py`, then publish the HTML in
 `notes/design/` to the page's URL (the Artifact tool, `url=`). `capture.py` reads the latest rolled turn of the capture instance "one-referee check noir (fork)" (5d2c8f539dbf) into `notes/design/capture.json`; play one turn on it first (the local model, free). The pages describe the build the rounds run: capture on the all-Gemma config with the stakes dial live (`api-local-gemma-live`) and a turn with at least one called check, and have the generators read model names from the ledger, never from a fixed label.
@@ -102,7 +102,7 @@ Every playtest also has a transcript `notes/playtests/<date>-<game>-<tag>.md` an
 | `TESTING.md` | 2026-11-06 | current: sets, keys, runs, the narrator's measure, settling a setting (D67/D71), the player's-eye read (D89), the long-round runbook (D99); the staked replay option and what the key does not grade |
 | `LOCAL_LLM.md` | 2026-11-06 | the `extra` flags and MTP profiles, the GPU wait, the Gemma working profile and the D98 ladder are in; **behind**: the next-model section is the 10-29 candidate list |
 | `GAME_AUTHORING.md` | 2026-11-06 | the D77 writer rules, the `cost_options` and `leaked_terms` hooks and the condition-in-examples lesson (A10) are in; **behind**: nerves on the clock, `eldritch:` and `sanity` (D75/D76), the `advance` effect, the nerves notes |
-| `ARCHITECTURE.md` | 2026-11-06 | the guard paragraph, the staked adjudication and its guard, the roll's reply (branch and cost), what the bulletin cuts, the 2.0 summary to D119 are in; **behind**: the tape (D59) beyond its ledger row, thinking per role (D66) |
+| `ARCHITECTURE.md` | 2026-11-07 | the 2d6 check table and caps (§6, D135); the guard paragraph, the staked adjudication and its guard, the roll's reply (branch and cost), what the bulletin cuts, the 2.0 summary to D119 are in; **behind**: the tape (D59) beyond its ledger row, thinking per role (D66) |
 | `WRITING_FOR_MODELS.md` | 2026-11-04 | the style guide for every line a model is handed and for scenario text: dos, don'ts with the day's befores, a checklist; the spec for the plain-language pass (ISSUES W1) |
 | `INDEX.md` | this file | |
 

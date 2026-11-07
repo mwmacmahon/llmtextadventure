@@ -105,3 +105,61 @@ def test_conditional_ending_event_has_priority():
 def test_bad_predicate_raises():
     with pytest.raises(ValueError):
         tick([Event(id="x", trigger={"bogus": 1})], {"clock": {"day": 1, "minute": 0}}, 1)
+
+
+# ---- 2d6 (ROADMAP 1a, D135) ----------------------------------------------------
+from engine.mechanics import BONUS_CAP, PENALTY_CAP, TARGET_2D6, capped, dice_2d6  # noqa: E402
+
+
+class _Fixed:
+    """An rng that deals the given faces in order."""
+    def __init__(self, *faces: int):
+        self.faces = list(faces)
+
+    def randint(self, a: int, b: int) -> int:
+        return self.faces.pop(0)
+
+
+def _req(difficulty="medium", base=0, *mods):
+    return CheckRequest(id="c", label="l", stat="s", difficulty=difficulty, base=base,
+                        modifiers=[Modifier(label=f"m{i}", value=v) for i, v in enumerate(mods)])
+
+
+def test_2d6_targets_rise_with_the_tier():
+    assert [TARGET_2D6[t] for t in ("very_low", "low", "medium", "high", "very_high")] == [3, 5, 7, 9, 11]
+
+
+def test_2d6_is_seeded_and_keeps_the_faces():
+    a = dice_2d6(rng_for("inst", 3), _req(base=1))
+    assert a == dice_2d6(rng_for("inst", 3), _req(base=1))
+    assert len(a.dice) == 2 and a.roll == sum(a.dice) and a.total == a.roll + 1 and a.resolver == "dice_2d6"
+
+
+def test_2d6_tiers():
+    assert dice_2d6(_Fixed(4, 3), _req("medium")).outcome == "success"           # 7 against 7
+    assert dice_2d6(_Fixed(3, 3), _req("medium")).outcome == "failure"           # miss by one
+    assert dice_2d6(_Fixed(3, 2), _req("medium")).outcome == "failure"           # miss by two
+    assert dice_2d6(_Fixed(2, 2), _req("medium")).outcome == "huge_failure"      # miss by three
+    assert dice_2d6(_Fixed(5, 5), _req("medium")).outcome == "huge_success"      # make by three
+    assert dice_2d6(_Fixed(5, 4), _req("medium")).outcome == "success"           # make by two
+
+
+def test_2d6_doubles_override_the_sum():
+    r = dice_2d6(_Fixed(1, 1), _req("very_low", 3, 2))                          # 2 + 5 = 7 against 3, still a critical failure
+    assert r.margin > 0 and r.outcome == "critical_failure"
+    r = dice_2d6(_Fixed(6, 6), _req("very_high", -1, -2))                        # 12 - 3 = 9 against 11, still a critical success
+    assert r.margin < 0 and r.outcome == "critical_success"
+
+
+def test_2d6_caps_are_asymmetric_and_shown():
+    total, mods = capped(_req("medium", -1, -2, -3, -2))                         # the noir death spiral: -8
+    assert total == PENALTY_CAP == -3
+    assert mods[-1].label.startswith("penalties capped") and mods[-1].value == 5
+    total, mods = capped(_req("medium", 3, 2, 2))                                # +7
+    assert total == BONUS_CAP == 5 and mods[-1].value == -2
+    total, mods = capped(_req("medium", 3, 2, -6))                               # +5 and -6: each side capped on its own
+    assert total == 5 + PENALTY_CAP and len(mods) == 3
+    total, mods = capped(_req("medium", 1, -1))                                  # nothing bites: no extra line
+    assert total == 0 and len(mods) == 1
+    r = dice_2d6(_Fixed(3, 4), _req("medium", -1, -4, -4))
+    assert r.total == 7 - 3 and r.total - r.roll == -3 and sum(m.value for m in r.modifiers) == -2   # the stat is the rest
