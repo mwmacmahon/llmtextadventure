@@ -1135,6 +1135,7 @@ class Engine:
         cost_rng = rng_for(iid, turn, "costs")
 
         def cost_for(roll: dict, label: str, target: str) -> dict | None:
+            target = target or roll.get("about") or ""     # D131: the check's own target is often empty; the intent's is who it was aimed at
             options = _hook(game, "cost_options", state, roll, label, target, default=None)
             if options is None:
                 options = default_cost_options(state, roll, label, target)

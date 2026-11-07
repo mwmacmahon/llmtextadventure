@@ -1541,12 +1541,21 @@ class StationGame(GameBase):
                            {"kind": "fault", "weight": 1, "fact": "A fault flag goes up on the shared board: the crew can see that something went wrong, not what."},
                            {"kind": "reset", "weight": 1, "fact": "The system drops into a reset and nothing more can be tried through it for the next twenty minutes."}]
         who = s.crew_by_id(target) if target else None
+        if who is None and target:                           # a name or a word for them, as the assistant wrote it
+            t = target.lower()
+            who = next((c for c in s.crew if t in (c.id.lower(), c.name.lower()) or t in c.name.lower().split()), None)
+        if roll.get("stat") == "influence":
+            # a failed word costs the conversation, never a machine fault (D131: eight failed influence rolls in a live round
+            # paid a fault flag or a reset, because the target never reached this table)
+            out = [o for o in out if o["kind"] not in ("fault", "reset")]
+            if who is not None and who.health != "dead":
+                out.append({"kind": "talk", "weight": 1, "detail": who.id,
+                            "fact": f"{who.name} is done listening to the station on this for now: the next try on them starts from worse."})
+            else:
+                out.append({"kind": "talk", "weight": 1, "fact": "The words land wrong: whoever the station was working on closes up on this for now."})
         if who is not None and who.health != "dead":
             out.append({"kind": "tell", "weight": 2, "detail": who.id,
                         "fact": f"{who.name} notices what was tried, and it stays with them."})
-            if roll.get("stat") == "influence":                 # a failed word costs the conversation (A15, D122)
-                out.append({"kind": "talk", "weight": 1, "detail": who.id,
-                            "fact": f"{who.name} is done listening to the station on this for now: the next try on them starts from worse."})
         return out
 
     def turn_directives(self, s: StationState) -> list[str]:

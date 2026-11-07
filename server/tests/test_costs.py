@@ -196,3 +196,17 @@ def test_a_capped_round_never_falls_back_to_the_capped_kinds():
     paid2 = [{"kind": "noise"}] * 3 + [{"kind": "thing", "detail": "y"}] * 2
     for seed in range(10):
         assert choose_cost(only, {"outcome": "failure"}, recent=[], rng=random.Random(seed), round_costs=paid2)["kind"] == "thing"   # the least paid
+
+
+def test_a_failed_word_on_the_station_costs_the_conversation_not_a_fault():
+    """D131: influence failures paid fault flags and resets; now the talk cost, and the target found by name too."""
+    cfg = load_config()
+    st_game = load_games(cfg.resolve(cfg.server.content_root))["station"]
+    _, st = st_game.new_instance({})
+    c = st.crew[0]
+    for target in (c.id, c.name, c.name.split()[-1]):
+        kinds = {o["kind"]: o for o in st_game.cost_options(st, {"stat": "influence", "outcome": "failure"}, "", target)}
+        assert "talk" in kinds and kinds["talk"].get("detail") == c.id and "fault" not in kinds and "reset" not in kinds
+    kinds = [o["kind"] for o in st_game.cost_options(st, {"stat": "influence", "outcome": "failure"}, "", "")]
+    assert "talk" in kinds and "fault" not in kinds
+    assert "fault" in [o["kind"] for o in st_game.cost_options(st, {"stat": "systems", "outcome": "failure"}, "", "")]
