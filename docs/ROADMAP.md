@@ -85,8 +85,8 @@ project with its own rate and block, harder modules slower (cameras and micropho
 default speed, two blocks of two; the crew implants' nudge the hardest); one project at a time, with parallel hacking
 left as a future unlockable in a self-upgrade system (ISSUES B19); events fired by crew suspicion such as "hardened
 security" halve the hacking speed; detection is one roll per block at a very low chance by default (cameras and
-microphones 2% a block), higher once security has been updated. Open: a fixed block per project or one the player
-chooses. The gating of panels and controls behind progress is the station's design change; the block and the
+microphones 2% a block), higher once security has been updated. The block is fixed per project by default and the
+player may name a shorter limit on the lever, never a longer one; an event interrupts either way. The gating of panels and controls behind progress is the station's design change; the block and the
 interrupt are the time rules. The record is the time doc §4, "Decided".
 
 ## Stage 2. Parity
