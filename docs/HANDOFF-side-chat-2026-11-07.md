@@ -25,7 +25,7 @@ Branch `fable/roadmap` (off `origin/2.0` at 1109d12), to be merged by the build 
   per-kind table map, the small faults, the time rules); Stage 2 the parity gate; then profiles and the picker, the
   context modules, players beyond us, other models.
 - `docs/INDEX.md` links the roadmap at the top.
-- `docs/BACKLOG-2026-11-07.md`, if present: every deferred item swept from the transcripts and notes extracts, with
+- `docs/BACKLOG-2026-11-07.md`: every deferred item still open or parked swept from the transcripts and notes extracts, with
   sources, to be reconciled against `notes/ISSUES.md` (see "Open threads").
 
 Earlier, merged into `2.0` already (branch `fable/docs-pass`): the documentation pass of 2026-11-06 (ARCHITECTURE,
