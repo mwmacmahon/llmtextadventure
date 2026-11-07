@@ -48,20 +48,22 @@ a table by outcome tier in config, one row each for failure, huge failure and cr
 consequence. Slight: a complication, handed to the narrator as a fact. Major: the complication plus one lasting mark
 the state can pay (a wound, a trace in the logs, something left behind), the only tier the referee has to record.
 
-Where the complication comes from is a module with levels, like the context modules, chosen per profile:
+Where the complication comes from is decided per kind of check, by the game's author, in the game's cost hook: a map
+from a check kind (the stat, or the author's own classes such as "a system edit" or "a fight") to either a table of
+rows, as today, or `stake`. Some failures should have a table: a failed edit of a ship's system draws a trace in the
+logs, a fault flag the crew can see, a reset, which are the systems' consequences and not the scene's; a noir fight
+can draw a wound. Others take the assistant's own complication from the stake, with the game's general table as the
+fallback when the stake carries none (the assistant wrote "none", or the guard dropped it). A profile can override
+the map for a weak model: `table` for every kind, or `off` (the roll alone; a failure is only its failure outcome).
 
-- `stake`: the assistant's own complication from the stake; the game's table only when the stake has none.
-- `table`: the engine picks from the game's cost table, as today. For a model whose stakes are weak.
-- `off`: the roll alone; a failure is only its failure outcome.
-
-At every level the game's table is also shown to the assistant in its stakes rules as "what this world can charge"
+Whatever the map says, the game's tables are also shown to the assistant in its stakes rules as "what this world can charge"
 (a trace in the station's logs, a fault flag the crew can see), so the assistant picks from the author's ideas as well
 as its own. The tables stay game content and get a pass: the station's hold up; noir's (a thing falling out of a
 pocket, noise) are to be rewritten as noir consequences (something left behind at the scene that can be found, a
 witness, the law taking an interest, a lead going cold, a wound). "Time" and "talk" fold into the time rules and the
 attitude field. The one engine rule kept outside the roll is "the way shuts on a retry of the same failed attempt"
 (D93, D122, D125), because it is pacing, not flavor. The roll is seeded per turn like the costs were, and the ledger
-records it and the source. Expected on the stored rounds at the `stake` level: about four slight complications and
+records it and the source. Expected on the stored rounds with most kinds on `stake`: about four slight complications and
 one major a round, against eighteen costs.
 
 **1d. The small faults from the reads.** Health stepping wounded to hurt to wounded at noir turns 33 and 34 (which
