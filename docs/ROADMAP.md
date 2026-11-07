@@ -76,6 +76,15 @@ minutes split at the roll and moved at call time; the floors and the trigger cei
 note; the noir table of defaults by task kind; the "until when" question for waiting and sleeping; the scene-length
 mark. The stakes already carry minutes per branch and only log them; (i) is where they start to move the clock.
 
+Inside 1e as well, the station's half of the same rule (the owner, 2026-11-07; the time doc §4): **the station's control
+model**. The AI's visual and control elements (cameras, doors, power, comms, drones, the auto-doc) sit behind a hacking
+progress bar, with the GUI to match; "work on the cameras" is a lever that spends a block of time (two hours unless an
+event interrupts it, the fraction credited, D58's stop), progress at a fixed rate modified by visible state, dice only
+for detection against the alarm, the narrator handed a montage turn. To decide in the station's design before code:
+which systems are projects, with rate and block; a fixed block per project (recommended) or chosen; one project at a
+time to start; what modifies the rate; detection as one roll per block. The gating of panels and controls behind
+progress is the station's design change; the block and the interrupt are the time rules.
+
 ## Stage 2. Parity
 
 Two or three noir rounds and one or two station rounds on the Stage 1 build, read against the D98 base rounds (the
