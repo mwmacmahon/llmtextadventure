@@ -7,6 +7,7 @@ Published as a page: [Project Index](https://claude.ai/artifact/CivViGMFsdW3qGvx
 `python3 notes/scripts/md2page.py docs/INDEX.md <out.html> notes/scripts/index-head.html`, then publish `<out.html>` to that URL.
 
 The order of work is `docs/ROADMAP.md` (published: [Roadmap](https://claude.ai/artifact/7n8jqWaQmb47y1SKRA7zRQ)); §7 below is the detail behind its stages.
+The position against that order, dated: `docs/STATE-2026-11-07.md` (what is live, what the rounds said, the register by area, what waits on the owner). The swept backlog, reconciled against ISSUES: `docs/BACKLOG-2026-11-07.md`.
 
 Three kinds of place: the repo (`docs/`, `server/`), the gitignored `notes/` (decisions, issues, content, results,
 reports, scripts), and published pages (claude.ai artifacts, private to the owner).
