@@ -6,6 +6,8 @@ the top is the last time someone checked it against the tree. **Checked: 2026-11
 Published as a page: [Project Index](https://claude.ai/artifact/CivViGMFsdW3qGvxFdejBr). Republish after editing this file:
 `python3 notes/scripts/md2page.py docs/INDEX.md <out.html> notes/scripts/index-head.html`, then publish `<out.html>` to that URL.
 
+The order of work is `docs/ROADMAP.md` (published: [Roadmap](https://claude.ai/artifact/7n8jqWaQmb47y1SKRA7zRQ)); §7 below is the detail behind its stages.
+
 Three kinds of place: the repo (`docs/`, `server/`), the gitignored `notes/` (decisions, issues, content, results,
 reports, scripts), and published pages (claude.ai artifacts, private to the owner).
 
