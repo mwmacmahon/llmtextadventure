@@ -41,15 +41,27 @@ stack; this caps the rest. This closes the noir death spiral, where five wound c
 **1b. The dice on the page (ISSUES R17).** The mechanics row shows the two faces (U+2680 to U+2685) with the modifier
 and the target: "⚂ ⚄ +1 = 9 against 7". Check the font on the phone. Hidden rolls stay hidden.
 
-**1c. The consequence roll replaces the cost table.** A failed check no longer draws a cost from the game's table.
-The engine makes a hidden second roll: does something else go wrong, and how badly. The chances are a table by
-outcome tier in config, one row each for failure, huge failure and critical failure, starting at 20/5, 35/12 and
-50/20 percent for slight and major. Slight: the stake's own complication fires, handed to the narrator as a fact.
-Major: the complication plus one lasting mark the state can pay (a wound, a thing lost, a trace in the logs), the
-only tier the referee has to record. Nothing: the stake's failure outcome stands and that is the whole consequence.
-The one engine rule kept outside the roll is "the way shuts on a retry of the same failed attempt" (D93, D122, D125),
-because it is pacing, not flavor. The kinds noise, time, talk, fault and reset retire. The roll is seeded per turn
-like the costs were, and the ledger records it. Expected on the stored rounds: about four slight complications and
+**1c. The consequence roll, with the cost table as a module.** A failed check no longer draws a cost from the game's
+table every time. The engine makes a hidden second roll: does something else go wrong, and how badly. The chances are
+a table by outcome tier in config, one row each for failure, huge failure and critical failure, starting at 20/5,
+35/12 and 50/20 percent for slight and major. Nothing: the stake's failure outcome stands and that is the whole
+consequence. Slight: a complication, handed to the narrator as a fact. Major: the complication plus one lasting mark
+the state can pay (a wound, a trace in the logs, something left behind), the only tier the referee has to record.
+
+Where the complication comes from is a module with levels, like the context modules, chosen per profile:
+
+- `stake`: the assistant's own complication from the stake; the game's table only when the stake has none.
+- `table`: the engine picks from the game's cost table, as today. For a model whose stakes are weak.
+- `off`: the roll alone; a failure is only its failure outcome.
+
+At every level the game's table is also shown to the assistant in its stakes rules as "what this world can charge"
+(a trace in the station's logs, a fault flag the crew can see), so the assistant picks from the author's ideas as well
+as its own. The tables stay game content and get a pass: the station's hold up; noir's (a thing falling out of a
+pocket, noise) are to be rewritten as noir consequences (something left behind at the scene that can be found, a
+witness, the law taking an interest, a lead going cold, a wound). "Time" and "talk" fold into the time rules and the
+attitude field. The one engine rule kept outside the roll is "the way shuts on a retry of the same failed attempt"
+(D93, D122, D125), because it is pacing, not flavor. The roll is seeded per turn like the costs were, and the ledger
+records it and the source. Expected on the stored rounds at the `stake` level: about four slight complications and
 one major a round, against eighteen costs.
 
 **1d. The small faults from the reads.** Health stepping wounded to hurt to wounded at noir turns 33 and 34 (which
