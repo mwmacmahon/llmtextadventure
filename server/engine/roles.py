@@ -22,8 +22,12 @@ Kind = Literal["action", "trivial", "clarify", "impossible"]
 class CheckProposal(BaseModel):
     label: str = Field(description="What is being attempted, in a few words.")
     stat: str = Field(description="One of the player's stats, exactly as listed in the rules.")
-    difficulty: Tier = Field(description="How hard this is for a capable player: very_low, low, medium, high, very_high.")
+    difficulty: Tier = Field(description="How hard this is for anyone: very_low, low, medium, high, very_high. It never carries what this player brought; that is the edge.")
     target_entity: str | None = Field(default=None, description="Entity id this check is against, if any.")
+    # B207, B211 (D179): what the player's words bring to the attempt, as a number and in their own terms
+    edge: int = Field(default=0, description="What the player's own words and things bring to this attempt, as a number (see EDGE in the rules); 0 when nothing.")
+    edge_why: str = Field(default="", description="The edge in a few words, in the player's own terms (\"the rope and the climbing irons\", \"a bluff with nothing behind it\"); empty when the edge is 0.")
+    aim: Literal["other", "secret"] = Field(default="other", description="secret only when the attempt is to get a person's secret out of them by force or trick (a threat, a lie, a bribe for it, a search of their things); other for everything else, a conversation included.")
 
 
 class Intent(BaseModel):
@@ -113,6 +117,8 @@ class IntentStaked(IntentV2):
 class FiatOutcome(BaseModel):
     attempt: str = Field(description="An attempt in the input that needs no roll, in a few words.")
     outcome: str = Field(description="How it comes out, one plain sentence.")
+    settled: Literal["works", "fails"] = Field(default="works", description="works: the words plainly give what the situation asks; fails: they plainly miss.")
+    why: str = Field(default="", description="Why the words settle it, in a few words (\"she asked for a true story and got one\").")
 
 
 class AssistantReadingStaked(AssistantReadingV2):
@@ -132,8 +138,9 @@ ADJUDICATOR_STAKES = """STAKES. While this section is here you also write what e
 - complication and complication_what: whether failure also brings one of these, as a fact: none; pending_early (something under IMPENDING happens now, by its id; only when IMPENDING lists something); cast_acts (a person who is here, or could reach here in the minutes the failure takes, acts on their own reasons); callback (something from MADE UP IN PLAY or an open thread comes back); new (a new person, place or thread, under the game's rules); time_lost (time passes that the player did not choose to spend). A failure and its complication give nothing of what was sought: no name, no fact, no glimpse of what is hidden, no half-success.
 - The label, the failure and the complication never name the player's own condition; time_lost is time, not a symptom.
 - A future is a plain fact in the story's words: no ids, no field or block names (Hidden, Tells, IMPENDING, THE CASE AHEAD), nothing in brackets.
-- pivotal: the label of the check this input turns on. fiat: each other attempt in the input that needs no roll and is not a listed command, and how it comes out; a fiat read or look gives only what the state already shows the player. A listed command is never fiat: it goes under `commands`, and the engine decides how it comes out. fiat never changes what a person thinks or feels.
+- pivotal: the label of the check this input turns on. fiat: each other attempt in the input that needs no roll and is not a listed command, and how it comes out; a fiat read or look gives only what the state already shows the player. A listed command is never fiat: it goes under `commands`, and the engine decides how it comes out. fiat says how a person takes it; the referee writes the attitude, mood or tell that follows, as after any turn.
 - THE CASE AHEAD is never pending_early: only IMPENDING is.
+- When success would bring out what someone keeps back, write its gain as "the piece comes" or "she says more", never what the piece is: it comes by its own condition, not by the dice.
 - summary, clarify_question, notes, focus, every check's label, success_gain, failure_outcome, complication_what and fiat name nothing from WHAT THE CAST HIDE, THE CASE AHEAD or the hidden truth that the player has not learned, beyond what a success's Tells allow."""
 
 

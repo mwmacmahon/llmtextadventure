@@ -154,6 +154,10 @@ class StationGame(GameBase):
 
     clock = ClockSpec(path="clock", minutes_per_day=1440, cap_minutes=240)
     resolver = "dice_2d6"
+    words_examples = [                 # B207 (D179): the words decide first (the assistant's rules)
+        "An order to a crewman who saw the station cause the fault: it fails, no roll.",
+        "Giving Okafor the reactor reading she asked for: it works, no roll.",
+    ]
     target_offset = 1          # D168: the station's checks one harder (its 2d6 targets 6/8/10/12/14)
     authority = AUTHORITY
     events_path = "hidden.events"

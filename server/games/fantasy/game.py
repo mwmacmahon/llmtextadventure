@@ -175,6 +175,11 @@ class FantasyGame(GameBase):
         "sleep": TaskRow(least=60, most=600, lost=0),
     })
     resolver = "dice_d20"
+    words_examples = [                 # B207 (D179): the words decide first (the assistant's rules)
+        "A true story offered to Mirren, who asked for one: it works, no roll.",
+        "Gold offered to a siren who has said gold is nothing to her: it fails, no roll.",
+        "A crude joke to a grieving siren: it fails, no roll; a story half true, from someone she has reason to doubt: open, a check with a -2 edge.",
+    ]
     sleep_by_command = True    # the owner (11-08 evening): only the Rest command makes a turn a night; "I go sleep at <a far place>" is a move
     target_offset = 2          # B83 (the owner, 11-08): one Hard step on the d20; a +2 character passes medium 55%, not 65%
     authority = AUTHORITY

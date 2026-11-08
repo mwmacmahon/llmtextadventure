@@ -746,6 +746,11 @@ class Engine:
             try:
                 adj, meta = await self._adjudicate(game, state, iid, player_text)
                 ledger("adjudication", {**adj.model_dump(mode="json"), "_call": meta})
+                for f in getattr(adj, "fiat", None) or []:     # B207 (D179): each attempt the words settled, with why
+                    ledger("settled", {"settled": getattr(f, "settled", "works"), "attempt": f.attempt, "outcome": f.outcome, "why": getattr(f, "why", "")})
+                unchecked = [i.action for i in adj.intents if i.check is None]
+                if adj.kind == "action" and len(unchecked) > len(getattr(adj, "fiat", None) or []):   # neither a check nor a settling
+                    ledger("precheck", {"kind": "unsettled", "intents": unchecked, "fiat": len(getattr(adj, "fiat", None) or [])})
                 for h in meta.get("prechecks") or []:          # B105: every pre-check hit is a row, and what the assistant made of it
                     ledger("precheck", {**h, "role": "assistant", "kind_after": adj.kind, "minutes_after": adj.time_minutes})
                 log.info("step " + logs.kv(iid=iid, turn=turn, step="adjudicate", model=meta["model"], seconds=meta["seconds"],
@@ -1554,7 +1559,8 @@ class Engine:
                         notes.append(f"adjudicator named unknown stat {stat!r} for {intent.check.label!r}; check dropped")
                         continue
                 assessments.append(Assessment(stat=stat, difficulty=intent.check.difficulty, target=intent.check.target_entity or "",
-                                              label=intent.check.label,
+                                              label=intent.check.label, edge=int(getattr(intent.check, "edge", 0) or 0),
+                                              edge_why=str(getattr(intent.check, "edge_why", "") or ""), aim=str(getattr(intent.check, "aim", "other") or "other"),
                                               about=intent.check.target_entity or next(iter(getattr(intent, "targets", None) or []), "")))
             for name in getattr(adj, "carried", []) or []:   # the input leans on something in the player's pockets: is it there?
                 missing = _hook(game, "not_carried", state, name, default=None)
@@ -2064,6 +2070,11 @@ def scrub_hidden(game: Game, state: BaseModel, adj: Any, player_text: str) -> di
     back to the player's own words; the clarify question to a plain one; notes and topics are dropped. Returns counts."""
     def leaks(text: str | None) -> bool:
         return bool(text) and bool(_hook(game, "leaked_terms", state, text, player_text, default=[]))
+
+    def mask(text: str) -> str:
+        for term in _hook(game, "leaked_terms", state, text, player_text, default=[]) or []:
+            text = re.sub(r"\b" + re.escape(term) + r"(s|es)?\b", "what they keep back", text, flags=re.I)
+        return text
     n: dict[str, int] = {}
     def hit(k: str) -> None:
         n[k] = n.get(k, 0) + 1
@@ -2078,10 +2089,18 @@ def scrub_hidden(game: Game, state: BaseModel, adj: Any, player_text: str) -> di
         if leaks(c.label):
             c.label = c.stat; hit("label")
         if any(leaks(getattr(c, f, "")) for f in ("success_gain", "failure_outcome", "complication_what")):
-            for f, v in (("success_gain", ""), ("failure_outcome", ""), ("complication_what", ""), ("complication", "none")):
-                if hasattr(c, f):
-                    setattr(c, f, v)
-            hit("stake")
+            # B210 (D179): reworded, not dropped: the hidden words masked; dropped only when the rewording still leaks
+            for f in ("success_gain", "failure_outcome", "complication_what"):
+                v = getattr(c, f, "")
+                if v and leaks(v):
+                    setattr(c, f, mask(v))
+            if any(leaks(getattr(c, f, "")) for f in ("success_gain", "failure_outcome", "complication_what")):
+                for f, v in (("success_gain", ""), ("failure_outcome", ""), ("complication_what", ""), ("complication", "none")):
+                    if hasattr(c, f):
+                        setattr(c, f, v)
+                hit("stake")
+            else:
+                hit("stake_reworded")
     if getattr(adj, "fiat", None):
         kept = [f for f in adj.fiat if not (leaks(f.attempt) or leaks(f.outcome))]
         if len(kept) < len(adj.fiat):
@@ -2102,6 +2121,31 @@ def scrub_hidden(game: Game, state: BaseModel, adj: Any, player_text: str) -> di
     return n
 
 
+WORDS_DECIDE = """THE WORDS DECIDE FIRST. For each attempt, read the player's words against the situation before anything else, and land on one of three:
+- It works: the words plainly give what the situation asks for (the right key in the right lock; what the person asked for, offered; a plan the scene cannot resist; talking to a friend). No check: it goes under fiat, settled works, with why.
+- It fails: the words plainly miss (what the person has said is worthless to them, offered anyway; a joke to someone grieving; a bluff against someone who watched the player do the opposite). No check: fiat, settled fails, with why.
+- It is open: only then a check, at its difficulty, with its edge.
+Difficulty is how hard the thing is for anyone. It never carries what this player brought; that is the edge.
+EDGE, on every check: what the player's own words and things bring, as a number in edge and their own terms in edge_why. {range}
+- Climbing and physical: gear in hand, footing, a free hand, weight carried (a rope and climbing irons on a wet wall: {up}; in mail with a child on one arm: {down}).
+- Stealth: light, noise, cover, who is watching (soft boots in a dark yard: {up}; a lit lantern: {down}).
+- Conversations and ploys: what the player offers against what the person wants, what the person knows of the player and has seen them do, whether the story holds together, the player's standing with them (a gift she has asked for: {up}; a lie she can check: {down}).
+- Knowledge: a book or a person consulted, a thing in hand to compare (the right book open: {up}).
+- Fights: position, surprise, a weapon suited to the foe, water or the dark (from above, unseen: {up}; fighting blind in the dark: {down}).
+Things in the pockets count when named or plainly in use; name the thing in edge_why. The game's own modifiers (stats, abilities, conditions, wounds, standing) are added by the engine; never count them in the edge."""
+EDGE_TEXT = {
+    "dice_d20": ("From -4 to +4: a thing made for the job +2; the right thing and a sound plan +3 or +4; a ploy against someone with reason to doubt -2; a plainly stupid attempt -3 or -4.", "+2", "-2"),
+    "dice_2d6": ("-1, 0 or +1, and +2 only for a plan that nearly settles it.", "+1", "-1"),
+}
+
+
+def words_decide(game: Game) -> str:
+    rng_text, up, down = EDGE_TEXT.get(getattr(game, "resolver", "dice_d20"), EDGE_TEXT["dice_d20"])
+    text = WORDS_DECIDE.replace("{range}", rng_text).replace("{up}", up).replace("{down}", down)
+    ex = getattr(game, "words_examples", None) or []
+    return text + ("\nIn this game, for example:\n" + "\n".join(f"- {e}" for e in ex) if ex else "")
+
+
 def adjudicator_inputs(game: Game, state: BaseModel, recent: list[Msg], player_text: str, stakes: bool = False,
                        notes: list[str] | None = None) -> tuple[str, list[Msg], type]:
     """Everything the adjudicator is sent, built from a state and an input alone, so a stored turn can be
@@ -2117,6 +2161,7 @@ def adjudicator_inputs(game: Game, state: BaseModel, recent: list[Msg], player_t
         _, fresh = game.new_instance({})
         extra = stakes_blocks(game, state, fresh)
     system, msgs = adjudicator_messages(rules, state_text, recent, player_text, _commands_text(_hook(game, "commands", state, default=[])), extra=extra)
+    system += "\n\n" + words_decide(game)          # B207, B211 (D179): the words decide first; the edge on every check
     if notes:                                        # the pre-checks' lines (engine/prechecks.py, B105): a nudge, the assistant decides
         msgs[-1] = Msg(msgs[-1].role, msgs[-1].content + "\n\n[ENGINE NOTE]\n" + "\n".join(notes), cache=msgs[-1].cache)
     if extra:
@@ -2844,6 +2889,9 @@ def _this_turn_block(res: dict[str, Any], clock_text: str = "") -> str:
     adj = res.get("adjudication")
     if adj is not None:
         lines.append(f"- What the player is attempting, as the engine read it: {adj.summary} Tell the attempt in the story's own words, not these.")
+    for f in (getattr(adj, "fiat", None) or []) if adj is not None else []:   # B207 (D179): the words settled it, no roll
+        lines.append(f"- Settled without a roll, by the player's words: {f.attempt}: {f.outcome}" + (f" ({f.why})" if getattr(f, "why", "") else "")
+                     + ". Play it as settled; it needs no check line and goes no other way.")
     if res.get("split") and res["elapsed"]:            # D146 (i): the clock moves to the attempt now, by each result when it falls
         if res["elapsed"] <= 2:                         # B38: "Tell those minutes" opened 37 of 50 turns with "A minute passes"
             lines.append("- The attempt comes straight away. Open on the action and call the check when the story reaches it. Each check's "

@@ -37,7 +37,7 @@ async def test_an_action_still_moves_the_clock(engine, fake):
     fake.canned["AssistantReading"] = [reading("I ask Tam where we are heading.", 10)]
     await play(engine, iid, "where are we heading, Tam? I ask him.")
     assert state_of(engine, iid).clock.minute > m0
-    assert not [r for r in engine.store.ledger(iid) if r["kind"] == "precheck"]
+    assert not [r for r in engine.store.ledger(iid) if r["kind"] == "precheck" and r["payload"].get("kind") == "question"]
 
 
 async def test_the_ask_mode_is_an_aside_that_moves_nothing(engine, fake):

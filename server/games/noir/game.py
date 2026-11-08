@@ -388,6 +388,10 @@ class NoirGame(GameBase):
 
     # ROADMAP 1c (D144): where a failed check's complication comes from, by stat. Body work draws from the city's table (a
     # fight can draw a wound); the rest take the assistant's own complication from the stake, the table when it wrote none.
+    words_examples = [                 # B207 (D179): the words decide first (the assistant's rules)
+        "A bribe to a cop who is already bought: it fails, no roll; he is paid to look the other way already.",
+        "Showing Rosa the photograph she asked to see: it works, no roll.",
+    ]
     consequence_sources = {"muscle": "table"}
     # shown to the assistant in its stakes rules: what this city can charge, as ideas for a complication it writes. The
     # marks (a wound, something of his left at the scene) stay the engine's: a complication never names the player's

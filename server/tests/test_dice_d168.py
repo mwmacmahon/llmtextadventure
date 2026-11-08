@@ -52,12 +52,16 @@ def test_the_caps_are_the_resolvers_own():
     assert r.total == 6 and any(m.label == "penalties capped at -2" for m in r.modifiers)
 
 
-def _A(target, difficulty="low"):
-    return Assessment(stat="tongue", difficulty=difficulty, target=target, label="ask about June")
+def _A(target, difficulty="low", aim="secret"):
+    return Assessment(stat="tongue", difficulty=difficulty, target=target, label="ask about June", aim=aim)
 
 
 def test_a_check_aimed_at_someone_keeping_a_tell_back_is_staked_high():
+    """B63 narrowed (B210, D179): only an attempt at the secret itself by force or trick (aim secret) takes the floor."""
     call = Call(verb="CHECK", stat="tongue", difficulty="low", raw="<<CHECK tongue low>>")
+    talk = run_check(call, 9, {"tongue": 1}, lambda rng, req: dice_2d6(_Fixed(6, 5), req), random.Random(0), [_A("szabo", aim="other")],
+                     lambda req, t: [], lambda res: "", holds_back=lambda t: "Szabo" if t == "szabo" else None)
+    assert talk.data["difficulty"] == "low" and not any("keeps something back" in m["label"] for m in talk.data["modifiers"])
     out = run_check(call, 1, {"tongue": 1}, lambda rng, req: dice_2d6(_Fixed(6, 5), req), random.Random(0), [_A("szabo")],
                     lambda req, t: [], lambda res: "", holds_back=lambda t: "Szabo" if t == "szabo" else None)
     assert out.data["difficulty"] == "high" and out.data["target"] == 9
@@ -65,7 +69,7 @@ def test_a_check_aimed_at_someone_keeping_a_tell_back_is_staked_high():
     free = run_check(call, 2, {"tongue": 1}, lambda rng, req: dice_2d6(_Fixed(6, 5), req), random.Random(0), [_A("maud")],
                      lambda req, t: [], lambda res: "", holds_back=lambda t: "Szabo" if t == "szabo" else None)
     assert free.data["difficulty"] == "low" and not any("keeps something back" in m["label"] for m in free.data["modifiers"])
-    by_about = Assessment(stat="tongue", difficulty="medium", label="question Szabo about June", about="szabo")   # no target, the person in about
+    by_about = Assessment(stat="tongue", difficulty="medium", label="question Szabo about June", about="szabo", aim="secret")   # no target, the person in about
     via = run_check(call, 4, {"tongue": 1}, lambda rng, req: dice_2d6(_Fixed(6, 5), req), random.Random(0), [by_about],
                     lambda req, t: [], lambda res: "", holds_back=lambda t: "Szabo" if t == "szabo" else None)
     assert via.data["difficulty"] == "high"

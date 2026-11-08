@@ -226,6 +226,12 @@ class Assessment:
     called_as: str = ""         # the difficulty the call that answered it named, to tell a repeat from a new attempt
     stake: dict | None = None   # the assistant's two futures for it (D109), live mode only; the reply carries the matched branch
     about: str = ""            # who or what the attempt is aimed at (the intent's first target id): a retry of the same attempt shuts the way (D122)
+    edge: int = 0              # B211 (D179): what the player's words bring, the assistant's number (a modifier line on the roll)
+    edge_why: str = ""
+    aim: str = "other"         # B63/B210 (D179): secret when the attempt is for a person's secret by force or trick (the floor's only case)
+
+
+EDGE_RANGE: dict[str, tuple[int, int]] = {"dice_d20": (-4, 4), "dice_2d6": (-1, 2)}   # B211: the edge by die
 
 
 def harder(a: str, b: str) -> Tier:
@@ -275,12 +281,16 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
     target = (a.target or call.target) if a else call.target        # the assessment's id wins over a called name
     raised = ""
     aimed = target or (a.about if a is not None else "")              # the assistant names the person in `about` (the smoke, D168)
-    who = holds_back(aimed) if (holds_back and aimed) else None
+    # B63 narrowed (B210, D179): the floor only for an attempt at the secret itself by force or trick, never a conversation
+    who = holds_back(aimed) if (holds_back and aimed and a is not None and a.aim == "secret") else None
     if who and TIER_ORDER.index(difficulty) < TIER_ORDER.index("high"):    # B63 (D168): a person keeping a tell back is a high check
         raised, difficulty = difficulty, "high"
     label = (a.label if a and a.label else f"{stat} check" + (f" against {target}" if target else ""))
     req = CheckRequest(id=f"n{n}", label=label, stat=stat, difficulty=difficulty, base=stats[stat], offset=offset, caps=caps)
     req.modifiers = modifiers(req, target or None)
+    if a is not None and a.edge:                     # B211 (D179): the edge the player's words bring, one more line in the detail
+        lo, hi = EDGE_RANGE.get(getattr(resolver, "__name__", "dice_d20"), (-4, 4))
+        req.modifiers.append(Modifier(label=(a.edge_why or "the player's plan").strip()[:60], value=max(lo, min(hi, int(a.edge)))))
     if raised:                                       # shown as a cap is: a line in the modifiers, worth nothing on the sum
         req.modifiers.append(Modifier(label=f"{who} keeps something back: {raised.replace('_', ' ')} raised to high", value=0))
     res = resolver(rng(stat, difficulty) if callable(rng) and not hasattr(rng, "randint") else rng, req)   # B85: a seed per check
