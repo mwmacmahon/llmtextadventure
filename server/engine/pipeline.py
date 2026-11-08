@@ -646,7 +646,9 @@ class Engine:
         self.store.append_transcript(iid, turn, "narrator", narration_stored)
 
         touched = [f"{p}: set by script" for p in res["effect_paths"]]
-        info = TurnInfo(turn=turn, elapsed_minutes=res["elapsed"], rng=rng_for(iid, turn, "drift"), applied=list(report.applied) + touched)
+        info = TurnInfo(turn=turn, elapsed_minutes=res["elapsed"], rng=rng_for(iid, turn, "drift"), applied=list(report.applied) + touched,
+                        calls=[dict((c.get("result") or {}), label=(c.get("result") or {}).get("label", "")) for c in calls_block.get("calls", [])],
+                        rejected=[r.model_dump(mode="json") for r in report.rejected])
         drifted = _hook(game, "after_turn", state, info, default=state)
         drift_lines: list[str] = []
         if drifted is not state:
@@ -1249,7 +1251,8 @@ class Engine:
             if call.verb == "CHECK":
                 return run_check(call, n, stats, resolver, rng, assessments, modifiers, render,
                                  fallback_stat=getattr(game, "fallback_stat", None), fail_streak=fail_streak,
-                                 player=_hook(game, "player_name", state, default="the player"), consequence_for=consequence_for)
+                                 player=_hook(game, "player_name", state, default="the player"), consequence_for=consequence_for,
+                                 lethal_for=lambda d, label: bool(_hook(game, "lethal_stake", state, d, label, default=False)))
             if call.verb == "LOOK":
                 text = _hook(game, "look", state, call.ref, default=None)
                 if not text:
@@ -1712,6 +1715,9 @@ RETELL_LEADS = {
     "repeated_beat": "This sentence tells again what an earlier turn already told: {what}. Tell that moment differently, or move past it. Keep the rest of the turn as it was.",
     "repetition": "{what}. {fix}",
     "fake_check": "{what}. {fix}",
+    # the fantasy's one content line (D139, D160): the referee rules it after a telling has gone past the door; the narrator
+    # hears of it only here, in the retelling
+    "too_far": "The telling showed more than this game shows: {what}. {fix} Keep everything before that moment as it was.",
     # a problem about where someone is (the user, 11-03): the retelling must pick a place and say it, never leave it
     # unsaid; the failure mode is "not under the docks, just very clearly under the docks"
     "location": "The telling put someone somewhere the game does not allow: {what}. Where they are instead is yours to decide. "
@@ -2204,8 +2210,13 @@ def _this_turn_block(res: dict[str, Any], clock_text: str = "") -> str:
     if adj is not None:
         lines.append(f"- What the player is attempting, as the engine read it: {adj.summary} Tell the attempt in the story's own words, not these.")
     if res.get("split") and res["elapsed"]:            # D146 (i): the clock moves to the attempt now, by each result when it falls
-        lines.append(f"- Time passes: about {res['elapsed']} minutes before the first attempt starts; the clock above shows the moment it starts. "
-                     "Tell those minutes, then call the check. Each check's result says how long that attempt takes; the turn ends when the last attempt does.")
+        if res["elapsed"] <= 2:                         # B38: "Tell those minutes" opened 37 of 50 turns with "A minute passes"
+            lines.append("- The attempt comes straight away. Open on the action and call the check when the story reaches it. Each check's "
+                         "result says how long that attempt takes; the turn ends when the last attempt does.")
+        else:
+            lines.append(f"- The first attempt starts about {res['elapsed']} minutes on; the clock above shows that moment. Open on what happens "
+                         "on the way to it, what is seen, said and done, then call the check. Each check's result says how long that attempt "
+                         "takes; the turn ends when the last attempt does.")
     elif res["elapsed"]:
         note = res.get("clock_note") or ""
         if "stopped at" in note and adj is not None and adj.time_minutes > res["elapsed"]:
