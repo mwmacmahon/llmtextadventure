@@ -184,5 +184,39 @@ async def test_the_pipeline_backstops_a_hostile_the_fake_prose_never_called(engi
     fake.canned["AssistantReading"] = [reading("I back away from Maud.", 1)]
     await play(engine, iid, "I back away from Maud.")
     after = state_of(engine, iid)
-    assert after.player.hp < st.player.hp and after.player.carry_lines
-    assert any(r["kind"] == "world" and r["payload"].get("kind") == "backstop" for r in engine.store.ledger(iid))
+    row = next(r["payload"] for r in engine.store.ledger(iid) if r["kind"] == "world" and r["payload"].get("kind") == "backstop")
+    assert after.player.carry_lines
+    assert after.player.hp == st.player.hp - int(row.get("harm") or 0) and (row.get("hit") is False or row.get("harm"))
+
+
+def test_an_invented_danger_takes_the_step_the_stake_named(game):
+    """B206: a danger the content never wrote (a rotten floor) lands at the stake's step; lethal kills outright."""
+    st = new(game, klass="Rogue", race="Human")                     # no shield to take the worst of it
+    data = {"outcome": "failure", "roll": 6, "stat": "dex", "stake": {"branch": "failure", "danger": "serious"}}
+    note = game.check_note(st, data, "cross the rotten floor")
+    assert 6 <= data["harm"] <= 10 and "serious hit" in note
+    after = game.after_turn(st, info_calls(2, [{**data, "label": "cross the rotten floor"}]))
+    assert after.player.hp == max(0, st.player.hp - data["harm"])
+    void = {"outcome": "failure", "roll": 3, "stat": "dex", "stake": {"branch": "failure", "danger": "lethal"}}
+    assert "kills Wren" in game.check_note(st, void, "leap the chasm")
+    dead = game.after_turn(st, info_calls(2, [{**void, "label": "leap the chasm"}]))
+    assert dead.player.fate == "dead" and dead.flags.get("ending") and game.cause_of_death(dead, {}) == "died trying to leap the chasm"
+
+
+def test_a_compulsion_check_comes_before_striking_the_singer(game):
+    """Part four §6 (B97): enthralled, striking the singer is a WIS check at very high; a failure means it does not happen."""
+    st = new(game)
+    game._land_condition(st, "enthralled", "maud")
+    assert st.player.conditions[-1].compelled["by"] == "maud"
+    s2, w = game.world_turn(st, act("I stab Maud"), "I stab Maud", Dice(10), 3, 2)
+    assert w.blocked and "very high" in w.mechanics[0].lower() and "does not happen" in w.directives[0]
+    s3, w3 = game.world_turn(st, act("I look at the moon"), "I look at the moon", Dice(10), 3, 2)
+    assert not w3.blocked and not w3.mechanics
+
+
+def test_swimming_in_the_lake_with_no_call_is_rolled_after_the_prose(game):
+    st = new(game)
+    st.player.location = "Lake Ambercold"
+    calls = game.backstop(st, {"hp": 0, "acted": [], "text": "I dive into the water after the girl"}, Dice(3, 0), 2)
+    assert [c["call"]["verb"] for c in calls] == ["HAZARD"] and calls[0]["result"]["outcome_player"] in ("failure", "huge_failure", "critical_failure")
+    assert game.backstop(st, {"hp": 0, "acted": [], "hazards": ["cold_water"], "text": "I dive in"}, Dice(3), 2) == []

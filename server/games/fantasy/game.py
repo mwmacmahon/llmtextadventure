@@ -1053,6 +1053,14 @@ class FantasyGame(GameBase):
         """A line the narrator reads with a check's result: Sneak Attack's step on a blow that lands (B92); what a failure
         costs in a fight or a peril (part four §4: the engine takes the hit points, `data["harm"]`)."""
         if data.get("outcome") not in ("success", "huge_success", "critical_success"):
+            danger = str((data.get("stake") or {}).get("danger") or "")
+            if danger in ("scrape", "solid", "serious", "lethal"):        # B206: the step the assistant's stake named
+                if danger == "lethal":
+                    data.update(kills=True, cause=label)
+                    return (f" The danger is past surviving: it kills {state.player.name}. Write the death straight; this is the end "
+                            f"of the story.")
+                data["harm"] = wo.harm(danger, int(data.get("roll") or 0))
+                return f" It costs {state.player.name}: {wo.STEP_WORDS[danger]} lands on them (the engine counts it). Write it landing."
             n = wo.failure_harm(self, state, data, label)
             if not n:
                 return ""
@@ -1796,6 +1804,13 @@ class FantasyGame(GameBase):
         if p.fate == "dead" and p.fate_turn < info.turn:                  # a death the narrator was told inline: it ends this turn
             s.flags["ending"] = f"{p.name} died at {p.location or 'Marrowgate'} on day {s.clock.day}. The fog keeps the rest."
             return s
+        for c in info.calls:                                # B206: a danger the stake named lethal, failed: death now, told inline
+            if c.get("kills") and not c.get("verb") and not p.fate:
+                p.hp, p.peril = 0, None
+                p.fate, p.fate_turn, p.fate_roll = "dead", info.turn - 1, str(c.get("cause") or c.get("label") or "")
+                s.flags["cause"] = f"died trying to {c.get('cause') or c.get('label')}"
+                s.flags["ending"] = f"{p.name} died at {p.location or 'Marrowgate'} on day {s.clock.day}. The fog keeps the rest."
+                return s
         for c in info.calls:                                # part four §4: a failed attempt in a fight or a peril, by its tier
             if c.get("harm") and not c.get("stepped") and p.hp > 0 and not p.fate:
                 n, notes = wo.take(self, s, int(c["harm"]), str(c.get("label") or ""))

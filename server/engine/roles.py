@@ -100,6 +100,10 @@ class CheckStaked(CheckProposal):
     failure_minutes: int = Field(default=0, description="How long the attempt lasts when it fails, start to finish; at least 1.")
     complication: Complication = Field(default="none", description="What else failure brings, a kind from the STAKES rules, or none.")
     complication_what: str = Field(default="", description="The complication as a fact about how things stand; empty when none.")
+    danger: Literal["none", "scrape", "solid", "serious", "lethal"] = Field(default="none", description=(
+        "When failing means a danger in the fiction lands on the player's own body (a rotten floor gives way, a fall, a blade): how "
+        "hard it lands: scrape, solid or serious. lethal only when the fiction is plainly unsurvivable (the void, a blade through "
+        "the body, a cave-in on top of them). none when failing hurts nobody."))
 
 
 class IntentStaked(IntentV2):

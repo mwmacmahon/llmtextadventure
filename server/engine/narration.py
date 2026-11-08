@@ -300,6 +300,8 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
     if stake:
         data["stake"] = {"branch": "failure" if failed else "success", "text": branch.strip(),
                          "minutes": int(stake.get("failure_minutes" if failed else "success_minutes") or 0)}
+        if stake.get("danger") and stake.get("danger") != "none":        # B206: the step an invented danger lands at on a failure
+            data["stake"]["danger"] = stake["danger"]
     if cost:
         data["cost"] = {k: cost[k] for k in ("kind", "fact", "detail") if cost.get(k)}
     text = (f"[ENGINE] Check: {stat}, {difficulty.replace('_', ' ')} difficulty" + (f", against {target}" if target else "") +

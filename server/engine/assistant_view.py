@@ -467,7 +467,7 @@ def adjudication_stakes(adj: Any) -> dict:
     """The stakes as the adjudication wrote them, in the shape the separate call had (D109), so match_stakes,
     branch_text, the ledger and the scorers read them unchanged."""
     d = adj.model_dump(mode="json") if hasattr(adj, "model_dump") else dict(adj)
-    keys = ("success_gain", "success_minutes", "failure_outcome", "failure_minutes", "complication", "complication_what")
+    keys = ("success_gain", "success_minutes", "failure_outcome", "failure_minutes", "complication", "complication_what", "danger")
     checks = [{"label": c["label"], **{k: c.get(k) for k in keys}} for i in d.get("intents") or []
               if (c := i.get("check")) and (c.get("failure_outcome") or c.get("success_gain"))]      # a recovered check has no futures
     return {"checks": checks, "pivotal": d.get("pivotal", ""), "fiat": d.get("fiat") or []}

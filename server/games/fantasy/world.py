@@ -49,8 +49,15 @@ DEFAULT_STRIKE = {"kind": "strike", "bonus": 2, "damage": "scrape"}   # people w
 ARMOUR = (("shield", 2), ("chain mail", 4), ("scale mail", 4), ("mail shirt", 4), ("mail", 4), ("plate", 6), ("leather", 1), ("hide", 1))
 
 
+LEAVE = re.compile(r"\b(row away|swim away|swim (back|for the (shore|boat|skiff))|leave|back away|turn away|turn (the boat|back)|flee|run|"
+                   r"head back|push off|go back|get away|paddle away|walk away|row (back|for))", re.I)
+RESIST = re.compile(r"\b(resist|plug my ears|cover my ears|stop my ears|hold fast|fight the (song|pull)|stay put|block (it )?out|"
+                    r"don'?t listen|ignore the (song|singing)|bite my (tongue|lip))", re.I)
+
+
 @dataclass
 class WorldTurn:
+    blocked: bool = False                                     # a compulsion won: the attempt does not happen, no check is called
     directives: list[str] = field(default_factory=list)
     mechanics: list[str] = field(default_factory=list)       # § lines, shown after the prose
     rows: list[dict] = field(default_factory=list)            # the ledger's
@@ -189,6 +196,29 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
                                 f"It is worse now ({'one moment' if pr.turns_left == 1 else 'a few moments'} left before it is over). Play it, and "
                                 f"end the turn on the question, in the city's voice: what does {p.name} do?")
         w.rows.append({"kind": "peril", "peril": pr.kind, "outcome": res.outcome, "turns_left": pr.turns_left, "line": line})
+    # -- a compulsion (part four §6, B97): the resist check before any attempt against the compeller, away from them, or
+    #    against the pull, at the floor the condition names; a failure means the attempt does not happen
+    held = next((c for c in p.conditions if getattr(c, "compelled", None)), None)
+    if held is not None and getattr(adj, "kind", "") == "action":
+        cp = dict(held.compelled or {})
+        by = s.person(str(cp.get("by") or "")) or game._same_person(s, str(cp.get("by") or ""))
+        who = by.name if by is not None else (str(cp.get("by") or "") or "the singer")
+        from .game import ATTACK
+        floor = "strike" if ATTACK.search(text) else "leave" if LEAVE.search(text) else "hold" if RESIST.search(text) else ""
+        if floor:
+            res = _check(game, s, str(cp.get("resist") or "wis"), str(cp.get(floor) or "medium"), f"resist {who}'s pull", rng, [], offset)
+            line = f"{who}'s pull: " + game.render_mechanic(s, res)
+            w.mechanics.append(line)
+            w.rows.append({"kind": "compulsion", "by": who, "floor": floor, "outcome": res.outcome, "line": line})
+            if res.outcome in ("success", "huge_success", "critical_success"):
+                w.directives.append(f"{p.name} fights {who}'s pull, and the engine rolled it: {p.name} wins this moment, and the attempt "
+                                    f"goes ahead as the player wrote it.")
+            else:
+                w.blocked = True
+                w.directives.append(f"{p.name} fights {who}'s pull, and the engine rolled it: the pull wins. The attempt the player wrote "
+                                    f"does not happen: {p.name} does not {'strike' if floor == 'strike' else 'go' if floor == 'leave' else 'hold out'}; "
+                                    f"they drift toward {who} instead. Call no check for it. Play that, and end on the question: what does "
+                                    f"{p.name} do?")
     # -- who the player is fighting (B95): the turn's attack targets join; the gone, the dead and the far leave
     from engine.pipeline import is_fight
     if adj is not None and getattr(adj, "kind", "") == "action" and is_fight(adj):
@@ -290,6 +320,8 @@ def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tal
         return None
     if call.verb == "HAZARD":
         hz = hazard(game, s, call.ref)
+        if hz is not None:
+            tally.setdefault("hazards", []).append(hz.get("id"))
         if hz is None:
             return {"text": f"No danger called {call.ref!r} is listed here. Play it without a roll.", "data": {"verb": "HAZARD", "name": call.ref, "none": True}}
         steps = armour_steps(s)
@@ -349,6 +381,18 @@ def backstop(game: Any, s: FantasyState, acted: list[str], rng: Any, offset: int
         r["data"]["backstop"] = True
         out.append({"call": {"verb": "ENEMY", "raw": f"ENEMY {q.id}", "ref": q.id}, "result": r["data"], "mechanic": r.get("mechanic", ""),
                     "backstop": True, "told": r["text"]})
+    # a hazard the player's own attempt walked into (its words), when the prose made no call for it (part four §6, B98)
+    text = str(tally.get("text") or "")
+    for hz in (getattr(s.city, "hazards", None) or {}).get(s.player.location) or []:
+        if hz.get("id") in tally.get("hazards", []) or not text:
+            continue
+        words = [w.lower() for w in hz.get("words") or []]
+        if words and any(re.search(r"\b" + re.escape(w) + r"\b", text.lower()) for w in words):
+            r = world_call(game, s, Call(verb="HAZARD", raw=f"HAZARD {hz.get('id')}", ref=str(hz.get("id"))), rng, offset, tally)
+            if r is not None:
+                r["data"]["backstop"] = True
+                out.append({"call": {"verb": "HAZARD", "raw": f"HAZARD {hz.get('id')}", "ref": hz.get("id")}, "result": r["data"],
+                            "mechanic": r.get("mechanic", ""), "backstop": True, "told": r["text"]})
     return out
 
 
@@ -381,8 +425,12 @@ def land(game: Any, s: FantasyState, calls: list[dict], turn: int) -> list[str]:
             game._land_condition(s, c["condition"], c.get("by") or "")
             notes.append(f"Condition: + {c['condition']}")
         if c.get("backstop") and not p.fate:
-            p.carry_lines.append(f"{c.get('label')}: it landed as the last moment ended" + (f", {STEP_WORDS.get(c.get('step', ''), '')}" if c.get("harm") else "")
-                                 + (f"; {p.name} is {PERILS.get(c['peril'], {}).get('what', c['peril'])}" if c.get("peril") else "") + ".")
+            if c.get("harm") or c.get("peril") or c.get("condition"):
+                p.carry_lines.append(f"{c.get('label')}: it landed as the last moment ended" + (f", {STEP_WORDS.get(c.get('step', ''), '')}" if c.get("harm") else "")
+                                     + (f"; {p.name} is {PERILS.get(c['peril'], {}).get('what', c['peril'])}" if c.get("peril") else "")
+                                     + (f"; {p.name} is {c['condition']}" if c.get("condition") else "") + ".")
+            else:
+                p.carry_lines.append(f"{c.get('label')}: it came as the last moment ended, and missed.")
     return notes
 
 

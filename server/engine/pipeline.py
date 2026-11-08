@@ -796,6 +796,8 @@ class Engine:
             res["state"] = state
             if world.directives:
                 res["directives"] = list(world.directives) + list(res["directives"])
+            if world.blocked:                             # a compulsion won (part four §6): the attempt does not happen, nothing to call
+                res["assessments"] = []
             for row in world.rows:
                 ledger("world", row)
         for f in res["fired"]:
@@ -934,7 +936,9 @@ class Engine:
                            "problems": ndone.problems, "causes": ndone.causes, "raw": ndone.raw,
                            "assessed_not_called": [a.label for a in res["assessments"] if not a.called]}
             if hasattr(game, "backstop") and adj is not None and adj.kind == "action":   # B206: a hostile the prose left out acts after it
-                for b in game.backstop(state, getattr(handler, "tally", {}), rng_for(iid, turn, "backstop"), self.target_offset(game, iid)):
+                tally_ = getattr(handler, "tally", {})
+                tally_["text"] = " ".join([player_text or "", adj.summary or ""] + [i.action for i in adj.intents])
+                for b in game.backstop(state, tally_, rng_for(iid, turn, "backstop"), self.target_offset(game, iid)):
                     calls_block["calls"].append(b)
                     ledger("world", {"kind": "backstop", **{k: v for k, v in b["result"].items() if k != "verb"}, "mechanic": b["mechanic"]})
         except Exception as e:
