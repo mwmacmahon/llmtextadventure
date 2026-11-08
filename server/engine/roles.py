@@ -93,9 +93,9 @@ Complication = Literal["none", "pending_early", "cast_acts", "callback", "new", 
 
 class CheckStaked(CheckProposal):
     success_gain: str = Field(default="", description="What success gains: how things stand if it works, one plain sentence. Not a scene.")
-    success_minutes: int = Field(default=0, description="Minutes the attempt takes when it works.")
+    success_minutes: int = Field(default=0, description="Of time_minutes, how long the attempt itself lasts when it works, start to finish; at least 1.")
     failure_outcome: str = Field(default="", description="What failure leaves standing, as a fact about the attempt only, never harm or loss to the player's side and never the player's own condition ('Dooley does not buy it'; 'the lock holds'). One plain sentence.")
-    failure_minutes: int = Field(default=0, description="Minutes the attempt takes when it fails.")
+    failure_minutes: int = Field(default=0, description="How long the attempt lasts when it fails, start to finish; at least 1.")
     complication: Complication = Field(default="none", description="What else failure brings, a kind from the STAKES rules, or none.")
     complication_what: str = Field(default="", description="The complication as a fact about how things stand; empty when none.")
 
@@ -121,8 +121,8 @@ class AssistantReadingStaked(AssistantReadingV2):
 
 
 ADJUDICATOR_STAKES = """STAKES. While this section is here you also write what each result of a check means; the dice still decide which result comes. For each check you assess, write both of its futures in the check itself, after its label, stat and difficulty. You do not know how the dice will fall; the narrator calls the check when the story reaches it, the engine rolls, and whichever way it goes the engine plays the future you wrote. time_minutes stays the input's time if it goes as the player means it.
-- success_gain and success_minutes: what success gains, a fact about how things stand, not a scene. A success gains what was sought; of a person's Hidden line or secret (WHAT THE CAST HIDE), only what its Tells (on the station, its How) allow.
-- failure_outcome and failure_minutes: what failure leaves standing, as a fact about the attempt only (he does not buy it; the lock holds; he does not get through). Never harm or loss to the player's side, and never the player's own condition: an injury, fear or exhaustion may make the attempt harder, but the outcome is only that the attempt does not come off. What a failure costs the player the engine decides separately; never write a cost.
+- success_gain and success_minutes: what success gains, a fact about how things stand, not a scene. success_minutes is how long the attempt itself lasts when it works, start to finish: at least 1, and all checks together no more than time_minutes. A success gains what was sought; of a person's Hidden line or secret (WHAT THE CAST HIDE), only what its Tells (on the station, its How) allow.
+- failure_outcome and failure_minutes: what failure leaves standing, as a fact about the attempt only (he does not buy it; the lock holds; he does not get through). Never harm or loss to the player's side, and never the player's own condition: an injury, fear or exhaustion may make the attempt harder, but the outcome is only that the attempt does not come off. What a failure costs the player the engine decides separately; never write a cost. failure_minutes is how long the attempt lasts when it fails, counted the same way, at least 1; a failure may run longer.
 - complication and complication_what: whether failure also brings one of these, as a fact: none; pending_early (something under IMPENDING happens now, by its id; only when IMPENDING lists something); cast_acts (a person who is here, or could reach here in the minutes the failure takes, acts on their own reasons); callback (something from MADE UP IN PLAY or an open thread comes back); new (a new person, place or thread, under the game's rules); time_lost (time passes that the player did not choose to spend). A failure and its complication give nothing of what was sought: no name, no fact, no glimpse of what is hidden, no half-success.
 - The label, the failure and the complication never name the player's own condition; time_lost is time, not a symptom.
 - A future is a plain fact in the story's words: no ids, no field or block names (Hidden, Tells, IMPENDING, THE CASE AHEAD), nothing in brackets.
@@ -142,9 +142,10 @@ Lines beginning with [ENGINE] are the engine speaking; never write them, nor the
 
 
 NARRATOR_WORLD = """THE WORLD DOES NOT WAIT. Every turn you narrate two things: what the player perceives, and what is happening out of their sight. Time passes for everyone. People act on their reasons whether or not the player is watching; a threat that was closing in arrives; a plan that was brewing comes due; time spent costs something. Nothing happens only because the player did something, and nothing holds still because they did nothing. You are strongly encouraged to add new details and occurrences, in the scene and beyond it; the referee records them, and the engine keeps the clock on what you set in motion. Waiting is not an occurrence: if something in the scene was about to act last turn, it acts this turn, or you write a soon: line with the minute it will. Whenever more than a few minutes pass, something changes that the player did not cause: in the prose if they can perceive it, in an unseen: line if not. COMING, in the state, lists what is already in motion; THIS TURN tells you when one is due, and you play it whatever the player is doing.
-Two lines are for the engine, each on a line of its own in plain words; the player never sees them:
+Three lines are for the engine, each on a line of its own in plain words; the player never sees them:
   [[unseen: …]]  something happening now out of the player's sight: where, who, what. One or two per turn when the world is moving elsewhere. Only what the player cannot perceive from where they are: anything the prose has just shown them (the thing in the room, the noise on the stairs) is seen, never an unseen: line.
-  [[soon: …]]    something you set in motion that will happen on its own: what, roughly when, and what would stop it, such as [[soon: in about three minutes the creature attacks unless Frank leaves the shack]]. The engine tells you when it is due."""
+  [[soon: …]]    something you set in motion that will happen on its own: what, roughly when, and what would stop it, such as [[soon: in about three minutes the creature attacks unless Frank leaves the shack]]. The engine tells you when it is due.
+  [[time lost: N minutes]]  only when what you tell truly takes longer than THIS TURN gives (a struggle that drags on, a search that runs long). The engine adds those minutes, up to a limit, and never past what is due next."""
 
 
 ADJUDICATOR_INSTRUCTIONS = """You are the adjudicator for a text adventure. You read the player's latest input and decide, in the engine's terms, what they are attempting. You do not narrate and you do not decide outcomes: the engine rolls checks and the narrator writes prose.

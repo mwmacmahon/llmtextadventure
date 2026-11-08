@@ -47,6 +47,7 @@ export type Mechanics = {
   rewritten?: { hint: string; attempt: number; by?: string } | null;
   rulings?: { rule: string; what: string; fix: string; serious: boolean }[];
   seen?: string[];   // what the player should see change this turn (ISSUES B18, D143)
+  timing?: { result_minutes: number; lost_asked: number; lost: number; added: number; stopped_at?: string };   // D146
 };
 
 export type Settings = {

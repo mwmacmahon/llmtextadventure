@@ -149,6 +149,9 @@ class ClockSpec(BaseModel):
     minutes_per_day: int = 1440
     cap_minutes: int = 240          # the most one turn may advance (the "don't jump 8 hours" rule)
     slow_minutes: int = 5           # the least a slow action costs (D93: a search, a talk, a walk; a fast beat in a fight is exempt)
+    fast_minutes: int = 1           # the least a fast action costs (time doc §3, D146: a stall is never free, a fight beat is a minute)
+    lost_cap_fast: int = 3          # the most a [[time lost]] note adds on a fast turn (a fight runs three minutes, not an hour)
+    lost_cap_slow: int = 30         # ... and on a slow one (a search that runs long)
 
 
 RejectionKind = Literal["duplicate", "fit", "conflict"]

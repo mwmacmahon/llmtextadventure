@@ -134,7 +134,7 @@ Each module earns a level by moving the read without growing the prompt.
   turn, shown in the round report and the read, so a player's reaction sits where it happened.
 - **A fantasy adventure (MARROWGATE), pulled forward: the next build after Stage 1e.** The owner, 2026-11-08: "the
   fantasy game is next and needs to be coming soon." A third game under `server/games/` with its own content and
-  narrator rules, designed in the fantasy side chat (record `notes/FANTASY_DESIGN.md`, D136 to D145; the directive is
+  narrator rules, designed in the fantasy side chat (record `notes/FANTASY_DESIGN.md`, D136 to D145F; the directive is
   `notes/DIRECTIVE-fantasy-2026-11-08.md`, one paste). Its tone is a D&D table's, not a younger player's (D137); its
   engine needs (setup kinds, ISSUES B21; the dice line and the mechanics row from Stage 1b) are small and independent
   of Stages 2 to 4, so it does not wait for the parity gate. The parity rounds (Stage 2) are box time, not build

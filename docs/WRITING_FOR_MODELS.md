@@ -101,6 +101,11 @@ fiction has moved, the state follows it (D80, D81); the note is for what can sti
 - **Severity by example, bounded below.** For every meter the referee moves: the ordinary case that is 0, the small
   case with its number, the big case with its number. The model finds the small case on every turn.
 
+- **Don't leave a number undefined.** Before: `success_minutes` with no description, "minutes" in the stakes rule and
+  nothing more; Gemma wrote 0 on all 155 branches of the keyed sets. After: "how long the attempt itself lasts when it
+  works, start to finish; at least 1", and a 0 became rare (1 of 29 in noir's keyed set, D146). A number a model may
+  leave blank defaults to its zero; say what it counts and its least value. The examples in brackets ("picking a lock:
+  2") were dropped again: they changed no pick.
 ## Checklist before a line ships
 
 1. What happened, what to do, where to put it: all three present?

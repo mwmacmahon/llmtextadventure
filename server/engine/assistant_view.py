@@ -386,9 +386,11 @@ def branch_text(stake: dict, failed: bool, complication: str | None = None) -> s
     """The engine's reply's branch: what the roll decided, as the assistant staked it (§12 step 4). The cost is added by
     the caller (the engine's own). `complication`: the one the consequence roll chose ("" for none, D144); None plays the
     stake's own, as before the roll."""
+    took = int(stake.get("failure_minutes" if failed else "success_minutes") or 0)
+    took = f" It takes about {took} minute{'s' if took != 1 else ''}." if took > 0 else ""       # D146 (i): the result's own minutes
     if not failed:
         gain = _sentence(stake.get("success_gain", ""))
-        return f" What it gains, as the engine holds it: {gain}" if gain else ""
+        return f" What it gains, as the engine holds it: {gain}{took}" if gain else ""
     out = _sentence(stake.get("failure_outcome", ""))
     text = f" What failure leaves standing, as the engine holds it: {out}" if out else ""
     if complication is None:
@@ -397,7 +399,7 @@ def branch_text(stake: dict, failed: bool, complication: str | None = None) -> s
         comp = _sentence(complication)
     if comp:
         text += f" And with it: {comp}"
-    return text
+    return text + (took if text else "")
 
 
 # ---- the beats' engine check (D111) ---------------------------------------------------------------------------

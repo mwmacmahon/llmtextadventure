@@ -165,8 +165,14 @@ RESOLVE      engine, deterministic
              - checks: assessed, not rolled: each becomes a THIS TURN line the narrator must call at its beat
                (told mode rolls them here, same seed and order)
              - clock: advance by time_minutes, raised to ClockSpec.slow_minutes for a slow action (the
-               assistant's tempo, D93), capped (ClockSpec.cap_minutes), stopped at the next
-               scheduled event so it fires on time
+               assistant's tempo, D93) and to fast_minutes (1) for a fast one (D146), capped
+               (ClockSpec.cap_minutes), stopped at the next scheduled event so it fires on time. With
+               the stakes live and branches that carry minutes, only up to the first attempt
+               (time_minutes less the checks' success_minutes, D146 (i)); THIS TURN says so
+             - after the prose (`pipeline.time_after`, D146): each called result's own minutes (the
+               stake's branch) and a narrator `[[time lost: N minutes]]` note (capped at
+               lost_cap_fast 3 / lost_cap_slow 30) move the clock, never past the next scheduled
+               event or pending and never past the turn's cap; the note never reaches the referee
              - events: tick every live event in priority order (trigger / fallback / expiry),
                apply effects, collect directives
              - happenings: roll the scenario's unscripted list against elapsed minutes
@@ -289,6 +295,7 @@ lies and who believes them, beats in order.
   against a probability. The RNG is seeded by instance id, turn and a salt, so a replayed turn
   rolls the same.
 - **Clock.** `{day, minute}` at a game-declared path; `slow_minutes` the least a slow action costs (D93),
+  `fast_minutes` the least a fast one costs, `lost_cap_fast` / `lost_cap_slow` the most a time-lost note adds (D146),
   `cap_minutes` the most a turn may advance; stops at the next scheduled event.
 - **Events** (`events.py`). Data in the scenario file, status stored in the state so undo, fork
   and export carry it. Predicates: `at`, `flag`, `not_flag`, `flag_is`, `eq/ne/gte/lte/gt/lt`,

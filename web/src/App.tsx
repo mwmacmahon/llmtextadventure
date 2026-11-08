@@ -312,6 +312,7 @@ function MechanicsRow({ text }: { text: string }) {
       + (c.consequence ? ` · consequence ${c.consequence.roll}: ${c.consequence.tier} (${c.consequence.source})`
         + (c.consequence.complication ? ` · ${c.consequence.complication.kind}` : "") + (c.consequence.mark ? ` · mark ${c.consequence.mark.kind}` : "")
         + (c.consequence.way_closed ? " · way closed" : "") : "")),
+    ...(m.timing ? [`clock after the prose: +${m.timing.added} min (results ${m.timing.result_minutes}, time lost ${m.timing.lost} of ${m.timing.lost_asked} asked${m.timing.stopped_at ? `, stopped at ${m.timing.stopped_at}` : ""})`] : []),
     ...m.events.map((e) => `event ${e}`),
     ...m.expired.map((e) => `expired ${e}`),
     ...(m.happenings ?? []).map((h) => `unscripted: ${h.id.replace(/_/g, " ")}${h.reason ? ` (${h.reason})` : ""}`),

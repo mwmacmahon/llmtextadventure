@@ -549,6 +549,14 @@ class Engine:
             self._tapes.pop(iid, None)
             return
 
+        # ---- 3b. time after the prose (time doc §3 (i)-(iii), D146): each called result's own minutes and the narrator's
+        #          [[time lost]] note move the clock now, never past the next trigger or the turn's cap
+        state, timing = time_after(game, state, res, calls_block.get("calls", []), calls_block.get("notes", []), turn)
+        if timing:
+            res["elapsed"] += timing.get("added", 0)
+            ledger("clock", {"after_prose": timing})
+            calls_block["notes"] = [n for n in calls_block.get("notes", []) if not TIME_LOST.match(n)]
+
         # ---- 4. referee + apply --------------------------------------
         # One referee, one row type, code types it (DESIGN2 §18 A): the report is rows; engine/changes.py lands the
         # engine's kinds and hands the game its own; the lever commits before the rows unless the referee said not_done.
@@ -753,6 +761,7 @@ class Engine:
             "declarations": [d.get("raw") for d in calls_block.get("declarations", [])],
             "notes": calls_block.get("notes", []),
             "seen": seen_lines(game, start, state, calls_block.get("calls", [])),
+            **({"timing": timing} if timing else {}),
         }
         if replay is not None:
             mechanics["rewritten"] = {"hint": replay.hint, "attempt": replay.attempt, "by": replay.by}
@@ -969,6 +978,7 @@ class Engine:
         notes: list[str] = []
         clock_note = ""
         elapsed = 0
+        split: tuple[int, int] | None = None
         clock = getattr(game, "clock", None)
         clock_path = getattr(clock, "path", "clock")
         log_path = getattr(game, "log_path", "log")
@@ -1005,9 +1015,23 @@ class Engine:
             if clock and adj.kind == "action" and getattr(adj, "tempo", "slow") != "fast" and adj.time_minutes < clock.slow_minutes:
                 notes.append(f"slow turn: {adj.time_minutes} minutes raised to the floor of {clock.slow_minutes}")
                 adj.time_minutes = clock.slow_minutes
+            # ... and a fast one at least a minute (time doc §3, D146): a fight beat that takes no time is a free stall
+            if clock and adj.kind == "action" and getattr(adj, "tempo", "slow") == "fast" and adj.time_minutes < getattr(clock, "fast_minutes", 1):
+                notes.append(f"fast turn: {adj.time_minutes} minutes raised to the floor of {clock.fast_minutes}")
+                adj.time_minutes = clock.fast_minutes
+            # (i) the minutes split at the roll (time doc §3a, D146): with the stakes live, the clock moves now only up to the
+            # attempt; each result's own minutes move it when the dice fall. Branches with no minutes (Gemma wrote 0 on every
+            # one of 155) leave the turn as before.
+            nrole = self.cfg.role("narrator") if "narrator" in self.cfg.roles else None
+            if nrole is not None and nrole.stakes == "live" and nrole.checks == "called" and assessments:
+                at_roll = sum(int(c.get("success_minutes") or 0) for c in adjudication_stakes(adj)["checks"])
+                if 0 < at_roll:
+                    split = (max(adj.time_minutes - at_roll, 0), adj.time_minutes)
+                    notes.append(f"split at the roll: {split[0]} minutes before the attempt of the {split[1]} planned")
             # clock, stopping where an event would fire (any time in its trigger or fallback) so it fires on time
-            if clock and adj.time_minutes > 0:
-                want = min(adj.time_minutes, clock.cap_minutes)
+            planned = split[0] if split else adj.time_minutes
+            if clock and planned > 0:
+                want = min(planned, clock.cap_minutes)
                 if want < adj.time_minutes:
                     clock_note = f"capped from {adj.time_minutes} to {want} minutes"
                 clk = sp.lookup(doc, clock.path)
@@ -1079,6 +1103,7 @@ class Engine:
             + [p for h in happened for p in _effect_paths(h.effects_applied)]
         return {"state": new_state, "assessments": assessments, "fired": fired, "expired": expired, "happened": happened,
                 "elapsed": elapsed, "clock_note": clock_note, "directives": directives, "adjudication": adj, "effect_paths": effect_paths,
+                "split": split,
                 "notes": notes, "pending_fired": pending_fired, "pending_lapsed": pending_lapsed,
                 "fail_streak": self._fail_streak(iid, turn) if assessments else 0,
                 "player_name": _hook(game, "player_name", state, default="the player")}
@@ -1730,6 +1755,45 @@ def _lever_lines(levers: list["PendingLever"]) -> list[str]:
 
 
 
+TIME_LOST = re.compile(r"^\s*time\s+lost\s*:?\s*(?:about\s+|some\s+|another\s+)?(\d{1,4})\b", re.I)    # "5 minutes", "5 min", "5" (the cold read, D146)
+
+
+def time_after(game: Game, state: BaseModel, res: dict, calls: list[dict], notes: list[str], turn: int) -> tuple[BaseModel, dict]:
+    """The clock after the prose (time doc §3 (i)-(iii), D146): the called results' own minutes (the stake's branch,
+    when it has any) and a [[time lost: N minutes]] note, capped by the kind of turn (fast or slow), never past the next
+    scheduled event or pending, and never so the turn passes the clock's cap. Returns the state, advanced, and what was
+    asked and added ({} when nothing was)."""
+    clock = getattr(game, "clock", None)
+    if not clock:
+        return state, {}
+    post = sum(int(((c.get("result") or {}).get("stake") or {}).get("minutes") or 0) for c in calls)
+    asked = sum(int(m.group(1)) for n in notes if (m := TIME_LOST.match(n)))
+    if post <= 0 and asked <= 0:
+        return state, {}
+    adj = res.get("adjudication")
+    cap = clock.lost_cap_fast if adj is not None and getattr(adj, "tempo", "slow") == "fast" else clock.lost_cap_slow
+    lost = min(asked, cap)
+    doc = state.model_dump(mode="json")
+    clk = sp.lookup(doc, clock.path)
+    now = clk["day"] * clock.minutes_per_day + clk["minute"]
+    room, why = max(clock.cap_minutes - int(res.get("elapsed") or 0), 0), "the turn's cap"
+    nxt_f = ev.next_firing(_events_of(game, doc), doc, turn, now, now + post + lost, clock.minutes_per_day, clock.path,
+                           getattr(game, "pending_path", None) or "hidden.pending")
+    if nxt_f is not None and nxt_f[1] - now < room:
+        room, why = nxt_f[1] - now, f"scheduled event {nxt_f[0].id}"
+    ppath = getattr(game, "pending_path", None)
+    nxt_p = pend.next_due(pend.load(doc, ppath), clock.minutes_per_day) if ppath else None
+    if nxt_p is not None and now < nxt_p.due_abs(clock.minutes_per_day) and nxt_p.due_abs(clock.minutes_per_day) - now < room:
+        room, why = nxt_p.due_abs(clock.minutes_per_day) - now, f"pending {nxt_p.id}"
+    add = max(0, min(post + lost, room))
+    total = now + add
+    clk["day"], clk["minute"] = total // clock.minutes_per_day, total % clock.minutes_per_day
+    info = {"result_minutes": post, "lost_asked": asked, "lost": lost, "added": add}
+    if add < post + lost:
+        info["stopped_at"] = why
+    return (game.load_state(doc) if add else state), info
+
+
 def _referee_cost(result: dict) -> str:
     """What the referee is told the state pays for a called check: a major consequence's lasting mark and a shut way
     (D144); a slight complication is already in the branch's text and needs no row. Before the roll: the one cost."""
@@ -1989,7 +2053,10 @@ def _this_turn_block(res: dict[str, Any], clock_text: str = "") -> str:
     adj = res.get("adjudication")
     if adj is not None:
         lines.append(f"- What the player is attempting, as the engine read it: {adj.summary} Tell the attempt in the story's own words, not these.")
-    if res["elapsed"]:
+    if res.get("split") and res["elapsed"]:            # D146 (i): the clock moves to the attempt now, by each result when it falls
+        lines.append(f"- Time passes: about {res['elapsed']} minutes before the first attempt starts; the clock above shows the moment it starts. "
+                     "Tell those minutes, then call the check. Each check's result says how long that attempt takes; the turn ends when the last attempt does.")
+    elif res["elapsed"]:
         note = res.get("clock_note") or ""
         if "stopped at" in note and adj is not None and adj.time_minutes > res["elapsed"]:
             lines.append(f"- Time passes: about {res['elapsed']} minutes of the {adj.time_minutes} the player meant to spend; something falls due then (below). "
