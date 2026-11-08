@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from engine.events import Event
 from engine.gamekit import Clock
 from engine.pending import Pending
+from engine.resolve import best_overlap
 from engine.spontaneous import Spontaneous
 from engine.threads import Thread
 from engine.wounds import Wound
@@ -215,8 +216,11 @@ class HookState(BaseModel):
     dealt_abs: int = 0
     closed_turn: int | None = None
     giver: str = ""                 # from whom (the quest log's column)
-    standing: str = ""              # where it stands, in a few words (the quest log's column)
+    standing: str = ""              # where it stands, one word from STANDING (the quest log's column; deck.restand keeps it)
     declined: bool = False          # the player turned the job down (the referee's row); it comes back when they take it up
+    offered: bool = False           # its giver put the job to the player (the reach fired where it is played, or the referee's word came after)
+    taken: bool = False             # the player took it up (said they will, went where it happens, or a step of it was paid)
+    note: str = ""                  # the referee's latest word on it (B93: a thread it opened for this job lands here)
     thread: str = ""                # the thread id it opened when its reach fired
     paid: list[int] = Field(default_factory=list)   # milestones paid (the long thread)
     reward: str = ""                # what was paid, for the log
@@ -299,13 +303,8 @@ def find_item(items: list[Item], key: str, strict: bool = False) -> Item | None:
         hit = next((it for it in items if it.id == alias), None)
         if hit is not None:
             return hit
-    words = set(k.replace("'s", "").split()) - _FILLER
-    best: tuple[int, Item | None] = (0, None)
-    for it in items:
-        iw = set(it.name.lower().replace("'s", "").split()) - _FILLER
-        score = len({w.rstrip("s") for w in words} & {w.rstrip("s") for w in iw})
-        if strict and score < min(len(words), len(iw)):
-            continue
-        if score > best[0]:
-            best = (score, it)
-    return best[1]
+    return best_overlap(_name_words(k), ((it, _name_words(it.name.lower())) for it in items), strict=strict)
+
+
+def _name_words(name: str) -> set[str]:
+    return {w.rstrip("s") for w in set(name.replace("'s", "").split()) - _FILLER}

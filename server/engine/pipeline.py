@@ -1881,7 +1881,21 @@ def referee_inputs(game: Game, state: BaseModel, directives: list[str], player_t
                    recent: list[tuple[int, str, str]] | None = None) -> tuple[str, list[Msg]]:
     """Everything the referee is sent (see adjudicator_inputs). `recent`: the TRIAL earlier turns (D59)."""
     rules = _hook(game, "referee_rules", state, default="")
-    return referee_messages(rules, _engine_state_text(game, state, adj), directives, player_text, tier_only_view(narration), levers=levers, recent=recent)
+    return referee_messages(rules, _engine_state_text(game, state, adj), directives, player_text, tier_only_view(narration), levers=levers, recent=recent,
+                            hints=quest_hints(game, state, player_text, narration))
+
+
+def quest_hints(game: Game, state: BaseModel, player_text: str, narration: str) -> list[str]:
+    """B93's pre-check (D175): the quests in motion this turn's words may concern (the giver named, or two of the title's
+    own words, or a place and one), one line each for the referee. A hint; the referee still decides."""
+    from .changes import quests_in_motion
+    from .resolve import hint_line, mentioned
+    if not getattr(game, "threads_path", None):
+        return []
+    quests = quests_in_motion(game, state)
+    if not quests:
+        return []
+    return [hint_line(q) for q in mentioned(f"{player_text}\n{narration}", quests, str(_hook(game, "player_name", state, default="") or ""))][:3]
 
 
 _NATURAL_LINE = re.compile(r"^§ ([^.\n]+?), ([a-z ]+)\. [^\n]*?\. Natural (?:20!|1\.) ([A-Za-z][a-z ]*)\.$", re.M)
@@ -2407,6 +2421,8 @@ def land_extras(game: Any, state: BaseModel, log_line: str, report: ApplyReport,
             report.rejected.append(Rejection(path="log", reason="the same as the last log line", value=log_line.strip(), kind="duplicate"))
         else:
             sp.append(doc, lpath, f"{_clock_text(game, doc)}{log_line.strip()}")
+    for m in getattr(extras, "merges", []):          # B93: a thread opened for a quest already in motion landed as its note
+        ledger("merge", m)
     tpath = getattr(game, "threads_path", None)
     if tpath and (extras.threads_opened or extras.threads_closed):
         applied, rejected = th.apply_updates(doc, tpath, extras.threads_opened, extras.threads_closed, turn)

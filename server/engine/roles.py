@@ -195,9 +195,10 @@ class Change(BaseModel):
     kind: ChangeKind = Field(description="set: a field takes a value. add: a number moves by a signed step. move: someone or something is somewhere else. new: a thing, person or place the prose introduced. gone: a listed thing is destroyed or removed. learned: a fact someone now knows (the player: a clue). flag: a scenario flag established. thread_open / thread_close: a commitment the story must remember, or one settled. soon: something set in motion that will happen on its own. unseen: a fact out of the player's sight. not_done: a listed lever the prose did not complete. ruling: the prose broke a rule the engine acts on (field = the rule, value = what happened, note = how a retelling fixes it). issue: anything else for the engine.")
     target: str = Field(default="", description="Who or what, by id as the state lists it: player, a person, a thing, a system or resource name, a place; for new: thing, person or place; for flag: the flag name; for thread_close: the thread id; for not_done: the lever id. Empty when the kind needs none.")
     field: str = Field(default="", description="set/add: the attribute (location, health, mood, stress, suspicion, dread, attitude, status, control, level, conditions, count, loaded, locked, open, state). new: where it is. ruling: the rule broken: contradiction, unauthorized_addition, directive_ignored, check_skipped, check_ignored, leak or drift. Empty otherwise.")
-    value: str = Field(default="", description="The new value; for add a signed step such as +8 or -2; for move the destination id; for new the name; for learned the fact; for thread_open the title; for soon what happens; for unseen the fact; for flag true or false; for ruling what happened, in a sentence; for issue the text.")
+    value: str = Field(default="", description="The new value; for add a signed step such as +8 or -2; for move the destination id; for new the name; for learned the fact; for thread_open what is pending, in a sentence (what is wanted, by whom, for what); for soon what happens; for unseen the fact; for flag true or false; for ruling what happened, in a sentence; for issue the text.")
     who: str = Field(default="", description="The person who did it, by id, when one did (a lock changed by a crew member, a plan that is theirs). Empty otherwise.")
     note: str = Field(default="", description="A few words: the reason; a new thing's state or a new person's role; what would stop a soon; how a thread ended (resolved or failed); why a lever was not completed; for ruling, one sentence telling the narrator how to tell the turn again correctly.")
+    title: str = Field(default="", description="thread_open only: the thread's name, in a few words.")
     minutes: int = Field(default=0, description="soon only: about how many in-game minutes until it happens. 0 means at once, next turn.")
     hidden: bool = Field(default=False, description="soon only: the player cannot see it happen where they are.")
 
@@ -227,7 +228,7 @@ Rows:
 - gone <target>: a listed thing destroyed or removed from play.
 - learned <target> value=fact: what someone now knows or said; target player for a clue the player learned (concrete evidence, not feelings).
 - flag <name> value=true|false: only names the rules list.
-- thread_open value=title / thread_close <thread id> note=resolved: <what in the prose settled it> | failed: <why it can no longer happen>: commitments the story must remember (a promise, a lie and who believes it, a plan with a time, a question raised); close only listed open threads, by id; something that opens and settles in the same prose is not a thread.
+- thread_open title=a short name, value=what is pending in a sentence / thread_close <thread id> note=resolved: <what in the prose settled it> | failed: <why it can no longer happen>: commitments the story must remember (a promise, a lie and who believes it, a plan with a time, a question raised); close only listed open threads, by id; something that opens and settles in the same prose is not a thread. set <thread id>.note = a few words: when the prose moves a listed open thread on (terms named, a step taken), where it stands now.
 - soon value=what happens, who, minutes, hidden, note=what would stop it: anything set in motion that will happen on its own if nothing intervenes: a threat closing in, a plan announced with a time, a timer, someone sent to do something. Every [[soon: …]] note is one. A creature or person described as waiting, watching, hesitating, closing in or about to act is one: give it minutes; waiting for a second turn is not an outcome.
 - unseen value=fact: [[unseen: …]] notes and anything the prose shows happening where the player cannot perceive it. The player does not know these: never put them in a clue, the log line, or anything player-visible. What the prose showed the player is not unseen, even when the narrator's note calls it so: report it as what it is (a move, a set, a clue).
 - set <pending id>.resolved = happened: how | stopped: why: IMPENDING items in the state are already in motion; when the prose shows one happened early (value happened: how it went through) or was prevented or no longer applies (value stopped: why), resolve it by its id (p1, p2, …). A scripted fuse that happens early is its blow: the engine plays its consequences.
@@ -256,12 +257,15 @@ def earlier_turns_block(recent: list[tuple[int, str, str]]) -> str:
 
 
 def referee_messages(rules: str, state_text: str, directives: list[str], player_text: str, narration: str,
-                     levers: list[str] | None = None, recent: list[tuple[int, str, str]] | None = None) -> tuple[str, list[Msg]]:
+                     levers: list[str] | None = None, recent: list[tuple[int, str, str]] | None = None,
+                     hints: list[str] | None = None) -> tuple[str, list[Msg]]:
     system = REFEREE_INSTRUCTIONS + "\n\nGAME RULES FOR THE REFEREE\n" + rules.strip()
     d = "\n".join(f"- {x}" for x in directives) if directives else "- (none)"
     lv = ("\n\n[LEVERS THE ENGINE APPLIES AFTER YOUR REPORT, UNLESS NOT COMPLETED]\n" + "\n".join(f"- {x}" for x in levers)) if levers else ""
     user = (earlier_turns_block(recent or []) + f"[GAME STATE BEFORE THIS TURN]\n{state_text.strip()}\n\n[DIRECTIVES THE NARRATOR WAS GIVEN]\n{d}{lv}\n\n"
             f"[PLAYER INPUT]\n{player_text.strip()}\n\n[NARRATION AND THE NARRATOR'S NOTES]\n{narration.strip()}")
+    if hints:                                   # B93's pre-check: quests in motion this turn's words may concern
+        user += "\n\n[QUESTS THIS TURN MAY CONCERN]\n" + "\n".join(f"- {h}" for h in hints)
     return system, [Msg("user", user)]
 
 

@@ -3,6 +3,8 @@
 export type Tone = "neutral" | "ok" | "warn" | "bad" | "info";
 export type Chip = { label: string; value: string; tone?: Tone | null };
 export type TableCell = { text: string; tone: Tone };
+// B93: one quest shape in every game: the title, one line (what is wanted, by whom, for what), the standing word, the giver.
+export type QuestRow = { title: string; line: string; standing: string; giver: string; tone: Tone };
 export type EntityCard = { id: string; title: string; subtitle?: string | null; badges: Chip[]; details: Chip[]; notes: string[] };
 export type Choice = { label: string; command: string; args: Record<string, unknown> };
 export type Option = { id: string; label: string };
@@ -22,7 +24,8 @@ export type Widget =
   | { type: "list"; title: string; items: Chip[]; layout?: "rows" | "grid" | "stack" }
   | { type: "log"; title: string; lines: string[] }
   | { type: "choices"; title?: string | null; choices: Choice[] }
-  | { type: "commands"; title?: string | null; items: CommandSpec[] };
+  | { type: "commands"; title?: string | null; items: CommandSpec[] }
+  | { type: "quests"; title: string; rows: QuestRow[] };
 
 export type UISchema = { phase: string; free_text: boolean; placeholder: string; panels: Widget[] };
 

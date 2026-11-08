@@ -25,12 +25,13 @@ from engine.events import Event, evaluate, next_moment
 from engine.events import clock_text as ev_clock_text
 from engine.game import (
     ApplyReport, Chip, ClockSpec, CommandResult, Commands, CommandSpec, EntityCard, EntityCards, GameBase, ListPanel,
-    LogPanel, Meter, MeterGroup, Option, Param, StatusStrip, Table, TableCell, TaskRow, TurnInfo, UISchema,
+    LogPanel, Meter, MeterGroup, Option, Param, QuestPanel, QuestRow, StatusStrip, TaskRow, TurnInfo, UISchema,
 )
-from engine.gamekit import Clock, Writer
+from engine.gamekit import Clock, Writer, quest_line
 from engine.mechanics import CheckRequest, Modifier
 from engine.narration import default_mechanic_line
 from engine.pending import Pending
+from engine.resolve import Quest, same_person
 from engine.roles import AssistantReadingV2, Change
 from engine.spontaneous import Spontaneous
 from engine.statepath import Actor
@@ -74,6 +75,9 @@ STOP = {"that", "this", "with", "from", "into", "their", "there", "they", "were"
         "when", "where", "which", "while", "just", "them", "then", "than", "over", "under", "told", "says", "your", "like", "want",
         "wants", "played", "playing", "very", "much", "some", "would", "could", "should", "anything", "always", "never", "still"}
 
+THREAD_STANDING = {"open": "taken up", "resolved": "done", "failed": "failed"}   # the player's own jobs, in the hooks' words (B93)
+PERSON_TITLES = {"the", "lord", "brother", "sergeant", "captain", "constable", "master", "old", "mother"}   # "Old Hesk" is Hesk
+
 AUTHORITY: dict[str, Actor] = {
     "clock": "engine", "player.stats": "engine", "player.abilities": "engine", "player.level": "engine", "player.xp": "engine",
     "player.hp_max": "engine", "player.renown": "engine", "player.name": "engine", "player.race": "engine", "player.klass": "engine",
@@ -83,7 +87,8 @@ AUTHORITY: dict[str, Actor] = {
     "inventory": "narrator", "people": "narrator", "people.*.wants": "script", "people.*.secret": "script",
     "people.*.description": "script", "people.*.tells": "script", "people.*.tells.*.told": "narrator", "things": "narrator",
     "lost": "narrator", "journal": "narrator", "found_places": "narrator", "hidden": "script", "flags": "narrator",
-    "log": "narrator", "threads": "narrator", "hooks": "engine", "hooks.*.declined": "narrator", "deck": "engine",
+    "log": "narrator", "threads": "narrator", "hooks": "engine", "hooks.*.declined": "narrator", "hooks.*.taken": "narrator",
+    "hooks.*.note": "narrator", "deck": "engine",
 }
 
 
@@ -674,8 +679,8 @@ class FantasyGame(GameBase):
             "a favour asked at the bar). Close it when the prose settles it, with how in the note. The quests the game deals have thread ids "
             "starting with hook-. You never close these. When the prose settles one, write the flag marked below with that quest's title, and "
             "the engine closes the quest. When the player plainly says no to a quest's job (a clear refusal to whoever offered it; not 'maybe "
-            "later', haggling over pay, or simply leaving), write set <its hook- thread id>.declined true; if they later say they will do the "
-            "job, set <its hook- thread id>.declined false.",
+            "later', haggling over pay, or simply leaving), write set <its hook- thread id>.declined true; when they say they will do the "
+            "job (at once, or after turning it down), write set <its hook- thread id>.declined false.",
             "ruling too_far (serious): the telling showed more than this game shows: a bedroom scene past the door, or a torture told blow by blow. "
             "value = what it showed, in a few words; note = where to cut and where to pick up: at the door for a bedroom; at the first blow for a "
             "torture, picking up with what it left.",
@@ -688,6 +693,54 @@ class FantasyGame(GameBase):
                 continue                                             # the engine's and the clock's
             lines.append(f"- {k}: {v}" + (f" (closes the quest {closes[k]}; write it when that happens)" if k in closes else ""))
         return "\n".join(lines)
+
+    # ---- quests (B93, D175): one record per job, one row shape ---------------------------------------------------------
+    def quests_in_motion(self, s: FantasyState) -> list[Quest]:
+        """The dealt hooks the player has been reached by (a dealt hook's reach can fire on the very turn the referee reads),
+        then the player's own open threads. Never a hook's hidden summary: only its title, giver, places and standing line."""
+        hooks = self.hooks_content()
+        fired = {e.id for e in s.hidden.events if e.fired}
+        out = [Quest(id=h.id, title=h.title, giver=h.giver, places=sorted(x for x in dk.hook_places(hooks.get(h.id) or {}) if x),
+                     kind="hook", line=dk.fill(self._standing_line(h.id, hooks), s.player.name))
+               for h in s.hooks if h.status == "live" or (h.status == "dealt" and f"{h.id}_reach" in fired)]
+        names = self.entity_names(s)
+        out += [Quest(id=t.id, title=t.title, giver=names.get(t.who, t.who), line=t.about)
+                for t in s.threads if t.status == "open" and not t.id.startswith("hook-")]
+        return out
+
+    def note_quest(self, s: FantasyState, quest: Any, note: str, w: Writer) -> bool:
+        """The referee's word on a quest: a hook's note (and its thread's, so the state block shows it), else a thread's."""
+        h = s.hook(quest.id.removeprefix("hook-"))
+        if h is None:
+            return super().note_quest(s, quest, note, w)
+        note = clip_words(" ".join(note.split()), 200)
+        if note and note != h.note and w.set(f"hooks.{h.id}.note", h.note, note):
+            h.note = note
+            t = next((t for t in s.threads if t.id == h.thread and t.status == "open"), None) if h.thread else None
+            if t is not None:
+                t.note = note
+            if h.status == "live" and not h.offered and not h.taken:
+                h.offered = True                                # the word came, and then the job itself: offered
+            dk.restand(h)
+        return True
+
+    def _standing_line(self, hid: str, hooks: dict[str, dict] | None = None) -> str:
+        """A hook's player-safe line from its content (`standing:`, what is wanted, by whom, for what), name filled."""
+        hk = (hooks if hooks is not None else self.hooks_content()).get(hid) or {}
+        return str(hk.get("standing") or "")
+
+    def quest_rows(self, s: FantasyState) -> list[QuestRow]:
+        """The Quests panel (B93): the hooks the player knows of, then their own threads, one shape: title, one line, the
+        standing word, the giver."""
+        hooks = self.hooks_content()
+        rows = [QuestRow(title=h.title, line=quest_line(dk.fill(self._standing_line(h.id, hooks), s.player.name), h.note),
+                         standing=dk.standing_of(h), giver=h.giver, tone=dk.STANDING_TONES.get(dk.standing_of(h), "info"))  # type: ignore[arg-type]
+                for h in s.hooks if h.status != "dealt"]
+        names = self.entity_names(s)
+        rows += [QuestRow(title=t.title, line=quest_line(t.about, t.note), standing=THREAD_STANDING.get(t.status, t.status),
+                          giver=names.get(t.who, t.who), tone="ok" if t.status == "resolved" else "bad" if t.status == "failed" else "info")
+                 for t in s.threads if not t.id.startswith("hook-")]
+        return rows
 
     def _quest_flags(self, s: FantasyState) -> dict[str, str]:
         """flag -> the title of the quest in motion whose done or failed condition names it (f1L, D165: the troll moved to
@@ -850,7 +903,11 @@ class FantasyGame(GameBase):
                 w.reject(f"hooks.{hk.id}.declined", "the quest is already settled", value)
             elif down != hk.declined and w.set(f"hooks.{hk.id}.declined", hk.declined, down):
                 hk.declined = down
-                hk.standing = "turned down" if down else "taken up"
+                hk.taken = hk.taken or not down
+                dk.restand(hk)
+            elif not down and not hk.taken and w.set(f"hooks.{hk.id}.taken", False, True):
+                hk.taken = True                                  # said yes to the job the first time it was put
+                dk.restand(hk)
             return True
         if kind in ("move", "set") and (kind == "move" or field == "location"):
             value = self._place(s, value) or value
@@ -1280,18 +1337,7 @@ class FantasyGame(GameBase):
 
     @staticmethod
     def _same_person(s: FantasyState, name: str) -> Person | None:
-        k = (name or "").strip().lower().removeprefix("the ").strip(" .")
-        if not k:
-            return None
-        for q in s.people:
-            if k == q.name.lower().removeprefix("the ") or any(k == a.lower().removeprefix("the ") for a in q.aliases):
-                return q
-        words = {x for x in re.split(r"[^a-z]+", k) if len(x) > 2 and x not in ("the", "lord", "brother", "sergeant", "captain", "constable", "master", "old", "mother")}
-        for q in s.people:
-            qw = {x for x in re.split(r"[^a-z]+", q.name.lower()) if len(x) > 2}
-            if words & qw:
-                return q
-        return None
+        return same_person(s.people, name, PERSON_TITLES)
 
     @staticmethod
     def _described(s: FantasyState, name: str, note: str = "") -> Person | None:
@@ -1388,11 +1434,13 @@ class FantasyGame(GameBase):
                 q.seen_at = q.location
         if p.location and p.location != "Unknown":
             self._visit(s, p.location)
-        # -- a job turned down is taken up again when the player goes where it happens (its own places, not where it was offered)
+        # -- a job is taken up (again, when it was turned down) when the player goes where it happens (its own places, not
+        #    where it was offered)
         hooks_now = self.hooks_content()
         for h in s.hooks:
-            if h.declined and h.status == "live" and p.location in {x.get("name") for x in (hooks_now.get(h.id) or {}).get("places") or []}:
-                h.declined, h.standing = False, "taken up"
+            if h.status == "live" and p.location in {x.get("name") for x in (hooks_now.get(h.id) or {}).get("places") or []}:
+                h.declined, h.taken = False, True
+                dk.restand(h)
         # -- the Watch: a day lowers it; one of the Watch turned hostile raises it a step (B55); wanted is a flag
         self._watch_turned(s, info.applied)
         if s.clock.day > p.heat_day:
@@ -1840,14 +1888,10 @@ class FantasyGame(GameBase):
             clues = [n for n in s.journal if n.kind == "clue"]
             lines.append("JOURNAL" if clues else "JOURNAL: nothing written down yet.")
             lines += [f"  - {n.text}" for n in clues]
-            quests = [h for h in s.hooks if h.status != "dealt"]
-            if quests:
+            rows = self.quest_rows(s)
+            if rows:
                 lines.append("QUESTS")
-                lines += [f"  - {h.title}: {h.standing}" + (f" (from {h.giver})" if h.giver else "") for h in quests]
-            mine = [t for t in s.threads if not t.id.startswith("hook-")]
-            if mine:
-                lines.append("YOUR OWN")
-                lines += [f"  - {t.title}: {t.status}" for t in mine]
+                lines += [f"  - {r.title}: {r.standing}" + (f" (from {r.giver})" if r.giver else "") + (f". {r.line}" if r.line else "") for r in rows]
             met = [q for q in s.people if q.met]
             if met:
                 lines.append("PEOPLE")
@@ -1882,10 +1926,6 @@ class FantasyGame(GameBase):
         gold = s.item("gold").count if s.item("gold") else 0
         met = [q for q in s.people if q.met]
         heard = [q for q in s.people if q.heard_of and not q.met]
-        quest_rows = [[TableCell(text=h.title), TableCell(text=h.standing, tone="ok" if h.status == "done" else "bad" if h.status == "failed" else "info"),
-                       TableCell(text=h.giver or "")] for h in s.hooks if h.status != "dealt"]
-        quest_rows += [[TableCell(text=t.title), TableCell(text=t.status, tone="ok" if t.status == "resolved" else "bad" if t.status == "failed" else "info"),
-                        TableCell(text="")] for t in s.threads if not t.id.startswith("hook-")]
         wounds = sorted(p.wounds, key=lambda x: -wd.WEIGHTS[x.weight])
         sheet = [Chip(label="", value=sh.score_text(k, p.stats.get(k, 0))) for k in STATS]
         sheet += [Chip(label="Race", value=p.race), Chip(label="Class", value=p.klass), Chip(label="Level", value=str(p.level))]
@@ -1923,7 +1963,7 @@ class FantasyGame(GameBase):
                            details=[Chip(label="Last seen", value=q.seen_at or "unknown")], notes=q.facts)
                 for q in met] + [
                 EntityCard(id=q.id, title=q.name, subtitle="heard of, not met", notes=q.facts) for q in heard]),
-            Table(title="Quests", columns=["Quest", "Where it stands", "From"], rows=quest_rows),
+            QuestPanel(title="Quests", rows=self.quest_rows(s)),
             ListPanel(title="Journal", items=[Chip(label="contact" if n.kind == "contact" else "", value=n.text) for n in s.journal[-20:]], layout="stack"),
             LogPanel(title="The day's log", lines=[ln for ln in s.log if ln.startswith(f"Day {s.clock.day} ")][-20:] or s.log[-5:]),
         ]

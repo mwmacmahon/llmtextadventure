@@ -19,7 +19,8 @@ from .game import ApplyReport, Rejection
 from .gamekit import Writer
 from .pending import PendingNew
 from .roles import RULES, SERIOUS_RULES, Change, ChangeReport
-from .threads import ThreadClose, says_still_open
+from . import resolve as rs
+from .threads import ThreadClose, ThreadOpen, opening, says_still_open
 
 TRUE_WORDS = {"true", "yes", "on", "1", "set"}
 
@@ -33,8 +34,37 @@ class Extras:
     not_done: list[str] = field(default_factory=list)
     issues: list[str] = field(default_factory=list)
     rulings: list[dict] = field(default_factory=list)   # {rule, what, fix, serious}; the guard acts on the serious ones
-    threads_opened: list[str] = field(default_factory=list)
+    threads_opened: list[ThreadOpen] = field(default_factory=list)
     threads_closed: list[ThreadClose] = field(default_factory=list)
+    merges: list[dict] = field(default_factory=list)       # B93: a thread opened for a quest already in motion, landed as its note (the ledger's `merge` rows)
+
+
+def quests_in_motion(game: Any, state: BaseModel) -> list[rs.Quest]:
+    """The game's quests in motion (GameBase.quests_in_motion), or the open threads for a game without the hook."""
+    fn = getattr(game, "quests_in_motion", None)
+    if fn is not None:
+        return [rs.as_quest(q) for q in fn(state)]
+    from .game import GameBase
+    return GameBase.quests_in_motion(game, state)   # type: ignore[arg-type]
+
+
+def note_quest(game: Any, state: BaseModel, quest: rs.Quest, note: str, w: Writer) -> bool:
+    fn = getattr(game, "note_quest", None)
+    if fn is not None:
+        return bool(fn(state, quest, note, w))
+    from .game import GameBase
+    return GameBase.note_quest(game, state, quest, note, w)    # type: ignore[arg-type]
+
+
+def quest_named(quests: list[rs.Quest], target: str) -> rs.Quest | None:
+    """The quest a row's target names: a thread's id, or a hook's id with or without its hook- prefix."""
+    k = target.strip().lower()
+    return next((q for q in quests if k in (q.id.lower(), f"hook-{q.id.lower()}")), None)
+
+
+def _player_name(game: Any, state: BaseModel) -> str:
+    fn = getattr(game, "player_name", None)
+    return str(fn(state) or "") if fn is not None else ""
 
 
 def clip_words(text: str, n: int) -> str:
@@ -293,6 +323,12 @@ def apply_changes(game: Any, state: BaseModel, report: ChangeReport, *, present:
         if k == "set" and not ch.field.strip() and ch.target.strip() in allowed_flags:      # "set okafor_got_report true": a flag by its name
             k = "flag"
             ch = ch.model_copy(update={"kind": "flag"})
+        qn = quest_named(quests_in_motion(game, s), ch.target) if k == "set" and ch.field.strip().lower() == "note" else None
+        if qn is not None:                                                 # set <thread or quest id>.note: the referee's latest word on it
+            note = (ch.value or ch.note).strip()
+            if note and not note.startswith("<") and "in a few words" not in note.lower() and not takes_itself_back(ch.model_copy(update={"note": note})):
+                note_quest(game, s, qn, note, w)
+            continue
         if skip_set and (ch.target.strip().lower() in skip_set or ch.field.strip().lower() in skip_set):
             w.note(f"{k} {ch.target}: already applied by the lever; not counted again")
             continue
@@ -326,8 +362,16 @@ def apply_changes(game: Any, state: BaseModel, report: ChangeReport, *, present:
                     row.update(serious=False, softened=True, softened_by="fix_declines")
                 ex.rulings.append(row)
         elif k == "thread_open":
-            if (ch.value or ch.note).strip():
-                ex.threads_opened.append((ch.value or ch.note).strip())
+            if (ch.value or ch.note or ch.title).strip():
+                op = opening(ch.value or ch.note or ch.title, ch.title, ch.who)
+                hit = rs.resolve_quest(op.title, op.about, op.who, quests_in_motion(game, s), _player_name(game, s))
+                if hit is None:
+                    ex.threads_opened.append(op)
+                else:                                                     # B93: one quest, one row: the job in motion takes the word
+                    note_quest(game, s, hit.quest, op.about or op.title, w)
+                    w.note(f"threads: {op.title!r} is {hit.quest.id} ({hit.quest.title}); noted there, not opened")
+                    ex.merges.append({"what": "thread_open", "title": op.title, "about": op.about, "who": op.who,
+                                      "into": hit.quest.id, "into_kind": hit.quest.kind, "into_title": hit.quest.title, "why": hit.why})
         elif k == "thread_close":
             text = f"{ch.note} {ch.value}".lower()
             reason = [x for x in re.findall(r"[a-z']+", text) if x not in ("failed", "resolved", "fail", "closed", "done")]

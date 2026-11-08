@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from engine.events import Event
 from engine.gamekit import Clock
 from engine.pending import Pending
+from engine.resolve import best_overlap
 from engine.spontaneous import Spontaneous
 from engine.threads import Thread
 from engine.wounds import Wound
@@ -229,16 +230,9 @@ def find_item(items: list[Item], key: str, strict: bool = False) -> Item | None:
     if alias:
         return next((it for it in items if it.id == alias), None)
     words = set(k.replace("'s", "").split()) - _FILLER           # "scrap of paper" shares only "of" with "photograph of June": no match
-    owner = _owner(k)
-    best: tuple[int, Item | None] = (0, None)
-    for it in items:
-        iw = set(it.name.lower().replace("'s", "").split()) - _FILLER
-        score = len(words & iw)
-        if strict and (score < min(len(words), len(iw)) or (owner and owner != _owner(it.name.lower()))):
-            continue                                                # Szabo's notebook is not the notebook Frank dropped; "shoe" is the woman's shoe
-        if score > best[0]:
-            best = (score, it)
-    return best[1]
+    owner = _owner(k)                                               # Szabo's notebook is not the notebook Frank dropped; "shoe" is the woman's shoe
+    return best_overlap(words, ((it, set(it.name.lower().replace("'s", "").split()) - _FILLER) for it in items), strict=strict,
+                        accept=lambda it: not owner or owner == _owner(it.name.lower()))
 
 
 _FILLER = {"of", "the", "a", "an", "his", "her", "its", "their", "with", "and", "in", "on", "from", "for", "to"}
