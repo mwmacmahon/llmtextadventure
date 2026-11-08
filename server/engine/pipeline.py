@@ -745,7 +745,10 @@ class Engine:
         if adj is None and not getattr(game, "skip_adjudication", False):
             try:
                 adj, meta = await self._adjudicate(game, state, iid, player_text)
+                hopeless = settle_hopeless(adj)                  # B225: very high and an edge of -3 or worse is a fail, no roll
                 ledger("adjudication", {**adj.model_dump(mode="json"), "_call": meta})
+                for h in hopeless:
+                    ledger("precheck", {"kind": "hopeless", **h})
                 for f in getattr(adj, "fiat", None) or []:     # B207 (D179): each attempt the words settled, with why
                     ledger("settled", {"settled": getattr(f, "settled", "works"), "attempt": f.attempt, "outcome": f.outcome, "why": getattr(f, "why", "")})
                 unchecked = [i.action for i in adj.intents if i.check is None]
@@ -2141,7 +2144,8 @@ def scrub_hidden(game: Game, state: BaseModel, adj: Any, player_text: str) -> di
 
 WORDS_DECIDE = """THE WORDS DECIDE FIRST. For each attempt, read the player's words against the situation before anything else, and land on one of three:
 - It works: the words plainly give what the situation asks for (the right key in the right lock; what the person asked for, offered; a plan the scene cannot resist; talking to a friend). No check: it goes under fiat, settled works, with why.
-- It fails: the words plainly miss (what the person has said is worthless to them, offered anyway; a joke to someone grieving; a bluff against someone who watched the player do the opposite). No check: fiat, settled fails, with why.
+- It fails: the words plainly miss (what the person has said is worthless to them, offered anyway; a joke to someone grieving; a bluff against someone who watched the player do the opposite; asking the innkeeper for her inn; asking a siren for her tower; fifty gold from someone with two). No check: fiat, settled fails, with why.
+A demand nobody in their place would grant is a fail, not a very high check.
 - It is open: only then a check, at its difficulty, with its edge.
 Difficulty is how hard the thing is for anyone. It never carries what this player brought; that is the edge.
 EDGE, on every check: what the player's own words and things bring, as a number in edge and their own terms in edge_why. {range}
@@ -2555,6 +2559,26 @@ def _unquiet(game: Game, state: BaseModel, adj: Any) -> str:
     if adj is not None and getattr(adj, "kind", "") == "action" and is_fight(adj):
         return "in a fight"
     return str(_hook(game, "unquiet", state, default="") or "")
+
+
+def settle_hopeless(adj: Any) -> list[dict]:
+    """B225: a check the assistant set at very_high with an edge of -3 or worse is settled as a fail before the narrator
+    calls anything: the check leaves the intent and a fiat 'fails' takes its place, why 'the words settled it: {edge_why}'.
+    Settled fails were 0 of 16 on Sonnet and 0 of 9 on Gemma; Maud's inn deed, Sael's tower and fifty gold all rolled."""
+    from .roles import FiatOutcome
+    out: list[dict] = []
+    if adj is None or not hasattr(adj, "fiat"):
+        return out
+    for i in getattr(adj, "intents", None) or []:
+        c = getattr(i, "check", None)
+        if c is None or c.difficulty != "very_high" or int(getattr(c, "edge", 0) or 0) > -3:
+            continue
+        why = f"the words settled it: {(getattr(c, 'edge_why', '') or 'nobody in their place would grant it').strip()}"
+        outcome = str(getattr(c, "failure_outcome", "") or "") or f"It does not come: {c.label}."
+        adj.fiat = list(adj.fiat or []) + [FiatOutcome(attempt=i.action or c.label, outcome=outcome, settled="fails", why=why)]
+        out.append({"attempt": i.action or c.label, "label": c.label, "edge": int(c.edge), "why": why})
+        i.check = None
+    return out
 
 
 PRY_GAIN = re.compile(r"\b(the piece comes|(she|he|they) says? more|says more|what they keep back)\b", re.I)

@@ -43,3 +43,32 @@ async def test_a_settled_attempt_is_told_as_settled_and_ledgered(engine, fake):
     rows = [r["payload"] for r in engine.store.ledger(iid) if r["kind"] == "settled"]
     assert rows == [{"settled": "works", "attempt": "tell Mirren a true story", "outcome": "she listens, and is pleased",
                      "why": "she asked for a true story and got one"}]
+
+
+def test_a_demand_nobody_would_grant_is_named_a_fail(game):
+    """B225: settled fails were 0 of 16 on Sonnet and 0 of 9 on Gemma; the words-decide text names the demands plainly."""
+    text = words_decide(game)
+    assert "asking the innkeeper for her inn" in text and "fifty gold from someone with two" in text
+    assert "A demand nobody in their place would grant is a fail, not a very high check." in text
+
+
+async def test_a_very_high_check_with_a_hopeless_edge_is_settled_as_a_fail(engine, fake):
+    """B225: the engine's rule. very_high with an edge of -3 or worse: no roll, a settled fails row with the edge's why."""
+    from engine.pipeline import settle_hopeless
+    from engine.roles import CheckStaked
+    deed = IntentStaked(action="demand Maud's inn deed", targets=["maud"],
+                        check=CheckStaked(label="demand the deed", stat="cha", difficulty="very_high", edge=-4, edge_why="she would never give her inn away",
+                                          failure_outcome="Maud laughs in her face."))
+    adj = AssistantReadingStaked(kind="action", summary="demands the deed", time_minutes=2, risk="low", intents=[deed])
+    out = settle_hopeless(adj)
+    assert out and deed.check is None and adj.fiat[0].settled == "fails" and adj.fiat[0].why == "the words settled it: she would never give her inn away"
+    near = IntentStaked(action="climb", check=CheckStaked(label="climb", stat="str", difficulty="very_high", edge=-2))
+    assert not settle_hopeless(AssistantReadingStaked(kind="action", summary="x", time_minutes=1, risk="low", intents=[near])) and near.check
+    iid = engine.create_instance("fantasy", SHEET)
+    deed2 = deed.model_copy(update={"check": CheckStaked(label="demand the deed", stat="cha", difficulty="very_high", edge=-3,
+                                                          edge_why="she would never give her inn away", failure_outcome="Maud laughs.")})
+    fake.canned["AssistantReading"] = [AssistantReadingStaked(kind="action", summary="demands the deed", time_minutes=2, risk="low", intents=[deed2])]
+    await play(engine, iid, "I demand Maud hand me the deed to her inn.")
+    rows = [r["payload"] for r in engine.store.ledger(iid) if r["kind"] == "settled"]
+    assert [r["settled"] for r in rows] == ["fails"] and rows[0]["why"].startswith("the words settled it:")
+    assert not any(r["kind"] == "check" for r in engine.store.ledger(iid))
