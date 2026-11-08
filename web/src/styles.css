@@ -159,3 +159,16 @@ ul.log, ul.notes { margin: 0; padding-left: 18px; font-size: 13px; }
 .settings { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin: 8px 0; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
 .settings-row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
 .settings select { font: inherit; }
+/* the profile picker and the selected profile's card */
+.picker { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border); padding-top: 8px; min-width: 0; }
+.pcard { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.pcard-head { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+.pcard-head > div { flex-basis: 100%; }
+.pcard-section { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; }
+.pcard-price { display: block; }
+.pcard .scroll { overflow-x: auto; max-width: 100%; }
+.pcard-table { border-collapse: collapse; font-size: 12px; width: 100%; }
+.pcard-table th { text-align: left; color: var(--muted); font-weight: 600; padding: 2px 12px 4px 0; border-bottom: 1px solid var(--border); }
+.pcard-table td { padding: 3px 12px 3px 0; vertical-align: top; border-bottom: 1px solid var(--border); }
+.pcard-table tr.muted td { color: var(--muted); }
+.loading-note { color: var(--warn); }

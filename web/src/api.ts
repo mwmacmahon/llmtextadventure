@@ -59,7 +59,45 @@ export type Settings = {
   guard: { mode: string; max_retells: number };
   modes: Record<string, string>;
   progress: { default_chars: number };
+  guard_from: "settings" | "profile" | "this server";
+  shared_guard: string;
+  profile: string;
+  profile_guard: string | null;
   roles: Record<string, { provider: string; model: string; effort: string | null }>;
+};
+
+// The profile picker (server/engine/picker.py): a profile is the whole configuration of a play.
+export type ProfileSummary = { name: string; note: string; local: boolean; base: string; model: string | null };
+export type ProfileList = {
+  active: string | null;
+  label: string;
+  base: string;
+  local: boolean;
+  loading: { name: string; model: string; since: number } | null;
+  busy: boolean;
+  profiles: ProfileSummary[];
+  errors: { name: string; error: string }[];
+};
+export type RoleCard = {
+  provider: string; model: string; where: string; max_tokens: number; effort: string | null;
+  sampler: Record<string, number>; thinking: string;
+};
+export type Dial = { value: string | number | null; from: string };
+export type ModuleLevel = { id: string; label: string; cuts: string; built: boolean; level: string; what: string; levels: string[] };
+export type BoxState = {
+  configured: boolean; state: string; loading: boolean; active: string | null; model: string | null;
+  slots: number | null; slot_ctx: number | null; sleeping: boolean | null; requested_ctx: string | number | null; box_ctx: string | null;
+};
+export type Price = { input: number; output: number; cache_read: number; cache_write: number };
+export type TurnCost = { turns: number; calls: number; usd_total: number; usd_per_turn: number | null; priced: boolean; prices: Record<string, Price> };
+export type ProfileCard = ProfileSummary & {
+  active: boolean;
+  roles: Record<string, RoleCard>;
+  dials: { stakes: Dial; checks: Dial; guard: Dial; target_offset: Record<string, Dial> };
+  modules: ModuleLevel[];
+  server: Record<string, string>;
+  box?: BoxState;
+  cost?: TurnCost;
 };
 
 export type Origin = { forked_from?: string; at_turn?: number; imported?: boolean; original_id?: string; exported?: string };
@@ -109,6 +147,21 @@ export const api = {
   settings: () => fetch("/api/settings").then((r) => j<Settings>(r)),
   updateSettings: (patch: { guard?: Partial<Settings["guard"]>; progress?: Partial<Settings["progress"]> }) =>
     fetch("/api/settings", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) }).then((r) => j<Settings>(r)),
+  profiles: () => fetch("/api/profiles").then((r) => j<ProfileList>(r)),
+  profile: (name: string) => fetch(`/api/profiles/${encodeURIComponent(name)}`).then((r) => j<ProfileCard>(r)),
+  switchProfile: (name: string) =>
+    fetch("/api/profiles/switch", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) }).then(async (r) => {
+      if (!r.ok) {
+        let msg = r.statusText;
+        try {
+          msg = (await r.json()).detail ?? msg;
+        } catch {
+          /* not json */
+        }
+        throw new Error(msg);
+      }
+      return (await r.json()) as ProfileList;
+    }),
 };
 
 export type TurnEvent =
