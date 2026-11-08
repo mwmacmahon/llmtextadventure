@@ -179,7 +179,10 @@ person's files (B9) and the masking sightings are its first cases.
 
 **Position:** the fantasy game built and playable (D152 to D167; the Gemma run and the content questions B64 to B70
 open with the fantasy side chat); W1's first pass done (D166, ten lines; the full sweep and its rounds still owed);
-the feedback button (B10) and the player UI (U2, to be designed with the owner first) not started; the clown sim waits.
+the feedback button (B10) not started; the player UI (U2) has its first slice designed and pulled to the front of the
+line by the owner on 11-08 midday (the lobby with games and settings on the main page, a game page of saved games whose
+lines name the character, place and day, a save card, and a dev-mode checkbox that reveals hidden games: B72 to B74,
+`notes/DESIGN-lobby-and-saves-2026-11-08.md`); the clown sim waits, hidden behind dev mode when it comes.
 
 ## Stage 6. Other models
 
