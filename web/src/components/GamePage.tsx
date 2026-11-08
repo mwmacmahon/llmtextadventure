@@ -18,7 +18,7 @@ function fieldsOf(g: GameInfo): Field[] {
   });
 }
 
-/** A game's own page: its saved games (most recently played first), then New game. */
+/** A game's own page: New game first, then its saved games (most recently played first) (the owner, 11-08). */
 export function GamePage({ name }: { name: string }) {
   const [game, setGame] = useState<GameInfo | null>(null);
   const [saves, setSaves] = useState<InstanceSummary[] | null>(null);
@@ -123,7 +123,7 @@ export function GamePage({ name }: { name: string }) {
       </h1>
       <p className="muted">{game.description}</p>
       {err && <div className="error">{err}</div>}
-      {saves.length ? [saved, newGame] : [newGame]}
+      {saves.length ? [newGame, saved] : [newGame]}
       {/* Reserved: the game's Mods list (files with download, delete, upload) goes here (the mods design). Empty on purpose. */}
       <section className="mods-list" data-slot="mods-list" />
     </div>
