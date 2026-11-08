@@ -3,17 +3,18 @@ import type { Chip, CommandSpec, EntityCard, MeterWidget, Widget } from "../api"
 
 type OnCommand = (command: string, args: Record<string, unknown>) => void;
 
-export function Panels({ panels, onChoice, onCommand, busy }: { panels: Widget[]; onChoice?: OnCommand; onCommand?: OnCommand; busy?: boolean }) {
+// B50 (D167): after the ending only the console commands (mode "engine": no story, no clock) still run, so a Journal can be read.
+export function Panels({ panels, onChoice, onCommand, busy, ended }: { panels: Widget[]; onChoice?: OnCommand; onCommand?: OnCommand; busy?: boolean; ended?: boolean }) {
   return (
     <div className="panels">
       {panels.map((w, i) => (
-        <Panel key={i} w={w} onChoice={onChoice} onCommand={onCommand} busy={busy} />
+        <Panel key={i} w={w} onChoice={onChoice} onCommand={onCommand} busy={busy} ended={ended} />
       ))}
     </div>
   );
 }
 
-function Panel({ w, onChoice, onCommand, busy }: { w: Widget; onChoice?: OnCommand; onCommand?: OnCommand; busy?: boolean }) {
+function Panel({ w, onChoice, onCommand, busy, ended }: { w: Widget; onChoice?: OnCommand; onCommand?: OnCommand; busy?: boolean; ended?: boolean }) {
   switch (w.type) {
     case "commands":
       if (!w.items.length) return null;
@@ -22,7 +23,7 @@ function Panel({ w, onChoice, onCommand, busy }: { w: Widget; onChoice?: OnComma
           {w.title && <h3>{w.title}</h3>}
           <div className="commands">
             {w.items.map((c) => (
-              <CommandRow key={c.id} spec={c} onRun={onCommand} busy={busy} />
+              <CommandRow key={c.id} spec={c} onRun={onCommand} busy={busy || (ended && c.mode !== "engine")} />
             ))}
           </div>
         </section>

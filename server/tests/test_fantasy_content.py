@@ -14,9 +14,8 @@ CONTENT = Path(__file__).resolve().parents[2] / "notes" / "content" / "fantasy"
 pytestmark = pytest.mark.skipif(not (CONTENT / "scenarios" / "marrowgate.yml").exists(), reason="the fantasy content is not on this machine")
 
 # found by the lint, logged for the owner; the content is loaded as written (the directive §2)
-KNOWN = {
-    "city: secret term 'Old Marrow' is in singing_on_the_lake's narrator text": "B41",
-    "city: secret term 'Old Marrow' is in what_the_fog_keeps's narrator text": "B41",
+KNOWN = {          # B41's place texts fixed (D167); the thing "a frayed bell-rope of Old Marrow" keeps the term (B66)
+    "city: secret term 'Old Marrow' is in what_the_fog_keeps's narrator text": "B66",
 }
 
 

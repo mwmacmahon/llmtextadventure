@@ -79,6 +79,7 @@ def _narrator_text(doc: dict, *, hook: bool) -> str:
     if not hook:
         bits += [doc.get("premise", ""), (doc.get("city") or {}).get("description", "")]
         bits += [r.get("text", "") for r in doc.get("country") or []]
+        bits += [str(doc.get("opening_text", ""))] + [str(v) for v in (doc.get("race_lines") or {}).values()]
     for e in list(doc.get("events") or []) + ([] if not hook else list(doc.get("reach") or [])):
         bits.append(str(e.get("directive", "")))
         bits.append(str(e.get("description", "")))
@@ -176,6 +177,13 @@ def lint(content_dir: Path) -> list[str]:
                 if not pl.get("gated"):
                     say(f"{hid}: new place {pl.get('name')!r} has no gate flag")
     all_places = places | hook_places
+    for w in (city.get("deck") or {}).get("water") or []:        # B39 (D167)
+        if w not in places:
+            say(f"deck: water place {w!r} is not a city place")
+    from .sheet import RACES
+    for race in city.get("race_lines") or {}:
+        if race not in RACES:
+            say(f"race_lines: {race!r} is not a race on the sheet")
     for alias, pl in (city.get("place_aliases") or {}).items():
         if pl not in places:
             say(f"city: place alias {alias!r} points at {pl!r}, not a listed place")

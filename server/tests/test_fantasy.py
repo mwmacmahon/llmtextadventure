@@ -156,11 +156,11 @@ def test_the_players_row_says_a_rest_cut_short_and_a_new_debt(game: FantasyGame)
 def test_the_prefix_carries_the_about_text_verbatim_and_the_pronoun_line(game: FantasyGame):
     st = new(game)
     pre = game.frozen_prefix(st)
-    assert "Wren, a dwarf warrior. Wren is a woman. The player wrote this about them, and it is true: \"" + SHEET["about"] + "\"" in pre
+    assert "Wren, a dwarf warrior. Wren is a dwarf: short and broad, braided hair or beard. Wren is a woman. The player wrote this about them, and it is true: \"" + SHEET["about"] + "\"" in pre
     assert "{name}" not in pre and "{about_line}" not in pre
     bare = new(game, gender="", about="", race="Elf", klass="Mage")
     pre2 = game.frozen_prefix(bare)
-    assert "Wren, an elf mage. The player controls Wren completely." in pre2
+    assert "Wren, an elf mage. Wren is an elf: pointed ears, a slight build. The player controls Wren completely." in pre2
     assert "The player wrote this" not in pre2
     assert SHEET["about"] in game.adjudication_rules(st) and "+2" in game.adjudication_rules(st)
 
@@ -450,7 +450,7 @@ def test_a_hook_goes_live_on_its_reach_and_closes_with_its_first_matching_reward
     s1.flags["troll_settled"] = True
     s1.flags["troll_dead"] = True                                    # both hold: the first row (settled) is paid, once
     s2 = game.after_turn(s1, info(turn=2))
-    assert s2.hook("cellar_rats").status == "done" and s2.player.xp == 100 and s2.item("gold").count == 17 and s2.player.renown == 5
+    assert s2.hook("cellar_rats").status == "done" and s2.player.xp == 100 and s2.item("gold").count == 17 and s2.player.renown == 15
     assert s2.item("brass_whistle") is not None and s2.person("gorm").attitude == 1 and s2.person("maud").attitude == 1
     assert next(t for t in s2.threads if t.id == "hook-cellar_rats").status == "resolved"
     assert game.after_turn(s2, info(turn=3)).player.xp == 100
@@ -461,7 +461,7 @@ def test_also_rows_are_paid_beside_the_main_row(game: FantasyGame):
     dk.deal(st, game.hooks_content()["body_on_lantern_row"], turn=1, deal_abs=2520, name="Wren")
     st.flags.update(killer_named_nan=True, took_the_purse=True)
     s1 = game.after_turn(st, info(turn=2))
-    assert s1.hook("body_on_lantern_row").status == "done" and s1.player.xp == 100 and s1.player.heat == 10 and s1.player.renown == 10
+    assert s1.hook("body_on_lantern_row").status == "done" and s1.player.xp == 100 and s1.player.heat == 10 and s1.player.renown == 30
 
 
 # ---- the f1L faults (D165) ---------------------------------------------------------------------------------------------
@@ -479,7 +479,7 @@ def test_reward_gold_the_prose_already_paid_is_paid_once(game: FantasyGame):
     s1.flags["wren_home"] = True
     s1.item("gold").count = 20                                         # the referee's row for Tam's five, already applied
     s2 = game.after_turn(s1, info(turn=2, applied=["inventory.gold.count: 15 -> 20"]))
-    assert s2.hook("ferrymans_daughter").status == "done" and s2.item("gold").count == 20 and s2.player.xp == 100 and s2.player.renown == 8
+    assert s2.hook("ferrymans_daughter").status == "done" and s2.item("gold").count == 20 and s2.player.xp == 100 and s2.player.renown == 24
     # the giver pays a turn after the flag (Maud's three, the turn after the troll settled): the reward's two come off again
     r1 = _live(game, new(game), "cellar_rats")
     r1.flags["troll_settled"] = True
@@ -679,9 +679,10 @@ async def test_the_first_evening_plays_as_the_content_says(engine: Engine, fake:
     iid = engine.create_instance("fantasy", SHEET)
     fake.canned["AssistantReading"] = [reading("I look around the common room.", 5)]
     events = await play(engine, iid, "I look around the common room.")
-    assert events[-1]["data"]["mechanics"]["events"] == ["opening", "cellar_rats_reach"]
+    assert events[-1]["data"]["mechanics"]["events"] == ["cellar_rats_reach"]          # the opening is shown at turn 0 (B51, D167)
     bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
-    assert "the next table" in bulletin and "Maud comes to Wren's table" in bulletin and "Day 1, 18:05" in bulletin
+    assert "the next table" in engine.store.transcript(iid)[0].text                    # Hazel, in the turn-0 opening (D167)
+    assert "Maud comes to Wren's table" in bulletin and "Day 1, 18:05" in bulletin
     st = state_of(engine, iid)
     assert st.hook("cellar_rats").status == "live" and st.clock.minute == 1085
     fake.canned["AssistantReading"] = [reading("I sit by the fire and wait.", 60)]

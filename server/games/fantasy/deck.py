@@ -312,7 +312,8 @@ def settle(state: FantasyState, content_hooks: dict[str, dict], turn: int, pay) 
 
 
 def _row_text(row: dict) -> str:
-    bits = [f"{row[k]} {k}" for k in ("xp", "gold", "renown") if row.get(k)]
+    from .state import RENOWN_SCALE
+    bits = [f"{row[k] * (RENOWN_SCALE if k == 'renown' else 1)} {k}" for k in ("xp", "gold", "renown") if row.get(k)]
     return ", ".join(bits)
 
 
@@ -321,6 +322,12 @@ def _row_text(row: dict) -> str:
 def tier_open(tier: int, tiers: dict, level: int, renown: int) -> bool:
     t = tiers.get(tier) or tiers.get(str(tier)) or {}
     return level >= int(t.get("level", 1)) or renown >= int(t.get("renown", 0))
+
+
+def hook_places(hook: dict) -> set[str]:
+    """Every place a hook names: its first reach, its declared places, where its people start."""
+    return (set(first_reach_places(hook)) | {p.get("name") for p in hook.get("places") or []}
+            | {p.get("location") for p in hook.get("people") or [] if p.get("location")})
 
 
 def first_reach_places(hook: dict) -> list[str]:
@@ -335,6 +342,8 @@ def candidates(state: FantasyState, deck: dict, content_hooks: dict[str, dict], 
     doc = state.model_dump(mode="json")
     near_w = int(deck.get("weight_near", 2))
     recent = {p for p, t in state.player.visited.items() if now_abs - t <= DAY} | {state.player.location}
+    water = set(deck.get("water") or [])
+    wet = bool(water & recent)              # B39 (D167): on the water in the last day favours a hook with a place on the water
     out: list[tuple[str, int]] = []
     for row in deck.get("hooks") or []:
         hid = row.get("id")
@@ -345,7 +354,7 @@ def candidates(state: FantasyState, deck: dict, content_hooks: dict[str, dict], 
             continue
         if row.get("wants") is not None and not _holds(row["wants"], doc, state.hidden.events, turn):
             continue
-        near = bool(set(first_reach_places(content_hooks[hid])) & recent)
+        near = bool(set(first_reach_places(content_hooks[hid])) & recent) or (wet and bool(hook_places(content_hooks[hid]) & water))
         out.append((hid, near_w if near else 1))
     return out
 

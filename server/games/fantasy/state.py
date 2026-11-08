@@ -24,6 +24,7 @@ ATTITUDE_WORDS = ["hostile", "hostile", "wary", "neutral", "friendly", "loyal", 
 HP_TIERS = ("fresh", "scratched", "hurt", "bloodied", "downed")
 HEAT_TIERS = ((0, "nobody"), (20, "asked about"), (50, "wanted"), (80, "hunted"))
 RENOWN_TIERS = ((0, "quiet"), (25, "known"), (50, "talked about"), (75, "famous"))   # the deck's tiers: 2 at 25, 3 at 50
+RENOWN_SCALE = 3      # B54 (D167): a reward row's renown is paid three times over (a first quest 9 to 24; "known" after about two)
 WANTED_AT, HUNTED_AT = 50, 80
 
 

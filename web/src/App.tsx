@@ -191,7 +191,7 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
           {err && <div className="error">{err}</div>}
         </section>
         <aside className="side">
-          <Panels panels={view.ui.panels} onChoice={(cmd) => send(cmd)} onCommand={sendCommand} busy={streaming !== null || !!view.ending} />
+          <Panels panels={view.ui.panels} onChoice={(cmd) => send(cmd)} onCommand={sendCommand} busy={streaming !== null} ended={!!view.ending} />
         </aside>
       </main>
       <footer>

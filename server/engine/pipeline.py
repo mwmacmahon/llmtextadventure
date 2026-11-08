@@ -290,7 +290,8 @@ class Engine:
         start = state.model_copy(deep=True)            # the turn's opening state, for what the player sees change (B18)
         turn = self.store.latest_turn(iid) + 1
         over = _hook(game, "ending", state)
-        if over:
+        console = command is not None and any(c.id == command[0] and c.mode == "engine" for c in _hook(game, "commands", state, default=[]))
+        if over and not console:                      # B50 (D167): a console command (no story, no clock) still runs after the end
             yield {"event": "error", "data": {"message": f"The story is over: {over} Undo or branch from an earlier turn to keep playing.", "step": "ended"}}
             return
         ledger = lambda kind, payload: self.store.append_ledger(iid, turn, kind, payload)  # noqa: E731
@@ -648,7 +649,8 @@ class Engine:
         touched = [f"{p}: set by script" for p in res["effect_paths"]]
         info = TurnInfo(turn=turn, elapsed_minutes=res["elapsed"], rng=rng_for(iid, turn, "drift"), applied=list(report.applied) + touched,
                         calls=[dict((c.get("result") or {}), label=(c.get("result") or {}).get("label", "")) for c in calls_block.get("calls", [])],
-                        rejected=[r.model_dump(mode="json") for r in report.rejected])
+                        rejected=[r.model_dump(mode="json") for r in report.rejected],
+                        levers=[{"id": o.get("id") or lv.id, "status": o["status"]} for lv, o in zip(levers, lever_outcomes)])
         drifted = _hook(game, "after_turn", state, info, default=state)
         drift_lines: list[str] = []
         if drifted is not state:

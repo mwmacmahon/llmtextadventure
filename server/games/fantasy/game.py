@@ -39,7 +39,7 @@ from . import deck as dk
 from . import sheet as sh
 from .state import (
     ATTITUDE_WORDS, HUNTED_AT, STAT_NAMES, STATS, WANTED_AT, City, Condition, FantasyState, FoundPlace, Hidden, Item, Note,
-    Person, Player, tier_of, RENOWN_TIERS,
+    Person, Player, tier_of, RENOWN_TIERS, RENOWN_SCALE, HEAT_TIERS,
 )
 
 DAY = 1440
@@ -202,6 +202,10 @@ class FantasyGame(GameBase):
             if hid in hooks:
                 dk.deal(state, hooks[hid], turn=0, deal_abs=now, name=player.name)
         state.player.visited[player.location] = now
+        if sc0.get("opening_text"):                      # B51 (D167): the opening is shown at turn 0; its event is played
+            for e in state.hidden.events:
+                if e.id == "opening":
+                    e.fired, e.fired_turn = True, 0
         return f"{sc.get('name', 'Marrowgate')} — {player.name}", state
 
     def load_state(self, data: dict[str, Any]) -> FantasyState:
@@ -214,7 +218,7 @@ class FantasyGame(GameBase):
         return FantasyState.model_validate(data)
 
     def opening(self, state: FantasyState) -> str | None:
-        return None
+        return self.scenario(state.city.id).get("opening_text")          # B51 (D167): as written, at turn 0
 
     # ---- the frozen prefix -------------------------------------------------------------------------------------------
     def fill_prefix(self, p: Player) -> str:
@@ -222,7 +226,9 @@ class FantasyGame(GameBase):
         race, klass = p.race.lower(), p.klass.lower()
         if race[:1] in "aeiou":
             text = text.replace("a {race}", "an {race}")       # "an elf mage" (D158: the article follows the race)
-        gender = f" {p.name} is {p.gender}." if p.gender.strip() else ""
+        line = (self.scenario().get("race_lines") or {}).get(p.race, "")       # D167: labels only, one line per race
+        art = "an" if race[:1] in "aeiou" else "a"
+        gender = (f" {p.name} is {art} {race}: {line}." if line else "") + (f" {p.name} is {p.gender}." if p.gender.strip() else "")
         about = f' The player wrote this about them, and it is true: "{p.about}"' if p.about.strip() else ""
         for slot, v in (("{gender_line}", gender), ("{about_line}", about), ("{race}", race), ("{klass}", klass), ("{name}", p.name)):
             text = text.replace(slot, v)
@@ -751,6 +757,7 @@ class FantasyGame(GameBase):
             out.append({"kind": "tell", "weight": 1, "detail": who.id, "fact": f"{who.name} sees what {p.name} was trying, and will remember it."})
         if not talk:
             out.append({"kind": "noise", "weight": 1, "fact": "It makes noise: anyone near enough knows someone was here, though not who."})
+        if not talk or (spoken is not None and self.of_the_watch(spoken)):        # B55 (D167): a talk check against the Watch too
             out.append({"kind": "law", "weight": 1, "fact": f"Someone saw enough to talk: before morning the Watch will hear of a stranger like {p.name}."})
         if spoken is not None:
             out.append({"kind": "cold", "weight": 1, "detail": spoken.id, "fact": f"{spoken.name} gets careful: asked again today, they give less, not more."})
@@ -767,6 +774,28 @@ class FantasyGame(GameBase):
         if spoken is not None:
             out.append({"kind": "turned", "weight": 1, "mark": True, "detail": spoken.id, "fact": f"{spoken.name} turns against {p.name} over this."})
         return out
+
+    @staticmethod
+    def of_the_watch(q: Person) -> bool:
+        """A member of the Watch, by role: "Sergeant of the Watch", "Captain of the Watch", "Dace's constable"."""
+        return bool(re.search(r"\bWatch\b", q.role) or re.search(r"\bconstable\b", q.role, re.I))
+
+    def _watch_turned(self, s: FantasyState, applied: list[str]) -> None:
+        """B55 (D167): a member of the Watch turned hostile this turn raises heat one step (to the next word's threshold)."""
+        p = s.player
+        for a in applied:
+            m = re.match(r"people\.([\w-]+)\.attitude: (-?\d+) -> (-?\d+)$", a)
+            if not m or not (int(m.group(2)) > -2 >= int(m.group(3))):
+                continue
+            q = s.person(m.group(1))
+            if q is None or not self.of_the_watch(q):
+                continue
+            nxt = next((lo for lo, _ in HEAT_TIERS if lo > p.heat), None)
+            if nxt is not None:
+                was = p.heat_word
+                p.heat = nxt
+                s.log.append(f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}. {q.name} of the Watch turned "
+                             f"against {p.name}: the Watch's interest, {was} → {p.heat_word}.")
 
     # ---- the referee's rows ------------------------------------------------------------------------------------------
     @staticmethod
@@ -1325,7 +1354,8 @@ class FantasyGame(GameBase):
                 q.seen_at = q.location
         if p.location and p.location != "Unknown":
             self._visit(s, p.location)
-        # -- the Watch: a day lowers it; wanted is a flag
+        # -- the Watch: a day lowers it; one of the Watch turned hostile raises it a step (B55); wanted is a flag
+        self._watch_turned(s, info.applied)
         if s.clock.day > p.heat_day:
             days = s.clock.day - p.heat_day
             p.heat = max(0, p.heat - HEAT_DAILY * days)
@@ -1378,6 +1408,9 @@ class FantasyGame(GameBase):
         p = s.player
         safe = self._safe(s)                                 # where the turn ended (the Rest command's long rest is judged here)
         hurt_now = any(a.startswith("player.hp:") and "->" in a and self._dropped(a) for a in info.applied)
+        if any(lv.get("id") == "rest" and lv.get("status") == "not_completed" for lv in info.levers):
+            p.rest_cut, p.resting = info.turn, ""        # B57 (D167): the referee said the rest did not happen (a sleepless night)
+            return
         kind = ""
         if (p.resting == "long" and safe and info.elapsed_minutes >= 360) or (safe and info.elapsed_minutes >= LONG_REST and not hurt_now):
             kind = "long"
@@ -1462,7 +1495,7 @@ class FantasyGame(GameBase):
             gold.count = max(0, gold.count + pay)
             bits.append(f"{g} gold")
         if row.get("renown"):
-            p.renown = max(0, min(100, p.renown + int(row["renown"])))
+            p.renown = max(0, min(100, p.renown + RENOWN_SCALE * int(row["renown"])))
         if row.get("heat"):
             p.heat = max(0, min(100, p.heat + int(row["heat"])))
         th_ = row.get("thing")

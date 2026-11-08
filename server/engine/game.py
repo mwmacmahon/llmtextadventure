@@ -246,6 +246,7 @@ class TurnInfo:
     applied: list[str] = field(default_factory=list)   # ApplyReport.applied, so drift can avoid fields the referee just set
     calls: list[dict] = field(default_factory=list)    # the turn's called checks' results (outcome, stat, label; `fatal` when staked lethal, D157)
     rejected: list[dict] = field(default_factory=list) # ApplyReport.rejected, so drift can see what the referee asked for and did not get
+    levers: list[dict] = field(default_factory=list)   # the typed commands' outcomes ({id, status}; "not_completed" when the referee said not_done)
 
 
 # ---------------------------------------------------------------------------
