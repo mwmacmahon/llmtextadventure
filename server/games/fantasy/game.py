@@ -2657,7 +2657,7 @@ class FantasyGame(GameBase):
     # ---- UI ----------------------------------------------------------------------------------------------------------
     # The player's view: what the character knows (where a person was last seen, the words for heat and renown), never
     # the state behind it (the Hidden lines, a person's true place, the numbers behind the words). Stage C (D162).
-    HP_TONES = {"fresh": "ok", "scratched": "ok", "hurt": "warn", "bloodied": "bad", "downed": "bad"}
+    HP_TONES = {"fresh": "ok", "scratched": "ok", "hurt": "warn", "bloodied": "bad", "dead": "bad"}
     HEAT_TONES = {"nobody": "neutral", "asked about": "warn", "wanted": "bad", "hunted": "bad"}
     WOUND_TONES = {"minor": "warn", "moderate": "warn", "serious": "bad", "grave": "bad", "ruinous": "bad"}
     ATTITUDE_TONES = {"hostile": "bad", "wary": "warn", "neutral": None, "friendly": "ok", "loyal": "ok", "devoted": "info"}

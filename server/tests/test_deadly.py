@@ -353,3 +353,14 @@ def test_nobody_rolls_on_the_dead(game):
     out = game.backstop(live, {"hp": 0, "acted": []}, Dice(15, 50, 15, 50), 2)
     assert len(out) == 1 and out[0]["result"].get("kills")
 
+
+
+def test_the_word_at_zero_is_dead(game):
+    """B216: the strip said 'Hit points: 0 / 9 (downed)' while zero is death (B205). The word is the stone's."""
+    st = new(game)
+    st.player.hp = 0
+    assert st.player.hp_tier == "dead"
+    meter = next(m for m in game.ui(st).panels if getattr(m, "label", "") == "Hit points")
+    assert meter.tier == "dead"
+    assert "; dead;" in game.render_bulletin(st, "")
+    assert "downed" not in game.ui(st).model_dump_json()
