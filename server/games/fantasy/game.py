@@ -125,6 +125,7 @@ class FantasyGame(GameBase):
         "sleep": TaskRow(least=60, most=600, lost=0),
     })
     resolver = "dice_d20"
+    sleep_by_command = True    # the owner (11-08 evening): only the Rest command makes a turn a night; "I go sleep at <a far place>" is a move
     target_offset = 2          # B83 (the owner, 11-08): one Hard step on the d20; a +2 character passes medium 55%, not 65%
     authority = AUTHORITY
     events_path = "hidden.events"
@@ -1732,8 +1733,9 @@ class FantasyGame(GameBase):
         p = state.player
         if self.ending(state) or p.fate in ("dead", "carried"):
             return [CommandSpec(id="journal", label="Journal", mode="engine", typed=False, hint="Read the journal, the quests and the people.")]
-        out = [CommandSpec(id="rest", label="Rest", mode="narrated", params=[Param(name="kind", label="Rest", options=[Option(id="short", label="Short (an hour)"), Option(id="long", label="Long (the night, somewhere safe)")], default="short")],
-                           hint="Rest: an hour (some hit points back) or a night somewhere safe (all of them, and what a night refills).",
+        out = [CommandSpec(id="rest", label="Rest", mode="narrated", params=[Param(name="kind", label="Rest", options=[Option(id="short", label="Short (an hour)"), Option(id="long", label="Long (the night)")], default="short")],
+                           hint="Rest: an hour (some hit points back) or the night (all of them, and what a night refills), here or close by with nothing "
+                                "in the way. Not when the player names a place farther off to sleep: that is a move there, not a rest.",
                            words=["rest", "sleep", "catch my breath", "lie down", "turn in", "bed down", "nap"])]
         nxt = sh.xp_for(p.level)
         options = self._level_options(p)
@@ -1764,9 +1766,13 @@ class FantasyGame(GameBase):
             p.resting = kind
             if kind == "long":
                 # The owner (11-08 evening): no penalties to resting. A night's sleep anywhere is a full rest, and the player is
-                # never shown a list of the city's places to sleep. Where they sleep is what the player said.
-                directive = (f"{p.name} sleeps the night where the player said. Play the settling down in a line or two and the waking; nothing "
-                             f"happens in the night unless something was already coming.")
+                # never shown a list of the city's places to sleep. Here or close by with nothing in the way; a place farther off is a
+                # move, not this command (the command's hint tells the assistant; `sleep_by_command` keeps the clock from making it a night).
+                directive = (f"{p.name} means to sleep the night, where they are or a step away if the player named a bed close by. Use sense "
+                             f"about where: a room or bed {p.name} already has is theirs; a room not yet paid for is not, and whoever keeps it stops "
+                             f"{p.name} and asks for payment first; out in the open, {p.name} camps somewhere fit for it with whatever they carry for "
+                             f"it. Play the settling down in a line or two and the waking. Nothing happens in the night unless something was already "
+                             f"coming.")
                 return s, CommandResult(label="Rest", player_line="I settle in and sleep the night.", summary=f"{p.name} sleeps the night.",
                                         directive=directive, minutes=LONG_REST)
             directive = (f"{p.name} rests for an hour: a quiet corner, a drink, a wound looked at. Play the hour in a line or two; nothing happens "

@@ -2172,6 +2172,8 @@ def until_when(game: Any, state: BaseModel, adj: AssistantReading, text: str) ->
     # ask only when the player's own words are mostly the wait
     if task == "other" or LIMIT_WORDS.search(text) or WAIT_FOR.search(text) or not WAIT_SAID.search(text) or len(text.split()) > 15:
         return adj, ""
+    if task == "sleep" and getattr(game, "sleep_by_command", False) and not any(c.id == "rest" for c in adj.commands):
+        return adj, ""            # the fantasy: a sleep the Rest command did not pick is a move somewhere (no night, no question)
     if task == "sleep" and not (MORNING_MINUTE - 120 <= now < NIGHT_MINUTE - 120):
         # the owner (11-08 evening): going to bed in the evening or the night is the night, to morning (the next trigger still
         # wakes them); a sleep by day still asks how long
