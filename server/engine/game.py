@@ -456,6 +456,23 @@ class GameBase:
     def ending(self, state: BaseModel) -> str | None:
         return None
 
+    # ---- the graveyard (B81): player-only; the engine writes a grave when `dead` turns true, and no model reads it ----
+    def dead(self, state: BaseModel) -> bool:
+        """The player character has died in this state (the fantasy's fall with nobody to carry, noir's fatal call).
+        Default: a game with no death."""
+        return False
+
+    def cause_of_death(self, state: BaseModel, info: dict[str, Any]) -> str | None:
+        """The grave's cause in the game's own voice. `info` carries the engine's composition (`cause`, `cause_from`) and
+        what it was made from (the fatal check, the hit-point row, the failed check, the telling). None: the engine's."""
+        return None
+
+    def death_score(self, state: BaseModel) -> dict[str, Any]:
+        """What the gravestone card scores a run by (the fantasy: level, XP, renown, gold, quests done, days). The engine
+        adds the turns. Default: the day, when the game has a clock with one."""
+        day = getattr(getattr(state, "clock", None), "day", None)
+        return {"days": day} if isinstance(day, int) else {}
+
     def save_line(self, state: BaseModel) -> list[Chip]:
         """What a saved game's line in the lobby says before a click (B75): a few short chips that tell this save from
         another of the same game (who, where, when in the story). The engine adds the turn, last played, the ending and

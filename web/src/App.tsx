@@ -1,20 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, streamCommand, streamRewrite, streamTurn, type InstanceView, type Mechanics, type TranscriptRow, type TurnEvent } from "./api";
+import { api, streamCommand, streamRewrite, streamTurn, type GraveCard, type InstanceView, type Mechanics, type TranscriptRow, type TurnEvent } from "./api";
 import { Bar } from "./components/Bar";
 import { DebugDrawer } from "./components/DebugDrawer";
 import { GamePage } from "./components/GamePage";
+import { DeathCardBody, Graveyard } from "./components/Graveyard";
 import { Home } from "./components/Home";
 import { Panels } from "./components/Panels";
 import { SettingsPage } from "./components/SettingsPage";
+import { prefs } from "./saves";
 
 // The pages, by hash: #/ home (the games), #/games/<name> a game's page (its saves, New game), #/g/<id> play,
-// #/settings Settings (#/settings/<id>: opened from that game, with its difficulty).
-type Route = { page: "home" } | { page: "game"; name: string } | { page: "play"; id: string } | { page: "settings"; id: string | null };
+// #/settings Settings (#/settings/<id>: opened from that game, with its difficulty), #/graveyard (#/graveyard/<game>).
+type Route =
+  | { page: "home" }
+  | { page: "game"; name: string }
+  | { page: "play"; id: string }
+  | { page: "settings"; id: string | null }
+  | { page: "graveyard"; game: string | null };
 
 function readRoute(): Route {
   const h = location.hash.replace(/^#/, "");
   let m: RegExpMatchArray | null;
   if ((m = h.match(/^\/g\/([^/?]+)/))) return { page: "play", id: decodeURIComponent(m[1]) };
+  if ((m = h.match(/^\/graveyard(?:\/([^/?]+))?/))) return { page: "graveyard", game: m[1] ? decodeURIComponent(m[1]) : null };
   if ((m = h.match(/^\/games\/([^/?]+)/))) return { page: "game", name: decodeURIComponent(m[1]) };
   if ((m = h.match(/^\/settings(?:\/([^/?]+))?/))) return { page: "settings", id: m[1] ? decodeURIComponent(m[1]) : null };
   return { page: "home" };
@@ -44,6 +52,7 @@ export default function App() {
         {route.page === "game" && <GamePage key={route.name} name={route.name} />}
         {route.page === "play" && <Game key={route.id} id={route.id} />}
         {route.page === "settings" && <SettingsPage key={route.id ?? ""} iid={route.id} />}
+        {route.page === "graveyard" && <Graveyard key={route.game ?? ""} game={route.game} />}
       </div>
     </div>
   );
@@ -59,12 +68,32 @@ function Game({ id }: { id: string }) {
   const [pending, setPending] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [debug, setDebug] = useState(false);
+  const [hideUndone, setHideUndone] = useState(prefs.hideUndone());
+  const [death, setDeath] = useState<GraveCard | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(() => api.instance(id).then(setView).catch((e) => setErr(String(e))), [id]);
   useEffect(() => {
     load();
   }, [load]);
+  useEffect(() => {
+    const sync = () => setHideUndone(prefs.hideUndone());
+    addEventListener("ta-prefs", sync);
+    return () => removeEventListener("ta-prefs", sync);
+  }, []);
+  // the death card (the graveyard's record of this save's death), fetched when the story ends
+  const ended = view?.ending ?? null;
+  useEffect(() => {
+    if (!ended) {
+      setDeath(null);
+      return;
+    }
+    let live = true;
+    api.death(id).then((d) => live && setDeath(d)).catch(() => live && setDeath(null));
+    return () => {
+      live = false;
+    };
+  }, [id, ended]);
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [view, streaming]);
@@ -179,7 +208,18 @@ function Game({ id }: { id: string }) {
 
   if (!view) return <div className="lobby">{err ?? "loading…"}</div>;
 
-  const rows = view.transcript.filter((r) => SHOWN.includes(r.role));
+  // undone turns stay in the log, struck through (their engine rows and summaries are not shown), unless hidden in Settings
+  const rows = view.transcript.filter((r) => SHOWN.includes(r.role) && (!r.undone || (!hideUndone && (r.role === "player" || r.role === "narrator" || r.role === "command"))));
+  const firstOfUndo = new Set<number>();
+  {
+    const seen = new Set<number>();
+    for (const r of rows) if (r.undone && !seen.has(r.undone)) (seen.add(r.undone), firstOfUndo.add(r.seq));
+  }
+  const goBack = (r: TranscriptRow) => {
+    const back = view.turn - (r.turn - 1);
+    if (back > 1 && !confirm(`Go back to before turn ${r.turn}? ${back} turns will be undone. They stay in the log, struck through.`)) return;
+    undo(r.turn - 1);
+  };
 
   return (
     <div className="layout">
@@ -208,12 +248,36 @@ function Game({ id }: { id: string }) {
       <main>
         <section className="narrative" ref={scrollRef}>
           {rows.map((r) => (
-            <Row key={r.seq} r={r} />
+            <Row key={r.seq} r={r} first={firstOfUndo.has(r.seq)} onUndo={streaming === null && !r.undone && r.turn > 0 && (r.role === "player" || r.role === "command") ? () => goBack(r) : undefined} />
           ))}
           {pending && <div className="msg player">{pending}</div>}
           {streaming !== null && streaming && <div className="msg narrator streaming"><Prose text={streaming} /></div>}
           {streaming !== null && stage && <div className="muted small stage">{stage}</div>}
-          {view.ending && <div className="ending">The End. {view.ending}</div>}
+          {view.ending && death && (
+            <div className="ending death-ending">
+              <DeathCardBody
+                g={death}
+                actions={
+                  <>
+                    <button className="primary" onClick={() => undo()} disabled={streaming !== null || view.turn === 0}>Undo the last turn</button>
+                    {death.turn - 1 < view.turn - 1 && (
+                      <button onClick={() => undo(death.turn - 1)} disabled={streaming !== null}>Go back to before the fall</button>
+                    )}
+                    <a className="button-like" href="#/graveyard">Graveyard</a>
+                    <a className="button-like" href={`#/games/${view.game}`}>New game</a>
+                  </>
+                }
+              />
+            </div>
+          )}
+          {view.ending && !death && (
+            <div className="ending">
+              The End. {view.ending}
+              <div className="continue-row">
+                <button onClick={() => undo()} disabled={streaming !== null || view.turn === 0}>Undo the last turn</button>
+              </div>
+            </div>
+          )}
           {err && <div className="error">{err}</div>}
         </section>
         <aside className="side">
@@ -248,7 +312,7 @@ function Game({ id }: { id: string }) {
       <DebugDrawer
         instanceId={id}
         turn={view.turn}
-        transcript={view.transcript}
+        transcript={view.transcript.filter((r) => !r.undone)}
         open={debug}
         onClose={() => setDebug(false)}
         onRewind={(t) => undo(t)}
@@ -258,7 +322,26 @@ function Game({ id }: { id: string }) {
   );
 }
 
-function Row({ r }: { r: TranscriptRow }) {
+function Row({ r, first, onUndo }: { r: TranscriptRow; first?: boolean; onUndo?: () => void }) {
+  if (r.undone) {
+    // an undone turn: kept in the record, struck through; nothing a model reads sees it
+    return (
+      <div className={`undone-row ${r.role}`}>
+        {first && <div className="undone-mark small">undone</div>}
+        <div className={`msg ${r.role} undone`}>{r.role === "narrator" ? <Prose text={r.text} /> : r.text}</div>
+      </div>
+    );
+  }
+  if (onUndo) {
+    return (
+      <div className={`row-with-undo ${r.role}`}>
+        <button className="link small row-undo" onClick={onUndo} title={`Undo turn ${r.turn} and everything after it`} aria-label={`Undo turn ${r.turn} and everything after it`}>
+          ↺ undo
+        </button>
+        <div className={`msg ${r.role}`}>{r.text}</div>
+      </div>
+    );
+  }
   switch (r.role) {
     case "mechanics":
       return <MechanicsRow text={r.text} />;

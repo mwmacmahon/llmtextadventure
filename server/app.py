@@ -97,9 +97,10 @@ def _visible(name: str, request: Request) -> bool:
 def list_games(request: Request):
     dev = dev_mode(request)
     saves = store.count_by_game()
+    deaths = engine.graves.count_by_game()          # every grave, an undone death's too (B81)
     return [
         {"name": g.name, "title": g.title, "description": g.description, "version": g.version, "setup": engine.setup_options(g),
-         "saves": saves.get(g.name, 0), "hidden": bool(getattr(g, "hidden", False))}
+         "saves": saves.get(g.name, 0), "deaths": deaths.get(g.name, 0), "hidden": bool(getattr(g, "hidden", False))}
         for g in games.values() if dev or not getattr(g, "hidden", False)
     ]
 
@@ -204,6 +205,30 @@ def get_usage(iid: str):
 @app.get("/api/instances/{iid}/ledger")
 def get_ledger(iid: str, turn: int | None = None):
     return store.ledger(iid, turn)
+
+
+@app.get("/api/instances/{iid}/death")
+def death_card(iid: str):
+    """The play page's death card (B81, B84): this save's death as it stands (null when it has none), with the cause and a
+    line under it."""
+    _exists(iid)
+    return engine.death_card(iid)
+
+
+# ---- the graveyard (B81): the player's alone; no model reads it ---------------------------------------
+@app.get("/api/graveyard")
+def graveyard(request: Request, game: str | None = None):
+    """The gallery: the characters, each with her stones in order, her death count and her best run."""
+    return engine.gallery(game, dev=dev_mode(request))
+
+
+@app.get("/api/graveyard/{gid}")
+def grave(gid: str, request: Request):
+    """A gravestone's card: the epitaph, the final state as the game's panels, the score, a line under the cause."""
+    g = engine.graves.get(gid)
+    if g is None or not _visible(g["game"], request):
+        raise HTTPException(404, "no such grave")
+    return engine.grave_card(gid)
 
 
 @app.post("/api/instances/{iid}/undo")

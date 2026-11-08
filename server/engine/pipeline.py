@@ -56,7 +56,8 @@ from .roles import (ADJUDICATOR_STAKES, AssistantReading, AssistantReadingStaked
 from .roles import NARRATOR_WORLD, REFEREE_PARTS, ChangeReport, referee_part_messages
 from .assistant import FAILURES, choose_consequence, choose_cost, default_cost_options, paid_rows, recent_costs
 from .changes import apply_changes, merge_parts, quoted_in_prose, quotes_of, says_result_played, screen_unseen_clues
-from .store import Store
+from .store import Store, live
+from .graveyard import Graveyard, compose_cause, load_lines, sentences
 from .tape import PART, Taped, exchange_row
 
 MODEL_CALL_KINDS = {"model_call": None, "adjudication": "assistant", "verdict": "referee"}
@@ -94,6 +95,7 @@ class Engine:
         self.store = store
         self.games = games
         self._tapes: dict[str, Any] = {}          # iid -> the running turn's ledger writer, for the tape (engine/tape.py)
+        self.graves = Graveyard(store)            # the player-only section (B81): written here, read by the gallery alone
         self.providers: dict[str, Any] = {}       # step -> a provider to use instead of the role's (the narrator replay's capture)
         # Runtime settings the UI can change (the guard mode, the progress estimate); persisted beside the store.
         self.settings_path = Path(store.path).parent / "settings.json" if getattr(store, "path", None) else None
@@ -294,7 +296,7 @@ class Engine:
             raise KeyError(iid)
         game = self.games[inst.game]
         state = game.load_state(self.store.load_state(iid))
-        rows = self.store.transcript(iid)
+        rows = self.store.transcript(iid, undone=True)       # the undone turns too, each marked: the log strikes them through (B82)
         return {
             **self.summary(iid, state=state),
             "ui": game.ui(state).model_dump(mode="json"),
@@ -356,12 +358,34 @@ class Engine:
         }
 
     def undo(self, iid: str, to_turn: int | None = None) -> int:
-        """Rewind to `to_turn` (default: one turn back). Turn 0 is the opening."""
+        """Rewind to `to_turn` (default: one turn back). Turn 0 is the opening. Undo keeps the record (B82): an `undo`
+        ledger row at the target turn, and every row after it (snapshots, transcript, ledger) marked undone with that
+        row's seq, so the context, the summaries and the counts lose them and the log and the call report keep them. The
+        rollback is the whole of it: the state is the target's snapshot, the summaries filed after it are undone with
+        their turns, and a difficulty changed since goes back to what it was then. A grave past the target stays, marked."""
+        inst = self.store.get_instance(iid)
+        if not inst:
+            raise KeyError(iid)
         latest = self.store.latest_turn(iid)
         target = latest - 1 if to_turn is None else to_turn
         target = max(0, min(target, latest))
-        if target < latest:
-            self.store.truncate_after_turn(iid, target)
+        if target >= latest:
+            return latest
+        rows = self.store.ledger(iid)
+        kept = [r["payload"] for r in rows if r["kind"] == "difficulty" and r["turn"] <= target]
+        first = next((r["payload"] for r in self.store.ledger(iid, undone=True) if r["kind"] == "difficulty"), None)
+        then = kept[-1]["new"] if kept else (first["old"] if first else inst.difficulty)
+        payload: dict[str, Any] = {"from_turn": latest, "to_turn": target, "turns": list(range(target + 1, latest + 1))}
+        if then != inst.difficulty:
+            payload["difficulty"] = {"old": inst.difficulty, "new": then}
+        mark = self.store.append_ledger(iid, target, "undo", payload)
+        self.store.undo_after_turn(iid, target, mark)
+        if then != inst.difficulty:
+            self.store.set_difficulty(iid, then)
+        dug = self.graves.undo_after(iid, target)
+        self.store.touch(iid)
+        log.info("instance.undo " + logs.kv(iid=iid, from_turn=latest, to_turn=target, mark=mark, difficulty=payload.get("difficulty", {}).get("new"),
+                                            graves=dug or None))
         return self.store.latest_turn(iid)
 
     def fork(self, iid: str, at_turn: int | None = None, title: str | None = None) -> str:
@@ -373,7 +397,8 @@ class Engine:
         return self.store.copy_instance(iid, at, title or f"{inst.title} (branch @{at})")
 
     def export(self, iid: str) -> dict[str, Any]:
-        return self.store.export_instance(iid)
+        """The save as a file: every row, the undone ones marked (B82), and its graves (B81)."""
+        return {**self.store.export_instance(iid), "graveyard": self.graves.export(iid)}
 
     def import_(self, doc: dict[str, Any]) -> str:
         game = doc.get("instance", {}).get("game")
@@ -382,9 +407,11 @@ class Engine:
         iid = self.store.import_instance(doc, origin={"imported": True, "original_id": doc["instance"].get("id"),
                                                       "exported": doc.get("exported")})
         self.games[game].load_state(self.store.load_state(iid))
+        self.graves.import_(doc.get("graveyard") or [], iid)
         return iid
 
     def delete(self, iid: str) -> None:
+        """The save goes; its graves stay (the owner: all her deaths)."""
         self.store.delete_instance(iid)
 
     def rename(self, iid: str, title: str) -> None:
@@ -839,6 +866,10 @@ class Engine:
             state = drifted
         self.store.save_snapshot(iid, turn, state.model_dump(mode="json"))
         log.info("turn.done " + logs.kv(iid=iid, turn=turn, seconds=time.monotonic() - t_turn, ending=_hook(game, "ending", state)))
+        try:                                          # the graveyard (B81): the moment a death lands, before any undo can happen
+            self._graves_after_turn(game, iid, turn, start, state, narration_stored, calls_block.get("calls", []), delta_json, replay)
+        except Exception:
+            log.exception("graveyard.failed " + logs.kv(iid=iid, turn=turn))
         self._tapes.pop(iid, None)
 
         # The engine checks the referee's check rulings against what it knows: check_skipped needs an assessed check
@@ -1015,7 +1046,7 @@ class Engine:
             "narration": next((r.text for r in transcript if r.role == "narrator"), ""),
             "mechanics": next((r.text for r in transcript if r.role == "mechanics"), ""),
             # the telling's own ledger (its model calls on the tape, its verdict, its rulings), for tools/round_report.py
-            "ledger": [{"seq": r["seq"], "kind": r["kind"], "payload": r["payload"]} for r in rows if r["kind"] not in ("rewrite", "difficulty")],
+            "ledger": [{"seq": r["seq"], "kind": r["kind"], "payload": r["payload"]} for r in rows if r["kind"] not in ("rewrite", "difficulty", "undo")],
         })
         attempt = (prev["attempt"] if prev else 0) + 1
         settings_rows = [r["payload"] for r in rows if r["kind"] == "difficulty"]     # a setting changed after the turn, not the telling's
@@ -1028,6 +1059,89 @@ class Engine:
             call = {"provider": role.provider, "model": role.model}
         async for ev in self.run_turn(iid, player_text, replay=Replay(adjudication=adj, hint=hint, attempt=attempt, history=history, call=call, by=by)):
             yield ev
+
+    # ---- the graveyard (B81, B84): player-only; nothing here reaches a model --------------------------------------
+    def _graves_after_turn(self, game: Game, iid: str, turn: int, start: BaseModel, state: BaseModel, narration: str,
+                           calls: list[dict], delta_json: dict | None, replay: Any) -> None:
+        was, now = bool(_hook(game, "dead", start, default=False)), bool(_hook(game, "dead", state, default=False))
+        if now and not was:
+            results = [c.get("result") or {} for c in calls]
+            names = _hook(game, "entity_names", state, default={}) or {}
+            named = lambda x: names.get(str(x or ""), str(x or ""))  # noqa: E731
+            fatal = next((r for r in results if r.get("fatal")), None)
+            failed = next((r for r in reversed(results) if r.get("outcome") in FAILURES), None)
+            hp_row = None
+            for ch in reversed((delta_json or {}).get("changes") or []):
+                tgt, fld, val = str(ch.get("target") or ""), str(ch.get("field") or ""), str(ch.get("value") or "")
+                if (tgt.startswith("player") or tgt == "") and (fld in ("hp", "health") or tgt.endswith((".hp", ".health"))) \
+                        and (val.strip().startswith("-") or val.strip().lower() in ("dead", "critical", "0")):
+                    hp_row = ch
+                    break
+            info: dict[str, Any] = {
+                "fatal": {"label": fatal.get("label"), "target": named(fatal.get("about"))} if fatal else None,
+                "hit_point_row": {"value": hp_row.get("value"), "note": hp_row.get("note")} if hp_row else None,
+                "failed": {"label": failed.get("label"), "target": named(failed.get("about"))} if failed else None,
+                "telling": narration,
+            }
+            cause, source = compose_cause(info)
+            info.update(cause=cause, cause_from=source)
+            own = _hook(game, "cause_of_death", state, info, default=None)
+            if own:
+                cause, source = str(own), "game"
+            player = getattr(state, "player", None)
+            clock = getattr(state, "clock", None)
+            day = getattr(clock, "day", None)
+            score = {**(_hook(game, "death_score", state, default={}) or {}), "turns": turn}
+            gid = self.graves.land(
+                game=game.name, iid=iid, turn=turn, character=str(_hook(game, "player_name", state, default="") or ""),
+                line=[c.model_dump(mode="json") for c in (_hook(game, "save_line", state, default=[]) or [])],
+                place=str(getattr(player, "location", "") or ""), day=day if isinstance(day, int) else None, clock=_clock_now(state),
+                cause=cause, cause_from=source, epitaph=sentences(narration, 2), state=state.model_dump(mode="json"), score=score)
+            log.info("graveyard.landed " + logs.kv(iid=iid, turn=turn, grave=gid, cause=cause, source=source))
+        elif was and now and _hook(game, "ending", state) and not _hook(game, "ending", start):
+            gid = self.graves.tell(iid, turn, sentences(narration, 2), state.model_dump(mode="json"))   # the death telling: the epitaph
+            if gid:
+                log.info("graveyard.told " + logs.kv(iid=iid, turn=turn, grave=gid))
+        elif replay is not None and not now:
+            if self.graves.retold_away(iid, turn):    # a retelling in which the death no longer lands
+                log.info("graveyard.retold_away " + logs.kv(iid=iid, turn=turn))
+
+    def death_lines(self, game_name: str) -> list[dict[str, Any]]:
+        """The game's death-card lines (B84), from its content directory; none when it has no file."""
+        return load_lines(self.cfg.resolve(self.cfg.server.content_root) / game_name / "death_lines.yml")
+
+    def _grave_view(self, g: dict[str, Any], line: bool = True) -> dict[str, Any]:
+        game = self.games.get(g["game"])
+        out = {k: v for k, v in g.items() if k != "state"}
+        out["game_title"] = getattr(game, "title", g["game"])
+        out["save_stands"] = self.store.get_instance(g["instance_id"]) is not None
+        out["ui"] = None
+        if game is not None and g.get("state") is not None:
+            try:
+                out["ui"] = game.ui(game.load_state(g["state"])).model_dump(mode="json")
+            except Exception:
+                log.exception("graveyard.ui_failed " + logs.kv(grave=g["id"], game=g["game"]))
+        out["death_line"] = self.graves.pick_line(g["game"], g["character"], self.death_lines(g["game"])) if line else None
+        return out
+
+    def death_card(self, iid: str) -> dict[str, Any] | None:
+        """The play page's death card: this save's standing grave, with a line under the cause."""
+        g = self.graves.standing(iid)
+        return self._grave_view(g) if g else None
+
+    def grave_card(self, gid: str) -> dict[str, Any]:
+        g = self.graves.get(gid)
+        if g is None:
+            raise KeyError(gid)
+        return self._grave_view(g)
+
+    def gallery(self, game: str | None = None, dev: bool = False) -> dict[str, Any]:
+        """The graveyard page: the characters, each with her stones (B81). A hidden game's only in dev mode."""
+        chars = [c for c in self.graves.characters(game) if dev or not getattr(self.games.get(c["game"]), "hidden", False)]
+        titles = {n: g.title for n, g in self.games.items()}
+        for c in chars:
+            c["game_title"] = titles.get(c["game"], c["game"])
+        return {"characters": chars, "deaths": sum(c["deaths"] for c in chars)}
 
     # ---- steps -------------------------------------------------------------
     def _fail_turn(self, iid: str, turn: int, ledger: Any, step: str, e: Exception) -> None:
@@ -1789,6 +1903,7 @@ def doc_upto(doc: dict, turn: int) -> dict:
     """An exported game (Store.export_instance) cut to the turns before `turn`, as it stood when `turn` began: a
     story-so-far summary is filed under the last turn it covers but written later, so transcript rows written after
     the turn's bulletin (the moment the narrator was called) are left out too."""
+    doc = live(doc)                                   # the undone rows (B82) are not the round as it stood
     rows = [r for r in doc["transcript"] if r["turn"] == turn]
     # the bulletin is written just before the narrator runs, after any summary the turn itself wrote
     start = next((r["created"] for r in rows if r["role"] == "bulletin"), min((r["created"] for r in rows), default=None))
@@ -1800,6 +1915,7 @@ def doc_upto(doc: dict, turn: int) -> dict:
 def stored_turn(doc: dict, turn: int) -> dict:
     """What a replay of `turn` needs from the game: the player's words and the stored adjudication, or why it cannot
     be replayed (a clicked command, a turn with no adjudication)."""
+    doc = live(doc)
     rows = [r for r in doc["ledger"] if r["turn"] == turn]
     if any(r["kind"] == "command" and not r["payload"].get("typed") for r in rows):
         return {"skip": "a clicked command"}

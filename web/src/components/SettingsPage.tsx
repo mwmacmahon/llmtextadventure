@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, devMode, type SaveCard, type Settings } from "../api";
+import { prefs } from "../saves";
 import { ProfilePicker } from "./ProfilePicker";
 
 const ROLE_ORDER = ["narrator", "assistant", "referee", "summarizer"];
@@ -53,6 +54,8 @@ export function SettingsPage({ iid }: { iid: string | null }) {
           </div>
         )}
       </section>
+
+      <StoryLog />
 
       <DevMode needsPin={s.dev_pin} />
 
@@ -115,6 +118,28 @@ function ThisGame({ iid, difficulties }: { iid: string; difficulties: Settings["
       </label>
       {err && <div className="error small">{err}</div>}
       <a className="link" href={`#/g/${iid}`}>← Back to the game</a>
+    </section>
+  );
+}
+
+/** The story log: undone turns struck through, or hidden. Kept in this browser. */
+function StoryLog() {
+  const [hide, setHide] = useState(prefs.hideUndone());
+  return (
+    <section className="settings">
+      <h2>Story log</h2>
+      <label className="settings-row">
+        <input
+          type="checkbox"
+          checked={hide}
+          onChange={(e) => {
+            prefs.setHideUndone(e.target.checked);
+            setHide(e.target.checked);
+          }}
+        />
+        <span>Hide undone turns</span>
+      </label>
+      <div className="muted small">Undone turns stay in the log, struck through, unless this is on. Kept in this browser only.</div>
     </section>
   );
 }

@@ -388,4 +388,206 @@ def lint(content_dir: Path) -> list[str]:
             Event.model_validate(e)
         except Exception as ex:                                     # noqa: BLE001
             say(f"city.{e.get('id')}: does not load: {ex}")
+    problems += lint_death_lines(content_dir)
+    return problems
+
+
+# ---- the death-card lines (B84) -------------------------------------------------------------------------------------
+# `death_lines.yml`: lines shown under the cause of death on the death card and the gravestone card; no model reads them.
+# A line marked `hint: true` states a rule, so each such line must match one of the checks below, and its check must hold
+# against the game as built: when a rule moves, the line that promised it fails here.
+def _fresh(game: Any) -> Any:
+    return game.new_instance({"name": "Lint", "klass": "Warrior", "race": "Human"})[1]
+
+
+def _seed_rule(game: Any, city: dict) -> str | None:
+    import inspect
+
+    from engine.mechanics import rng_for
+    from engine.pipeline import Engine
+    a, b = rng_for("lint", 3, "calls:str:medium:0"), rng_for("lint", 3, "calls:str:medium:0")
+    if [a.random() for _ in range(3)] != [b.random() for _ in range(3)]:
+        return "the dice are not seeded by the game, the turn and the check"
+    if 'f"calls:{stat}:{difficulty}:{k}"' not in inspect.getsource(Engine._call_handler):
+        return "the checks' dice are no longer salted by stat and difficulty alone, so the same attempt after an undo may not replay"
+    return None
+
+
+def _kit_has(city: dict, item: str) -> bool:
+    return any(i.get("id") == item and int(i.get("count", 1) or 0) > 0 for i in ((city.get("player") or {}).get("inventory") or []))
+
+
+def _fire_rule(game: Any, city: dict) -> str | None:
+    if not _kit_has(city, "torches"):
+        return "the common kit carries no torches"
+    if not any("Lantern" in s and re.search(r"\bfire\b", s) for s in _strings(city)):
+        return "nothing in the city file puts a fire in the Lantern"
+    return None
+
+
+def _rest_rule(game: Any, city: dict) -> str | None:
+    import random as _r
+
+    from engine.game import TurnInfo
+    from games.fantasy import game as fg
+    if (fg.SHORT_REST, fg.LONG_REST) != (60, 480):
+        return f"a short rest is {fg.SHORT_REST} minutes and a long one {fg.LONG_REST}, not an hour and eight"
+    safe = (list(_fresh(game).city.safe_locations) or [None])[0]
+    if not safe:
+        return "the city names no safe place"
+    out = []
+    for minutes in (60, 480):
+        st = _fresh(game)
+        st.player.location, st.player.hp = safe, 1
+        game._rest(st, TurnInfo(turn=2, elapsed_minutes=minutes, rng=_r.Random(0)))
+        out.append(st.player)
+    if not 1 < out[0].hp < out[0].hp_max:
+        return "an hour's rest does not give a little back"
+    if out[1].hp != out[1].hp_max:
+        return "eight hours somewhere safe does not give all of it back"
+    return None
+
+
+def _potion_rule(game: Any, city: dict) -> str | None:
+    import inspect
+
+    from games.fantasy import game as fg
+    if not fg.TREATED.search("a potion"):
+        return "a potion no longer heals"
+    if not any(re.search(r"\bpotion", s, re.I) for s in _strings(city)):
+        return "there is no potion anywhere in the city file"
+    if "p.hp <= 0 and not p.fate" not in inspect.getsource(fg.FantasyGame.after_turn):
+        return "the fall no longer comes at the last hit point, the same turn"
+    return None
+
+
+def _carry_rule(game: Any, city: dict) -> str | None:
+    import random as _r
+
+    from engine import wounds as wd
+    from engine.game import TurnInfo
+    if wd.death_fork(True, ["friend"]) != "carried" or wd.death_fork(True, []) != "dead":
+        return "a fatal fall with a friend there is no longer carried"
+    st = _fresh(game)
+    q = next(iter(st.people), None)
+    if q is None:
+        return "the city has no people"
+    q.status, q.attitude = "alive", 2
+    st.player.with_them = [q.id]
+    if q.id not in [x.id for x in game._carriers(st)]:
+        return "a person who likes the player and is with them does not carry them"
+    game._raise(st, TurnInfo(turn=2, elapsed_minutes=0, rng=_r.Random(0)))
+    if st.player.location != "Temple of the Quiet Flame":
+        return "the carried are not raised at the Temple of the Quiet Flame"
+    return None
+
+
+def _talk_rule(game: Any, city: dict) -> str | None:
+    rules = game.adjudication_rules(_fresh(game))
+    if "a fight is str" not in rules:
+        return "a fight is no longer a check"
+    if re.search(r"is a cha check", rules):
+        return ("the rules make getting something out of a stranger, a wary or a hostile person a cha check (only talking to a "
+                "friend needs none), so 'never' overstates it")
+    return None
+
+
+def _run_rule(game: Any, city: dict) -> str | None:
+    rules = game.adjudication_rules(_fresh(game))
+    if "one per real risk" not in rules or "dodge" not in game.STAT_HELP.get("dex", ""):
+        return "a getaway under threat is no longer a check (one per real risk; dex covers a dodge)"
+    return None
+
+
+def _journal_rule(game: Any, city: dict) -> str | None:
+    st = _fresh(game)
+    st.flags["ending"] = "Lint died."
+    if not any(c.id == "journal" and c.mode == "engine" for c in game.commands(st)):
+        return "the Journal cannot be read after the end"
+    return None
+
+
+def _level_rule(game: Any, city: dict) -> str | None:
+    from games.fantasy import sheet as sh
+    st = _fresh(game)
+    lv = next((c for c in game.commands(st) if c.id == "level_up"), None)
+    if lv is None or lv.mode != "engine":
+        return "levelling up is not a command"
+    if lv.enabled is not False:
+        return "levelling up works before the bar is full"
+    st.player.xp = sh.xp_for(st.player.level)
+    lv = next((c for c in game.commands(st) if c.id == "level_up"), None)
+    if lv is None or not lv.enabled:
+        return "levelling up does not work when the bar is full"
+    return None
+
+
+def _sleep_rule(game: Any, city: dict) -> str | None:
+    from games.fantasy import sheet as sh
+    return None if "Sleep" in sh.SPELLS else "Sleep is not a spell"
+
+
+def _beat_rule(game: Any, city: dict) -> str | None:
+    cha = game.STAT_HELP.get("cha", "")
+    if not ("haggle" in cha and "bluff" in cha):
+        return "selling to and lying to are no longer cha"
+    if "dodge" not in game.STAT_HELP.get("dex", "") or not _kit_has(city, "torches"):
+        return "outrunning or setting on fire has no stat or no torch"
+    return None
+
+
+HINT_RULES: list[tuple[re.Pattern[str], Any]] = [          # the first pattern a line matches is its check
+    (re.compile(r"\bdice remember|\bundo\b", re.I), _seed_rule),
+    (re.compile(r"sold to, lied to, outrun or set on fire", re.I), _beat_rule),
+    (re.compile(r"set something on fire|\btorch\b", re.I), _fire_rule),
+    (re.compile(r"hour's rest|eight hours", re.I), _rest_rule),
+    (re.compile(r"\bpotions?\b", re.I), _potion_rule),
+    (re.compile(r"carry you to the Temple", re.I), _carry_rule),
+    (re.compile(r"talking never needs a roll", re.I), _talk_rule),
+    (re.compile(r"running away is a check", re.I), _run_rule),
+    (re.compile(r"\bjournal\b", re.I), _journal_rule),
+    (re.compile(r"levell?ing up is a command", re.I), _level_rule),
+    (re.compile(r"\bsleep is a spell", re.I), _sleep_rule),
+]
+
+
+def lint_death_lines(content_dir: Path, game: Any = None) -> list[str]:
+    """The death-card lines' shape, and every `hint: true` line against the rule it states (HINT_RULES)."""
+    path = content_dir / "death_lines.yml"
+    if not path.exists():
+        return []
+    doc = _load(path) or {}
+    rows = doc.get("lines")
+    if not isinstance(rows, list) or not rows:
+        return ["death_lines: no `lines` list"]
+    city = _load(content_dir / "scenarios" / "marrowgate.yml")
+    if game is None:
+        from games.fantasy.game import FantasyGame
+        game = FantasyGame(content_dir)
+    problems: list[str] = []
+    seen: set[str] = set()
+    for i, r in enumerate(rows):
+        text = str(r.get("text") or "").strip() if isinstance(r, dict) else ""
+        if not text:
+            problems.append(f"death_lines: line {i + 1} has no text")
+            continue
+        if text in seen:
+            problems.append(f"death_lines: {text!r} is listed twice")
+        seen.add(text)
+        if "hint" in r and not isinstance(r["hint"], bool):
+            problems.append(f"death_lines: {text!r}: hint is true or false")
+        if "{" in text:
+            problems.append(f"death_lines: {text!r}: a placeholder the card does not fill")
+        if not r.get("hint"):
+            continue
+        check = next((fn for pat, fn in HINT_RULES if pat.search(text)), None)
+        if check is None:
+            problems.append(f"death_lines: hint {text!r} states a rule the lint has no check for")
+            continue
+        try:
+            why = check(game, city)
+        except Exception as ex:                                          # noqa: BLE001
+            why = f"its check failed to run: {ex}"
+        if why:
+            problems.append(f"death_lines: hint {text!r}: {why}")
     return problems

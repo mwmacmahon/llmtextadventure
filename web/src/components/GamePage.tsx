@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type GameInfo, type InstanceSummary, type SetupField, type SetupOption } from "../api";
-import { ago, endingShort, originMark } from "../saves";
+import { ago, countsLine, endingShort, originMark } from "../saves";
 import { SaveCard } from "./SaveCard";
 
 type Field = { key: string; plain: boolean; kind: "select" | "text" | "textarea"; label: string; hint: string; required: boolean; options: SetupOption[]; initial: string };
@@ -122,6 +122,15 @@ export function GamePage({ name }: { name: string }) {
         {game.hidden && <span className="dev-mark">dev</span>}
       </h1>
       <p className="muted">{game.description}</p>
+      <p className="muted small game-counts">
+        {countsLine(game.saves, game.deaths ?? 0)}
+        {(game.deaths ?? 0) > 0 && (
+          <>
+            {" · "}
+            <a className="link" href={`#/graveyard/${game.name}`}>Graveyard</a>
+          </>
+        )}
+      </p>
       {err && <div className="error">{err}</div>}
       {saves.length ? [newGame, saved] : [newGame]}
       {/* Reserved: the game's Mods list (files with download, delete, upload) goes here (the mods design). Empty on purpose. */}

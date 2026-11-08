@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type GameInfo } from "../api";
+import { countsLine } from "../saves";
 
 /** Home: one card per game, with its saved games counted; Open goes to the game's own page. */
 export function Home() {
@@ -47,7 +48,7 @@ export function Home() {
             </div>
             <p className="muted">{g.description}</p>
             <div className="game-card-foot">
-              <span className="muted small">{g.saves === 0 ? "No saved games" : g.saves === 1 ? "1 saved game" : `${g.saves} saved games`}</span>
+              <span className="muted small">{countsLine(g.saves, g.deaths ?? 0)}</span>
               <span className="button-like">Open</span>
             </div>
           </a>

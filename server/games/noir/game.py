@@ -1538,6 +1538,10 @@ class NoirGame(GameBase):
         e = state.flags.get("ending")
         return str(e) if e else None
 
+    def dead(self, state: NoirState) -> bool:
+        """The graveyard (B81): Frank is dead (the fatal call, H5). The player's alone; no model reads it."""
+        return state.player.health == "dead"
+
     def save_line(self, state: NoirState) -> list[Chip]:
         """The lobby's line for a save (B75): where Frank is, the day and time, his health when it is not fine."""
         p = state.player

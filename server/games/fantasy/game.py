@@ -1665,6 +1665,22 @@ class FantasyGame(GameBase):
         e = state.flags.get("ending")
         return str(e) if e else None
 
+    # ---- the graveyard (B81): the player's alone; no model reads it ---------------------------------------------------
+    def dead(self, state: FantasyState) -> bool:
+        """The fall with nobody to carry: the lethal roll came up death (a carried fall is raised, not buried)."""
+        return state.player.fate == "dead"
+
+    def cause_of_death(self, state: FantasyState, info: dict[str, Any]) -> str | None:
+        if state.player.fate_roll == "an execution":
+            return "executed: " + str(info.get("cause") or "death by the headsman").removeprefix("death by ")
+        return None
+
+    def death_score(self, state: FantasyState) -> dict[str, Any]:
+        p = state.player
+        gold = state.item("gold")
+        return {"level": p.level, "xp": p.xp, "renown": p.renown, "renown_word": p.renown_word, "gold": gold.count if gold else 0,
+                "quests_done": sum(1 for h in state.hooks if h.status == "done"), "days": state.clock.day}
+
     def save_line(self, state: FantasyState) -> list[Chip]:
         """The lobby's line for a save (B75): the character ("Wren, tiefling rogue, level 2"), the place, the day."""
         p = state.player

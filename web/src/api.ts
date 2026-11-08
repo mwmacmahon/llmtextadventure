@@ -32,6 +32,7 @@ export type TranscriptRow = {
   role: "player" | "bulletin" | "narrator" | "system_note" | "mechanics" | "command" | "result";
   text: string;
   created: string;
+  undone: number;     // 0: live; else the undo that undid it (the log strikes it through; nothing a model reads sees it)
 };
 
 export type CheckSummary = { label: string; outcome: string; roll: number | null; total: number; target: number };
@@ -125,8 +126,18 @@ export type SetupField = {
 };
 export type GameInfo = {
   name: string; title: string; description: string; version: string; setup: Record<string, SetupOption[] | SetupField>;
-  saves: number; hidden: boolean;
+  saves: number; deaths: number; hidden: boolean;
 };
+
+// The graveyard (server/engine/graveyard.py): every death, kept for good, an undone one too. No model reads it.
+export type Grave = {
+  id: string; game: string; instance_id: string; turn: number; created: string; character: string; line: Chip[];
+  place: string; day: number | null; clock: string; cause: string; epitaph: string; score: Record<string, number | string>; undone: boolean;
+};
+/** A gravestone's card (and the play page's death card): the grave, the final state as panels, one line under the cause. */
+export type GraveCard = Grave & { game_title: string; save_stands: boolean; ui: UISchema | null; death_line: string | null; cause_from: string };
+export type Character = { game: string; game_title: string; key: string; name: string; deaths: number; best: { level?: number; turns?: number; days?: number }; last: string; graves: Grave[] };
+export type Gallery = { characters: Character[]; deaths: number };
 
 export type LedgerEntry = { seq: number; turn: number; kind: string; created: string; payload: Record<string, any> };
 
@@ -217,6 +228,10 @@ export const api = {
     req("/api/instances/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(doc) }).then((r) => j<InstanceView>(r)),
   ledger: (id: string, turn?: number) => req(`/api/instances/${id}/ledger${turn != null ? `?turn=${turn}` : ""}`).then((r) => j<LedgerEntry[]>(r)),
   usage: (id: string) => req(`/api/instances/${id}/usage`).then((r) => j<InstanceUsage>(r)),
+  /** The play page's death card: this save's death as it stands, or null. */
+  death: (id: string) => req(`/api/instances/${id}/death`).then((r) => j<GraveCard | null>(r)),
+  graveyard: (game?: string) => req(`/api/graveyard${game ? `?game=${encodeURIComponent(game)}` : ""}`).then((r) => j<Gallery>(r)),
+  grave: (id: string) => req(`/api/graveyard/${id}`).then((r) => j<GraveCard>(r)),
   settings: () => req("/api/settings").then((r) => j<Settings>(r)),
   updateSettings: (patch: { guard?: Partial<Settings["guard"]>; progress?: Partial<Settings["progress"]> }) =>
     req("/api/settings", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) }).then((r) => j<Settings>(r)),

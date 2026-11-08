@@ -11,6 +11,12 @@ Export/import: `export_instance` returns a self-contained JSON document (all
 four tables for one instance); `import_instance` recreates it under a fresh
 id. `copy_instance` is the same thing in-process, truncated at a turn: that is
 how branching ("fork from turn N") works.
+
+Undo keeps the record (B82): the turns after the target are not deleted but marked
+`undone` (the seq of the `undo` ledger row that undid them; 0 is live). Every read
+here returns the live rows only unless it is asked for the undone ones, so the
+narrator's context, the summaries and the counts never see an undone turn; the
+play page's log (struck through), the export and the call report ask for them.
 """
 from __future__ import annotations
 
@@ -48,6 +54,7 @@ CREATE TABLE IF NOT EXISTS transcript (
   role TEXT NOT NULL,             -- player | bulletin | narrator | system_note
   text TEXT NOT NULL,
   created TEXT NOT NULL,
+  undone INTEGER NOT NULL DEFAULT 0, -- 0 live; else the seq of the `undo` ledger row that undid it (B82)
   PRIMARY KEY (instance_id, seq)
 );
 CREATE TABLE IF NOT EXISTS ledger (
@@ -57,6 +64,7 @@ CREATE TABLE IF NOT EXISTS ledger (
   kind TEXT NOT NULL,             -- model_call | exchange | roll | check | adjudication | delta | verdict | event_fired | event_expired | summary
   payload_json TEXT NOT NULL,
   created TEXT NOT NULL,
+  undone INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (instance_id, seq)
 );
 CREATE TABLE IF NOT EXISTS blob (
@@ -68,7 +76,8 @@ CREATE TABLE IF NOT EXISTS snapshot (
   turn INTEGER NOT NULL,
   state_json TEXT NOT NULL,
   created TEXT NOT NULL,
-  PRIMARY KEY (instance_id, turn)
+  undone INTEGER NOT NULL DEFAULT 0, -- an undone turn's snapshot stays beside the live one of the same number
+  PRIMARY KEY (instance_id, turn, undone)
 );
 """
 
@@ -77,6 +86,8 @@ MIGRATIONS = [
     ("instance", "origin_json", "TEXT NOT NULL DEFAULT '{}'"),
     ("instance", "updated", "TEXT NOT NULL DEFAULT ''"),          # last played: the end of the latest turn (the save list's order)
     ("instance", "difficulty", "TEXT NOT NULL DEFAULT 'normal'"), # the player's difficulty: easy | normal | hard (moves the die)
+    ("transcript", "undone", "INTEGER NOT NULL DEFAULT 0"),       # undo keeps the record (B82)
+    ("ledger", "undone", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 
@@ -129,6 +140,15 @@ class TranscriptRow:
     role: str
     text: str
     created: str
+    undone: int = 0
+
+
+def live(doc: dict) -> dict:
+    """An exported game with its undone rows left out (the counts, the replays and every tool that reads a round as
+    it stands). The `undo` rows themselves are live and stay: they are the record that an undo happened."""
+    return {**doc, "transcript": [r for r in doc.get("transcript", []) if not r.get("undone")],
+            "ledger": [r for r in doc.get("ledger", []) if not r.get("undone")],
+            "snapshots": [r for r in doc.get("snapshots", []) if not r.get("undone")]}
 
 
 def _locked(fn):
@@ -152,6 +172,15 @@ class Store:
         self._migrate()
 
     def _migrate(self) -> None:
+        cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(snapshot)")}
+        if "undone" not in cols:                 # B82: the key takes the undone mark, so the table is rebuilt once
+            with self.conn:
+                self.conn.execute("ALTER TABLE snapshot RENAME TO snapshot_old")
+                self.conn.execute("CREATE TABLE snapshot (instance_id TEXT NOT NULL, turn INTEGER NOT NULL, state_json TEXT NOT NULL,"
+                                  " created TEXT NOT NULL, undone INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (instance_id, turn, undone))")
+                self.conn.execute("INSERT INTO snapshot (instance_id, turn, state_json, created, undone)"
+                                  " SELECT instance_id, turn, state_json, created, 0 FROM snapshot_old")
+                self.conn.execute("DROP TABLE snapshot_old")
         for table, col, decl in MIGRATIONS:
             cols = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})")}
             if col not in cols:
@@ -202,7 +231,8 @@ class Store:
         for i in range(0, len(ids), 500):
             part = ids[i:i + 500]
             q = ("SELECT s.instance_id, s.turn, s.state_json FROM snapshot s JOIN (SELECT instance_id, MAX(turn) AS t FROM snapshot"
-                 f" WHERE instance_id IN ({','.join('?' * len(part))}) GROUP BY instance_id) m ON s.instance_id = m.instance_id AND s.turn = m.t")
+                 f" WHERE undone=0 AND instance_id IN ({','.join('?' * len(part))}) GROUP BY instance_id) m"
+                 " ON s.instance_id = m.instance_id AND s.turn = m.t AND s.undone = 0")
             out.update({r["instance_id"]: (int(r["turn"]), json.loads(r["state_json"])) for r in self.conn.execute(q, part)})
         return out
 
@@ -248,14 +278,14 @@ class Store:
     # ---- snapshots --------------------------------------------------------
     @_locked
     def latest_turn(self, iid: str) -> int:
-        r = self.conn.execute("SELECT MAX(turn) AS t FROM snapshot WHERE instance_id=?", (iid,)).fetchone()
+        r = self.conn.execute("SELECT MAX(turn) AS t FROM snapshot WHERE instance_id=? AND undone=0", (iid,)).fetchone()
         return int(r["t"] or 0)
 
     @_locked
     def load_state(self, iid: str, turn: int | None = None) -> dict:
         if turn is None:
             turn = self.latest_turn(iid)
-        r = self.conn.execute("SELECT state_json FROM snapshot WHERE instance_id=? AND turn=?", (iid, turn)).fetchone()
+        r = self.conn.execute("SELECT state_json FROM snapshot WHERE instance_id=? AND turn=? AND undone=0", (iid, turn)).fetchone()
         if not r:
             raise KeyError(f"no snapshot for {iid} turn {turn}")
         return json.loads(r["state_json"])
@@ -264,7 +294,7 @@ class Store:
     def save_snapshot(self, iid: str, turn: int, state: dict) -> None:
         with self.conn:
             self.conn.execute(
-                "INSERT OR REPLACE INTO snapshot (instance_id, turn, state_json, created) VALUES (?,?,?,?)",
+                "INSERT OR REPLACE INTO snapshot (instance_id, turn, state_json, created, undone) VALUES (?,?,?,?,0)",
                 (iid, turn, json.dumps(state), _now()),
             )
 
@@ -285,8 +315,9 @@ class Store:
         return seq
 
     @_locked
-    def transcript(self, iid: str, roles: Iterable[str] | None = None) -> list[TranscriptRow]:
-        q = "SELECT seq, turn, role, text, created FROM transcript WHERE instance_id=?"
+    def transcript(self, iid: str, roles: Iterable[str] | None = None, undone: bool = False) -> list[TranscriptRow]:
+        """The live rows (`undone=True`: the undone ones too, each with its mark: the play page's log)."""
+        q = "SELECT seq, turn, role, text, created, undone FROM transcript WHERE instance_id=?" + ("" if undone else " AND undone=0")
         args: list[Any] = [iid]
         if roles:
             roles = list(roles)
@@ -307,15 +338,17 @@ class Store:
         return seq
 
     @_locked
-    def ledger(self, iid: str, turn: int | None = None) -> list[dict]:
-        q = "SELECT seq, turn, kind, payload_json, created FROM ledger WHERE instance_id=?"
+    def ledger(self, iid: str, turn: int | None = None, undone: bool = False) -> list[dict]:
+        """The live rows (`undone=True`: every row, each with its `undone` mark)."""
+        q = "SELECT seq, turn, kind, payload_json, created, undone FROM ledger WHERE instance_id=?" + ("" if undone else " AND undone=0")
         args: list[Any] = [iid]
         if turn is not None:
             q += " AND turn=?"
             args.append(turn)
         q += " ORDER BY seq"
         return [
-            {"seq": r["seq"], "turn": r["turn"], "kind": r["kind"], "created": r["created"], **{"payload": json.loads(r["payload_json"])}}
+            {"seq": r["seq"], "turn": r["turn"], "kind": r["kind"], "created": r["created"], "payload": json.loads(r["payload_json"]),
+             **({"undone": r["undone"]} if undone else {})}
             for r in self.conn.execute(q, args).fetchall()
         ]
 
@@ -324,7 +357,7 @@ class Store:
         """Rows of these kinds in every instance, each with its instance id, oldest first; `since` an ISO time (UTC) the
         rows were written after (the profile picker: the turns stamped with a profile, the turns played lately)."""
         kinds = list(kinds)
-        q = f"SELECT instance_id, seq, turn, kind, payload_json, created FROM ledger WHERE kind IN ({','.join('?' * len(kinds))})"
+        q = f"SELECT instance_id, seq, turn, kind, payload_json, created FROM ledger WHERE undone=0 AND kind IN ({','.join('?' * len(kinds))})"
         args: list[Any] = list(kinds)
         if since is not None:
             q += " AND created > ?"
@@ -358,28 +391,38 @@ class Store:
     def drop_transcript_turn(self, iid: str, turn: int) -> None:
         """A turn that failed part way: its transcript rows go (the next turn takes its number); its ledger rows stay."""
         with self.conn:
-            self.conn.execute("DELETE FROM transcript WHERE instance_id=? AND turn=?", (iid, turn))
+            self.conn.execute("DELETE FROM transcript WHERE instance_id=? AND turn=? AND undone=0", (iid, turn))
 
     # ---- undo -------------------------------------------------------------
     @_locked
-    def truncate_after_turn(self, iid: str, turn: int) -> None:
-        """Undo: drop everything after `turn` (snapshots, transcript, ledger)."""
+    def undo_after_turn(self, iid: str, turn: int, mark: int) -> None:
+        """Undo (B82): every live row after `turn` (snapshots, transcript, ledger) is marked undone with `mark`, the seq of
+        the `undo` ledger row; nothing is deleted."""
         with self.conn:
-            self.conn.execute("DELETE FROM snapshot WHERE instance_id=? AND turn>?", (iid, turn))
-            self.conn.execute("DELETE FROM transcript WHERE instance_id=? AND turn>?", (iid, turn))
-            self.conn.execute("DELETE FROM ledger WHERE instance_id=? AND turn>?", (iid, turn))
+            for t in ("snapshot", "transcript", "ledger"):
+                self.conn.execute(f"UPDATE {t} SET undone=? WHERE instance_id=? AND turn>? AND undone=0", (mark, iid, turn))
+
+    @_locked
+    def truncate_after_turn(self, iid: str, turn: int) -> None:
+        """A retelling: drop the live rows after `turn` (snapshots, transcript, ledger); the turn's earlier telling is kept
+        in its `rewrite` row. Undone rows and `undo` rows are the record and stay."""
+        with self.conn:
+            self.conn.execute("DELETE FROM snapshot WHERE instance_id=? AND turn>? AND undone=0", (iid, turn))
+            self.conn.execute("DELETE FROM transcript WHERE instance_id=? AND turn>? AND undone=0", (iid, turn))
+            self.conn.execute("DELETE FROM ledger WHERE instance_id=? AND turn>? AND undone=0 AND kind<>'undo'", (iid, turn))
 
     # ---- export / import / copy -------------------------------------------
     @_locked
     def export_instance(self, iid: str, upto_turn: int | None = None) -> dict:
+        """The whole record, undone rows included (each with its mark); `upto_turn` (a branch): the live rows to that turn."""
         inst = self.get_instance(iid)
         if not inst:
             raise KeyError(iid)
-        lim = "" if upto_turn is None else f" AND turn<={int(upto_turn)}"
+        lim = "" if upto_turn is None else f" AND turn<={int(upto_turn)} AND undone=0"
         rows = lambda q: [dict(r) for r in self.conn.execute(q, (iid,)).fetchall()]  # noqa: E731
         ledger = [
             {**r, "payload": json.loads(r.pop("payload_json"))}
-            for r in rows(f"SELECT seq, turn, kind, payload_json, created FROM ledger WHERE instance_id=?{lim} ORDER BY seq")
+            for r in rows(f"SELECT seq, turn, kind, payload_json, created, undone FROM ledger WHERE instance_id=?{lim} ORDER BY seq")
         ]
         return {
             "format": EXPORT_FORMAT,
@@ -389,12 +432,12 @@ class Store:
                 "created": inst.created, "status": inst.status, "setup": inst.setup, "prefix_text": inst.prefix_text,
                 "origin": inst.origin, "updated": inst.updated, "difficulty": inst.difficulty,
             },
-            "transcript": rows(f"SELECT seq, turn, role, text, created FROM transcript WHERE instance_id=?{lim} ORDER BY seq"),
+            "transcript": rows(f"SELECT seq, turn, role, text, created, undone FROM transcript WHERE instance_id=?{lim} ORDER BY seq"),
             "ledger": ledger,
             "blobs": self.blobs(blob_refs(ledger)),
             "snapshots": [
                 {**r, "state": json.loads(r.pop("state_json"))}
-                for r in rows(f"SELECT turn, state_json, created FROM snapshot WHERE instance_id=?{lim} ORDER BY turn")
+                for r in rows(f"SELECT turn, state_json, created, undone FROM snapshot WHERE instance_id=?{lim} ORDER BY undone<>0, turn")
             ],
         }
 
@@ -416,16 +459,16 @@ class Store:
                  now, src.get("difficulty") or "normal"),
             )
             self.conn.executemany(
-                "INSERT INTO transcript (instance_id, seq, turn, role, text, created) VALUES (?,?,?,?,?,?)",
-                [(iid, r["seq"], r["turn"], r["role"], r["text"], r["created"]) for r in doc.get("transcript", [])],
+                "INSERT INTO transcript (instance_id, seq, turn, role, text, created, undone) VALUES (?,?,?,?,?,?,?)",
+                [(iid, r["seq"], r["turn"], r["role"], r["text"], r["created"], int(r.get("undone") or 0)) for r in doc.get("transcript", [])],
             )
             self.conn.executemany(
-                "INSERT INTO ledger (instance_id, seq, turn, kind, payload_json, created) VALUES (?,?,?,?,?,?)",
-                [(iid, r["seq"], r["turn"], r["kind"], json.dumps(r["payload"]), r["created"]) for r in doc.get("ledger", [])],
+                "INSERT INTO ledger (instance_id, seq, turn, kind, payload_json, created, undone) VALUES (?,?,?,?,?,?,?)",
+                [(iid, r["seq"], r["turn"], r["kind"], json.dumps(r["payload"]), r["created"], int(r.get("undone") or 0)) for r in doc.get("ledger", [])],
             )
             self.conn.executemany(
-                "INSERT INTO snapshot (instance_id, turn, state_json, created) VALUES (?,?,?,?)",
-                [(iid, r["turn"], json.dumps(r["state"]), r["created"]) for r in doc["snapshots"]],
+                "INSERT INTO snapshot (instance_id, turn, state_json, created, undone) VALUES (?,?,?,?,?)",
+                [(iid, r["turn"], json.dumps(r["state"]), r["created"], int(r.get("undone") or 0)) for r in doc["snapshots"]],
             )
             self.conn.executemany("INSERT OR IGNORE INTO blob (hash, text) VALUES (?,?)", list((doc.get("blobs") or {}).items()))
         return iid
