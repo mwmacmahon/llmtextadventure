@@ -27,6 +27,9 @@ page is the order; it does not repeat the designs.
    were queued "after the model is pinned" and nothing re-read the queue. The roadmap is that re-read.
 5. The notes under `notes/` are canonical for design; `docs/` describes the engine as built.
 
+**The order after Stage 1 (the owner, 2026-11-08):** the fantasy game (Stage 5's first item) is built next, as soon
+as 1e lands; the parity rounds of Stage 2 run on the box beside that build; Stages 3 and 4 follow.
+
 ## Stage 1. The dice and the consequences
 
 The batch of fixes from the live rounds. No gate before it; it is the gate for Stage 2.
@@ -123,8 +126,14 @@ Each module earns a level by moving the read without growing the prompt.
 
 - **Feedback while playing.** A note button beside the rewrite button that writes a row into the ledger at that
   turn, shown in the round report and the read, so a player's reaction sits where it happened.
-- **A fantasy adventure.** A third game under `server/games/` with its own content and narrator rules, which is also
-  where the tone for a younger player is set. The engine does not care about genre.
+- **A fantasy adventure (MARROWGATE), pulled forward: the next build after Stage 1e.** The owner, 2026-11-08: "the
+  fantasy game is next and needs to be coming soon." A third game under `server/games/` with its own content and
+  narrator rules, designed in the fantasy side chat (record `notes/FANTASY_DESIGN.md`, D136 to D145; the directive is
+  `notes/DIRECTIVE-fantasy-2026-11-08.md`, one paste). Its tone is a D&D table's, not a younger player's (D137); its
+  engine needs (setup kinds, ISSUES B21; the dice line and the mechanics row from Stage 1b) are small and independent
+  of Stages 2 to 4, so it does not wait for the parity gate. The parity rounds (Stage 2) are box time, not build
+  time: they run beside the fantasy build. The clown sim (`notes/CLOWN_DESIGN.md`, D132) waits behind it. The engine
+  does not care about genre.
 - **The player UI** as a whole (ISSUES U2), and the plain-language pass on every line a model is handed (ISSUES W1).
 
 ## Stage 6. Other models
