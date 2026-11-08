@@ -28,7 +28,11 @@ page is the order; it does not repeat the designs.
 5. The notes under `notes/` are canonical for design; `docs/` describes the engine as built.
 
 **The order after Stage 1 (the owner, 2026-11-08):** the fantasy game (Stage 5's first item) is built next, as soon
-as 1e lands; the parity rounds of Stage 2 run on the box beside that build; Stages 3 and 4 follow.
+as 1e lands; the parity rounds of Stage 2 run on the box beside that build; Stages 3 and 4 follow. The plain-language sweep (ISSUES
+W1) is a standing rule from now (every new model-facing line in plain words, `WRITING_FOR_MODELS.md`) and one full sweep
+after the fantasy build, measured by rounds of its own. The wounds track (ISSUES H1 to H5) is built with the fantasy
+game's hit points and death. The sanity sitting (NV2) and the station's week (ST1) wait until after that. The "Open
+now" register moves into `docs/` (B25).
 
 ## Stage 1. The dice and the consequences
 
@@ -92,12 +96,14 @@ microphones 2% a block), higher once security has been updated. The block is fix
 player may name a shorter limit on the lever, never a longer one; an event interrupts either way. The gating of panels and controls behind progress is the station's design change; the block and the
 interrupt are the time rules. The record is the time doc §4, "Decided".
 
-## Stage 2. Parity
+## Stage 2. Parity (a standing rule, not a gate: the owner, 2026-11-08)
 
 Two or three noir rounds and one or two station rounds on the Stage 1 build, read against the D98 base rounds (the
 all-Gemma rounds before the assistant existed). The gate: the reader's verdict at parity or better, no new class of
 fault, and the counts beside the previous rounds: checks staked and matched, consequences fired by tier, the formula
-count, facts told before found. Nothing in Stages 3 to 5 starts before this gate is passed.
+count, facts told before found. **Decided 2026-11-08:** this is standing rule 2 applied to Stage 1, not a gate. The
+rounds run on the box beside the fantasy build and nothing waits for them; their verdict decides whether the 2d6 tuning
+stands (D135's open question) before Stages 3 and 4 build on it.
 
 ## Stage 3. Profiles and the picker
 
@@ -134,7 +140,8 @@ Each module earns a level by moving the read without growing the prompt.
   of Stages 2 to 4, so it does not wait for the parity gate. The parity rounds (Stage 2) are box time, not build
   time: they run beside the fantasy build. The clown sim (`notes/CLOWN_DESIGN.md`, D132) waits behind it. The engine
   does not care about genre.
-- **The player UI** as a whole (ISSUES U2), and the plain-language pass on every line a model is handed (ISSUES W1).
+- **The player UI** as a whole (ISSUES U2). The plain-language pass on every line a model is handed (ISSUES W1) is
+  pulled forward to right after the fantasy build (the order line above).
 
 ## Stage 6. Other models
 
