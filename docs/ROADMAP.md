@@ -5,17 +5,25 @@ chat on 2026-11-07, after the first rounds with the stakes live in both games (D
 item are in `notes/DECISIONS.md` and `notes/ISSUES.md`; the designs are the three docs listed in `INDEX.md` §2. This
 page is the order; it does not repeat the designs.
 
-## Where we are
+## Where we are (2026-11-08 midday, at 7b9d346)
 
-- Both games play a 50-turn round with the stakes live, on one local model for every role (Gemma 4 31B on the box),
-  at about 30 seconds a turn with half the prompt served from cache.
-- The assistant (formerly the adjudicator) names the attempt, stakes every check with both futures, and the engine
-  rolls at the narrator's call with the assessment as the floor. 51 of 51 checks staked on the station, 46 of 48 on
-  noir; the narrator answers the call with the matched branch nearly every time.
-- Both player's-eye reads say "would keep playing." The noir round ended itself at turn 47 with June out. What both
-  readers held against the rounds: the same failure beat repeating (the engine's cost table), and a late-turn
-  formula in the prose (the narrator's own shape).
-- 359 tests pass. Seven living pages are regenerated with each change they show.
+- **Stage 1 is done** (D135 to D151, 2026-11-07 night to 11-08 dawn): 2d6 with caps, the dice and the player's row,
+  the consequence roll with noir's table rewritten, the small faults, the six time rules, and the station's control
+  model (a locked-out start where every system is a project worked one sitting at a time).
+- **Stage 2 has run.** Five parity rounds on the box (noir r21L to r23L, station r21L and r22L) read against the D98
+  base rounds and paired blind: the base won all four pairs, both orders agreeing. The readers' reason was the dice,
+  not the prose: the station's d20-era +3 stats passed 2d6 medium checks 92% of the time ("escorted rather than
+  played") and two noir rounds ended early on one roll that gave the case away. Fixed the same day (D168): the
+  station's capabilities down one and a per-game target offset of +1, the 2d6 penalty cap at -2, and a tell held
+  back is staked high at least and retold if told early. Smoke turns only after; the W1 rounds are the next night's.
+- **The fantasy game, MARROWGATE, is built and playable** (D152 to D167): the sheet, the deck, hit points and the
+  death fork, heat and renown, levels, the panels, its own living page; one 50-turn round on Sonnet read "would play
+  on eagerly", a ten-turn smoke after the midday fixes; served on :8014 on Sonnet for its first player today. Noir's
+  wounds (H1 to H5) came with it as the shared body piece (D157).
+- **One model, every role, still holds:** Gemma 4 31B on the box for noir and the station; the fantasy on Sonnet for
+  its first play (the profile may differ per run, never per role).
+- The register is `docs/OPEN-ISSUES.md` (B25). 484 tests pass. Stage 3 (profiles, the picker, the settings card) is
+  the build chat's current work. The order of work below is unchanged; each stage carries its position.
 
 ## The standing rules
 
@@ -27,8 +35,8 @@ page is the order; it does not repeat the designs.
    were queued "after the model is pinned" and nothing re-read the queue. The roadmap is that re-read.
 5. The notes under `notes/` are canonical for design; `docs/` describes the engine as built.
 
-**The order after Stage 1 (the owner, 2026-11-08):** the fantasy game (Stage 5's first item) is built next, as soon
-as 1e lands; the parity rounds of Stage 2 run on the box beside that build; Stages 3 and 4 follow. The plain-language sweep (ISSUES
+**The order after Stage 1 (the owner, 2026-11-08):** the fantasy game (Stage 5's first item) was built next, as soon
+as 1e landed; the parity rounds of Stage 2 run on the box beside that build; Stages 3 and 4 follow. The plain-language sweep (ISSUES
 W1) is a standing rule from now (every new model-facing line in plain words, `WRITING_FOR_MODELS.md`) and one full sweep
 after the fantasy build, measured by rounds of its own. The wounds track (ISSUES H1 to H5) is built with the fantasy
 game's hit points and death. The sanity sitting (NV2) and the station's week (ST1) wait until after that. The "Open
@@ -37,6 +45,10 @@ now" register moves into `docs/` (B25).
 ## Stage 1. The dice and the consequences
 
 The batch of fixes from the live rounds. No gate before it; it is the gate for Stage 2.
+
+**Position:** done. 1a D135, 1b D143, 1c D144, 1d D145, 1e D146 and D148 to D151 (the time rules; the control model),
+with B38's split line fixed after the first parity round. The caps since D168: 2d6 penalties -2, the d20 keeps -3,
+bonuses +5 on both; a per-game target offset (the station +1) moves a game's whole table.
 
 **1a. Checks as 2d6 (ISSUES R16).** A `dice_2d6` resolver beside `dice_d20` in `engine/mechanics.py`; the games name
 it. Targets by difficulty band on the 2d6 bell (about 7, 9 and 11 for the three bands the games use; the exact table
@@ -109,6 +121,11 @@ count, facts told before found. **Decided 2026-11-08:** this is standing rule 2 
 rounds run on the box beside the fantasy build and nothing waits for them; their verdict decides whether the 2d6 tuning
 stands (D135's open question) before Stages 3 and 4 build on it.
 
+**Position:** run 2026-11-08 (REPORT-2026-11-08-overnight). The base won all four blind pairs; the cause was the
+dice (B62, B63) and D168 tuned them. The Stage 1 build is at parity or better on writing and continuity, behind on story
+escalation; the next long rounds (after the W1 sweep's rounds) are the check on D168. The 2d6 modifier strategy is
+recorded in GAME_AUTHORING §7c and DESIGN.md §7.1a.
+
 ## Stage 3. Profiles and the picker
 
 `notes/DESIGN-context-modules-2026-11-06.md` §6. A profile is the whole configuration of a play: provider and model
@@ -118,10 +135,10 @@ the active one's card; switching a local profile goes through the box's helper; 
 turn's mechanics row. Module levels for modules not yet built show as "not yet." Editing levels in the UI as an
 override layer is the second step.
 
-**Status (2026-11-08 midday): built (D169).** The files, the per-server active profile, the card with the cost of a
-hosted turn, the switch (hosted at once, local through the helper, refused while a turn streams or the box is busy),
-the stamp in the ledger and the call report, the dials including the target offset per game. `sonnet.yml` is the
-fantasy's play (guard gate). Not built: editing levels in the UI (the second step).
+**Position:** built (D169), the midday directive of 2026-11-08 §3: the files, the per-server active profile, the card with
+the cost of a hosted turn, the switch (hosted at once, local through the helper, refused while a turn streams or the box
+is busy), the stamp in the ledger and the call report, the dials including the target offset per game. Left: B73 (the
+model label from the profile), one server for every game (B77), editing levels in the UI (the second step).
 
 ## Stage 4. The narrator's context modules
 
@@ -136,6 +153,9 @@ fantasy's play (guard gate). Not built: editing levels in the UI (the second ste
 4. The pull extended to clues and threads; the summary levels.
 
 Each module earns a level by moving the read without growing the prompt.
+
+**Position:** not started; next after Stage 3. B5's formula count (D145) is its baseline; the Stage 1d log of the wrong
+person's files (B9) and the masking sightings are its first cases.
 
 ## Stage 5. Players beyond us
 
@@ -159,6 +179,15 @@ Each module earns a level by moving the read without growing the prompt.
     running; the `visited_*` flags on a move; the lethal roll and `carried`; heat and renown; `too_far`.
 - **The player UI** as a whole (ISSUES U2). The plain-language pass on every line a model is handed (ISSUES W1) is
   pulled forward to right after the fantasy build (the order line above).
+
+**Position:** the fantasy game built and playable (D152 to D167; the Gemma run and the content questions B64 to B70
+open with the fantasy side chat); W1's first pass done (D166, ten lines; the full sweep and its rounds still owed);
+the feedback button (B10) not started; the player UI (U2) has its first slice designed and pulled to the front of the
+line by the owner on 11-08 midday (the lobby with games and settings on the main page, a game page of saved games whose
+lines name the character, place and day, a save card, and a dev-mode checkbox that reveals hidden games: B74 to B76,
+`notes/DESIGN-lobby-and-saves-2026-11-08.md`); the clown sim waits, hidden behind dev mode when it comes. **Mods** (B79: hand-tuned patches to a game's
+content, prompts and starting state, toggled before a game starts, uploaded, downloaded and deleted from the lobby;
+`notes/DESIGN-mods-2026-11-08.md`) come next after the fantasy game is considered ready (the owner, 11-08 afternoon).
 
 ## Stage 6. Other models
 
