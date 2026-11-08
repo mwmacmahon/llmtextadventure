@@ -256,9 +256,9 @@ def test_rests_refill_what_the_content_says(game: FantasyGame):
     out.player.location = "The Greywood"
     walked = game.after_turn(out, info(minutes=480))
     assert walked.player.hp == 1                                     # eight hours on the road is no rest
-    rough, res = game.run_command(out, "rest", {"kind": "long"})     # D165: judged where the turn ends; nowhere safe, a rough night
-    assert res.ok and "Where you end up" in res.text and "The Drowned Lantern" in res.directive and rough.player.resting == "long"
-    assert game.after_turn(rough, info(minutes=480)).player.hp == 1 + 3 + 0          # a short rest's worth, not the night's
+    rough, res = game.run_command(out, "rest", {"kind": "long"})     # the owner (11-08 evening): no penalty, a night anywhere is a full rest
+    assert res.ok and res.text == "" and "Drowned Lantern" not in res.directive and rough.player.resting == "long"
+    assert game.after_turn(rough, info(minutes=480)).player.hp == rough.player.hp_max   # and no place names shown
     ok, res = game.run_command(out, "rest", {"kind": "short"})
     assert res.ok and ok.player.resting == "short" and res.minutes == 60
     assert game.after_turn(ok, info(minutes=60)).player.hp == 4
@@ -516,11 +516,11 @@ def test_a_long_rest_is_judged_where_the_turn_ends(game: FantasyGame):
     st = new(game)
     st.player.location, st.player.hp = "Ferry Landing", 4
     s1, res = game.run_command(st, "rest", {"kind": "long"})
-    assert res.ok and res.minutes == 480 and "The Drowned Lantern" in res.directive
+    assert res.ok and res.minutes == 480 and "Drowned Lantern" not in res.directive + res.text      # no place list (11-08 evening)
     s1.player.location = "The Drowned Lantern"                        # the turn's own move
     assert game.after_turn(s1, info(minutes=480)).player.hp == s1.player.hp_max
     s1.player.location = "Ferry Landing"
-    assert game.after_turn(s1, info(minutes=480)).player.hp == 4 + 3 + 3          # a rough night: a short rest's worth (3 + CON)
+    assert game.after_turn(s1, info(minutes=480)).player.hp == s1.player.hp_max      # no penalty anywhere (the owner, 11-08 evening)
 
 
 def test_an_id_that_is_also_the_players_name_is_that_person(game: FantasyGame):

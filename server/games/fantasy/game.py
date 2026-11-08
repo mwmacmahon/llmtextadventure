@@ -1444,13 +1444,13 @@ class FantasyGame(GameBase):
 
     def _rest(self, s: FantasyState, info: TurnInfo) -> None:
         p = s.player
-        safe = self._safe(s)                                 # where the turn ended (the Rest command's long rest is judged here)
+        safe = self._safe(s)      # a rest without the command counts only somewhere safe; the Rest command's rest counts anywhere (no penalty)
         hurt_now = any(a.startswith("player.hp:") and "->" in a and self._dropped(a) for a in info.applied)
         if any(lv.get("id") == "rest" and lv.get("status") == "not_completed" for lv in info.levers):
             p.rest_cut, p.resting = info.turn, ""        # B57 (D167): the referee said the rest did not happen (a sleepless night)
             return
         kind = ""
-        if (p.resting == "long" and safe and info.elapsed_minutes >= 360) or (safe and info.elapsed_minutes >= LONG_REST and not hurt_now):
+        if (p.resting == "long" and info.elapsed_minutes >= 360) or (safe and info.elapsed_minutes >= LONG_REST and not hurt_now):
             kind = "long"
         elif (p.resting in ("short", "long") and info.elapsed_minutes >= SHORT_REST) or (safe and info.elapsed_minutes >= SHORT_REST and not hurt_now):
             kind = "short"
@@ -1762,23 +1762,11 @@ class FantasyGame(GameBase):
         if command_id == "rest":
             kind = (args.get("kind") or "short").lower()
             p.resting = kind
-            if kind == "long" and not self._safe(s):
-                # Judged where the turn ends, not where it starts (after_turn): "I walk back to the Lantern and sleep" is a night's
-                # rest at the Lantern. Refusing it here told the narrator it was blocked while the eight hours at the Lantern
-                # gave every hit point back (f1L turn 26, D165). Nowhere safe by the end: a rough night, a short rest's worth.
-                safe_list = ", ".join(s.city.safe_locations)
-                directive = (f"{p.name} means to sleep the night, and only a safe place gives a real night's rest: {safe_list}. This line does not "
-                             f"take {p.name} anywhere; where {p.name} goes is what the player said. If that is one of those places, play the going, "
-                             f"the settling down there, and the waking. Anywhere else is a poor night, however comfortable: a few broken hours "
-                             f"wherever {p.name} stops, then the waking. Keep it short and end on the waking. Nothing happens in the night unless "
-                             f"something was already coming.")
-                return s, CommandResult(label="Rest", player_line="I find somewhere to sleep the night.", summary=f"{p.name} beds down for the night.",
-                                        text=f"Where you end up decides it: a full night's rest at {' or '.join(safe_list.rsplit(', ', 1))}; "
-                                             f"anywhere else, a rough night that rests you about as much as an hour.",
-                                        directive=directive, minutes=LONG_REST)
             if kind == "long":
-                directive = (f"{p.name} sleeps the night here. Play the settling down in a line or two and the waking; nothing happens in the night unless "
-                             f"something was already coming.")
+                # The owner (11-08 evening): no penalties to resting. A night's sleep anywhere is a full rest, and the player is
+                # never shown a list of the city's places to sleep. Where they sleep is what the player said.
+                directive = (f"{p.name} sleeps the night where the player said. Play the settling down in a line or two and the waking; nothing "
+                             f"happens in the night unless something was already coming.")
                 return s, CommandResult(label="Rest", player_line="I settle in and sleep the night.", summary=f"{p.name} sleeps the night.",
                                         directive=directive, minutes=LONG_REST)
             directive = (f"{p.name} rests for an hour: a quiet corner, a drink, a wound looked at. Play the hour in a line or two; nothing happens "

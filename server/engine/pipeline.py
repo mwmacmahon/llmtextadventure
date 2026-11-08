@@ -572,16 +572,18 @@ class Engine:
                 return
         # ---- 1b. typed levers: previewed now, in order, played by the narrator, committed after the prose
         #          unless the referee reports one was not completed (DESIGN2 §6, LOG §12)
-        levers: list[PendingLever] = []
-        if command is None and adj is not None and adj.commands:
-            adj, levers = self._preview_levers(game, state, adj, iid, turn, ledger, player_text or "")
-            extra_directives.extend(lv.directive for lv in levers)
-        # ---- 1c. waiting and sleeping (time doc §3 (v), D149): with no limit in the input, ask "until when" first, the way a
-        #          lever with a missing parameter asks; "until something happens" runs to the next trigger, "until morning" to it
+        # ---- 1b. waiting and sleeping (time doc §3 (v), D149): a wait with no limit asks "until when" first, the way a lever with a
+        #          missing parameter asks (a question turn previews no lever: nothing is done); sleep with no limit runs to morning
         if command is None and adj is not None and adj.kind == "action" and getattr(game, "clock", None) is not None:
             adj, asked = until_when(game, state, adj, player_text or "")
             if asked:
                 ledger("until_when", {"task": adj.summary, "asked": asked})
+        # ---- 1c. typed levers: previewed now, in order, played by the narrator, committed after the prose
+        #          unless the referee reports one was not completed (DESIGN2 §6, LOG §12)
+        levers: list[PendingLever] = []
+        if command is None and adj is not None and adj.kind != "clarify" and adj.commands:
+            adj, levers = self._preview_levers(game, state, adj, iid, turn, ledger, player_text or "")
+            extra_directives.extend(lv.directive for lv in levers)
         if replay is not None and replay.by != "eval":
             who = "the referee" if replay.by == "referee" else "the player"
             if replay.hint:
@@ -2170,6 +2172,11 @@ def until_when(game: Any, state: BaseModel, adj: AssistantReading, text: str) ->
     # ask only when the player's own words are mostly the wait
     if task == "other" or LIMIT_WORDS.search(text) or WAIT_FOR.search(text) or not WAIT_SAID.search(text) or len(text.split()) > 15:
         return adj, ""
+    if task == "sleep" and not (MORNING_MINUTE - 120 <= now < NIGHT_MINUTE - 120):
+        # the owner (11-08 evening): going to bed in the evening or the night is the night, to morning (the next trigger still
+        # wakes them); a sleep by day still asks how long
+        to = (MORNING_MINUTE - now) % clock.minutes_per_day or clock.minutes_per_day
+        return adj.model_copy(update={"time_minutes": min(to, clock.cap_minutes)}), ""
     day = MORNING_MINUTE - 120 <= now < NIGHT_MINUTE - 120          # 05:00 to 17:00: the long wait runs to nightfall
     end = "until nightfall" if day else "until morning"
     q = UNTIL_ASK + (f" Until something happens, for about an hour, or {end}?" if task == "wait"

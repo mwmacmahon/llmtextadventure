@@ -117,7 +117,11 @@ def test_until_when_is_asked_only_with_no_limit(noir):
     _, st = noir.new_instance({})
     adj, q = until_when(noir, st, _wait(), "I wait.")
     assert q.startswith("Until when?") and adj.kind == "clarify" and adj.time_minutes == 0
-    _, q = until_when(noir, st, _wait("sleep"), "I lie down on the cot and sleep")
+    adj, q = until_when(noir, st, _wait("sleep"), "I lie down on the cot and sleep")       # at night: to morning, no question
+    assert q == "" and adj.kind == "action" and adj.time_minutes > 30
+    day = st.model_copy(deep=True)
+    day.clock.minute = 14 * 60                                                               # the afternoon: asked
+    _, q = until_when(noir, day, _wait("sleep"), "I lie down on the cot and sleep")
     assert "until something wakes you" in q
     for said in ("I wait an hour", "I wait twenty minutes", "I wait until he comes out", "I wait for Marlowe",
                  "I sleep till midnight", "wait 45"):
