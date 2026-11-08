@@ -325,6 +325,27 @@ async def test_the_stamp_and_the_lethal_roll_carry_the_difficulty(engine: Engine
     assert stamp["difficulty"] == "hard"
 
 
+async def test_a_retelling_keeps_the_record_of_a_difficulty_change(engine: Engine):
+    from engine.providers.fake import FakeProvider
+    from engine.providers.factory import get_provider
+    fake = get_provider(engine.cfg.role("narrator"))
+    assert isinstance(fake, FakeProvider)
+    iid = engine.create_instance("noir", {})
+    fake.canned["AssistantReading"] = [AssistantReading(kind="action", summary="looks", time_minutes=2, risk="low", intents=[Intent(action="look")])]
+    fake.hook = lambda schema, last: ChangeReport.of(log_line="y") if schema is ChangeReport else None
+    try:
+        [e async for e in engine.play(iid, "I look around.")]
+        engine.set_difficulty(iid, "hard")
+        [e async for e in engine.play(iid, rewrite=True, hint="")]
+    finally:
+        fake.canned.clear()
+        fake.hook = None
+    rows = engine.store.ledger(iid, 1)
+    assert any(r["kind"] == "rewrite" for r in rows)
+    assert [r["payload"] for r in rows if r["kind"] == "difficulty"] == [{"turn": 1, "old": "normal", "new": "hard"}]
+    assert next(r["payload"] for r in rows if r["kind"] == "profile")["difficulty"] == "hard"
+
+
 def test_a_branch_and_an_export_keep_the_difficulty(engine: Engine):
     iid = engine.create_instance("noir", {"difficulty": "hard"})
     doc = engine.export(iid)

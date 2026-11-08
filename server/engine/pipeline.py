@@ -1015,10 +1015,13 @@ class Engine:
             "narration": next((r.text for r in transcript if r.role == "narrator"), ""),
             "mechanics": next((r.text for r in transcript if r.role == "mechanics"), ""),
             # the telling's own ledger (its model calls on the tape, its verdict, its rulings), for tools/round_report.py
-            "ledger": [{"seq": r["seq"], "kind": r["kind"], "payload": r["payload"]} for r in rows if r["kind"] != "rewrite"],
+            "ledger": [{"seq": r["seq"], "kind": r["kind"], "payload": r["payload"]} for r in rows if r["kind"] not in ("rewrite", "difficulty")],
         })
         attempt = (prev["attempt"] if prev else 0) + 1
+        settings_rows = [r["payload"] for r in rows if r["kind"] == "difficulty"]     # a setting changed after the turn, not the telling's
         self.store.truncate_after_turn(iid, turn - 1)
+        for payload in settings_rows:
+            self.store.append_ledger(iid, turn, "difficulty", payload)
         call = dict(adj_row.get("_call") or {})
         if not call.get("model"):                 # the row came from an earlier rewrite that kept no call meta
             role = self.cfg.role("assistant")
