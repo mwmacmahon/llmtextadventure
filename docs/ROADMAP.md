@@ -118,6 +118,11 @@ the active one's card; switching a local profile goes through the box's helper; 
 turn's mechanics row. Module levels for modules not yet built show as "not yet." Editing levels in the UI as an
 override layer is the second step.
 
+**Status (2026-11-08 midday): built (D169).** The files, the per-server active profile, the card with the cost of a
+hosted turn, the switch (hosted at once, local through the helper, refused while a turn streams or the box is busy),
+the stamp in the ledger and the call report, the dials including the target offset per game. `sonnet.yml` is the
+fantasy's play (guard gate). Not built: editing levels in the UI (the second step).
+
 ## Stage 4. The narrator's context modules
 
 `notes/DESIGN-context-modules-2026-11-06.md` §2 to §4, each as a level a profile names:

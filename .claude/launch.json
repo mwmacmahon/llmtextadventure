@@ -334,8 +334,10 @@
     },
     {
       "name": "api-fantasy-sonnet",
-      "runtimeExecutable": "/Users/dadbook/source/old/llmtextadventure/server/.venv/bin/uvicorn",
+      "runtimeExecutable": "env",
       "runtimeArgs": [
+        "TA_PROFILE=sonnet",
+        "/Users/dadbook/source/old/llmtextadventure/server/.venv/bin/uvicorn",
         "app:app",
         "--app-dir",
         "/Users/dadbook/source/old/llmtextadventure/server",
