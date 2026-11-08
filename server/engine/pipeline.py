@@ -1121,7 +1121,7 @@ class Engine:
                 out["ui"] = game.ui(game.load_state(g["state"])).model_dump(mode="json")
             except Exception:
                 log.exception("graveyard.ui_failed " + logs.kv(grave=g["id"], game=g["game"]))
-        out["line"] = self.graves.pick_line(g["game"], g["character"], self.death_lines(g["game"])) if line else None
+        out["death_line"] = self.graves.pick_line(g["game"], g["character"], self.death_lines(g["game"])) if line else None
         return out
 
     def death_card(self, iid: str) -> dict[str, Any] | None:
