@@ -32,3 +32,16 @@ def one_referee_call(monkeypatch, request):
         return
     real = Config.role
     monkeypatch.setattr(Config, "role", lambda self, name: real(self, name).model_copy(update={"split": False}) if name == "referee" else real(self, name))
+
+
+@pytest.fixture(autouse=True)
+def fresh_fake_script():
+    """A test that scripts the fake narrator on the cached instance (`fake.script = ...`) must not hand that script to the
+    next test (ISSUES B23: test_stakes then test_noir had the noir turn say "You put it to Park")."""
+    yield
+    from engine.providers.fake import FakeProvider
+    FakeProvider.script = None
+    import gc
+    for o in gc.get_objects():
+        if isinstance(o, FakeProvider):
+            o.__dict__.pop("script", None)

@@ -335,7 +335,8 @@ class Engine:
                 return
             player_text = cmd_result.player_line or label
             adj = AssistantReading(kind="action", summary=cmd_result.summary or cmd_result.player_line or label, tempo="fast",   # the command's own minutes stand
-                               time_minutes=cmd_result.minutes, entities=cmd_result.entities, systems=cmd_result.systems, risk="medium")
+                               time_minutes=cmd_result.minutes, entities=cmd_result.entities, systems=cmd_result.systems, risk="medium",
+                                   minutes_fixed=True)
             if cmd_result.directive:
                 extra_directives.append(cmd_result.directive)
 
@@ -370,6 +371,12 @@ class Engine:
         if command is None and adj is not None and adj.commands:
             adj, levers = self._preview_levers(game, state, adj, iid, turn, ledger, player_text or "")
             extra_directives.extend(lv.directive for lv in levers)
+        # ---- 1c. waiting and sleeping (time doc §3 (v), D149): with no limit in the input, ask "until when" first, the way a
+        #          lever with a missing parameter asks; "until something happens" runs to the next trigger, "until morning" to it
+        if command is None and adj is not None and adj.kind == "action" and getattr(game, "clock", None) is not None:
+            adj, asked = until_when(game, state, adj, player_text or "")
+            if asked:
+                ledger("until_when", {"task": adj.summary, "asked": asked})
         if replay is not None and replay.by != "eval":
             who = "the referee" if replay.by == "referee" else "the player"
             if replay.hint:
@@ -606,7 +613,8 @@ class Engine:
                     r.kind = "conflict"
                     r.rule, r.fix = "leak", f"The player does not know the word in {r.value!r}; nothing they perceived said it."
                 report.rejected.extend(screened)
-                state = land_extras(game, state, delta.log_line, report, extras, turn=turn, notes=calls_block.get("notes", []), ledger=ledger)
+                state = land_extras(game, state, delta.log_line, report, extras, turn=turn, notes=calls_block.get("notes", []), ledger=ledger,
+                                    scene_long=res.get("scene_long", 0))
                 issues = extras.issues
                 ledger("delta", report.model_dump(mode="json"))
                 log.info("step " + logs.kv(iid=iid, turn=turn, step="referee", model=meta["model"], seconds=meta["seconds"], rows=len(delta.changes),
@@ -923,6 +931,7 @@ class Engine:
             log.info("command.typed.preview " + logs.kv(iid=iid, turn=turn, id=spec.id, mode=spec.mode, args=json.dumps(args)))
             adj = adj.model_copy(update={
                 "time_minutes": max(adj.time_minutes, res.minutes),
+                "minutes_fixed": adj.minutes_fixed or res.minutes > 0,
                 "entities": list(dict.fromkeys([*adj.entities, *res.entities])),
                 "systems": list(dict.fromkeys([*adj.systems, *res.systems])),
             })
@@ -987,7 +996,11 @@ class Engine:
 
         if adj is not None and adj.kind in ("clarify", "impossible"):
             q = adj.clarify_question or adj.summary
-            directives.append(f"CLARIFY: the player's input could not be acted on ({adj.kind}). Ask or explain in character, briefly: {q} Do not move time forward and do not narrate consequences.")
+            if q.startswith(UNTIL_ASK):          # (v): not a puzzle, a length; the cold read's wording (D149)
+                directives.append(f"The player did not say how long. Ask them, in a line or two in the story's voice: {q[len(UNTIL_ASK):].strip()} "
+                                  "The scene stays as it is; nothing happens and no time passes this turn.")
+            else:
+                directives.append(f"CLARIFY: the player's input could not be acted on ({adj.kind}). Ask or explain in character, briefly: {q} Do not move time forward and do not narrate consequences.")
         elif adj is not None:
             # checks are assessed here and called by the narrator when the fiction reaches them (DESIGN2 §5); no dice before the prose
             stats = _hook(game, "stats", state, default={})
@@ -1019,6 +1032,13 @@ class Engine:
             if clock and adj.kind == "action" and getattr(adj, "tempo", "slow") == "fast" and adj.time_minutes < getattr(clock, "fast_minutes", 1):
                 notes.append(f"fast turn: {adj.time_minutes} minutes raised to the floor of {clock.fast_minutes}")
                 adj.time_minutes = clock.fast_minutes
+            # (iv) the game's minutes by kind of turn (time doc §3, D148): a fight, a talk, a search or a walk keeps to its
+            # row; waiting and sleeping run to the player's limit (the "until when" question), so their rows only floor
+            if clock and adj.kind == "action" and not getattr(adj, "minutes_fixed", False):
+                kept, why = task_minutes(clock, adj)
+                if why:
+                    notes.append(why)
+                    adj.time_minutes = kept
             # (i) the minutes split at the roll (time doc §3a, D146): with the stakes live, the clock moves now only up to the
             # attempt; each result's own minutes move it when the dice fall. Branches with no minutes (Gemma wrote 0 on every
             # one of 155) leave the turn as before.
@@ -1101,12 +1121,33 @@ class Engine:
         new_state = game.load_state(doc)
         effect_paths = [p for f in fired for p in _effect_paths(f.effects_applied)] + [p for x in expired for p in _effect_paths(x.effects_applied)] \
             + [p for h in happened for p in _effect_paths(h.effects_applied)]
+        scene_long = self._scene_run(iid, turn, adj, clock)
+        if scene_long:
+            notes.append(f"scene marked long: turn {scene_long} of a fight")
         return {"state": new_state, "assessments": assessments, "fired": fired, "expired": expired, "happened": happened,
                 "elapsed": elapsed, "clock_note": clock_note, "directives": directives, "adjudication": adj, "effect_paths": effect_paths,
-                "split": split,
+                "split": split, "scene_long": scene_long,
                 "notes": notes, "pending_fired": pending_fired, "pending_lapsed": pending_lapsed,
                 "fail_streak": self._fail_streak(iid, turn) if assessments else 0,
                 "player_name": _hook(game, "player_name", state, default="the player")}
+
+    def _scene_run(self, iid: str, turn: int, adj: AssistantReading | None, clock: Any) -> int:
+        """The scene-length mark (time doc §3 (vi), D150): when this turn is a fight beat and the turns running before it
+        were too, and the run has reached the clock's `scene_mark`, the run's length; else 0."""
+        mark = getattr(clock, "scene_mark", 0) if clock else 0
+        if not mark or adj is None or adj.kind != "action" or not is_fight(adj):
+            return 0
+        last: dict[int, dict] = {}
+        for r in self.store.ledger(iid):
+            if r["kind"] == "adjudication" and r["turn"] < turn:
+                last[r["turn"]] = r["payload"]
+        run = 1
+        for t in range(turn - 1, max(0, turn - 30), -1):
+            if t in last and last[t].get("kind") == "action" and is_fight(last[t]):
+                run += 1
+            else:
+                break
+        return run if run >= mark else 0
 
     def _fail_streak(self, iid: str, turn: int, limit: int = 6) -> int:
         """How many turns running, before this one, ended with every rolled check failed (D93: the second failure in a
@@ -1758,6 +1799,102 @@ def _lever_lines(levers: list["PendingLever"]) -> list[str]:
 TIME_LOST = re.compile(r"^\s*time\s+lost\s*:?\s*(?:about\s+|some\s+|another\s+)?(\d{1,4})\b", re.I)    # "5 minutes", "5 min", "5" (the cold read, D146)
 
 
+UNTIL_ANY = re.compile(r"\buntil\s+(?:something|anything|someone|somebody)\b|\btill\s+(?:something|anything)\b", re.I)
+UNTIL_MORNING = re.compile(r"\b(?:until|till|'til|til)\s+(?:the\s+)?(?:morning|dawn|daybreak|first light|sunrise)\b|\bthrough the night\b|\ball night\b", re.I)
+LIMIT_WORDS = re.compile(r"\d|\b(?:until|till|'til|til|minutes?|mins?|hours?|hrs?|moment|second|seconds|a bit|half an?|quarter|"
+                         r"morning|dawn|dusk|noon|midnight|o'clock|tonight|nightfall|daybreak|sunrise|sunset|shift|"
+                         r"one|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|sixty)\b", re.I)
+WAIT_FOR = re.compile(r"\b(?:wait|watch|stay|sit)\w*\b.*?\bfor\s+(?!a\s+(?:while|bit)\b)(?!some\s+time\b)\w", re.I)   # "wait for him": the limit is him
+MORNING_MINUTE = 7 * 60
+UNTIL_ASK = "Until when?"
+
+
+def until_when(game: Any, state: BaseModel, adj: AssistantReading, text: str) -> tuple[AssistantReading, str]:
+    """Waiting and sleeping (time doc §3 (v), D149), for a game whose clock lists them: an input with no limit is asked
+    "until when" before the turn runs (a clarify turn, no time passes); "until something happens" runs the clock to the
+    turn's cap, where the next trigger stops it; "until morning" runs it to 07:00. Returns the reading and the question
+    asked ("" when none)."""
+    clock = game.clock
+    task = task_of(adj)
+    tasks = getattr(clock, "tasks", None) or {}
+    if "wait" not in tasks or task not in ("wait", "sleep", "other"):
+        return adj, ""
+    if UNTIL_ANY.search(text):
+        return adj.model_copy(update={"time_minutes": clock.cap_minutes}), ""
+    if UNTIL_MORNING.search(text):
+        clk = sp.lookup(state.model_dump(mode="json"), clock.path, None) or {}
+        now = int(clk.get("minute", 0))
+        to = (MORNING_MINUTE - now) % clock.minutes_per_day or clock.minutes_per_day
+        return adj.model_copy(update={"time_minutes": min(to, clock.cap_minutes)}), ""
+    if task == "other" or LIMIT_WORDS.search(text) or WAIT_FOR.search(text):
+        return adj, ""
+    q = UNTIL_ASK + (" Until something happens, for about an hour, or until morning?" if task == "wait"
+                     else " Until morning, for a few hours, or until something wakes you?")
+    return adj.model_copy(update={"kind": "clarify", "clarify_question": q, "time_minutes": 0,
+                                  "intents": [i.model_copy(update={"check": None}) for i in adj.intents], "commands": []}), q
+
+
+def rearmed(pitems: list, new: Any, turn: int, within: int = 3) -> Any:
+    """A timer of the last few turns, already fired, that `new` sets again: the same doer (when one is named), or the same
+    words. None when `new` is something else."""
+    who = (new.who or "").strip().lower()
+    what = set(re.findall(r"[a-z']+", (new.what or "").lower()))
+    for p in pitems:
+        if not p.fired or (p.fired_turn or 0) < turn - within:
+            continue
+        theirs = set(re.findall(r"[a-z']+", (p.what or "").lower()))
+        alike = len(what & theirs) / len(what | theirs) if what and theirs else 0.0
+        if alike >= 0.5 or (who and who == (p.who or "").strip().lower() and alike >= 0.3):
+            return p                     # the creature attacks again; never the creature backing off
+    return None
+
+
+def is_fight(adj: Any) -> bool:
+    """A fight beat: read as a fight, or as one fast beat (a blow, a shot, a lunge). Takes a reading or its ledger row."""
+    if isinstance(adj, dict):
+        from types import SimpleNamespace
+        adj = SimpleNamespace(tempo=adj.get("tempo", "slow"), summary=adj.get("summary", ""),
+                              intents=[SimpleNamespace(action=(i or {}).get("action", "")) for i in adj.get("intents") or []])
+    return task_of(adj) == "fight"
+
+
+TASK_WORDS: list[tuple[str, re.Pattern]] = [       # D148: the longer kind wins on a mixed turn, so the list runs longest first
+    ("sleep", re.compile(r"\b(?:sleep|sleeps|asleep|nap|naps|turns? in|beds? down|rests? (?:for )?the night|lies? down to rest)\b", re.I)),
+    ("wait", re.compile(r"\b(?:wait|waits|waiting|stakes? out|stake-?out|keeps? watch|watches|watching|tails?|tailing|follows?|lies? low|holes? up)\b", re.I)),
+    ("search", re.compile(r"\b(?:search|searches|searching|goes? through|go through|rummages?|reads?|reading|examines?|inspects?|studies|study|"
+                          r"looks? through|combs?|checks? the|investigates?)\b", re.I)),
+    ("travel", re.compile(r"\b(?:walks?|goes to|go to|heads? (?:to|for|toward|towards|back|out|off|down|up|home)|drives?|takes? a cab|cab|travels?|crosses?|returns? to|leaves? for|makes? (?:his|her|their) way|"
+                          r"moves? to|climbs?|rows?|sails?)\b", re.I)),
+    ("talk", re.compile(r"\b(?:asks?|talks?|tells?|questions?|speaks?|chats?|persuades?|bribes?|buys? .{0,20}drink|negotiates?|haggles?|"
+                        r"interrogates?|presses?|confronts?|calls?|phones?|lies? to|bluffs?|charms?|threatens?)\b", re.I)),
+    ("fight", re.compile(r"\b(?:fights?|shoots?|fires?(?! ladder| escape| exit|place|light)|punch(?:es)?|attacks?|stabs?|swings? at|strikes?|"
+                         r"wrestles?|struggles?|grapples?|dodges?|lunges?|flees?|runs? from|chases?|tackles?|kicks?|bites?|retreats?|"
+                         r"scrambles?|backs? away|wrench(?:es)?)\b", re.I)),
+]
+
+
+def task_of(adj: Any) -> str:
+    """The kind of turn (time doc §3 (iv), D148), read by the engine from what the assistant already wrote: a fast beat is a
+    fight; otherwise the summary's verbs, the longest-running kind first. A model asked for the kind itself wrote "fight"
+    (the first choice) on 23 of 24 keyed turns, a talk with Rosa among them."""
+    if getattr(adj, "tempo", "slow") == "fast":
+        return "fight"
+    text = " ".join([getattr(adj, "summary", "") or ""] + [getattr(i, "action", "") or "" for i in (getattr(adj, "intents", None) or [])])
+    return next((kind for kind, rx in TASK_WORDS if rx.search(text)), "other")
+
+
+def task_minutes(clock, adj) -> tuple[int, str]:
+    """The game's row for the kind of turn (time doc §3 (iv), D148): the estimate kept within the row, and a note when it
+    moved. Waiting and sleeping run to the player's limit, so their rows only floor them."""
+    task = task_of(adj)
+    row = (getattr(clock, "tasks", None) or {}).get(task)
+    m = int(adj.time_minutes or 0)
+    if row is None:
+        return m, ""
+    kept = max(m, row.least) if task in ("wait", "sleep") else min(max(m, row.least), row.most)
+    return kept, (f"{task} turn: {m} minutes kept to {kept} ({row.least} to {row.most})" if kept != m else "")
+
+
 def time_after(game: Game, state: BaseModel, res: dict, calls: list[dict], notes: list[str], turn: int) -> tuple[BaseModel, dict]:
     """The clock after the prose (time doc §3 (i)-(iii), D146): the called results' own minutes (the stake's branch,
     when it has any) and a [[time lost: N minutes]] note, capped by the kind of turn (fast or slow), never past the next
@@ -1771,7 +1908,10 @@ def time_after(game: Game, state: BaseModel, res: dict, calls: list[dict], notes
     if post <= 0 and asked <= 0:
         return state, {}
     adj = res.get("adjudication")
-    cap = clock.lost_cap_fast if adj is not None and getattr(adj, "tempo", "slow") == "fast" else clock.lost_cap_slow
+    row = (getattr(clock, "tasks", None) or {}).get(task_of(adj)) if adj is not None else None
+    cap = row.lost if row is not None else clock.lost_cap_fast if adj is not None and getattr(adj, "tempo", "slow") == "fast" else clock.lost_cap_slow
+    if res.get("scene_long"):           # (vi): the engine has decided the scene should end, so the note may run to the next trigger
+        cap = clock.cap_minutes
     lost = min(asked, cap)
     doc = state.model_dump(mode="json")
     clk = sp.lookup(doc, clock.path)
@@ -1850,7 +1990,7 @@ def _parse_command_args(spec: Any, raw: list[str]) -> tuple[dict[str, str], str]
         given = {p.name: v for p, v in zip(spec.params, values)}
     args: dict[str, str] = {}
     for p in spec.params:
-        v = given.get(p.name, "")
+        v = given.get(p.name, "") or getattr(p, "default", "")
         hit = next((o.id for o in p.options if o.id == v), None) or \
             next((o.id for o in p.options if o.id.lower() == v.lower() or o.label.lower() == v.lower()), None)
         if hit is None:
@@ -1861,7 +2001,7 @@ def _parse_command_args(spec: Any, raw: list[str]) -> tuple[dict[str, str], str]
 
 
 def land_extras(game: Any, state: BaseModel, log_line: str, report: ApplyReport, extras: Any, *, turn: int, notes: list[str],
-                ledger: Any = None) -> BaseModel:
+                ledger: Any = None, scene_long: int = 0) -> BaseModel:
     """What apply_changes hands back besides the state: timers set in motion or settled, unseen facts, the log line,
     threads opened and closed. The turn and the replay harness (tools/eval_replay.py) land them the same way, so a
     test set scores the timers and threads a model reports, not only its state rows."""
@@ -1882,6 +2022,10 @@ def land_extras(game: Any, state: BaseModel, log_line: str, report: ApplyReport,
             dup = pend.duplicate_of(pitems, new)
             if dup is not None:
                 report.rejected.append(Rejection(path="pending", reason=f"already in motion as {dup.id}", value=new.what, kind="duplicate"))
+                continue
+            again = rearmed(pitems, new, turn) if scene_long else None
+            if again is not None:                # (vi): once the scene is marked long, a timer that fires every turn stops re-arming
+                report.rejected.append(Rejection(path="pending", reason=f"the scene has run long; {again.id} does not re-arm", value=new.what, kind="duplicate"))
                 continue
             sched = pend.scheduled_as(_events_of(game, doc), new, now_abs, clock.minutes_per_day)
             if sched is not None:
@@ -2065,6 +2209,11 @@ def _this_turn_block(res: dict[str, Any], clock_text: str = "") -> str:
             lines.append(f"- Time passes: about {res['elapsed']} minutes" + (f"; the clock reads {clock_text} when this turn ends (the clock above shows the end)" if clock_text else ". The clock above already includes it") + ". Stop the prose there; never run past it.")
     elif adj is not None and adj.kind in ("action", "trivial"):
         lines.append("- No appreciable time passes.")
+    if res.get("scene_long"):
+        n, mins = res["scene_long"], res.get("elapsed") or 0
+        lines.append(f"- This fight has gone on for {n} turns. This turn, change it: something in it or around it shifts the situation, grown from "
+                     f"what is already in the scene, or the fight ends. That may run past the {mins} minute{'s' if mins != 1 else ''} above; if it does, "
+                     "add [[time lost: N minutes]] with the minutes it takes." + (" Not the way the last change came." if n > 4 else ""))
     told = res.get("told")
     if told:
         for t in told:

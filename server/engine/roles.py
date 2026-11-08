@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Literal
 
 from pydantic import BaseModel, Field
+from pydantic.json_schema import SkipJsonSchema
 
 from .mechanics import Tier
 from .providers.base import Msg
@@ -47,6 +48,7 @@ class AssistantReading(BaseModel):
     risk: Literal["none", "low", "medium", "high"] = Field(description="How likely this is to raise suspicion or cause harm if it goes wrong.")
     notes: str | None = Field(default=None, description="Anything the narrator or engine should know that the fields above do not capture.")
     commands: list[CommandPick] = Field(default_factory=list, description="Every listed engine command the input plainly asks for, in the order the input gives them. Empty when it asks for none.")
+    minutes_fixed: SkipJsonSchema[bool] = False   # engine only, never in the schema: a lever's or a click's own minutes, which no table moves (D148)
 
     @classmethod
     def example(cls, player_text: str) -> "AssistantReading":

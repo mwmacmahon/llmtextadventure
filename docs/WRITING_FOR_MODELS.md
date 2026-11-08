@@ -106,6 +106,16 @@ fiction has moved, the state follows it (D80, D81); the note is for what can sti
   works, start to finish; at least 1", and a 0 became rare (1 of 29 in noir's keyed set, D146). A number a model may
   leave blank defaults to its zero; say what it counts and its least value. The examples in brackets ("picking a lock:
   2") were dropped again: they changed no pick.
+- **Don't ask a grammar-bound model for a classification it has no reason to make.** `task` (D148), a kind of turn
+  for the clock: optional, Gemma skipped it on 24 of 24 keyed turns (as it skips `notes` and `pivotal`); required, it
+  wrote the enum's first value, "fight", on 23 of 24, a drink with Rosa among them. When the engine can read the thing
+  from what the model already wrote (the summary's verbs), read it there.
+- **Don't hand the narrator a number it should not say.** "40% of the way in now, about 90% if nothing stops it" comes
+  back as "you are nearly ninety percent of the way into the camera grid" (the cold read of D151, the "stress 85" echo of
+  R3b). Give it the words ("about halfway now, most of the way in if nothing stops it") and say "in words, never a number".
+- **Don't let a fresh line overrule a standing one by being more specific.** The montage line asked for "what the crew do
+  meanwhile, where they go" while the standing line said the station cannot see; the fresher, more concrete line wins.
+  Ask for the thing through the limit: "through what the station can sense: doors opening, systems in use".
 ## Checklist before a line ships
 
 1. What happened, what to do, where to put it: all three present?

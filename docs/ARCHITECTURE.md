@@ -173,6 +173,13 @@ RESOLVE      engine, deterministic
                stake's branch) and a narrator `[[time lost: N minutes]]` note (capped at
                lost_cap_fast 3 / lost_cap_slow 30) move the clock, never past the next scheduled
                event or pending and never past the turn's cap; the note never reaches the referee
+             - the kind of turn (D148): `task_of` reads it from the tempo and the summary's verbs and picks a row of ClockSpec.tasks
+               (noir: fight 1-3, talk 5-20, search 10-30, travel 5-60), which keeps the minutes in range
+               and sets the time-lost cap; wait and sleep only floor. A wait or sleep with no limit in the
+               input is asked "until when" first (D149, a clarify turn); "until something happens" runs
+               to the turn's cap and the next trigger. A run of fight beats reaching ClockSpec.scene_mark
+               (noir 4) marks the scene long (D150): one THIS TURN line, the note's cap lifted to the
+               turn's cap, and a timer repeating one fired in the last three turns is not landed
              - events: tick every live event in priority order (trigger / fallback / expiry),
                apply effects, collect directives
              - happenings: roll the scenario's unscripted list against elapsed minutes
@@ -296,7 +303,12 @@ lies and who believes them, beats in order.
   rolls the same.
 - **Clock.** `{day, minute}` at a game-declared path; `slow_minutes` the least a slow action costs (D93),
   `fast_minutes` the least a fast one costs, `lost_cap_fast` / `lost_cap_slow` the most a time-lost note adds (D146),
-  `cap_minutes` the most a turn may advance; stops at the next scheduled event.
+  `cap_minutes` the most a turn may advance; stops at the next scheduled event. `tasks` (D148) a game's minutes by kind of
+  turn (`TaskRow(least, most, lost)`); `scene_mark` (D150) the fight run that marks a scene long, 0 for never.
+- **A game's projects** (the station, D151, `games/station/projects.py`). A long task as a lever: a progress number, a
+  rate, a block; the lever sets the sitting, `after_turn` credits the minutes the clock actually ran (the D58 stop gives
+  the fraction), one detection roll a sitting; dice never touch progress. A command `Param` may carry a `default`
+  option the engine takes when the input names none.
 - **Events** (`events.py`). Data in the scenario file, status stored in the state so undo, fork
   and export carry it. Predicates: `at`, `flag`, `not_flag`, `flag_is`, `eq/ne/gte/lte/gt/lt`,
   `in`, `fired`, `not_fired`, `expired`, `turn_gte`, `all/any/not`. Effects: `set`, `add` (with

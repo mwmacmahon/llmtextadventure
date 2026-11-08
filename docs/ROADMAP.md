@@ -96,6 +96,10 @@ microphones 2% a block), higher once security has been updated. The block is fix
 player may name a shorter limit on the lever, never a longer one; an event interrupts either way. The gating of panels and controls behind progress is the station's design change; the block and the
 interrupt are the time rules. The record is the time doc §4, "Decided".
 
+**Status 2026-11-08: built, not yet seen in a live round.** (i) to (iii) D146; (iv) the noir table by kind of turn
+D148; (v) "until when" D149; (vi) the scene-length mark and the re-arm stop D150; the station's control model D151 (a
+locked-out start in the lobby; the parity rounds run the station in control, B30).
+
 ## Stage 2. Parity (a standing rule, not a gate: the owner, 2026-11-08)
 
 Two or three noir rounds and one or two station rounds on the Stage 1 build, read against the D98 base rounds (the

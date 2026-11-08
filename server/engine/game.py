@@ -107,6 +107,7 @@ class Param(BaseModel):
     name: str
     label: str
     options: list[Option]
+    default: str = ""               # an option id taken when the input names none (1e: the block of a "Work on" lever)
 
 
 class CommandSpec(BaseModel):
@@ -144,6 +145,14 @@ class UISchema(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class TaskRow(BaseModel):
+    """A row of a game's table of minutes by kind of turn (time doc §3 (iv), D148): the adjudicator's estimate is kept
+    within [least, most], and a [[time lost]] note on such a turn adds at most `lost`."""
+    least: int
+    most: int
+    lost: int
+
+
 class ClockSpec(BaseModel):
     path: str = "clock"             # state path of {day, minute}
     minutes_per_day: int = 1440
@@ -152,6 +161,8 @@ class ClockSpec(BaseModel):
     fast_minutes: int = 1           # the least a fast action costs (time doc §3, D146: a stall is never free, a fight beat is a minute)
     lost_cap_fast: int = 3          # the most a [[time lost]] note adds on a fast turn (a fight runs three minutes, not an hour)
     lost_cap_slow: int = 30         # ... and on a slow one (a search that runs long)
+    tasks: dict[str, TaskRow] = {}  # the game's minutes by kind of turn (time doc §3 (iv)); a kind not listed keeps the floors
+    scene_mark: int = 0             # a fight this many turns long is marked long (time doc §3 (vi)); 0 = never
 
 
 RejectionKind = Literal["duplicate", "fit", "conflict"]

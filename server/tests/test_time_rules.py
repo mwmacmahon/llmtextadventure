@@ -23,7 +23,7 @@ def _abs(game, st):
 
 def _res(tempo="slow", elapsed=10):
     from types import SimpleNamespace
-    return {"adjudication": SimpleNamespace(kind="action", summary="x", tempo=tempo, time_minutes=elapsed), "elapsed": elapsed}
+    return {"adjudication": SimpleNamespace(kind="action", summary="x", intents=[], tempo=tempo, time_minutes=elapsed), "elapsed": elapsed}
 
 
 def _call(minutes):
@@ -71,3 +71,92 @@ def test_the_reply_says_how_long_a_result_takes():
     assert branch_text(st, False).endswith("The lock gives. It takes about 2 minutes.")
     assert branch_text(st, True, complication="").endswith("The lock holds. It takes about 1 minute.")
     assert "It takes" not in branch_text({**st, "success_minutes": 0}, False)
+
+
+def test_the_kind_of_turn_keeps_the_minutes(noir):
+    from types import SimpleNamespace
+    from engine.pipeline import task_minutes, task_of
+    said = {"fight": ("fast", "Frank swings at the thing"), "search": ("slow", "Frank searches the desk"),
+            "talk": ("slow", "Frank buys Rosa a drink and asks her about June"), "wait": ("slow", "Frank waits in the car"),
+            "other": ("slow", "Frank lights a cigarette")}
+    t = lambda task, m: task_minutes(noir.clock, SimpleNamespace(tempo=said[task][0], summary=said[task][1], intents=[], time_minutes=m))   # noqa: E731
+    assert t("fight", 20) == (3, "fight turn: 20 minutes kept to 3 (1 to 3)")
+    assert t("search", 2)[0] == 10 and t("search", 25) == (25, "")
+    assert t("talk", 45)[0] == 20
+    assert t("wait", 240) == (240, "")          # the player's limit stands; (v) asks for it
+    assert t("wait", 1)[0] == noir.clock.tasks["wait"].least
+    assert t("other", 7) == (7, "")
+    # the keyed turns a model called "fight": a drink and a question is a talk; reading a file and walking off is a search
+    k = lambda text: task_of(SimpleNamespace(tempo="slow", summary=text, intents=[]))   # noqa: E731
+    assert k("Frank buys a drink, tips Rosa, and asks her about June Day.") == "talk"
+    assert k("Frank reads the file and walks to the docks") == "search"
+    assert k("Frank sleeps in his office until morning") == "sleep"
+
+
+def test_the_kind_of_turn_caps_the_note(noir):
+    _, st = noir.new_instance({})
+    st.hidden.pending = []
+    st.hidden.events = []
+    res = _res("fast")
+    _, info = time_after(noir, st, res, [], ["time lost: 20 minutes"], 1)
+    assert info["lost"] == 3
+    res = _res("slow")
+    res["adjudication"].summary = "Frank searches the warehouse"
+    _, info = time_after(noir, st, res, [], ["time lost: 50 minutes"], 1)
+    assert info["lost"] == 30
+
+
+def _wait(task="wait", minutes=30):
+    from engine.roles import AssistantReading
+    words = {"wait": "Frank waits", "sleep": "Frank sleeps", "search": "Frank searches the room", "other": "Frank lights a cigarette"}
+    return AssistantReading(kind="action", summary=words[task], time_minutes=minutes, risk="none")
+
+
+def test_until_when_is_asked_only_with_no_limit(noir):
+    from engine.pipeline import until_when
+    _, st = noir.new_instance({})
+    adj, q = until_when(noir, st, _wait(), "I wait.")
+    assert q.startswith("Until when?") and adj.kind == "clarify" and adj.time_minutes == 0
+    _, q = until_when(noir, st, _wait("sleep"), "I lie down on the cot and sleep")
+    assert "until something wakes you" in q
+    for said in ("I wait an hour", "I wait twenty minutes", "I wait until he comes out", "I wait for Marlowe",
+                 "I sleep till midnight", "wait 45"):
+        adj, q = until_when(noir, st, _wait(), said)
+        assert q == "" and adj.kind == "action" and adj.time_minutes == 30, said
+    assert until_when(noir, st, _wait("search"), "I wait.")[1] == ""
+
+
+def test_until_something_happens_and_until_morning(noir):
+    from engine.pipeline import until_when
+    _, st = noir.new_instance({})
+    adj, q = until_when(noir, st, _wait(), "Until something happens.")
+    assert q == "" and adj.time_minutes == noir.clock.cap_minutes
+    adj, q = until_when(noir, st, _wait("other"), "until something happens")
+    assert adj.time_minutes == noir.clock.cap_minutes
+    st.clock.minute = 23 * 60
+    adj, _ = until_when(noir, st, _wait("sleep"), "I sleep until morning")
+    assert adj.time_minutes == min(8 * 60, noir.clock.cap_minutes)
+
+
+def test_a_timer_that_fires_every_turn_is_seen_again():
+    from engine import pending as pend
+    from engine.pipeline import rearmed, is_fight
+    old = pend.Pending(id="p3", what="the creature attacks Frank again", who="the creature", fired=True, fired_turn=9)
+    new = lambda what, who="the creature": pend.PendingNew(what=what, who=who, in_minutes=1)   # noqa: E731
+    assert rearmed([old], new("the creature attacks Frank"), 10) is old
+    assert rearmed([old], new("the creature lunges and attacks Frank again"), 10) is old
+    assert rearmed([old], new("the creature loses interest and slides back into the water"), 10) is None
+    assert rearmed([old], new("the creature attacks Frank"), 20) is None          # long ago: a new scene
+    assert is_fight({"summary": "Frank shoots at the creature"}) and is_fight({"tempo": "fast"}) and not is_fight({"summary": "Frank asks Rosa"})
+
+
+def test_the_marked_turn_says_so_and_lifts_the_notes_cap(noir):
+    from engine.pipeline import _this_turn_block
+    res = _res("fast", elapsed=2)
+    res.update({"directives": [], "scene_long": 4})
+    assert "This fight has gone on for 4 turns. This turn, change it" in _this_turn_block(res)
+    _, st = noir.new_instance({})
+    st.hidden.pending = []
+    st.hidden.events = []
+    _, info = time_after(noir, st, res, [], ["time lost: 40 minutes"], 1)
+    assert info["lost"] == 40

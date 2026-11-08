@@ -26,7 +26,7 @@ from engine.world import Policy
 from engine.events import Event, evaluate, next_moment
 from engine.events import clock_text as ev_clock_text
 from engine.game import (
-    ApplyReport, Chip, ClockSpec, CommandResult, Commands, CommandSpec, EntityCard, EntityCards, GameBase, ListPanel,
+    ApplyReport, Chip, ClockSpec, TaskRow, CommandResult, Commands, CommandSpec, EntityCard, EntityCards, GameBase, ListPanel,
     LogPanel, Meter, StatusStrip, TurnInfo, UISchema,
 )
 from engine.gamekit import Clock, Content, Writer, threads_panel
@@ -181,7 +181,14 @@ class NoirGame(GameBase):
     title = "Lowtown"
     description = "A hardboiled detective, a missing singer, and something under the docks. Dice, pockets, nerves."
 
-    clock = ClockSpec(path="clock", minutes_per_day=1440, cap_minutes=600)
+    clock = ClockSpec(path="clock", minutes_per_day=1440, cap_minutes=600, scene_mark=4, tasks={      # time doc §3 (iv), D148
+        "fight": TaskRow(least=1, most=3, lost=3),        # a fight, a chase, a struggle: a minute or three a turn
+        "talk": TaskRow(least=5, most=20, lost=15),       # the doc's 5 to 15; the rules' Time line says 10 to 20 (kept wider)
+        "search": TaskRow(least=10, most=30, lost=30),    # a room, a desk, a stack of papers
+        "travel": TaskRow(least=5, most=60, lost=15),     # the rules' Time line is the map: a district 10, across town 30
+        "wait": TaskRow(least=5, most=600, lost=0),       # to the player's limit ((v), the "until when" question)
+        "sleep": TaskRow(least=60, most=600, lost=0),
+    })
     resolver = "dice_2d6"
     authority = AUTHORITY
     events_path = "hidden.events"
