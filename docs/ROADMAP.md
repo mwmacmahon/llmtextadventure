@@ -5,7 +5,7 @@ chat on 2026-11-07, after the first rounds with the stakes live in both games (D
 item are in `notes/DECISIONS.md` and `notes/ISSUES.md`; the designs are the three docs listed in `INDEX.md` §2. This
 page is the order; it does not repeat the designs.
 
-## Where we are (2026-11-08 midday, at 7b9d346)
+## Where we are (2026-11-08 night, at fc89cad)
 
 - **Stage 1 is done** (D135 to D151, 2026-11-07 night to 11-08 dawn): 2d6 with caps, the dice and the player's row,
   the consequence roll with noir's table rewritten, the small faults, the six time rules, and the station's control
@@ -27,9 +27,17 @@ page is the order; it does not repeat the designs.
   mid-parley because part four counts anyone hostile at the same place as in the fight. Part seven (B207 to B211)
   answers it: the words decide first, a situational edge on every check, the floor narrowed, the backstop only for
   people in the fight.
+- **Parts six and seven are in, and the rounds found the local model skips the edge** (11-08 night, at fc89cad). The
+  build chat landed death is death, caps off with the wound ladder, the narrator's ENEMY and HAZARD calls, the backstop
+  for people in the fight only, the words decide first with the edge on every check, the floor narrowed, stakes masked
+  not dropped, the story so far restamped (B212), too_far widened to solicitation and sexual violence (B144), and a
+  schema fix that had failed every Sonnet action turn (f9ae8f4); 640 tests pass. Three readiness rounds ran. On Sonnet
+  the edge moved (six of nine checks) and the words settled attempts without rolls; on Gemma the assistant wrote none of
+  the new fields (B213), a surrender killed Kragga as a chosen death (B214), and the narrator played on after a recorded
+  death (B215).
 - **One model, every role, still holds:** Gemma 4 31B on the box for noir and the station; the fantasy on Sonnet for
   its first play (the profile may differ per run, never per role).
-- The register is `docs/OPEN-ISSUES.md` (B25). 484 tests pass. Stage 3 (profiles, the picker, the settings card) is
+- The register is `docs/OPEN-ISSUES.md` (B25). 640 tests pass. Stage 3 (profiles, the picker, the settings card) is
   the build chat's current work. The order of work below is unchanged; each stage carries its position.
 
 ## The standing rules
@@ -188,7 +196,7 @@ person's files (B9) and the masking sightings are its first cases.
 - **The player UI** as a whole (ISSUES U2). The plain-language pass on every line a model is handed (ISSUES W1) is
   pulled forward to right after the fantasy build (the order line above).
 
-**Position (2026-11-08 night, at 8c065ae; part four §3 to §5 and the conditions table in, parts five to seven sent).** The fantasy game is built and has been played by the owner; the first
+**Position (2026-11-08 night, at fc89cad; parts four to seven in, the readiness rounds run once, B213 to B216 found).** The fantasy game is built and has been played by the owner; the first
 real game (Marrowgate, Ungdall, 36 turns) found the danger system hollow, and fixing that is now the first item.
 
 *Landed today:* the fantasy (D152 to D167); W1's first pass (D166); the lobby with the bar, game pages, save lines and
@@ -198,23 +206,17 @@ record, the death gallery per character, the death-card lines (D173, B81, B82, B
 twelve SRD classes with Rogue and Barbarian full (B92); the sheet pass (B90); the quest fix (B93); the content fixes
 and the Places panel (B64, B65, B68, B69, B87); hidden games gitignored (B88); part four §3 to §5 (a chosen death lands,
 perils count down by the engine's roll, enemies act every turn, failures cost hit points by tier; D176), the conditions
-table (B96), redo (fb5d406).
+table (B96), redo (fb5d406); parts six and seven (D178, D179: B200 to B212, B63 narrowed), too_far widened (B144), the graveyard per
+save (B81), the schema fix (f9ae8f4), the readiness rounds run once (B145).
 
 *The queue, in order (the owner, 11-08 evening; part seven put first 11-08 night):*
-0. **Part seven: the words decide the check** (B207 to B211, B63 narrowed; sent 11-08 night, after the owner's play):
-   first and alone, the backstop rolls only people in the fight (joined by a strike either way or a narrator's call,
-   an ambush included; attitude, moves and place never start it: B208); then as one design the assistant's three-way
-   read of the words (it works, it fails, or it is open; fiat may settle a social attempt the words plainly settle:
-   B207), a situational `edge` with its why on every check from the player's words (d20 -4 to +4, 2d6 the one
-   modifier; guidance per kind; none on levers, enemy moves or hazards: B211), the secret-holder floor only for a
-   check that aims at the secret by force, a tell by its condition never by a die, a leaking stake reworded not
-   dropped (B63, B210); the Hard note (B99, +4 stacks as designed); too_far's silence read last (B209).
-0b. **The night's rulings, part six** (B200 to B206, sent 11-08 night; they change part four where they touch it):
-   caps off on every game and a five-step wound ladder (minor 0, moderate -1, serious -2, grave -4, ruinous -5);
-   **death is death** (zero hit points is the stone; the downed branch and the carry removed from play, the rescue
-   exception a later item); enemy and environment harm through the narrator's inline calls (`ENEMY`, `HAZARD`) with
-   damage steps up to lethal and an engine backstop; noir's talk row 5 to 15; the locked-out station keeps its cameras
-   and the crew's chat channel; the fantasy's B66 and B70 to the build chat.
+0. **Before she plays: what the rounds found** (B213 to B216, 11-08 night): the local schema requires the check's
+   edge, its why and its aim and fiat's settled and why (B213: on Gemma none of them is ever written, so the edge is 0
+   and nothing can fail without a roll); the chosen-death net never fires on a surrender (B214: "stop fighting the
+   hands" killed Kragga); the narrator told of a death writes it (B215); the strip's word at zero (B216); then a Gemma
+   round to see the edge move.
+   *Landed 11-08 night:* part seven (B207 to B211, B63 narrowed; 2669a19, 5a82d9e), part six (B200 to B206; dd4be6c,
+   748d653, 0638909, ca47f24, 9538397), B212 (634f5a9), too_far widened (fc89cad).
 1. **Questions do not move time** (B105): a pre-check line to the assistant, the engine's trivial turn, an Ask mode.
    Front of the line, a quick fix. **Reaches wait for a quiet turn and a carrier** (B104) behind it.
 2. **Deadliness** (B94 to B103, part four): the stakes live by default; no modifier caps on the fantasy; a chosen death
