@@ -342,6 +342,7 @@ class GameBase:
     version = "0.0.0"
     title = "Untitled"
     description = ""
+    hidden: bool = False                              # B76: left out of the game list, its saves and new games unless the request is in dev mode
 
     # --- declarations -------------------------------------------------------
     clock: ClockSpec | None = None                    # None: no engine clock
@@ -453,6 +454,12 @@ class GameBase:
 
     def ending(self, state: BaseModel) -> str | None:
         return None
+
+    def save_line(self, state: BaseModel) -> list[Chip]:
+        """What a saved game's line in the lobby says before a click (B75): a few short chips that tell this save from
+        another of the same game (who, where, when in the story). The engine adds the turn, last played, the ending and
+        the difficulty. Default: nothing."""
+        return []
 
     def look(self, state: BaseModel, ref: str) -> str | None:
         """What <<LOOK ref>> returns to the narrator: the record of a person, thing or place. None: nothing recorded."""

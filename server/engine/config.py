@@ -103,6 +103,9 @@ class ServerConfig(BaseModel):
     web_dist: Path = Path("../web/dist")
     log_dir: Path = Path("../data/logs")
     log_level: str = "INFO"
+    # Dev mode (B76): a request with `X-Dev: 1` sees the hidden games. With a pin set (here or TA_DEV_PIN), it must also
+    # carry `X-Dev-Pin: <pin>` or it is refused (403); without one, the header is enough (a checkbox is not a lock).
+    dev_pin: str | None = None
 
 
 class ContextConfig(BaseModel):
@@ -256,6 +259,10 @@ def read_config(path: Path) -> Config:
     if data_dir:
         cfg.server.data_dir = Path(data_dir).resolve()
         cfg.server.log_dir = cfg.server.data_dir / "logs"
+    # TA_DEV_PIN sets the dev-mode pin (B76) without writing it into the shared config
+    dev_pin = os.environ.get("TA_DEV_PIN", "").strip()
+    if dev_pin:
+        cfg.server.dev_pin = dev_pin
     # TA_GUARD=log|rewrite|gate sets this server's default guard mode (the test suite pins log: its fake prose repeats)
     guard = os.environ.get("TA_GUARD", "").strip()
     if guard:

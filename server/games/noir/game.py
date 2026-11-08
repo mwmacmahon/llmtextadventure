@@ -1538,6 +1538,14 @@ class NoirGame(GameBase):
         e = state.flags.get("ending")
         return str(e) if e else None
 
+    def save_line(self, state: NoirState) -> list[Chip]:
+        """The lobby's line for a save (B75): where Frank is, the day and time, his health when it is not fine."""
+        p = state.player
+        out = [Chip(label="place", value=p.location or "unknown"), Chip(label="time", value=state.clock.render())]
+        if p.health != "fine":
+            out.append(Chip(label="health", value=p.health, tone="warn" if p.health == "hurt" else "bad"))
+        return out
+
     # ---- summarizer ----------------------------------------------------------
     def summary_guidance(self, state: NoirState) -> str:
         return (

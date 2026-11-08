@@ -1640,6 +1640,13 @@ class FantasyGame(GameBase):
         e = state.flags.get("ending")
         return str(e) if e else None
 
+    def save_line(self, state: FantasyState) -> list[Chip]:
+        """The lobby's line for a save (B75): the character ("Wren, tiefling rogue, level 2"), the place, the day."""
+        p = state.player
+        who = ", ".join(x for x in (p.name, f"{p.race} {p.klass}".strip().lower(), f"level {p.level}") if x)
+        return [Chip(label="character", value=who), Chip(label="place", value=p.location or "unknown"),
+                Chip(label="day", value=f"Day {state.clock.day}")]
+
     # ---- the player's row ---------------------------------------------------------------------------------------------
     def seen_changes(self, before: FantasyState, after: FantasyState) -> list[str]:
         b, a, out = before.player, after.player, []

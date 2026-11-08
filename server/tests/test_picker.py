@@ -251,7 +251,7 @@ async def test_every_turn_is_stamped_and_a_switch_mid_instance_shows_on_the_next
     mech = {r.turn: json.loads(r.text) for r in engine.store.transcript(iid, roles=["mechanics"])}
     assert mech[1]["profile"] == "config.yml (no profile)" and mech[2]["profile"] == "sonnet"
     stamps = {r["turn"]: r["payload"] for r in engine.store.ledger(iid) if r["kind"] == "profile"}
-    assert stamps[2] == {"name": "sonnet", "profile": "sonnet", "base": "config.yml", "local": False}
+    assert stamps[2] == {"name": "sonnet", "profile": "sonnet", "base": "config.yml", "local": False, "difficulty": "normal"}
     doc = engine.store.export_instance(iid)
     page = build(doc["instance"], doc["ledger"], doc["blobs"], doc["transcript"], "t")
     assert "config.yml (no profile) (turns 1), sonnet (2)" in page and "profile sonnet" in page

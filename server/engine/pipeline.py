@@ -69,6 +69,24 @@ GUARD_MODES = {
     "gate": "nothing shows until the referee has read it; a serious ruling has it retold once first (no streaming)",
 }
 
+# The player's difficulty (B80): the engine's, not the game's. It moves only the die: a player target offset added to the
+# game's own (or the profile's dial that replaces it), by the resolver's step: one on the 2d6 bell, two on a flat d20.
+DIFFICULTIES: dict[str, str] = {"easy": "Easy", "normal": "Normal", "hard": "Hard"}
+DIFFICULTY_STEP: dict[str, int] = {"dice_2d6": 1, "dice_d20": 2}
+DIFFICULTY_FIELD = "difficulty"         # the engine's setup field, appended to every game's; a game may not use the id
+
+
+def difficulty_offset(game: Any, difficulty: str) -> int:
+    """The player's target offset for a difficulty on this game's resolver (easy lowers every target, hard raises it)."""
+    step = DIFFICULTY_STEP.get(getattr(game, "resolver", "dice_d20"), 0)
+    return {"easy": -step, "hard": step}.get(difficulty, 0)
+
+
+def difficulty_field() -> dict[str, Any]:
+    return {"kind": "select", "label": "Difficulty", "default": "normal",
+            "hint": "Easier or harder dice. You can change it later in Settings.",
+            "options": [{"id": k, "name": v} for k, v in DIFFICULTIES.items()]}
+
 
 class Engine:
     def __init__(self, cfg: Config, store: Store, games: dict[str, Game]):
@@ -116,17 +134,49 @@ class Engine:
             return "this server" if self.guard_override else "profile"
         return "settings"
 
-    def target_offset(self, game: Game) -> int:
+    def target_offset(self, game: Game, iid: str | None = None) -> int:
         """Every check's target offset for this game: the active profile's dial for the game when it names one, else the
-        game's own (the station's +1, D168)."""
+        game's own (the station's +1, D168); for an instance, plus the player's difficulty (B80)."""
         prof = self.cfg.profile
         if prof and game.name in prof.dials.target_offset:
-            return int(prof.dials.target_offset[game.name])
-        return int(getattr(game, "target_offset", 0) or 0)
+            base = int(prof.dials.target_offset[game.name])
+        else:
+            base = int(getattr(game, "target_offset", 0) or 0)
+        return base + (difficulty_offset(game, self.difficulty(iid)) if iid else 0)
 
-    def profile_stamp(self) -> dict[str, Any]:
-        """What every turn carries: the profile it played on (or the base config's name), whether it ran on the box."""
-        return {"name": self.cfg.profile_label, "profile": self.cfg.profile_name, "base": self.cfg.source, "local": self.cfg.local}
+    def difficulty(self, iid: str) -> str:
+        inst = self.store.get_instance(iid)
+        return inst.difficulty if inst else "normal"
+
+    def set_difficulty(self, iid: str, difficulty: str) -> dict[str, Any]:
+        """The player's difficulty changed mid-game (Settings, opened from the game): from the next check on. A `difficulty`
+        ledger row at the latest turn records the turn and the old and new values."""
+        if difficulty not in DIFFICULTIES:
+            raise ValueError(f"difficulty must be one of {', '.join(DIFFICULTIES)}")
+        inst = self.store.get_instance(iid)
+        if not inst:
+            raise KeyError(iid)
+        if inst.difficulty != difficulty:
+            turn = self.store.latest_turn(iid)
+            self.store.set_difficulty(iid, difficulty)
+            self.store.append_ledger(iid, turn, "difficulty", {"turn": turn, "old": inst.difficulty, "new": difficulty})
+            log.info("instance.difficulty " + logs.kv(iid=iid, turn=turn, old=inst.difficulty, new=difficulty))
+        return self.summary(iid)
+
+    def profile_stamp(self, iid: str | None = None) -> dict[str, Any]:
+        """What every turn carries: the profile it played on (or the base config's name), whether it ran on the box, and
+        for an instance the player's difficulty."""
+        stamp = {"name": self.cfg.profile_label, "profile": self.cfg.profile_name, "base": self.cfg.source, "local": self.cfg.local}
+        if iid:
+            stamp["difficulty"] = self.difficulty(iid)
+        return stamp
+
+    def setup_options(self, game: Game) -> dict[str, Any]:
+        """The new-game form's fields: the game's own, then the engine's difficulty (B80)."""
+        own = dict(game.setup_options() or {})
+        if DIFFICULTY_FIELD in own:
+            raise ValueError(f"{game.name}: the setup field {DIFFICULTY_FIELD!r} is the engine's")
+        return {**own, DIFFICULTY_FIELD: difficulty_field()}
 
     # ---- settings ------------------------------------------------------------
     def get_settings(self) -> dict[str, Any]:
@@ -136,6 +186,7 @@ class Engine:
             "guard": {**self.settings["guard"], "mode": self.guard_mode()}, "modes": GUARD_MODES, "progress": dict(self.settings["progress"]),
             "guard_from": self.guard_source(), "shared_guard": self.settings["guard"]["mode"],
             "profile": self.cfg.profile_label, "profile_guard": self.profile_guard(),
+            "dev_pin": bool(self.cfg.server.dev_pin), "difficulties": [{"id": k, "name": v} for k, v in DIFFICULTIES.items()],
             "roles": {name: {"provider": r.provider, "model": r.model, "effort": r.effort}
                       for name, r in ((n, self.cfg.role(n)) for n in self.cfg.roles)},
         }
@@ -187,22 +238,54 @@ class Engine:
     # ---- instances --------------------------------------------------------
     def create_instance(self, game_name: str, setup: dict[str, Any]) -> str:
         game = self.games[game_name]
+        setup = dict(setup or {})
+        difficulty = str(setup.pop(DIFFICULTY_FIELD, None) or "normal")     # the engine's field: on the instance row, not the game's setup
+        if difficulty not in DIFFICULTIES:
+            raise ValueError(f"Difficulty: no such choice {difficulty!r}")
+        self.setup_options(game)                                  # a game's own field may not take the engine's id
         setup = check_setup(game.setup_options(), setup)          # required fields filled, defaults taken (B21, D154)
         title, state = game.new_instance(setup)
         prefix = game.frozen_prefix(state)
-        iid = self.store.create_instance(game.name, game.version, title, setup, prefix, state.model_dump(mode="json"))
+        iid = self.store.create_instance(game.name, game.version, title, setup, prefix, state.model_dump(mode="json"), difficulty=difficulty)
         opening = game.opening(state)
         if opening:
             self.store.append_transcript(iid, 0, "narrator", opening)
         return iid
 
-    def summary(self, iid: str) -> dict[str, Any]:
+    def summary(self, iid: str, state: BaseModel | None = None) -> dict[str, Any]:
+        """A save as the lobby lists it: the row, the turn, last played, and from the latest state the game's save line and
+        its ending. `state`: the latest state already loaded (the play view), so it is not loaded twice."""
         inst = self.store.get_instance(iid)
         if not inst:
             raise KeyError(iid)
+        return self._summary(inst, self.store.latest_turn(iid), state=state)
+
+    def summaries(self, game: str | None = None, dev: bool = False) -> list[dict[str, Any]]:
+        """Every save (one game's when `game` names it), most recently played first; a hidden game's only in dev mode (B76).
+        The latest snapshots come in one read, each loaded once for both the save line and the ending."""
+        rows = [i for i in self.store.list_instances(game) if dev or not getattr(self.games.get(i.game), "hidden", False)]
+        latest = self.store.latest_states(i.id for i in rows)
+        return [self._summary(i, *latest.get(i.id, (0, None))) for i in rows]
+
+    def _summary(self, inst: Any, turn: int, doc: dict | None = None, state: BaseModel | None = None) -> dict[str, Any]:
+        game = self.games.get(inst.game)
+        line: list[dict[str, Any]] = []
+        ending = None
+        if game is not None:
+            try:
+                if state is None:
+                    state = game.load_state(doc if doc is not None else self.store.load_state(inst.id, turn))
+                line = [c.model_dump(mode="json") for c in (_hook(game, "save_line", state, default=[]) or [])]
+                ending = _hook(game, "ending", state)
+            except Exception:
+                log.exception("summary.state_failed " + logs.kv(iid=inst.id, game=inst.game))
+        if inst.difficulty != "normal":
+            line.append({"label": "difficulty", "value": DIFFICULTIES.get(inst.difficulty, inst.difficulty), "tone": None})
         return {
             "id": inst.id, "game": inst.game, "game_version": inst.game_version, "title": inst.title,
-            "created": inst.created, "turn": self.store.latest_turn(iid), "origin": inst.origin,
+            "created": inst.created, "turn": turn, "origin": inst.origin,
+            "updated": inst.updated, "difficulty": inst.difficulty, "save_line": line, "ending": ending,
+            "hidden": bool(getattr(game, "hidden", False)),
         }
 
     def instance_view(self, iid: str) -> dict[str, Any]:
@@ -213,11 +296,34 @@ class Engine:
         state = game.load_state(self.store.load_state(iid))
         rows = self.store.transcript(iid)
         return {
-            **self.summary(iid),
+            **self.summary(iid, state=state),
             "ui": game.ui(state).model_dump(mode="json"),
             "transcript": [asdict(r) for r in rows],
-            "ending": _hook(game, "ending", state),
         }
+
+    def card(self, iid: str, chars: int = 300) -> dict[str, Any]:
+        """A save's card in the lobby (B75): the summary, the last telling's opening with its turn and clock, and the game's
+        panels as the player sees them (`ui(state)`; the page draws them read-only)."""
+        inst = self.store.get_instance(iid)
+        if not inst:
+            raise KeyError(iid)
+        game = self.games[inst.game]
+        turn = self.store.latest_turn(iid)
+        state = game.load_state(self.store.load_state(iid, turn))
+        last = None
+        told = [r for r in self.store.transcript(iid, roles=["narrator"])]
+        if told:
+            r = told[-1]
+            prose = "\n\n".join(b for b in r.text.split("\n\n") if not b.lstrip().startswith("§")).strip()
+            text = prose if len(prose) <= chars else prose[:chars].rsplit(" ", 1)[0].rstrip(",;:—-") + "…"
+            at: BaseModel | None = state
+            if r.turn != turn:                       # the last telling is older than the latest turn (a console command since)
+                try:
+                    at = game.load_state(self.store.load_state(iid, r.turn))
+                except KeyError:
+                    at = None
+            last = {"turn": r.turn, "text": text, "clock": _clock_now(at) if at is not None else ""}
+        return {**self._summary(inst, turn, state=state), "last": last, "ui": game.ui(state).model_dump(mode="json")}
 
     def usage(self, iid: str) -> dict[str, Any]:
         """Token and cost rollup per role from the ledger (game properties in the lobby)."""
@@ -300,6 +406,7 @@ class Engine:
                 yield ev
         finally:
             self.streaming.pop(token, None)
+            self.store.touch(iid)                     # last played (the save list sorts on it)
 
     def turns_streaming(self, stale_after: float = 900.0) -> list[str]:
         """The instances telling a turn on this server now. A turn whose stream was dropped without being closed would
@@ -362,7 +469,7 @@ class Engine:
         ledger = lambda kind, payload: self.store.append_ledger(iid, turn, kind, payload)  # noqa: E731
         self._tapes[iid] = ledger
         t_turn = time.monotonic()
-        stamp = self.profile_stamp()                  # the play's profile, on the ledger and the mechanics row (Stage 3)
+        stamp = self.profile_stamp(iid)               # the play's profile and difficulty, on the ledger and the mechanics row (Stage 3)
         log.info("turn.start " + logs.kv(iid=iid, turn=turn, command=command[0] if command else None,
                                          chars=len(player_text or ""), profile=stamp["name"]))
 
@@ -720,7 +827,7 @@ class Engine:
                         calls=[dict((c.get("result") or {}), label=(c.get("result") or {}).get("label", "")) for c in calls_block.get("calls", [])],
                         rejected=[r.model_dump(mode="json") for r in report.rejected],
                         levers=[{"id": o.get("id") or lv.id, "status": o["status"]} for lv, o in zip(levers, lever_outcomes)],
-                        target_offset=self.target_offset(game))
+                        target_offset=self.target_offset(game, iid))
         drifted = _hook(game, "after_turn", state, info, default=state)
         drift_lines: list[str] = []
         if drifted is not state:
@@ -1263,6 +1370,7 @@ class Engine:
         stats = _hook(game, "stats", state, default={})
         resolver = RESOLVERS[getattr(game, "resolver", "dice_d20")]
         rng = rng_for(iid, turn, "calls")
+        offset = self.target_offset(game, iid)       # the game's (or the profile's) and the player's difficulty
         show_numbers = bool(getattr(game, "mechanic_numbers", True))
 
         def modifiers(req: CheckRequest, target: str | None) -> list:
@@ -1329,7 +1437,7 @@ class Engine:
                                  fallback_stat=getattr(game, "fallback_stat", None), fail_streak=fail_streak,
                                  player=_hook(game, "player_name", state, default="the player"), consequence_for=consequence_for,
                                  lethal_for=lambda d, label: bool(_hook(game, "lethal_stake", state, d, label, default=False)),
-                                 offset=self.target_offset(game),
+                                 offset=offset,
                                  holds_back=lambda target: _hook(game, "holds_back", state, target, default=None))
             if call.verb == "LOOK":
                 text = _hook(game, "look", state, call.ref, default=None)
