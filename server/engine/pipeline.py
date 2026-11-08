@@ -1057,7 +1057,8 @@ class Engine:
                 clk = sp.lookup(doc, clock.path)
                 now = clk["day"] * clock.minutes_per_day + clk["minute"]
                 nxt_f = ev.next_firing(_events_of(game, doc), doc, turn, now, now + want, clock.minutes_per_day, clock.path,
-                                       getattr(game, "pending_path", None) or "hidden.pending")
+                                       getattr(game, "pending_path", None) or "hidden.pending",
+                                       getattr(game, "location_path", "player.location"))
                 if nxt_f is not None:
                     nxt, at = nxt_f
                     want = at - now
@@ -1087,7 +1088,8 @@ class Engine:
                                           "if the player would notice the change, let it show, lightly.")
         # events tick (also on clarify turns: time has not moved, so usually nothing fires)
         events = _events_of(game, doc)
-        ectx = ev.EffectContext(pending_path=ppath or "hidden.pending", clock_path=clock_path, minutes_per_day=clock.minutes_per_day if clock else 1440, turn=turn)
+        ectx = ev.EffectContext(pending_path=ppath or "hidden.pending", clock_path=clock_path, minutes_per_day=clock.minutes_per_day if clock else 1440, turn=turn,
+                                location_path=getattr(game, "location_path", "player.location"))
         fired, expired, ev_directives = ev.tick(events, doc, turn, clock_path, log_path, ectx, since_abs=since_abs)
         sp.assign(doc, getattr(game, "events_path", "hidden.events"), [e.model_dump(mode="json") for e in events])
         directives.extend(ev_directives)
@@ -1918,7 +1920,7 @@ def time_after(game: Game, state: BaseModel, res: dict, calls: list[dict], notes
     now = clk["day"] * clock.minutes_per_day + clk["minute"]
     room, why = max(clock.cap_minutes - int(res.get("elapsed") or 0), 0), "the turn's cap"
     nxt_f = ev.next_firing(_events_of(game, doc), doc, turn, now, now + post + lost, clock.minutes_per_day, clock.path,
-                           getattr(game, "pending_path", None) or "hidden.pending")
+                           getattr(game, "pending_path", None) or "hidden.pending", getattr(game, "location_path", "player.location"))
     if nxt_f is not None and nxt_f[1] - now < room:
         room, why = nxt_f[1] - now, f"scheduled event {nxt_f[0].id}"
     ppath = getattr(game, "pending_path", None)
