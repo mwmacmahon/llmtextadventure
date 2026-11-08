@@ -1,236 +1,339 @@
 # Roadmap
 
-Where the engine stands and what comes next, in order, with the gate between each stage. Written from the Fable side
-chat on 2026-11-07, after the first rounds with the stakes live in both games (D125, D131). The decisions behind each
-item are in `notes/DECISIONS.md` and `notes/ISSUES.md`; the designs are the three docs listed in `INDEX.md` §2. This
-page is the order; it does not repeat the designs.
+Every piece of work the project has agreed to, designed, or is weighing, by area, each with its state and where its
+design lives. The horizon is months. An item enters the day the owner rules it or a design is written, and leaves
+only when it is built and a round has shown it working; nothing leaves because time passed. This page does not say
+what the build chat does this week: that is `docs/QUEUE.md` (published:
+[The Queue](https://claude.ai/artifact/KmViUPuc37ZVVGCQMhzdRy)). It does not carry the dated evidence: that is the
+state page (`docs/STATE-2026-11-08.md`). It does not list bugs one by one: that is the register, `docs/OPEN-ISSUES.md`,
+whose open lines each area below rolls up by id. The designs themselves are under `notes/` and are not repeated here.
 
-## Where we are (2026-11-08 night, at fc89cad)
+Rewritten 2026-11-09 from the stage plan of 2026-11-07, which had become the week's planning document and showed
+"basically nothing left" while about 145 register lines stood open. The six stages survive as areas 1 to 5 and 14; the
+areas with no stage before (the player UI, mods, magic, the clown sim, the content questions, the tooling) now have
+their own.
 
-- **Stage 1 is done** (D135 to D151, 2026-11-07 night to 11-08 dawn): 2d6 with caps, the dice and the player's row,
-  the consequence roll with noir's table rewritten, the small faults, the six time rules, and the station's control
-  model (a locked-out start where every system is a project worked one sitting at a time).
-- **Stage 2 has run.** Five parity rounds on the box (noir r21L to r23L, station r21L and r22L) read against the D98
-  base rounds and paired blind: the base won all four pairs, both orders agreeing. The readers' reason was the dice,
-  not the prose: the station's d20-era +3 stats passed 2d6 medium checks 92% of the time ("escorted rather than
-  played") and two noir rounds ended early on one roll that gave the case away. Fixed the same day (D168): the
-  station's capabilities down one and a per-game target offset of +1, the 2d6 penalty cap at -2, and a tell held
-  back is staked high at least and retold if told early. Smoke turns only after; the W1 rounds are the next night's.
-- **The fantasy game, MARROWGATE, is built and playable** (D152 to D167): the sheet, the deck, hit points and the
-  death fork, heat and renown, levels, the panels, its own living page; one 50-turn round on Sonnet read "would play
-  on eagerly", a ten-turn smoke after the midday fixes; served on :8014 on Sonnet for its first player today. Noir's
-  wounds (H1 to H5) came with it as the shared body piece (D157).
-- **The night's play found the checks hollow** (11-08 night, the owner playing Ungdall on the local model at Hard).
-  Nothing the player says moves a check: the assistant grades difficulty on an abstract scale, nothing weighs the plan
-  or the thing in hand, fiat may not touch what a person feels, and the midday secret-holder floor (B63) made every
-  parley high; a plea to a siren became a roll for her deepest secret, and an offstage siren dragged the player under
-  mid-parley because part four counts anyone hostile at the same place as in the fight. Part seven (B207 to B211)
-  answers it: the words decide first, a situational edge on every check, the floor narrowed, the backstop only for
-  people in the fight.
-- **Parts six and seven are in, and the rounds found the local model skips the edge** (11-08 night, at fc89cad). The
-  build chat landed death is death, caps off with the wound ladder, the narrator's ENEMY and HAZARD calls, the backstop
-  for people in the fight only, the words decide first with the edge on every check, the floor narrowed, stakes masked
-  not dropped, the story so far restamped (B212), too_far widened to solicitation and sexual violence (B144), and a
-  schema fix that had failed every Sonnet action turn (f9ae8f4); 640 tests pass. Three readiness rounds ran. On Sonnet
-  the edge moved (six of nine checks) and the words settled attempts without rolls; on Gemma the assistant wrote none of
-  the new fields (B213), a surrender killed Kragga as a chosen death (B214), and the narrator played on after a recorded
-  death (B215).
-- **One model, every role, still holds:** Gemma 4 31B on the box for noir and the station; the fantasy on Sonnet for
-  its first play (the profile may differ per run, never per role).
-- The register is `docs/OPEN-ISSUES.md` (B25). 640 tests pass. Stage 3 (profiles, the picker, the settings card) is
-  the build chat's current work. The order of work below is unchanged; each stage carries its position.
+**States.** *built*: in the code and seen working in a round. *built, unseen*: in the code, no round yet. *running*: a
+standing rule or a measure that recurs. *designed*: a design document exists and a directive could be written from
+it. *decided*: the owner has ruled, no design yet. *open with the owner*: a question waits for the owner's answer.
+*idea*: raised, not weighed. *not started*: agreed, nothing written.
 
 ## The standing rules
 
 1. Nothing in the engine branches on the model's name. A model's needs are a profile's levels.
 2. A change is measured by a long round and a player's-eye read, with the numbers beside the previous round's.
 3. The living pages are regenerated, never hand-edited, and carry no history.
-4. Every design decision made in a chat gets a line in `notes/DECISIONS.md` or `notes/ISSUES.md` the same day. The
-   2d6 die and the dice faces were agreed in early November and sat as ISSUES R16 and R17 for a week because they
-   were queued "after the model is pinned" and nothing re-read the queue. The roadmap is that re-read.
+4. Every design decision made in a chat gets a line in `notes/DECISIONS.md` or the register the same day, and a place
+   on this page the same day. The 2d6 die and the dice faces sat as register lines for a week in early November because
+   nothing re-read the queue; this page is the re-read, and the queue page is the week.
 5. The notes under `notes/` are canonical for design; `docs/` describes the engine as built.
+6. One local model serves every role on one GPU in sequence; parameters may differ per role, the model may not.
+7. Every new model-facing line is in plain words (`docs/WRITING_FOR_MODELS.md`, W1).
 
-**The order after Stage 1 (the owner, 2026-11-08):** the fantasy game (Stage 5's first item) was built next, as soon
-as 1e landed; the parity rounds of Stage 2 run on the box beside that build; Stages 3 and 4 follow. The plain-language sweep (ISSUES
-W1) is a standing rule from now (every new model-facing line in plain words, `WRITING_FOR_MODELS.md`) and one full sweep
-after the fantasy build, measured by rounds of its own. The wounds track (ISSUES H1 to H5) is built with the fantasy
-game's hit points and death. The sanity sitting (NV2) and the station's week (ST1) wait until after that. The "Open
-now" register moves into `docs/` (B25).
+## The map
 
-## Stage 1. The dice and the consequences
+| # | Area | State | Design | Left (in one line) |
+|---|---|---|---|---|
+| 1 | The dice, checks and consequences | built; the words-decide design built, unseen on the local model | DESIGN.md §7.1a to §7.1c; DESIGN-time-and-attempts | the edge on the local model, the chosen-death net, tier-only d20 lines, fresh dice on a fork |
+| 2 | Time and pacing | built, unseen in long rounds | DESIGN-time-and-attempts §3, §4 | travel floors, the fall's hours, a refused rest, "until when" as buttons, per-campaign pacing, missed events |
+| 3 | Measurement and parity | running | MEASURING.md, TESTING.md | the long rounds after parts four to eight, the eval key rebuild, the stale measure pages |
+| 4 | Profiles and the picker | built | DESIGN-context-modules §6 | the model label from the profile, one server for every game, levels edited in the UI |
+| 5 | The narrator's context | not started | DESIGN-context-modules §2 to §4 | the four modules; the chant, the formula, the leak, the retold order are its cases |
+| 6 | The assistant | built | ASSISTANT-DESIGN; DESIGN2 §17 | fiat and levers, a retold turn's stakes, the parked beats, the unsettled attempts |
+| 7 | The world's records | built | DESIGN.md; GAME_AUTHORING | "unknown", a place under another name, one object twice, name clashes, stale time text |
+| 8 | The fantasy game, Marrowgate | built; her first game waits on part eight | FANTASY_DESIGN; DIRECTIVE-fantasy | part eight, the Gemma round, the rescue later, magic, the content questions, the sheet pass live |
+| 9 | Noir, Lowtown | built | notes/design/noir page; DESIGN.md | whether noir takes death is death, the nerves sitting, stray engine lines |
+| 10 | The station | built | DESIGN-time-and-attempts §4; station page | the locked-out text, what each project unlocks, the upgrades, the canister, the station's week |
+| 11 | The player UI | slice one built; slice two designed | DESIGN-lobby-and-saves; DESIGN-player-ui | the play page (four questions open), the feedback button, the ending word, dev mode's gaps |
+| 12 | Mods and variants | designed (mods); idea (variants) | DESIGN-mods | the mod files, Super Dark Fantasy's Conan pass, basic and advanced variants |
+| 13 | Magic | designed, open with the owner | DESIGN-magic | placement and four questions; then the spell data, slots, the Cast lever, the level-up screen |
+| 14 | Models and the box | one model all roles, running | LOCAL_LLM.md; the trials reports | the local schema, Qwen's return through profiles, hosted narrators, the box's faults |
+| 15 | The clown sim | designed, provisional | CLOWN_DESIGN | seven questions, the engine gaps, dev mode gating; nothing committed without discussion |
+| 16 | Writing for models | running; the sweep proper not run | WRITING_FOR_MODELS.md | the full sweep and its rounds |
+| 17 | Tooling, tests and docs | running | INDEX.md §7 | tests on gitignored content, the docs marked behind, the register's statuses, the phone's pages |
+| 18 | Ideas not yet weighed | idea | the register | the referee review pass, the preference corpus, the station's self-upgrade |
 
-The batch of fixes from the live rounds. No gate before it; it is the gate for Stage 2.
+## The order (the owner's, as set)
 
-**Position:** done. 1a D135, 1b D143, 1c D144, 1d D145, 1e D146 and D148 to D151 (the time rules; the control model),
-with B38's split line fixed after the first parity round. The caps are off everywhere since 11-08 night (B200: a grave wound may make a check
-near impossible; D168's -2 on 2d6 and the d20's -3 are gone); a per-game target offset (the station +1) moves a game's
-whole table.
+The fantasy's first player comes first: part eight, then one Gemma round, then she plays. Then the owner's open
+answers as they come (area 8's content questions, the play page's four, magic's placement). Then mods (area 12), next
+after the fantasy is considered ready. Then Stage 3's leftovers and the context modules (areas 4 and 5). Magic, the
+feedback button, the W1 sweep proper, the fantasy on local Gemma and the clown sim follow, in that order as of 11-08
+evening. Unplaced by the owner: the play page (area 11), basic and advanced variants (area 12), noir's death question
+(area 9), the station's design items (area 10). The week's cut of this order is the queue page.
 
-**1a. Checks as 2d6 (ISSUES R16).** A `dice_2d6` resolver beside `dice_d20` in `engine/mechanics.py`; the games name
-it. Targets by difficulty band on the 2d6 bell (about 7, 9 and 11 for the three bands the games use; the exact table
-is the resolver's). Outcome tiers: miss by three or more is a huge failure; double ones a critical failure; double
-sixes a critical success. Modifiers are capped, and the cap is asymmetric: penalties sum to no worse than -3, bonuses
-to no better than +5 ("super awful modifiers are no fun; super good ones are allowed"). Fear sources already do not
-stack; this caps the rest. This closes the noir death spiral, where five wound conditions stacked to -8 on a d20.
+## 1. The dice, checks and consequences
 
-**1b. The dice on the page (ISSUES R17).** The mechanics row shows the two faces (U+2680 to U+2685) with the modifier
-and the target: "⚂ ⚄ +1 = 9 against 7". Check the font on the phone. Hidden rolls stay hidden.
+Checks are 2d6 on noir and the station (stats -1 to +3, one modifier, a per-game target offset) and d20 on the fantasy
+and the clown sim, where modifiers may stack; a hidden second roll on a failure decides whether something else goes
+wrong and how badly, from the game's own table or the assistant's stake; no modifier caps on any game since 11-08
+night, with a five-step wound ladder instead; the dice seeded per instance, turn and stat. Since part seven the
+player's words decide first: an attempt that plainly works or fails is settled without a roll, an open one is a check
+whose difficulty is how hard the thing is for anyone and whose edge is what this player brought. Design: DESIGN.md
+§7.1a to §7.1c; D135, D143, D144, D168, D176, D178, D179.
 
-**1c. The consequence roll, with the cost table as a module.** A failed check no longer draws a cost from the game's
-table every time. The engine makes a hidden second roll: does something else go wrong, and how badly. The chances are
-a table by outcome tier in config, one row each for failure, huge failure and critical failure, starting at 20/5,
-35/12 and 50/20 percent for slight and major. Nothing: the stake's failure outcome stands and that is the whole
-consequence. Slight: a complication, handed to the narrator as a fact. Major: the complication plus one lasting mark
-the state can pay (a wound, a trace in the logs, something left behind), the only tier the referee has to record.
+**Built:** all of the above. **Built, unseen on the local model:** the words decide and the edge, which Sonnet writes
+and Gemma does not (area 14, B213).
 
-Where the complication comes from is decided per kind of check, by the game's author, in the game's cost hook: a map
-from a check kind (the stat, or the author's own classes such as "a system edit" or "a fight") to either a table of
-rows, as today, or `stake`. Some failures should have a table: a failed edit of a ship's system draws a trace in the
-logs, a fault flag the crew can see, a reset, which are the systems' consequences and not the scene's; a noir fight
-can draw a wound. Others take the assistant's own complication from the stake, with the game's general table as the
-fallback when the stake carries none (the assistant wrote "none", or the guard dropped it). A profile can override
-the map for a weak model: `table` for every kind, or `off` (the roll alone; a failure is only its failure outcome).
+**Left.**
+- The local provider's schema requires the edge, its why, the aim, and fiat's settled and why (B213; part eight §1).
+- The chosen-death net fires only on the wish to die, never on "stop fighting" (B214; part eight §2).
+- Every d20 line tier-only to the referee and the summarizer if a round shows a ruling on the sum (B37, later).
+- The old "what the player brought" +2 and a sheet-pass trait can meet on one check (B141); whether the pass retires
+  the About-word bonus is the owner's call. With the edge in, the About-word bonus is the likelier one to go.
+- Noir's keyed check grade fell from 22 of 24 to 19 of 24 with the minutes line (B27); count checks matched in the next
+  long rounds.
+- Undo replays the same dice and a fork rolls fresh (H4, decided 11-07); confirm it is so since the seeding (B85).
+- A retold turn runs the stakes call again; whether greedy decoding returns the same stakes is unverified (A3).
 
-Whatever the map says, the game's tables are also shown to the assistant in its stakes rules as "what this world can charge"
-(a trace in the station's logs, a fault flag the crew can see), so the assistant picks from the author's ideas as well
-as its own. The tables stay game content and get a pass: the station's hold up; noir's (a thing falling out of a
-pocket, noise) are to be rewritten as noir consequences (something left behind at the scene that can be found, a
-witness, the law taking an interest, a lead going cold, a wound). "Time" and "talk" fold into the time rules and the
-attitude field. The one engine rule kept outside the roll is "the way shuts on a retry of the same failed attempt"
-(D93, D122, D125), because it is pacing, not flavor. The roll is seeded per turn like the costs were, and the ledger
-records it and the source. Expected on the stored rounds with most kinds on `stake`: about four slight complications and
-one major a round, against eighteen costs.
+## 2. Time and pacing
 
-**1d. The small faults from the reads.** Health stepping wounded to hurt to wounded at noir turns 33 and 34 (which
-referee rule allowed the step back up). The stray " (false)" left by a narrator note line (A16). The station narrator
-reading Voss's files when asked for Okafor's (turn 27): logged as the focus item for Stage 4, no fix now. A per-round
-count of the late-turn formula (an opener naming the place, a closer naming the clock), so Stage 4 has a baseline.
+The six time rules (the minutes split at the roll and moved at call time; floors and the trigger ceiling; the
+time-lost note; a game's table of minutes by kind of turn; "until when" for waiting and sleeping; the scene-length mark
+and the re-arm stop) and the station's control model (every system a project worked one sitting at a time, detection
+one roll a block). Design: DESIGN-time-and-attempts §3 and §4; D146 to D151.
 
-**1e. The time rules.** `notes/DESIGN-time-and-attempts-2026-11-06.md` §3, build items (i) to (vi) in order: the
-minutes split at the roll and moved at call time; the floors and the trigger ceiling in the clock; the time-lost
-note; the noir table of defaults by task kind; the "until when" question for waiting and sleeping; the scene-length
-mark. The stakes already carry minutes per branch and only log them; (i) is where they start to move the clock.
+**Built, unseen in a long round** (the parity rounds ran before parts four to seven; B38's split line fixed).
 
-Inside 1e as well, the station's half of the same rule (the owner, 2026-11-07; the time doc §4): **the station's control
-model**. The AI's visual and control elements (cameras, doors, power, comms, drones, the auto-doc) sit behind a hacking
-progress bar, with the GUI to match; "work on the cameras" is a lever that spends a block of time (two hours unless an
-event interrupts it, the fraction credited, D58's stop), progress at a fixed rate modified by visible state, dice only
-for detection against the alarm, the narrator handed a montage turn. Decided (the owner, 2026-11-07): every system is a
-project with its own rate and block, harder modules slower (cameras and microphones are the easiest, four hours each at
-default speed, two blocks of two; the crew implants' nudge the hardest); one project at a time, with parallel hacking
-left as a future unlockable in a self-upgrade system (ISSUES B19); events fired by crew suspicion such as "hardened
-security" halve the hacking speed; detection is one roll per block at a very low chance by default (cameras and
-microphones 2% a block), higher once security has been updated. The block is fixed per project by default and the
-player may name a shorter limit on the lever, never a longer one; an event interrupts either way. The gating of panels and controls behind progress is the station's design change; the block and the
-interrupt are the time rules. The record is the time doc §4, "Decided".
+**Left.**
+- A travel floor: a move between distant places took one minute when the clock stopped at a pending (B56).
+- The fall's hours are outside the turn's elapsed minutes, so the row and the clock disagree (B49); moot while death is
+  death, back when the rescue returns (B143).
+- A rest the prose refuses still moves the clock eight hours (B132); the night's minutes after the referee.
+- "Until when" is asked in the story's voice; buttons belong to the play page (B29; area 11).
+- The station's "work on" limit in its own terms, "until Okafor's shift ends" (B31).
+- Per-campaign pacing: "it's not fun to fight the monster for more than 4-5 turns" (B13, open since 11-04); the scene
+  mark is the engine's handle, the per-game numbers are not set.
+- Missed world events must not force action through a "missed" event alone (B14, open since 11-04).
+- Text with a time in it goes stale (T4); windows fixed in code (T5); no test crosses midnight with a timer in flight
+  (T6).
+- Questions move no time and an Ask mode answers out of the story (B105): built (D177); reaches wait for a quiet turn
+  (B104): built, its content half (a fallback names its carrier) is the fantasy's.
 
-**Status 2026-11-08: built, not yet seen in a live round.** (i) to (iii) D146; (iv) the noir table by kind of turn
-D148; (v) "until when" D149; (vi) the scene-length mark and the re-arm stop D150; the station's control model D151 (a
-locked-out start in the lobby; the parity rounds run the station in control, B30).
+## 3. Measurement and parity
 
-## Stage 2. Parity (a standing rule, not a gate: the owner, 2026-11-08)
+A change is measured by a long round and a player's-eye read with the counts beside the previous round's; blind round
+pairs judged by Opus subagents give relative quality; the reads are trajectory data, never ranked. Parity with the D98
+base is a standing rule since 11-08, not a gate. Design: MEASURING.md, TESTING.md, READER_BRIEF; D89, D98, D99.
 
-Two or three noir rounds and one or two station rounds on the Stage 1 build, read against the D98 base rounds (the
-all-Gemma rounds before the assistant existed). The gate: the reader's verdict at parity or better, no new class of
-fault, and the counts beside the previous rounds: checks staked and matched, consequences fired by tier, the formula
-count, facts told before found. **Decided 2026-11-08:** this is standing rule 2 applied to Stage 1, not a gate. The
-rounds run on the box beside the fantasy build and nothing waits for them; their verdict decides whether the 2d6 tuning
-stands (D135's open question) before Stages 3 and 4 build on it.
+**Running.** The parity rounds of 11-08 (five rounds, four blind pairs, the base won; D168 tuned the dice). The
+readiness rounds of 11-08 night ran once (B145). 640 tests pass.
 
-**Position:** run 2026-11-08 (REPORT-2026-11-08-overnight). The base won all four blind pairs; the cause was the
-dice (B62, B63) and D168 tuned them. The Stage 1 build is at parity or better on writing and continuity, behind on story
-escalation; the next long rounds (after the W1 sweep's rounds) are the check on D168. The 2d6 modifier strategy is
-recorded in GAME_AUTHORING §7c and DESIGN.md §7.1a.
+**Left.**
+- The next long rounds on noir and the station after parts four to seven and W1: the check on D168 and the first look
+  at the edge on 2d6.
+- The fantasy's readiness rounds again after part eight, with the three counts (edge non-zero, settled with a why,
+  settled fails); then on local Gemma (B86, B145).
+- The keyed sets re-graded across the quest block and the title row (B139) before any referee comparison.
+- The eval key rebuild (E3, low priority; the referee key is scored per game).
+- The two stale measure pages: rebuild from the current runs or retire them (INDEX §7.3).
+- A note button that writes a ledger row at a turn so a player's reaction sits where it happened (B10; area 11).
 
-## Stage 3. Profiles and the picker
+## 4. Profiles and the picker
 
-`notes/DESIGN-context-modules-2026-11-06.md` §6. A profile is the whole configuration of a play: provider and model
-per role, sampler and thinking, the dials (checks, stakes, guard), the module levels. One file per profile in
-`server/profiles/`, the same file the rounds and the eval runs name. The settings menu lists the profiles and shows
-the active one's card; switching a local profile goes through the box's helper; the profile name is stamped on every
-turn's mechanics row. Module levels for modules not yet built show as "not yet." Editing levels in the UI as an
-override layer is the second step.
+A profile is the whole configuration of a play: provider and model per role, sampler and thinking, the dials, the
+module levels; one file in `server/profiles/`; the card in Settings with the cost of a hosted turn; the switch through
+the box's helper; the stamp on every turn's rows and in the call report. Design: DESIGN-context-modules §6; D169.
 
-**Position:** built (D169), the midday directive of 2026-11-08 §3: the files, the per-server active profile, the card with
-the cost of a hosted turn, the switch (hosted at once, local through the helper, refused while a turn streams or the box
-is busy), the stamp in the ledger and the call report, the dials including the target offset per game. Left: B73 (the
-model label from the profile), one server for every game (B77), editing levels in the UI (the second step).
+**Built.** **Left:** the ledger's model label comes from the config, not the profile, so the box's rows say
+"qwen3.5-27b" while Gemma runs (B73, L10); one server for every game, so the rounds and the fantasy share a save list
+(B77); module levels edited in the UI as an override layer; the cost per profile on the card for a local model.
 
-## Stage 4. The narrator's context modules
+## 5. The narrator's context
 
-`notes/DESIGN-context-modules-2026-11-06.md` §2 to §4, each as a level a profile names:
+The narrator's prompt as modules, each a level a profile names: the bulletin as named sections with items; the focus
+filter and the prefix split together (the cast's secrets out of the cached prefix and delivered per scene for the
+people present); own-prose distance and the window levels (how much of the narrator's own earlier prose stays
+verbatim); the pull extended to clues and threads, and the summary levels. Each module earns a level by moving the
+read without growing the prompt. Design: DESIGN-context-modules §2 to §5; D120.
 
-1. The bulletin as named sections with items, the next time `render_bulletin` is touched. No behaviour change.
-2. The focus filter and the prefix split together: the cast's secrets out of the cached prefix and delivered per
-   scene for the people present. This is the masking item ("shepherd" came from the narrator's own case file) and the
-   wrong-person item from Stage 1d.
-3. Own-prose distance and the window levels: how much of the narrator's own earlier prose stays verbatim. This is
-   the late-turn formula both readers named, and the first thing Qwen needs.
-4. The pull extended to clues and threads; the summary levels.
+**Not started.** The baseline is the formula count (D145, B5). Its cases, all open: the narrator reading Voss's files
+when asked for Okafor's (B9); "shepherd" and "organism" from the narrator's own case file (the masking); the bulletin
+cut by count, not relevance (N2); the end-of-turn clock line copied as the closer (R12); the player's order retold
+before the roll (R9); the chant across turns on the local models (R1, P1, K3: the repetition rulings never fire); the
+narrator's reasoning reaching the player as prose (R19); the same beat told again (A7). The first thing Qwen needs
+(area 14).
 
-Each module earns a level by moving the read without growing the prompt.
+## 6. The assistant
 
-**Position:** not started; next after Stage 3. B5's formula count (D145) is its baseline; the Stage 1d log of the wrong
-person's files (B9) and the masking sightings are its first cases.
+The adjudicator reads the turn before the narrator: kind, intents, checks with stakes (two futures and a
+complication), fiat for what needs no roll, the minutes; since part seven the three-way read of the words and the
+edge. Stakes live by default on every game. Design: ASSISTANT-DESIGN-2026-11-05; DESIGN2 §17; D103, D104, D176, D179.
 
-## Stage 5. Players beyond us
+**Built.** **Left.**
+- Fiat can swallow a listed command (A13): logged only; if fiat ever commits, it must not commit a lever.
+- An action turn with an attempt neither checked nor settled is flagged (part seven); count the flags in the next rounds.
+- The narrow beats probe (A6 minutes unclamped, A7 beats repeating, A8 name matching) is parked with the beats; it
+  returns only if beats return.
+- The assistant sees more than the narrator and is probed as the whole role (DESIGN2 §17; the standing plan).
 
-- **Feedback while playing.** A note button beside the rewrite button that writes a row into the ledger at that
-  turn, shown in the round report and the read, so a player's reaction sits where it happened.
-- **A fantasy adventure (MARROWGATE), pulled forward: the next build after Stage 1e.** The owner, 2026-11-08: "the
-  fantasy game is next and needs to be coming soon." A third game under `server/games/` with its own content and
-  narrator rules, designed in the fantasy side chat (record `notes/FANTASY_DESIGN.md`, D136 to D145F; the directive is
-  `notes/DIRECTIVE-fantasy-2026-11-08.md`, one paste). Its tone is a D&D table's, not a younger player's (D137); its
-  engine needs (setup kinds, ISSUES B21; the dice line and the mechanics row from Stage 1b) are small and independent
-  of Stages 2 to 4, so it does not wait for the parity gate. The parity rounds (Stage 2) are box time, not build
-  time: they run beside the fantasy build. The clown sim (`notes/CLOWN_DESIGN.md`, D132) waits behind it. The engine
-  does not care about genre.
-  Its engine additions (the directive §4), none of which changes station or noir:
-  - built (stage A, D152 to D156): setup kinds (B21); `where` on an event; a hook's `after_deal_minutes` with
-    `not_before`/`not_after`, rebased at the deal (`events.rebase_event`); `at_minute_of_day` with `repeat: daily`;
-    `told` as a predicate; `not_before` on a `pending`; `rearm` (already there); `open_tell`; one hook's directive a
-    turn; the d20 line's naturals and caps (A11); the header at phone width (B22).
-  - with the game (stage B onward): `secret_add`/`wants_add` on a merged person; reward `when`/`also`/`milestones`; a
-    secret term that is a person's or place's name learned on meeting or entering; a closed hook's events keep
-    running; the `visited_*` flags on a move; the lethal roll and `carried`; heat and renown; `too_far`.
-- **The player UI** as a whole (ISSUES U2). The plain-language pass on every line a model is handed (ISSUES W1) is
-  pulled forward to right after the fantasy build (the order line above).
+## 7. The world's records
 
-**Position (2026-11-08 night, at fc89cad; parts four to seven in, the readiness rounds run once, B213 to B216 found).** The fantasy game is built and has been played by the owner; the first
-real game (Marrowgate, Ungdall, 36 turns) found the danger system hollow, and fixing that is now the first item.
+The structured state the referee writes from the prose: people, places, things, threads, timers, secrets and tells,
+the journal and the story so far. Design: DESIGN.md; GAME_AUTHORING; the world page.
 
-*Landed today:* the fantasy (D152 to D167); W1's first pass (D166); the lobby with the bar, game pages, save lines and
-cards, one Settings page, dev mode and the difficulty select (D171, B74 to B77, B80); the guard `rewrite` everywhere
-(D170, B78); the fantasy one Hard step harder and the dice seeded per check (D172, B83, B85); undo that keeps the
-record, the death gallery per character, the death-card lines (D173, B81, B82, B84); rest and the night (D174); the
-twelve SRD classes with Rogue and Barbarian full (B92); the sheet pass (B90); the quest fix (B93); the content fixes
-and the Places panel (B64, B65, B68, B69, B87); hidden games gitignored (B88); part four §3 to §5 (a chosen death lands,
-perils count down by the engine's roll, enemies act every turn, failures cost hit points by tier; D176), the conditions
-table (B96), redo (fb5d406); parts six and seven (D178, D179: B200 to B212, B63 narrowed), too_far widened (B144), the graveyard per
-save (B81), the schema fix (f9ae8f4), the readiness rounds run once (B145).
+**Built.** The story so far is restamped with the turn it was written (B212). **Left.**
+- "Unknown" for things and for people's status, as D81 gave people's location (B12, owed since 11-03).
+- A new place that is a listed one under another name is not caught (B59); the world holds one object twice (R18).
+- A character named like a cast member muddles name matching (B45, partly fixed); no guard.
+- A thing handed back to the player not recorded (B133; fixed by hand once).
+- Scars written with words land as wounds and heal (B150); the sheet's lifelong traits land as timed conditions (B151).
+- The quest machinery to watch in the next fantasy rounds: a second job from the same giver merged into the first
+  (B137); the pre-check hint on every turn a giver is named (B138); hooks with no player-safe standing line (B136).
+- A serious ruling whose fix says there is nothing to fix (N5); a contradiction ruled when the state is stale (N7-1031).
 
-*The queue, in order (the owner, 11-08 evening; part seven put first 11-08 night):*
-0. **Before she plays: what the rounds found** (B213 to B216, 11-08 night): the local schema requires the check's
-   edge, its why and its aim and fiat's settled and why (B213: on Gemma none of them is ever written, so the edge is 0
-   and nothing can fail without a roll); the chosen-death net never fires on a surrender (B214: "stop fighting the
-   hands" killed Kragga); the narrator told of a death writes it (B215); the strip's word at zero (B216); then a Gemma
-   round to see the edge move.
-   *Landed 11-08 night:* part seven (B207 to B211, B63 narrowed; 2669a19, 5a82d9e), part six (B200 to B206; dd4be6c,
-   748d653, 0638909, ca47f24, 9538397), B212 (634f5a9), too_far widened (fc89cad).
-1. **Questions do not move time** (B105): a pre-check line to the assistant, the engine's trivial turn, an Ask mode.
-   Front of the line, a quick fix. **Reaches wait for a quiet turn and a carrier** (B104) behind it.
-2. **Deadliness** (B94 to B103, part four): the stakes live by default; no modifier caps on the fantasy; a chosen death
-   lands; armour class and hostile moves, enemies rolling to hit every turn of a fight and failures costing hit points
-   by the dice; peril states with countdowns; hazards on places and compulsions as content the engine enforces;
-   conditions with mechanics from a table; the offset double-count checked (B99).
-3. **The readiness rounds** (B86): Barbarian on Sonnet and Rogue on local Gemma in parallel, a reckless player who dies
-   twice, read from the ledger against the checklist; then she plays.
-4. **Mods** (B79, `notes/DESIGN-mods-2026-11-08.md`), the first being Super Dark Fantasy's Conan pass with `too_far`
-   off (B89).
-5. **Magic as an engine system** (B91, `notes/DESIGN-magic-2026-11-08.md`) when a caster is wanted; the feedback
-   button (B10); the W1 sweep proper and its rounds; the fantasy on local Gemma; the clown sim behind dev mode.
+## 8. The fantasy game, Marrowgate
 
-## Stage 6. Other models
+The fourth game, for the owner's daughter: a D&D table's tone, a sheet with the twelve SRD classes, a hook deck, hit
+points and death as the one ending, heat and renown, levels, sirens on the lake. Design: FANTASY_DESIGN (D136 to
+D145F and the rulings since), DIRECTIVE-fantasy-2026-11-08, the Marrowgate living page; D152 to D179.
 
-Back to Qwen and to hosted narrators through profiles and module levels, never through code paths. Retire or rebuild
-the two stale measure pages. The cost of a turn per profile on the picker's card.
+**Built** and played by the owner; the readiness rounds ran once. **Her first game waits on:** part eight (area 1's
+B213 and B214, area 9's B215, area 11's B216) and one Gemma round; and which difficulty her save is on (B99: it
+carries Hard from the copy it was moved from; the owner has not said whether that is meant).
+
+**Left, decided or designed.**
+- The rescue from death, later (B143, the owner 11-08 night): only a devoted companion present or a cleric in the
+  room; the rotated survived costs become the raise's price. Out of play until then.
+- Magic as an engine system (area 13) when a caster is wanted; mages start with the three fixed spells until then (B44).
+- The fantasy on local Gemma as a served game, after the edge arrives there (B213).
+- The sheet pass live: one call on Sonnet and one on Gemma read before her next game (B140); the lobby shows nothing
+  while the sheet call runs and the re-read has no box of its own (B142).
+
+**Open with the owner (content).** The Watch raid the build added (B40); the Temple's price as a hook (B43); a quest
+settled a way no flag names (B58); the thirteen hooks whose endings the lint found one-sided (B110 to B122, each with
+its proposed `another_way` flag); a `standing:` line per hook (B136).
+
+**To check.** The too_far ruling's silence on the owner's explicit forks (B209, lower priority; the engine net since
+B144 covers the plain words).
+
+## 9. Noir, Lowtown
+
+Frank's case in Lowtown: 2d6, the notebook, the city's table of consequences, nerves, the wounds. Design: the noir
+living page; DESIGN.md; D73 to D77, D144, D157, D178.
+
+**Built.** The talk row is 5 to 15 (B201). **Left.**
+- Whether noir takes "death is death" as the fantasy did (open with the owner since 11-08 night; today noir's wounds
+  ladder down and the lethal step kills, but there is no stone).
+- The sanity sitting on nerves (NV2) and D72 to D76's reading for the station's alarm (INDEX §7.5).
+- Stray engine lines in the prose ("§ Smoke", "§ Reload") that contradict it (B20).
+- Rosa met and heard of at once (N6-1031); the caller filed at The Anchor (I6).
+
+## 10. The station
+
+The station AI, locked out at the start, every system a project; the crew with wants and suspicion; the alarm. Design:
+DESIGN-time-and-attempts §4 (the control model, D151); the station living page; D151, D168, D178.
+
+**Built.** The locked-out start keeps the cameras and the crew's chat channel (B202). **Left.**
+- The scenario's text still assumes the cameras in a locked-out game (B30, open with the owner: a locked variant of
+  those lines, or the cameras held from the start, which B202 now does for the cameras).
+- What comms, drones and the auto-doc unlock when their projects finish (B32); the upgrade and downgrade system with
+  unlockables, two projects at once among them (B19, idea).
+- The canister's sample can never be learned (B61, open with the owner: a secret with a How for the catalogue).
+- The station's week (ST1), after the sanity sitting.
+- Voss's suspicion and the crew alarm jumping (S12); the drone carrying the canister into the Lab on every run (W1-1031).
+
+## 11. The player UI
+
+Slice one is the lobby: the bar, game pages, save lines and cards, one Settings page, dev mode, the difficulty select
+(D171). Slice two is the play page: the story the whole width on a phone, the state as a bottom sheet with tabs, the
+dice as cards in the prose, one input with three modes, a skin per game, death as D173 has it. Design:
+DESIGN-lobby-and-saves (built), DESIGN-player-ui-2026-11-08 (designed, not built). The owner 11-03: "the player's
+current UI is basically a placeholder, it's pretty garbage".
+
+**Slice one built; slice two designed.** **Open with the owner:** the four questions at the end of the play-page
+design (the strip's content per game, bottom sheet or tabs, skins now or later, dice as cards or in the row).
+
+**Left.**
+- The play page, in the design's six commits, phone width checked at each.
+- The feedback button (B10): a note at a turn as a ledger row, listed in the round report.
+- The status strip's word at zero hit points (B216); an ending word per game on the save line (B135).
+- Dev mode gates the lists but not a hidden save by id (B134), before the clown sim lands.
+- The call-report pages too large for the phone (B15, worked around with the light page).
+- "Until when" as buttons (B29; area 2).
+
+## 12. Mods and variants
+
+A mod is a file of patches on a game's content and prompts, chosen at a new game and frozen for that save; the first
+is Super Dark Fantasy's Conan pass with too_far off. Variants: a game's features tagged advanced and run only on a
+strong backend, because they may overwhelm a local model (the owner, 10-30). Design: DESIGN-mods-2026-11-08 (the
+owner's five answers recorded); the variants idea has no design.
+
+**Mods designed; placement next after the fantasy is considered ready (B79).** Super Dark Fantasy exists as a copy
+(B88); the Conan pass is B89. **Variants: idea**, not started; the game-design pages are the inventory to tag from;
+do not build the split until the hard/easy eval slice shows where local models fail.
+
+## 13. Magic
+
+Spells as structured data from the SRD (levels 0 to 3 first, about eighty), slots on the sheet, casting as a lever the
+engine validates before any model call, the slot spent by the engine, the assistant staking the attempt, effects as
+condition rows and timers; the twelve classes with Rogue and Barbarian full and the level-up screen. Design:
+DESIGN-magic-2026-11-08; B91, B92.
+
+**Designed; open with the owner:** placement, and four questions (which SRD; how much structure for effects in the
+first cut; whether Cleric and Druid come with their lists; whether a failed cast spends the slot). Built from the same
+design already: the twelve classes (B92), the sheet pass (B90).
+
+## 14. Models and the box
+
+One local model serves every role on one GPU in sequence: Gemma 4 31B on gumbo (:8013), the fantasy also on Sonnet
+(:8014). Hosted and local differ by profile, never by code path. Design: LOCAL_LLM.md; the trials and models reports;
+D98, D101.
+
+**Running.** **Left.**
+- The local provider's schema leaves scalar fields with defaults optional, so the local model skips them (B213): the
+  first item of the old Stage 6 and the reason the edge is Sonnet-only today.
+- Qwen's return, and hosted narrators, through profiles and module levels (area 5 is what Qwen needs first).
+- The ledger's model label from the served model (L10, B73).
+- The box's faults, open: llama-server's CUDA launch timeouts (L8), no DNS on the box (G1), thinking-off via the
+  deprecated template flag (L2), a structured call truncated with thinking on (L4), a thinking narrator writing calls
+  that do not exist (N6).
+- The eval and trials reports kept current when a model changes (INDEX §2).
+
+## 15. The clown sim
+
+A clown-training raising sim, black comedy played straight: a stable of girls, meters, private clients, the week as a
+plan of training slots ending on a scripted Sunday. Design: CLOWN_DESIGN (provisional first pass, D132 turn
+structure, D133 the player unconstrained); nothing in the repo.
+
+**Designed, provisional.** Seven questions for the owner stand in the record. The engine gaps it found (no recurring
+event, one `cap_minutes` per game: B17) and dev mode's gap (B134) come first. Nothing about it is committed without
+discussion; it lands behind dev mode, after the fantasy and mods.
+
+## 16. Writing for models
+
+Every line a model is handed in plain words, by the style guide; the sweep of the existing lines. Design:
+WRITING_FOR_MODELS.md; W1; D166.
+
+**Running as a rule; the first pass done (D166, the W1 sweep page).** **Left:** the sweep proper over every remaining
+model-facing line, measured by rounds of its own; the fail-forward echo when a game has no player name (B53).
+
+## 17. Tooling, tests and docs
+
+The call report per round, the living pages regenerated in the same commit, the index, the register, the decisions
+log. Design: INDEX.md; the memory rules.
+
+**Running.** **Left.**
+- Nineteen test files load the gitignored `notes/content`, so a fresh clone cannot run them (R5-1031).
+- The docs marked behind in INDEX §4 (ARCHITECTURE, GAME_AUTHORING's lines, LOCAL_LLM's next-model section) and §7's
+  list; the WRITEUP's adjudicator line.
+- The register's status words drift (decided lines that were built, built lines never confirmed); a pass each time
+  this page is re-cut.
+- A save's cost counts only live calls (B131); a "spent including undone" figure if wanted.
+- Long rounds on the phone: the light page is the answer (B15).
+
+## 18. Ideas not yet weighed
+
+A referee review pass, a second call over the referee's own report (X1). A preference corpus across games from the
+blind-pair judgements (X2). The station AI upgrading and downgrading itself (B19). Basic and advanced variants (area
+12). Per-campaign pacing numbers (B13). Each needs a measured run before it is kept.
+
+## For the record: analysed and parked
+
+Findings from October and early November that were analysed and left where they stood, with no action chosen: the
+narrator eval's pooling and ranking limits (E1-1102, E2-1102), the guard mode `log` landing ruled rows (R1-1031), two
+names for one thing (R2-1031), the station's "+isolated" stored raw (R3-1031), the applied scores' undercount
+(R4-1031), per-turn limits that do not scale (T3), the prose outrunning the clock (T7), the narrator never calling
+LOOK (N1), the past adjudicator turns unmarked (N4), the wall of text (N8), the summarizer row lost on a retell (S1),
+the Opus player idling (P7), stale geography (P6), the resume's wrong input (R5). They stay in the register; an area
+above takes one when a round makes it matter.
