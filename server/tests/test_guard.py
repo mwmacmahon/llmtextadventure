@@ -264,3 +264,26 @@ def test_the_retelling_note_has_one_paragraph_per_kind_of_problem():
     assert paras[1].startswith("The telling put someone somewhere the game does not allow:") and "[[unseen: <name> is at <place>]]" in paras[1] and "Do not leave the place unsaid" in paras[1] and "under another name" in paras[1]
     assert "must not pass through" not in paras[1] and "yours to decide" in paras[1]      # the note never tells the narrator where to keep someone
     assert paras[2] == "this telling repeats turn 3. Tell only what is new."
+
+
+async def test_an_early_tell_is_retold_under_rewrite(engine: Engine, fake: FakeProvider):
+    """B63 (D168) under the guard the owner chose (D170, rewrite): a tell given before its condition holds is a conflict,
+    and the turn is retold with the person keeping it back; the secret's words never reach the retelling."""
+    engine.update_settings({"guard": {"mode": "rewrite", "max_retells": 1}})
+    iid = engine.create_instance("noir", {})
+    doc = engine.store.load_state(iid)
+    doc["player"]["location"] = next(q["location"] for q in doc["people"] if q["id"] == "szabo")
+    engine.store.save_snapshot(iid, 0, doc)
+    fake.canned["AssistantReading"] = [AssistantReading(kind="action", summary="Frank asks Szabo where June is", time_minutes=2, risk="none",
+                                                        intents=[Intent(action="ask Szabo")])]
+    tellings = iter(["Szabo spills it: the Harrow docks, the fifth, the key.", "Szabo shakes his head and looks at the door."])
+    fake.script = lambda system, messages: next(tellings)
+    reports = iter([ChangeReport.of(Change(kind="set", target="szabo", field="told", value="szabo_booth"), log_line="x"),
+                    ChangeReport.of(Change(kind="add", target="player", field="dread", value="+1"), log_line="y")])
+    fake.hook = lambda schema, last: next(reports) if schema is ChangeReport else None
+    events = await events_of(engine.play(iid, "I ask Szabo where June is."))
+    retell = next(e["data"] for e in events if e["event"] == "retell")
+    assert retell["rulings"][0]["rule"] == "early_tell" and "Emil Szabo" in retell["hint"] and "Harrow" not in retell["hint"]
+    assert "looks at the door" in events[-1]["data"]["text"]
+    st = engine.games["noir"].load_state(engine.store.load_state(iid))
+    assert not next(t for t in st.person("szabo").tells if t.id == "szabo_booth").told
