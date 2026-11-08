@@ -313,3 +313,12 @@ dl.score dd { margin: 0; font-family: var(--pixel-font); font-size: 15px; }
   .grave-sheet { border: none; border-radius: 0; min-height: 100%; }
   h1.pixel-heading { font-size: 38px; }
 }
+
+/* B105: the Ask mode's exchange, an aside out of the story */
+.msg.ask, .msg.aside { font-size: .92em; border-left: 3px solid var(--accent); padding: 4px 10px; margin: 2px 0; opacity: .9; font-style: italic; }
+.msg.ask { align-self: flex-end; }
+.aside-tag { font-style: normal; text-transform: uppercase; letter-spacing: .06em; font-size: .75em; color: var(--accent); margin-right: 4px; }
+.send-stack { display: flex; flex-direction: column; gap: 4px; align-self: stretch; }
+.send-stack > button[type="submit"] { flex: 3; }
+.send-stack > .ask-toggle { flex: 1; padding: 1px 8px; font-size: .78em; line-height: 1.2; }
+.ask-toggle.on { background: var(--accent); color: #111; border-color: transparent; }

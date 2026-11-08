@@ -67,6 +67,8 @@ class EffectContext(BaseModel):
     minutes_per_day: int = 1440
     turn: int = 0
     location_path: str = "player.location"      # what an event's `where` reads
+    unquiet: str = ""                           # B104 (D177): why this turn is not quiet ("in a fight on the lake"); empty when it is
+    holds: list[dict] = Field(default_factory=list)   # what waited this turn for a quiet one, and why (the ledger's)
 
 Strictness = Literal["scripted", "guided", "advisory"]
 
@@ -397,6 +399,11 @@ def tick(events: list[Event], doc: dict, turn: int, clock_path: str = "clock", l
         if e.hook and says and any(o is not e and o.hook and o.hook != e.hook and o.fired and o.fired_turn == turn
                                    and _said(o) for o in events):
             held.add(e.id)                          # another hook spoke this turn: this one waits for the next
+            continue
+        own_scene = variant == "trigger" and bool(e.where)
+        if e.hook and says and not own_scene and ctx is not None and ctx.unquiet:
+            held.add(e.id)                          # B104 (D177): word from elsewhere waits for a quiet turn and a carrier
+            ctx.holds.append({"event": e.id, "hook": e.hook, "variant": variant, "why": ctx.unquiet})
             continue
         e.fired, e.fired_turn, e.variant = True, turn, variant
         e.fired_at = _clock_abs(doc, clock_path, mpd)

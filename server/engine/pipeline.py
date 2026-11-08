@@ -37,6 +37,7 @@ from pydantic import BaseModel
 from . import events as ev
 from . import logs
 from . import pending as pend
+from . import prechecks
 from . import spontaneous as spon
 from . import statepath as sp
 from . import repetition
@@ -326,6 +327,51 @@ class Engine:
         ledger("sheet_pass", {"from": "the sheet", "line": line, "correction": correction, "again": again, **counts})
         log.info("sheet " + logs.kv(iid=iid, again=again, rows=len(report.rows), **counts))
         return {"ok": True, "text": line or "The sheet matches the character as built.", "line": line}
+
+    ASK_SYSTEM = ("You are the game master of a text adventure, answering a question the player asked you out of the story. The "
+                  "player's character is {name}. Answer from the game state and the last telling below, in one to three plain sentences, "
+                  "with only what {name} can see, hear, remember or plainly work out where they are now. When {name} could not know, "
+                  "say that {name} cannot tell from here. The answer is an aside: the story does not move, no time passes, nothing "
+                  "happens because of it.")
+
+    async def ask(self, iid: str, question: str) -> dict[str, Any]:
+        """The Ask mode (B105 (c), D177): a question to the game master out of the story. No clock, no events, no referee, no
+        stakes: one short call with the state block and the last telling. The exchange is two transcript rows (`ask`,
+        `aside`) that no model's story context or summary reads (their roles are on none of the lists)."""
+        inst = self.store.get_instance(iid)
+        if not inst:
+            raise KeyError(iid)
+        game = self.games[inst.game]
+        turn = self.store.latest_turn(iid)
+        state = game.load_state(self.store.load_state(iid))
+        name = str(_hook(game, "player_name", state, default="the player") or "the player")
+        q = question.strip().lstrip("?").strip()[:500]
+        if not q:
+            return {"ok": False, "text": "Ask a question after the ?."}
+        told = [r for r in self.store.transcript(iid, roles=["narrator"]) if r.turn <= turn]
+        last = told[-1].text.split("\n§ ")[0] if told else ""
+        role = self.cfg.role("assistant")
+        provider = self._provider(role, iid, "ask")
+        system = self.ASK_SYSTEM.replace("{name}", name)
+        msgs = [Msg("user", f"[GAME STATE]\n{game.render_bulletin(state, q)}\n\n[THE LAST TELLING]\n{last}\n\n[THE PLAYER ASKS]\n{q}")]
+        ledger = lambda kind, payload: self.store.append_ledger(iid, turn, kind, payload)  # noqa: E731
+        t0 = time.monotonic()
+        done: StreamDone | None = None
+        try:
+            async for sev in provider.stream(role, system, msgs):
+                if isinstance(sev, StreamDone):
+                    done = sev
+        except Exception as e:
+            ledger("model_call", {"role": "assistant", "step": "ask", "error": repr(e)})
+            return {"ok": False, "text": "The game master could not answer just now."}
+        answer = (done.text.strip() if done else "") or f"{name} cannot tell from here."
+        if _hook(game, "leaked_terms", state, answer, q, default=[]):          # an aside never teaches a word the story has not
+            answer = f"{name} cannot tell from here."
+        ledger("model_call", {"role": "assistant", "step": "ask", "provider": provider.name, "model": (done.model if done else role.model),
+                              "seconds": round(time.monotonic() - t0, 2), "usage": asdict(done.usage) if done else {}, "question": q, "answer": answer})
+        self.store.append_transcript(iid, turn, "ask", q)
+        self.store.append_transcript(iid, turn, "aside", answer)
+        return {"ok": True, "text": answer, "turn": turn}
 
     async def _reread(self, iid: str, correction: str) -> AsyncIterator[dict[str, Any]]:
         """`Re-read my sheet` (B90): an engine console action at turn 0, not a turn."""
@@ -665,6 +711,8 @@ class Engine:
             try:
                 adj, meta = await self._adjudicate(game, state, iid, player_text)
                 ledger("adjudication", {**adj.model_dump(mode="json"), "_call": meta})
+                for h in meta.get("prechecks") or []:          # B105: every pre-check hit is a row, and what the assistant made of it
+                    ledger("precheck", {**h, "role": "assistant", "kind_after": adj.kind, "minutes_after": adj.time_minutes})
                 log.info("step " + logs.kv(iid=iid, turn=turn, step="adjudicate", model=meta["model"], seconds=meta["seconds"],
                                            kind=adj.kind, minutes=adj.time_minutes, checks=sum(1 for i in adj.intents if i.check),
                                            **logs.usage_kv(meta["usage"])))
@@ -718,6 +766,8 @@ class Engine:
                                    fired=",".join(f.event_id for f in res["fired"]) or None,
                                    expired=",".join(x.event_id for x in res["expired"]) or None,
                                    happened=",".join(h.id for h in res["happened"]) or None, directives=len(res["directives"])))
+        for h in res.get("holds") or []:                 # B104 (D177): word from elsewhere waited for a quiet turn
+            ledger("hold", h)
         yield {"event": "resolution", "data": {
             "assessed": [{"label": a.label, "stat": a.stat, "difficulty": a.difficulty, "target": a.target} for a in res["assessments"]],
             "fired": [f.model_dump(mode="json") for f in res["fired"]],
@@ -919,6 +969,11 @@ class Engine:
                     for c in [c for c in delta.changes if c.kind == "learned" and re.search(r"\b" + re.escape(term.lower()), c.value.lower())]:
                         delta.changes.remove(c)
                         screened.append(Rejection(path="notebook", reason=f"uses '{term}', which the player has not learned", value=c.value))
+                if adj.kind == "trivial" and not levers:    # B105 (D177): a question moves nothing; the referee writes the journal only
+                    kept_rows = [c for c in delta.changes if c.kind == "learned"]
+                    if len(kept_rows) != len(delta.changes):
+                        ledger("precheck", {"kind": "trivial_rows", "dropped": [c.model_dump(mode="json") for c in delta.changes if c.kind != "learned"]})
+                        delta = delta.model_copy(update={"changes": kept_rows})
                 state, report, extras = apply_changes(game, state, delta, present=present, causes=causes, skip=skip, force=force)
                 if not force:                                 # a game's own check on the prose after the rows landed (B92: a hidden person named)
                     report.rejected.extend(_hook(game, "late_conflicts", state, narration, default=[]) or [])
@@ -1273,7 +1328,9 @@ class Engine:
         provider = self._provider(role, iid, "assistant")
         recent = _recent_prose(self.store, iid, turns=2)
         nrole = self.cfg.role("narrator")
-        system, msgs, schema = adjudicator_inputs(game, state, recent, player_text, stakes=nrole.stakes != "off" and nrole.checks == "called")
+        hits = [h for h in [prechecks.question(player_text)] if h is not None]
+        system, msgs, schema = adjudicator_inputs(game, state, recent, player_text, stakes=nrole.stakes != "off" and nrole.checks == "called",
+                                                  notes=[h.line for h in hits])
         t0 = time.monotonic()
         adj, usage, retry, recovered = await extract_adjudication(provider, role, system, msgs, schema, _hook(game, "stats", state, default={}))
         if retry:
@@ -1285,7 +1342,8 @@ class Engine:
         if adj.kind in ("clarify", "impossible", "trivial"):
             adj.time_minutes = 0
             adj.intents = [i.model_copy(update={"check": None}) for i in adj.intents]
-        meta = {"provider": provider.name, "model": usage.extra.get("model") or role.model, "seconds": round(time.monotonic() - t0, 2), "usage": asdict(usage), **({"scrubbed": scrubbed} if scrubbed else {})}
+        meta = {"provider": provider.name, "model": usage.extra.get("model") or role.model, "seconds": round(time.monotonic() - t0, 2), "usage": asdict(usage), **({"scrubbed": scrubbed} if scrubbed else {}),
+                **({"prechecks": [{"kind": h.kind, "line": h.line, "matched": h.matched} for h in hits]} if hits else {})}
         if retry:
             meta["retry"] = retry
         return adj, meta
@@ -1503,13 +1561,16 @@ class Engine:
         # events tick (also on clarify turns: time has not moved, so usually nothing fires)
         events = _events_of(game, doc)
         ectx = ev.EffectContext(pending_path=ppath or "hidden.pending", clock_path=clock_path, minutes_per_day=clock.minutes_per_day if clock else 1440, turn=turn,
-                                location_path=getattr(game, "location_path", "player.location"))
-        fired, expired, ev_directives = ev.tick(events, doc, turn, clock_path, log_path, ectx, since_abs=since_abs)
+                                location_path=getattr(game, "location_path", "player.location"),
+                                unquiet=_unquiet(game, state, adj))
+        # B105 (D177): a question about the scene (kind trivial) moves nothing: no event, pending or hazard ticks on it
+        quiet = adj is not None and adj.kind == "trivial"
+        fired, expired, ev_directives = ([], [], []) if quiet else ev.tick(events, doc, turn, clock_path, log_path, ectx, since_abs=since_abs)
         sp.assign(doc, getattr(game, "events_path", "hidden.events"), [e.model_dump(mode="json") for e in events])
         directives.extend(ev_directives)
         # pendings that have come due (engine/pending.py); not on a clarify turn, where nothing is narrated
         pending_fired: list[pend.Pending] = []
-        if ppath and clock and (adj is None or adj.kind in ("action", "trivial")):
+        if ppath and clock and (adj is None or adj.kind == "action"):
             pitems = pend.load(doc, ppath)
             if pitems:
                 clk = sp.lookup(doc, clock_path, {}) or {}
@@ -1543,7 +1604,7 @@ class Engine:
         return {"state": new_state, "assessments": assessments, "fired": fired, "expired": expired, "happened": happened,
                 "elapsed": elapsed, "clock_note": clock_note, "directives": directives, "adjudication": adj, "effect_paths": effect_paths,
                 "split": split, "scene_long": scene_long,
-                "notes": notes, "pending_fired": pending_fired, "pending_lapsed": pending_lapsed,
+                "notes": notes, "pending_fired": pending_fired, "pending_lapsed": pending_lapsed, "holds": list(ectx.holds),
                 "fail_streak": self._fail_streak(iid, turn) if assessments else 0,
                 "player_name": _hook(game, "player_name", state, default="the player")}
 
@@ -1959,7 +2020,8 @@ def scrub_hidden(game: Game, state: BaseModel, adj: Any, player_text: str) -> di
     return n
 
 
-def adjudicator_inputs(game: Game, state: BaseModel, recent: list[Msg], player_text: str, stakes: bool = False) -> tuple[str, list[Msg], type]:
+def adjudicator_inputs(game: Game, state: BaseModel, recent: list[Msg], player_text: str, stakes: bool = False,
+                       notes: list[str] | None = None) -> tuple[str, list[Msg], type]:
     """Everything the adjudicator is sent, built from a state and an input alone, so a stored turn can be
     replayed outside the pipeline (tools/eval_replay.py) and get exactly what the live turn got. `stakes` (the
     narrator's dial on, D115): each assessed check carries both its futures, the system text gains the STAKES rules
@@ -1973,6 +2035,8 @@ def adjudicator_inputs(game: Game, state: BaseModel, recent: list[Msg], player_t
         _, fresh = game.new_instance({})
         extra = stakes_blocks(game, state, fresh)
     system, msgs = adjudicator_messages(rules, state_text, recent, player_text, _commands_text(_hook(game, "commands", state, default=[])), extra=extra)
+    if notes:                                        # the pre-checks' lines (engine/prechecks.py, B105): a nudge, the assistant decides
+        msgs[-1] = Msg(msgs[-1].role, msgs[-1].content + "\n\n[ENGINE NOTE]\n" + "\n".join(notes), cache=msgs[-1].cache)
     if extra:
         game_rules = STAKES_RULES.get(getattr(game, "family", None) or game.name, "").replace("The rules of this game.", "In the futures, complications and fiat you write, these rules hold.", 1)
         system += "\n\n" + ADJUDICATOR_STAKES + ("\n\n" + game_rules if game_rules else "")
@@ -2327,6 +2391,14 @@ def rearmed(pitems: list, new: Any, turn: int, within: int = 3) -> Any:
         if alike >= 0.5 or (who and who == (p.who or "").strip().lower() and alike >= 0.3):
             return p                     # the creature attacks again; never the creature backing off
     return None
+
+
+def _unquiet(game: Game, state: BaseModel, adj: Any) -> str:
+    """Why this turn is not quiet, or "" (B104, D177): a fight this turn, or the game's own reason (a hostile present, a
+    peril, a compulsion, open water or the wild with nobody near). Word from elsewhere waits while it is not quiet."""
+    if adj is not None and getattr(adj, "kind", "") == "action" and is_fight(adj):
+        return "in a fight"
+    return str(_hook(game, "unquiet", state, default="") or "")
 
 
 def is_fight(adj: Any) -> bool:

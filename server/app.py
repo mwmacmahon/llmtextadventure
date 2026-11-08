@@ -234,6 +234,18 @@ def grave(gid: str, request: Request):
     return engine.grave_card(gid)
 
 
+class AskInput(BaseModel):
+    text: str
+
+
+@app.post("/api/instances/{iid}/ask")
+async def ask(iid: str, body: AskInput):
+    """The Ask mode (B105): a question to the game master out of the story; nothing moves."""
+    _exists(iid)
+    res = await engine.ask(iid, body.text)
+    return {**res, "view": engine.instance_view(iid)}
+
+
 @app.post("/api/instances/{iid}/undo")
 def undo(iid: str, body: UndoInput | None = None):
     _exists(iid)

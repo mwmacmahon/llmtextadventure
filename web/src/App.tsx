@@ -58,11 +58,13 @@ export default function App() {
   );
 }
 
-const SHOWN: TranscriptRow["role"][] = ["player", "narrator", "mechanics", "command", "result", "system_note"];
+const SHOWN: TranscriptRow["role"][] = ["player", "narrator", "mechanics", "command", "result", "system_note", "ask", "aside"];
 
 function Game({ id }: { id: string }) {
   const [view, setView] = useState<InstanceView | null>(null);
   const [input, setInput] = useState("");
+  const [asking, setAsking] = useState(false);       // the Ask toggle (B105): the box's words go to the game master as a question
+  const [askBusy, setAskBusy] = useState(false);
   const [streaming, setStreaming] = useState<string | null>(null);
   const [stage, setStage] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
@@ -166,8 +168,27 @@ function Game({ id }: { id: string }) {
 
   function send(text: string) {
     if (!view || streaming !== null || !text.trim()) return;
+    if (asking || text.trim().startsWith("?")) return askGM(text);
     setInput("");
     return run(streamTurn(id, text), text);
+  }
+
+  // B105 (c): Ask mode, a question to the game master out of the story: no clock, no events, no referee
+  async function askGM(text: string) {
+    const q = text.trim().replace(/^\?+/, "").trim();
+    if (!q) return;
+    setInput("");
+    setErr(null);
+    setAskBusy(true);
+    try {
+      const res = await api.ask(id, q);
+      if (res.view) setView(res.view);
+      else if (!res.ok) setErr(res.text);
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setAskBusy(false);
+    }
   }
 
   function sendCommand(command: string, args: Record<string, unknown>) {
@@ -299,8 +320,8 @@ function Game({ id }: { id: string }) {
         >
           <textarea
             value={input}
-            placeholder={view.ui.placeholder}
-            disabled={!view.ui.free_text || streaming !== null}
+            placeholder={asking ? "Ask the game master (nothing happens in the story)" : view.ui.placeholder}
+            disabled={!view.ui.free_text || streaming !== null || askBusy}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
@@ -310,9 +331,17 @@ function Game({ id }: { id: string }) {
             }}
             rows={2}
           />
-          <button type="submit" disabled={streaming !== null || !input.trim()}>
-            Send
-          </button>
+          <div className="send-stack">
+            <button type="submit" disabled={streaming !== null || askBusy || !input.trim()}>
+              {asking || input.trim().startsWith("?") ? "Ask" : "Send"}
+            </button>
+            {/* B105: with words in the box, Ask sends them as a question at once; with none, it switches to asking */}
+            <button type="button" className={`ask-toggle small${asking ? " on" : ""}`} aria-pressed={asking} disabled={streaming !== null || askBusy}
+              title="Ask the game master a question out of the story: no time passes and nothing happens. Or start your words with ?"
+              onClick={() => (input.trim() ? askGM(input) : setAsking(!asking))}>
+              Ask
+            </button>
+          </div>
         </form>
       </footer>
       <DebugDrawer
@@ -351,6 +380,10 @@ function Row({ r, first, onUndo }: { r: TranscriptRow; first?: boolean; onUndo?:
   switch (r.role) {
     case "mechanics":
       return <MechanicsRow text={r.text} />;
+    case "ask":
+      return <div className="msg ask"><span className="aside-tag">asked</span> {r.text}</div>;
+    case "aside":
+      return <div className="msg aside"><span className="aside-tag">game master</span> {r.text}</div>;
     case "system_note":
       return (
         <details className="story-note">

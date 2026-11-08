@@ -502,6 +502,22 @@ class FantasyGame(GameBase):
                 out.append(term)
         return out
 
+    def unquiet(self, state: FantasyState) -> str:
+        """Why word from elsewhere cannot reach the player now (B104, D177), or "": someone hostile here, a compulsion or a
+        peril, or open water or the wild with nobody here to carry it (Tam beside them is not a carrier of the city's news)."""
+        s, p = state, state.player
+        here = [q for q in s.people if q.status == "alive" and not q.hidden_from_player and q.location and self._same_spot(s, q.location, p.location)]
+        hostile = next((q for q in here if q.attitude <= -2), None)
+        if hostile is not None:
+            return f"{hostile.name} is here and hostile"
+        if any(c.name.lower().startswith(("enthralled", "compelled", "entranced")) for c in p.conditions):
+            return "under a compulsion"
+        if getattr(p, "peril", None):
+            return "in a peril"
+        if p.location in WATER | WOOD | SOUTH and not [q for q in here if q.id not in p.with_them]:
+            return f"at {p.location} with nobody near to carry word"
+        return ""
+
     @staticmethod
     def _secret_name(s: FantasyState, q: Person) -> bool:
         return any(t.lower() == q.name.lower() or t.lower() in q.name.lower().split() for t in s.hidden.terms)

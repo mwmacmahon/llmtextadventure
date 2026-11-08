@@ -37,7 +37,7 @@ export type UISchema = { phase: string; free_text: boolean; placeholder: string;
 export type TranscriptRow = {
   seq: number;
   turn: number;
-  role: "player" | "bulletin" | "narrator" | "system_note" | "mechanics" | "command" | "result";
+  role: "player" | "bulletin" | "narrator" | "system_note" | "mechanics" | "command" | "result" | "ask" | "aside";
   text: string;
   created: string;
   undone: number;     // 0: live; else the undo that undid it (the log strikes it through; nothing a model reads sees it)
@@ -226,6 +226,10 @@ export const api = {
     req(`/api/instances/${id}/difficulty`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ difficulty }) }).then((r) => j<InstanceSummary>(r)),
   create: (game: string, setup: Record<string, unknown>) =>
     req("/api/instances", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ game, setup }) }).then((r) => j<InstanceView>(r)),
+  // B105: a question to the game master out of the story; nothing moves
+  ask: (id: string, text: string) =>
+    req(`/api/instances/${id}/ask`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) })
+      .then((r) => j<{ ok: boolean; text: string; view?: InstanceView }>(r)),
   undo: (id: string, turn?: number) =>
     req(`/api/instances/${id}/undo`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ turn: turn ?? null }) }).then((r) => j<InstanceView>(r)),
   fork: (id: string, turn?: number, title?: string) =>

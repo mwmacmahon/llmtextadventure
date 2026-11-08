@@ -524,6 +524,16 @@ def _talk_rule(game: Any, city: dict) -> str | None:
     return None
 
 
+def _friend_talk_rule(game: Any, city: dict) -> str | None:
+    """B94's rewording (the side chat): "Talking to a friend never needs a roll. Stabbing always does." """
+    rules = game.adjudication_rules(_fresh(game))
+    if "Talking to a friend needs none" not in rules:
+        return "talking to a friend may need a check now"
+    if "a fight is str" not in rules:
+        return "a fight is no longer a check"
+    return None
+
+
 def _run_rule(game: Any, city: dict) -> str | None:
     rules = game.adjudication_rules(_fresh(game))
     if "one per real risk" not in rules or "dodge" not in game.STAT_HELP.get("dex", ""):
@@ -574,6 +584,7 @@ HINT_RULES: list[tuple[re.Pattern[str], Any]] = [          # the first pattern a
     (re.compile(r"hour's rest|eight hours", re.I), _rest_rule),
     (re.compile(r"\bpotions?\b", re.I), _potion_rule),
     (re.compile(r"carry you to the Temple", re.I), _carry_rule),
+    (re.compile(r"talking to a friend never needs a roll", re.I), _friend_talk_rule),
     (re.compile(r"talking never needs a roll", re.I), _talk_rule),
     (re.compile(r"running away is a check", re.I), _run_rule),
     (re.compile(r"\bjournal\b", re.I), _journal_rule),
