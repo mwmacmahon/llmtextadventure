@@ -272,6 +272,23 @@ class Store:
             for r in self.conn.execute(q, args).fetchall()
         ]
 
+    @_locked
+    def ledger_across(self, kinds: Iterable[str], since: str | None = None) -> list[dict]:
+        """Rows of these kinds in every instance, each with its instance id, oldest first; `since` an ISO time (UTC) the
+        rows were written after (the profile picker: the turns stamped with a profile, the turns played lately)."""
+        kinds = list(kinds)
+        q = f"SELECT instance_id, seq, turn, kind, payload_json, created FROM ledger WHERE kind IN ({','.join('?' * len(kinds))})"
+        args: list[Any] = list(kinds)
+        if since is not None:
+            q += " AND created > ?"
+            args.append(since)
+        q += " ORDER BY created, seq"
+        return [
+            {"iid": r["instance_id"], "seq": r["seq"], "turn": r["turn"], "kind": r["kind"], "created": r["created"],
+             "payload": json.loads(r["payload_json"])}
+            for r in self.conn.execute(q, args).fetchall()
+        ]
+
     # ---- blobs (prompt texts, by content) -------------------------------------
     @_locked
     def put_blob(self, text: str) -> str:

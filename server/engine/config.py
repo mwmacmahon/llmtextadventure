@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 import yaml
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, PrivateAttr, model_validator
 
 from engine import profiles
 
@@ -170,37 +170,83 @@ class Config(BaseModel):
             data = {**data, "roles": canon_roles(data["roles"])}
         return data
 
+    # The play this config serves (Stage 3, DESIGN-context-modules §6). `_source` is the base file's name; `_pin` the profile a
+    # switch chose (config_for), which then wins over TA_PROFILE and the box's report; `_forced` the role fields the
+    # environment forces (TA_PROVIDER, TA_STAKES), which a profile's overrides never undo.
+    _source: str = PrivateAttr(default="config.yml")
+    _pinned: bool = PrivateAttr(default=False)
+    _pin: profiles.Profile | None = PrivateAttr(default=None)
+    _forced: dict[str, dict[str, Any]] = PrivateAttr(default_factory=dict)
+
+    @property
+    def source(self) -> str:
+        return self._source
+
+    @property
+    def profile(self) -> profiles.Profile | None:
+        """The active profile: the one pinned by a switch; else TA_PROFILE; else, for a config that plays on the box, the
+        profile the box reports loaded; else none (the base config as written)."""
+        if self._pinned:
+            return self._pin
+        prof = profiles.active_profile()
+        if prof is None or os.environ.get("TA_PROFILE", "").strip():
+            return prof
+        return prof if any(r.provider == "llamacpp" for r in self.roles.values()) else None
+
+    @property
+    def profile_name(self) -> str | None:
+        p = self.profile
+        return p.name if p else None
+
+    @property
+    def profile_label(self) -> str:
+        """The name the settings card and the call report show: the profile's, or the base file's when none is active."""
+        return self.profile_name or f"{self._source} (no profile)"
+
+    def pin(self, prof: profiles.Profile | None) -> "Config":
+        self._pinned, self._pin = True, prof
+        return self
+
+    @property
+    def local(self) -> bool:
+        """Whether any role, as it plays now, runs on the GPU box."""
+        return any(self.role(n).provider == "llamacpp" for n in self.roles)
+
     def role(self, name: str) -> RoleConfig:
-        """The configured role, with the loaded model profile's overrides for it laid over (engine/profiles.py):
-        thinking, budgets, sampling follow the model on the box, not an edit to this file."""
+        """The configured role, with the active profile's overrides for it laid over (engine/profiles.py): thinking, budgets,
+        sampling follow the profile, and on the narrator its stakes and checks dials; then what the environment forces."""
         name = canon_role(name)
         r = self.roles[name]
-        prof = profiles.active_profile()
-        ov = prof.roles.get(name) if prof else None
+        prof = self.profile
+        ov = prof.role_overrides(name) if prof else {}
+        forced = self._forced.get(name)
+        if ov and forced:                         # the role itself already holds the forced values (read_config)
+            ov = {**ov, **{k: v for k, v in forced.items() if k in ov}}
         return r.model_copy(update=ov) if ov else r
 
     def resolve(self, p: Path) -> Path:
         return (SERVER_DIR / p).resolve() if not p.is_absolute() else p
 
 
-def load_config(path: Path | None = None) -> Config:
-    # TA_CONFIG picks another file (config.llamacpp.yml puts every role on a local llama-server).
-    env_path = os.environ.get("TA_CONFIG")
-    path = path or (SERVER_DIR / env_path if env_path else SERVER_DIR / "config.yml")
+def read_config(path: Path) -> Config:
+    """A base config file with what the environment forces; no profile checks, nothing asked of the box."""
     with open(path) as f:
         raw = yaml.safe_load(f)
     cfg = Config.model_validate(raw)
+    cfg._source = path.name
 
     # TA_PROVIDER=fake forces every role onto the fake provider (offline dev/tests); TA_PROVIDER=llamacpp onto the
-    # local server at TA_LLAMA_URL, one slot per role in config order so each keeps its own cache.
+    # local server at TA_LLAMA_URL, one slot per role in config order so each keeps its own cache. Forced: a profile's
+    # role overrides never undo it (Config.role lays these over last).
     forced = os.environ.get("TA_PROVIDER")
     if forced:
-        for i, r in enumerate(cfg.roles.values()):
+        for i, (name, r) in enumerate(cfg.roles.items()):
             r.provider = forced  # type: ignore[assignment]
             if forced == "llamacpp" and r.slot is None:
                 r.slot = i
+            cfg._forced[name] = {"provider": forced, **({"slot": r.slot} if forced == "llamacpp" else {})}
     # TA_STAKES=off|shadow|live sets the narrator's stakes dial (D109) for one server, so a shadow round needs no edit to
-    # the shared config (D111: 5c, the stakes in shadow on Gemma rounds)
+    # the shared config (D111: 5c, the stakes in shadow on Gemma rounds); it wins over a profile's stakes dial too
     # TA_DATA_DIR gives one server its own store and logs (a fake server for UI checks beside the live rounds' store)
     data_dir = os.environ.get("TA_DATA_DIR")
     if data_dir:
@@ -210,10 +256,42 @@ def load_config(path: Path | None = None) -> Config:
     if stakes and "narrator" in cfg.roles:
         cfg.roles["narrator"].stakes = stakes  # type: ignore[assignment]
         RoleConfig.model_validate(cfg.roles["narrator"].model_dump())      # a typo fails at load, not in a turn
+        cfg._forced.setdefault("narrator", {})["stakes"] = stakes
+    return cfg
+
+
+def check_profile(p: profiles.Profile) -> None:
+    """A profile is sound before play: its overrides name only role settings, and a hosted one (no model file) puts no
+    role on the box, where nothing would be loaded for it."""
+    p.check_roles(set(RoleConfig.model_fields))
+    if not p.local:
+        with open(SERVER_DIR / p.base) as f:
+            base = canon_roles((yaml.safe_load(f) or {}).get("roles") or {})
+        on_box = [n for n, r in base.items() if (p.role_overrides(n).get("provider") or (r or {}).get("provider")) == "llamacpp"]
+        if on_box:
+            raise ValueError(f"profile {p.name}: no model file, but {', '.join(on_box)} would run on the box")
+
+
+def config_for(p: profiles.Profile) -> Config:
+    """The engine's config for a play on this profile: its base file, the environment's forced fields, the profile pinned."""
+    return read_config(SERVER_DIR / p.base).pin(p)
+
+
+def load_config(path: Path | None = None) -> Config:
+    # TA_CONFIG picks another file (config.llamacpp.yml puts every role on a local llama-server). Without it, TA_PROFILE's
+    # base config (a profile names its base, Stage 3), else config.yml.
+    env_path = os.environ.get("TA_CONFIG")
+    forced_profile = os.environ.get("TA_PROFILE", "").strip()
+    if path is None and not env_path and forced_profile:
+        try:
+            env_path = profiles.load(forced_profile).base
+        except FileNotFoundError:
+            pass
+    cfg = read_config(path or (SERVER_DIR / env_path if env_path else SERVER_DIR / "config.yml"))
     # every profile in the repo must be sound before play (a typo in an override fails here, not in a turn), and
     # when a role runs on a llama-server, the box is asked once which profile it has loaded
     for name in profiles.names():
-        profiles.load(name).check_roles(set(RoleConfig.model_fields))
+        check_profile(profiles.load(name))
     if any(r.provider == "llamacpp" for r in cfg.roles.values()):
         profiles.refresh_sync()
     return cfg

@@ -29,7 +29,11 @@ def test_every_profile_in_the_repo_loads_and_names_only_role_settings():
     for name in profiles.names():
         p = profiles.load(name)
         p.check_roles(set(RoleConfig.model_fields))
+        if not p.local:                                            # a hosted play (Stage 3): no model file, no server block
+            assert not p.server and p.base == "config.yml"
+            continue
         assert p.model.endswith(".gguf") and "/" not in p.model and set(p.server) <= profiles.SERVER_KEYS
+        assert p.base == "config.llamacpp.yml"                     # every local profile keeps meaning what it meant
     think = profiles.load("a3b-think")
     assert think.roles["referee"]["thinking"] is True and think.server["think_budget"] == 1536
     assert think.swap_body() == {"profile": "a3b-think", "model": think.model, "server": {"ctx": "98304", "ckpt": "512", "kv": "q8_0", "think_budget": "1536"}}

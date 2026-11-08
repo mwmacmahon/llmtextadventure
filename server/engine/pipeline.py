@@ -90,30 +90,81 @@ class Engine:
                 log.exception("settings.load_failed " + logs.kv(path=str(self.settings_path)))
         if self.settings["guard"]["mode"] not in GUARD_MODES:
             self.settings["guard"]["mode"] = "log"
+        # The profile picker (Stage 3, engine/picker.py): the turns streaming on this server now (a switch waits for none),
+        # the local profile the box is loading after a switch, and the transport the box is asked through (tests mock it).
+        self.streaming: dict[object, tuple[str, float]] = {}
+        self.loading: dict[str, Any] | None = None
+        self.box_transport: Any = None
+        # The guard mode the menu chose on this server while the active profile names one: in memory only (the profile's
+        # guard is per server; data/settings.json is every server's). A switch clears it.
+        self.guard_override: str | None = None
+
+    # ---- the play's profile and its dials (Stage 3) ------------------------------
+    def profile_guard(self) -> str | None:
+        prof = self.cfg.profile
+        return prof.dials.guard if prof else None
+
+    def guard_mode(self) -> str:
+        """The guard mode: when the active profile names one, the menu's choice on this server (in memory) or the profile's;
+        else the shared setting (data/settings.json)."""
+        if self.profile_guard():
+            return self.guard_override or self.profile_guard()  # type: ignore[return-value]
+        return self.settings["guard"]["mode"]
+
+    def guard_source(self) -> str:
+        if self.profile_guard():
+            return "this server" if self.guard_override else "profile"
+        return "settings"
+
+    def target_offset(self, game: Game) -> int:
+        """Every check's target offset for this game: the active profile's dial for the game when it names one, else the
+        game's own (the station's +1, D168)."""
+        prof = self.cfg.profile
+        if prof and game.name in prof.dials.target_offset:
+            return int(prof.dials.target_offset[game.name])
+        return int(getattr(game, "target_offset", 0) or 0)
+
+    def profile_stamp(self) -> dict[str, Any]:
+        """What every turn carries: the profile it played on (or the base config's name), whether it ran on the box."""
+        return {"name": self.cfg.profile_label, "profile": self.cfg.profile_name, "base": self.cfg.source, "local": self.cfg.local}
 
     # ---- settings ------------------------------------------------------------
     def get_settings(self) -> dict[str, Any]:
-        """What the settings menu shows: the guard and its modes, the roles' backends (read-only for now)."""
+        """What the settings menu shows: the guard as it plays on this server (the profile's when it names one) and its
+        modes, where the mode comes from, the roles' backends as the active profile plays them."""
         return {
-            "guard": dict(self.settings["guard"]), "modes": GUARD_MODES, "progress": dict(self.settings["progress"]),
-            "roles": {name: {"provider": r.provider, "model": r.model, "effort": r.effort} for name, r in self.cfg.roles.items()},
+            "guard": {**self.settings["guard"], "mode": self.guard_mode()}, "modes": GUARD_MODES, "progress": dict(self.settings["progress"]),
+            "guard_from": self.guard_source(), "shared_guard": self.settings["guard"]["mode"],
+            "profile": self.cfg.profile_label, "profile_guard": self.profile_guard(),
+            "roles": {name: {"provider": r.provider, "model": r.model, "effort": r.effort}
+                      for name, r in ((n, self.cfg.role(n)) for n in self.cfg.roles)},
         }
 
     def update_settings(self, patch: dict[str, Any]) -> dict[str, Any]:
+        """The menu's changes. The guard mode, while the active profile names one, is this server's alone: kept in memory,
+        not written to data/settings.json (which every server on the store shares); a switch clears it."""
         g = patch.get("guard") or {}
+        shared = False
         if "mode" in g:
             if g["mode"] not in GUARD_MODES:
                 raise ValueError(f"guard mode must be one of {', '.join(GUARD_MODES)}")
-            self.settings["guard"]["mode"] = g["mode"]
+            if self.profile_guard():
+                self.guard_override = None if g["mode"] == self.profile_guard() else g["mode"]
+            else:
+                self.settings["guard"]["mode"] = g["mode"]
+                shared = True
         if "max_retells" in g:
             self.settings["guard"]["max_retells"] = max(0, min(int(g["max_retells"]), 3))
+            shared = True
         pr = patch.get("progress") or {}
         if "default_chars" in pr:
             self.settings["progress"]["default_chars"] = max(200, int(pr["default_chars"]))
-        if self.settings_path:
+            shared = True
+        if self.settings_path and shared:
             self.settings_path.parent.mkdir(parents=True, exist_ok=True)
             self.settings_path.write_text(json.dumps(self.settings, indent=1))
-        log.info("settings.updated " + logs.kv(**{f"guard.{k}": v for k, v in self.settings["guard"].items()}))
+        log.info("settings.updated " + logs.kv(**{f"guard.{k}": v for k, v in self.settings["guard"].items()},
+                                                guard_here=self.guard_mode(), guard_from=self.guard_source(), written=shared))
         return self.get_settings()
 
     def _exchanges(self, iid: str) -> dict[int, dict]:
@@ -171,15 +222,12 @@ class Engine:
     def usage(self, iid: str) -> dict[str, Any]:
         """Token and cost rollup per role from the ledger (game properties in the lobby)."""
         roles: dict[str, dict[str, Any]] = {}
+        from .picker import call_of, price
         for row in self.store.ledger(iid):
-            kind = row["kind"]
-            if kind not in MODEL_CALL_KINDS:
+            got = call_of(row)
+            if not got:
                 continue
-            pl = row["payload"]
-            call = pl if kind == "model_call" else pl.get("_call") or {}
-            role = pl.get("role") if kind == "model_call" else MODEL_CALL_KINDS[kind]
-            if not role or "usage" not in call:
-                continue
+            role, call = got
             u = call["usage"]
             r = roles.setdefault(role, {"calls": 0, "model": call.get("model"), "seconds": 0.0, "usage": {
                 "input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}, "usd": 0.0, "priced": True})
@@ -187,7 +235,7 @@ class Engine:
             r["seconds"] = round(r["seconds"] + float(call.get("seconds") or 0), 1)
             for k in r["usage"]:
                 r["usage"][k] += int(u.get(k) or 0)
-            cost = self.cfg.cost_usd(call.get("model") or "", u)
+            cost = price(self.cfg, call.get("model") or "", u)     # config.yml's table when the engine plays locally now
             if cost is None:
                 r["priced"] = False
             else:
@@ -243,8 +291,25 @@ class Engine:
         and, when the referee returns a serious ruling, retells the turn through `rewrite_turn` with the
         ruling's fix as the instruction, up to `max_retells` times. Mode `log` never retells; `rewrite`
         streams the first telling and then replaces it; `gate` holds the prose (and the § lines) back
-        until the referee has passed it, sending `progress` events instead, and shows only the final one."""
-        mode = self.settings["guard"]["mode"]
+        until the referee has passed it, sending `progress` events instead, and shows only the final one.
+        While it runs, the instance counts as streaming: a profile switch on this server waits for it (engine/picker.py)."""
+        token = object()
+        self.streaming[token] = (iid, time.time())
+        try:
+            async for ev in self._play(iid, player_text, command, rewrite=rewrite, hint=hint):
+                yield ev
+        finally:
+            self.streaming.pop(token, None)
+
+    def turns_streaming(self, stale_after: float = 900.0) -> list[str]:
+        """The instances telling a turn on this server now. A turn whose stream was dropped without being closed would
+        hold the switch forever, so one older than `stale_after` seconds no longer counts."""
+        now = time.time()
+        return [iid for iid, since in list(self.streaming.values()) if now - since < stale_after]
+
+    async def _play(self, iid: str, player_text: str | None, command: tuple[str, dict[str, Any]] | None,
+                    *, rewrite: bool, hint: str) -> AsyncIterator[dict[str, Any]]:
+        mode = self.guard_mode()
         max_retells = int(self.settings["guard"]["max_retells"])
         gen = self.rewrite_turn(iid, hint, by="player") if rewrite else self.run_turn(iid, player_text, command)
         retells = 0
@@ -297,8 +362,9 @@ class Engine:
         ledger = lambda kind, payload: self.store.append_ledger(iid, turn, kind, payload)  # noqa: E731
         self._tapes[iid] = ledger
         t_turn = time.monotonic()
+        stamp = self.profile_stamp()                  # the play's profile, on the ledger and the mechanics row (Stage 3)
         log.info("turn.start " + logs.kv(iid=iid, turn=turn, command=command[0] if command else None,
-                                         chars=len(player_text or "")))
+                                         chars=len(player_text or ""), profile=stamp["name"]))
 
         # ---- 0. command (clicked) ------------------------------------------
         adj: AssistantReading | None = None
@@ -320,6 +386,7 @@ class Engine:
                 doc = state.model_dump(mode="json")
                 sp.append(doc, getattr(game, "log_path", "log"), f"{_clock_text(game, doc)}{cmd_result.log_line.strip()}")
                 state = game.load_state(doc)
+            ledger("profile", stamp)
             ledger("command", {"id": cid, "args": args, "mode": spec.mode, **cmd_result.model_dump(mode="json")})
             log.info("command " + logs.kv(iid=iid, turn=turn, id=cid, mode=spec.mode, args=json.dumps(args)))
             yield {"event": "command", "data": {"ok": True, "text": cmd_result.text, "mode": spec.mode, "label": label, "turn": turn}}
@@ -329,7 +396,7 @@ class Engine:
                 self.store.append_transcript(iid, turn, "result", cmd_result.text)
                 self.store.save_snapshot(iid, turn, state.model_dump(mode="json"))
                 mechanics = {"kind": "command", "elapsed": 0, "events": [], "expired": [], "happenings": [],
-                             "applied": [f"command {cid}"], "rejected": [], "drift": [], "issues": []}
+                             "applied": [f"command {cid}"], "rejected": [], "drift": [], "issues": [], "profile": stamp["name"]}
                 self.store.append_transcript(iid, turn, "mechanics", json.dumps(mechanics))
                 yield {"event": "done", "data": {"turn": turn, "text": cmd_result.text, "note": None, "model": None, "usage": {},
                                                  "seconds": 0, "mechanics": mechanics, "ending": _hook(game, "ending", state),
@@ -343,6 +410,8 @@ class Engine:
                 extra_directives.append(cmd_result.directive)
 
         assert player_text is not None
+        if command is None:
+            ledger("profile", stamp)
         self.store.append_transcript(iid, turn, "player", player_text)
         if replay is not None:
             ledger("rewrite", {"hint": replay.hint, "attempt": replay.attempt, "by": replay.by, "history": replay.history})
@@ -650,7 +719,8 @@ class Engine:
         info = TurnInfo(turn=turn, elapsed_minutes=res["elapsed"], rng=rng_for(iid, turn, "drift"), applied=list(report.applied) + touched,
                         calls=[dict((c.get("result") or {}), label=(c.get("result") or {}).get("label", "")) for c in calls_block.get("calls", [])],
                         rejected=[r.model_dump(mode="json") for r in report.rejected],
-                        levers=[{"id": o.get("id") or lv.id, "status": o["status"]} for lv, o in zip(levers, lever_outcomes)])
+                        levers=[{"id": o.get("id") or lv.id, "status": o["status"]} for lv, o in zip(levers, lever_outcomes)],
+                        target_offset=self.target_offset(game))
         drifted = _hook(game, "after_turn", state, info, default=state)
         drift_lines: list[str] = []
         if drifted is not state:
@@ -776,6 +846,7 @@ class Engine:
             "notes": calls_block.get("notes", []),
             "seen": seen_lines(game, start, state, calls_block.get("calls", [])),
             **({"timing": timing} if timing else {}),
+            "profile": stamp["name"],
         }
         if replay is not None:
             mechanics["rewritten"] = {"hint": replay.hint, "attempt": replay.attempt, "by": replay.by}
@@ -1258,7 +1329,7 @@ class Engine:
                                  fallback_stat=getattr(game, "fallback_stat", None), fail_streak=fail_streak,
                                  player=_hook(game, "player_name", state, default="the player"), consequence_for=consequence_for,
                                  lethal_for=lambda d, label: bool(_hook(game, "lethal_stake", state, d, label, default=False)),
-                                 offset=int(getattr(game, "target_offset", 0) or 0),
+                                 offset=self.target_offset(game),
                                  holds_back=lambda target: _hook(game, "holds_back", state, target, default=None))
             if call.verb == "LOOK":
                 text = _hook(game, "look", state, call.ref, default=None)

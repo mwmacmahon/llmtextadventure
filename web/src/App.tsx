@@ -3,6 +3,7 @@ import { api, streamCommand, streamRewrite, streamTurn, type InstanceView, type 
 import { DebugDrawer } from "./components/DebugDrawer";
 import { Lobby } from "./components/Lobby";
 import { Panels } from "./components/Panels";
+import { ProfilePicker } from "./components/ProfilePicker";
 
 function useHashRoute(): [string | null, (id: string | null) => void] {
   const read = () => (location.hash.startsWith("#/g/") ? location.hash.slice(4) : null);
@@ -169,7 +170,7 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
         <button onClick={() => rewrite()} disabled={view.turn === 0 || streaming !== null} title="Request a rewrite of the last turn: same facts, same dice, the referee's changes undone. Whatever is in the text box is your explanation or instructions; empty just tells it again.">
           rewrite
         </button>
-        <button onClick={() => setSettingsOpen(!settingsOpen)} title="The narrator guard and the models in use">settings</button>
+        <button onClick={() => setSettingsOpen(!settingsOpen)} title="The narrator guard and the profile this server plays on">settings</button>
         <button onClick={() => branch()} disabled={streaming !== null} title="Copy this game as a new branch from here">
           branch
         </button>
@@ -346,13 +347,14 @@ function MechanicsRow({ text }: { text: string }) {
   );
 }
 
-/** The settings menu: the narrator guard (changeable) and the roles' backends (shown; swapping them is a todo). */
+/** The settings menu: the narrator guard (changeable) and the profile picker (the profiles, the selected one's card, the switch). */
 function SettingsMenu({ onClose }: { onClose: () => void }) {
   const [s, setS] = useState<Settings | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  useEffect(() => {
+  const reload = useCallback(() => {
     api.settings().then(setS).catch((e) => setErr(String(e)));
   }, []);
+  useEffect(reload, [reload]);
   async function setMode(mode: string) {
     try {
       setS(await api.updateSettings({ guard: { mode } }));
@@ -372,13 +374,14 @@ function SettingsMenu({ onClose }: { onClose: () => void }) {
         </select>
         <span className="muted small">{s.modes[s.guard.mode]}</span>
       </div>
-      <div className="settings-row muted small">
-        <strong>Backends</strong>
-        {Object.entries(s.roles).map(([role, r]) => (
-          <span key={role}>{role}: {r.provider}:{r.model}{r.effort ? `/${r.effort}` : ""}</span>
-        ))}
-        <span>(swapping backends from here: todo; set in config.yml or TA_CONFIG for now)</span>
-      </div>
+      {s.guard_from !== "settings" && (
+        <div className="settings-row muted small">
+          {s.guard_from === "profile"
+            ? `Set by the profile ${s.profile}, on this server only; a change here stays on this server until the next switch.`
+            : `Changed here, on this server only (the profile ${s.profile} says ${s.profile_guard}); the other servers keep ${s.shared_guard}.`}
+        </div>
+      )}
+      <ProfilePicker onSwitched={reload} />
       {err && <div className="error small">{err}</div>}
       <button className="link small" onClick={onClose}>close</button>
     </div>
