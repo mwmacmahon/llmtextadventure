@@ -385,6 +385,13 @@ def lint(content_dir: Path) -> list[str]:
             for other, text in hook_text.items():
                 if other != where and pat.search(text):
                     say(f"{where}: secret term {t!r} is in {other}'s narrator text")
+    # B203 (D179): a secret term is never a thing's name (the thing is named in the open: "a frayed bell-rope of Old Marrow", B66)
+    all_terms = [t for _, ts in [("city", city.get("secret_terms") or [])] + [(hid, h.get("secret_terms") or []) for hid, h in hooks.items()] for t in ts]
+    for where, things in [("city", city.get("things") or [])] + [(hid, h.get("things") or []) for hid, h in hooks.items()]:
+        for th_ in things:
+            for t in all_terms:
+                if re.search(r"\b" + re.escape(t.lower()) + r"(s|es)?\b", str(th_.get("name") or "").lower()):
+                    say(f"{where}: the thing {th_.get('name')!r} names the secret term {t!r}")
 
     # ---- names and aliases
     seen: dict[str, str] = {}

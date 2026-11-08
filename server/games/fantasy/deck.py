@@ -97,7 +97,7 @@ PERSON_SCRIPT = ("name", "role", "description", "aliases", "wants", "secret", "m
 
 def person_from(raw: dict, hook: str = "") -> Person:
     data = {k: v for k, v in raw.items() if k in Person.model_fields and k != "tells"}
-    data.setdefault("seen_at", raw.get("location", ""))
+    data.setdefault("seen_at", "")              # B70 (B203, D179): set only by a sighting the prose shows, never from where they are said to be
     data["tells"] = [Tell(**t) for t in raw.get("tells") or []]
     data["hook"] = hook
     data["wants"] = raw.get("wants") or ""

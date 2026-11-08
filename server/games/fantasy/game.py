@@ -1751,7 +1751,8 @@ class FantasyGame(GameBase):
         elsewhere = elsewhere if elsewhere and not self._same_spot(s, elsewhere, p.location) else None
         loc = elsewhere or p.location
         nid = slug(name)
-        s.people.append(Person(id=nid, name=name.strip()[:40], role=role.strip()[:60], location=loc, seen_at=loc, met=elsewhere is None, heard_of=True))
+        s.people.append(Person(id=nid, name=name.strip()[:40], role=role.strip()[:60], location=loc, seen_at=loc if elsewhere is None else "",
+                               met=elsewhere is None, heard_of=True))
         s.journal.append(Note(kind="contact", text=f"{name.strip()}: {role.strip()}" + (f" ({loc})" if loc else "")))
         w.note(f"people += {nid} ({name.strip()}, {role.strip()})")
 
@@ -2698,7 +2699,8 @@ class FantasyGame(GameBase):
                                    *([Chip(label="status", value=q.status, tone="bad")] if q.status != "alive" else [])],
                            details=[Chip(label="Last seen", value=q.seen_at or "unknown")], notes=q.facts)
                 for q in met] + [
-                EntityCard(id=q.id, title=q.name, subtitle="heard of, not met", notes=q.facts) for q in heard]),
+                EntityCard(id=q.id, title=q.name, subtitle="heard of, not met", notes=q.facts,
+                           details=[Chip(label="Said to be at", value=q.location)] if q.location and q.location != "Unknown" else []) for q in heard]),
             ListPanel(title="Places", items=self._places_panel(s), layout="stack"),
             QuestPanel(title="Quests", rows=self.quest_rows(s)),
             ListPanel(title="Journal", items=[Chip(label="contact" if n.kind == "contact" else "", value=n.text) for n in s.journal[-20:]], layout="stack"),
