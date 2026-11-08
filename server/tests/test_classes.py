@@ -103,7 +103,7 @@ def test_the_hidden_flag_set_by_a_hide_cleared_by_an_attack_after_sneak_attack(g
     st = new(game, klass="Rogue", race="Human")
     out = game.after_turn(st, turn(st, calls=[{"label": "hide behind the stacks", "stat": "dex", "outcome": "success"}]))
     assert out.player.hidden_from_others and "Brin is hidden." in game.render_bulletin(out, "")
-    assert any(c.value == "Hidden" for x in game.ui(out).panels if getattr(x, "title", "") == "Character" for c in x.items)
+    assert any(c.value == "Hidden" for x in game.ui(out).panels if type(x).__name__ == "StatusStrip" for c in x.chips)   # B222: on the strip
     assert "Hidden" in game.seen_changes(st, out)
     stab = game.modifiers(out, CheckRequest(id="n", label="stab the guard", stat="dex"), None)
     sa = [m for m in stab if m.label.startswith("Sneak Attack")]
@@ -195,3 +195,28 @@ def test_a_stub_class_starts_and_plays(game: FantasyGame):
     assert s.player.level == 2
     wiz = new(game, klass="Wizard", race="Elf")
     assert wiz.player.spells and wiz.player.count("spell_slots").value == 2
+
+
+def test_sneak_attack_finesse_and_rage_reach_the_player(game):
+    """B222: the Rogue's attack from hiding was a plain STR check (her finesse sword never used DEX) and Sneak Attack, worth
+    nothing on the sum, never showed; the Barbarian's Raging chip sat in the Character list. Finesse uses the better of STR
+    and DEX; the § line names Sneak Attack; Raging and Hidden are on the strip."""
+    from engine.mechanics import CheckRequest, dice_d20
+    st = new(game, klass="Rogue", race="Halfling")
+    p = st.player
+    assert any(FINESSE_NAME in it.name.lower() for it in st.inventory for FINESSE_NAME in ("shortsword", "rapier", "dagger"))
+    p.hidden_from_others = True
+    req = CheckRequest(id="n1", label="Surprise strike with shortsword", stat="str", difficulty="low", base=p.stats["str"])
+    mods = game.modifiers(st, req, None)
+    gap = p.stats["dex"] - p.stats["str"]
+    assert gap > 0 and any(m.label.startswith("finesse (") and m.value == gap for m in mods)
+    assert any(m.label.startswith("Sneak Attack (from hiding)") for m in mods)
+    req.modifiers = mods
+    res = dice_d20(random.Random(1), req)
+    assert game.render_mechanic(st, res).endswith("Sneak Attack (from hiding).")
+    axe = CheckRequest(id="n2", label="swing the greataxe", stat="str", difficulty="low", base=p.stats["str"])
+    assert not any(m.label.startswith("finesse") for m in game.modifiers(st, axe, None))
+    barb = new(game, klass="Barbarian", race="Human")
+    barb.player.flags_on = ["raging"]
+    strip = next(x for x in game.ui(barb).panels if type(x).__name__ == "StatusStrip")
+    assert any(c.value == "Raging" for c in strip.chips)

@@ -69,6 +69,8 @@ HIDE = re.compile(r"\b(hide|hiding|hidden|sneak|slip (away|off|out|past|into|beh
 SURPRISE = re.compile(r"\b(surprise|unaware|from behind|unseen|from hiding|ambush|before (he|she|they|it) (sees|notices)|sleeping|asleep)", re.I)
 WOUND_KINDS: dict[str, set[str]] = {"everything": {"str", "dex", "con"}, "sight": {"wis", "dex"}, "legs": {"str", "dex"},
                                      "hands": {"str", "dex"}, "body": {"str", "con"}, "head": {"int", "wis"}}   # B200
+FINESSE = re.compile(r"\b(rapier|short ?sword|dagger|scimitar|whip|knife|stiletto)s?\b", re.I)
+HEAVY = re.compile(r"\b(great ?axe|axe|great ?sword|longsword|maul|hammer|mace|club|spear|halberd|pike|flail|morningstar)\b", re.I)
 WOUNDED = re.compile(r"\b(wound\w*|stabb\w*|cut|slash\w*|bleed\w*|bloodied|incapacitat\w*|dead|dying|killed|slain|beaten|unconscious|"
                      r"broken|run through|shot)\b", re.I)
 STEAL = re.compile(r"\b(steal\w*|stole|snatch\w*|pickpocket\w*|lift (a|the|his|her|their)|swip\w+|pinch|filch\w*|rob\w*|"
@@ -1016,7 +1018,12 @@ class FantasyGame(GameBase):
     # ---- checks -------------------------------------------------------------------------------------------------------
     def render_mechanic(self, state: FantasyState, result: Any) -> str | None:
         line = default_mechanic_line(result, show_numbers=True)
-        return re.sub(r"^[A-Z][a-z]{2}\b", STAT_NAMES.get(result.stat, result.stat.upper()), line, count=1)
+        line = re.sub(r"^[A-Z][a-z]{2}\b", STAT_NAMES.get(result.stat, result.stat.upper()), line, count=1)
+        sneak = next((str(m.label) for m in getattr(result, "modifiers", None) or [] if str(getattr(m, "label", "")).startswith("Sneak Attack")), "")
+        if sneak:                                        # B222: worth nothing on the sum, so the line names it (it lands as a step)
+            why = re.search(r"\((.*?)\)", sneak)
+            line = line.rstrip() + f" Sneak Attack{' (' + why.group(1) + ')' if why else ''}."
+        return line
 
     def modifiers(self, state: FantasyState, req: CheckRequest, target_entity: str | None) -> list[Modifier]:
         p = state.player
@@ -1039,6 +1046,11 @@ class FantasyGame(GameBase):
             if c.mod and c.stat == req.stat and (not c.words or any(w in label for w in c.words)):
                 mods.append(Modifier(label=c.name, value=c.mod))
         mods += wd.wound_modifiers(p.wounds, req.stat, WOUND_KINDS)          # the wound ladder (B200): minor 0 to ruinous -5
+        if req.stat == "str" and ATTACK.search(req.label) and not HEAVY.search(req.label):   # B222: a finesse weapon, the better of STR and DEX
+            fw = next((it.name for it in state.inventory if FINESSE.search(it.name)), None)
+            gap = int(p.stats.get("dex", 0)) - int(p.stats.get("str", 0))
+            if fw and gap > 0:
+                mods.append(Modifier(label=f"finesse ({fw}): DEX in place of STR", value=gap))
         if req.stat == "cha":
             if stranger:
                 bonus = {"quiet": 0, "known": 1, "talked about": 2, "famous": 2}[p.renown_word]
@@ -2756,18 +2768,21 @@ class FantasyGame(GameBase):
         sheet += [Chip(label="Race", value=p.race), Chip(label="Class", value=p.klass), Chip(label="Level", value=str(p.level))]
         ac, ac_how = wo.armour_class(s)
         sheet.append(Chip(label="AC", value=str(ac)))
-        if p.peril is not None:
-            sheet.insert(0, Chip(label=p.peril.kind.capitalize(), value=f"{p.peril.turns_left} {'turn' if p.peril.turns_left == 1 else 'turns'} left", tone="bad"))
-        if p.hidden_from_others:
-            sheet.insert(0, Chip(label="", value="Hidden", tone="info"))
+        # B222: what is true of the player this moment goes on the strip, where the eye is (the Raging chip sat in the Character
+        # list, which the round's status line and a glance at the page never reach)
+        now: list[Chip] = []
         if "raging" in p.flags_on:
-            sheet.insert(0, Chip(label="", value="Raging", tone="bad"))
+            now.append(Chip(label="", value="Raging", tone="bad"))
+        if p.hidden_from_others:
+            now.append(Chip(label="", value="Hidden", tone="info"))
+        if p.peril is not None:
+            now.append(Chip(label=p.peril.kind.capitalize(), value=f"{p.peril.turns_left} {'turn' if p.peril.turns_left == 1 else 'turns'} left", tone="bad"))
         if p.gender:
             sheet.append(Chip(label="Gender", value=p.gender))
         sheet += [Chip(label="From your sheet", value=n) for n in p.sheet_notes]
         pockets = [Chip(label=it.name + (f" ×{it.count}" if it.count != 1 else ""), value=it.note or "") for it in s.inventory if it.id not in COINS]
         panels: list[Any] = [
-            StatusStrip(chips=[Chip(label="Time", value=s.clock.render()), Chip(label="Place", value=p.location or "unknown"),
+            StatusStrip(chips=[Chip(label="Time", value=s.clock.render()), Chip(label="Place", value=p.location or "unknown"), *now,
                                Chip(label="Level", value=str(p.level)), Chip(label="Gold", value=str(gold))]),
             Meter(label="Hit points", value=p.hp, min=0, max=p.hp_max, tier=p.hp_tier, text=f"{p.hp} / {p.hp_max}",
                   tone=self.HP_TONES.get(p.hp_tier, "warn"), thresholds=[0.5 * p.hp_max, 0.75 * p.hp_max],
