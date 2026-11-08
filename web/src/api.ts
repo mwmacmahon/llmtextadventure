@@ -60,7 +60,17 @@ export type Settings = {
 export type Origin = { forked_from?: string; at_turn?: number; imported?: boolean; original_id?: string; exported?: string };
 export type InstanceSummary = { id: string; game: string; game_version: string; title: string; created: string; turn: number; origin: Origin };
 export type InstanceView = InstanceSummary & { ui: UISchema; transcript: TranscriptRow[]; ending?: string | null };
-export type GameInfo = { name: string; title: string; description: string; version: string; setup: Record<string, { id: string; name: string }[]> };
+export type SetupOption = { id: string; name: string };
+// A setup key is the plain list (a select) or a field (ISSUES B21): the label is the whole hint unless the game gives one.
+export type SetupField = {
+  kind?: "select" | "text" | "textarea";
+  label?: string;
+  hint?: string;
+  required?: boolean;
+  options?: (SetupOption | string)[];
+  default?: string | null;
+};
+export type GameInfo = { name: string; title: string; description: string; version: string; setup: Record<string, SetupOption[] | SetupField> };
 
 export type LedgerEntry = { seq: number; turn: number; kind: string; created: string; payload: Record<string, any> };
 

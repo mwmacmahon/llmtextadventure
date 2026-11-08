@@ -46,7 +46,7 @@ from .brackets import STOP_SEQUENCES, Call, Note, StreamFilter, extract, is_mech
 from .context import build_messages, summary_plan
 from .narration import (Assessment, CallResult, Mechanic, NarrationDone, Visible, default_mechanic_line, fail_forward, narrate,
                         run_check)
-from .game import ApplyReport, CommandResult, Game, GameBase, Rejection, TurnInfo
+from .game import ApplyReport, CommandResult, Game, GameBase, Rejection, TurnInfo, check_setup
 from .assistant_view import RULES as STAKES_RULES, adjudication_stakes, match_stakes, stakes_blocks
 from .mechanics import RESOLVERS, CheckRequest, CheckResult, outcome_words, rng_for
 from .providers import Msg, StreamDone, TextDelta, get_provider
@@ -136,6 +136,7 @@ class Engine:
     # ---- instances --------------------------------------------------------
     def create_instance(self, game_name: str, setup: dict[str, Any]) -> str:
         game = self.games[game_name]
+        setup = check_setup(game.setup_options(), setup)          # required fields filled, defaults taken (B21, D154)
         title, state = game.new_instance(setup)
         prefix = game.frozen_prefix(state)
         iid = self.store.create_instance(game.name, game.version, title, setup, prefix, state.model_dump(mode="json"))

@@ -154,7 +154,12 @@ def main(argv: list[str]) -> int:
         for g in _get("/api/games"):
             print(f"{g['name']} v{g['version']}: {g['title']} — {g['description']}")
             for k, opts in g["setup"].items():
-                print(f"  {k}: " + ", ".join(o["id"] for o in opts))
+                if isinstance(opts, dict):              # a setup field (B21): {kind, label, required, options?}
+                    choices = [o if isinstance(o, str) else o["id"] for o in opts.get("options") or []]
+                    print(f"  {k}: {opts.get('kind', 'select')}" + (" (required)" if opts.get("required") else "")
+                          + (": " + ", ".join(choices) if choices else ""))
+                else:
+                    print(f"  {k}: " + ", ".join(o["id"] for o in opts))
     elif cmd == "new":
         v = _post("/api/instances", {"game": rest[0], "setup": _kv(rest[1:])})
         print(v["id"])

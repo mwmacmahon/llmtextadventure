@@ -1,5 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import { api, type GameInfo, type InstanceSummary, type InstanceUsage } from "../api";
+import { api, type GameInfo, type InstanceSummary, type InstanceUsage, type SetupField, type SetupOption } from "../api";
+
+type Field = { key: string; plain: boolean; kind: "select" | "text" | "textarea"; label: string; hint: string; required: boolean; options: SetupOption[]; initial: string };
+
+// Each setup key as one shape: the plain list is a select labelled by its key (station, noir); a field keeps its kind.
+function fieldsOf(g: GameInfo): Field[] {
+  return Object.entries(g.setup).map(([key, spec]) => {
+    if (Array.isArray(spec)) return { key, plain: true, kind: "select", label: key, hint: "", required: false, options: spec, initial: spec[0]?.id ?? "" };
+    const f = spec as SetupField;
+    const options = (f.options ?? []).map((o) => (typeof o === "string" ? { id: o, name: o } : o));
+    const kind = f.kind ?? "select";
+    const initial = f.default ?? (kind === "select" ? options[0]?.id ?? "" : "");
+    return { key, plain: false, kind, label: f.label || key, hint: f.hint ?? "", required: !!f.required, options, initial };
+  });
+}
 
 export function Lobby({ onOpen }: { onOpen: (id: string) => void }) {
   const [games, setGames] = useState<GameInfo[]>([]);
@@ -37,10 +51,14 @@ export function Lobby({ onOpen }: { onOpen: (id: string) => void }) {
     };
   }, []);
 
+  const valueOf = (g: GameInfo, f: Field) => setup[g.name]?.[f.key] ?? f.initial;
+  const setValue = (g: GameInfo, key: string, v: string) => setSetup({ ...setup, [g.name]: { ...(setup[g.name] ?? {}), [key]: v } });
+  const missing = (g: GameInfo) => fieldsOf(g).filter((f) => f.required && !valueOf(g, f).trim());
+
   async function start(g: GameInfo) {
     try {
-      const shown = Object.fromEntries(Object.entries(g.setup).map(([k, opts]) => [k, opts[0]?.id ?? ""]));   // what the selects show
-      const v = await api.create(g.name, { ...shown, ...(setup[g.name] ?? {}) });
+      const shown = Object.fromEntries(fieldsOf(g).map((f) => [f.key, valueOf(g, f)]));   // what the fields show, selects' defaults included
+      const v = await api.create(g.name, shown);
       onOpen(v.id);
     } catch (e) {
       setErr(String(e));
@@ -75,19 +93,40 @@ export function Lobby({ onOpen }: { onOpen: (id: string) => void }) {
           <div key={g.name} className="game">
             <div className="card-title">{g.title}</div>
             <p className="muted">{g.description}</p>
-            {Object.entries(g.setup).map(([key, opts]) => (
-              <label key={key}>
-                {key}{" "}
-                <select value={setup[g.name]?.[key] ?? opts[0]?.id} onChange={(e) => setSetup({ ...setup, [g.name]: { ...(setup[g.name] ?? {}), [key]: e.target.value } })}>
-                  {opts.map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ))}
-            <button onClick={() => start(g)}>Start</button>
+            {fieldsOf(g).map((f) =>
+              f.plain ? (
+                <label key={f.key}>
+                  {f.label}{" "}
+                  <select value={valueOf(g, f)} onChange={(e) => setValue(g, f.key, e.target.value)}>
+                    {f.options.map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <label key={f.key} className="setup-field">
+                  <span>{f.label}</span>
+                  {f.kind === "select" ? (
+                    <select value={valueOf(g, f)} onChange={(e) => setValue(g, f.key, e.target.value)}>
+                      {f.options.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : f.kind === "textarea" ? (
+                    <textarea rows={4} value={valueOf(g, f)} placeholder={f.hint || undefined} onChange={(e) => setValue(g, f.key, e.target.value)} />
+                  ) : (
+                    <input type="text" value={valueOf(g, f)} placeholder={f.hint || undefined} onChange={(e) => setValue(g, f.key, e.target.value)} />
+                  )}
+                </label>
+              ),
+            )}
+            <button onClick={() => start(g)} disabled={missing(g).length > 0} title={missing(g).length ? `Fill in: ${missing(g).map((f) => f.label).join(", ")}` : undefined}>
+              Start
+            </button>
           </div>
         ))}
       </div>

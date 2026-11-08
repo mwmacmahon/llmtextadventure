@@ -19,7 +19,7 @@ button { background: var(--panel-2); color: var(--text); border: 1px solid var(-
 button:hover:not(:disabled) { border-color: var(--accent); }
 button:disabled { opacity: .5; cursor: default; }
 button.link { background: none; border: none; color: var(--accent); padding: 0; }
-select, textarea { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font: inherit; }
+select, textarea, input[type=text] { max-width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font: inherit; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
 .error, .warn { color: var(--bad); }
@@ -27,6 +27,8 @@ select, textarea { background: var(--panel-2); color: var(--text); border: 1px s
 .lobby { max-width: 800px; margin: 0 auto; padding: 32px 16px; }
 .games { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
 .game { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+.setup-field { display: flex; flex-direction: column; gap: 4px; }
+.setup-field textarea { resize: vertical; }
 .instances { list-style: none; padding: 0; }
 .instances li { display: flex; gap: 12px; align-items: baseline; padding: 6px 0; border-top: 1px solid var(--border); }
 .row-actions { display: inline-flex; gap: 10px; }
@@ -36,7 +38,8 @@ select, textarea { background: var(--panel-2); color: var(--text); border: 1px s
 a.link { color: var(--accent); text-decoration: none; }
 
 .layout { height: 100%; display: grid; grid-template-rows: auto 1fr auto; }
-header { display: flex; gap: 12px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--panel); }
+header { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--panel); }
+header strong { min-width: 0; overflow-wrap: anywhere; }
 .spacer { flex: 1; }
 main { display: grid; grid-template-columns: minmax(0, 1fr) 380px; min-height: 0; }
 .narrative { overflow-y: auto; padding: 20px 24px; display: flex; flex-direction: column; gap: 14px; }
@@ -87,6 +90,12 @@ ul.log, ul.notes { margin: 0; padding-left: 18px; font-size: 13px; }
 @media (max-width: 900px) {
   main { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
   .side { border-left: none; border-top: 1px solid var(--border); max-height: 45vh; }
+}
+/* phone width (ISSUES B22): the header wraps above; tighter here so it takes two rows, not four */
+@media (max-width: 600px) {
+  header { gap: 6px 8px; padding: 8px 12px; }
+  header button:not(.link) { padding: 3px 8px; font-size: 13px; }
+  .narrative { padding: 14px 16px; }
 }
 
 .mechanics { font-size: 12px; color: var(--muted); border-left: 2px solid var(--border); padding-left: 10px; max-width: 72ch; }

@@ -88,7 +88,10 @@ def list_instances():
 def create_instance(body: NewInstance):
     if body.game not in games:
         raise HTTPException(404, "unknown game")
-    iid = engine.create_instance(body.game, body.setup)
+    try:
+        iid = engine.create_instance(body.game, body.setup)
+    except ValueError as e:                     # a required field left empty, a choice not offered (B21, D154)
+        raise HTTPException(400, str(e))
     log.info("instance.create " + logs.kv(iid=iid, game=body.game, setup=json.dumps(body.setup)))
     return engine.instance_view(iid)
 

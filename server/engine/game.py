@@ -15,7 +15,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, runtime_checkable
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from .events import Event
 from .mechanics import CheckRequest, Modifier
@@ -232,6 +232,70 @@ class TurnInfo:
 
 # ---------------------------------------------------------------------------
 # Game protocol and base
+# ---------------------------------------------------------------------------
+# Setup fields (ISSUES B21, D154): what the lobby asks before a game starts
+# ---------------------------------------------------------------------------
+
+
+class SetupOption(BaseModel):
+    id: str
+    name: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def _plain(cls, data: Any) -> Any:
+        """"Mage" for {id: "Mage", name: "Mage"}; {id, label} as the commands' options write it."""
+        if isinstance(data, str):
+            return {"id": data, "name": data}
+        if isinstance(data, dict) and "name" not in data:
+            return {**data, "name": data.get("label") or data.get("id", "")}
+        return data
+
+
+class SetupField(BaseModel):
+    """One key of `setup_options()`. A game may return the plain list `[{id, name}, ...]` (a select, as station and
+    noir do) or `{kind, label, hint, required, options?, default?}`. The label is the whole hint unless the game gives
+    one (the fantasy's "About your character" box is the only one)."""
+    kind: Literal["select", "text", "textarea"] = "select"
+    label: str = ""
+    hint: str = ""
+    required: bool = False
+    options: list[SetupOption] = Field(default_factory=list)
+    default: str | None = None
+
+
+def setup_fields(options: dict[str, Any]) -> dict[str, SetupField]:
+    """Every key of a game's `setup_options()` as a SetupField; a plain list is a select labelled by its key."""
+    out: dict[str, SetupField] = {}
+    for key, spec in (options or {}).items():
+        if isinstance(spec, list):
+            out[key] = SetupField(kind="select", label=key, options=[SetupOption.model_validate(o) for o in spec])
+        else:
+            f = SetupField.model_validate(spec)
+            out[key] = f if f.label else f.model_copy(update={"label": key})
+    return out
+
+
+def check_setup(options: dict[str, Any], setup: dict[str, Any]) -> dict[str, Any]:
+    """The setup a new game is made from, checked against the game's fields: a required field must be filled (text
+    not blank), a select given in the field form must name one of its options, and a missing field given in the field
+    form takes its `default`. Plain-list selects pass as they always did (the game takes its own default when the key
+    is missing). Raises ValueError with the field's label."""
+    fields = setup_fields(options)
+    out = dict(setup or {})
+    for key, f in fields.items():
+        if isinstance((options or {}).get(key), list):
+            continue
+        v = out.get(key)
+        if (v is None or (isinstance(v, str) and not v.strip())) and f.default is not None:
+            out[key] = v = f.default
+        if f.required and (v is None or (isinstance(v, str) and not v.strip())):
+            raise ValueError(f"{f.label} is required")
+        if f.kind == "select" and v not in (None, "") and f.options and v not in {o.id for o in f.options}:
+            raise ValueError(f"{f.label}: no such choice {v!r}")
+    return out
+
+
 # ---------------------------------------------------------------------------
 
 
