@@ -65,6 +65,10 @@ def test_a_check_aimed_at_someone_keeping_a_tell_back_is_staked_high():
     free = run_check(call, 2, {"tongue": 1}, lambda rng, req: dice_2d6(_Fixed(6, 5), req), random.Random(0), [_A("maud")],
                      lambda req, t: [], lambda res: "", holds_back=lambda t: "Szabo" if t == "szabo" else None)
     assert free.data["difficulty"] == "low" and not any("keeps something back" in m["label"] for m in free.data["modifiers"])
+    by_about = Assessment(stat="tongue", difficulty="medium", label="question Szabo about June", about="szabo")   # no target, the person in about
+    via = run_check(call, 4, {"tongue": 1}, lambda rng, req: dice_2d6(_Fixed(6, 5), req), random.Random(0), [by_about],
+                    lambda req, t: [], lambda res: "", holds_back=lambda t: "Szabo" if t == "szabo" else None)
+    assert via.data["difficulty"] == "high"
     hard = run_check(call, 3, {"tongue": 1}, lambda rng, req: dice_2d6(_Fixed(6, 5), req), random.Random(0), [_A("szabo", "very_high")],
                      lambda req, t: [], lambda res: "", holds_back=lambda t: "Szabo")
     assert hard.data["difficulty"] == "very_high"                 # a floor, never a cut

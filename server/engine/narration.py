@@ -273,7 +273,8 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
         difficulty = call.difficulty or "medium"  # type: ignore[assignment]
     target = (a.target or call.target) if a else call.target        # the assessment's id wins over a called name
     raised = ""
-    who = holds_back(target) if (holds_back and target) else None
+    aimed = target or (a.about if a is not None else "")              # the assistant names the person in `about` (the smoke, D168)
+    who = holds_back(aimed) if (holds_back and aimed) else None
     if who and TIER_ORDER.index(difficulty) < TIER_ORDER.index("high"):    # B63 (D168): a person keeping a tell back is a high check
         raised, difficulty = difficulty, "high"
     label = (a.label if a and a.label else f"{stat} check" + (f" against {target}" if target else ""))

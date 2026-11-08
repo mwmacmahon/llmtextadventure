@@ -24,6 +24,8 @@ N6-1031, N7-1031, A1-1031, A2-1031, C1-1101); a bare id is the newer item.
 
 **Added 2026-11-08 midday (the dice tuning, D168).**
 
+- B72 *for the owner (11-08 midday, the D168 smoke; a lean taken).* The guard mode every server reads is `log` (data/settings.json, shared): rulings are recorded and nothing is ever retold live. So B63's early tell is refused in the state but stays in the prose: in the smoke (5f4f32a42f84 T2) a high Tongue success had Szabo give the Harrow docks, the fifth and the key; the notebook stayed empty and the tell untold, while the history the narrator reads next turn says it all. The same holds for the fantasy's `too_far` ruling (f1L: 0 retells in 50 turns). Lean taken: the Sonnet profile (Stage 3) runs the fantasy server with the guard at `gate` (nothing shows until the referee has read it; one retelling first); the rounds' local profiles stay at `log` so their measures do not move. Question: the guard on for the rounds too, or for `early_tell` and `too_far` only?
+- B73 *flagged (11-08 midday).* The ledger's model_call rows on the box name the model as config.llamacpp.yml labels it ("qwen3.5-27b") while Gemma 31B is loaded; only the profile says what ran. Stage 3's stamp carries the profile; the model label stays wrong until the config names it from the profile.
 - B67 *for the owner (11-08 midday, D168).* The midday directive gives the station's offset as +1 and says "its 2d6 table becomes 6/8/10/12/14"; +1 on the table (3/5/7/9/11) makes 4/6/8/10/12, and "Systems +2 at medium 8 is 72%" agrees with +1. Built +1 (medium 8). If 6/8/10/12/14 was meant, the offset is +3 at the top and +1 in the middle, which one offset cannot give.
 
 **Added 2026-11-08 midday (the fantasy's fixes, D167).**
