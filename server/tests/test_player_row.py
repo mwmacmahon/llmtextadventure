@@ -63,8 +63,22 @@ class _D20:
 
 def test_the_d20_line_keeps_its_sum_and_says_a_natural_20():
     line = default_mechanic_line(dice_d20(_D20(20), _req("high", -9)))
-    assert line.startswith("Hands, high. 20 - 9 = 11 against ") and line.endswith("A natural 20: critical success.")
-    assert "natural" not in default_mechanic_line(dice_d20(_D20(12), _req("medium", 2)))
+    assert line == "Hands, high. 20 - 3 = 17 against 14. Natural 20! Critical success."     # capped at -3 (B1, D156)
+    assert "atural" not in default_mechanic_line(dice_d20(_D20(12), _req("medium", 2)))
+
+
+def test_the_d20_line_reads_as_a_dnd_table_would_d152():
+    assert default_mechanic_line(dice_d20(_D20(17), _req("high", 2))) == "Hands, high. 17 + 2 = 19 against 14. Success."
+    assert default_mechanic_line(dice_d20(_D20(1), _req("very_low", 5))) == "Hands, very low. 1 + 5 = 6 against 3. Natural 1. Critical failure."
+    assert default_mechanic_line(dice_d20(_D20(10), _req("medium", 4, 3))) == "Hands, medium. 10 + 5 = 15 against 10. Success."   # +7 capped at +5
+    assert default_mechanic_line(dice_d20(_D20(9), _req("medium"))) == "Hands, medium. 9 against 10. Failure."
+    soft = soften_mechanic(default_mechanic_line(dice_d20(_D20(20), _req("high", 2))))
+    assert soft == "Hands, high: it could not have gone better."          # the narrator remembers it in words, no "Natural 20!"
+    from engine.pipeline import tier_only_view
+    prose = "She swings.\n§ " + default_mechanic_line(dice_d20(_D20(1), _req("low", 2))) + "\n§ " + \
+        default_mechanic_line(dice_d20(_D20(17), _req("high", 2))) + "\nIt lands."
+    assert tier_only_view(prose).split("\n") == ["She swings.", "§ Hands check, low: critical failure.",
+                                                  "§ Hands, high. 17 + 2 = 19 against 14. Success.", "It lands."]   # the referee's copy
 
 
 def test_tier_only_games_show_no_dice():

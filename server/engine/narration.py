@@ -367,20 +367,22 @@ DIE_FACES = "\u2680\u2681\u2682\u2683\u2684\u2685"      # ⚀ ⚁ ⚂ ⚃ ⚄ �
 
 def critical_cause(res: CheckResult) -> str:
     """What made a critical, said in the § line, because the sum alone can read as wrong ("20 - 9 = 11 against 14.
-    Critical success.", ISSUES A11): "Double sixes", "A natural 20". Empty when the outcome is not a critical."""
+    Critical success.", ISSUES A11): "Double sixes", "Natural 20!" (D156: a D&D table's words). Empty when the outcome is
+    not a critical."""
     if res.outcome not in ("critical_success", "critical_failure"):
         return ""
     if len(res.dice) == 2:
         return "Double sixes" if res.outcome == "critical_success" else "Double ones"
     if res.resolver == "dice_d20" and res.roll in (1, 20):
-        return f"A natural {res.roll}"
+        return "Natural 20!" if res.roll == 20 else "Natural 1."
     return ""
 
 
 def default_mechanic_line(res: CheckResult, show_numbers: bool = True) -> str:
     """The player's § line. 2d6 shows the two faces, the modifier and the target: "Hands, low. ⚂ ⚄ +1 = 9 against 7.
-    Success." (D143, R17). The d20 keeps "12 + 2 = 14 against 13". A critical names its cause (A11). Tier-only games
-    (`mechanic_numbers = False`) show no dice at all: their rolls stay hidden."""
+    Success." (D143, R17). The d20 keeps "17 + 2 = 19 against 14. Success."; its naturals say so: "Natural 20! Critical
+    success.", "Natural 1. Critical failure." (D156, A11). A 2d6 critical names its cause: "Double sixes: critical
+    success.". Tier-only games (`mechanic_numbers = False`) show no dice at all: their rolls stay hidden."""
     word = res.difficulty.replace("_", " ")
     outcome = res.tier_text()
     if not show_numbers or res.roll is None:
@@ -392,5 +394,8 @@ def default_mechanic_line(res: CheckResult, show_numbers: bool = True) -> str:
     else:
         arith = f"{res.roll} {'+' if mods >= 0 else '-'} {abs(mods)} = {res.total}" if mods else f"{res.roll}"
     cause = critical_cause(res)
-    told = f"{cause}: {outcome}." if cause else f"{outcome.capitalize()}."
+    if cause and res.resolver == "dice_d20":
+        told = f"{cause} {outcome.capitalize()}."
+    else:
+        told = f"{cause}: {outcome}." if cause else f"{outcome.capitalize()}."
     return f"{res.stat.capitalize()}, {word}. {arith} against {res.target}. {told}"

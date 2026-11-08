@@ -1557,6 +1557,7 @@ def referee_inputs(game: Game, state: BaseModel, directives: list[str], player_t
     return referee_messages(rules, _engine_state_text(game, state, adj), directives, player_text, tier_only_view(narration), levers=levers, recent=recent)
 
 
+_NATURAL_LINE = re.compile(r"^§ ([^.\n]+?), ([a-z ]+)\. [^\n]*?\. Natural (?:20!|1\.) ([A-Za-z][a-z ]*)\.$", re.M)
 _FACES_LINE = re.compile(r"^§ ([^.\n]+?), ([a-z ]+)\. [\u2680-\u2685] [\u2680-\u2685][^\n]*?\. (?:[A-Z][a-z]+ [a-z]+: )?([A-Za-z][a-z ]*)\.$", re.M)
 
 
@@ -1565,8 +1566,10 @@ def tier_only_view(narration: str) -> str:
     already use ("§ Hands check, very high: critical success."). The player's line can read as a wrong sum ("⚅ ⚅ -3 = 9
     against 11. Double sixes: critical success.") and a weak referee may rule on the sum (the cold read, D143); "double
     sixes" is a story-sounding phrase either could hand the narrator (a retelling, the story so far). Lines without faces (the d20's, taped
-    turns) pass unchanged, so the keyed sets' referee inputs do not move."""
-    return _FACES_LINE.sub(lambda m: f"§ {m.group(1)} check, {m.group(2)}: {m.group(3).lower()}.", narration)
+    turns) pass unchanged, so the keyed sets' referee inputs do not move; a d20 natural ("Natural 20! Critical success.",
+    D156, new with the fantasy) goes tier-only too, for the same reason as double sixes."""
+    out = _FACES_LINE.sub(lambda m: f"§ {m.group(1)} check, {m.group(2)}: {m.group(3).lower()}.", narration)
+    return _NATURAL_LINE.sub(lambda m: f"§ {m.group(1)} check, {m.group(2)}: {m.group(3).lower()}.", out)
 
 
 # ---- the narrator replay (tools/eval_replay.py narrate; notes/TASK-narrator-review.md) ----------------------

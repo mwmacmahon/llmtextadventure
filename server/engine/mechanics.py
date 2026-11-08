@@ -3,7 +3,7 @@
 A check is (stat, difficulty tier, modifiers) -> outcome. Four resolvers:
   dice_2d6   roll 2d6 + the stat + modifiers vs a target per tier on the bell; penalties capped at -3, bonuses at +5
              (ROADMAP 1a, ISSUES R16 and B1); both games use it
-  dice_d20   roll d20 + modifiers vs a target number per tier (the 2023 noir table)
+  dice_d20   roll d20 + the stat + modifiers vs a target number per tier (the 2023 noir table), capped as 2d6 (the fantasy)
   threshold  deterministic: stat total >= target (Long Live the Queen style)
   weighted   probability from stat vs target, one roll
 
@@ -95,9 +95,12 @@ def _outcome(margin: int) -> Outcome:
 
 
 def dice_d20(rng: random.Random, req: CheckRequest) -> CheckResult:
+    """d20 + the capped modifier (B1, as 2d6: the fantasy's checks, D156) against TARGET. A natural 1 is a critical
+    failure and a natural 20 a critical success whatever the sum; otherwise a miss or make by 8 is huge."""
     roll = rng.randint(1, 20)
     target = TARGET[req.difficulty]
-    total = roll + req.total_modifier
+    mod, mods = capped(req)
+    total = roll + mod
     margin = total - target
     if roll == 1:
         outcome: Outcome = "critical_failure"
@@ -106,7 +109,7 @@ def dice_d20(rng: random.Random, req: CheckRequest) -> CheckResult:
     else:
         outcome = _outcome(margin)
     return CheckResult(id=req.id, label=req.label, stat=req.stat, difficulty=req.difficulty, resolver="dice_d20",
-                       roll=roll, total=total, target=target, margin=margin, outcome=outcome, modifiers=req.modifiers)
+                       roll=roll, total=total, target=target, margin=margin, outcome=outcome, modifiers=mods)
 
 
 def capped(req: CheckRequest) -> tuple[int, list[Modifier]]:
