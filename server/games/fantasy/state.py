@@ -26,6 +26,9 @@ HEAT_TIERS = ((0, "nobody"), (20, "asked about"), (50, "wanted"), (80, "hunted")
 RENOWN_TIERS = ((0, "quiet"), (25, "known"), (50, "talked about"), (75, "famous"))   # the deck's tiers: 2 at 25, 3 at 50
 RENOWN_SCALE = 3      # B54 (D167): a reward row's renown is paid three times over (a first quest 9 to 24; "known" after about two)
 WANTED_AT, HUNTED_AT = 50, 80
+COPPERS = "coppers"   # B69 (D175): small change, its own pocket count beside gold; 100 make a gold (the engine carries and breaks)
+COINS = ("gold", COPPERS)
+COPPERS_TO_GOLD = 100
 
 
 def tier_of(value: int, tiers: tuple[tuple[int, str], ...]) -> str:
@@ -47,6 +50,8 @@ class Item(BaseModel):
     def render(self) -> str:
         if self.id == "gold":
             return f"{self.count} gold"
+        if self.id == COPPERS:
+            return f"{self.count} coppers"
         if self.count != 1:
             return f"{self.count} {self.name}"
         return self.name
@@ -278,6 +283,7 @@ class FantasyState(BaseModel):
     lost: list[Item] = Field(default_factory=list)
     people: list[Person] = Field(default_factory=list)
     found_places: list[FoundPlace] = Field(default_factory=list)
+    places_heard_of: list[str] = Field(default_factory=list)   # B87 (D175): places named to the player, not yet visited (the Places panel)
     journal: list[Note] = Field(default_factory=list)
     log: list[str] = Field(default_factory=list)
     threads: list[Thread] = Field(default_factory=list)
@@ -310,7 +316,17 @@ class FantasyState(BaseModel):
 
 _FILLER = {"of", "the", "a", "an", "his", "her", "its", "their", "my", "with", "and", "in", "on", "from", "for", "to"}
 ALIASES = {"coin": "gold", "coins": "gold", "money": "gold", "purse": "gold", "gp": "gold", "torch": "torches",
+           "copper": COPPERS, "copper coins": COPPERS, "cp": COPPERS, "small change": COPPERS, "penny": COPPERS, "pennies": COPPERS,
            "potion": "healing_potion", "potions": "healing_potion", "healing potion": "healing_potion"}
+
+
+def purse_text(items: list[Item]) -> str:
+    """The coins as one pocket line (B69): "3 gold 40 coppers"; "3 gold" with no coppers; "40 coppers" with no gold."""
+    gold = next((it.count for it in items if it.id == "gold"), 0)
+    cp = next((it.count for it in items if it.id == COPPERS), 0)
+    if cp and not gold:
+        return f"{cp} coppers"
+    return f"{gold} gold" + (f" {cp} coppers" if cp else "")
 
 
 def pocket_key(key: str) -> str:

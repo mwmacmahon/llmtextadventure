@@ -22,6 +22,7 @@ PROSE_TIME = re.compile(r"\b(dawn|dusk|noon|midnight|first light|nightfall|sunri
 FORBIDDEN = re.compile(r"\b(the referee|the engine|a roll)\b", re.I)
 ENGINE_FLAGS = {"ending", "carried_by"}
 ENGINE_SET = {"wanted_by_the_watch", "visited_greywood", "visited_mire", "night_market_open"}
+TITLES = {"Old", "Brother", "Sister", "Mother", "Father", "Lord", "Lady", "Sergeant", "Captain", "Constable", "The"}
 
 
 def _load(path: Path) -> Any:
@@ -329,6 +330,37 @@ def lint(content_dir: Path) -> list[str]:
                     check_person(w, hid, pid)
                 for f in row.get("flags") or []:
                     check_flag(w, hid, f)
+
+    # ---- B68 (D175): every hook that closes has an ending for the problem gone another way (the troll walled in, Maud
+    #      paid): `another_way` names a flag of the hook's own that `done` reads and a reward row pays, so the referee
+    #      always has a flag that closes the quest. A hook with milestones and no `done` never closes, so it needs none.
+    for hid, h in hooks.items():
+        if h.get("done") is None:
+            continue
+        flag = h.get("another_way")
+        if not flag:
+            say(f"{hid}: no ending for the problem gone another way (another_way: a flag of its own that done reads and a reward row pays)")
+            continue
+        if flag not in (h.get("narrator_flags") or {}):
+            say(f"{hid}: another_way {flag!r} is not one of its flags")
+        if ("flag", flag) not in set((op, a) for op, a in _preds(h.get("done")) if isinstance(a, str)):
+            say(f"{hid}: another_way {flag!r} does not close it (not in done)")
+        rows = h.get("reward") if isinstance(h.get("reward"), list) else []
+        if not any(("flag", flag) in set((op, a) for op, a in _preds(r.get("when")) if isinstance(a, str)) for r in rows if isinstance(r, dict)):
+            say(f"{hid}: another_way {flag!r} has no reward row")
+
+    # ---- B65 (D175): the turn-0 opening names nobody the player has not met (a stranger in the room would not know them)
+    opening = str(city.get("opening_text") or "")
+    if opening:
+        cast = list(city.get("people") or []) + [pr for hid in deck.get("deal_at_start") or [] for pr in (hooks.get(hid) or {}).get("people") or []]
+        for pr in cast:
+            if not pr.get("name") or pr.get("met"):
+                continue
+            names = [pr["name"], *[w for w in pr["name"].split() if w[:1].isupper() and w not in TITLES and len(w) > 2],
+                     *[a for a in pr.get("aliases") or [] if a[:1].isupper()]]
+            hit = next((n for n in names if re.search(r"\b" + re.escape(n) + r"\b", opening)), None)
+            if hit:
+                say(f"city: opening_text names {hit!r} ({pr.get('id')}), whom the player has not met")
 
     # ---- prose-timed events carry their hour
     for hid, h in hooks.items():
