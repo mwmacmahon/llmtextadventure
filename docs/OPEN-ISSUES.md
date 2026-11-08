@@ -12,7 +12,7 @@ Status words: **flagged** (seen, not analysed), **analysed** (cause known, no fi
 on the user), **built, unseen** (code in, not yet seen in a live round).
 Added 11-07: **built, not exercised (checked 11-07)** (code in, no round on record has reached it) and **ran, no measure on
 record** (the code certainly ran, nobody counted what it did). "Open now" is re-read at every roadmap stage gate (docs/ROADMAP.md).
-Ids: where two groups used the same id, the older carries a date suffix (W1-1031, R1-1031 to R5-1031, E1-1102, E2-1102,
+*fixed in the content (the side chat, 11-08 evening: the line now reads "Talking to a friend never needs a roll. Stabbing always does."). Was: *Numbering from 2026-11-08 evening:** the side chat numbers its new lines from B200 upward and the build chat keeps counting from B143, so two chats writing the same hour never clash and a merge never renumbers (today's merges renumbered twice; B130 to B142 carry their old numbers in brackets). Ids: where two groups used the same id, the older carries a date suffix (W1-1031, R1-1031 to R5-1031, E1-1102, E2-1102,
 N6-1031, N7-1031, A1-1031, A2-1031, C1-1101); a bare id is the newer item.
 
 **Added 2026-11-08 midday (the lobby, the saved games and dev mode; the owner's asks, pulled to the front of the line;
