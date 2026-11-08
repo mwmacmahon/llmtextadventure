@@ -160,3 +160,17 @@ def test_the_marked_turn_says_so_and_lifts_the_notes_cap(noir):
     st.hidden.events = []
     _, info = time_after(noir, st, res, [], ["time lost: 40 minutes"], 1)
     assert info["lost"] == 40
+
+
+def test_until_when_only_for_a_plain_wait_and_by_the_hour(noir):
+    from engine.pipeline import until_when
+    _, st = noir.new_instance({})
+    long = ("I ease off before the willows and let the boat drift in quietly, ship the oars, and watch for whatever "
+            "is there: an island, a hut, a girl, anything that sings.")
+    assert until_when(noir, st, _wait(), long)[1] == ""               # an action that mentions watching is not a wait
+    assert until_when(noir, st, _wait(), "I follow Gorm along the ledge")[1] == ""
+    st.clock.minute = 7 * 60 + 40
+    _, q = until_when(noir, st, _wait(), "I wait.")
+    assert "until nightfall" in q and "morning" not in q
+    adj, _ = until_when(noir, st, _wait(), "I wait until dark")
+    assert adj.time_minutes == min(19 * 60 - (7 * 60 + 40), noir.clock.cap_minutes)

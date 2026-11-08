@@ -1820,7 +1820,10 @@ LIMIT_WORDS = re.compile(r"\d|\b(?:until|till|'til|til|minutes?|mins?|hours?|hrs
                          r"one|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|sixty)\b", re.I)
 WAIT_FOR = re.compile(r"\b(?:wait|watch|stay|sit)\w*\b.*?\bfor\s+(?!a\s+(?:while|bit)\b)(?!some\s+time\b)\w", re.I)   # "wait for him": the limit is him
 MORNING_MINUTE = 7 * 60
+NIGHT_MINUTE = 19 * 60
 UNTIL_ASK = "Until when?"
+UNTIL_NIGHT = re.compile(r"\b(?:until|till|'til|til)\s+(?:the\s+)?(?:nightfall|night|dark|dusk|evening|sundown|sunset)\b", re.I)
+WAIT_SAID = re.compile(r"\b(?:wait|waits|waiting|sleep|sleeps|nap|doze|rest|lie low|hole up|stake ?out|keep watch|bide|kill time|sit tight)\b", re.I)
 
 
 def until_when(game: Any, state: BaseModel, adj: AssistantReading, text: str) -> tuple[AssistantReading, str]:
@@ -1835,15 +1838,20 @@ def until_when(game: Any, state: BaseModel, adj: AssistantReading, text: str) ->
         return adj, ""
     if UNTIL_ANY.search(text):
         return adj.model_copy(update={"time_minutes": clock.cap_minutes}), ""
-    if UNTIL_MORNING.search(text):
-        clk = sp.lookup(state.model_dump(mode="json"), clock.path, None) or {}
-        now = int(clk.get("minute", 0))
-        to = (MORNING_MINUTE - now) % clock.minutes_per_day or clock.minutes_per_day
-        return adj.model_copy(update={"time_minutes": min(to, clock.cap_minutes)}), ""
-    if task == "other" or LIMIT_WORDS.search(text) or WAIT_FOR.search(text):
+    clk = sp.lookup(state.model_dump(mode="json"), clock.path, None) or {}
+    now = int(clk.get("minute", 0))
+    for rx, at in ((UNTIL_MORNING, MORNING_MINUTE), (UNTIL_NIGHT, NIGHT_MINUTE)):
+        if rx.search(text):
+            to = (at - now) % clock.minutes_per_day or clock.minutes_per_day
+            return adj.model_copy(update={"time_minutes": min(to, clock.cap_minutes)}), ""
+    # B60 (the fantasy's first round): asked on three long action inputs whose summaries held "watches" or "follows";
+    # ask only when the player's own words are mostly the wait
+    if task == "other" or LIMIT_WORDS.search(text) or WAIT_FOR.search(text) or not WAIT_SAID.search(text) or len(text.split()) > 15:
         return adj, ""
-    q = UNTIL_ASK + (" Until something happens, for about an hour, or until morning?" if task == "wait"
-                     else " Until morning, for a few hours, or until something wakes you?")
+    day = MORNING_MINUTE - 120 <= now < NIGHT_MINUTE - 120          # 05:00 to 17:00: the long wait runs to nightfall
+    end = "until nightfall" if day else "until morning"
+    q = UNTIL_ASK + (f" Until something happens, for about an hour, or {end}?" if task == "wait"
+                     else f" {end[0].upper() + end[1:]}, for a few hours, or until something wakes you?")
     return adj.model_copy(update={"kind": "clarify", "clarify_question": q, "time_minutes": 0,
                                   "intents": [i.model_copy(update={"check": None}) for i in adj.intents], "commands": []}), q
 
