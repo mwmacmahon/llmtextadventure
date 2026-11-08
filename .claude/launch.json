@@ -331,6 +331,20 @@
         "8013"
       ],
       "port": 8013
+    },
+    {
+      "name": "api-fantasy-sonnet",
+      "runtimeExecutable": "/Users/dadbook/source/old/llmtextadventure/server/.venv/bin/uvicorn",
+      "runtimeArgs": [
+        "app:app",
+        "--app-dir",
+        "/Users/dadbook/source/old/llmtextadventure-fantasy/server",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8014"
+      ],
+      "port": 8014
     }
   ]
 }
