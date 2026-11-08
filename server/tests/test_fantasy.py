@@ -822,3 +822,31 @@ def test_money_guards(game):
         cp.count = 99
     strip = next(x for x in game.ui(st).panels if type(x).__name__ == "StatusStrip")
     assert any(c.label == "Gold" and c.value.endswith("(99 coppers)") for c in strip.chips)
+
+
+def test_the_people_panel_names_a_person_once_the_prose_has(game):
+    """B224 (5528fb9033ac turns 5 and 13): Gorm and Mirren were on the People panel by name before the prose named them.
+    The card says what they are until the telling, the player or the journal names them."""
+    from engine.game import TurnInfo
+    st = new(game)
+    q = st.person("gorm")
+    q.met, q.heard_of, q.location = True, True, st.player.location
+    st.player.names_heard = [n for n in st.player.names_heard if n.lower() != "gorm"]
+    card = lambda s: next(c for x in game.ui(s).panels if getattr(x, "title", "") == "People" for c in x.cards if c.id == "gorm")
+    assert card(st).title != "Gorm" and card(st).subtitle == "not yet named"
+    shown = game.after_turn(st, TurnInfo(turn=6, elapsed_minutes=1, rng=random.Random(0),
+                                         prose="The troll lifts its head. \"Gorm,\" it says, touching its chest. \"Gorm.\""))
+    assert card(shown).title == "Gorm"
+
+
+def test_a_journal_line_is_a_whole_sentence_or_none(game):
+    """B224: a journal line cut mid-sentence ('...where the lord') at 200 characters."""
+    from games.fantasy.game import whole_sentence
+    long = ("The Hill's divers brought the bell up by rope; a boat carried it to the quay and up the long stair to a house. "
+            "There, thin men with ledgers weighed it and sent word to the Hill, where the lord of the lamps keeps what he buys.")
+    out = whole_sentence(long)
+    assert out and out.endswith("to a house.") and len(out) <= 200
+    assert whole_sentence("x" * 250) is None and whole_sentence("Short and whole.") == "Short and whole."
+    s2, rep, _ = apply(game, new(game), C(kind="learned", target="player", value="y" * 260))
+    assert not any("yyy" in n.text for n in s2.journal) and any(r.path == "journal" for r in rep.rejected)
+

@@ -69,6 +69,19 @@ HIDE = re.compile(r"\b(hide|hiding|hidden|sneak|slip (away|off|out|past|into|beh
 SURPRISE = re.compile(r"\b(surprise|unaware|from behind|unseen|from hiding|ambush|before (he|she|they|it) (sees|notices)|sleeping|asleep)", re.I)
 WOUND_KINDS: dict[str, set[str]] = {"everything": {"str", "dex", "con"}, "sight": {"wis", "dex"}, "legs": {"str", "dex"},
                                      "hands": {"str", "dex"}, "body": {"str", "con"}, "head": {"int", "wis"}}   # B200
+def whole_sentence(text: str, limit: int = 200) -> str | None:
+    """B224: a journal line as a whole sentence: the text as it is when it fits, else cut at the last sentence end inside
+    the limit; None when there is none worth keeping."""
+    t = " ".join(str(text or "").split())
+    if len(t) <= limit:
+        return t
+    cut = t[:limit]
+    ends = [m.end() for m in re.finditer(r"[.!?;](?=\s|$)", cut)]
+    if not ends or ends[-1] < 40:
+        return None
+    return cut[:ends[-1]].rstrip(";").rstrip() + ("." if cut[ends[-1] - 1] == ";" else "")
+
+
 MONEY = re.compile(r"\b(coins?|gold pieces?|pieces of gold|gp|crowns?|purse|coppers?|pennies|money)\b|^\s*gold\s*$", re.I)
 NUMBER_WORDS = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
                 "twelve": 12, "twenty": 20, "fifty": 50, "hundred": 100}
@@ -1229,6 +1242,29 @@ class FantasyGame(GameBase):
                 s.log.append(f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}. {q.name} of the Watch turned "
                              f"against {p.name}: the Watch's interest, {was} → {p.heat_word}.")
 
+    def _names_shown(self, s: FantasyState, info: TurnInfo) -> None:
+        """B224: a person's name the telling (or the player) used becomes a name the player knows (names_heard), unless it
+        is a hidden name the telling had no right to (the leak guard's call)."""
+        text = f"{info.prose or ''}\n{info.player_text or ''}"
+        if not text.strip():
+            return
+        leaked = {t.lower() for t in self.leaked_terms(s, info.prose or "", info.player_text or "")}
+        for q in s.people:
+            for nm in {q.name, q.name.split()[0]} if q.name else set():
+                if len(nm) > 2 and nm.lower() not in leaked and nm not in s.player.names_heard \
+                        and re.search(r"\b" + re.escape(nm) + r"\b", text, re.I):
+                    s.player.names_heard.append(nm)
+
+    def name_shown(self, s: FantasyState, q: Person) -> bool:
+        """B224: the People panel names a person once the telling, the player, or the journal has (Gorm and Mirren were on the
+        panel by name turns before the prose named them); until then the card says what they are."""
+        heard = {n.lower() for n in s.player.names_heard}
+        names = {q.name.lower(), q.name.split()[0].lower()} if q.name else set()
+        if names & heard:
+            return True
+        notes = " ".join(n.text for n in s.journal).lower()
+        return any(re.search(r"\b" + re.escape(nm) + r"\b", notes) for nm in names if len(nm) > 2)
+
     def _crime_seen(self, s: FantasyState, info: TurnInfo) -> str:
         """B227: a crime in open view with no heat row. A verdict that records a wound on a named person the player struck
         at, or a theft (the player's words steal and something came into the pockets), at a place where someone else is
@@ -1368,7 +1404,10 @@ class FantasyGame(GameBase):
         if kind == "set" and is_player and field == "location":
             return self._move_player(s, value, w)
         if kind == "learned" and is_player:
-            text = value[:200]
+            text = whole_sentence(value)                 # B224: a whole sentence, or nothing ("...where the lord" was a cut at 200)
+            if text is None:
+                w.reject("journal", "a journal line is a whole sentence; this one runs past 200 characters with no end inside them", value[:80])
+                return True
             if text and not any(n.text == text for n in s.journal):
                 s.journal.append(Note(kind="clue", text=text))
                 w.note(f"journal += {text[:120]!r}")
@@ -1953,6 +1992,7 @@ class FantasyGame(GameBase):
                 n, notes = wo.take(self, s, int(c["harm"]), str(c.get("label") or ""))
                 p.shown_notes.append(f"{c.get('label') or 'The attempt'} failed: {n} hit points" + (f" ({', '.join(notes)})" if notes else ""))
         self._hidden_after(s, info)
+        self._names_shown(s, info)
         for q in s.people:
             if q.met and q.location and q.location != "Unknown" and self._same_spot(s, q.location, p.location):
                 q.seen_at = q.location
@@ -2843,12 +2883,13 @@ class FantasyGame(GameBase):
                                                                      *[Chip(label="owed", value=d) for d in p.debts]], layout="stack"))
         panels += [
             EntityCards(title="People", cards=[
-                EntityCard(id=q.id, title=q.name, subtitle=q.role or None,
+                EntityCard(id=q.id, title=q.name if self.name_shown(s, q) else (q.role or "someone, not yet named"),
+                           subtitle=(q.role or None) if self.name_shown(s, q) else "not yet named",
                            badges=[Chip(label="attitude", value=q.attitude_word, tone=self.ATTITUDE_TONES.get(q.attitude_word)),
                                    *([Chip(label="status", value=q.status, tone="bad")] if q.status != "alive" else [])],
                            details=[Chip(label="Last seen", value=q.seen_at or "unknown")], notes=q.facts)
                 for q in met] + [
-                EntityCard(id=q.id, title=q.name, subtitle="heard of, not met", notes=q.facts,
+                EntityCard(id=q.id, title=q.name if self.name_shown(s, q) else (q.role or "someone, not yet named"), subtitle="heard of, not met", notes=q.facts,
                            details=[Chip(label="Said to be at", value=q.location)] if q.location and q.location != "Unknown" else []) for q in heard]),
             ListPanel(title="Places", items=self._places_panel(s), layout="stack"),
             QuestPanel(title="Quests", rows=self.quest_rows(s)),

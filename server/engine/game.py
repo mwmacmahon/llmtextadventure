@@ -281,6 +281,7 @@ class TurnInfo:
     levers: list[dict] = field(default_factory=list)   # the typed commands' outcomes ({id, status}; "not_completed" when the referee said not_done)
     target_offset: int | None = None                   # the check offset this turn played under (the profile's dial, else the game's own); None: the game's
     player_text: str = ""                              # what the player typed (the Rogue's auto-hide reads it, B92)
+    prose: str = ""                                    # the turn's telling as the player read it (B224: the names it showed)
 
 
 # ---------------------------------------------------------------------------

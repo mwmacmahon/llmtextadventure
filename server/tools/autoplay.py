@@ -184,7 +184,7 @@ def run(args: argparse.Namespace) -> int:
         else:
             events = _stream(f"/api/instances/{iid}/turn", {"text": step["text"]})
         raw_events.append({"step": step, "events": events})
-        done = next((e for e in events if e["event"] == "done"), None)
+        done = next((e for e in reversed(events) if e["event"] == "done"), None)   # B224: the retold telling, the one kept
         err = [e["data"].get("message") for e in events if e["event"] == "error"]
         cmd = next((e["data"] for e in events if e["event"] == "command"), None)
         report.append(f"## Turn {i + 1}: {label}")

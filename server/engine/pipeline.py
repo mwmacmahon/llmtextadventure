@@ -1099,7 +1099,7 @@ class Engine:
                         calls=[dict((c.get("result") or {}), label=(c.get("result") or {}).get("label", "")) for c in calls_block.get("calls", [])],
                         rejected=[r.model_dump(mode="json") for r in report.rejected],
                         levers=[{"id": o.get("id") or lv.id, "status": o["status"]} for lv, o in zip(levers, lever_outcomes)],
-                        target_offset=self.target_offset(game, iid), player_text=player_text or "")
+                        target_offset=self.target_offset(game, iid), player_text=player_text or "", prose=narration_stored)
         drifted = _hook(game, "after_turn", state, info, default=state)
         drift_lines: list[str] = []
         if drifted is not state:

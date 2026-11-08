@@ -76,7 +76,8 @@ def play(a: argparse.Namespace) -> int:
         label = text
         events = _stream(f"/api/instances/{a.iid}/turn", {"text": text})
     n = side["turn"] + 1
-    done = next((e for e in events if e["event"] == "done"), None)
+    # B224: the guard's retelling sends a second done; the last one is the telling the server kept (the first was replaced)
+    done = next((e for e in reversed(events) if e["event"] == "done"), None)
     err = [e["data"].get("message") for e in events if e["event"] == "error"]
     cmd = next((e["data"] for e in events if e["event"] == "command"), None)
     lines = [f"## Turn {n}: {label}", ""]
