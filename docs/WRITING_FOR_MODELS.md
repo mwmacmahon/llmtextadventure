@@ -72,6 +72,14 @@ fiction has moved, the state follows it (D80, D81); the note is for what can sti
   to the narrator in a retelling note. The referee and the summarizer read a tier-only copy instead ("§ Eye check, low:
   huge success."), the form the station's referee already knew; a rule saying "trust the words over the numbers" was
   the alternative, and a trap removed beats a rule against it.
+- **Don't end a "nothing happened" line on a word that asks for harm.** The first closer for a failure the consequence
+  roll left alone read "Play that outcome, and no other: that is all the failure costs." after "it fails badly". The
+  cold read (D144): a weak model satisfies "badly" and "costs" by inventing a bruise, and reads "no other" as "write one
+  line and stop". After: "Play that outcome [and what comes with it]; nothing more is lost, and the story goes on from
+  there." Say what is not lost and that the scene moves.
+- **Don't hand a model a short list where you want invention.** Four ideas for a complication ("a witness, noise, the
+  police, a lead going cold") get picked nearly every time; the line now says "ideas for complication_what only, never
+  for failure_outcome" and "better still, one grown from the people and things already in this scene" (D144).
 - **Don't make a standing note a quota.** A tier note the bulletin repeats on every turn in tier ("let it show in what
   he half-sees, a face at a window") is followed on every turn: eight turns of the same face. Say "at most once this
   turn, where the scene gives it room, and not the way the last turn did" (D91).

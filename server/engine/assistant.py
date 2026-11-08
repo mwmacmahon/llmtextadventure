@@ -37,9 +37,11 @@ def recent_costs(rows: list[list[dict]]) -> list[dict]:
     out: list[dict] = []
     for calls in rows:
         for c in calls:
-            cost = (c.get("result") or {}).get("cost")
-            if cost:
-                out.append(cost)
+            res = c.get("result") or {}
+            if res.get("consequence"):                  # D144: what the consequence roll paid from the table
+                out += paid_rows(res["consequence"])
+            elif res.get("cost"):
+                out.append(res["cost"])
     return out
 
 
@@ -76,3 +78,74 @@ def choose_cost(options: list[dict], roll: dict, *, recent: list[dict], rng: Any
         top = max(int(o.get("weight", 1)) for o in pool)
         pool = [o for o in pool if int(o.get("weight", 1)) == top]
     return dict(pool[rng.randrange(len(pool))])
+
+
+# ---- the consequence roll (ROADMAP 1c, D144) ------------------------------------------------------------------------
+# A failed check no longer pays a cost every time (eighteen a round). A hidden d100 decides whether something else goes
+# wrong: nothing (the failure outcome is the whole of it), slight (a complication, a fact to play), or major (the
+# complication and one lasting mark the state can pay, which the referee records). The way shutting on a retry of the
+# same failed attempt stays outside the roll (D93, D122): it is pacing. A cost row with "mark": True is a lasting mark;
+# the others are complications.
+
+TIERS = ("nothing", "slight", "major")
+
+
+def consequence_tier(rng: Any, outcome: str, chances: dict[str, Any]) -> tuple[int, str]:
+    """The hidden roll: d100 (0-99) against the outcome tier's [slight, major] percent. Under major: major; under
+    slight + major: slight; else nothing. A success never rolls."""
+    r = int(rng.randrange(100))
+    slight, major = (list(chances.get(outcome) or (0, 0)) + [0, 0])[:2]
+    return r, ("major" if r < int(major) else "slight" if r < int(major) + int(slight) else "nothing")
+
+
+def stake_complication(stake: dict | None) -> str:
+    """The assistant's own complication on a stake, or "" when it wrote none (or the guard dropped it)."""
+    if not stake or (stake.get("complication") or "none") == "none":
+        return ""
+    return (stake.get("complication_what") or "").strip()
+
+
+def choose_consequence(options: list[dict], roll: dict, *, stake: dict | None, source: str, chances: dict[str, Any], rng: Any,
+                       recent: list[dict], round_costs: list[dict] | None = None, retry: bool = False) -> dict | None:
+    """What a failed roll brings beyond its failure outcome. None for a roll that did not fail.
+
+    `source` is where a complication comes from: "stake" (the assistant's, the table when it wrote none), "table", or
+    "off" (the roll never fires). Returns {roll, tier, source, complication?, mark?, way_closed?}: complication and mark
+    are cost rows ({kind, fact, detail?}); a complication from the stake has kind "stake"."""
+    outcome = roll.get("outcome") or ""
+    if outcome not in FAILURES:
+        return None
+    r, tier = consequence_tier(rng, outcome, chances)
+    if source == "off":
+        tier = "nothing"
+    out: dict[str, Any] = {"roll": r, "tier": tier, "source": source}
+    if retry:
+        closing = [o for o in options if o["kind"] == "way_closed"]
+        out["way_closed"] = dict(closing[0] if closing else WAY_CLOSED)
+    rows = [o for o in options if o["kind"] != "way_closed"]
+    # the table's picks: variety as before (not the kind of the last few, the round caps), every row on an equal footing
+    pick = {"outcome": "huge_failure"}
+    if tier in ("slight", "major"):
+        own = stake_complication(stake) if source == "stake" else ""
+        if own:
+            out["complication"] = {"kind": "stake", "fact": own}
+        else:
+            c = choose_cost([dict(o, weight=1) for o in rows if not o.get("mark")], pick, recent=recent, rng=rng, round_costs=round_costs)
+            if c:
+                out["complication"] = {k: c[k] for k in ("kind", "fact", "detail") if c.get(k)}
+                if source == "stake":
+                    out["source"] = "table (the stake had none)"
+    if tier == "major":
+        m = choose_cost([dict(o, weight=1) for o in rows if o.get("mark")], pick, recent=recent, rng=rng, round_costs=round_costs)
+        if m:
+            out["mark"] = {k: m[k] for k in ("kind", "fact", "detail") if m.get(k)}
+    return out
+
+
+def paid_rows(consequence: dict | None) -> list[dict]:
+    """The rows a consequence pays from the game's table, for variety and the round caps: the mark, a table complication
+    and a shut way (a stake's complication is the assistant's own and counts for nothing here)."""
+    if not consequence:
+        return []
+    rows = [consequence.get("mark"), consequence.get("complication"), consequence.get("way_closed")]
+    return [r for r in rows if r and r.get("kind") != "stake"]

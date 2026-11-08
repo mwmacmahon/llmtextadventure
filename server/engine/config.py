@@ -34,6 +34,10 @@ class RoleConfig(BaseModel):
     # narrator, called mode (D109, ASSISTANT-DESIGN §12): the assistant stakes each assessed check before the prose, both
     # futures; off: no call; shadow: called and logged, the engine's reply unchanged; live: the reply to a call is the branch
     stakes: Literal["off", "shadow", "live"] = "off"
+    # narrator: where a failed check's complication comes from (ROADMAP 1c, D144). map: the game's own map by kind of check
+    # (a table, or the assistant's stake); table: the game's table for every kind (a weak assistant); off: the consequence
+    # roll never fires, a failure is only its failure outcome. A retry still shuts the way under every setting.
+    consequences: Literal["map", "table", "off"] = "map"
     # llamacpp only (engine/providers/llamacpp_provider.py): the server, the slot this role is pinned to so its
     # cache stays resident beside the other roles', whether the model may think, sampling temperature, auth.
     base_url: str = Field(default_factory=lambda: os.environ.get("TA_LLAMA_URL", "http://127.0.0.1:8080"))
@@ -136,8 +140,16 @@ def canon_roles(roles: dict) -> dict:
     return {canon_role(k): v for k, v in roles.items()} if isinstance(roles, dict) else roles
 
 
+class ConsequenceConfig(BaseModel):
+    """The hidden second roll on a failed check (ROADMAP 1c, D144): percent chances of a slight and of a major
+    consequence, by outcome tier. Below both: nothing beyond the failure outcome."""
+    chances: dict[str, tuple[int, int]] = Field(default_factory=lambda: {
+        "failure": (20, 5), "huge_failure": (35, 12), "critical_failure": (50, 20)})
+
+
 class Config(BaseModel):
     server: ServerConfig = Field(default_factory=ServerConfig)
+    consequences: ConsequenceConfig = Field(default_factory=ConsequenceConfig)
     guard: GuardConfig = Field(default_factory=GuardConfig)
     roles: dict[str, RoleConfig]
     context: ContextConfig = Field(default_factory=ContextConfig)

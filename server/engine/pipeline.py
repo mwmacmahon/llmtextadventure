@@ -54,7 +54,7 @@ from .providers.base import Msg, Usage
 from .roles import (ADJUDICATOR_STAKES, AssistantReading, AssistantReadingStaked, AssistantReadingV2, adjudicator_messages, referee_messages,
                     summarizer_messages, NARRATOR_PROTOCOL)
 from .roles import NARRATOR_WORLD, REFEREE_PARTS, ChangeReport, referee_part_messages
-from .assistant import FAILURES, choose_cost, default_cost_options, recent_costs
+from .assistant import FAILURES, choose_consequence, choose_cost, default_cost_options, paid_rows, recent_costs
 from .changes import apply_changes, merge_parts, quoted_in_prose, quotes_of, says_result_played, screen_unseen_clues
 from .store import Store
 from .tape import PART, Taped, exchange_row
@@ -568,8 +568,9 @@ class Engine:
                 branches = [c for c in calls_block.get("calls", []) if (c.get("result") or {}).get("stake")]
                 if branches:                                  # D109 §12 step 6: a called check whose result was not played
                     for_referee += ("\n\n[WHAT EACH CALLED CHECK DECIDED: the engine's answer to the call, which the prose must play]\n"
-                                    + "\n".join(f"- {c['call'].get('raw')}: {str((c['result']).get('outcome', '')).replace('_', ' ')}. {c['result']['stake']['text']}"
-                                                 + (f" Cost: {c['result']['cost']['fact']}" if c["result"].get("cost") else "") for c in branches))
+                                    + "\n".join(f"- {c['call'].get('raw')}: {str((c['result']).get('outcome', '')).replace('_', ' ')}. "
+                                                 + c['result']['stake']['text'].replace(" And with it: ", " And with it (record only what the prose shows changing): ")
+                                                 + _referee_cost(c["result"]) for c in branches))
                 uncalled_now = [a for a in res["assessments"] if not a.called]
                 if uncalled_now and calls_block.get("calls"):     # K2 stopgap: some called, some not; none called is the engine's own ruling
                     for_referee += ("\n\n[CHECKS NOT CALLED: the engine assessed these attempts as needing a roll, and the narrator called no check for them]\n"
@@ -746,7 +747,9 @@ class Engine:
                       + [f"narrator: {p}" for p in calls_block.get("problems", [])],
             "calls": [{"call": c["call"].get("raw"), "mechanic": c.get("mechanic"), "outcome": (c.get("result") or {}).get("outcome"),
                        **({"cost": (c.get("result") or {})["cost"]} if (c.get("result") or {}).get("cost") else {}),
-                       **({"stake": (c.get("result") or {})["stake"]} if (c.get("result") or {}).get("stake") else {})} for c in calls_block.get("calls", [])],
+                       **({"stake": (c.get("result") or {})["stake"]} if (c.get("result") or {}).get("stake") else {}),
+                       **({"consequence": (c.get("result") or {})["consequence"]} if (c.get("result") or {}).get("consequence") else {})}
+                      for c in calls_block.get("calls", [])],
             "declarations": [d.get("raw") for d in calls_block.get("declarations", [])],
             "notes": calls_block.get("notes", []),
             "seen": seen_lines(game, start, state, calls_block.get("calls", [])),
@@ -1151,11 +1154,33 @@ class Engine:
                 round_costs.append(cost)
             return cost
 
+        dial = self.cfg.role("narrator").consequences if "narrator" in self.cfg.roles else "map"
+        chances = {k: list(v) for k, v in self.cfg.consequences.chances.items()}
+
+        def consequence_for(roll: dict, label: str, target: str, stake: dict | None) -> dict | None:
+            """ROADMAP 1c (D144): the hidden second roll on a failure, seeded per turn ("costs", as the costs were).
+            Where the complication comes from: the game's map by kind of check, unless the profile says table or off."""
+            target = target or roll.get("about") or ""
+            options = _hook(game, "cost_options", state, roll, label, target, default=None)
+            if options is None:
+                options = default_cost_options(state, roll, label, target)
+            about = roll.get("about") or target
+            retry = is_retry(last_fail, label=label, about=about, stat=roll.get("stat") or "")
+            source = dial if dial in ("table", "off") else _hook(game, "consequence_source", state, roll, label, target, default="stake")
+            cons = choose_consequence(options, roll, stake=stake, source=source, chances=chances, rng=cost_rng,
+                                      recent=recent, round_costs=round_costs, retry=retry)
+            if roll.get("outcome") in FAILURES:
+                last_fail.clear(); last_fail.update({"label": label, "about": about, "stat": roll.get("stat") or ""})
+            for row in paid_rows(cons):
+                recent.append(row)
+                round_costs.append(row)
+            return cons
+
         def handler(call, n: int) -> CallResult:
             if call.verb == "CHECK":
                 return run_check(call, n, stats, resolver, rng, assessments, modifiers, render,
                                  fallback_stat=getattr(game, "fallback_stat", None), fail_streak=fail_streak,
-                                 player=_hook(game, "player_name", state, default="the player"), cost_for=cost_for)
+                                 player=_hook(game, "player_name", state, default="the player"), consequence_for=consequence_for)
             if call.verb == "LOOK":
                 text = _hook(game, "look", state, call.ref, default=None)
                 if not text:
@@ -1449,6 +1474,10 @@ def adjudicator_inputs(game: Game, state: BaseModel, recent: list[Msg], player_t
     if extra:
         game_rules = STAKES_RULES.get(game.name, "").replace("The rules of this game.", "In the futures, complications and fiat you write, these rules hold.", 1)
         system += "\n\n" + ADJUDICATOR_STAKES + ("\n\n" + game_rules if game_rules else "")
+        ideas = getattr(game, "consequence_ideas", "")
+        if ideas:                                       # ROADMAP 1c (D144): the author's table, as ideas for the assistant's own
+            system += (f"\n\nWhat this world can charge, as ideas for complication_what only, never for failure_outcome: {ideas}. "
+                       "Better still, one grown from the people and things already in this scene.")
     return system, msgs, schema
 
 
@@ -1699,6 +1728,17 @@ def _lever_lines(levers: list["PendingLever"]) -> list[str]:
             out.append(f"{lv.id} ({lv.label}): {lv.preview.text.strip()}")
     return out
 
+
+
+def _referee_cost(result: dict) -> str:
+    """What the referee is told the state pays for a called check: a major consequence's lasting mark and a shut way
+    (D144); a slight complication is already in the branch's text and needs no row. Before the roll: the one cost."""
+    cons = result.get("consequence")
+    if cons is not None:
+        facts = [r["fact"] for r in (cons.get("mark"), cons.get("way_closed")) if r]
+    else:
+        facts = [result["cost"]["fact"]] if result.get("cost") else []
+    return (" Cost: " + " ".join(facts)) if facts else ""
 
 
 def seen_lines(game: Game, before: BaseModel, after: BaseModel, calls: list[dict]) -> list[str]:

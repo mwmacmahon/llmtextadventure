@@ -382,15 +382,19 @@ def _sentence(s: str) -> str:
     return (s if s.endswith((".", "!", "?", '"')) else s + ".") if s else ""
 
 
-def branch_text(stake: dict, failed: bool) -> str:
+def branch_text(stake: dict, failed: bool, complication: str | None = None) -> str:
     """The engine's reply's branch: what the roll decided, as the assistant staked it (§12 step 4). The cost is added by
-    the caller (the engine's own)."""
+    the caller (the engine's own). `complication`: the one the consequence roll chose ("" for none, D144); None plays the
+    stake's own, as before the roll."""
     if not failed:
         gain = _sentence(stake.get("success_gain", ""))
         return f" What it gains, as the engine holds it: {gain}" if gain else ""
     out = _sentence(stake.get("failure_outcome", ""))
     text = f" What failure leaves standing, as the engine holds it: {out}" if out else ""
-    comp = _sentence(stake.get("complication_what", "")) if stake.get("complication", "none") != "none" else ""
+    if complication is None:
+        comp = _sentence(stake.get("complication_what", "")) if stake.get("complication", "none") != "none" else ""
+    else:
+        comp = _sentence(complication)
     if comp:
         text += f" And with it: {comp}"
     return text

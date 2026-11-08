@@ -131,7 +131,7 @@ def test_the_thing_kind_is_capped_per_round():
 
 
 def test_a_failed_conversation_costs_the_conversation_not_a_noise(game: NoirGame):
-    """A15, D122: a tongue roll against someone in the scene offers the talk cost and never the noise."""
+    """A15, D122, D144: a tongue roll against someone in the scene offers the lead going cold and never the noise."""
     from engine.game import ApplyReport
     from engine.gamekit import Writer
     _, st = game.new_instance({})
@@ -139,17 +139,17 @@ def test_a_failed_conversation_costs_the_conversation_not_a_noise(game: NoirGame
     q.met, q.location = True, st.player.location
     st = game.apply_present(st, [q.id], Writer(game.authority, ApplyReport(), actor="engine"))
     kinds = [o["kind"] for o in game.cost_options(st, {"stat": "tongue", "outcome": "failure"}, "", q.id)]
-    assert "talk" in kinds and "noise" not in kinds
+    assert "cold" in kinds and "noise" not in kinds
     st = game.apply_present(st, [], Writer(game.authority, ApplyReport(), actor="engine"))
-    talk = [o for o in game.cost_options(st, {"stat": "tongue", "outcome": "failure"}, "", q.id) if o["kind"] == "talk"]
-    assert talk and talk[0]["detail"] == q.id                                    # the target counts though the last telling had not listed them
+    cold = [o for o in game.cost_options(st, {"stat": "tongue", "outcome": "failure"}, "", q.id) if o["kind"] == "cold"]
+    assert cold and cold[0]["detail"] == q.id                                    # the target counts though the last telling had not listed them
     kinds = [o["kind"] for o in game.cost_options(st, {"stat": "tongue", "outcome": "failure"}, "", "")]
-    assert "noise" not in kinds and "talk" in kinds                              # no target: a plain talk cost, never a lost thing for a failed word
+    assert "noise" not in kinds and "cold" in kinds                              # no target: a plain talk cost, never a lost thing for a failed word
     import random
     from engine.assistant import choose_cost
     opts = game.cost_options(st, {"stat": "tongue", "outcome": "failure"}, "", "")
     for seed in range(10):
-        assert choose_cost(opts, {"outcome": "failure", "stat": "tongue"}, recent=[], rng=random.Random(seed))["kind"] in ("talk", "time")   # never a thing or a noise
+        assert choose_cost(opts, {"outcome": "failure", "stat": "tongue"}, recent=[], rng=random.Random(seed))["kind"] in ("cold", "turned", "way_closed")   # never a thing or a noise (D144: no time row)
 
 
 def test_a_retry_is_the_same_label_or_the_same_target_and_stat():
@@ -206,7 +206,7 @@ def test_a_failed_word_on_the_station_costs_the_conversation_not_a_fault():
     c = st.crew[0]
     for target in (c.id, c.name, c.name.split()[-1]):
         kinds = {o["kind"]: o for o in st_game.cost_options(st, {"stat": "influence", "outcome": "failure"}, "", target)}
-        assert "talk" in kinds and kinds["talk"].get("detail") == c.id and "fault" not in kinds and "reset" not in kinds
+        assert "cold" in kinds and kinds["cold"].get("detail") == c.id and "fault" not in kinds and "reset" not in kinds
     kinds = [o["kind"] for o in st_game.cost_options(st, {"stat": "influence", "outcome": "failure"}, "", "")]
-    assert "talk" in kinds and "fault" not in kinds
+    assert "cold" in kinds and "fault" not in kinds
     assert "fault" in [o["kind"] for o in st_game.cost_options(st, {"stat": "systems", "outcome": "failure"}, "", "")]

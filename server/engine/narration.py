@@ -254,7 +254,8 @@ def match_assessment(call: Call, assessments: list[Assessment]) -> Assessment | 
 def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any, CheckRequest], CheckResult], rng: Any,
               assessments: list[Assessment], modifiers: Callable[[CheckRequest, str | None], list[Modifier]],
               render: Callable[[CheckResult], str], *, fallback_stat: str | None = None, fail_streak: int = 0,
-              player: str = "the player", cost_for: Callable[[dict, str, str], dict | None] | None = None) -> CallResult:
+              player: str = "the player", cost_for: Callable[[dict, str, str], dict | None] | None = None,
+              consequence_for: Callable[[dict, str, str, dict | None], dict | None] | None = None) -> CallResult:
     stat = call.stat
     if stat not in stats:
         if fallback_stat and fallback_stat in stats:
@@ -277,20 +278,37 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
     data = res.model_dump(mode="json")
     data["about"] = (a.about if a and a.about else target) or ""       # D122: what the attempt was aimed at, for telling a retry
     failed = res.outcome in ("failure", "huge_failure", "critical_failure")
-    cost = cost_for(data, label, target or "") if (failed and cost_for) else None      # plan A (D103): the engine picks the cost
     stake = a.stake if a is not None else None                                           # D109: the assistant's branch, live
-    branch = branch_text(stake, failed) if stake else ""
+    if consequence_for is not None:                                                      # D144: the hidden consequence roll
+        tail, branch, cost = _consequence_tail(data, label, target or "", stake, failed, consequence_for)
+    else:
+        tail, branch, cost = _cost_tail(data, label, target or "", stake, failed, cost_for, fail_streak, player)
     if stake:
         data["stake"] = {"branch": "failure" if failed else "success", "text": branch.strip(),
                          "minutes": int(stake.get("failure_minutes" if failed else "success_minutes") or 0)}
     if cost:
         data["cost"] = {k: cost[k] for k in ("kind", "fact", "detail") if cost.get(k)}
-        tail = (" A failure gives nothing of what was sought: no name, no fact, no glimpse of what is hidden, no half-success. The scene"
-                f" still moves.{branch} What it costs, the engine has chosen: {cost['fact']} Play "
+    text = (f"[ENGINE] Check: {stat}, {difficulty.replace('_', ' ')} difficulty" + (f", against {target}" if target else "") +
+            f". Rolled {res.roll}{sign} = {res.total} against {res.target}: {outcome_words(res.outcome)}. "
+            "Play that in the story; never soften or reverse it, and never mention dice, numbers or how well it rolled." + tail)
+    causes = [target] if target and res.outcome in ("success", "huge_success", "critical_success") else []
+    return CallResult(text=text, mechanic=render(res), data=data, causes=causes)
+
+
+NOTHING_SOUGHT = (" A failure gives nothing of what was sought: no name, no fact, no glimpse of what is hidden, no half-success. The scene"
+                  " still moves.")
+
+
+def _cost_tail(data: dict, label: str, target: str, stake: dict | None, failed: bool, cost_for, fail_streak: int, player: str
+               ) -> tuple[str, str, dict | None]:
+    """The reply's tail before the consequence roll (D103, D109): a failure always paid a cost from the game's table."""
+    cost = cost_for(data, label, target) if (failed and cost_for) else None      # plan A (D103): the engine picks the cost
+    branch = branch_text(stake, failed) if stake else ""
+    if cost:
+        tail = (NOTHING_SOUGHT + f"{branch} What it costs, the engine has chosen: {cost['fact']} Play "
                 + ("that outcome and that cost" if branch else "that cost") + ", and no other: no further hurt, nothing else lost.")
     elif failed and branch:
-        tail = (" A failure gives nothing of what was sought: no name, no fact, no glimpse of what is hidden, no half-success. The scene"
-                f" still moves.{branch} Play that outcome.")
+        tail = NOTHING_SOUGHT + f"{branch} Play that outcome."
     elif branch:
         tail = branch + " Play that."
     elif failed:
@@ -298,11 +316,43 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
                 " A failure gives nothing: no name, no fact, no glimpse of what is hidden, no half-success. The attempt costs instead (time, noise, notice, a hurt).")
     else:
         tail = ""
-    text = (f"[ENGINE] Check: {stat}, {difficulty.replace('_', ' ')} difficulty" + (f", against {target}" if target else "") +
-            f". Rolled {res.roll}{sign} = {res.total} against {res.target}: {outcome_words(res.outcome)}. "
-            "Play that in the story; never soften or reverse it, and never mention dice, numbers or how well it rolled." + tail)
-    causes = [target] if target and res.outcome in ("success", "huge_success", "critical_success") else []
-    return CallResult(text=text, mechanic=render(res), data=data, causes=causes)
+    return tail, branch, cost
+
+
+def _consequence_tail(data: dict, label: str, target: str, stake: dict | None, failed: bool, consequence_for
+                      ) -> tuple[str, str, dict | None]:
+    """The reply's tail with the consequence roll (ROADMAP 1c, D144). A success plays its gain. A failure plays its
+    failure outcome; on a slight roll, with one complication (the stake's own, or the game's table's); on a major roll,
+    with that and a lasting mark; a retry of the same failed attempt also shuts the way. Nothing else goes wrong."""
+    if not failed:
+        branch = branch_text(stake, False) if stake else ""
+        return (branch + " Play that." if branch else ""), branch, None
+    cons = consequence_for(data, label, target, stake)
+    data["consequence"] = cons
+    comp = (cons or {}).get("complication")
+    marks = [m for m in ((cons or {}).get("mark"), (cons or {}).get("way_closed")) if m]
+    branch = branch_text(stake, True, complication=comp["fact"] if comp else "") if stake else ""
+    if not stake and comp:
+        marks = [comp] + marks                       # no stake to carry it: the complication is told with the costs
+    cost = (cons or {}).get("mark") or (cons or {}).get("way_closed")       # what the state pays, for the referee and the tools
+    if marks:
+        facts = " ".join(_full(m["fact"]) for m in marks)
+        tail = (NOTHING_SOUGHT + f"{branch} What it costs, the engine has chosen: {facts} Play "
+                + ("that outcome and that cost" if branch else "that cost") + ", and no other: no further hurt, nothing else lost.")
+    elif branch:                                     # the cold read (D144): "no other" stalls a weak model; "costs" invites harm
+        tail = NOTHING_SOUGHT + f"{branch} Play that outcome" + (" and what comes with it" if comp else "") + GOES_ON
+    else:
+        tail = (" A failure gives nothing: no name, no fact, no glimpse of what is hidden, no half-success. The attempt does not"
+                " come off" + GOES_ON)
+    return tail, branch, cost
+
+
+GOES_ON = "; nothing more is lost, and the story goes on from there."
+
+
+def _full(s: str) -> str:
+    s = (s or "").strip()
+    return s if s.endswith((".", "!", "?", '"')) else s + "."
 
 
 def fail_forward(player: str) -> str:

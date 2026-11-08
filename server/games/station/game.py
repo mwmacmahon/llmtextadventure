@@ -1554,33 +1554,42 @@ class StationGame(GameBase):
     def player_name(self, s: StationState) -> str:
         return "the station"
 
+    # ROADMAP 1c (D144): where a failed check's complication comes from, by stat. A failed edit of a system or a forged
+    # record draws the systems' own consequences (a fault flag, a reset); the rest take the assistant's complication
+    # from the stake, the table when it wrote none.
+    consequence_sources = {"systems": "table", "forgery": "table"}
+    consequence_ideas = ("a fault flag the crew can see on the shared board; a system dropping into a reset; a crew member noticing "
+                         "what was tried; a trace in the station's own logs; a person trusting the station less")
+
     def cost_options(self, s: StationState, roll: dict, label: str = "", target: str = "") -> list[dict]:
-        """Plan A (D103): what a failed check can cost the station, for engine/assistant.choose_cost. No system
-        mishap: a failure is noticed, leaves a trace, or closes the way (the card round's electrical mishap on every
-        failure was the narrator's own pick)."""
+        """The station's table (ROADMAP 1c, D144), for engine/assistant.choose_consequence. Complications (a slight roll):
+        a fault flag, a reset (never on a failed word, D131), the words landing wrong. Lasting marks (a major roll, which
+        the referee records): a trace in the station's logs, a crew member noticing what was tried, a person trusting the
+        station less. The way shut on a retry stays outside the roll."""
         from engine.assistant import WAY_CLOSED
-        # D127: with the way shut only on a retry (D122), a plain failure had one light cost, the trace, every time; two more
-        # the station's state can pay, so the costs rotate
-        out: list[dict] = [dict(WAY_CLOSED),
-                           {"kind": "trace", "weight": 1, "fact": "It leaves a trace in the station's own logs: anyone who checks will find it."},
-                           {"kind": "fault", "weight": 1, "fact": "A fault flag goes up on the shared board: the crew can see that something went wrong, not what."},
-                           {"kind": "reset", "weight": 1, "fact": "The system drops into a reset and nothing more can be tried through it for the next twenty minutes."}]
+        out: list[dict] = [dict(WAY_CLOSED)]
         who = s.crew_by_id(target) if target else None
         if who is None and target:                           # a name or a word for them, as the assistant wrote it
             t = target.lower()
             who = next((c for c in s.crew if t in (c.id.lower(), c.name.lower()) or t in c.name.lower().split()), None)
-        if roll.get("stat") == "influence":
-            # a failed word costs the conversation, never a machine fault (D131: eight failed influence rolls in a live round
-            # paid a fault flag or a reset, because the target never reached this table)
-            out = [o for o in out if o["kind"] not in ("fault", "reset")]
-            if who is not None and who.health != "dead":
-                out.append({"kind": "talk", "weight": 1, "detail": who.id,
-                            "fact": f"{who.name} is done listening to the station on this for now: the next try on them starts from worse."})
-            else:
-                out.append({"kind": "talk", "weight": 1, "fact": "The words land wrong: whoever the station was working on closes up on this for now."})
-        if who is not None and who.health != "dead":
-            out.append({"kind": "tell", "weight": 2, "detail": who.id,
+        if who is not None and who.health == "dead":
+            who = None
+        talk = roll.get("stat") == "influence"
+        if not talk:
+            out.append({"kind": "fault", "weight": 1, "fact": "A fault flag goes up on the shared board: the crew can see that something went wrong, not what."})
+            out.append({"kind": "reset", "weight": 1, "fact": "The system drops into a reset and nothing more can be tried through it for the next twenty minutes."})
+        elif who is not None:
+            out.append({"kind": "cold", "weight": 1, "detail": who.id,
+                        "fact": f"{who.name} is done listening to the station on this for now: the next try on them starts from worse."})
+        else:
+            out.append({"kind": "cold", "weight": 1, "fact": "The words land wrong: whoever the station was working on closes up on this for now."})
+        out.append({"kind": "trace", "weight": 1, "mark": True, "fact": "It leaves a trace in the station's own logs: anyone who checks will find it."})
+        if who is not None:
+            out.append({"kind": "tell", "weight": 1, "mark": True, "detail": who.id,
                         "fact": f"{who.name} notices what was tried, and it stays with them."})
+            if talk:
+                out.append({"kind": "turned", "weight": 1, "mark": True, "detail": who.id,
+                            "fact": f"{who.name} trusts the station less after this."})
         return out
 
     def turn_directives(self, s: StationState) -> list[str]:

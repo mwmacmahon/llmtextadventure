@@ -23,6 +23,17 @@ server:
 # temperature 0.2 without the penalty scored the same but ran two calls into the 1536-token budget, greedy
 # none. min_p 0.05 / top_p 0.95 (Qwen's general advice) wrote different rows, mostly unjudged, and truncated
 # twice. One run per setting; the dense models get these as their starting point.
+
+# The consequence roll (ROADMAP 1c, D144): on a failed check the engine rolls d100 in secret; under the major chance
+# the failure brings a complication and a lasting mark, under slight + major a complication, else nothing beyond the
+# failure outcome. Percent [slight, major] by outcome tier. Where the complication comes from is the game's (by kind of
+# check) unless the narrator role's `consequences` dial says table or off.
+consequences:
+  chances:
+    failure: [20, 5]
+    huge_failure: [35, 12]
+    critical_failure: [50, 20]
+
 roles:
   narrator:
     provider: llamacpp

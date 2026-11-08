@@ -12,6 +12,17 @@ server:
 
 # Model roles. Each role is configured independently so backends can be mixed.
 # provider: anthropic | fake   (set TA_PROVIDER=fake to force fake everywhere)
+
+# The consequence roll (ROADMAP 1c, D144): on a failed check the engine rolls d100 in secret; under the major chance
+# the failure brings a complication and a lasting mark, under slight + major a complication, else nothing beyond the
+# failure outcome. Percent [slight, major] by outcome tier. Where the complication comes from is the game's (by kind of
+# check) unless the narrator role's `consequences` dial says table or off.
+consequences:
+  chances:
+    failure: [20, 5]
+    huge_failure: [35, 12]
+    critical_failure: [50, 20]
+
 roles:
   narrator:
     provider: anthropic

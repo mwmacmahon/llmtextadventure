@@ -109,12 +109,15 @@ async def test_live_replies_with_the_branch_and_the_referee_sees_it(engine: Engi
     failed = "fail" in call["outcome"]
     assert call["stake"]["branch"] == ("failure" if failed else "success")
     if failed:
-        assert OUTCOME in replies[0] and COMP in replies[0] and GAIN not in replies[0]
+        cons = call["consequence"]                          # D144: the stake's complication only on a slight or major roll
+        assert OUTCOME in replies[0] and GAIN not in replies[0]
+        assert (COMP in replies[0]) is ((cons.get("complication") or {}).get("kind") == "stake")
         assert ("What it costs, the engine has chosen" in replies[0]) is bool(call.get("cost"))
         assert call["stake"]["minutes"] == 8
     else:
         assert GAIN in replies[0] and OUTCOME not in replies[0] and call["stake"]["minutes"] == 5
-    assert "[WHAT EACH CALLED CHECK DECIDED" in seen[0] and call["stake"]["text"] in seen[0]
+    marked = call["stake"]["text"].replace(" And with it: ", " And with it (record only what the prose shows changing): ")   # D144
+    assert "[WHAT EACH CALLED CHECK DECIDED" in seen[0] and marked in seen[0]
 
 
 def test_the_dial_off_prompt_is_unchanged_and_on_adds_the_stakes():

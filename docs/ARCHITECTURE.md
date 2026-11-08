@@ -192,12 +192,15 @@ NARRATE      streamed. system = frozen prefix (cached, 1h). messages = [story so
              modifiers apply. The reply is one [ENGINE] line: the result in words, never the die for a
              local narrator; with the stakes live, the branch the assistant wrote for that result
              ("What it gains, as the engine holds it: …" or "What failure leaves standing …", with its
-             complication), the minutes of that branch, and on a failure the engine's cost. The cost
-             (engine/assistant.choose_cost) comes from the game's `cost_options` (kinds with weights and
-             a fact): a plain failure pays a weight-1 cost, a huge or critical failure the heaviest that
-             fits, never a kind among the last three costs, never a kind past its per-round cap (things:
-             two a round), and a second failure running shuts the way (way_closed) and adds the
-             fail-forward line. An unstaked check gets the words alone.
+             complication only when the consequence roll calls for one), the minutes of that branch,
+             and on a failure what the consequence roll chose (D144, engine/assistant.choose_consequence):
+             a hidden d100 against `consequences.chances` by outcome tier gives nothing (the failure
+             outcome alone), slight (one complication, from the stake or the game's table by kind of
+             check, `consequence_sources`) or major (that and a lasting mark from the table, the only
+             Cost the referee is told). Table picks keep their variety (never a kind among the last
+             three paid, the per-round caps). A retry of the same failed attempt shuts the way
+             (way_closed) outside the roll. The narrator role's `consequences` dial (map, table, off)
+             overrides the map. An unstaked check gets the words alone.
   ▼
 REFEREE      one structured call (Sonnet, or the box's model) against roles.ChangeReport, the same for every game
              (split: three passes over one cached prompt, player / world / timers and rulings, merged by changes.merge_parts)
@@ -396,12 +399,11 @@ Branch `1.0` preserves the first engine; `main` stays there until 2.0 is playabl
 - `engine/narration.py`: the narrator loop. Stream; on a call, stop, run it, show a mechanics line,
   send one more request (history + the prose so far + the result + "continue from where you stopped");
   at most `GameBase.max_calls` stops per turn. `run_check` rolls with the assistant's assessment as the
-  floor (the harder of assessment and call). A failure's answer carries the engine's cost (engine/assistant.py,
-  from the game's `cost_options`); when the previous turns' rolls all failed too (`Engine._fail_streak`, read
-  from their narrator rows) the way shuts and the answer adds "Failed twice now. Make it cost Frank one real
-  thing ... end with a different opening in front of Frank." (a scene is never stalled by failed checks more
-  than once in a row). With the narrator's stakes dial live, the answer leads with the branch the assistant
-  wrote for that result (§4, NARRATE).
+  floor (the harder of assessment and call). A failure's answer carries what the consequence roll chose (D144,
+  engine/assistant.py, from the game's `cost_options` and the stake) and ends "nothing more is lost, and the story
+  goes on from there"; a retry of the same failed attempt shuts the way. (Before D144 every failure paid a cost,
+  and a game with no cost table still gets the D93 fail-forward line on a second failure running.) With the
+  narrator's stakes dial live, the answer leads with the branch the assistant wrote for that result (§4, NARRATE).
 - One narration path for both games: resolve assesses checks instead of rolling them, THIS TURN lists the assessed checks as calls to make, the system prompt
   carries `roles.NARRATOR_WORLD` and `roles.NARRATOR_PROTOCOL`, the SSE stream has `mechanic` events, the
   transcript's narrator row is flat (prose plus `§` lines), and the ledger's narrator `model_call`

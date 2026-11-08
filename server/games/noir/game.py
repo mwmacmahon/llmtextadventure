@@ -369,55 +369,64 @@ class NoirGame(GameBase):
 
     # plan A (D103): what a failed check can cost Frank, for engine/assistant.choose_cost. The body is one cost of
     # several and the heaviest; the bad leg is one wound of five and never the same wound twice running.
-    LOSABLE = {"cigarettes": 2, "matches": 2, "dollars": 2, "bullets": 2, "pencil": 2}   # never the lockpicks (his trade), the revolver or the notebook
     WOUNDS = (("hand", "a torn palm; his grip is worse for a while"), ("ribs", "a bruised rib that catches when he breathes"),
               ("shoulder", "a wrenched shoulder"), ("face", "a split lip"), ("leg", "the bad leg jarred: it aches, and it holds"))
     PHYSICAL = ("muscle", "hands")
     SOCIAL = ("tongue",)
 
+    # ROADMAP 1c (D144): where a failed check's complication comes from, by stat. Body work draws from the city's table (a
+    # fight can draw a wound); the rest take the assistant's own complication from the stake, the table when it wrote none.
+    consequence_sources = {"muscle": "table"}
+    # shown to the assistant in its stakes rules: what this city can charge, as ideas for a complication it writes. The
+    # marks (a wound, something of his left at the scene) stay the engine's: a complication never names the player's
+    # own condition or loss (roles.ADJUDICATOR_STAKES)
+    consequence_ideas = "a witness who will remember what they saw; noise that carries; the police hearing about it; a lead going cold"
+    KEPT = ("lockpicks", "revolver", "notebook", "trench_coat")       # never left behind: his trade, his gun, his notes, his coat
+
     def cost_options(self, state: NoirState, roll: dict, label: str = "", target: str = "") -> list[dict]:
+        """The city's table (ROADMAP 1c, D144), for engine/assistant.choose_consequence. Complications (a slight roll):
+        a witness, noise, the police hearing of it, a lead going cold. Lasting marks (a major roll, which the referee
+        records): something of his left at the scene where it can be found, a wound (body work only), a person turned
+        against him (talk only). Time and talk are no longer costs: time is the failure's minutes, a closed mouth is the
+        person's attitude. The way shut on a retry stays outside the roll."""
         from engine.assistant import WAY_CLOSED
         s, p = state, state.player
-        out: list[dict] = [dict(WAY_CLOSED),
-                           # D128: a light cost no round cap reaches, so a capped round never falls back to the same noise again
-                           {"kind": "time", "weight": 1, "fact": f"It eats time: the minutes run on while {state.player.name} gets nowhere with it."}]
+        out: list[dict] = [dict(WAY_CLOSED)]
         people = [q for q in s.people if q.status == "alive" and q.id not in s.case.eldritch]     # the thing in the dark keeps no grudges
-        # a witness only from the last telling (H6, D109): the state's locations go stale, and "Brandt sees what Frank was trying"
-        # was staked on eight of thirteen cell checks with Brandt long gone; the target counts only when that telling had them too
+        # a witness only from the last telling (H6, D109): the state's locations go stale
         here = [q for pid in p.with_him for q in people if q.id == pid]
         who = next((q for q in here if q.id == target), None) if target else None
         if who is None and here:
             who = here[0]
         talk = roll.get("stat") in self.SOCIAL
-        if talk:
-            # a failed conversation costs the conversation, not a crash (A15, D122). The person talked to is there by the nature
-            # of the attempt, so the target counts even when the last telling had not listed them (D126: with nobody listed,
-            # a failed word fell through to losing the cigarettes)
-            spoken = next((q for q in people if q.id == target), None) if target else None
-            if spoken is not None:
-                out.append({"kind": "talk", "weight": 1, "detail": spoken.id,
-                            "fact": f"{spoken.name} has had enough of {p.name}'s questions for now: pressing them again tonight gets less, not more."})
-            else:
-                out.append({"kind": "talk", "weight": 1,
-                            "fact": f"The talk goes nowhere: whoever {p.name} was working on closes up on this for now."})
-        if who is not None:
+        spoken = next((q for q in people if q.id == target), None) if (talk and target) else None   # talked to: there by the attempt (D126)
+        if who is not None and who is not spoken:
             out.append({"kind": "tell", "weight": 1, "detail": who.id,
                         "fact": f"{who.name} sees what {p.name} was trying, and will remember it."})
-        elif not talk:                                   # a failed word makes no noise
-            out.append({"kind": "noise", "weight": 1, "fact": f"It makes noise: anyone near enough knows someone was here, though not who."})
-        for it in s.inventory:
-            w = self.LOSABLE.get(it.id)
-            if w is None or it.count <= 0:
+        if not talk:                                     # a failed word makes no noise
+            out.append({"kind": "noise", "weight": 1, "fact": "It makes noise: anyone near enough knows someone was here, though not who."})
+            out.append({"kind": "law", "weight": 1,
+                        "fact": f"Someone saw enough to talk: before morning the police will hear that a man like {p.name} was here."})
+        if spoken is not None:
+            out.append({"kind": "cold", "weight": 1, "detail": spoken.id,
+                        "fact": f"{spoken.name} gets careful: asked again tonight, they give less, not more."})
+        else:
+            out.append({"kind": "cold", "weight": 1,
+                        "fact": f"A lead goes cold: what {p.name} was after here will be harder to come at when he tries again."})
+        # the lasting marks
+        for it in ([] if talk else s.inventory):           # a failed word leaves nothing lying about
+            if it.id in self.KEPT or it.id in COUNTED or it.count != 1:
                 continue
-            if it.id == "dollars":
-                out.append({"kind": "thing", "weight": w, "detail": it.id, "fact": f"{p.name} loses ${min(it.count, 5)}."})
-            elif it.id == "bullets":                      # the loose rounds, never the ones in the cylinder
-                out.append({"kind": "thing", "weight": w, "detail": it.id, "fact": f"{p.name} loses the loose bullets from his coat pocket; the gun keeps its load."})
-            else:
-                out.append({"kind": "thing", "weight": w, "detail": it.id, "fact": f"{p.name} loses the {it.name} he carries."})
+            out.append({"kind": "thing", "weight": 1, "mark": True, "detail": it.id,
+                        "fact": f"{p.name} leaves his {it.name} behind at the scene, where anyone who looks could find "
+                                + ("them." if it.name.endswith("s") and not it.name.endswith("ss") else "it.")})
         if roll.get("stat") in self.PHYSICAL:
             for part, words in self.WOUNDS:
-                out.append({"kind": "wound", "weight": 2, "detail": part, "fact": f"{p.name} is hurt: {words}. It slows him; it does not stop him."})
+                out.append({"kind": "wound", "weight": 1, "mark": True, "detail": part,
+                            "fact": f"{p.name} is hurt: {words}. It slows him; it does not stop him."})
+        if spoken is not None:
+            out.append({"kind": "turned", "weight": 1, "mark": True, "detail": spoken.id,
+                        "fact": f"{spoken.name} turns against {p.name} over this: they think worse of him from now on."})
         return out
 
     def not_carried(self, state: NoirState, name: str) -> str | None:

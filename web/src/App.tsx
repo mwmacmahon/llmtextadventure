@@ -308,7 +308,10 @@ function MechanicsRow({ text }: { text: string }) {
   if (time) shown.push(time);
   const seen = m.seen ?? [];
   const lines = [
-    ...(m.calls ?? []).map((c) => (c.outcome ? `${c.call}: ${c.outcome.replace(/_/g, " ")}` : `${c.call}`)),
+    ...(m.calls ?? []).map((c) => (c.outcome ? `${c.call}: ${c.outcome.replace(/_/g, " ")}` : `${c.call}`)
+      + (c.consequence ? ` · consequence ${c.consequence.roll}: ${c.consequence.tier} (${c.consequence.source})`
+        + (c.consequence.complication ? ` · ${c.consequence.complication.kind}` : "") + (c.consequence.mark ? ` · mark ${c.consequence.mark.kind}` : "")
+        + (c.consequence.way_closed ? " · way closed" : "") : "")),
     ...m.events.map((e) => `event ${e}`),
     ...m.expired.map((e) => `expired ${e}`),
     ...(m.happenings ?? []).map((h) => `unscripted: ${h.id.replace(/_/g, " ")}${h.reason ? ` (${h.reason})` : ""}`),

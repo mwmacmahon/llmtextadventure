@@ -33,7 +33,8 @@ export type CheckSummary = { label: string; outcome: string; roll: number | null
 export type Mechanics = {
   kind: string | null;
   elapsed: number;
-  calls: { call: string | null; mechanic: string | null; outcome: string | null }[];
+  calls: { call: string | null; mechanic: string | null; outcome: string | null;
+           consequence?: { roll: number; tier: string; source: string; complication?: { kind: string; fact: string }; mark?: { kind: string; fact: string }; way_closed?: { fact: string } } }[];
   events: string[];
   expired: string[];
   happenings: { id: string; who: string[]; reason: string | null }[];

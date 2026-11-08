@@ -359,6 +359,15 @@ class GameBase:
         """What <<LOOK ref>> returns to the narrator: the record of a person, thing or place. None: nothing recorded."""
         return None
 
+    # ROADMAP 1c (D144): where a failed check's complication comes from, by kind of check: "table" (the game's cost_options
+    # rows) or "stake" (the assistant's own, the table when it wrote none). A kind not listed: "stake".
+    consequence_sources: dict[str, str] = {}
+    consequence_ideas: str = ""                      # what this world can charge, shown to the assistant in its stakes rules
+
+    def consequence_source(self, state: BaseModel, roll: dict, label: str, target: str) -> str:
+        """The kind of a failed check is its stat by default; a game can class checks its own way ("a fight")."""
+        return self.consequence_sources.get(roll.get("stat") or "", "stake")
+
     def seen_changes(self, before: BaseModel, after: BaseModel) -> list[str]:
         """What the player should see change this turn, in the player's row under the prose (ISSUES B18, D143): pockets,
         health and nerves, a thing lost. Short lines from the turn's start and end states; only what the player's own
