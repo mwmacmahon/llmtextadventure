@@ -60,6 +60,7 @@ ATTITUDE_STEP = 2
 POTION_HP = 8
 SHORT_REST, LONG_REST = 60, 480
 SURVIVED_HOURS = 240
+CREDIT_TURNS = 6                # turns a quest's reward gold waits for the giver's payment in the prose (D165)
 RAISED_HOURS = 360
 MAX_PEOPLE, MAX_THINGS, MAX_FOUND = 80, 200, 40
 WATER = {"The river Marrow", "The Reedway", "Lake Ambercold", "Reed Island", "Monastery Isle", "Old Marrow"}
@@ -647,18 +648,45 @@ class FantasyGame(GameBase):
             "person is that person: use their id.",
             "present: the listed people in the scene with the player when the prose ends; someone only talked about is not present.",
             "Threads: open one for a job, a promise or a rumour the player took up that is not one of the quests in motion (a notice from the board, "
-            "a favour asked at the bar). Close it when the prose settles it, with how in the note. The quests the game deals open and close by themselves.",
+            "a favour asked at the bar). Close it when the prose settles it, with how in the note. The quests the game deals have thread ids "
+            "starting with hook-. You never close these. When the prose settles one, write the flag marked below with that quest's title, and "
+            "the engine closes the quest.",
             "ruling too_far (serious): the telling showed more than this game shows: a bedroom scene past the door, or a torture told blow by blow. "
             "value = what it showed, in a few words; note = where to cut and where to pick up: at the door for a bedroom; at the first blow for a "
             "torture, picking up with what it left.",
             "",
             "Flags you may set (flag <name> value=true) when the narration clearly establishes them:",
         ]
+        closes = self._quest_flags(s)
         for k, v in s.city.narrator_flags.items():
             if k in ("wanted_by_the_watch", "visited_greywood", "visited_mire", "night_market_open"):
                 continue                                             # the engine's and the clock's
-            lines.append(f"- {k}: {v}")
+            lines.append(f"- {k}: {v}" + (f" (closes the quest {closes[k]}; write it when that happens)" if k in closes else ""))
         return "\n".join(lines)
+
+    def _quest_flags(self, s: FantasyState) -> dict[str, str]:
+        """flag -> the title of the quest in motion whose done or failed condition names it (f1L, D165: the troll moved to
+        the bridge, Maud paid, and nobody wrote troll_settled, so the quest never closed or paid)."""
+        out: dict[str, str] = {}
+        hooks = self.hooks_content()
+
+        def walk(pred: Any, title: str) -> None:
+            if isinstance(pred, dict):
+                for key, val in pred.items():
+                    if key == "flag" and isinstance(val, str):
+                        out.setdefault(val, title)
+                    elif key != "not_flag":
+                        walk(val, title)
+            elif isinstance(pred, list):
+                for x in pred:
+                    walk(x, title)
+
+        for h in s.hooks:
+            hk = hooks.get(h.id)
+            if hk is not None and h.status in ("dealt", "live"):
+                walk(hk.get("done"), h.title)
+                walk(hk.get("failed"), h.title)
+        return out
 
     # ---- checks -------------------------------------------------------------------------------------------------------
     def render_mechanic(self, state: FantasyState, result: Any) -> str | None:
@@ -756,6 +784,8 @@ class FantasyGame(GameBase):
         p = s.player
         target, field, value, kind = ch.target.strip(), ch.field.strip().lower(), ch.value.strip(), ch.kind
         is_player = target.lower() in ("player", p.name.lower(), p.name.split(" ")[0].lower() if p.name else "player", "")
+        if is_player and target != "player" and any(q.id == target for q in s.people):
+            is_player = False             # B45: a person's id written as the id ("wren", Tam's girl) is that person, not the player Wren
         if is_player and "." in field:
             target, field = (x.strip() for x in field.split(".", 1))
             is_player = target.lower() in ("player", "")
@@ -763,7 +793,7 @@ class FantasyGame(GameBase):
         if not is_player and "." in target and not field:
             target, field = (x.strip() for x in target.split(".", 1))
             field = field.lower()
-            is_player = target.lower() in ("player", p.name.lower())
+            is_player = target.lower() in ("player", p.name.lower()) and not any(q.id == target for q in s.people)
         if kind in ("move", "set") and (kind == "move" or field == "location"):
             value = self._place(s, value) or value
         # ---- the player's body and standing
@@ -1201,6 +1231,23 @@ class FantasyGame(GameBase):
         return None
 
     @staticmethod
+    def _described(s: FantasyState, name: str, note: str = "") -> Person | None:
+        """A stranger the prose introduces by a description that fits one listed person not yet met: "the grey-green siren"
+        is Mirren ("grey-green", "the siren in the shallows"), "a child in a river-brown dress" is Wren Reedy ("river-brown
+        like her father"). Two shared words or more, and more than anyone else shares; on a tie, the row's note decides
+        ("a girl ... Tam's daughter" is the girl, not her river-brown father). f1L, D165: both came in as new people, and
+        Mirren's change of heart went to the copy."""
+        words, said = _words(name), _words(note)
+        if len(words) < 2:
+            return None
+        scored = sorted((((len(words & _words(" ".join([q.name, *q.aliases, q.description]))),
+                           len(said & _words(" ".join([q.role, *q.aliases, q.description])))), i)
+                         for i, q in enumerate(s.people) if not q.met and q.status == "alive"), reverse=True)
+        if not scored or scored[0][0][0] < 2 or (len(scored) > 1 and scored[1][0] == scored[0][0]):
+            return None
+        return s.people[scored[0][1]]
+
+    @staticmethod
     def _know(s: FantasyState, q: Person, w: Writer, *, met: bool) -> None:
         if met and not q.met:
             w.note(f"people.{q.id}.met: False -> True")
@@ -1211,8 +1258,10 @@ class FantasyGame(GameBase):
 
     def _new_person(self, s: FantasyState, name: str, role: str, w: Writer, where: str = "") -> None:
         p = s.player
-        q = s.person(slug(name)) or self._same_person(s, name)
+        q = s.person(slug(name)) or self._same_person(s, name) or self._described(s, name, role)
         if q is not None:
+            if q.name.lower() != name.strip().lower():
+                w.note(f"new person {name.strip()!r} is {q.id} ({q.name}): nothing added")
             self._know(s, q, w, met=self._same_spot(s, q.location, p.location))
             return
         if len(s.people) >= MAX_PEOPLE:
@@ -1297,10 +1346,18 @@ class FantasyGame(GameBase):
                     p.thread_xp[day] = p.thread_xp.get(day, 0) + 1
                     p.xp += 25
                     s.log.append(f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}. {t.title}: done (25 XP).")
-        # -- the hooks
+        # -- the hooks: gold the referee recorded this turn is first set against reward gold already paid (a giver paying
+        #    in the prose a turn after the flag), then against this turn's rewards (Tam counting out the five gold the quest
+        #    pays): one payment, not two (f1L, D165)
         hooks = self.hooks_content()
-        for ln in dk.settle(s, hooks, info.turn, lambda row, why: self._pay(s, row, why)):
+        pool = {"gold": self._gold_gained(info.applied)}
+        self._absorb_credits(s, pool, info.turn)
+        for ln in dk.settle(s, hooks, info.turn, lambda row, why: self._pay(s, row, why, pool, info.turn)):
             s.log.append(f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}. {ln}")
+        for h in s.hooks:                                    # a quest's thread is the engine's: closed by the referee while the
+            t = next((t for t in s.threads if t.id == h.thread), None) if h.thread else None    # quest is unsettled, it opens again
+            if t is not None and h.status == "live" and t.status != "open":
+                t.status, t.closed_turn, t.note = "open", None, ""
         # -- the fall: 0 hit points stakes the lethal roll
         if p.hp <= 0 and not p.fate:
             self._fall(s, info)
@@ -1312,12 +1369,17 @@ class FantasyGame(GameBase):
                 dk.deal(s, hooks[hid], turn=info.turn, deal_abs=now, name=p.name)
         return s
 
+    @staticmethod
+    def _safe(s: FantasyState) -> bool:
+        p = s.player
+        return p.location in s.city.safe_locations or any(f.name == p.location and f.within in s.city.safe_locations for f in s.found_places)
+
     def _rest(self, s: FantasyState, info: TurnInfo) -> None:
         p = s.player
-        safe = p.location in s.city.safe_locations or any(f.name == p.location and f.within in s.city.safe_locations for f in s.found_places)
+        safe = self._safe(s)                                 # where the turn ended (the Rest command's long rest is judged here)
         hurt_now = any(a.startswith("player.hp:") and "->" in a and self._dropped(a) for a in info.applied)
         kind = ""
-        if p.resting == "long" and info.elapsed_minutes >= 360 or (safe and info.elapsed_minutes >= LONG_REST and not hurt_now):
+        if (p.resting == "long" and safe and info.elapsed_minutes >= 360) or (safe and info.elapsed_minutes >= LONG_REST and not hurt_now):
             kind = "long"
         elif (p.resting in ("short", "long") and info.elapsed_minutes >= SHORT_REST) or (safe and info.elapsed_minutes >= SHORT_REST and not hurt_now):
             kind = "short"
@@ -1342,9 +1404,42 @@ class FantasyGame(GameBase):
         m = re.match(r"player\.hp: (-?\d+) -> (-?\d+)", line)
         return bool(m) and int(m.group(2)) < int(m.group(1))
 
-    def _pay(self, s: FantasyState, row: dict, why: str) -> None:
+    @staticmethod
+    def _gold_gained(applied: list[str]) -> int:
+        """Gold the referee's rows added this turn (the delta's "inventory.gold.count: 14 -> 19" lines)."""
+        n = 0
+        for a in applied:
+            m = re.match(r"inventory\.gold\.count: (-?\d+) -> (-?\d+)$", a)
+            if m and int(m.group(2)) > int(m.group(1)):
+                n += int(m.group(2)) - int(m.group(1))
+        return n
+
+    def _absorb_credits(self, s: FantasyState, pool: dict, turn: int) -> None:
+        """Gold the referee recorded this turn from a quest's giver, present, a few turns after the engine paid that quest's
+        reward gold: the same payment, so it comes off again (Maud paying her three gold the turn after the troll settled)."""
+        gold = s.item("gold")
+        for h in s.hooks:
+            if h.gold_credit <= 0:
+                continue
+            if turn > h.credit_until:
+                h.gold_credit = 0
+                continue
+            giver = self._same_person(s, h.giver) if h.giver else None
+            if gold is None or pool["gold"] <= 0 or giver is None or giver.id not in s.player.with_them:
+                continue
+            take = min(pool["gold"], h.gold_credit, gold.count)
+            if take <= 0:
+                continue
+            gold.count -= take
+            pool["gold"] -= take
+            h.gold_credit -= take
+            s.log.append(f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}. {h.title}: what {giver.name} paid "
+                         f"was the quest's reward, already counted ({take} gold).")
+
+    def _pay(self, s: FantasyState, row: dict, why: str, pool: dict | None = None, turn: int = 0) -> None:
         """A reward row: XP, gold, renown, heat, a thing (an id the hook declared, or a thing written inline), attitudes,
-        flags. Logged."""
+        flags. Logged. Reward gold first takes up gold the referee recorded this turn (`pool`): the giver paying in the
+        prose is the reward, paid once; what the engine pays itself is held as a credit for a later payment in the prose."""
         p = s.player
         bits: list[str] = []
         if row.get("xp"):
@@ -1356,7 +1451,15 @@ class FantasyGame(GameBase):
             if gold is None:
                 gold = Item(id="gold", name="gold", count=0)
                 s.inventory.append(gold)
-            gold.count = max(0, gold.count + g)
+            pay = g
+            if g > 0 and pool is not None:
+                counted = min(pool["gold"], g)
+                pool["gold"] -= counted
+                pay = g - counted
+                h = next((x for x in s.hooks if why == x.title or why.startswith(f"{x.title}:")), None)
+                if h is not None and pay > 0:
+                    h.gold_credit, h.credit_until = h.gold_credit + pay, turn + CREDIT_TURNS
+            gold.count = max(0, gold.count + pay)
             bits.append(f"{g} gold")
         if row.get("renown"):
             p.renown = max(0, min(100, p.renown + int(row["renown"])))
@@ -1563,11 +1666,21 @@ class FantasyGame(GameBase):
         p = s.player
         if command_id == "rest":
             kind = (args.get("kind") or "short").lower()
-            safe = p.location in s.city.safe_locations or any(f.name == p.location and f.within in s.city.safe_locations for f in s.found_places)
-            if kind == "long" and not safe:
-                return state, CommandResult(ok=False, label="Rest", text="Nowhere here is safe enough to sleep the night. A short rest, or somewhere safe: "
-                                            + ", ".join(s.city.safe_locations) + ".")
             p.resting = kind
+            if kind == "long" and not self._safe(s):
+                # Judged where the turn ends, not where it starts (after_turn): "I walk back to the Lantern and sleep" is a night's
+                # rest at the Lantern. Refusing it here told the narrator it was blocked while the eight hours at the Lantern
+                # gave every hit point back (f1L turn 26, D165). Nowhere safe by the end: a rough night, a short rest's worth.
+                safe_list = ", ".join(s.city.safe_locations)
+                directive = (f"{p.name} means to sleep the night, and only a safe place gives a real night's rest: {safe_list}. This line does not "
+                             f"take {p.name} anywhere; where {p.name} goes is what the player said. If that is one of those places, play the going, "
+                             f"the settling down there, and the waking. Anywhere else is a poor night, however comfortable: a few broken hours "
+                             f"wherever {p.name} stops, then the waking. Keep it short and end on the waking. Nothing happens in the night unless "
+                             f"something was already coming.")
+                return s, CommandResult(label="Rest", player_line="I find somewhere to sleep the night.", summary=f"{p.name} beds down for the night.",
+                                        text=f"Where you end up decides it: a full night's rest at {' or '.join(safe_list.rsplit(', ', 1))}; "
+                                             f"anywhere else, a rough night that rests you about as much as an hour.",
+                                        directive=directive, minutes=LONG_REST)
             if kind == "long":
                 directive = (f"{p.name} sleeps the night here. Play the settling down in a line or two and the waking; nothing happens in the night unless "
                              f"something was already coming.")

@@ -218,6 +218,8 @@ class HookState(BaseModel):
     thread: str = ""                # the thread id it opened when its reach fired
     paid: list[int] = Field(default_factory=list)   # milestones paid (the long thread)
     reward: str = ""                # what was paid, for the log
+    gold_credit: int = 0            # reward gold the engine paid that the giver's payment in the prose, a turn or two later, repeats
+    credit_until: int = 0           # the last turn that credit is held (D165)
 
 
 class Hidden(BaseModel):

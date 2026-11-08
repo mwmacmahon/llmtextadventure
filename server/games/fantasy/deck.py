@@ -196,17 +196,36 @@ def deal(state: FantasyState, hook: dict, *, turn: int, deal_abs: int, name: str
     return h
 
 
+CITY_GIVERS = {"Maud": "Maud Tallow", "Tam": "Tam Reedy", "Anselm": "Brother Anselm", "Hesk": "Old Hesk", "Caskell": "Lord Caskell",
+               "Dace": "Sergeant Dace"}
+
+
 def _giver(hook: dict) -> str:
-    """From whom, for the quest log: the first person of the cast the reach's directive names, else the hook's first."""
+    """From whom, for the quest log. The person the reach's directive names before its first colon (the one who comes
+    in and asks: "Tam Reedy the ferryman comes in wet ...: his daughter Wren" is Tam's quest, which f1L showed as Wren
+    Reedy's, D165); else the first of the hook's people the directive names, else one of the city's usual askers. A
+    leading article is not a name ("The Undertow" is not "The")."""
     text = " ".join(str(f.get("directive", "")) if "fallback" not in f else "" for f in hook.get("reach") or [])
+    names: dict[str, str] = {}
     for pr in hook.get("people") or []:
-        n = (pr.get("name") or "").split(" ")[0]
-        if n and n in text:
-            return pr.get("name", "")
-    for word in ("Maud", "Tam", "Anselm", "Hesk", "Caskell", "Dace"):
-        if word in text:
-            return {"Maud": "Maud Tallow", "Tam": "Tam Reedy", "Anselm": "Brother Anselm", "Hesk": "Old Hesk",
-                    "Caskell": "Lord Caskell", "Dace": "Sergeant Dace"}[word]
+        full = pr.get("name") or ""
+        word = next((w for w in full.split(" ") if w and w not in ("The", "A", "An")), "")
+        if word:
+            names.setdefault(word, full)
+    for word, full in CITY_GIVERS.items():
+        names.setdefault(word, full)
+
+    def at(word: str, within: str) -> int | None:
+        m = re.search(r"\b" + re.escape(word) + r"\b", within)
+        return m.start() if m else None
+
+    head = text.split(":", 1)[0] if ":" in text else ""
+    hits = sorted((pos, full) for word, full in names.items() if (pos := at(word, head)) is not None)
+    if hits:
+        return hits[0][1]
+    for word, full in names.items():                     # the hook's people in their order, then the city's
+        if at(word, text) is not None:
+            return full
     return ""
 
 

@@ -256,8 +256,9 @@ def test_rests_refill_what_the_content_says(game: FantasyGame):
     out.player.location = "The Greywood"
     walked = game.after_turn(out, info(minutes=480))
     assert walked.player.hp == 1                                     # eight hours on the road is no rest
-    refused, res = game.run_command(out, "rest", {"kind": "long"})
-    assert not res.ok and "safe" in res.text
+    rough, res = game.run_command(out, "rest", {"kind": "long"})     # D165: judged where the turn ends; nowhere safe, a rough night
+    assert res.ok and "Where you end up" in res.text and "The Drowned Lantern" in res.directive and rough.player.resting == "long"
+    assert game.after_turn(rough, info(minutes=480)).player.hp == 1 + 3 + 0          # a short rest's worth, not the night's
     ok, res = game.run_command(out, "rest", {"kind": "short"})
     assert res.ok and ok.player.resting == "short" and res.minutes == 60
     assert game.after_turn(ok, info(minutes=60)).player.hp == 4
@@ -461,6 +462,99 @@ def test_also_rows_are_paid_beside_the_main_row(game: FantasyGame):
     st.flags.update(killer_named_nan=True, took_the_purse=True)
     s1 = game.after_turn(st, info(turn=2))
     assert s1.hook("body_on_lantern_row").status == "done" and s1.player.xp == 100 and s1.player.heat == 10 and s1.player.renown == 10
+
+
+# ---- the f1L faults (D165) ---------------------------------------------------------------------------------------------
+
+def _live(game: FantasyGame, st, hid: str):
+    next(e for e in st.hidden.events if e.id == f"{hid}_reach").fired = True
+    s1 = game.after_turn(st, info(turn=1))
+    assert s1.hook(hid).status == "live"
+    return s1
+
+
+def test_reward_gold_the_prose_already_paid_is_paid_once(game: FantasyGame):
+    """f1L turn 25: Tam counted out five gold (the referee's +5) and the quest paid its five beside it: gold rose by ten."""
+    s1 = _live(game, new(game), "ferrymans_daughter")
+    s1.flags["wren_home"] = True
+    s1.item("gold").count = 20                                         # the referee's row for Tam's five, already applied
+    s2 = game.after_turn(s1, info(turn=2, applied=["inventory.gold.count: 15 -> 20"]))
+    assert s2.hook("ferrymans_daughter").status == "done" and s2.item("gold").count == 20 and s2.player.xp == 100 and s2.player.renown == 8
+    # the giver pays a turn after the flag (Maud's three, the turn after the troll settled): the reward's two come off again
+    r1 = _live(game, new(game), "cellar_rats")
+    r1.flags["troll_settled"] = True
+    r2 = game.after_turn(r1, info(turn=2))
+    assert r2.item("gold").count == 17 and r2.hook("cellar_rats").gold_credit == 2
+    r2.item("gold").count = 20
+    r2.player.with_them = ["maud"]
+    r3 = game.after_turn(r2, info(turn=3, applied=["inventory.gold.count: 17 -> 20"]))
+    assert r3.item("gold").count == 18 and r3.hook("cellar_rats").gold_credit == 0 and "already counted" in r3.log[-1]
+    loot = r2.model_copy(deep=True)                                    # gold from someone else is not the reward
+    loot.player.with_them = ["hesk"]
+    assert game.after_turn(loot, info(turn=3, applied=["inventory.gold.count: 17 -> 20"])).item("gold").count == 20
+
+
+def test_the_referee_writes_the_flag_that_closes_a_quest_and_its_thread_stays_the_engines(game: FantasyGame):
+    """f1L turns 40 and 41: Gorm settled under the bridge, the referee closed hook-cellar_rats itself and never wrote
+    troll_settled, so the quest stayed live and paid nothing."""
+    s1 = _live(game, new(game), "cellar_rats")
+    rules = game.referee_rules(s1)
+    assert "- troll_settled: " in rules and "(closes the quest Rats in the Cellar; write it when that happens)" in rules.split("- troll_settled: ", 1)[1].split("\n", 1)[0]
+    assert "(closes the quest The Ferryman's Daughter;" in rules.split("- wren_dead: ", 1)[1].split("\n", 1)[0]
+    assert "close by themselves" not in rules and "You never close these" in rules
+    next(t for t in s1.threads if t.id == "hook-cellar_rats").status = "resolved"       # the referee's thread_close
+    s2 = game.after_turn(s1, info(turn=2))
+    assert s2.hook("cellar_rats").status == "live" and next(t for t in s2.threads if t.id == "hook-cellar_rats").status == "open"
+    s2.flags["troll_settled"] = True
+    s3 = game.after_turn(s2, info(turn=3))
+    assert s3.hook("cellar_rats").status == "done" and next(t for t in s3.threads if t.id == "hook-cellar_rats").status == "resolved"
+
+
+def test_a_long_rest_is_judged_where_the_turn_ends(game: FantasyGame):
+    """f1L turn 26: 'walk back to the Lantern and sleep' from the Ferry Landing was refused as unsafe (the start of the turn),
+    while the eight hours at the Lantern gave every hit point back."""
+    st = new(game)
+    st.player.location, st.player.hp = "Ferry Landing", 4
+    s1, res = game.run_command(st, "rest", {"kind": "long"})
+    assert res.ok and res.minutes == 480 and "The Drowned Lantern" in res.directive
+    s1.player.location = "The Drowned Lantern"                        # the turn's own move
+    assert game.after_turn(s1, info(minutes=480)).player.hp == s1.player.hp_max
+    s1.player.location = "Ferry Landing"
+    assert game.after_turn(s1, info(minutes=480)).player.hp == 4 + 3 + 3          # a rough night: a short rest's worth (3 + CON)
+
+
+def test_an_id_that_is_also_the_players_name_is_that_person(game: FantasyGame):
+    """B45 in f1L: the player is Wren; `move wren` and `learned wren` (Tam's girl, id wren) moved the player and wrote the
+    player's journal, and the girl stayed on Reed Island all game."""
+    st = new(game)
+    s2, rep, _ = apply(game, st, C(kind="move", target="wren", value="Ferry Landing"),
+                       C(kind="learned", target="wren", value="She went into the water on purpose."),
+                       C(kind="set", target="wren.mood", value="relieved"))
+    assert s2.person("wren").location == "Ferry Landing" and s2.player.location == "The Drowned Lantern"
+    assert "She went into the water on purpose." in s2.person("wren").facts and not any("on purpose" in n.text for n in s2.journal)
+    assert s2.person("wren").mood == "relieved"
+    s3, _, _ = apply(game, st, C(kind="move", target="player", value="Lantern Row"), C(kind="move", target="Wren", value="Lantern Row"))
+    assert s3.player.location == "Lantern Row" and s3.person("wren").location == "Reed Island"
+
+
+def test_a_stranger_described_like_a_listed_person_is_that_person(game: FantasyGame):
+    """f1L turn 17: 'the grey-green siren' and 'a child in a river-brown dress' came in as new people beside Mirren and Wren
+    Reedy, and Mirren's change of heart went to the copy."""
+    st = new(game)
+    n = len(st.people)
+    s2, rep, _ = apply(game, st, C(kind="new", target="person", field="The Reedway", value="the grey-green siren", note="a siren"),
+                       C(kind="new", target="person", field="The Reedway", value="a child in a river-brown dress", note="a girl"))
+    assert len(s2.people) == n and s2.person("mirren").heard_of and s2.person("wren").heard_of
+    s3, _, _ = apply(game, st, C(kind="new", target="person", value="a young siren", note="in the shallows"),
+                     C(kind="new", target="person", value="Dobbin", note="a carter"))
+    assert len(s3.people) == n + 2
+
+
+def test_a_quest_is_from_the_one_who_asks(game: FantasyGame):
+    hooks = game.hooks_content()
+    assert dk._giver(hooks["ferrymans_daughter"]) == "Tam Reedy"      # f1L's quest log said "from Wren Reedy"
+    assert dk._giver(hooks["cellar_rats"]) == "Maud Tallow" and dk._giver(hooks["clockmakers_apprentice"]) == "Master Hollin Gear"
+    assert dk._giver(hooks["bell_rings_itself"]) == ""                # was "The Undertow" (the word "The")
 
 
 def test_milestones_pay_once_and_the_long_thread_never_closes(game: FantasyGame):
