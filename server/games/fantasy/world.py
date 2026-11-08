@@ -228,9 +228,18 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
                                     f"{p.name} do?")
     # -- who the player is fighting (B95): the turn's attack targets join; the gone, the dead and the far leave
     from engine.pipeline import is_fight
-    if adj is not None and getattr(adj, "kind", "") == "action" and is_fight(adj):     # B208: the player struck at them
-        for e in list(getattr(adj, "entities", None) or []):
-            q = s.person(e)
+    if adj is not None and getattr(adj, "kind", "") == "action":       # B208: the player struck at them
+        from .game import ATTACK
+        struck: list[str] = []
+        for i in getattr(adj, "intents", None) or []:
+            c = getattr(i, "check", None)
+            words = " ".join([i.action or "", getattr(c, "label", "") or ""])
+            if ATTACK.search(words) and (c is None or getattr(c, "stat", "") in ("str", "dex", "")):
+                struck += [x for x in [getattr(c, "target_entity", None), *(getattr(i, "targets", None) or [])] if x]
+        if not struck and is_fight(adj):
+            struck = list(getattr(adj, "entities", None) or [])
+        for e in struck:
+            q = s.person(e) or game._same_person(s, e)
             if q is not None and q.status == "alive" and q.id not in p.with_them and q.id not in p.fighting:
                 p.fighting.append(q.id)
     p.fighting = [x for x in p.fighting if (q := s.person(x)) is not None and q.status == "alive" and game._same_spot(s, q.location, p.location)]

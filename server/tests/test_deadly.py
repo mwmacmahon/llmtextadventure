@@ -237,3 +237,22 @@ def test_a_hostile_who_has_not_joined_the_fight_is_never_rolled(game):
     out = game.world_call(st, call("ENEMY", "maud", "hold"), Dice(2), 2, {"hp": 0, "acted": []})
     after = game.after_turn(st, info_calls(2, [out["data"]]))
     assert after.player.fighting == ["maud"] and "In a fight with" in " ".join(game.turn_directives(after))
+
+
+def test_an_attack_on_a_named_person_joins_the_fight_whatever_the_tempo(game):
+    """The report turns (11-08 night): Gemma read 'I swing my axe at Mirren' as slow, and the fight never joined."""
+    from engine.roles import CheckProposal, IntentV2
+    st = new(game)
+    st.person("maud").location = st.player.location
+    adj = AssistantReading(kind="action", summary="Bram attacks Maud with his greataxe.", time_minutes=1, risk="high", tempo="slow",
+                           intents=[Intent(action="swing the greataxe at Maud",
+                                           check=CheckProposal(label="strike Maud", stat="str", difficulty="low", target_entity="maud"))])
+    s2, _ = game.world_turn(st, adj, "I swing my greataxe at Maud", Dice(10), 3, 2)
+    assert s2.player.fighting == ["maud"]
+
+
+def test_swimming_off_reed_island_meets_the_cold_water(game):
+    st = new(game)
+    st.player.location = "Reed Island"
+    calls = game.backstop(st, {"hp": 0, "acted": [], "text": "I try to swim for the skiff in my gear"}, Dice(3, 0), 2)
+    assert [c["call"]["verb"] for c in calls] == ["HAZARD"]
