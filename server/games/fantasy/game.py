@@ -69,6 +69,10 @@ HIDE = re.compile(r"\b(hide|hiding|hidden|sneak|slip (away|off|out|past|into|beh
 SURPRISE = re.compile(r"\b(surprise|unaware|from behind|unseen|from hiding|ambush|before (he|she|they|it) (sees|notices)|sleeping|asleep)", re.I)
 WOUND_KINDS: dict[str, set[str]] = {"everything": {"str", "dex", "con"}, "sight": {"wis", "dex"}, "legs": {"str", "dex"},
                                      "hands": {"str", "dex"}, "body": {"str", "con"}, "head": {"int", "wis"}}   # B200
+WOUNDED = re.compile(r"\b(wound\w*|stabb\w*|cut|slash\w*|bleed\w*|bloodied|incapacitat\w*|dead|dying|killed|slain|beaten|unconscious|"
+                     r"broken|run through|shot)\b", re.I)
+STEAL = re.compile(r"\b(steal\w*|stole|snatch\w*|pickpocket\w*|lift (a|the|his|her|their)|swip\w+|pinch|filch\w*|rob\w*|"
+                   r"cut (a|the|his|her|their) purse|pocket (it|the))\b", re.I)
 TITLES = {"the", "a", "old", "young", "big", "little", "lord", "lady", "captain", "brother", "sister", "mother", "father", "master",
           "mistress", "sergeant", "constable", "sir", "dame", "goodwife", "goodman", "uncle", "aunt", "granny", "grandfather"}
 
@@ -884,7 +888,8 @@ class FantasyGame(GameBase):
             f"- add player.hp +n: healing the prose shows someone giving {p.name} (a priest's hands, a bandage done properly, a healer), up to {HEAL_STEP}, "
             "with how in the note. A potion drunk is add <the potion's id>.count -1 and nothing else; rests and the commands (a second wind) are the engine's.",
             "- What THIS TURN says a fall or a waking cost (gold, a thing left behind, a scar) the engine has already paid; write no row for it.",
-            "- add player.heat +n: the player was seen at a crime. A theft 5 to 10; an assault 10 to 20; a killing 25 to 40; a third of that when nobody "
+            "- add player.heat +n: the player was seen at a crime by anyone who could tell the Watch. Each crime its own row (a theft and a stabbing in "
+            "one turn are two). A theft 5 to 10; an assault 10 to 20; a killing 25 to 40; a third of that when nobody "
             "saw but it will be found. Nothing the Watch would not care about. add player.heat -n: a bribe paid to the Watch or a favour done for it, "
             "5 to 20. The days lower it by themselves; never count that. A failed check's cost that says the Watch will hear of it is add player.heat +5.",
             "- add gold.count -n: gold spent, paid or lost (never more than carried); add gold.count +n: gold taken, found or paid to the player in the prose. "
@@ -1197,6 +1202,37 @@ class FantasyGame(GameBase):
                 p.heat = nxt
                 s.log.append(f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}. {q.name} of the Watch turned "
                              f"against {p.name}: the Watch's interest, {was} → {p.heat_word}.")
+
+    def _crime_seen(self, s: FantasyState, info: TurnInfo) -> str:
+        """B227: a crime in open view with no heat row. A verdict that records a wound on a named person the player struck
+        at, or a theft (the player's words steal and something came into the pockets), at a place where someone else is
+        present (not the victim, not the player's own company), raises heat one step. Returns what it saw, or ""."""
+        applied = list(info.applied or [])
+        if any(a.startswith("player.heat") for a in applied):
+            return ""
+        p = s.player
+        words = info.player_text or ""
+        what, victim = "", ""
+        for a in applied:
+            m = re.match(r"people\.([\w-]+)\.(condition|status): .* -> '(.+)'$", a)
+            if m and WOUNDED.search(m.group(3)) and (m.group(1) in p.fighting or ATTACK.search(words)):
+                what, victim = "a wounding", m.group(1)
+                break
+        if not what and STEAL.search(words) and any(a.startswith("inventory.") and "->" in a for a in applied):
+            what = "a theft"
+        if not what:
+            return ""
+        seen = [q for q in s.people if q.status == "alive" and q.id != victim and q.id not in p.with_them and not q.hidden_from_player
+                and q.location and self._same_spot(s, q.location, p.location)]
+        nxt = next((lo for lo, _ in HEAT_TIERS if lo > p.heat), None)
+        if not seen or nxt is None:
+            return ""
+        was = p.heat_word
+        p.heat = nxt
+        s.log.append(f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}. {p.name} was seen at {what} at "
+                     f"{p.location}: the Watch's interest, {was} → {p.heat_word}.")
+        p.shown_notes.append(f"Seen at {what}: Heat {was} → {p.heat_word}")
+        return what
 
     # ---- the referee's rows ------------------------------------------------------------------------------------------
     @staticmethod
@@ -1903,6 +1939,7 @@ class FantasyGame(GameBase):
                 dk.restand(h)
         # -- the Watch: a day lowers it; one of the Watch turned hostile raises it a step (B55); wanted is a flag
         self._watch_turned(s, info.applied)
+        self._crime_seen(s, info)
         if s.clock.day > p.heat_day:
             days = s.clock.day - p.heat_day
             p.heat = max(0, p.heat - HEAT_DAILY * days)

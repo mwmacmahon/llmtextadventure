@@ -758,3 +758,30 @@ def test_a_player_name_from_the_cast_is_refused(game):
         with pytest.raises(ValueError, match="That name belongs to someone in the city; pick another."):
             game.new_instance({**SHEET, "name": name})
     assert game.new_instance({**SHEET, "name": "Pell"})[1].player.name == "Pell"
+
+
+def test_a_crime_in_open_view_raises_heat(game):
+    """B227 (8c106d354426, the Rogue's turn 34): a stabbing at the Night Market in front of a crowd and heat stayed
+    'nobody'. The referee wrote +10 for the theft the turn before (still 'nobody') and nothing for the wounding; the
+    engine's net raises heat a step on a wound or a theft in view with no heat row."""
+    from engine.game import TurnInfo
+    from games.fantasy.state import Person
+    st = new(game)
+    here = st.player.location
+    st.people.append(Person(id="velvet_merchant", name="Velvet Merchant", location=here, condition="wounded in the chest", met=True))
+    st.people.append(Person(id="hooded_giant", name="Hooded Giant", location=here, met=True))
+    st.player.fighting, st.player.heat = ["velvet_merchant"], 10
+    info = TurnInfo(turn=21, elapsed_minutes=1, rng=random.Random(0), player_text="I laugh, hold the amulet up and go for the merchant again.",
+                    applied=["people.velvet_merchant.condition: 'wounded in the chest' -> 'incapacitated'"])
+    out = game.after_turn(st, info)
+    assert out.player.heat == 20 and out.player.heat_word == "asked about" and any("Seen at a wounding" in n for n in out.player.shown_notes)
+    # a heat row the referee wrote stands alone; nobody else present: nothing
+    import dataclasses
+    assert game.after_turn(st, dataclasses.replace(info, applied=info.applied + ["player.heat: 10 -> 25"])).player.heat == 10
+    alone = new(game)
+    alone.people.append(Person(id="velvet_merchant", name="Velvet Merchant", location=alone.player.location, met=True))
+    alone.player.fighting = ["velvet_merchant"]
+    for q in alone.people:
+        if q.id != "velvet_merchant" and q.location == alone.player.location:
+            q.location = "Lantern Row"
+    assert game.after_turn(alone, info).player.heat == 0
