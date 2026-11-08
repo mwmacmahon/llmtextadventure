@@ -4,11 +4,12 @@
 """
 from __future__ import annotations
 
+import hmac
 import json
 import re
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -66,27 +67,52 @@ class CommandInput(BaseModel):
     args: dict[str, Any] = {}
 
 
+class DifficultyInput(BaseModel):
+    difficulty: str
+
+
 def _exists(iid: str) -> None:
     if not store.get_instance(iid):
         raise HTTPException(404, "no such instance")
 
 
+def dev_mode(request: Request) -> bool:
+    """Dev mode (B76): the request carries `X-Dev: 1`. With a pin configured (`server.dev_pin`, TA_DEV_PIN), it must carry
+    the right `X-Dev-Pin` too, or it is refused with 403; without one, the header is enough."""
+    if request.headers.get("x-dev", "").strip() != "1":
+        return False
+    pin = engine.cfg.server.dev_pin
+    if pin and not hmac.compare_digest(request.headers.get("x-dev-pin", "").encode(), str(pin).encode()):
+        raise HTTPException(403, "dev mode needs the right pin")
+    return True
+
+
+def _visible(name: str, request: Request) -> bool:
+    """A game this request may see: a loaded game that is not hidden, or any loaded game in dev mode."""
+    g = games.get(name)
+    return g is not None and (not getattr(g, "hidden", False) or dev_mode(request))
+
+
 @app.get("/api/games")
-def list_games():
+def list_games(request: Request):
+    dev = dev_mode(request)
+    saves = store.count_by_game()
     return [
-        {"name": g.name, "title": g.title, "description": g.description, "version": g.version, "setup": g.setup_options()}
-        for g in games.values()
+        {"name": g.name, "title": g.title, "description": g.description, "version": g.version, "setup": engine.setup_options(g),
+         "saves": saves.get(g.name, 0), "hidden": bool(getattr(g, "hidden", False))}
+        for g in games.values() if dev or not getattr(g, "hidden", False)
     ]
 
 
 @app.get("/api/instances")
-def list_instances():
-    return [engine.summary(i.id) for i in store.list_instances()]
+def list_instances(request: Request, game: str | None = None):
+    """The saves, most recently played first; `?game=` one game's. A hidden game's saves only in dev mode."""
+    return engine.summaries(game, dev=dev_mode(request))
 
 
 @app.post("/api/instances")
-def create_instance(body: NewInstance):
-    if body.game not in games:
+def create_instance(body: NewInstance, request: Request):
+    if not _visible(body.game, request):
         raise HTTPException(404, "unknown game")
     try:
         iid = engine.create_instance(body.game, body.setup)
@@ -97,7 +123,10 @@ def create_instance(body: NewInstance):
 
 
 @app.post("/api/instances/import")
-def import_instance(doc: dict[str, Any]):
+def import_instance(doc: dict[str, Any], request: Request):
+    game = (doc.get("instance") or {}).get("game")
+    if game in games and not _visible(game, request):
+        raise HTTPException(400, f"cannot import: unknown game {game!r}")
     try:
         iid = engine.import_(doc)
     except (ValueError, KeyError) as e:
@@ -115,11 +144,30 @@ def get_instance(iid: str):
         raise HTTPException(404, "no such instance")
 
 
+@app.get("/api/instances/{iid}/card")
+def instance_card(iid: str):
+    """The save card (B75): the summary, the last telling's opening, the game's panels (`ui`) for a read-only view."""
+    try:
+        return engine.card(iid)
+    except KeyError:
+        raise HTTPException(404, "no such instance")
+
+
 @app.patch("/api/instances/{iid}")
 def rename_instance(iid: str, body: RenameInput):
     _exists(iid)
     engine.rename(iid, body.title)
     return engine.summary(iid)
+
+
+@app.post("/api/instances/{iid}/difficulty")
+def set_difficulty(iid: str, body: DifficultyInput):
+    """The player's difficulty for the rest of this game (B80); a `difficulty` ledger row records the change."""
+    _exists(iid)
+    try:
+        return engine.set_difficulty(iid, body.difficulty)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
 
 
 @app.delete("/api/instances/{iid}")

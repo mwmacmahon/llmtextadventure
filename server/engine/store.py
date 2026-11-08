@@ -37,7 +37,9 @@ CREATE TABLE IF NOT EXISTS instance (
   status TEXT NOT NULL DEFAULT 'active',
   setup_json TEXT NOT NULL DEFAULT '{}',
   prefix_text TEXT NOT NULL DEFAULT '',
-  origin_json TEXT NOT NULL DEFAULT '{}'
+  origin_json TEXT NOT NULL DEFAULT '{}',
+  updated TEXT NOT NULL DEFAULT '',
+  difficulty TEXT NOT NULL DEFAULT 'normal'
 );
 CREATE TABLE IF NOT EXISTS transcript (
   instance_id TEXT NOT NULL,
@@ -73,6 +75,8 @@ CREATE TABLE IF NOT EXISTS snapshot (
 # Columns added after the first release; applied with ALTER TABLE when missing.
 MIGRATIONS = [
     ("instance", "origin_json", "TEXT NOT NULL DEFAULT '{}'"),
+    ("instance", "updated", "TEXT NOT NULL DEFAULT ''"),          # last played: the end of the latest turn (the save list's order)
+    ("instance", "difficulty", "TEXT NOT NULL DEFAULT 'normal'"), # the player's difficulty: easy | normal | hard (moves the die)
 ]
 
 
@@ -114,6 +118,8 @@ class InstanceRow:
     setup: dict
     prefix_text: str
     origin: dict
+    updated: str = ""
+    difficulty: str = "normal"
 
 
 @dataclass
@@ -151,16 +157,22 @@ class Store:
             if col not in cols:
                 with self.conn:
                     self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+        # `updated`, once, for the rows that predate it: the latest ledger row's time, else the instance's creation
+        with self.conn:
+            self.conn.execute("UPDATE instance SET updated = COALESCE((SELECT MAX(created) FROM ledger WHERE ledger.instance_id = instance.id), created)"
+                              " WHERE updated = ''")
 
     # ---- instances --------------------------------------------------------
     @_locked
     def create_instance(self, game: str, game_version: str, title: str, setup: dict, prefix_text: str, state: dict,
-                        origin: dict | None = None) -> str:
+                        origin: dict | None = None, difficulty: str = "normal") -> str:
         iid = _new_id()
+        now = _now()
         with self.conn:
             self.conn.execute(
-                "INSERT INTO instance (id, game, game_version, title, created, setup_json, prefix_text, origin_json) VALUES (?,?,?,?,?,?,?,?)",
-                (iid, game, game_version, title, _now(), json.dumps(setup), prefix_text, json.dumps(origin or {})),
+                "INSERT INTO instance (id, game, game_version, title, created, setup_json, prefix_text, origin_json, updated, difficulty)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (iid, game, game_version, title, now, json.dumps(setup), prefix_text, json.dumps(origin or {}), now, difficulty),
             )
             self.conn.execute(
                 "INSERT INTO snapshot (instance_id, turn, state_json, created) VALUES (?,?,?,?)",
@@ -169,9 +181,43 @@ class Store:
         return iid
 
     @_locked
-    def list_instances(self) -> list[InstanceRow]:
-        rows = self.conn.execute("SELECT * FROM instance ORDER BY created DESC").fetchall()
+    def list_instances(self, game: str | None = None) -> list[InstanceRow]:
+        """The saves, most recently played first (one game's when `game` names it)."""
+        q, args = "SELECT * FROM instance", []
+        if game is not None:
+            q += " WHERE game=?"
+            args.append(game)
+        rows = self.conn.execute(q + " ORDER BY updated DESC, created DESC", args).fetchall()
         return [self._inst(r) for r in rows]
+
+    @_locked
+    def count_by_game(self) -> dict[str, int]:
+        return {r["game"]: int(r["n"]) for r in self.conn.execute("SELECT game, COUNT(*) AS n FROM instance GROUP BY game")}
+
+    @_locked
+    def latest_states(self, iids: Iterable[str]) -> dict[str, tuple[int, dict]]:
+        """Each instance's latest snapshot as (turn, state), in one read per 500 (the save list's lines)."""
+        ids = list(iids)
+        out: dict[str, tuple[int, dict]] = {}
+        for i in range(0, len(ids), 500):
+            part = ids[i:i + 500]
+            q = ("SELECT s.instance_id, s.turn, s.state_json FROM snapshot s JOIN (SELECT instance_id, MAX(turn) AS t FROM snapshot"
+                 f" WHERE instance_id IN ({','.join('?' * len(part))}) GROUP BY instance_id) m ON s.instance_id = m.instance_id AND s.turn = m.t")
+            out.update({r["instance_id"]: (int(r["turn"]), json.loads(r["state_json"])) for r in self.conn.execute(q, part)})
+        return out
+
+    @_locked
+    def touch(self, iid: str) -> None:
+        """Last played: the latest ledger row's time, kept on the row at the end of each turn so the save list needs no
+        ledger read. A turn refused before it wrote anything leaves it as it was."""
+        with self.conn:
+            self.conn.execute("UPDATE instance SET updated = COALESCE((SELECT MAX(created) FROM ledger WHERE instance_id=?), updated) WHERE id=?",
+                              (iid, iid))
+
+    @_locked
+    def set_difficulty(self, iid: str, difficulty: str) -> None:
+        with self.conn:
+            self.conn.execute("UPDATE instance SET difficulty=? WHERE id=?", (difficulty, iid))
 
     @_locked
     def get_instance(self, iid: str) -> InstanceRow | None:
@@ -196,6 +242,7 @@ class Store:
             id=r["id"], game=r["game"], game_version=r["game_version"], title=r["title"],
             created=r["created"], status=r["status"], setup=json.loads(r["setup_json"]),
             prefix_text=r["prefix_text"], origin=json.loads(r["origin_json"] or "{}"),
+            updated=r["updated"] or r["created"], difficulty=r["difficulty"] or "normal",
         )
 
     # ---- snapshots --------------------------------------------------------
@@ -340,7 +387,7 @@ class Store:
             "instance": {
                 "id": inst.id, "game": inst.game, "game_version": inst.game_version, "title": inst.title,
                 "created": inst.created, "status": inst.status, "setup": inst.setup, "prefix_text": inst.prefix_text,
-                "origin": inst.origin,
+                "origin": inst.origin, "updated": inst.updated, "difficulty": inst.difficulty,
             },
             "transcript": rows(f"SELECT seq, turn, role, text, created FROM transcript WHERE instance_id=?{lim} ORDER BY seq"),
             "ledger": ledger,
@@ -359,11 +406,14 @@ class Store:
         if not doc.get("snapshots"):
             raise ValueError("export has no snapshots")
         iid = src["id"] if keep_id else _new_id()        # keep_id: a scratch copy that must roll the same dice (rng_for seeds on the id)
+        now = _now()                                     # a branch or an import is new on this server: it sorts first
         with self.conn:
             self.conn.execute(
-                "INSERT INTO instance (id, game, game_version, title, created, status, setup_json, prefix_text, origin_json) VALUES (?,?,?,?,?,?,?,?,?)",
-                (iid, src["game"], src["game_version"], title or src["title"], _now(), src.get("status", "active"),
-                 json.dumps(src.get("setup", {})), src.get("prefix_text", ""), json.dumps(origin or src.get("origin") or {})),
+                "INSERT INTO instance (id, game, game_version, title, created, status, setup_json, prefix_text, origin_json, updated, difficulty)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (iid, src["game"], src["game_version"], title or src["title"], now, src.get("status", "active"),
+                 json.dumps(src.get("setup", {})), src.get("prefix_text", ""), json.dumps(origin or src.get("origin") or {}),
+                 now, src.get("difficulty") or "normal"),
             )
             self.conn.executemany(
                 "INSERT INTO transcript (instance_id, seq, turn, role, text, created) VALUES (?,?,?,?,?,?)",

@@ -1263,6 +1263,23 @@ class StationGame(GameBase):
         e = state.flags.get("ending")
         return str(e) if e else None
 
+    def save_line(self, state: StationState) -> list[Chip]:
+        """The lobby's line for a save (B75): the day and time, the alarm word, locked out or in control, and the system
+        the station is working its way into with how far it has got."""
+        s = state
+        tier = s.suspicion_tier(s.suspicion)
+        out = [Chip(label="time", value=s.clock.render()),
+               Chip(label="alarm", value=tier, tone="ok" if tier == "quiet" else "warn" if tier == "doubt" else "bad")]
+        projects = pj.projects_of(self._scenarios().get(s.scenario.id))
+        left = [p for p in projects if not pj.is_done(s.access, p.id)]
+        out.append(Chip(label="access", value="locked out" if left else "in control"))
+        working = s.access.working.project if s.access.working is not None else None
+        started = sorted((p for p in left if s.access.progress.get(p.id, 0) > 0), key=lambda p: -s.access.progress.get(p.id, 0))
+        hand = next((p for p in left if p.id == working), None) or (started[0] if started else None)
+        if hand is not None:
+            out.append(Chip(label="working on", value=f"{hand.name}: {pj.how_far(pj.pct(hand, s.access))}"))
+        return out
+
     # ---- summarizer ----------------------------------------------------------
     def summary_guidance(self, state: StationState) -> str:
         return (
