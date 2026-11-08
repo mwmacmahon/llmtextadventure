@@ -2092,7 +2092,7 @@ def scrub_hidden(game: Game, state: BaseModel, adj: Any, player_text: str) -> di
 
     def mask(text: str) -> str:
         for term in _hook(game, "leaked_terms", state, text, player_text, default=[]) or []:
-            text = re.sub(r"\b" + re.escape(term) + r"(s|es)?\b", "what they keep back", text, flags=re.I)
+            text = mask_term(state, text, term)
         return text
     n: dict[str, int] = {}
     def hit(k: str) -> None:
@@ -2559,6 +2559,38 @@ def _unquiet(game: Game, state: BaseModel, adj: Any) -> str:
     if adj is not None and getattr(adj, "kind", "") == "action" and is_fight(adj):
         return "in a fight"
     return str(_hook(game, "unquiet", state, default="") or "")
+
+
+SHE = re.compile(r"\b(she|her|hers|woman|girl|wife|mother|daughter|sister|widow|lady|siren|queen|witch|maid|niece|aunt|grandmother)\b", re.I)
+HE = re.compile(r"\b(he|him|his|man|boy|husband|father|son|brother|widower|lord|king|priest|uncle|grandfather)\b", re.I)
+POSSESSIVE = {"she": "her", "he": "his", "the person": "the person's", "that place": "that place's"}
+
+
+def mask_word(state: Any, term: str) -> str:
+    """B220: what a leaked hidden term becomes in a stake. A person's name: 'she', 'he' or 'the person', by the person's
+    record (role and description); a place: 'that place'; a fact or a thing: 'what they keep back' (B210's phrase)."""
+    t = term.strip().lower()
+    for q in getattr(state, "people", None) or getattr(state, "crew", None) or []:
+        names = {str(getattr(q, "name", "")).lower(), str(getattr(q, "name", "")).lower().split(" ")[0]}
+        names |= {str(a).lower() for a in getattr(q, "aliases", None) or []}
+        if t in names:
+            record = f"{getattr(q, 'role', '')} {getattr(q, 'description', '')}"
+            she, he = len(SHE.findall(record)), len(HE.findall(record))
+            return "she" if she > he else "he" if he > she else "the person"
+    pl = getattr(state, "places", None)
+    places = list(pl() if callable(pl) else pl or []) + list(getattr(state, "locations", None) or [])
+    city = getattr(state, "city", None)
+    places += [str(getattr(c, "name", c)) for c in (getattr(city, "country", None) or [])] if city is not None else []
+    if any(t == str(pl).lower() for pl in places):
+        return "that place"
+    return "what they keep back"
+
+
+def mask_term(state: Any, text: str, term: str) -> str:
+    """The term masked in `text` by what it is (mask_word); a possessive becomes the pronoun's own ('Elowen's' -> 'her')."""
+    word = mask_word(state, term)
+    text = re.sub(r"\b" + re.escape(term) + r"['’]s\b", POSSESSIVE.get(word, word), text, flags=re.I)
+    return re.sub(r"\b" + re.escape(term) + r"(s|es)?\b", word, text, flags=re.I)
 
 
 def settle_hopeless(adj: Any) -> list[dict]:

@@ -87,3 +87,19 @@ async def test_a_retold_turn_keeps_its_one_settled_row(engine, fake):
     rows = [r for r in engine.store.ledger(iid) if r["kind"] == "settled"]
     assert len(rows) == 1 and rows[0]["payload"]["why"] == "she asked for one"
     assert any(r["kind"] == "rewrite" for r in engine.store.ledger(iid))
+
+
+def test_a_hidden_name_masks_to_a_pronoun(game):
+    """B220 (219a98e03aa9 turn 4): the stake read 'what they keep back is amused and more open to conversation', B210's
+    phrase for a fact written over Elowen's name. A person's name masks to she, he or the person by the record; a place to
+    'that place'; a fact or a thing keeps the old phrase."""
+    from engine.pipeline import mask_term
+    from games.fantasy.state import Person
+    st = game.new_instance(SHEET)[1]
+    st.people.append(Person(id="elowen", name="Elowen", role="A young siren of Reed Island", description="still mostly a girl"))
+    st.people.append(Person(id="quill", name="Quill", role="a ferry hand", description="keeps the ropes at the steps"))
+    assert mask_term(st, "Elowen is amused and more open to conversation", "Elowen") == "she is amused and more open to conversation"
+    assert mask_term(st, "Elowen's laugh comes back", "Elowen") == "her laugh comes back"
+    assert mask_term(st, "Quill lets go", "Quill") == "the person lets go"
+    assert mask_term(st, "the way to Reed Island", "Reed Island") == "the way to that place"
+    assert mask_term(st, "the drowned bell is under the lake", "drowned bell") == "the what they keep back is under the lake"
