@@ -185,7 +185,7 @@ def main(argv: list[str]) -> int:
             print(f"[{row['turn']}] {row['kind']}: {json.dumps(payload)[:800]}")
     elif cmd == "transcript":
         for r in _get(f"/api/instances/{rest[0]}")["transcript"]:
-            if r["role"] in ("player", "narrator", "command", "result", "system_note"):
+            if r["role"] in ("player", "narrator", "command", "result", "system_note") and not r.get("undone"):
                 label = "STORY SO FAR (summary stored at this turn)" if r["role"] == "system_note" else r["role"]
                 print(f"[{r['turn']} {label}] {r['text']}\n")
     else:

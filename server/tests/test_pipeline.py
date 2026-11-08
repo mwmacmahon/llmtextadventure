@@ -56,7 +56,11 @@ async def test_two_turns_and_undo(engine: Engine):
 
     assert engine.undo(iid) == 1
     assert engine.instance_view(iid)["turn"] == 1
-    assert all(r["turn"] <= 1 for r in engine.instance_view(iid)["transcript"])
+    # undo keeps the record (B82): the undone turn's rows stay in the log, marked; the live ones end at turn 1
+    rows = engine.instance_view(iid)["transcript"]
+    assert all(r["turn"] <= 1 for r in rows if not r["undone"])
+    assert {r["turn"] for r in rows if r["undone"]} == {2}
+    assert all(r.turn <= 1 for r in engine.store.transcript(iid))
 
 
 async def test_prefix_holds_static_content_and_bulletin_is_small(engine: Engine):

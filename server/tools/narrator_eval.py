@@ -50,7 +50,7 @@ from engine.config import load_config  # noqa: E402
 from engine.pipeline import narrate_turn, stored_turn  # noqa: E402
 from engine.providers import RECORDER, Msg, get_provider  # noqa: E402
 from engine.registry import load_games  # noqa: E402
-from engine.store import Store  # noqa: E402
+from engine.store import Store, live  # noqa: E402
 from eval_replay import BLOBS, ROOT, _role_with, exchange_json, provenance, put_blob, short_model  # noqa: E402
 
 NARR = ROOT / "notes" / "eval" / "narrator"
@@ -86,7 +86,7 @@ def make_corpus(picks: list[str], purpose: str, title: str) -> Path:
     games, n = [], 0
     for pick in picks:
         iid, _, which = pick.partition(":")
-        doc = store.export_instance(iid)
+        doc = live(store.export_instance(iid))           # the round as it stands: its undone turns (B82) are not replayed
         turns = sorted({r["turn"] for r in doc["transcript"] if r["turn"] > 0})
         if which:
             turns = [t for t in turns if str(t) in which.split(",")]

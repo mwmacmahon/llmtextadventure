@@ -92,19 +92,25 @@ JS = """
 
 
 # ---- reading ---------------------------------------------------------------------------------------
-def load(iid: str | None, export: Path | None) -> tuple[dict, list[dict], dict[str, str], list[dict], dict[int, dict]]:
-    """(instance, ledger rows, blobs, transcript rows, snapshots by turn) from the store or an export."""
+def load(iid: str | None, export: Path | None, undone: bool = False) -> tuple[dict, list[dict], dict[str, str], list[dict], dict[int, dict]]:
+    """(instance, ledger rows, blobs, transcript rows, snapshots by turn) from the store or an export: the round as it
+    stands, its undone turns (B82) left out, so every count reads what was played; `undone=True` keeps them, marked (the
+    call report shows them at the undo that undid them)."""
+    from engine.store import live
     if export:
         doc = json.loads(export.read_text())
-        snaps = {s["turn"]: s["state"] for s in doc.get("snapshots", [])}
-        return doc["instance"], doc["ledger"], doc.get("blobs") or {}, doc.get("transcript", []), snaps
-    from engine.config import load_config
-    from engine.store import Store, blob_refs
-    cfg = load_config()
-    store = Store(cfg.resolve(cfg.server.data_dir) / "textadventure.sqlite3")
-    doc = store.export_instance(iid)
-    snaps = {s["turn"]: s["state"] for s in doc.get("snapshots", [])}
-    return doc["instance"], doc["ledger"], store.blobs(blob_refs(doc["ledger"])), doc["transcript"], snaps
+        blobs = doc.get("blobs") or {}
+    else:
+        from engine.config import load_config
+        from engine.store import Store, blob_refs
+        cfg = load_config()
+        store = Store(cfg.resolve(cfg.server.data_dir) / "textadventure.sqlite3")
+        doc = store.export_instance(iid)
+        blobs = store.blobs(blob_refs(doc["ledger"]))
+    if not undone:
+        doc = live(doc)
+    snaps = {s["turn"]: s["state"] for s in doc.get("snapshots", []) if not s.get("undone")}
+    return doc["instance"], doc["ledger"], blobs, doc.get("transcript", []), snaps
 
 
 def tellings(rows: list[dict]) -> list[dict]:
@@ -370,10 +376,38 @@ def retell_counts(ledger: list[dict]) -> tuple[int, Counter, list[int]]:
     return n, rules, sorted(set(turns))
 
 
+def render_undo(u: dict, ledger: list[dict], transcript: list[dict]) -> str:
+    """An undo (B82), where it happened: back to which turn, the turns it undid, and their inputs and tellings struck
+    through (the record keeps them; nothing that counts or builds a prompt reads them)."""
+    p = u.get("payload") or {}
+    turns = p.get("turns") or []
+    span = (f"turn {turns[0]} undone" if len(turns) == 1 else f"turns {turns[0]} to {turns[-1]} undone") if turns else "nothing undone"
+    gone = [r for r in transcript if r.get("undone") == u.get("seq")]
+    calls = sum(1 for r in ledger if r.get("undone") == u.get("seq") and r["kind"] == "exchange")
+    items = []
+    for t in sorted({r["turn"] for r in gone}):
+        said = {r["role"]: r["text"] for r in gone if r["turn"] == t}
+        items.append(f"<div class='undone'><b>turn {t}</b> {E(said.get('player') or said.get('command') or '')}"
+                     f"<div class='prose'><s>{E(said.get('narrator', ''))}</s></div></div>")
+    diff = p.get("difficulty") or {}
+    back = f"; difficulty back to {E(str(diff.get('new', '')))}" if diff else ""
+    return (f"<div class='sentback undo'><b>Undo: back to turn {E(str(p.get('to_turn')))}</b> from turn {E(str(p.get('from_turn')))}; {E(span)}{back}"
+            f" · {calls} model call{'s' if calls != 1 else ''} in the undone turns"
+            + (f"<details><summary>The undone turns, as played</summary>{''.join(items)}</details>" if items else "") + "</div>")
+
+
 def build(inst: dict, ledger: list[dict], blobs: dict[str, str], transcript: list[dict], title: str | None = None, standalone: bool = True) -> str:
+    every_ledger, every_transcript = ledger, transcript
+    ledger = [r for r in ledger if not r.get("undone")]                 # the turns as they stand; the undone ones show at their undo
+    transcript = [r for r in transcript if not r.get("undone")]
+    undos: dict[int, list[dict]] = defaultdict(list)
+    for r in ledger:
+        if r["kind"] == "undo":
+            undos[r["turn"]].append(r)
     by_turn: dict[int, list[dict]] = defaultdict(list)
     for r in ledger:
-        by_turn[r["turn"]].append(r)
+        if r["kind"] != "undo":
+            by_turn[r["turn"]].append(r)
     said: dict[int, dict[str, str]] = defaultdict(dict)
     for r in transcript:
         said[r["turn"]].setdefault(r["role"], r["text"])
@@ -415,6 +449,10 @@ def build(inst: dict, ledger: list[dict], blobs: dict[str, str], transcript: lis
         for i, x in enumerate(tl):
             prose = x.get("narration", "") if x["old"] else said[t].get("narrator", "")
             body.append(render_telling(x, blobs, prose))
+        body += [render_undo(u, every_ledger, every_transcript) for u in undos.get(t, [])]
+        for u in undos.get(t, []):
+            idx_rows.append(f"<tr class='undo-row'><td class='num'><a href='#t{t}'>{t}</a></td><td colspan='8'>undo: back to turn {t}, "
+                            f"{len((u.get('payload') or {}).get('turns') or [])} undone</td></tr>")
         sections_html.append(f"<section class='turn' id='t{t}'>{''.join(body)}</section>")
 
     opening = said.get(0, {}).get("narrator", "")
@@ -432,6 +470,7 @@ def build(inst: dict, ledger: list[dict], blobs: dict[str, str], transcript: lis
             f"<div class='stats'>{who}</div>")
     if opening:
         head += f"<details><summary>The opening</summary><div class='prose'>{E(opening)}</div></details>"
+    head += "".join(render_undo(u, every_ledger, every_transcript) for u in undos.get(0, []))       # back to the opening
     index = ("<div class='scroll'><table class='idx'><thead><tr><th>turn</th><th>input</th><th>kind</th><th>min</th><th>calls</th><th>applied</th>"
              f"<th>refused</th><th>retold</th><th>profile</th></tr></thead><tbody>{''.join(idx_rows)}</tbody></table></div>")
     data = json.dumps(blobs, ensure_ascii=False).replace("</", "<\\/")
@@ -440,7 +479,7 @@ def build(inst: dict, ledger: list[dict], blobs: dict[str, str], transcript: lis
 
 
 def write_report(iid: str, out: Path | None = None, title: str | None = None, export: Path | None = None, standalone: bool = True) -> Path:
-    inst, ledger, blobs, transcript, _ = load(iid, export)
+    inst, ledger, blobs, transcript, _ = load(iid, export, undone=True)
     path = out or OUT / f"{dt.date.today():%Y-%m-%d}-{inst['game']}-{inst['id']}.html"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(build(inst, ledger, blobs, transcript, title, standalone))
