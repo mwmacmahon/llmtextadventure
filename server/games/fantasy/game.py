@@ -567,7 +567,8 @@ class FantasyGame(GameBase):
             "with the spell named in the label.",
         ]
         if p.about.strip():
-            lines.append(f'What the player says about {p.name}, in their own words: "{p.about.strip()}". A check that something in this '
+            said = p.about.strip()
+            lines.append(f'What the player says about {p.name}, in their own words: "{said}"' + ("" if said[-1:] in ".!?" else ".") + ' A check that something in this '
                          f"plainly bears on (a thing they carry, a skill, their past) gets +2: name that thing in the check's label, in the player's words.")
         lines += [
             *([f"Casting a known spell needs a spell left (the game state says how many); a night's sleep brings them back. With none left, a spell "
