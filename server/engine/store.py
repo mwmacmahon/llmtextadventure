@@ -431,11 +431,12 @@ class Store:
     @_locked
     def truncate_after_turn(self, iid: str, turn: int) -> None:
         """A retelling: drop the live rows after `turn` (snapshots, transcript, ledger); the turn's earlier telling is kept
-        in its `rewrite` row. Undone rows and `undo` rows are the record and stay."""
+        in its `rewrite` row. Undone rows and `undo` rows are the record and stay; so do `settled` rows (B219: written once,
+        from the reading, which a retelling replays unchanged)."""
         with self.conn:
             self.conn.execute("DELETE FROM snapshot WHERE instance_id=? AND turn>? AND undone=0", (iid, turn))
             self.conn.execute("DELETE FROM transcript WHERE instance_id=? AND turn>? AND undone=0", (iid, turn))
-            self.conn.execute("DELETE FROM ledger WHERE instance_id=? AND turn>? AND undone=0 AND kind<>'undo'", (iid, turn))
+            self.conn.execute("DELETE FROM ledger WHERE instance_id=? AND turn>? AND undone=0 AND kind NOT IN ('undo', 'settled')", (iid, turn))
 
     # ---- export / import / copy -------------------------------------------
     @_locked

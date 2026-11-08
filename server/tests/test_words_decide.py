@@ -72,3 +72,18 @@ async def test_a_very_high_check_with_a_hopeless_edge_is_settled_as_a_fail(engin
     rows = [r["payload"] for r in engine.store.ledger(iid) if r["kind"] == "settled"]
     assert [r["settled"] for r in rows] == ["fails"] and rows[0]["why"].startswith("the words settled it:")
     assert not any(r["kind"] == "check" for r in engine.store.ledger(iid))
+
+
+async def test_a_retold_turn_keeps_its_one_settled_row(engine, fake):
+    """B219 (219a98e03aa9 turn 2): the turn was retold for a leak and the retelling wrote no settled row, so the count ran
+    one short. Settled rows are written once, from the reading, and a retelling keeps them."""
+    adj = AssistantReadingStaked(kind="action", summary="offers Mirren a true story", time_minutes=10, risk="low", intents=[IntentStaked(action="tell a true story")],
+                                 fiat=[FiatOutcome(attempt="tell Mirren a true story", outcome="she listens", settled="works", why="she asked for one")])
+    iid = engine.create_instance("fantasy", SHEET)
+    fake.canned["AssistantReading"] = [adj]
+    await play(engine, iid, "I tell her the true story of how I lost my brother.")
+    async for _ in engine.rewrite_turn(iid, "Shorter.", by="referee"):
+        pass
+    rows = [r for r in engine.store.ledger(iid) if r["kind"] == "settled"]
+    assert len(rows) == 1 and rows[0]["payload"]["why"] == "she asked for one"
+    assert any(r["kind"] == "rewrite" for r in engine.store.ledger(iid))
