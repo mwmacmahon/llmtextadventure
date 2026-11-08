@@ -119,6 +119,24 @@ function Panel({ w, onChoice, onCommand, busy, ended }: { w: Widget; onChoice?: 
           )}
         </section>
       );
+    case "quests":
+      return (
+        <section className="panel">
+          <h3>{w.title}</h3>
+          {w.rows.length === 0 ? <div className="muted small">Nothing yet.</div> : <ul className="quests">
+            {w.rows.map((r, i) => (
+              <li key={`${r.title}-${i}`}>
+                <div className="quest-head">
+                  <span className="quest-title">{r.title}</span>
+                  <span className={`quest-standing tone-${r.tone}`}>{r.standing}</span>
+                </div>
+                {r.line && <div className="quest-line">{r.line}</div>}
+                {r.giver && <div className="quest-giver muted">from {r.giver}</div>}
+              </li>
+            ))}
+          </ul>}
+        </section>
+      );
     case "entity_cards":
       return (
         <section className="panel">

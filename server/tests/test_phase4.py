@@ -116,7 +116,7 @@ async def test_referee_threads_land_in_state_and_bulletin(engine: Engine, fake: 
     done = next(t for t in st.threads if t.id == tid)
     assert done.status == "resolved" and done.note == "sent"
     panel = next(p for p in events[-1]["data"]["ui"]["panels"] if p.get("title") == "Threads")
-    assert any(it["label"] == "resolved" and it["value"].startswith("Okafor expects") for it in panel["items"])
+    assert any(r["standing"] == "resolved" and r["title"].startswith("Okafor expects") for r in panel["rows"])   # the one quest shape (B93)
 
 
 # ---- happenings -------------------------------------------------------------

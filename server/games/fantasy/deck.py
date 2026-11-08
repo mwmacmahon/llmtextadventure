@@ -272,18 +272,22 @@ def settle(state: FantasyState, content_hooks: dict[str, dict], turn: int, pay) 
             continue
         reach = next((e for e in events if e.id == f"{h.id}_reach"), None)
         if h.status == "dealt" and reach is not None and reach.fired:
-            h.status, h.standing = "live", "heard of"
+            h.status = "live"
             tid = f"hook-{h.id}"
             if not any(t.id == tid for t in state.threads):
                 state.threads.append(th.Thread(id=tid, title=h.title, opened_turn=turn))
             h.thread = tid
             out.append(f"New quest: {h.title}.")
+        if h.status == "live" and reach is not None and reach.fired and reach.variant != "fallback":
+            h.offered = True                                # the giver asked in person; word passed on is only heard of
+        restand(h)
         if h.status not in ("dealt", "live"):
             continue
         rows, also, milestones = reward_rows(hook)
         for i, m in enumerate(milestones):
             if i not in h.paid and _holds(rebase_predicate(m.get("when"), h.dealt_abs), doc, events, turn):
                 h.paid.append(i)
+                h.taken = True
                 pay(m, f"{h.title}: a step further")
                 out.append(f"{h.title}: a step further.")
         done = _holds(rebase_predicate(hook.get("done"), h.dealt_abs), doc, events, turn)
@@ -299,7 +303,7 @@ def settle(state: FantasyState, content_hooks: dict[str, dict], turn: int, pay) 
                 if _holds(a.get("when"), doc, events, turn):
                     pay(a, h.title)
         h.status, h.closed_turn = ("done" if done else "failed"), turn
-        h.standing = "done" if done else "gone by"
+        restand(h)
         t = next((t for t in state.threads if t.id == h.thread), None) if h.thread else None
         if t is None:                                       # closed before it ever reached the player: the log still shows it
             t = th.Thread(id=f"hook-{h.id}", title=h.title, opened_turn=turn)
@@ -309,6 +313,29 @@ def settle(state: FantasyState, content_hooks: dict[str, dict], turn: int, pay) 
             t.status, t.closed_turn, t.note = ("resolved" if done else "failed"), turn, ("done" if done else "it went by")
         out.append(f"{h.title}: {'done' if done else 'it went by'}.")
     return out
+
+
+# The standing words follow the hook (B93): heard of (word reached the player) -> offered (its giver asked) -> taken up or
+# turned down -> done or failed. "not yet heard of" is a dealt hook's, never shown.
+STANDING = ("not yet heard of", "heard of", "offered", "taken up", "turned down", "done", "failed")
+STANDING_TONES = {"done": "ok", "failed": "bad", "turned down": "neutral"}
+
+
+def standing_of(h: HookState) -> str:
+    if h.status in ("done", "failed"):
+        return h.status
+    if h.status == "dealt":
+        return "not yet heard of"
+    if h.declined:
+        return "turned down"
+    if h.taken:
+        return "taken up"
+    return "offered" if h.offered else "heard of"
+
+
+def restand(h: HookState) -> str:
+    h.standing = standing_of(h)
+    return h.standing
 
 
 def _row_text(row: dict) -> str:

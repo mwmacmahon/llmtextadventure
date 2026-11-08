@@ -32,6 +32,7 @@ from engine.game import (
 from engine.gamekit import Clock, Content, Writer, threads_panel
 from engine.mechanics import CheckRequest, Modifier
 from engine.pending import Pending
+from engine.resolve import same_person
 from engine.roles import AssistantReadingV2, Change
 from engine.spontaneous import Spontaneous
 from engine.statepath import Actor
@@ -1367,16 +1368,9 @@ class NoirGame(GameBase):
     # ---- pocket helpers -----------------------------------------------------
     @staticmethod
     def _same_person(s: NoirState, name: str) -> Person | None:
-        k = name.strip().lower().removeprefix("the ").strip(" .")
-        for q in s.people:                                   # what the script says the prose calls them: "the creature", "the thing"
-            if k == q.name.lower().removeprefix("the ") or any(k == a.lower().removeprefix("the ") for a in q.aliases):
-                return s.person(q.id)                        # "the caller", identified, is Szabo
-        words = {x for x in re.split(r"[^a-z]+", name.lower()) if len(x) > 2 and x not in ("the", "mrs", "mr", "miss", "professor", "chief", "sergeant", "doctor")}
-        for q in s.people:
-            qw = {x for x in re.split(r"[^a-z]+", q.name.lower()) if len(x) > 2}
-            if words & qw:
-                return s.person(q.id)
-        return None
+        # what the script says the prose calls them ("the creature", "the caller", identified, is Szabo), else a name word
+        q = same_person(s.people, name, {"the", "mrs", "mr", "miss", "professor", "chief", "sergeant", "doctor"})
+        return s.person(q.id) if q is not None else None     # a folded record is the one it was folded into
 
     def _relocate(self, s: NoirState, it: Item, in_pockets: bool, target: str, dest: str, w: Writer) -> None:
         """A thing changes hands or is left somewhere: to a listed place, to a person (by id or name), or back to
@@ -1755,7 +1749,7 @@ class NoirGame(GameBase):
                     ],
                 ),
                 ListPanel(title="Notebook", items=[Chip(label=n.kind, value=n.text) for n in s.notebook[-20:]]),
-                threads_panel(s.threads),
+                threads_panel(s.threads, names=self.entity_names(s)),
                 ListPanel(title="Stats", items=[Chip(label=k, value=f"{v:+d}") for k, v in p.stats.items()]),
                 LogPanel(title="Case log", lines=s.log[-20:]),
             ],

@@ -156,13 +156,29 @@ class CommandSpec(BaseModel):
     panel: "CommandPanel | None" = None   # a command that opens a panel of its own (the level-up screen, B92) instead of selects
 
 
+class QuestRow(BaseModel):
+    """One quest in the one shape every game shows (B93): the title, one line (what is wanted, by whom, for what), the
+    standing word, the giver."""
+    title: str
+    line: str = ""
+    standing: str = ""
+    giver: str = ""
+    tone: Tone = "info"
+
+
+class QuestPanel(BaseModel):
+    type: Literal["quests"] = "quests"
+    title: str
+    rows: list[QuestRow]
+
+
 class Commands(BaseModel):
     type: Literal["commands"] = "commands"
     title: str | None = None
     items: list[CommandSpec]
 
 
-Widget = StatusStrip | Meter | MeterGroup | Table | EntityCards | ListPanel | LogPanel | Choices | Commands
+Widget = StatusStrip | Meter | MeterGroup | Table | EntityCards | ListPanel | LogPanel | Choices | Commands | QuestPanel
 
 
 class UISchema(BaseModel):
@@ -444,6 +460,26 @@ class GameBase:
     def apply_present(self, state: BaseModel, present: list[str], writer: Any) -> BaseModel:
         """The referee's list of people who appeared: a game may mark them met."""
         return state
+
+    # ---- quests (B93, D175): what the referee may be talking about, and where its word on one lands ----
+    def quests_in_motion(self, state: BaseModel) -> list[Any]:
+        """The quests the referee's rows are resolved against (engine/resolve.py): (id, title, giver, places) rows or
+        resolve.Quest. Default: the open threads, each with the person it is with."""
+        from .resolve import Quest
+        names = self.entity_names(state) if hasattr(self, "entity_names") else {}
+        return [Quest(id=t.id, title=t.title, giver=names.get(t.who, t.who), line=t.about)
+                for t in getattr(state, "threads", None) or [] if getattr(t, "status", "open") == "open"]
+
+    def note_quest(self, state: BaseModel, quest: Any, note: str, writer: Any) -> bool:
+        """The referee's latest word on a quest (a thread it opened again, or set <id>.note): lands on the thread. A game
+        with quests of its own (the fantasy's hooks) puts it there. Returns whether it landed."""
+        t = next((t for t in getattr(state, "threads", None) or [] if t.id == quest.id), None)
+        if t is None:
+            return False
+        note = " ".join(note.split())[:200]
+        if note and note != t.note and writer.set(f"threads.{t.id}.note", t.note, note):
+            t.note = note
+        return True
 
     def after_changes(self, state: BaseModel, report: ApplyReport) -> BaseModel:
         """After every row landed: derived values, syncing (the station's suspicion and world mirror)."""

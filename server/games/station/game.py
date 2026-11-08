@@ -1841,7 +1841,7 @@ class StationGame(GameBase):
                 ),
                 Commands(title="Station controls", items=self.commands(s)),
                 *([ListPanel(title="Findings", items=[Chip(label="found", value=f) for f in s.findings[-12:]])] if s.findings else []),
-                threads_panel(s.threads),
+                threads_panel(s.threads, names=self.entity_names(s)),
                 ListPanel(title="Capabilities", items=[Chip(label=k, value=f"{v:+d}") for k, v in s.stats.items()]),
                 LogPanel(title="Logfile", lines=s.log[-20:]),
             ],

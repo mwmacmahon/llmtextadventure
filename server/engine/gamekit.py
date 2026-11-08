@@ -14,7 +14,7 @@ import yaml
 from pydantic import BaseModel
 
 from . import threads as th
-from .game import ApplyReport, Chip, ListPanel, Rejection
+from .game import ApplyReport, QuestPanel, QuestRow, Rejection
 from .statepath import Actor, may_write
 
 
@@ -112,9 +112,29 @@ class Writer:
         self.report.applied.append(line)
 
 
-def threads_panel(threads: list[th.Thread], title: str = "Threads", recent_closed: int = 5) -> ListPanel:
+THREAD_WORDS = {"open": "open", "resolved": "resolved", "failed": "failed"}
+THREAD_TONES = {"resolved": "ok", "failed": "bad"}
+
+
+def quest_line(*parts: str) -> str:
+    """The row's one line: what is wanted, then the latest word on it, each once."""
+    out: list[str] = []
+    for x in parts:
+        x = " ".join((x or "").split()).rstrip(".")
+        if x and not any(x.lower() in o.lower() for o in out):
+            out.append(x)
+    return ". ".join(out) + ("." if out else "")
+
+
+def thread_row(t: th.Thread, names: dict[str, str] | None = None, words: dict[str, str] | None = None) -> QuestRow:
+    """A thread in the one quest shape (B93): its title, its line and latest note, its standing, the person it is with."""
+    who = (names or {}).get(t.who, t.who)
+    return QuestRow(title=t.title, line=quest_line(t.about, t.note), standing=(words or THREAD_WORDS).get(t.status, t.status),
+                    giver=who, tone=THREAD_TONES.get(t.status, "info"))  # type: ignore[arg-type]
+
+
+def threads_panel(threads: list[th.Thread], title: str = "Threads", recent_closed: int = 5,
+                  names: dict[str, str] | None = None) -> QuestPanel:
+    """The open threads, then the most recently closed few, in the one quest shape."""
     closed = sorted((t for t in threads if t.status != "open"), key=lambda t: t.closed_turn or 0)[-recent_closed:]
-    return ListPanel(title=title, items=[
-        *[Chip(label="open", value=t.title) for t in threads if t.status == "open"],
-        *[Chip(label=t.status, value=t.title) for t in closed],
-    ])
+    return QuestPanel(title=title, rows=[thread_row(t, names) for t in [*(t for t in threads if t.status == "open"), *closed]])

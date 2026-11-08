@@ -27,7 +27,29 @@ class Thread(BaseModel):
     status: Status = "open"
     opened_turn: int = 0
     closed_turn: int | None = None
-    note: str = ""
+    note: str = ""                  # how it ended; while open, the referee's latest word on it (set <id>.note)
+    about: str = ""                 # one line: what is wanted, by whom, for what (B93: the title is a name, this the line)
+    who: str = ""                   # the person it is with, as the referee named them
+
+
+class ThreadOpen(BaseModel):
+    """A thread the referee opened, before the engine resolves it against the quests in motion."""
+    title: str
+    about: str = ""
+    who: str = ""
+
+
+def opening(text: str, title: str = "", who: str = "") -> ThreadOpen:
+    """The referee's thread_open row as a title and a line. Its own `title` when it gave one; else the clause before a
+    colon ("Maud's cellar rats: she offers two gold ..." is titled "Maud's cellar rats"); else the whole text, as
+    before (D175)."""
+    text, title = " ".join((text or "").split()), " ".join((title or "").split())
+    if title:
+        return ThreadOpen(title=title[:120], about="" if text.lower() == title.lower() else text[:240], who=who.strip())
+    head, sep, rest = text.partition(":")
+    if sep and head.strip() and rest.strip() and len(head) <= 80:
+        return ThreadOpen(title=head.strip(), about=rest.strip()[:240], who=who.strip())
+    return ThreadOpen(title=text[:120], who=who.strip())
 
 
 class ThreadClose(BaseModel):
@@ -47,7 +69,7 @@ def load(doc: dict, path: str) -> list[Thread]:
     return [Thread.model_validate(t) for t in raw]
 
 
-def apply_updates(doc: dict, path: str, opened: list[str], closed: list[ThreadClose], turn: int,
+def apply_updates(doc: dict, path: str, opened: list[str | ThreadOpen], closed: list[ThreadClose], turn: int,
                   max_open: int | None = None) -> tuple[list[str], list[str]]:
     """Mutates `doc`. Returns (applied lines, rejection reasons). The store takes every thread the prose opens (D77:
     a cap is on the view, `render`, never on what is recorded); `max_open` remains only for a game that wants one."""
@@ -66,11 +88,12 @@ def apply_updates(doc: dict, path: str, opened: list[str], closed: list[ThreadCl
         t.status, t.closed_turn, t.note = c.outcome, turn, c.note.strip()[:200]
         applied.append(f"threads.{t.id}: open -> {c.outcome}" + (f" ({t.note})" if t.note else ""))
     open_count = sum(1 for t in threads if t.status == "open")
-    for title in opened[:2]:
-        title = " ".join(title.split())[:120]
+    for op in opened[:2]:
+        op = op if isinstance(op, ThreadOpen) else ThreadOpen(title=op)
+        title = " ".join(op.title.split())[:120]
         if not title:
             continue
-        if any(t.title.lower() == title.lower() and t.status == "open" for t in threads):
+        if any(t.title.lower() == title.lower() and t.about.lower() == op.about.lower() and t.status == "open" for t in threads):
             rejected.append(f"threads: duplicate open thread {title!r}")
             continue
         if max_open is not None and open_count >= max_open:
@@ -81,11 +104,11 @@ def apply_updates(doc: dict, path: str, opened: list[str], closed: list[ThreadCl
         while tid in by_id:
             tid = f"{slug(title, turn)}-{n}"
             n += 1
-        t = Thread(id=tid, title=title, opened_turn=turn)
+        t = Thread(id=tid, title=title, opened_turn=turn, about=op.about, who=op.who)
         threads.append(t)
         by_id[tid] = t
         open_count += 1
-        applied.append(f"threads += {tid}: {title}")
+        applied.append(f"threads += {tid}: {title}" + (f": {op.about}" if op.about else ""))
     sp.assign(doc, path, [t.model_dump(mode="json") for t in threads])
     return applied, rejected
 
@@ -103,7 +126,7 @@ def render(threads: list[Thread], recent_closed: int = 3, shown: int = 12) -> li
         older = [t for t in open_ if t not in recent]
         lines.append("Open threads (id: what is pending):")
         for t in recent:
-            lines.append(f"- {t.id}: {t.title}")
+            lines.append(f"- {t.id}: {t.title}" + (f": {t.about}" if t.about else "") + (f" (latest: {t.note})" if t.note else ""))
         if older:
             lines.append(f"- and {len(older)} older still open: " + "; ".join(f"{t.id} ({' '.join(t.title.split()[:5])}…)" for t in older))
     if closed:

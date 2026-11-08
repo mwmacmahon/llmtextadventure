@@ -128,6 +128,9 @@ def _print_state(view: dict) -> None:
                 print(f"{p['title']}: " + "; ".join(f"{c['label']}={c['value']}" if c["label"] != c["value"] else c["value"] for c in p["items"]))
         elif t == "table":
             print(p["title"] + ": " + "; ".join(" ".join(c["text"] for c in row) for row in p["rows"]))
+        elif t == "quests":
+            if p["rows"]:
+                print(p["title"] + ": " + "; ".join(" · ".join(x for x in (r["title"], r["line"], r["standing"], r["giver"]) if x) for r in p["rows"]))
         elif t == "entity_cards":
             for c in p["cards"]:
                 print(f"{p['title']} · {c['title']} ({c.get('subtitle') or ''}): " + ", ".join(f"{b['label']} {b['value']}" for b in c["badges"])
