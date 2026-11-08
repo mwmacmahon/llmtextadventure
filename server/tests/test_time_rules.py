@@ -82,7 +82,7 @@ def test_the_kind_of_turn_keeps_the_minutes(noir):
     t = lambda task, m: task_minutes(noir.clock, SimpleNamespace(tempo=said[task][0], summary=said[task][1], intents=[], time_minutes=m))   # noqa: E731
     assert t("fight", 20) == (3, "fight turn: 20 minutes kept to 3 (1 to 3)")
     assert t("search", 2)[0] == 10 and t("search", 25) == (25, "")
-    assert t("talk", 45)[0] == 20
+    assert t("talk", 45)[0] == 15                                              # B201: talk is 5 to 15
     assert t("wait", 240) == (240, "")          # the player's limit stands; (v) asks for it
     assert t("wait", 1)[0] == noir.clock.tasks["wait"].least
     assert t("other", 7) == (7, "")

@@ -187,7 +187,7 @@ class NoirGame(GameBase):
 
     clock = ClockSpec(path="clock", minutes_per_day=1440, cap_minutes=600, scene_mark=4, tasks={      # time doc §3 (iv), D148
         "fight": TaskRow(least=1, most=3, lost=3),        # a fight, a chase, a struggle: a minute or three a turn
-        "talk": TaskRow(least=5, most=20, lost=15),       # the doc's 5 to 15; the rules' Time line says 10 to 20 (kept wider)
+        "talk": TaskRow(least=5, most=15, lost=15),       # B201 (D178; supersedes D148's 5 to 20): talk is 5 to 15 minutes
         "search": TaskRow(least=10, most=30, lost=30),    # a room, a desk, a stack of papers
         "travel": TaskRow(least=5, most=60, lost=15),     # the rules' Time line is the map: a district 10, across town 30
         "wait": TaskRow(least=5, most=600, lost=0),       # to the player's limit ((v), the "until when" question)
@@ -697,7 +697,7 @@ class NoirGame(GameBase):
             "Firing the revolver is impossible if it holds 0 rounds; paying more dollars than he carries is impossible. Say so in clarify_question. Reloading and smoking are commands: always list them under commands when asked, full cylinder or empty pack included; the engine refuses and the narrator plays it. A command is never an intent and never replaces the rest of the input: the run, the shot, the search or the conversation beside it is still an intent with its check.",
             "target_entity only for a listed person the player names or the scene identifies; an unnamed stranger has no id, so leave target_entity null for him.",
             "Stats are exactly the six listed; never invent one.",
-            "Time: a look around is 2 minutes; a search 15-30; a conversation 10-20; walking across a district 10; Midtown to Lowtown or Uptown 30 (10 by cab); sleeping 6-8 hours; waiting is however long he waits.",
+            "Time: a look around is 2 minutes; a search 15-30; a conversation 5-15; walking across a district 10; Midtown to Lowtown or Uptown 30 (10 by cab); sleeping 6-8 hours; waiting is however long he waits.",
             "",
             "What Frank carries (pockets, rounds loaded), his conditions and health, and where he is are in the game state block; read them there before ruling something impossible.",
             "Entities (people, by id): " + ", ".join(f"{q.id} ({q.name}, {q.role})" for q in s.cast) + ". People Frank has dealt with are listed in the game state; the others he has not met yet.",

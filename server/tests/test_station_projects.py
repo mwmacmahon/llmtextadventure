@@ -42,21 +42,22 @@ def test_locked_start_takes_the_controls_away(station):
     _, res = station.run_command(s, "nudge", {"crew": s.crew[0].id, "shade": "calm"})
     assert not res.ok
     lines = station.turn_directives(s)
-    assert any(d.startswith("The station cannot see yet") for d in lines) and any(d.startswith("The station cannot hear") for d in lines)
+    assert not any(d.startswith("The station cannot see yet") for d in lines)            # B202: the cameras are kept at the start
+    assert any(d.startswith("The station sees through its cameras and hears what is said to it") for d in lines)
 
 
 def test_a_sitting_credits_the_minutes_spent(station):
     s = _locked(station)
-    s2, res = station.run_command(s, "work", {"project": "cameras", "limit": "block"})
+    s2, res = station.run_command(s, "work", {"project": "microphones", "limit": "block"})
     assert res.ok and res.minutes == 120 and s2.access.working.limit == 120
     s3 = station.after_turn(s2, TurnInfo(turn=1, elapsed_minutes=50, rng=random.Random(1)))   # an event stopped the clock at 50
-    assert s3.access.progress["cameras"] == 50 and s3.access.working is None
-    assert "Cameras: 0% → 20%" in station.seen_changes(s2, s3)
-    s4, _ = station.run_command(s3, "work", {"project": "cameras", "limit": "block"})
+    assert s3.access.progress["microphones"] == 50 and s3.access.working is None
+    assert "Microphones: 0% → 20%" in station.seen_changes(s2, s3)
+    s4, _ = station.run_command(s3, "work", {"project": "microphones", "limit": "block"})
     s5 = station.after_turn(s4, TurnInfo(turn=2, elapsed_minutes=120, rng=random.Random(1)))
-    s6, _ = station.run_command(s5, "work", {"project": "cameras"})                            # the limit defaults to the block
+    s6, _ = station.run_command(s5, "work", {"project": "microphones"})                            # the limit defaults to the block
     s7 = station.after_turn(s6, TurnInfo(turn=3, elapsed_minutes=120, rng=random.Random(1)))
-    assert pj.is_done(s7.access, "cameras") and not any(d.startswith("The station cannot see") for d in station.turn_directives(s7))
+    assert pj.is_done(s7.access, "microphones") and not any(d.startswith("The station sees through its cameras") for d in station.turn_directives(s7))
 
 
 def test_never_longer_than_the_block_and_one_dependency(station):
@@ -78,12 +79,12 @@ def test_hardened_security_halves_the_speed_and_triples_detection(station):
 
 def test_a_noticed_sitting_sets_someone_asking(station):
     s = _locked(station)
-    s2, _ = station.run_command(s, "work", {"project": "cameras"})
+    s2, _ = station.run_command(s, "work", {"project": "microphones"})
     rng = random.Random(0)
     rng.random = lambda: 0.0                                       # the roll comes up under any chance
     s3 = station.after_turn(s2, TurnInfo(turn=1, elapsed_minutes=120, rng=rng))
     assert s3.flags["last_work"]["detected"] and s3.access.detected
-    assert any("odd entries in the camera logs" in p.what for p in s3.hidden.pending)
+    assert any("odd entries in the microphone logs" in p.what for p in s3.hidden.pending)
 
 
 def test_the_alarm_hardens_security_once(station):

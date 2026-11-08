@@ -105,11 +105,11 @@ def test_each_game_says_which_save_it_is(engine: Engine):
     doc["player"]["health"] = "wounded"
     engine.store.save_snapshot(n, 1, doc)
     sdoc = engine.store.load_state(s)
-    sdoc["access"]["progress"] = {"cameras": 120}
+    sdoc["access"]["progress"] = {"microphones": 120}
     engine.store.save_snapshot(s, 1, sdoc)
     noir, station = engine.summary(n), engine.summary(s)
     assert noir["save_line"][-1] == {"label": "health", "value": "wounded", "tone": "bad"} and noir["turn"] == 1
-    assert station["save_line"][-1]["value"] == "Cameras: about halfway"
+    assert station["save_line"][-1]["value"] == "Microphones: about halfway"
     assert engine.summary(f)["ending"] is None and engine.summary(f)["updated"] == engine.summary(f)["created"]
 
 

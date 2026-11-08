@@ -18,7 +18,6 @@ from pydantic import BaseModel, Field
 # the defaults when a scenario lists no projects of its own (the 11-07 decisions: senses the easiest, four hours in two
 # blocks of two at 2% a block; the implants' nudge the hardest)
 DEFAULT_PROJECTS: list[dict[str, Any]] = [
-    {"id": "cameras", "name": "Cameras", "minutes": 240, "block": 120, "detect": 2},
     {"id": "microphones", "name": "Microphones", "minutes": 240, "block": 120, "detect": 2},
     {"id": "doors", "system": "Doors", "name": "Doors", "minutes": 360, "block": 120, "detect": 3},
     {"id": "comms", "system": "Comms", "name": "Comms", "minutes": 360, "block": 120, "detect": 3},
@@ -63,8 +62,11 @@ def projects_of(scenario: dict | None) -> list[Project]:
     return [Project.model_validate(p) for p in ((scenario or {}).get("projects") or DEFAULT_PROJECTS)]
 
 
+KEPT_AT_START = ("cameras",)          # B202 (D178): the locked-out start keeps the cameras and the crew's chat channel
+
+
 def is_done(ctl: Control, pid: str) -> bool:
-    return ctl.mode == "full" or pid in ctl.done
+    return ctl.mode == "full" or pid in ctl.done or pid in KEPT_AT_START
 
 
 def speed(p: Project, systems: list[Any], flags: dict[str, Any]) -> float:

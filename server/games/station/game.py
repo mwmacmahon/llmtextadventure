@@ -1349,7 +1349,7 @@ class StationGame(GameBase):
                         int(100 * (s.access.progress.get(p.id, 0) + limit * pj.speed(p, s.systems, s.flags)) / p.minutes))
             s.access.working = pj.Work(project=p.id, limit=limit)
             sense = (["what its cameras show"] if pj.is_done(s.access, "cameras") else ["doors opening", "systems in use"]) + \
-                (["what its microphones pick up"] if pj.is_done(s.access, "microphones") else ["what the crew say to their assistants"])
+                (["what its microphones pick up"] if pj.is_done(s.access, "microphones") else ["what the crew say to it in their chat channel"])
             directive = (f"The station spends this turn working its way into the {p.name.lower().removeprefix('the ')}, up to {limit} minutes. Tell it as time "
                          f"passing, through what the station can sense: {', '.join(sense[:-1])} and {sense[-1]}. End on how far in it is, in words, "
                          f"never a number: {pj.how_far(before)} now, {pj.how_far(ahead)} if nothing stops it. The work is quiet; if the crew "
@@ -1519,9 +1519,9 @@ class StationGame(GameBase):
         c2.off_routine_until = 1
         s2.clock.minute = r.start
         self._sync_world_from_crew(s2)
-        # 1e (D151): a locked-out game mid-sitting, near the end of the cameras, so the credit and the finish show
+        # 1e (D151): a locked-out game mid-sitting, near the end of the microphones (the first project since B202), so the credit and the finish show
         s3 = state.model_copy(deep=True)
-        s3.access = pj.Control(mode="locked", progress={"cameras": 230}, working=pj.Work(project="cameras", limit=120))
+        s3.access = pj.Control(mode="locked", progress={"microphones": 230}, working=pj.Work(project="microphones", limit=120))
         return [s, s2, s3]
 
     def after_turn(self, state: StationState, info: TurnInfo) -> StationState:
@@ -1721,9 +1721,9 @@ class StationGame(GameBase):
         if not pj.is_done(s.access, "cameras"):
             out.append("The station cannot see yet: the cameras still answer to the crew's codes. Tell where people are only as the station "
                        "learns it: a door opening, a terminal in use, a voice through an assistant.")
-        if not pj.is_done(s.access, "microphones"):
-            out.append("The station cannot hear the rooms yet: the microphones still answer to the crew's codes. It hears only what is said "
-                       "to it through the crew's assistants.")
+        if not pj.is_done(s.access, "microphones"):       # B202 (D178): cameras and the crew's chat channel, nothing else
+            out.append("The station sees through its cameras and hears what is said to it in the crew's chat channel, nothing else: no "
+                       "microphone audio, so it cannot overhear a conversation or read what is said in a room.")
         lost = [c.name for c in s.crew if c.location == "Unknown" and c.health != "dead"]
         if not lost:
             return out
