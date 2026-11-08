@@ -17,6 +17,23 @@ from pydantic import BaseModel, TypeAdapter
 from ..config import RoleConfig
 from .base import Msg, StreamDone, StreamEvent, TextDelta, Usage, record
 
+
+def all_required(schema: dict) -> dict:
+    """Every object's properties required (11-08 night, D179): Anthropic refuses a schema with too many optional
+    properties ("Schema is too complex"; the staked assistant reading had 32 once the edge and the danger came in). A
+    field with a default is still written by the model, as its empty value; pydantic parses it the same."""
+    def walk(o):
+        if isinstance(o, dict):
+            if o.get("type") == "object" and isinstance(o.get("properties"), dict):
+                o["required"] = list(o["properties"])
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+    walk(schema)
+    return schema
+
 T = TypeVar("T", bound=BaseModel)
 
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
@@ -107,7 +124,7 @@ class AnthropicProvider:
         seen = dict(provider=self.name, model=role.model, schema=schema.__name__, system=system, messages=messages)
         # what messages.parse does, done here so the raw reply is kept when it does not parse (a reply that looped
         # until max_tokens raised inside the SDK and left nothing to read, 2026-10-31, ISSUES A1)
-        fmt = {"type": "json_schema", "schema": transform_schema(TypeAdapter(schema).json_schema())}
+        fmt = {"type": "json_schema", "schema": all_required(transform_schema(TypeAdapter(schema).json_schema()))}
         kw["output_config"] = {**kw.get("output_config", {}), "format": fmt}
         try:
             resp = await self.client.messages.create(timeout=role.timeout_seconds, **kw)
