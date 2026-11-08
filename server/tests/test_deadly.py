@@ -117,7 +117,7 @@ def test_a_hold_that_wins_opens_drowning_and_the_countdown_kills(game):
     st = new(game)
     foe(st, moves=[{"kind": "hold", "bonus": 4, "difficulty": "very_high", "peril": "drowning", "harm": "cold hands round the ankles"}])
     out = game.world_call(st, call("ENEMY", "maud", "hold"), Dice(2), 2, {"hp": 0})
-    assert out["data"]["peril"] == "drowning" and "what does Brin do?" in out["text"]
+    assert out["data"]["peril"] == "drowning" and "Brin does next is the player's to say" in out["text"]
     s2 = game.after_turn(st, info_calls(3, [out["data"]]))
     assert s2.player.peril is not None and s2.player.peril.kind == "drowning" and s2.player.peril.turns_left == 2
     s3, w3 = game.world_turn(s2, act("I kick for the surface"), "I kick for the surface", Dice(2, 2), 4, 2)

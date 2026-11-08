@@ -223,7 +223,7 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
         elif ok:
             w.directives.append(f"{p.name} has moments left, {PERILS.get(pr.kind, {}).get('what', pr.kind)}, and the engine rolled it: a success. "
                                 f"It buys one more moment, no more: {p.name} is still {PERILS.get(pr.kind, {}).get('what', pr.kind)}. Play it, and end "
-                                f"the turn on the question, in the city's voice: what does {p.name} do?")
+                                f"the turn on that moment; what {p.name} does next is the player's to say.")
         else:
             pr.turns_left -= 1
             if pr.turns_left <= 0:
@@ -233,7 +233,7 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
                 return s, w
             w.directives.append(f"{p.name} has moments left, {PERILS.get(pr.kind, {}).get('what', pr.kind)}, and the engine rolled it: a failure. "
                                 f"It is worse now ({'one moment' if pr.turns_left == 1 else 'a few moments'} left before it is over). Play it, and "
-                                f"end the turn on the question, in the city's voice: what does {p.name} do?")
+                                f"end the turn on that moment; what {p.name} does next is the player's to say.")
         w.rows.append({"kind": "peril", "peril": pr.kind, "outcome": res.outcome, "turns_left": pr.turns_left, "line": line})
     return _after_peril(game, s, adj, player_text, rng, turn, offset, w, text)
 
@@ -311,7 +311,7 @@ def peril_by_check(s: FantasyState, data: dict, label: str) -> str:
     if pr.turns_left <= 1:
         data.update(kills=True, cause=f"{what}", death_cause=f"{PERIL_CAUSE.get(pr.kind, 'died')} at {s.player.location or 'Marrowgate'}")
         return f" That was the last moment: {s.player.name} dies of it, {what}. Write the death straight; this is the end of the story."
-    return f" Still {what}, and worse: one moment left. End the turn on the question: what does {s.player.name} do?"
+    return f" Still {what}, and worse: one moment left. End the turn on that moment; what {s.player.name} does next is the player's to say."
 
 
 def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: Any, turn: int, offset: int, w: "WorldTurn",
@@ -338,8 +338,8 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
                 w.blocked = True
                 w.directives.append(f"{p.name} fights {who}'s pull, and the engine rolled it: the pull wins. The attempt the player wrote "
                                     f"does not happen: {p.name} does not {'strike' if floor == 'strike' else 'go' if floor == 'leave' else 'hold out'}; "
-                                    f"they drift toward {who} instead. Call no check for it. Play that, and end on the question: what does "
-                                    f"{p.name} do?")
+                                    f"they drift toward {who} instead. Call no check for it. Play that, and end the turn on that moment; what "
+                                    f"{p.name} does next is the player's to say.")
     # -- who the player is fighting (B95): the turn's attack targets join; the gone, the dead and the far leave
     from engine.pipeline import is_fight
     if adj is not None and getattr(adj, "kind", "") == "action":       # B208: the player struck at them
@@ -437,7 +437,7 @@ def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tal
             data.update(peril=kind_p, by=q.name)
             spec = PERILS.get(kind_p, PERILS["held"])
             return {"text": f"{q.name} has {p.name} ({what}): {p.name} is {spec['what']} now, moments from the end unless they get {spec['way']}. "
-                            f"Play it, and end the turn on the question: what does {p.name} do?", "mechanic": line, "data": data}
+                            f"Play it, and end the turn on that moment; what {p.name} does next is the player's to say.", "mechanic": line, "data": data}
         if kind == "song":
             res = _check(game, s, "wis", move.get("difficulty", "medium"), f"resist {q.name}'s song", rng, [], offset)
             line = f"{q.name}'s song: " + game.render_mechanic(s, res)
@@ -475,7 +475,7 @@ def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tal
         if bad.get("peril"):
             spec = PERILS.get(bad["peril"], PERILS["held"])
             data.update(peril=bad["peril"], by=hz.get("when") or "")
-            told.append(f"{p.name} is {spec['what']}, moments from the end unless they get {spec['way']}; end the turn on the question: what does {p.name} do?")
+            told.append(f"{p.name} is {spec['what']}, moments from the end unless they get {spec['way']}; end the turn on that moment; what {p.name} does next is the player's to say.")
         return {"text": f"The danger reaches {p.name} ({hz.get('when', '')}): " + "; ".join(told or ["it costs them"]) + ". Play it.",
                 "mechanic": line, "data": data}
     return None

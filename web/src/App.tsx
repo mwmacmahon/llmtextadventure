@@ -202,10 +202,13 @@ function Game({ id }: { id: string }) {
     return run(streamCommand(id, command, args), command);
   }
 
+  // B228: a clicked command's turn cannot be told again (no words to retell); the rewrite button is not offered for it
+  const lastWasCommand = !!view && view.transcript.some((r) => r.turn === view.turn && r.role === "command");
+
   /** "You're out of line": the last turn is told again, same facts, same dice. Whatever is in the text box is the
    * ruling or the instructions; an empty box just asks for it told again. The referee's writes are undone with the turn. */
   function rewrite() {
-    if (!view || streaming !== null || view.turn === 0) return;
+    if (!view || streaming !== null || view.turn === 0 || lastWasCommand) return;
     const hint = input.trim();
     setInput("");
     const last = [...view.transcript].reverse().find((r) => r.role === "player");
@@ -275,7 +278,8 @@ function Game({ id }: { id: string }) {
             redo
           </button>
         )}
-        <button onClick={() => rewrite()} disabled={view.turn === 0 || streaming !== null} title="Request a rewrite of the last turn: same facts, same dice, the referee's changes undone. Whatever is in the text box is your explanation or instructions; empty just tells it again.">
+        <button onClick={() => rewrite()} disabled={view.turn === 0 || streaming !== null || lastWasCommand}
+                title={lastWasCommand ? "The last turn was a command, not words: there is nothing to tell again" : "Request a rewrite of the last turn: same facts, same dice, the referee's changes undone. Whatever is in the text box is your explanation or instructions; empty just tells it again."}>
           rewrite
         </button>
         <a className="button-like" href={`#/settings/${id}`} title="Settings: this game's difficulty, the narrator guard, the profile this server plays on">settings</a>

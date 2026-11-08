@@ -82,6 +82,7 @@ def whole_sentence(text: str, limit: int = 200) -> str | None:
     return cut[:ends[-1]].rstrip(";").rstrip() + ("." if cut[ends[-1] - 1] == ";" else "")
 
 
+CLOCK_TIME = re.compile(r"\b(the (clock|time|hour) (is|reads|shows|says|has crept|creeps|stands at|has reached)[^.]{0,20}?)?\b([01]?\d|2[0-3]):[0-5]\d\b", re.I)
 MONEY = re.compile(r"\b(coins?|gold pieces?|pieces of gold|gp|crowns?|purse|coppers?|pennies|money)\b|^\s*gold\s*$", re.I)
 NUMBER_WORDS = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
                 "twelve": 12, "twenty": 20, "fifty": 50, "hundred": 100}
@@ -589,6 +590,22 @@ class FantasyGame(GameBase):
     @staticmethod
     def _secret_name(s: FantasyState, q: Person) -> bool:
         return any(t.lower() == q.name.lower() or t.lower() in q.name.lower().split() for t in s.hidden.terms)
+
+    def prose_faults(self, state: FantasyState, prose: str) -> list[dict]:
+        """B228: the narrator's own slips the engine can see, ruled as the § line is (a retell): the clock's time written in
+        the telling ('the clock has crept to 22:04'), and the player asked what they do ('What does Wren do?')."""
+        voice = "\n".join(ln for ln in (prose or "").splitlines() if not ln.lstrip().startswith("§"))
+        out: list[dict] = []
+        t = CLOCK_TIME.search(voice)
+        if t:
+            out.append({"rule": "clock_in_prose", "what": f"the telling writes the clock's time ('{t.group(0)}')",
+                        "fix": "Never write the clock's time in the telling; the player sees it on the strip. Say the hour as the "
+                               "city shows it (the bells, the light, the fog, the dark), or leave it out."})
+        q = re.search(r"\bwhat (do|does|will) (you|" + re.escape(state.player.name) + r")( now)? do\b[^.?!]*\?", voice, re.I)
+        if q:
+            out.append({"rule": "question_in_prose", "what": f"the telling asks the player what they do ('{q.group(0)}')",
+                        "fix": f"Never ask what {state.player.name} does; end the turn on the moment itself and leave the next move to the player."})
+        return out
 
     def too_far_words(self, prose: str) -> str:
         """The engine's own check on the telling after the fact (the owner, 11-08 night: "make sure the model doesn't go invent

@@ -850,3 +850,29 @@ def test_a_journal_line_is_a_whole_sentence_or_none(game):
     s2, rep, _ = apply(game, new(game), C(kind="learned", target="player", value="y" * 260))
     assert not any("yyy" in n.text for n in s2.journal) and any(r.path == "journal" for r in rep.rejected)
 
+
+def test_the_clock_and_the_question_in_the_prose_are_ruled(game):
+    """B228 (8c106d354426): 'the clock has crept to 22:04' and 'What does Wren do?' were in the prose; the engine rules
+    both as it rules a § line, and the game's own lines no longer ask the narrator for that question."""
+    st = new(game)
+    prose = "The fog thickens; the clock has crept to 22:04.\n\n§ STR, low. 12 + 2 = 14 against 8. Success.\n\nWhat does Brin do?"
+    rules = {f["rule"] for f in game.prose_faults(st, prose)}
+    assert rules == {"clock_in_prose", "question_in_prose"}
+    assert not game.prose_faults(st, "The bells ring ten across the water. Brin waits.\n\n§ STR, low. 12 + 2 = 14 against 8.")
+    import inspect
+    from games.fantasy import world as w
+    assert "what does {p.name} do?" not in inspect.getsource(w)
+
+
+async def test_a_clicked_commands_turn_is_never_retold(engine, fake):
+    """B228 (Rogue turn 28): the guard asked to retell a narrated command (smoke pellets) and the retelling's refusal reached
+    the player as an error. A clicked command's turn is never retold; asked anyway, the line is plain."""
+    from engine.pipeline import rewrite_of_command
+    iid = engine.create_instance("fantasy", SHEET)
+    await play(engine, iid, "I look around the room.")
+    assert not rewrite_of_command(engine.store, iid)
+    engine.store.append_ledger(iid, 1, "command", {"id": "smoke_pellets", "args": {}, "mode": "narrated"})
+    assert rewrite_of_command(engine.store, iid)
+    events = [e async for e in engine.rewrite_turn(iid, "")]
+    msgs = [e["data"].get("message", "") for e in events if e["event"] == "error"]
+    assert msgs == ["That turn was a command, not words, so there is nothing to tell again."]

@@ -643,7 +643,10 @@ class Engine:
                 else:
                     yield ev
             serious = [r for r in ((done or {}).get("mechanics") or {}).get("rulings", []) if r.get("serious")] if done else []
-            if serious and mode != "log" and retells < max_retells and (done or {}).get("mechanics", {}).get("kind") != "command":
+            # B228: a clicked command's turn is never retold (the Rogue's smoke pellets, narrated, asked for a retell the
+            # retelling refused, and the refusal reached the player as an error); its rulings stand as on the last telling
+            if serious and mode != "log" and retells < max_retells and command is None and not rewrite_of_command(self.store, iid) \
+                    and (done or {}).get("mechanics", {}).get("kind") != "command":
                 retells += 1
                 fix = retell_note(serious)
                 yield {"event": "retell", "data": {"turn": done["turn"], "attempt": retells, "rulings": serious, "hint": fix}}
@@ -1194,6 +1197,10 @@ class Engine:
                                    "Call the check and wait for its result, or tell the attempt in plain prose with no roll."})
             log.info("engine.ruling " + logs.kv(iid=iid, turn=turn, rule="fake_check", serious=True, lines=own_lines))
 
+        for fault in _hook(game, "prose_faults", state, narration, default=[]) or []:     # B228: the narrator's own slips
+            if not any(r.get("rule") == fault["rule"] for r in rulings):
+                rulings.append({"serious": True, "by": "engine", **fault})
+                log.info("engine.ruling " + logs.kv(iid=iid, turn=turn, rule=fault["rule"], serious=True))
         crossed = _hook(game, "too_far_words", narration, default="") or ""
         if crossed and not any(r.get("rule") == "too_far" for r in rulings):     # the owner, 11-08 night: the engine's own net
             rulings.append({"rule": "too_far", "serious": True, "by": "engine", "what": "the telling went where this game does not go",
@@ -1278,7 +1285,7 @@ class Engine:
         rows = self.store.ledger(iid, turn)
         adj_row = next((r["payload"] for r in rows if r["kind"] == "adjudication"), None)
         if adj_row is None or any(r["kind"] == "command" and not r["payload"].get("typed") for r in rows):
-            yield {"event": "error", "data": {"message": "only a typed turn can be retold; this one was a clicked command", "step": "rewrite"}}
+            yield {"event": "error", "data": {"message": "That turn was a command, not words, so there is nothing to tell again.", "step": "rewrite"}}
             return
         game = self.games[inst.game]
         schema = getattr(game, "adjudication_schema", AssistantReading)
@@ -2378,6 +2385,8 @@ RETELL_LEADS = {
     "repeated_beat": "This sentence tells again what an earlier turn already told: {what}. Tell that moment differently, or move past it. Keep the rest of the turn as it was.",
     "repetition": "{what}. {fix}",
     "fake_check": "{what}. {fix}",
+    "clock_in_prose": "{what}. {fix} Keep everything else as it was.",            # B228
+    "question_in_prose": "{what}. {fix} Keep everything else as it was.",
     # B63 (D168): a person gave up a tell before its condition was met; the referee's conflict, the leak guard's path
     "early_tell": "A telling gave away a secret too early: {what}. {fix} In this retelling they hold it back: they may stall, "
                   "deflect or lie, or let slip something small that is not part of it, and the scene goes on. Drop anything that "
@@ -2591,6 +2600,12 @@ def mask_term(state: Any, text: str, term: str) -> str:
     word = mask_word(state, term)
     text = re.sub(r"\b" + re.escape(term) + r"['’]s\b", POSSESSIVE.get(word, word), text, flags=re.I)
     return re.sub(r"\b" + re.escape(term) + r"(s|es)?\b", word, text, flags=re.I)
+
+
+def rewrite_of_command(store: Any, iid: str) -> bool:
+    """B228: the latest turn was a clicked command (a ledger command row not typed), so it cannot be retold."""
+    turn = store.latest_turn(iid)
+    return turn >= 1 and any(r["kind"] == "command" and not r["payload"].get("typed") for r in store.ledger(iid, turn))
 
 
 def settle_hopeless(adj: Any) -> list[dict]:
