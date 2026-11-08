@@ -189,7 +189,9 @@ difficulty so the same attempt after an undo replays and a different one rolls f
 harder by its own offset (+2 on the d20, B83), and twenty-two death-card lines drafted by the side chat (B84). Before her first game: two readiness rounds in parallel on the final build, Sonnet and
 local Gemma, a reckless player who dies twice, with three content fixes first (B86). Asked 11-08 evening, placement open: the sheet pass at creation (B90, the player's
 sheet is canon for the starting state) and magic as an engine system (B91, SRD spells, slots by level, casting as a
-lever, spell text in a prompt only when a cast is happening; `notes/DESIGN-magic-2026-11-08.md`). **A difficulty select** (B80: Easy, Normal, Hard on every new game and changeable in play, for now only the player's
+lever, spell text in a prompt only when a cast is happening; `notes/DESIGN-magic-2026-11-08.md`), with the twelve SRD
+classes, kits as a choice, and spell and ability pickers at creation and level up (B92; the first player's class built
+full first, the rest marked under construction). **A difficulty select** (B80: Easy, Normal, Hard on every new game and changeable in play, for now only the player's
 target offset on the die) comes with the lobby work, ahead of mods (the owner, 11-08 afternoon). **Mods** (B79: hand-tuned patches to a game's
 content, prompts and starting state, toggled before a game starts, uploaded, downloaded and deleted from the lobby;
 `notes/DESIGN-mods-2026-11-08.md`) come next after the fantasy game is considered ready (the owner, 11-08 afternoon).
