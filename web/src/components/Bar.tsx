@@ -7,7 +7,19 @@ export function Bar({ settingsHref }: { settingsHref: string }) {
   const [profile, setProfile] = useState<string | null>(null);
   const [dev, setDev] = useState(devMode.on());
   const [err, setErr] = useState<string | null>(null);
+  const [stale, setStale] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // A tab open since an older web build offers a reload (the owner's undo showed nothing on a page from before the change).
+  useEffect(() => {
+    const mine = (document.querySelector('script[src*="/assets/index-"]') as HTMLScriptElement | null)?.src.split("/assets/")[1] ?? "";
+    if (!mine) return;
+    const check = () => fetch("/api/build").then((r) => r.json()).then((b: { build: string }) => setStale(!!b.build && b.build !== mine)).catch(() => {});
+    check();
+    const t = setInterval(check, 60_000);
+    addEventListener("focus", check);
+    return () => { clearInterval(t); removeEventListener("focus", check); };
+  }, []);
 
   useEffect(() => {
     const load = () => api.settings().then((s) => setProfile(s.profile)).catch(() => setProfile(null));
@@ -49,6 +61,11 @@ export function Bar({ settingsHref }: { settingsHref: string }) {
         {location.host}
         {profile ? ` · ${profile}` : ""}
       </span>
+      {stale && (
+        <div className="bar-error small" role="status">
+          A new version of the game is ready. <button className="link small" onClick={() => location.reload()}>Reload</button>
+        </div>
+      )}
       {err && (
         <div className="bar-error error small" role="alert">
           {err} <button className="link small" onClick={() => setErr(null)}>dismiss</button>

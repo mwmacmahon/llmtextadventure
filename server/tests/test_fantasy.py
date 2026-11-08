@@ -613,7 +613,7 @@ def test_the_draw_favours_a_hook_whose_reach_is_where_the_player_has_been(game: 
     assert sum(1 for x in picks if x == "singing_on_the_lake") > 5
     deck2 = dk.deck_of(game.scenario())
     pool = dict(dk.candidates(st, deck2, hooks, now, 5))
-    assert pool["singing_on_the_lake"] == deck2["weight_near"] == 8 and all(w == 1 for k, w in pool.items() if k != "singing_on_the_lake")
+    assert pool["singing_on_the_lake"] == 2 * deck2["weight_near"] == 16 and all(w == 1 for k, w in pool.items() if k != "singing_on_the_lake")
 
 
 # ---- the referee's rows (§3i) ------------------------------------------------------------------------------------------

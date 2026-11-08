@@ -420,6 +420,19 @@ def judge_record(pid: str, body: JudgeInput):
 
 # ---- static frontend (production) ----------------------------------------
 _dist = cfg.resolve(cfg.server.web_dist)
+
+
+@app.get("/api/build")
+def build():
+    """The web build being served (its script's name). A page open since an older build sees it change and offers a reload:
+    the owner's tab kept the pre-undo-record page for hours and its undo showed nothing (11-08 evening)."""
+    try:
+        m = re.search(r'/assets/(index-[^"]+\.js)', (_dist / "index.html").read_text(encoding="utf-8"))
+    except OSError:
+        m = None
+    return {"build": m.group(1) if m else ""}
+
+
 if _dist.exists():
     app.mount("/assets", StaticFiles(directory=_dist / "assets"), name="assets")
 

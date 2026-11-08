@@ -78,7 +78,7 @@ def test_on_the_water_in_the_last_day_favours_a_hook_with_a_place_on_the_water(g
     assert dry["singing_on_the_lake"] == 1
     st.player.visited["Lake Ambercold"] = now + 100
     wet = dict(dk.candidates(st, deck, hooks, now + 360, 1))
-    assert wet["singing_on_the_lake"] == deck["weight_near"] and wet["bell_rings_itself"] == 1
+    assert wet["singing_on_the_lake"] == 2 * deck["weight_near"] and wet["bell_rings_itself"] == 1
     st.player.visited["Lake Ambercold"] = now + 360 - dk.DAY - 1             # more than a day ago
     assert dict(dk.candidates(st, deck, hooks, now + 360, 1))["singing_on_the_lake"] == 1
 
@@ -99,6 +99,7 @@ def test_acceptance_5_rerun_on_the_file_as_written(game):
     picks = [dk.draw(st, deck, hooks, random.Random(seed), now + 360, 1) for seed in range(10)]
     print("acceptance 5:", sum(1 for x in picks if x in lake), "of 10 lake hooks;", picks)
     assert all(p is not None for p in picks)
+    assert sum(1 for x in picks if x in lake) > 5                 # B64 (D175): on the water, the water's hooks outrank the quay's
 
 
 def test_a_rest_the_referee_said_was_not_done_heals_nothing(game):

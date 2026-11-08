@@ -381,8 +381,10 @@ def candidates(state: FantasyState, deck: dict, content_hooks: dict[str, dict], 
             continue
         if row.get("wants") is not None and not _holds(row["wants"], doc, state.hidden.events, turn):
             continue
-        near = bool(set(first_reach_places(content_hooks[hid])) & recent) or (wet and bool(hook_places(content_hooks[hid]) & water))
-        out.append((hid, near_w if near else 1))
+        on_water = wet and bool(hook_places(content_hooks[hid]) & water)
+        near = bool(set(first_reach_places(content_hooks[hid])) & recent)
+        # B64 (D175): on the water within the day, the water's hooks outrank the quay's (acceptance 5: more often than not)
+        out.append((hid, 2 * near_w if on_water else 1 if wet else near_w if near else 1))
     return out
 
 
