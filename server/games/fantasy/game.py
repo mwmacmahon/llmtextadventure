@@ -38,7 +38,7 @@ from engine.statepath import Actor
 from . import deck as dk
 from . import sheet as sh
 from .state import (
-    ATTITUDE_WORDS, HUNTED_AT, STAT_NAMES, STATS, WANTED_AT, City, Condition, FantasyState, FoundPlace, Hidden, Item, Note,
+    ATTITUDE_WORDS, HUNTED_AT, STAT_NAMES, STATS, WANTED_AT, Ability, City, Condition, FantasyState, FoundPlace, Hidden, Item, Note,
     Person, Player, tier_of, RENOWN_TIERS, RENOWN_SCALE, HEAT_TIERS,
 )
 
@@ -136,7 +136,7 @@ class FantasyGame(GameBase):
     mechanic_numbers = True
     adjudication_schema = AssistantReadingV2
     fallback_stat = "wis"
-    static_paths = ["player.name", "player.race", "player.klass", "player.gender", "player.about"]
+    static_paths = ["player.name", "player.race", "player.klass", "player.gender", "player.about", "player.sheet_notes"]
     extra_rulings = {"too_far": "End the scene at the door, or at the first blow, and pick up after it."}
     consequence_sources = {"str": "table"}
     consequence_ideas = "a witness who will remember what they saw; noise that carries; the Watch hearing of it; a trail going cold"
@@ -402,6 +402,9 @@ class FantasyGame(GameBase):
         marks = [c.name for c in p.conditions] + [w.words for w in sorted(p.wounds, key=lambda x: -wd.WEIGHTS[x.weight])]
         lines.append(f"{p.name}: at {where}; {p.hp_tier}; marks: {', '.join(marks) or 'none'}.")
         lines.append(f"The Watch on {p.name}: {p.heat_word}. What strangers have heard of {p.name}: {p.renown_word}.")
+        own = [f"{a.name} ({a.text})" if a.text and a.text != a.name else a.name for a in p.abilities if a.source == "sheet"] + p.sheet_notes
+        if own:                                          # the sheet pass (B90): what the player wrote, as the state holds it
+            lines.append(f"From {p.name}'s sheet: " + "; ".join(x.rstrip(". ") for x in own) + ".")
         here = [s.person(x) for x in p.with_them]
         here = [q for q in here if q is not None and q.status == "alive"]
         if here:
@@ -829,6 +832,8 @@ class FantasyGame(GameBase):
         return next((c for c in s.player.counts if c.id == k or c.name.lower().replace(" ", "_") == k or c.id.rstrip("s") == k.rstrip("s")), None)
 
     def apply_change(self, s: FantasyState, ch: Change, w: Writer) -> bool:
+        if getattr(w, "setup", False):                 # the sheet pass (B90): the player's own words, no referee bounds
+            return self._sheet_change(s, ch, w)
         p = s.player
         target, field, value, kind = ch.target.strip(), ch.field.strip().lower(), ch.value.strip(), ch.kind
         is_player = target.lower() in ("player", p.name.lower(), p.name.split(" ")[0].lower() if p.name else "player", "")
@@ -1862,6 +1867,216 @@ class FantasyGame(GameBase):
             return state, CommandResult(label="Journal", text="\n".join(lines))
         return state, CommandResult(ok=False, text=f"unknown command {command_id!r}")
 
+    # ---- the sheet pass (B90, D175; engine/sheet.py) -----------------------------------------------------------------
+    # Independent of the class list and the kits: it reads the built state, whatever build_player put there.
+    STAT_WORDS = {"strength": "str", "dexterity": "dex", "constitution": "con", "intelligence": "int", "wisdom": "wis", "charisma": "cha"}
+    HP_FIELDS = ("hp", "hit_points", "hitpoints", "health", "hp_max", "max_hp", "hit points", "max hit points")
+    GOLD_FIELDS = ("gold", "coins", "coin", "money", "gold pieces", "gp", "purse")
+    MARK_FIELDS = ("conditions", "condition", "wounds", "wound", "marks")
+
+    def sheet_text(self, state: FantasyState) -> str:
+        p = state.player
+        if not p.about.strip():
+            return ""
+        head = [f"Name: {p.name}", f"Race: {p.race}", f"Class: {p.klass}"] + ([f"Gender: {p.gender}"] if p.gender.strip() else [])
+        return "\n".join(head + ["About the character, in the player's words:", p.about.strip()])
+
+    def sheet_fields(self, state: FantasyState) -> str:
+        s, p = state, state.player
+        gold = s.item("gold").count if s.item("gold") else 0
+        art = "an" if p.race[:1].lower() in "aeiou" else "a"
+        lines = [f"{p.name}, {art} {p.race.lower()} {p.klass.lower()}, level {p.level}.",
+                 f"Hit points (player.hp): {p.hp_max}, which is also the most they can have; setting one sets both.",
+                 "Stats (player.str, player.dex, player.con, player.int, player.wis, player.cha), each written as its modifier, the number in "
+                 "brackets: " + ", ".join(sh.score_text(k, p.stats.get(k, 0)) for k in STATS) + ". +3 is the best a new hero has, +5 a giant's strength or a sage's mind, -2 a real weakness.",
+                 f"Gold (player.gold): {gold}.",
+                 "Pockets, by id (gone <id> takes one away; set <id>.count = n changes how many): "
+                 + "; ".join(f"{it.id} ({it.render()}" + (f": {it.note}" if it.note else "") + ")" for it in s.inventory if it.id != "gold") + "."]
+        if p.counts:
+            lines.append("Counts, uses between rests, by id (set player.<id> = n): " + "; ".join(f"{c.id} ({c.name}, {c.value} of {c.max})" for c in p.counts) + ".")
+        lines.append("Abilities: " + ("; ".join(f"{a.name} ({a.text})" if a.text else a.name for a in p.abilities) or "none") + ". Another is a new trait row.")
+        if p.spells or p.cantrips:
+            lines.append("Spells known: " + ", ".join(p.spells + p.cantrips) + ". Another is a new trait row with no number.")
+        lines.append("Conditions (player.conditions; +name adds one, -name takes one away): " + (", ".join(c.name for c in p.conditions) or "none") + ".")
+        return "\n".join(lines)
+
+    def _sheet_where(self, s: FantasyState, ch: Change) -> tuple[str, str]:
+        """(target, field) of a sheet row, lower case, with "player.hp" written either way round split."""
+        target, field = ch.target.strip().lower(), ch.field.strip().lower()
+        if "." in target and not field:
+            target, field = (x.strip() for x in target.rsplit(".", 1))
+        if target.startswith("player.") and field:
+            target = target.split(".", 1)[1]
+        for pre in ("player.", "stats.", "counts.", "pockets.", "inventory."):
+            field = field.removeprefix(pre)
+        if target in (s.player.name.lower(), s.player.name.split(" ")[0].lower(), "me", "character", "stats"):
+            target = "player"
+        return target, self.STAT_WORDS.get(field, field)
+
+    @staticmethod
+    def _sheet_number(value: str) -> int | None:
+        m = re.search(r"[+\-−]?\s*\d[\d,]*", value or "")
+        return int(m.group(0).replace("−", "-").replace(" ", "").replace(",", "")) if m else None
+
+    @staticmethod
+    def _signed(value: str) -> bool:
+        return value.lstrip()[:1] in ("+", "-", "−")
+
+    def _sheet_change(self, s: FantasyState, ch: Change, w: Writer) -> bool:
+        """One row of the sheet pass. No bounds but the fields' types: the player is infallible here. False for a row no
+        field holds (the engine then keeps its quote as a note)."""
+        p = s.player
+        kind, value, note = ch.kind, ch.value.strip(), ch.note.strip()
+        target, field = self._sheet_where(s, ch)
+        if kind == "new" and target in ("note", "notes"):
+            text = clip_words((value or note).strip(), 300)
+            if not text:
+                w.reject("player.sheet_notes", "an empty note", value)
+            elif text not in p.sheet_notes and w.set("player.sheet_notes", None, text):
+                p.sheet_notes.append(text)
+            return True
+        if kind == "new" and target in ("trait", "ability", "abilities"):
+            return self._sheet_trait(s, value, field, note, w)
+        if kind == "new" and target in ("thing", "item", "pocket", "pockets", "inventory", "player", ""):
+            name = value[:50].strip()
+            if not name:
+                w.reject("inventory", "a thing needs a name", value)
+                return True
+            if name.lower() in self.GOLD_FIELDS:
+                return self._sheet_gold(s, "add", str(self._sheet_number(note) or 1), w)
+            iid = slug(name)
+            iid = iid if all(it.id != iid for it in s.inventory) else f"{iid}_{len(s.inventory)}"
+            if w.set(f"inventory.{iid}", None, name):
+                s.inventory.append(Item(id=iid, name=name, note=clip_words(note, 80)))
+            return True
+        if kind == "gone":
+            target = field if target == "player" and field else target
+            it = s.item(target)
+            if it is not None and it.id != "gold":
+                if w.set(f"inventory.{it.id}", it.name, None):
+                    s.inventory.remove(it)
+                return True
+            a = next((a for a in p.abilities if target in (a.id, a.name.lower())), None)
+            if a is not None:
+                if w.set(f"player.abilities.{a.id}", a.name, None):
+                    p.abilities.remove(a)
+                return True
+            c = self._count(s, target)
+            if c is not None:
+                if w.set(f"player.counts.{c.id}", c.value, None):
+                    p.counts.remove(c)
+                return True
+            w.reject(f"gone {target}", "nothing on the character by that name", value)
+            return True
+        if kind not in ("set", "add"):
+            return False
+        if target == "player" and field in self.MARK_FIELDS:
+            return self._condition(s, value if value[:1] in "+-" else "+" + value, note, w)
+        if target == "player" and field in self.HP_FIELDS:
+            n = self._sheet_number(value)
+            if n is None:
+                w.reject("player.hp", "hit points are a number", value)
+                return True
+            new = max(1, n if kind == "set" and not self._signed(value) else p.hp_max + n)
+            if w.set("player.hp", p.hp, new):
+                p.hp_max, p.hp = new, new
+            return True
+        if target == "player" and field in STATS:
+            n = self._sheet_number(value)
+            if n is None:
+                w.reject(f"player.stats.{field}", "a stat is a number", value)
+                return True
+            if kind == "set" and not self._signed(value) and n >= 8:
+                n = (n - 10) // 2                     # a score written for the modifier ("STR 18"): the number in brackets
+            new = n if kind == "set" else p.stats.get(field, 0) + n
+            if w.set(f"player.stats.{field}", p.stats.get(field, 0), new):
+                p.stats[field] = new
+            return True
+        if (target == "player" and field in self.GOLD_FIELDS) or (target in self.GOLD_FIELDS and field in ("", "count", "value")):
+            return self._sheet_gold(s, kind, value, w)
+        c = self._count(s, field if target == "player" and field else target)
+        if c is not None:
+            n = self._sheet_number(value)
+            if n is None:
+                w.reject(f"player.counts.{c.id}", "a count is a number", value)
+                return True
+            new = max(0, n if kind == "set" and not self._signed(value) else c.value + n)
+            if w.set(f"player.counts.{c.id}", c.value, new):
+                c.value, c.max = new, max(c.max, new)
+            return True
+        key = field if target == "player" else target
+        it = s.item(key) if key else None
+        if it is not None and it.id != "gold":
+            n = self._sheet_number(value)
+            if n is None:
+                w.reject(f"inventory.{it.id}.count", "a count is a number", value)
+                return True
+            new = max(0, n if kind == "set" and not self._signed(value) else it.count + n)
+            if new == 0:
+                if w.set(f"inventory.{it.id}", it.name, None):
+                    s.inventory.remove(it)
+            elif w.set(f"inventory.{it.id}.count", it.count, new):
+                it.count = new
+            return True
+        return False
+
+    def _sheet_gold(self, s: FantasyState, kind: str, value: str, w: Writer) -> bool:
+        n = self._sheet_number(value)
+        if n is None:
+            w.reject("inventory.gold", "gold is a number", value)
+            return True
+        gold = s.item("gold")
+        if gold is None or gold.id != "gold":
+            gold = Item(id="gold", name="gold", count=0)
+            s.inventory.append(gold)
+        new = max(0, n if kind == "set" and not self._signed(value) else gold.count + n)
+        if w.set("inventory.gold.count", gold.count, new):
+            gold.count = new
+        return True
+
+    def _sheet_trait(self, s: FantasyState, name: str, stat: str, note: str, w: Writer) -> bool:
+        """A trait in the Ability shape: "+2 to throw, chop" on a stat is a modifier on checks of it whose label has one of
+        the words; no stat or no number, a line of what it does."""
+        p = s.player
+        name = " ".join(name.split())[:40]
+        if not name:
+            w.reject("player.abilities", "a trait needs a name", note)
+            return True
+        stats = [x for x in (self.STAT_WORDS.get(y.strip(), y.strip()[:3]) for y in stat.lower().replace("/", ",").split(",")) if x in STATS]
+        m = re.match(r"\s*([+\-−]\s*\d+)\s*(?:(?:to|with|when|on|at|for|in)\b)?\s*(.*)$", note, re.S)
+        mod = int(m.group(1).replace("−", "-").replace(" ", "")) if m else 0
+        rest = m.group(2) if m else ""
+        words = [x.strip().lower() for x in re.split(r",|;|\band\b|\bor\b", rest) if x.strip()][:12]
+        if stats and mod:
+            text = f"{'/'.join(x.upper() for x in stats)} {mod:+d}" + (f" to {', '.join(words)}" if words else "")
+        else:
+            stats, mod, words, text = [], 0, [], note or name
+        aid = "sheet_" + slug(name)
+        aid = aid if all(a.id != aid for a in p.abilities) else f"{aid}_{len(p.abilities)}"
+        if w.set(f"player.abilities.{aid}", None, name):
+            p.abilities.append(Ability(id=aid, name=name, stat=",".join(stats) or None, words=words, mod=mod, text=clip_words(text, 120), source="sheet"))
+        return True
+
+    def sheet_phrase(self, before: FantasyState, after: FantasyState, ch: Change) -> str:
+        if ch.kind not in ("set", "add"):
+            return ""
+        target, field = self._sheet_where(after, ch)
+        p = after.player
+        if target == "player" and field in self.HP_FIELDS:
+            return f"{p.hp} hit points"
+        if target == "player" and field in STATS:
+            return sh.score_text(field, p.stats.get(field, 0))
+        if (target == "player" and field in self.GOLD_FIELDS) or target in self.GOLD_FIELDS:
+            gold = after.item("gold")
+            return f"{gold.count if gold else 0} gold"
+        if target == "player" and field in self.MARK_FIELDS:
+            return ch.value.strip().lstrip("+")
+        c = self._count(after, field if target == "player" and field else target)
+        if c is not None:
+            return f"{c.name} {c.value}"
+        it = after.item(field if target == "player" else target)
+        return it.render() if it is not None and it.id != "gold" else ""
+
     def audit_probes(self, state: FantasyState) -> list[FantasyState]:
         s = state.model_copy(deep=True)
         s.player.hp = max(1, s.player.hp_max // 2)
@@ -1891,6 +2106,7 @@ class FantasyGame(GameBase):
         sheet += [Chip(label="Race", value=p.race), Chip(label="Class", value=p.klass), Chip(label="Level", value=str(p.level))]
         if p.gender:
             sheet.append(Chip(label="Gender", value=p.gender))
+        sheet += [Chip(label="From your sheet", value=n) for n in p.sheet_notes]
         pockets = [Chip(label=it.name + (f" ×{it.count}" if it.count != 1 else ""), value=it.note or "") for it in s.inventory if it.id != "gold"]
         panels: list[Any] = [
             StatusStrip(chips=[Chip(label="Time", value=s.clock.render()), Chip(label="Place", value=p.location or "unknown"),

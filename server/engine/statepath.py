@@ -16,7 +16,7 @@ from __future__ import annotations
 from fnmatch import fnmatchcase
 from typing import Any, Literal
 
-Actor = Literal["engine", "narrator", "script"]
+Actor = Literal["engine", "narrator", "script", "setup"]   # setup: the sheet pass at creation (B90), writes any field
 
 
 class PathError(KeyError):
@@ -103,6 +103,6 @@ def authority_for(path: str, table: dict[str, Actor], default: Actor = "engine")
 
 def may_write(path: str, actor: Actor, table: dict[str, Actor]) -> bool:
     owner = authority_for(path, table)
-    if actor == "engine":
-        return True  # engine resolution may touch anything; it is the authority of last resort
+    if actor in ("engine", "setup"):
+        return True  # engine resolution may touch anything; it is the authority of last resort. The sheet pass (B90) too: the player is infallible there
     return owner == actor

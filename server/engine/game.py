@@ -502,6 +502,22 @@ class GameBase:
         """The player-facing mechanics line for a check the narrator called. None: the engine's default line."""
         return None
 
+    # ---- the sheet pass (B90, D175; engine/sheet.py): once at creation, one call in the assistant's slot makes the built
+    # state match what the player wrote on the sheet. Off unless a game returns text from both hooks below.
+    def sheet_fields(self, state: BaseModel) -> str:
+        """The character as the game built it, field by field, each with the way a row writes it (`set player.hp = n`,
+        a pocket's id, the stats' names). Model-facing text. Empty: the game has no sheet pass."""
+        return ""
+
+    def sheet_text(self, state: BaseModel) -> str:
+        """What the player wrote at creation, as the model reads it and as the rows must quote it (the free-text box and
+        the choices beside it). Empty: nothing to read (no call is made)."""
+        return ""
+
+    def sheet_phrase(self, before: BaseModel, after: BaseModel, change: Any) -> str:
+        """A few words for one applied sheet row in the "Outfitted:" line ("1000 hit points"). Empty: the engine's own."""
+        return ""
+
     def audit_probes(self, state: BaseModel) -> list[BaseModel]:
         """Extra starting states for tools/authority_audit.py when a fresh instance cannot reach a
         writer (noir: dread drifts only somewhere safe, and the case opens on a rooftop)."""
