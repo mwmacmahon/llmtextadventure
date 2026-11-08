@@ -135,6 +135,14 @@ Required by the protocol: `setup_options`, `new_instance(setup) -> (title, state
 `load_state(dict)`, `frozen_prefix(state)`, `opening(state)`, `render_bulletin(state,
 player_text)`, `ui(state)`.
 
+`setup_options()` gives, per key, the plain list `[{id, name}, ...]` (a select, labelled by its key) or a field
+`{kind: select|text|textarea, label, hint, required, options?, default?}` (B21, D154); `options` may be bare strings.
+The lobby draws each kind, sends what every field shows, and keeps Start disabled until the required ones are filled;
+`hint` is shown (as the box's placeholder) only where the game gives one. The engine checks a new game's setup against
+the fields (`engine/game.py` `check_setup`: a required field filled, a select's value one of its options, a missing
+field's `default` taken) and the API answers 400 otherwise; plain-list keys pass as before, so a game still takes its
+own default for one that is missing.
+
 Optional, with defaults that do nothing:
 
 | hook | purpose |
@@ -352,6 +360,23 @@ Rules of thumb:
     rearm: {pending_live: diagnostic}
     effects: [{add: [crew.voss.suspicion, 20], lo: 0, hi: 100}]
   ```
+- Hooks and the clock (the fantasy, D152). An event may carry `where: [places]` (its trigger holds only while
+  the player is in one of them, read from `location_path`, default `player.location`; the fallback reaches
+  anywhere), `repeat: daily` (fired, it plays again once the clock is on a later day), and `hook: <id>` (the hook
+  that dealt it). Predicates: `at_minute_of_day: 300` is a crossing (the clock passed 05:00 since the event last
+  looked; never true all day, and it does not stop the clock: an ambient event, played even while the player
+  sleeps), `time_of_day: [from, to]` (the minute of the day is in the window; `to` may be null, a window may wrap
+  midnight), `told: [person, tell]`. Effects: `open_tell: [person, tell]` clears that tell's `needs`; a `pending`
+  may carry `not_before: <minute of the day>` (due at 03:00 with `not_before: 360` it comes due at 06:00). A hook's
+  file writes its times relative to the deal (`at: {after_deal_minutes: N, not_before, not_after}`, a fallback's
+  `after_deal_minutes`, `{at: {after_deal_minutes}}` in `done`/`failed`); the deck turns them into the clock with
+  `events.rebase_event` / `reach_event` / `rebase_predicate` when it deals the hook: the earliest time in the
+  window becomes `at` and a gate on the trigger, the window a `time_of_day` gate (a dawn scene missed today waits
+  for the next dawn, and the clock stops at that dawn if the player is there), and a fallback's time joins the
+  event's own conditions (without its place or window). An unrebased time never fires. When events of two
+  different hooks would both put a directive in front of the narrator in one tick, the first (by priority) plays
+  and the others wait, unfired, for the next turn: one hook a turn. Events without `hook` are never held.
+  `expires` may be the bare predicate (`expires: {any: [...]}`).
 - People (station, D36): a crew member is `bio`, `traits` (words with weight in the dice, `TRAIT_MODS`),
   `trust` (-5..5 toward the station; the referee nudges it by at most 2 a turn, a word is a step toward it;
   4+ is an ally and their suspicion barely counts in the alarm), `bonds` (crew id -> -3..3; suspicion spreads

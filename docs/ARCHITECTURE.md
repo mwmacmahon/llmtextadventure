@@ -316,6 +316,10 @@ lies and who believes them, beats in order.
   (fires a location-independent form after a deadline) or an `expires` clause. Branching beats
   are two events at the same time with mutual `expires: {fired: sibling}`; endings are
   conditional events with no time that set an `ending` flag.
+  The fantasy's additions (D152): `where` on an event, `repeat: daily`, `at_minute_of_day` (a crossing,
+  ambient), `time_of_day` windows, `told`, `open_tell`, `not_before` on a pending, a hook's deal-relative
+  times rebased by `rebase_event` when the deck deals it, and a `hook` tag: two hooks' directives due in one
+  tick are told one hook a turn (GAME_AUTHORING §6).
 - **Happenings** (`spontaneous.py`). Chance per in-game hour → per-turn chance from elapsed
   minutes; optional predicate; cooldown; `once`; at most two per turn. The narrator is always told
   the reason; `visible` decides whether the player sees it.
@@ -429,8 +433,9 @@ Branch `1.0` preserves the first engine; `main` stays there until 2.0 is playabl
   carries `requests`, `calls`, `declarations`, `notes`, `problems` and `raw`. Hooks: `look(state, ref)`,
   `render_mechanic(state, result)`; `GameBase.mechanic_numbers` picks die-and-target or tier-only lines. On 2d6 the
   line shows the faces ("Eye, low. ⚃ ⚃ +2 = 10 against 5. Huge success."), and a critical names its cause ("Double
-  sixes: critical success.", "A natural 20: …") (D143). The referee and the summarizer read a tier-only copy of
-  each line with faces (`pipeline.tier_only_view`); the narrator's history softens past lines to words.
+  sixes: critical success.") (D143); the d20 reads "17 + 2 = 19 against 14. Success." and its naturals "Natural 20!
+  Critical success." / "Natural 1. Critical failure." (D156). The referee and the summarizer read a tier-only copy of
+  each line with faces or a natural (`pipeline.tier_only_view`); the narrator's history softens past lines to words.
 - The player's row under the prose (D143): the time in words and the mechanics payload's `seen` list, which the
   game's `seen_changes(before, after)` hook writes from the turn's opening and closing states, plus "Way closed: …"
   from a way_closed cost. Everything else in the payload (calls, events due, counts, drift, rulings, issues) opens

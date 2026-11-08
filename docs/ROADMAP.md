@@ -144,6 +144,14 @@ Each module earns a level by moving the read without growing the prompt.
   of Stages 2 to 4, so it does not wait for the parity gate. The parity rounds (Stage 2) are box time, not build
   time: they run beside the fantasy build. The clown sim (`notes/CLOWN_DESIGN.md`, D132) waits behind it. The engine
   does not care about genre.
+  Its engine additions (the directive §4), none of which changes station or noir:
+  - built (stage A, D152 to D156): setup kinds (B21); `where` on an event; a hook's `after_deal_minutes` with
+    `not_before`/`not_after`, rebased at the deal (`events.rebase_event`); `at_minute_of_day` with `repeat: daily`;
+    `told` as a predicate; `not_before` on a `pending`; `rearm` (already there); `open_tell`; one hook's directive a
+    turn; the d20 line's naturals and caps (A11); the header at phone width (B22).
+  - with the game (stage B onward): `secret_add`/`wants_add` on a merged person; reward `when`/`also`/`milestones`; a
+    secret term that is a person's or place's name learned on meeting or entering; a closed hook's events keep
+    running; the `visited_*` flags on a move; the lethal roll and `carried`; heat and renown; `too_far`.
 - **The player UI** as a whole (ISSUES U2). The plain-language pass on every line a model is handed (ISSUES W1) is
   pulled forward to right after the fantasy build (the order line above).
 
