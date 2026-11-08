@@ -180,24 +180,29 @@ person's files (B9) and the masking sightings are its first cases.
 - **The player UI** as a whole (ISSUES U2). The plain-language pass on every line a model is handed (ISSUES W1) is
   pulled forward to right after the fantasy build (the order line above).
 
-**Position:** the fantasy game built and playable (D152 to D167; the Gemma run and the content questions B64 to B70
-open with the fantasy side chat); W1's first pass done (D166, ten lines; the full sweep and its rounds still owed);
-the feedback button (B10) not started; the player UI (U2) has its first slice designed and pulled to the front of the
-line by the owner on 11-08 midday (the lobby with games and settings on the main page, a game page of saved games whose
-lines name the character, place and day, a save card, and a dev-mode checkbox that reveals hidden games: B74 to B76,
-`notes/DESIGN-lobby-and-saves-2026-11-08.md`); the clown sim waits, hidden behind dev mode when it comes. **Undo that keeps the record** (B82: undone turns struck through, never shown to a model) and **the death gallery** (B81:
-every death as a gravestone with a roguelike cause, a graveyard table no model reads; `notes/DESIGN-death-gallery-2026-11-08.md`)
-are part of the fantasy's rollout (the owner, 11-08 afternoon), with the dice seed salted by the check's stat and
-difficulty so the same attempt after an undo replays and a different one rolls fresh (B85), the fantasy one Hard step
-harder by its own offset (+2 on the d20, B83), and twenty-two death-card lines drafted by the side chat (B84). Before her first game: two readiness rounds in parallel on the final build, Sonnet and
-local Gemma, a reckless player who dies twice, with three content fixes first (B86). Asked 11-08 evening, placement open: the sheet pass at creation (B90, the player's
-sheet is canon for the starting state) and magic as an engine system (B91, SRD spells, slots by level, casting as a
-lever, spell text in a prompt only when a cast is happening; `notes/DESIGN-magic-2026-11-08.md`), with the twelve SRD
-classes, kits as a choice, and spell and ability pickers at creation and level up (B92; the first player's class built
-full first, the rest marked under construction). **A difficulty select** (B80: Easy, Normal, Hard on every new game and changeable in play, for now only the player's
-target offset on the die) comes with the lobby work, ahead of mods (the owner, 11-08 afternoon). **Mods** (B79: hand-tuned patches to a game's
-content, prompts and starting state, toggled before a game starts, uploaded, downloaded and deleted from the lobby;
-`notes/DESIGN-mods-2026-11-08.md`) come next after the fantasy game is considered ready (the owner, 11-08 afternoon).
+**Position (2026-11-08 evening, at 0017a19).** The fantasy game is built and has been played by the owner; the first
+real game (Marrowgate, Ungdall, 36 turns) found the danger system hollow, and fixing that is now the first item.
+
+*Landed today:* the fantasy (D152 to D167); W1's first pass (D166); the lobby with the bar, game pages, save lines and
+cards, one Settings page, dev mode and the difficulty select (D171, B74 to B77, B80); the guard `rewrite` everywhere
+(D170, B78); the fantasy one Hard step harder and the dice seeded per check (D172, B83, B85); undo that keeps the
+record, the death gallery per character, the death-card lines (D173, B81, B82, B84); rest and the night (D174); the
+twelve SRD classes with Rogue and Barbarian full (B92); the sheet pass (B90); the quest fix (B93); the content fixes
+and the Places panel (B64, B65, B68, B69, B87); hidden games gitignored (B88).
+
+*The queue, in order (the owner, 11-08 evening):*
+1. **Questions do not move time** (B105): a pre-check line to the assistant, the engine's trivial turn, an Ask mode.
+   Front of the line, a quick fix. **Reaches wait for a quiet turn and a carrier** (B104) behind it.
+2. **Deadliness** (B94 to B103, part four): the stakes live by default; no modifier caps on the fantasy; a chosen death
+   lands; armour class and hostile moves, enemies rolling to hit every turn of a fight and failures costing hit points
+   by the dice; peril states with countdowns; hazards on places and compulsions as content the engine enforces;
+   conditions with mechanics from a table; the offset double-count checked (B99).
+3. **The readiness rounds** (B86): Barbarian on Sonnet and Rogue on local Gemma in parallel, a reckless player who dies
+   twice, read from the ledger against the checklist; then she plays.
+4. **Mods** (B79, `notes/DESIGN-mods-2026-11-08.md`), the first being Super Dark Fantasy's Conan pass with `too_far`
+   off (B89).
+5. **Magic as an engine system** (B91, `notes/DESIGN-magic-2026-11-08.md`) when a caster is wanted; the feedback
+   button (B10); the W1 sweep proper and its rounds; the fantasy on local Gemma; the clown sim behind dev mode.
 
 ## Stage 6. Other models
 
