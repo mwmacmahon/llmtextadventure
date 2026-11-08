@@ -39,6 +39,7 @@ from engine.spontaneous import Spontaneous
 from engine.statepath import Actor
 
 from . import classes as cl
+from . import conditions as cn
 from . import world as wo
 from . import deck as dk
 from . import sheet as sh
@@ -839,9 +840,11 @@ class FantasyGame(GameBase):
             "move <thing> <place or person id>.",
             "- set <person id>.attitude <hostile|wary|neutral|friendly|loyal|devoted> (or a number -3 to 3): only when the player did something to them "
             "this turn that changes how they treat the player. A tense talk is no change.",
-            "- set player.conditions +<name> / -<name>: a condition with words (drunk, poisoned, soaked, a scar, a lost eye). An injury is written the "
-            "same way, +<the injury in a few words>; it comes off (-<the injury>) only when the prose treats it, with how in the note. A lost eye, "
-            "hand or ear never comes off.",
+            f"- set player.conditions +<name> / -<name>: a condition on {p.name}. Conditions are only these names: "
+            + ", ".join([*cn.load(self.content_dir), "lost an eye", "lost a hand", "lost an ear"]) + ". Write the name alone; the game knows "
+            f"what each one does and how long it lasts. For enthralled or grappled, the note says who holds {p.name}. -<name> when the prose "
+            "ends one (dry clothes by a fire, a healer's work, breaking free). An injury goes in the same row as +<the injury in a few words>; "
+            "it comes off (-<the injury>) only when the prose treats it, with how in the note. A lost eye, hand or ear never comes off.",
             f"- set player.carried true: {p.name} is down and the prose has someone pick up the body and carry it away.",
             *([f"- set player.hidden_from_others false: the prose shows someone seeing {p.name}; quote it in the note."] if p.hidden_from_others else []),
             *([f"- set <person id>.hidden_from_player false: the prose shows {p.name} seeing someone who was unseen (the game state lists them); "
@@ -1307,13 +1310,18 @@ class FantasyGame(GameBase):
         return True
 
     def _condition(self, s: FantasyState, value: str, note: str, w: Writer) -> bool:
+        """A condition by the table's name (B96, D176): the engine supplies stat, modifier and duration. A lost eye, hand
+        or ear is LOST_PIECES'; an injury is a wound; any other phrase is a journal line, never a condition."""
         p = s.player
         removing = value.startswith("-")
-        name = value.lstrip("+-").strip().lower()[:40]
+        phrase = value.lstrip("+-").strip()
+        name = phrase.lower()
         if not name:
             return True
+        table = cn.load(self.content_dir)
         if removing:
-            c = next((c for c in p.conditions if c.name == name), None)
+            row = cn.match(table, name)
+            c = next((c for c in p.conditions if c.name == name or (row is not None and c.name == row.name)), None)
             hurt = next((x for x in p.wounds if name in x.words.lower() or x.words.lower() in name), None) if c is None else None
             if hurt is not None:
                 if not TREATED.search(f"{note} {value}"):
@@ -1325,9 +1333,9 @@ class FantasyGame(GameBase):
                 return True
             if c is None:
                 w.reject("player.conditions", "not a current condition", name)
-            elif c.source != "narrator" or c.stat:
-                w.reject("player.conditions", "this one stays (the engine's, or a lost piece)", name)
-            elif w.set("player.conditions", name, None):
+            elif c.source != "narrator" or c.duration == "lasting" or LOST_PIECE.search(c.name):
+                w.reject("player.conditions", "this one stays (the engine's, a lost piece or a lasting mark)", name)
+            elif w.set("player.conditions", c.name, None):
                 p.conditions.remove(c)
             return True
         if p.has_condition(name):
@@ -1337,22 +1345,46 @@ class FantasyGame(GameBase):
             part = next(x for x in (piece.group(2), piece.group(3)) if x)
             stat, words, mod = LOST_PIECES[part.lower()]
             if w.set("player.conditions", None, name):
-                p.conditions.append(Condition(name=name, stat=stat, words=words, mod=mod))
+                p.conditions.append(Condition(name=name, stat=stat, words=words, mod=mod, duration="lasting"))
             return True
-        if wd.is_injury(name):
+        row = cn.match(table, name, exact=True)
+        if row is None and wd.is_injury(name):
             held, dropped = wd.add_wound(p.wounds, wd.Wound(words=name, weight=wd.weight_of(f"{name} {note}")))
             if w.set("player.wounds", [x.chip() for x in p.wounds], [x.chip() for x in held]):
                 p.wounds = held
                 if dropped is not None:
                     w.note(f"player.wounds: {dropped.chip()} folded (lighter than every wound held)")
             return True
-        narr = [c for c in p.conditions if c.source == "narrator" and not c.stat]
-        if len(narr) >= 6:
-            p.conditions.remove(narr[0])
-            w.note(f"player.conditions: -{narr[0].name} (the oldest, making room for {name})")
-        if w.set("player.conditions", None, name):
-            p.conditions.append(Condition(name=name))
+        row = row or cn.match(table, name)
+        if row is None and cn.ENDING.match(name):        # an ending is the dice's; a journal line would tell the narrator it happened
+            w.reject("player.conditions", "an ending is not a condition", phrase)
+            return True
+        if row is None:                                  # a sentence, or a name the table does not have: the journal keeps it
+            text = f"{p.name}: {phrase}"
+            if not any(n.text == text for n in s.journal):
+                s.journal.append(Note(kind="clue", text=text))
+            w.note(f"player.conditions: {phrase!r} is not a condition name; journal += {text!r}")
+            return True
+        if p.has_condition(row.name):
+            return True
+        now = s.clock.day * DAY + s.clock.minute
+        compelled = None
+        if row.compelled is not None:
+            compelled = dict(row.compelled)
+            if not compelled.get("by"):
+                who = next((q for q in s.people if q.status == "alive" and q.name and q.name.lower() in f"{note} {phrase}".lower()), None)
+                compelled["by"] = who.id if who is not None else (note or phrase).strip()[:80]
+        if w.set("player.conditions", None, row.name):
+            p.conditions.append(Condition(name=row.name, stat=row.stat, words=list(row.words), mod=row.mod, duration=row.duration,
+                                          expires_at=now + row.minutes if row.duration == "minutes" else None, compelled=compelled))
         return True
+
+    def _expire_conditions(self, s: FantasyState, now: int) -> None:
+        """A `minutes` condition clears when the clock passes its minute (B96)."""
+        p = s.player
+        for c in [c for c in p.conditions if c.expires_at is not None and now >= c.expires_at]:
+            p.conditions.remove(c)
+            s.log.append(f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}. {p.name} is no longer {c.name}.")
 
     def _move_player(self, s: FantasyState, value: str, w: Writer) -> bool:
         p = s.player
@@ -1754,6 +1786,7 @@ class FantasyGame(GameBase):
             s.flags["wanted_by_the_watch"] = True
         elif s.flags.get("wanted_by_the_watch"):
             s.flags["wanted_by_the_watch"] = False
+        self._expire_conditions(s, now)
         # -- rests
         if p.hp > 0 and not p.fate:
             self._rest(s, info)
@@ -1837,6 +1870,8 @@ class FantasyGame(GameBase):
         p.resting = ""
         if not kind:
             return
+        for c in [c for c in p.conditions if c.source == "narrator" and c.duration in cn.RESTED[kind]]:
+            p.conditions.remove(c)                       # B96: a rest dries and warms; a long one ends what lasts until rested
         if kind == "long":
             p.hp = p.hp_max
             for c in p.counts:
@@ -1847,6 +1882,12 @@ class FantasyGame(GameBase):
             for c in p.counts:
                 if c.refill == "short":
                     c.value = c.max
+
+    @staticmethod
+    def _mark_value(c: Condition) -> str:
+        """The Marks panel's line for a condition (B96): its modifier and how long it lasts, "DEX -1, until dry"."""
+        mod = f"{STAT_NAMES.get(c.stat, '')} {c.mod:+d}".strip() if c.mod else ""
+        return ", ".join(x for x in (mod, cn.duration_word(c.duration, c.expires_at)) if x)
 
     @staticmethod
     def _dropped(line: str) -> bool:
@@ -2598,7 +2639,7 @@ class FantasyGame(GameBase):
                                            *[Chip(label=x, value="spell") for x in p.spells],
                                            *[Chip(label=x, value="cantrip") for x in p.cantrips]]))
         if p.conditions or p.debts:
-            panels.append(ListPanel(title="Marks and debts", items=[*[Chip(label=c.name, value=f"{STAT_NAMES.get(c.stat, '')} {c.mod:+d}".strip() if c.mod else "") for c in p.conditions],
+            panels.append(ListPanel(title="Marks and debts", items=[*[Chip(label=c.name, value=self._mark_value(c)) for c in p.conditions],
                                                                      *[Chip(label="owed", value=d) for d in p.debts]], layout="stack"))
         panels += [
             EntityCards(title="People", cards=[
