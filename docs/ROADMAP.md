@@ -47,8 +47,9 @@ now" register moves into `docs/` (B25).
 The batch of fixes from the live rounds. No gate before it; it is the gate for Stage 2.
 
 **Position:** done. 1a D135, 1b D143, 1c D144, 1d D145, 1e D146 and D148 to D151 (the time rules; the control model),
-with B38's split line fixed after the first parity round. The caps since D168: 2d6 penalties -2, the d20 keeps -3,
-bonuses +5 on both; a per-game target offset (the station +1) moves a game's whole table.
+with B38's split line fixed after the first parity round. The caps are off everywhere since 11-08 night (B200: a grave wound may make a check
+near impossible; D168's -2 on 2d6 and the d20's -3 are gone); a per-game target offset (the station +1) moves a game's
+whole table.
 
 **1a. Checks as 2d6 (ISSUES R16).** A `dice_2d6` resolver beside `dice_d20` in `engine/mechanics.py`; the games name
 it. Targets by difficulty band on the 2d6 bell (about 7, 9 and 11 for the three bands the games use; the exact table
@@ -191,6 +192,9 @@ twelve SRD classes with Rogue and Barbarian full (B92); the sheet pass (B90); th
 and the Places panel (B64, B65, B68, B69, B87); hidden games gitignored (B88).
 
 *The queue, in order (the owner, 11-08 evening):*
+0. **The night's rulings** (B200 to B203): caps off on every game, grave wounds carrying -4 or -5; noir's talk row 5
+   to 15; the locked-out station keeps its cameras and the crew's chat channel, microphones the first project; the
+   fantasy's B66 and B70 to the build chat. Small, with §1.
 1. **Questions do not move time** (B105): a pre-check line to the assistant, the engine's trivial turn, an Ask mode.
    Front of the line, a quick fix. **Reaches wait for a quiet turn and a carrier** (B104) behind it.
 2. **Deadliness** (B94 to B103, part four): the stakes live by default; no modifier caps on the fantasy; a chosen death
