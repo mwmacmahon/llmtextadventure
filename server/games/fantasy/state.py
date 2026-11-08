@@ -120,11 +120,23 @@ class Person(BaseModel):
     secret: str = ""
     tells: list[Tell] = Field(default_factory=list)
     hook: str = ""                  # the hook that brought them, empty for the city's own
+    moves: list[dict] = Field(default_factory=list)   # what they do in a fight (B95, D176): [{kind: strike|hold|grab|song, bonus, damage, peril, harm}]
     hidden_from_player: bool = False   # present and unseen (an ambusher in the fog, a pickpocket at the next table; B92, §7c)
 
     @property
     def attitude_word(self) -> str:
         return ATTITUDE_WORDS[max(-3, min(3, self.attitude)) + 3]
+
+
+class Peril(BaseModel):
+    """A peril state (B102, D176): drowning, freezing, burning, bleeding out, falling, held by something stronger. Each turn
+    the engine stakes `stat` with a penalty a step worse; a failure takes a turn off; none left is death (the fork)."""
+    kind: str
+    turns_left: int = 2
+    stat: str = "con"
+    step: int = 0                   # turns spent in it so far (the penalty is -2 a step, uncapped)
+    by: str = ""                    # who or what holds them (Mirren)
+    way: str = ""                   # the way out, in words (to the surface, out of her grip)
 
 
 class Player(BaseModel):
@@ -174,7 +186,9 @@ class Player(BaseModel):
     turn_notes: list[str] = Field(default_factory=list)     # what a class feature did to this turn's rows (Rage, Uncanny Dodge), for the § row
     shown_notes: list[str] = Field(default_factory=list)
     notes_turn: int = 0
-    names_heard: list[str] = Field(default_factory=list)    # secret names said aloud in the player's hearing (the leak check's)
+    names_heard: list[str] = Field(default_factory=list)
+    peril: Peril | None = None                              # B102 (D176): moments left
+    fighting: list[str] = Field(default_factory=list)       # the people the player is in a fight with (B95): they act every turn    # secret names said aloud in the player's hearing (the leak check's)
 
     def count(self, cid: str) -> Count | None:
         return next((c for c in self.counts if c.id == cid), None)

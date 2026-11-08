@@ -39,6 +39,7 @@ from engine.spontaneous import Spontaneous
 from engine.statepath import Actor
 
 from . import classes as cl
+from . import world as wo
 from . import deck as dk
 from . import sheet as sh
 from .state import (
@@ -551,6 +552,12 @@ class FantasyGame(GameBase):
         marks = [c.name for c in p.conditions] + [w.words for w in sorted(p.wounds, key=lambda x: -wd.WEIGHTS[x.weight])]
         lines.append(f"{p.name}: at {where}; {p.hp_tier}; marks: {', '.join(marks) or 'none'}.")
         lines.append(f"The Watch on {p.name}: {p.heat_word}. What strangers have heard of {p.name}: {p.renown_word}.")
+        if p.peril is not None:
+            lines.append(f"{p.name} is {wo.PERILS.get(p.peril.kind, {}).get('what', p.peril.kind)}" + (f" ({p.peril.by})" if p.peril.by else "")
+                         + f": {'one moment' if p.peril.turns_left == 1 else 'moments'} from the end, unless they get {p.peril.way}.")
+        foes = wo.present_enemies(self, s)
+        if foes:
+            lines.append(f"In a fight with {p.name}: " + ", ".join(q.name for q in foes) + ". They act every turn; the engine rolls for them.")
         if p.hidden_from_others:
             lines.append(f"{p.name} is hidden.")
         if "raging" in p.flags_on:
@@ -1002,10 +1009,22 @@ class FantasyGame(GameBase):
             return f"while {allies[0].name} fights them"
         return ""
 
+    def world_turn(self, state: FantasyState, adj: Any, player_text: str, rng: Any, turn: int, offset: int):
+        """The engine's own rolls before the narrator writes (part four, D176): a chosen death, a peril's countdown, the
+        enemies' moves. Returns (state, WorldTurn)."""
+        return wo.world_turn(self, state, adj, player_text, rng, turn, offset)
+
     def check_note(self, state: FantasyState, data: dict, label: str) -> str:
-        """A line the narrator reads with a check's result (B92): Sneak Attack's step on a blow that lands."""
+        """A line the narrator reads with a check's result: Sneak Attack's step on a blow that lands (B92); what a failure
+        costs in a fight or a peril (part four §4: the engine takes the hit points, `data["harm"]`)."""
         if data.get("outcome") not in ("success", "huge_success", "critical_success"):
-            return ""
+            n = wo.failure_harm(self, state, data, label)
+            if not n:
+                return ""
+            data["harm"] = n
+            step = wo.TIER_STEP.get(str(data.get("outcome")), "scrape")
+            return (f" It costs {state.player.name}: {wo.STEP_WORDS[step]} lands on them in the attempt (the engine counts it). "
+                    f"Write it landing.")
         line = next((m.get("label", "") for m in data.get("modifiers") or [] if str(m.get("label", "")).startswith("Sneak Attack")), "")
         if not line:
             return ""
@@ -1708,6 +1727,10 @@ class FantasyGame(GameBase):
                 return s
             p.fate, p.fate_note = "", ""
         p.shown_notes, p.turn_notes, p.notes_turn = list(p.turn_notes), [], info.turn
+        for c in info.calls:                                # part four §4: a failed attempt in a fight or a peril, by its tier
+            if c.get("harm") and p.hp > 0 and not p.fate:
+                n, notes = wo.take(self, s, int(c["harm"]), str(c.get("label") or ""))
+                p.shown_notes.append(f"{c.get('label') or 'The attempt'} failed: {n} hit points" + (f" ({', '.join(notes)})" if notes else ""))
         self._hidden_after(s, info)
         for q in s.people:
             if q.met and q.location and q.location != "Unknown" and self._same_spot(s, q.location, p.location):
@@ -2068,6 +2091,8 @@ class FantasyGame(GameBase):
                 out.append(f"{it.name[:1].upper()}{it.name[1:]}: {was[iid].count} → {it.count}")
         out += [f"Pockets: − {it.name}" for iid, it in was.items() if iid not in now]
         out += [f"Owed: + {d}" for d in a.debts if d not in b.debts]
+        if (a.peril and a.peril.kind) != (b.peril and b.peril.kind) or (a.peril and b.peril and a.peril.turns_left != b.peril.turns_left):
+            out.append(f"{a.peril.kind.capitalize()}: {a.peril.turns_left} left" if a.peril else f"{b.peril.kind.capitalize()}: out of it")
         if a.hidden_from_others != b.hidden_from_others:
             out.append("Hidden" if a.hidden_from_others else "Seen: no longer hidden")
         if ("raging" in a.flags_on) != ("raging" in b.flags_on):
@@ -2539,6 +2564,10 @@ class FantasyGame(GameBase):
         wounds = sorted(p.wounds, key=lambda x: -wd.WEIGHTS[x.weight])
         sheet = [Chip(label="", value=sh.score_text(k, p.stats.get(k, 0), p.score_bonus.get(k, 0))) for k in STATS]
         sheet += [Chip(label="Race", value=p.race), Chip(label="Class", value=p.klass), Chip(label="Level", value=str(p.level))]
+        ac, ac_how = wo.armour_class(s)
+        sheet.append(Chip(label="AC", value=str(ac)))
+        if p.peril is not None:
+            sheet.insert(0, Chip(label=p.peril.kind.capitalize(), value=f"{p.peril.turns_left} {'turn' if p.peril.turns_left == 1 else 'turns'} left", tone="bad"))
         if p.hidden_from_others:
             sheet.insert(0, Chip(label="", value="Hidden", tone="info"))
         if "raging" in p.flags_on:

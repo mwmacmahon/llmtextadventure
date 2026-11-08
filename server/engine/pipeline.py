@@ -788,6 +788,16 @@ class Engine:
         # ---- 2. resolve -----------------------------------------------------
         res = self._resolve(game, state, adj, iid, turn, extra_directives)
         state = res["state"]
+        # ---- 2b. the world acts (part four, D176): the game's own rolls before the prose (a chosen death, a peril's
+        #          countdown, the enemies' moves); the narrator is told each in THIS TURN, the § lines follow the prose
+        world = None
+        if hasattr(game, "world_turn") and (adj is None or adj.kind in ("action", "trivial")):
+            state, world = game.world_turn(state, adj, player_text or "", rng_for(iid, turn, "world"), turn, self.target_offset(game, iid))
+            res["state"] = state
+            if world.directives:
+                res["directives"] = list(world.directives) + list(res["directives"])
+            for row in world.rows:
+                ledger("world", row)
         for f in res["fired"]:
             ledger("event_fired", f.model_dump(mode="json"))
         for x in res["expired"]:
@@ -913,6 +923,9 @@ class Engine:
                 if t["mechanic"]:
                     prose_out = with_mechanic(prose_out, t["mechanic"])
                     yield {"event": "mechanic", "data": {"turn": turn, "text": t["mechanic"], "data": t["data"]}}
+            for m in (world.mechanics if world else []):     # the world's rolls (part four): shown after the prose they shaped
+                prose_out = with_mechanic(prose_out, m)
+                yield {"event": "mechanic", "data": {"turn": turn, "text": m, "data": {"world": True}}}
             done = StreamDone(text=prose_out, stop_reason=ndone.stop_reason, model=ndone.model, usage=ndone.usage, note=ndone.note)
             calls_block = {"requests": ndone.requests,
                            "calls": [{"call": t["call"], "result": t["data"], "mechanic": t["mechanic"], "told": True} for t in told] + ndone.calls,
@@ -996,6 +1009,10 @@ class Engine:
                 vetoes = [f"{c.target}: {c.note or c.value}" for c in delta.changes if c.kind == "not_done"]
                 state, lever_outcomes = self._commit_levers(game, state, levers, vetoes, iid, turn, ledger)
                 skip = list(cmd_result.referee_skip) if cmd_result else []
+                if world is not None and world.skip:          # the engine took these hit points itself (part four): no second count
+                    skip += world.skip
+                if any((c.get("result") or {}).get("harm") for c in calls_block.get("calls", [])):
+                    skip.append("hp")
                 for lv, out in zip(levers, lever_outcomes):
                     if out["status"] == "applied":
                         skip += lv.preview.referee_skip
@@ -1139,6 +1156,7 @@ class Engine:
             rulings.append(rep_ruling)
             log.info("engine.ruling " + logs.kv(iid=iid, turn=turn, rule="repetition", serious=True, of_turn=rep_ruling["of_turn"], overlap=rep_ruling["overlap"]))
         own_lines = sum(1 for ln in narration.splitlines() if ln.strip().startswith("§")) - sum(1 for c in calls_block.get("calls", []) if c.get("mechanic"))
+        own_lines -= len(world.mechanics) if world is not None else 0      # the world's rolls are the engine's too (part four)
         if own_lines > 0:                                # P2: a § line the engine did not write is an invented roll
             rulings.append({"rule": "fake_check", "serious": True, "by": "engine",
                             "what": f"the narration carries {own_lines} § line{'s' if own_lines != 1 else ''} the engine did not write: an invented roll",

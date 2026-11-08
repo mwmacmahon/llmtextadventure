@@ -92,7 +92,7 @@ class FantasyContent(Content):
 
 # ---- people ----------------------------------------------------------------------------------------------------------
 
-PERSON_SCRIPT = ("name", "role", "description", "aliases", "wants", "secret")
+PERSON_SCRIPT = ("name", "role", "description", "aliases", "wants", "secret", "moves")
 
 
 def person_from(raw: dict, hook: str = "") -> Person:
@@ -454,7 +454,7 @@ def reread(data: dict, scenario: dict, content_hooks: dict[str, dict], name: str
             continue                                         # a person the save does not have (dealt before this field existed): left out
         for key in PERSON_SCRIPT:
             if key in sp_:
-                q[key] = sp_[key] or ""
+                q[key] = (sp_[key] or []) if key == "moves" else (sp_[key] or "")
         told = {t.get("id"): bool(t.get("told")) for t in q.get("tells") or []}
         opened = {t.get("id") for t in q.get("tells") or [] if t.get("needs") is None}
         tells = [dict(t) for t in sp_.get("tells") or []]
