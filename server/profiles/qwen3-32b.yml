@@ -6,3 +6,5 @@
 model: Qwen3-32B-abliterated.Q4_K_M.gguf
 server: {ctx: 65536, ckpt: 2048, kv: q8_0, think_budget: -1}
 roles: {}
+dials:
+  stakes: live          # B94 (D176): every profile names it

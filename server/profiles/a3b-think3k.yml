@@ -6,3 +6,5 @@ server: {ctx: 98304, ckpt: 512, kv: q8_0, think_budget: 3072}
 roles:
   assistant: {thinking: true, thinking_budget: 3072}
   referee: {thinking: true, thinking_budget: 3072}
+dials:
+  stakes: live          # B94 (D176): every profile names it

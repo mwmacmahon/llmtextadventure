@@ -33,7 +33,7 @@ class RoleConfig(BaseModel):
     checks: Literal["called", "told"] = "called"
     # narrator, called mode (D109, ASSISTANT-DESIGN §12): the assistant stakes each assessed check before the prose, both
     # futures; off: no call; shadow: called and logged, the engine's reply unchanged; live: the reply to a call is the branch
-    stakes: Literal["off", "shadow", "live"] = "off"
+    stakes: Literal["off", "shadow", "live"] = "live"      # B94 (D176): live by default; shadow and off for the harness and tests, set explicitly
     # narrator: where a failed check's complication comes from (ROADMAP 1c, D144). map: the game's own map by kind of check
     # (a table, or the assistant's stake); table: the game's table for every kind (a weak assistant); off: the consequence
     # roll never fires, a failure is only its failure outcome. A retry still shuts the way under every setting.

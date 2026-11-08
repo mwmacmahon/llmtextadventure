@@ -72,7 +72,9 @@ function Card({ card }: { card: ProfileCard }) {
 
       <div className="pcard-section">
         <strong>Dials</strong>
-        <span>stakes: {String(card.dials.stakes.value)} <span className="muted small">({card.dials.stakes.from})</span></span>
+        <span className={card.dials.stakes.value === "live" ? "" : "error"} title={card.dials.stakes.value === "live" ? undefined : "The assistant's futures are not driving the checks: the stakes are meant to be live on every game with an assistant (B94)."}>
+          stakes: {String(card.dials.stakes.value)} <span className="muted small">({card.dials.stakes.from})</span>
+        </span>
         <span>checks: {String(card.dials.checks.value)} <span className="muted small">({card.dials.checks.from})</span></span>
         <span>guard: {String(card.dials.guard.value)} <span className="muted small">({card.dials.guard.from})</span></span>
         <span>

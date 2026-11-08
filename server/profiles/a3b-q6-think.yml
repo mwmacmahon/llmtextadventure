@@ -6,3 +6,5 @@ server: {ctx: 98304, ckpt: 512, kv: q8_0, think_budget: 1536, tensor_split: "27,
 roles:
   assistant: {thinking: true, thinking_budget: 1536}
   referee: {thinking: true, thinking_budget: 1536}
+dials:
+  stakes: live          # B94 (D176): every profile names it

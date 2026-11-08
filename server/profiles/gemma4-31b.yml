@@ -7,3 +7,5 @@
 model: gemma-4-31B-it-uncensored-heretic-Q5_K_M.gguf
 server: {ctx: auto, ckpt: 2048, kv: q8_0, think_budget: -1}
 roles: {}
+dials:
+  stakes: live          # B94 (D176): every profile names it

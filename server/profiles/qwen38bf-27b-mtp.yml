@@ -5,3 +5,5 @@ model: Qwen3.8-27B-ABLITERATED-Q5_K_M.gguf
 server: {ctx: 98304, ckpt: 2048, kv: q8_0, think_budget: 512, extra: "--spec-type draft-mtp --spec-draft-n-max 3"}
 roles:
   narrator: {thinking: true, thinking_budget: 512, reasoning_effort: low, think_after_call: true}
+dials:
+  stakes: live          # B94 (D176): every profile names it

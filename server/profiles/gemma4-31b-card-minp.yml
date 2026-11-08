@@ -6,3 +6,5 @@ model: gemma-4-31B-it-uncensored-heretic-Q5_K_M.gguf
 server: {ctx: auto, ckpt: 2048, kv: q8_0, think_budget: -1}
 roles:
   narrator: {temperature: 1.0, top_p: 1.0, top_k: 0, min_p: 0.05}
+dials:
+  stakes: live          # B94 (D176): every profile names it

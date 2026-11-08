@@ -6,3 +6,5 @@ model: Huihui-Qwen3.8-27B-abliterated-UD-Q5_K_XL.gguf
 server: {ctx: 98304, ckpt: 2048, kv: q8_0, think_budget: 512}
 roles:
   narrator: {thinking: true, thinking_budget: 512, reasoning_effort: low, think_after_call: false}
+dials:
+  stakes: live          # B94 (D176): every profile names it

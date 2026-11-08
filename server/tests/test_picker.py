@@ -98,18 +98,19 @@ def test_every_profile_file_loads_and_keeps_meaning_what_it_meant(monkeypatch):
                 assert {k: getattr(cfg.role(role), k) for k in ov} == ov
         assert set(p.levels()) == set(profiles.MODULES)
     card = config_for(profiles.load("gemma4-31b-card")).role("narrator")
-    assert (card.temperature, card.top_p, card.top_k, card.stakes, card.checks) == (1.0, 0.95, 64, "off", "called")
+    assert (card.temperature, card.top_p, card.top_k, card.stakes, card.checks) == (1.0, 0.95, 64, "live", "called")
 
 
-def test_the_hosted_profile_is_every_role_on_sonnet_with_the_stakes_off_and_the_guard_rewrite(monkeypatch):
+def test_the_hosted_profile_is_every_role_on_sonnet_with_the_stakes_live_and_the_guard_rewrite(monkeypatch):
     monkeypatch.delenv("TA_PROVIDER")
+    monkeypatch.delenv("TA_STAKES", raising=False)                     # the suite pins off; the profile's own is live (B94)
     p = profiles.load("sonnet")
     assert (p.local, p.model, p.base, p.server) == (False, None, "config.yml", {})
-    assert (p.dials.stakes, p.dials.checks, p.dials.guard, p.dials.target_offset) == ("off", "called", "rewrite", {})
+    assert (p.dials.stakes, p.dials.checks, p.dials.guard, p.dials.target_offset) == ("live", "called", "rewrite", {})
     cfg = config_for(p)
     assert set(cfg.roles) == {"narrator", "assistant", "referee", "summarizer"}
     assert all((cfg.role(n).provider, cfg.role(n).model) == ("anthropic", SONNET) for n in cfg.roles)
-    assert cfg.role("narrator").stakes == "off" and not cfg.local
+    assert cfg.role("narrator").stakes == "live" and not cfg.local
     with pytest.raises(ValueError, match="hosted"):
         p.swap_body()
 

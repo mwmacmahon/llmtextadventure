@@ -8,3 +8,5 @@ roles:
   narrator: {thinking: true, thinking_budget: 1536, reasoning_effort: low}
   assistant: {thinking: true, thinking_budget: 1536, reasoning_effort: low}
   referee: {thinking: true, thinking_budget: 1536, reasoning_effort: low}
+dials:
+  stakes: live          # B94 (D176): every profile names it

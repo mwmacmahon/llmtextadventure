@@ -19,6 +19,9 @@ import pytest
 # The guard is rewrite on every server (the owner, 11-08, B78); the suite's fake narrator repeats its prose, which a
 # rewrite would retell, so the suite pins log and the tests of the guard set their mode themselves.
 os.environ.setdefault("TA_GUARD", "log")
+# The stakes are live by default (B94, D176); the suite's canned assessments carry no stakes, so it pins off and the
+# tests of the stakes set the dial themselves.
+os.environ.setdefault("TA_STAKES", "off")
 
 from engine import spontaneous as spon  # noqa: E402
 from engine.config import Config  # noqa: E402

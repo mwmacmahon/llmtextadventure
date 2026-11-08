@@ -7,3 +7,5 @@ server: {ctx: 98304, ckpt: 2048, kv: q8_0, think_budget: 1536}
 roles:
   assistant: {thinking: true, thinking_budget: 1536, reasoning_effort: low, temperature: 0.6, top_p: 0.95, top_k: 20, min_p: 0.0}
   referee: {thinking: true, thinking_budget: 1536, reasoning_effort: low, temperature: 0.6, top_p: 0.95, top_k: 20, min_p: 0.0}
+dials:
+  stakes: live          # B94 (D176): every profile names it
