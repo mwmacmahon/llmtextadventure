@@ -816,6 +816,8 @@ class Engine:
                         delta.changes.remove(c)
                         screened.append(Rejection(path="notebook", reason=f"uses '{term}', which the player has not learned", value=c.value))
                 state, report, extras = apply_changes(game, state, delta, present=present, causes=causes, skip=skip, force=force)
+                if not force:                                 # a game's own check on the prose after the rows landed (B92: a hidden person named)
+                    report.rejected.extend(_hook(game, "late_conflicts", state, narration, default=[]) or [])
                 for r in screened:
                     r.kind = "conflict"
                     r.rule, r.fix = "leak", f"The player does not know the word in {r.value!r}; nothing they perceived said it."
@@ -856,7 +858,7 @@ class Engine:
                         calls=[dict((c.get("result") or {}), label=(c.get("result") or {}).get("label", "")) for c in calls_block.get("calls", [])],
                         rejected=[r.model_dump(mode="json") for r in report.rejected],
                         levers=[{"id": o.get("id") or lv.id, "status": o["status"]} for lv, o in zip(levers, lever_outcomes)],
-                        target_offset=self.target_offset(game, iid))
+                        target_offset=self.target_offset(game, iid), player_text=player_text or "")
         drifted = _hook(game, "after_turn", state, info, default=state)
         drift_lines: list[str] = []
         if drifted is not state:
@@ -933,7 +935,7 @@ class Engine:
         for rj in report.conflicts():
             if rj.rule == "leak" and (leaked or any(r.get("rule") == "leak" for r in rulings)):
                 continue                                     # the leak ruling below says it, with every term
-            what = (rj.reason if rj.rule == "early_tell"          # B63: never the secret's own words, nor an engine path
+            what = (rj.reason if rj.rule in ("early_tell", "unseen_named")   # B63: never the secret's own words, nor an engine path
                     else f"{rj.path}: {rj.reason} ({str(rj.value)[:80]})")
             rulings.append({"rule": rj.rule or "contradiction", "serious": True, "by": "engine", "what": what, "fix": rj.fix or rj.reason})
             log.info("engine.ruling " + logs.kv(iid=iid, turn=turn, rule=rj.rule or "contradiction", serious=True, path=rj.path, reason=rj.reason))
@@ -1575,7 +1577,8 @@ class Engine:
                                  player=_hook(game, "player_name", state, default="the player"), consequence_for=consequence_for,
                                  lethal_for=lambda d, label: bool(_hook(game, "lethal_stake", state, d, label, default=False)),
                                  offset=offset,
-                                 holds_back=lambda target: _hook(game, "holds_back", state, target, default=None))
+                                 holds_back=lambda target: _hook(game, "holds_back", state, target, default=None),
+                                 note_for=lambda d, label: _hook(game, "check_note", state, d, label, default="") or "")
             if call.verb == "LOOK":
                 text = _hook(game, "look", state, call.ref, default=None)
                 if not text:
@@ -2044,6 +2047,9 @@ RETELL_LEADS = {
     "early_tell": "A telling gave away a secret too early: {what}. {fix} In this retelling they hold it back: they may stall, "
                   "deflect or lie, or let slip something small that is not part of it, and the scene goes on. Drop anything that "
                   "followed from it; keep everything else as it was.",
+    # B92 (§7c): someone present and unseen by the player was named or shown before the player saw them
+    "unseen_named": "A telling showed someone the player has not seen: {what}. {fix} Drop anything that followed from it; keep "
+                    "everything else as it was.",
     # the fantasy's one content line (D139, D160): the referee rules it after a telling has gone past the door; the narrator
     # hears of it only here, in the retelling
     "too_far": "The telling showed more than this game shows: {what}. {fix} Keep everything before that moment as it was.",

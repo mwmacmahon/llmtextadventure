@@ -125,6 +125,21 @@ class Param(BaseModel):
     default: str = ""               # an option id taken when the input names none (1e: the block of a "Work on" lever)
 
 
+class CommandPanel(BaseModel):
+    """What a command's own panel shows (the level-up screen, B92): lines of what is new, `points` to spend on the
+    `stats` buttons (one click one point, at most `per_stat` on one), `cards` to pick `pick` of, and Confirm. Nothing
+    lands until Confirm; the args are `stats` (comma-separated ids, one per click) and `cards` (comma-separated ids)."""
+    title: str
+    lines: list[Chip] = Field(default_factory=list)
+    points: int = 0
+    per_stat: int = 2
+    stats: list[Option] = Field(default_factory=list)      # id, label ("STR 16")
+    cards: list[Chip] = Field(default_factory=list)        # label = id, value = the line shown
+    card_names: dict[str, str] = Field(default_factory=dict)
+    pick: int = 0
+    confirm: str = "Confirm"
+
+
 class CommandSpec(BaseModel):
     """A command the player can issue with a click: resolved by the engine alone
     (`engine`: no model call, a console result) or turned into a synthetic player
@@ -138,6 +153,7 @@ class CommandSpec(BaseModel):
     typed: bool = True              # the adjudicator may map typed input onto it; False for read-only console commands
     words: list[str] = Field(default_factory=list)   # typed use: the input must contain one of these (a word start) for the adjudicator's pick to count
     enabled: bool = True            # the panel shows it greyed when False (Level up before the XP is there); the engine still refuses
+    panel: "CommandPanel | None" = None   # a command that opens a panel of its own (the level-up screen, B92) instead of selects
 
 
 class Commands(BaseModel):
@@ -248,6 +264,7 @@ class TurnInfo:
     rejected: list[dict] = field(default_factory=list) # ApplyReport.rejected, so drift can see what the referee asked for and did not get
     levers: list[dict] = field(default_factory=list)   # the typed commands' outcomes ({id, status}; "not_completed" when the referee said not_done)
     target_offset: int | None = None                   # the check offset this turn played under (the profile's dial, else the game's own); None: the game's
+    player_text: str = ""                              # what the player typed (the Rogue's auto-hide reads it, B92)
 
 
 # ---------------------------------------------------------------------------
@@ -276,12 +293,14 @@ class SetupField(BaseModel):
     """One key of `setup_options()`. A game may return the plain list `[{id, name}, ...]` (a select, as station and
     noir do) or `{kind, label, hint, required, options?, default?}`. The label is the whole hint unless the game gives
     one (the fantasy's "About your character" box is the only one)."""
-    kind: Literal["select", "text", "textarea"] = "select"
+    kind: Literal["select", "text", "textarea", "checks"] = "select"
     label: str = ""
     hint: str = ""
     required: bool = False
     options: list[SetupOption] = Field(default_factory=list)
     default: str | None = None
+    show_if: dict[str, str] = Field(default_factory=dict)   # shown, checked and kept only when these fields hold these values (a class's kit, B92)
+    pick: int = 0                                            # checks: exactly this many ticked (a comma-separated value)
 
 
 def setup_fields(options: dict[str, Any]) -> dict[str, SetupField]:
@@ -306,6 +325,9 @@ def check_setup(options: dict[str, Any], setup: dict[str, Any]) -> dict[str, Any
     for key, f in fields.items():
         if isinstance((options or {}).get(key), list):
             continue
+        if f.show_if and any(str(out.get(k) or "") != v for k, v in f.show_if.items()):
+            out.pop(key, None)                               # a field for another class: not asked, not kept
+            continue
         v = out.get(key)
         if (v is None or (isinstance(v, str) and not v.strip())) and f.default is not None:
             out[key] = v = f.default
@@ -313,6 +335,11 @@ def check_setup(options: dict[str, Any], setup: dict[str, Any]) -> dict[str, Any
             raise ValueError(f"{f.label} is required")
         if f.kind == "select" and v not in (None, "") and f.options and v not in {o.id for o in f.options}:
             raise ValueError(f"{f.label}: no such choice {v!r}")
+        if f.kind == "checks" and v not in (None, ""):
+            picked = [x.strip() for x in (v if isinstance(v, list) else str(v).split(",")) if x.strip()]
+            if any(x not in {o.id for o in f.options} for x in picked) or (f.pick and len(set(picked)) != f.pick):
+                raise ValueError(f"{f.label}: pick {f.pick}" if f.pick else f"{f.label}: no such choice")
+            out[key] = ",".join(dict.fromkeys(picked))
     return out
 
 

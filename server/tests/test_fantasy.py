@@ -28,7 +28,7 @@ from games.fantasy.game import FantasyGame  # noqa: E402
 
 CONTENT = Path(__file__).resolve().parents[2] / "notes" / "content" / "fantasy"
 pytestmark = pytest.mark.skipif(not (CONTENT / "scenarios" / "marrowgate.yml").exists(), reason="the fantasy content is not on this machine")
-SHEET = {"name": "Wren", "klass": "Warrior", "race": "Dwarf", "gender": "a woman", "about": "Raised by smugglers; carries her mother's silver dagger and owes a man in the south."}
+SHEET = {"name": "Wren", "klass": "Fighter", "race": "Dwarf", "gender": "a woman", "about": "Raised by smugglers; carries her mother's silver dagger and owes a man in the south."}
 C = Change
 
 
@@ -88,9 +88,12 @@ def state_of(engine: Engine, iid: str):
 def test_the_sheet_is_five_fields_with_one_hint(game: FantasyGame):
     from engine.game import setup_fields
     f = setup_fields(game.setup_options())
-    assert list(f) == ["name", "klass", "race", "gender", "about"]
-    assert [x.kind for x in f.values()] == ["text", "select", "select", "text", "textarea"]
+    shown = [k for k, x in f.items() if not x.show_if]               # the class's kit and Expertise show only for that class (B92)
+    assert shown == ["name", "klass", "race", "gender", "about"]
+    assert [f[k].kind for k in shown] == ["text", "select", "select", "text", "textarea"]
     assert [k for k, x in f.items() if x.required] == ["name", "klass", "race"]
+    assert [o.name for o in f["klass"].options][:2] == ["Barbarian", "Bard (under construction)"] and len(f["klass"].options) == 12
+    assert f["kit_barbarian_1"].show_if == {"klass": "Barbarian"} and f["expertise_rogue"].kind == "checks" and f["expertise_rogue"].pick == 2
     assert [k for k, x in f.items() if x.hint] == ["about"]
     assert [o.id for o in f["race"].options][-1] == "Dragonborn" and len(f["race"].options) == 9
 
@@ -98,14 +101,14 @@ def test_the_sheet_is_five_fields_with_one_hint(game: FantasyGame):
 def test_new_instance_builds_the_player_from_the_tables(game: FantasyGame):
     st = new(game)
     p = st.player
-    assert p.stats == {"str": 3, "dex": 1, "con": 3, "int": -1, "wis": 0, "cha": 1}       # warrior, +1 CON for a dwarf
-    assert p.hp == p.hp_max == 12 + 3
-    assert {a.id for a in p.abilities} >= {"strong_arm", "shield", "second_wind", "stout"}
+    assert p.stats == {"str": 3, "dex": 1, "con": 3, "int": 0, "wis": 0, "cha": 0}        # the Fighter's file, +1 CON for a dwarf
+    assert p.hp == p.hp_max == 10 + 3
+    assert {a.id for a in p.abilities} >= {"second_wind", "stout"}
     assert p.count("second_wind").value == 1
-    assert st.item("gold").count == 15 and st.item("sword") and st.item("shield") and st.item("travelling_pack")
+    assert st.item("gold").count == 15 and st.item("longsword") and st.item("shield") and st.item("travelling_pack")
     assert st.clock.day == 1 and st.clock.minute == 1080 and p.location == "The Drowned Lantern"
-    mage = new(game, klass="Mage", race="Elf")
-    assert mage.player.spells == ["Magic Missile", "Sleep", "Charm Person"] and mage.player.cantrips == ["Light", "Mage Hand", "Spark"]
+    mage = new(game, klass="Wizard", race="Elf")
+    assert mage.player.spells == ["Magic Missile", "Sleep", "Charm Person"] and mage.player.cantrips == ["Fire Bolt", "Light", "Mage Hand"]
     assert mage.player.count("spell_slots").value == 2 and mage.player.hp == 7
     assert new(game, race="Dragonborn").player.count("breath").value == 1
 
@@ -114,7 +117,7 @@ def test_scores_show_as_dnd_scores(game: FantasyGame):
     st = new(game)
     panel = next(x for x in game.ui(st).panels if getattr(x, "title", "") == "Character")
     vals = [c.value for c in panel.items]
-    assert "STR 16 (+3)" in vals and "INT 8 (-1)" in vals and "CON 16 (+3)" in vals
+    assert "STR 16 (+3)" in vals and "DEX 12 (+1)" in vals and "CON 16 (+3)" in vals
     assert panel.layout == "grid"
 
 
@@ -156,11 +159,11 @@ def test_the_players_row_says_a_rest_cut_short_and_a_new_debt(game: FantasyGame)
 def test_the_prefix_carries_the_about_text_verbatim_and_the_pronoun_line(game: FantasyGame):
     st = new(game)
     pre = game.frozen_prefix(st)
-    assert "Wren, a dwarf warrior. Wren is a dwarf: short and broad, braided hair or beard. Wren is a woman. The player wrote this about them, and it is true: \"" + SHEET["about"] + "\"" in pre
+    assert "Wren, a dwarf fighter. Wren is a dwarf: short and broad, braided hair or beard. Wren is a woman. The player wrote this about them, and it is true: \"" + SHEET["about"] + "\"" in pre
     assert "{name}" not in pre and "{about_line}" not in pre
-    bare = new(game, gender="", about="", race="Elf", klass="Mage")
+    bare = new(game, gender="", about="", race="Elf", klass="Wizard")
     pre2 = game.frozen_prefix(bare)
-    assert "Wren, an elf mage. Wren is an elf: pointed ears, a slight build. The player controls Wren completely." in pre2
+    assert "Wren, an elf wizard. Wren is an elf: pointed ears, a slight build. The player controls Wren completely." in pre2
     assert "The player wrote this" not in pre2
     assert SHEET["about"] in game.adjudication_rules(st) and "+2" in game.adjudication_rules(st)
 
@@ -190,7 +193,11 @@ def test_the_dice_line_names_the_stat_in_capitals(game: FantasyGame):
 def test_modifiers_abilities_about_companions_renown(game: FantasyGame):
     st = new(game)
     mods = game.modifiers(st, CheckRequest(id="n", label="fight the troll", stat="str", difficulty="high"), None)
-    assert [m.label for m in mods] == ["Strong arm"]
+    assert [m.label for m in mods] == []                             # no homebrew Strong arm (B92, §7c)
+    barb = new(game, klass="Barbarian")
+    assert game.modifiers(barb, CheckRequest(id="n", label="fight the troll", stat="str"), None) == []
+    barb.player.flags_on.append("raging")
+    assert [(m.label, m.value) for m in game.modifiers(barb, CheckRequest(id="n", label="fight the troll", stat="str"), None)] == [("Rage", 2)]
     mods = game.modifiers(st, CheckRequest(id="n", label="cut the rope with the silver dagger", stat="dex"), None)
     assert any(m.value == 2 and m.label.startswith("what Wren brought") for m in mods)
     hazel = st.person("hazel")
@@ -206,12 +213,12 @@ def test_modifiers_abilities_about_companions_renown(game: FantasyGame):
 # ---- hit points, damage, rests (§3e; acceptance 4) ---------------------------------------------------------------------
 
 def test_damage_is_bounded_and_the_shield_takes_a_step(game: FantasyGame):
-    st = new(game)                                                   # 15 hp: half is 7, the shield lowers it to 5
+    st = new(game)                                                   # 13 hp: half is 6, the shield lowers it to 5
     s2, rep, _ = apply(game, st, C(kind="add", target="player", field="hp", value="-20", note="a troll's fist"))
-    assert s2.player.hp == 10
-    no_shield = new(game, klass="Rogue")                             # 9 + 2 = 11 hp: half is 5
+    assert s2.player.hp == 8
+    no_shield = new(game, klass="Rogue")                             # 8 + 2 = 10 hp: half is 5
     s3, _, _ = apply(game, no_shield, C(kind="add", target="player", field="hp", value="-9"))
-    assert s3.player.hp == 6
+    assert s3.player.hp == 5
     big = new(game, klass="Rogue")
     big.player.hp = big.player.hp_max = 40
     s4, _, _ = apply(game, big, C(kind="add", target="player", field="hp", value="-30"))
@@ -245,11 +252,11 @@ def test_heat_gold_counts_move_by_rows_bounded(game: FantasyGame):
 
 
 def test_rests_refill_what_the_content_says(game: FantasyGame):
-    st = new(game, klass="Mage", race="Human")
+    st = new(game, klass="Wizard", race="Human")
     st.player.hp = 1
     st.player.count("spell_slots").value = 0
     short = game.after_turn(st, info(minutes=60))
-    assert short.player.hp == 1 + 3 + 0 and short.player.count("spell_slots").value == 0      # a short rest at the Lantern: 3 + CON
+    assert short.player.hp == 1 + 3 + 1 and short.player.count("spell_slots").value == 0      # a short rest at the Lantern: 3 + CON
     long = game.after_turn(st, info(minutes=480))
     assert long.player.hp == long.player.hp_max and long.player.count("spell_slots").value == 2
     out = st.model_copy(deep=True)
@@ -261,7 +268,7 @@ def test_rests_refill_what_the_content_says(game: FantasyGame):
     assert game.after_turn(rough, info(minutes=480)).player.hp == rough.player.hp_max   # and no place names shown
     ok, res = game.run_command(out, "rest", {"kind": "short"})
     assert res.ok and ok.player.resting == "short" and res.minutes == 60
-    assert game.after_turn(ok, info(minutes=60)).player.hp == 4
+    assert game.after_turn(ok, info(minutes=60)).player.hp == 5
 
 
 def test_wounds_are_chips_held_by_weight(game: FantasyGame):
@@ -377,22 +384,14 @@ def test_the_watch_comes_at_hunted_where_the_player_sleeps(game: FantasyGame):
 
 def test_level_up_is_refused_until_the_xp_is_there(game: FantasyGame):
     st = new(game)
-    s1, res = game.run_command(st, "level_up", {"stat": "str", "ability": "cleave"})
+    s1, res = game.run_command(st, "level_up", {})
     assert not res.ok and "0 of 300 XP" in res.text
     st.player.xp = 300
-    s1, res = game.run_command(st, "level_up", {"stat": "str", "ability": "nothing"})
-    assert not res.ok and "Cleave" in res.text
-    s1, res = game.run_command(st, "level_up", {"stat": "str", "ability": "cleave"})
-    assert res.ok and s1.player.level == 2 and s1.player.stats["str"] == 4
-    assert s1.player.hp_max == 15 + 7 + 3 and any(a.id == "cleave" for a in s1.player.abilities)
-    s2, res = game.run_command(s1, "level_up", {"stat": "str", "ability": "iron_skin"})
+    s1, res = game.run_command(st, "level_up", {})
+    assert res.ok and s1.player.level == 2 and s1.player.hp_max == 13 + 6 + 3       # the Fighter's d10: 6 + CON a level
+    assert any("level 2" in n.text for n in s1.journal)
+    s2, res = game.run_command(s1, "level_up", {})
     assert not res.ok and "900" in res.text
-    mage = new(game, klass="Mage", race="Gnome")
-    mage.player.xp = 900
-    mage.player.level = 2
-    m3, res = game.run_command(mage, "level_up", {"stat": "int", "ability": "knock"})
-    assert res.ok and m3.player.count("spell_slots").max == 3 and "Knock" in m3.player.spells
-    assert "fireball" not in [o.id for o in game.commands(m3)[1].params[1].options]       # Fireball waits for level 5
 
 
 def test_invented_threads_pay_25_xp_two_a_day(game: FantasyGame):
@@ -614,7 +613,7 @@ def test_the_draw_favours_a_hook_whose_reach_is_where_the_player_has_been(game: 
     assert sum(1 for x in picks if x == "singing_on_the_lake") > 5
     deck2 = dk.deck_of(game.scenario())
     pool = dict(dk.candidates(st, deck2, hooks, now, 5))
-    assert pool["singing_on_the_lake"] == 2 and all(w == 1 for k, w in pool.items() if k != "singing_on_the_lake")
+    assert pool["singing_on_the_lake"] == 8 and all(w == 1 for k, w in pool.items() if k != "singing_on_the_lake")
 
 
 # ---- the referee's rows (§3i) ------------------------------------------------------------------------------------------

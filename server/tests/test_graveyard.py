@@ -28,7 +28,7 @@ SERVER = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SERVER / "tools"))
 CONTENT = SERVER.parent / "notes" / "content" / "fantasy"
 fantasy = pytest.mark.skipif(not (CONTENT / "scenarios" / "marrowgate.yml").exists(), reason="the fantasy content is not on this machine")
-SHEET = {"name": "Wren", "klass": "Warrior", "race": "Dwarf", "gender": "a woman", "about": "Raised by smugglers."}
+SHEET = {"name": "Wren", "klass": "Fighter", "race": "Dwarf", "gender": "a woman", "about": "Raised by smugglers."}
 
 
 @pytest.fixture
@@ -89,7 +89,7 @@ async def test_a_death_lands_a_grave_with_its_cause_epitaph_state_and_score(engi
     await die(engine, fake, iid)
     [g] = engine.graves.all()
     assert g["character"] == "Wren" and g["game"] == "fantasy" and g["turn"] == 1 and not g["undone"]
-    assert g["line"][0]["value"] == "Wren, dwarf warrior, level 1"
+    assert g["line"][0]["value"] == "Wren, dwarf fighter, level 1"
     assert g["place"] == "The Drowned Lantern" and g["day"] == 1 and g["clock"].startswith("Day 1, ")
     assert g["cause"] == "death by the guard captain's axe"
     assert g["epitaph"] == "The blow lands hard number 2. Wren goes down on the wet stones."      # the death telling's opening

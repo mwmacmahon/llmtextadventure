@@ -29,6 +29,15 @@ select, textarea, input[type=text], input[type=password] { max-width: 100%; back
 .game { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
 .setup-field { display: flex; flex-direction: column; gap: 4px; }
 .setup-field textarea { resize: vertical; }
+.setup-checks { display: flex; flex-wrap: wrap; gap: 6px; }
+.check-chip { border: 1px solid var(--line, #8884); border-radius: 999px; padding: 4px 10px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.check-chip.on { background: var(--accent, #4a7); color: var(--accent-ink, #fff); border-color: transparent; }
+.check-chip:disabled { opacity: 0.45; cursor: default; }
+.level-panel { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--line, #8884); border-radius: 8px; margin-top: 6px; }
+.level-panel h4 { margin: 0; }
+.level-panel ul { margin: 0; padding-left: 18px; }
+.level-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.level-cards { display: flex; flex-wrap: wrap; gap: 6px; }
 .instances { list-style: none; padding: 0; }
 .instances li { display: flex; gap: 12px; align-items: baseline; padding: 6px 0; border-top: 1px solid var(--border); }
 .row-actions { display: inline-flex; gap: 10px; }

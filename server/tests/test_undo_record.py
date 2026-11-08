@@ -23,7 +23,7 @@ from engine.store import Store, live  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
 CONTENT = Path(__file__).resolve().parents[2] / "notes" / "content" / "fantasy"
-SHEET = {"name": "Wren", "klass": "Warrior", "race": "Dwarf", "gender": "a woman", "about": "Raised by smugglers."}
+SHEET = {"name": "Wren", "klass": "Fighter", "race": "Dwarf", "gender": "a woman", "about": "Raised by smugglers."}
 
 
 @pytest.fixture

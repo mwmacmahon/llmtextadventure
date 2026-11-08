@@ -397,7 +397,7 @@ def lint(content_dir: Path) -> list[str]:
 # A line marked `hint: true` states a rule, so each such line must match one of the checks below, and its check must hold
 # against the game as built: when a rule moves, the line that promised it fails here.
 def _fresh(game: Any) -> Any:
-    return game.new_instance({"name": "Lint", "klass": "Warrior", "race": "Human"})[1]
+    return game.new_instance({"name": "Lint", "klass": "Fighter", "race": "Human"})[1]
 
 
 def _seed_rule(game: Any, city: dict) -> str | None:
@@ -523,8 +523,7 @@ def _level_rule(game: Any, city: dict) -> str | None:
 
 
 def _sleep_rule(game: Any, city: dict) -> str | None:
-    from games.fantasy import sheet as sh
-    return None if "Sleep" in sh.SPELLS else "Sleep is not a spell"
+    return None if any("Sleep" in c.spells for c in game.classes().values()) else "Sleep is not a spell"
 
 
 def _beat_rule(game: Any, city: dict) -> str | None:

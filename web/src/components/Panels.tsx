@@ -194,7 +194,67 @@ export function ChipView({ c }: { c: Chip }) {
   );
 }
 
+// The level-up screen (B92): what is new, the hit points, score points to spend by clicking the scores, cards to pick,
+// Confirm. Nothing lands until Confirm.
+function PanelCommand({ spec, onRun, busy }: { spec: CommandSpec; onRun?: OnCommand; busy?: boolean }) {
+  const p = spec.panel!;
+  const [open, setOpen] = useState(false);
+  const [spent, setSpent] = useState<string[]>([]);
+  const [cards, setCards] = useState<string[]>([]);
+  const ready = spent.length === p.points && cards.length === p.pick;
+  return (
+    <div className="command-row command-panel">
+      <button className="command-btn" disabled={busy} onClick={() => setOpen(!open)} aria-expanded={open}>{spec.label}</button>
+      {open && (
+        <div className="level-panel">
+          <h4>{p.title}</h4>
+          <ul>
+            {p.lines.map((c, i) => (
+              <li key={i}><strong>{c.label}</strong>{c.value ? ` — ${c.value}` : ""}</li>
+            ))}
+          </ul>
+          {p.points > 0 && (
+            <>
+              <div className="muted small">Raise scores: {p.points - spent.length} of {p.points} left{spent.length ? <> · <button className="link" onClick={() => setSpent([])}>reset</button></> : null}</div>
+              <div className="level-stats">
+                {p.stats.map((o) => {
+                  const n = spent.filter((x) => x === o.id).length;
+                  return (
+                    <button key={o.id} className={`check-chip${n ? " on" : ""}`} disabled={busy || (spent.length >= p.points) || n >= p.per_stat}
+                      onClick={() => setSpent([...spent, o.id])}>{o.label}{n ? ` +${n}` : ""}</button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+          {p.pick > 0 && (
+            <>
+              <div className="muted small">Pick {p.pick}</div>
+              <div className="level-cards">
+                {p.cards.map((c) => {
+                  const on = cards.includes(c.label);
+                  return (
+                    <button key={c.label} className={`check-chip${on ? " on" : ""}`} disabled={busy || (!on && cards.length >= p.pick)}
+                      onClick={() => setCards(on ? cards.filter((x) => x !== c.label) : [...cards, c.label])}>{c.value}</button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+          <button className="primary" disabled={busy || !ready} onClick={() => { onRun?.(spec.id, { stats: spent.join(","), cards: cards.join(",") }); setOpen(false); setSpent([]); setCards([]); }}>
+            {p.confirm}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CommandRow({ spec, onRun, busy }: { spec: CommandSpec; onRun?: OnCommand; busy?: boolean }) {
+  return spec.panel && spec.enabled !== false ? <PanelCommand key="panel" spec={spec} onRun={onRun} busy={busy} /> : <SelectCommand key="select" spec={spec} onRun={onRun} busy={busy} />;
+}
+
+function SelectCommand({ spec, onRun, busy }: { spec: CommandSpec; onRun?: OnCommand; busy?: boolean }) {
   const [args, setArgs] = useState<Record<string, string>>(() => Object.fromEntries(spec.params.map((p) => [p.name, p.options[0]?.id ?? ""])));
   const ready = spec.params.every((p) => args[p.name]);
   const enabled = spec.enabled !== false;

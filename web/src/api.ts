@@ -7,7 +7,12 @@ export type EntityCard = { id: string; title: string; subtitle?: string | null; 
 export type Choice = { label: string; command: string; args: Record<string, unknown> };
 export type Option = { id: string; label: string };
 export type Param = { name: string; label: string; options: Option[] };
-export type CommandSpec = { id: string; label: string; mode: "engine" | "narrated"; params: Param[]; hint: string; enabled?: boolean };
+// A command's own panel (the level-up screen, B92): what is new, score points to spend, cards to pick, Confirm.
+export type CommandPanel = {
+  title: string; lines: Chip[]; points: number; per_stat: number; stats: { id: string; label: string }[];
+  cards: Chip[]; pick: number; confirm: string;
+};
+export type CommandSpec = { id: string; label: string; mode: "engine" | "narrated"; params: Param[]; hint: string; enabled?: boolean; panel?: CommandPanel | null };
 export type MeterWidget = {
   type: "meter"; label: string; value: number; min: number; max: number; tier?: string | null; thresholds: number[];
   text?: string | null; tone?: Tone | null; chips?: Chip[];
@@ -117,8 +122,10 @@ export type SaveCard = InstanceSummary & { ui: UISchema; last: { turn: number; t
 export type SetupOption = { id: string; name: string };
 // A setup key is the plain list (a select) or a field (ISSUES B21): the label is the whole hint unless the game gives one.
 export type SetupField = {
-  kind?: "select" | "text" | "textarea";
+  kind?: "select" | "text" | "textarea" | "checks";
   label?: string;
+  show_if?: Record<string, string>;   // shown (and sent) only when these fields hold these values: a class's kit (B92)
+  pick?: number;                      // checks: exactly this many ticked
   hint?: string;
   required?: boolean;
   options?: (SetupOption | string)[];

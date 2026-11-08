@@ -25,8 +25,9 @@ from engine.events import Event, evaluate, next_moment
 from engine.events import clock_text as ev_clock_text
 from engine.game import (
     ApplyReport, Chip, ClockSpec, CommandResult, Commands, CommandSpec, EntityCard, EntityCards, GameBase, ListPanel,
-    LogPanel, Meter, MeterGroup, Option, Param, StatusStrip, Table, TableCell, TaskRow, TurnInfo, UISchema,
+    CommandPanel, LogPanel, Meter, MeterGroup, Option, Param, StatusStrip, Table, TableCell, TaskRow, TurnInfo, UISchema,
 )
+from engine.game import Rejection
 from engine.gamekit import Clock, Writer
 from engine.mechanics import CheckRequest, Modifier
 from engine.narration import default_mechanic_line
@@ -35,10 +36,11 @@ from engine.roles import AssistantReadingV2, Change
 from engine.spontaneous import Spontaneous
 from engine.statepath import Actor
 
+from . import classes as cl
 from . import deck as dk
 from . import sheet as sh
 from .state import (
-    ATTITUDE_WORDS, HUNTED_AT, STAT_NAMES, STATS, WANTED_AT, City, Condition, FantasyState, FoundPlace, Hidden, Item, Note,
+    ATTITUDE_WORDS, HUNTED_AT, STAT_NAMES, STATS, WANTED_AT, Ability, City, Condition, Count, FantasyState, FoundPlace, Hidden, Item, Note,
     Person, Player, tier_of, RENOWN_TIERS, RENOWN_SCALE, HEAT_TIERS,
 )
 
@@ -54,6 +56,14 @@ LOST_PIECES: dict[str, tuple[str, list[str], int]] = {
     "ear": ("wis", ["hear", "listen"], -2),
 }
 LOST_PIECE = re.compile(r"\b(lost|missing|one|ruined|put out|blind in one|cut off)\b.*\b(eye|hand|ear)\b|\b(eye|hand|ear)\b.*\b(lost|gone|cut off|put out)\b", re.I)
+# The hidden flags and the class effects (B92, D175): what a called check's label says the attempt was
+ATTACK = re.compile(r"\b(attack|strike|stab|hit|fight|shoot|cut|slash|swing|kill|throw|hurl|smash|punch|kick|chop|cleave|lunge|"
+                    r"thrust|bash|club|grapple|wrestle|tackle|slit|loose|fire at|ambush)", re.I)
+LOUD = re.compile(r"\b(shout|yell|scream|roar|smash|crash|break down|kick (in|down)|bang|ring|bellow|call out)", re.I)
+HIDE = re.compile(r"\b(hide|hiding|hidden|sneak|slip (away|off|out|past|into|behind)|duck (into|behind|out)|melt into|vanish|"
+                  r"keep (out of sight|to the shadows)|unseen|stay out of sight|creep|skulk)", re.I)
+SURPRISE = re.compile(r"\b(surprise|unaware|from behind|unseen|from hiding|ambush|before (he|she|they|it) (sees|notices)|sleeping|asleep)", re.I)
+SCENE_MINUTES = 60              # a scene ends when the player moves on, rests, or an hour passes (Rage, Uncanny Dodge)
 HEAT_UP, HEAT_DOWN, HEAT_DAILY = 40, 20, 5
 HEAL_STEP = 10
 ATTITUDE_STEP = 2
@@ -84,7 +94,14 @@ AUTHORITY: dict[str, Actor] = {
     "people.*.description": "script", "people.*.tells": "script", "people.*.tells.*.told": "narrator", "things": "narrator",
     "lost": "narrator", "journal": "narrator", "found_places": "narrator", "hidden": "script", "flags": "narrator",
     "log": "narrator", "threads": "narrator", "hooks": "engine", "hooks.*.declined": "narrator", "deck": "engine",
+    "player.hidden_from_others": "narrator", "people.*.hidden_from_player": "narrator",     # the referee says when they are seen (B92)
 }
+
+
+def step_down(n: int) -> int:
+    """A blow one step lighter on the referee's bounds (D158): a serious hit (6 to 10) lands as a solid blow (at most 5), a
+    solid blow (3 to 5) as a scrape (at most 2), a scrape as 1."""
+    return min(n, 5) if n >= 6 else min(n, 2) if n >= 3 else min(n, 1)
 
 
 def part_of_day(minute: int) -> str:
@@ -143,6 +160,19 @@ class FantasyGame(GameBase):
 
     def __init__(self, content_dir: Path):
         self.content = dk.FantasyContent(content_dir)
+        self.content_dir = content_dir
+        self._classes: tuple[float, dict[str, cl.ClassDef]] | None = None
+
+    def classes(self) -> dict[str, cl.ClassDef]:
+        """The class files (B92), read again when one changes."""
+        folder = self.content_dir / "classes"
+        stamp = max((f.stat().st_mtime for f in folder.glob("*.yml")), default=0.0) if folder.is_dir() else 0.0
+        if self._classes is None or self._classes[0] != stamp:
+            self._classes = (stamp, cl.load(self.content_dir))
+        return self._classes[1]
+
+    def class_of(self, p: Player) -> cl.ClassDef | None:
+        return cl.resolve(self.classes(), p.klass)
 
     # ---- content -----------------------------------------------------------------------------------------------------
     def scenario(self, sid: str = "") -> dict:
@@ -154,31 +184,63 @@ class FantasyGame(GameBase):
 
     # ---- protocol ----------------------------------------------------------------------------------------------------
     def setup_options(self) -> dict[str, Any]:
-        return {
+        classes = self.classes()
+        out: dict[str, Any] = {
             "name": {"kind": "text", "label": "Name", "required": True},
-            "klass": {"kind": "select", "label": "Class", "required": True, "options": list(sh.CLASSES)},
+            "klass": {"kind": "select", "label": "Class", "required": True, "options": [{"id": c.name, "name": c.label} for c in classes.values()]},
+        }
+        for c in classes.values():                         # the kit as selects in the SRD's manner, shown for the class picked (B92)
+            for key, ch in c.kit_fields():
+                out[key] = {"kind": "select", "label": ch.label, "show_if": {"klass": c.name},
+                            "options": [{"id": o.id, "name": o.label} for o in ch.options]}
+            for f in c.features_at(1):
+                if f.choice and f.choice.get("from") == "skills":
+                    out[f"{f.id}_{c.name.lower()}"] = {"kind": "checks", "label": f"{f.name}: pick {f.choice.get('pick', 2)}", "show_if": {"klass": c.name},
+                                                       "pick": int(f.choice.get("pick", 2)),
+                                                       "options": [{"id": k, "name": v[0]} for k, v in cl.SKILLS.items()]}
+        out.update({
             "race": {"kind": "select", "label": "Race", "required": True, "options": list(sh.RACES)},
             "gender": {"kind": "text", "label": "Gender"},
             "about": {"kind": "textarea", "label": "About your character",
                       "hint": "Anything you like: looks, history, what you carry, a secret, how you want to be played."},
-        }
+        })
+        return out
 
     def build_player(self, setup: dict[str, Any], sc: dict) -> tuple[Player, list[Item]]:
         name = " ".join(str(setup.get("name") or "").split())[:40] or "the stranger"
-        klass = setup.get("klass") if setup.get("klass") in sh.CLASSES else "Warrior"
+        classes = self.classes()
+        cd = cl.resolve(classes, str(setup.get("klass") or "")) or classes.get("Fighter") or next(iter(classes.values()))
         race = setup.get("race") if setup.get("race") in sh.RACES else "Human"
-        stats = dict(sh.CLASS_STATS[klass])
+        stats = {k: int(cd.stats.get(k, 0)) for k in STATS}
         stats[sh.RACE_BONUS[race]] += 1
-        hp = max(1, sh.CLASS_HP[klass] + stats["con"])
-        abilities = [a.model_copy() for a in sh.CLASS_ABILITIES[klass] + sh.RACE_ABILITIES[race]]
-        counts = [c.model_copy() for c in sh.CLASS_COUNTS[klass] + sh.RACE_COUNTS.get(race, [])]
+        hp = max(1, cd.hp_first + stats["con"])
+        abilities: list[Ability] = []
+        counts: list[Count] = []
+        expertise: list[str] = []
+        for f in cd.features_at(1):
+            cl.grant(abilities, counts, f, cd.name)
+            if f.choice and f.choice.get("from") == "skills":
+                raw = setup.get(f"{f.id}_{cd.name.lower()}") or setup.get(f.id) or ""
+                picks = [x.strip() for x in (raw if isinstance(raw, list) else str(raw).split(",")) if x.strip() in cl.SKILLS]
+                n = int(f.choice.get("pick", 2))
+                picks = list(dict.fromkeys(picks))[:n]
+                picks += [k for k in cl.SKILLS if k not in picks][: n - len(picks)]
+                expertise = picks
+                abilities += cl.expertise_abilities(picks)
+        abilities += [a.model_copy() for a in sh.RACE_ABILITIES[race]]
+        counts += [c.model_copy() for c in sh.RACE_COUNTS.get(race, [])]
         pl = sc.get("player") or {}
-        p = Player(name=name, gender=" ".join(str(setup.get("gender") or "").split())[:40], race=race, klass=klass,
-                   about=str(setup.get("about") or "").strip(), stats=stats, abilities=abilities, counts=counts,
-                   cantrips=list(sh.CANTRIPS) if klass == "Mage" else [], spells=list(sh.SPELLS) if klass == "Mage" else [],
-                   hp=hp, hp_max=hp, location=pl.get("location", "The Drowned Lantern"))
         inv = [Item(**{k: v for k, v in i.items() if k in Item.model_fields}) for i in pl.get("inventory") or []]
-        inv += [i.model_copy() for i in sh.CLASS_KIT[klass]]
+        kit: list[str] = []
+        for key, ch in cd.kit_fields():
+            pick = next((o for o in ch.options if o.id == setup.get(key)), ch.options[0])
+            kit.append(pick.label)
+            inv += [i.model_copy() for i in pick.items]
+        inv += [i.model_copy() for i in cd.kit.always]
+        p = Player(name=name, gender=" ".join(str(setup.get("gender") or "").split())[:40], race=race, klass=cd.name,
+                   about=str(setup.get("about") or "").strip(), stats=stats, abilities=abilities, counts=counts,
+                   cantrips=list(cd.cantrips), spells=list(cd.spells), kit=kit, expertise=expertise,
+                   hp=hp, hp_max=hp, location=pl.get("location", "The Drowned Lantern"))
         return p, inv
 
     def new_instance(self, setup: dict[str, Any]) -> tuple[str, FantasyState]:
@@ -204,6 +266,9 @@ class FantasyGame(GameBase):
             if hid in hooks:
                 dk.deal(state, hooks[hid], turn=0, deal_abs=now, name=player.name)
         state.player.visited[player.location] = now
+        state.player.scene_start, state.player.scene_place = now, player.location
+        if sc0.get("start_hidden"):                      # content may open with the player unseen (B92)
+            state.player.hidden_from_others = True
         if sc0.get("opening_text"):                      # B51 (D167): the opening is shown at turn 0; its event is played
             for e in state.hidden.events:
                 if e.id == "opening":
@@ -384,14 +449,42 @@ class FantasyGame(GameBase):
         if not state.hidden.terms:
             return []
         voice = re.sub(r'"[^"]*"|“[^”]*”', " ", prose)
+        said = " ".join(re.findall(r'"[^"]*"|“[^”]*”', prose))
+        # the owner (11-08 evening): Elowen named in the telling because the young siren had been in the scene. Being met is not
+        # being named: a person's name is learned when someone says it aloud (here or on an earlier turn), or it is in the notes
         known = " ".join([n.text for n in state.journal] + list(state.log) + [t.title for t in state.threads]
-                         + [f for q in state.people if q.met for f in q.facts] + [q.name for q in state.people if q.met]
-                         + list(state.player.visited) + [state.player.location] + [player_text]).lower()
+                         + [f for q in state.people if q.met for f in q.facts] + list(state.player.names_heard)
+                         + [q.name for q in state.people if q.met and not self._secret_name(state, q)]
+                         + list(state.player.visited) + [state.player.location] + [player_text, said]).lower()
         out = []
         for term in state.hidden.terms:
             pat = r"\b" + re.escape(term.lower()) + r"(s|es)?\b"
             if re.search(pat, voice.lower()) and not re.search(pat, known):
                 out.append(term)
+        return out
+
+    @staticmethod
+    def _secret_name(s: FantasyState, q: Person) -> bool:
+        return any(t.lower() == q.name.lower() or t.lower() in q.name.lower().split() for t in s.hidden.terms)
+
+    def late_conflicts(self, state: FantasyState, prose: str) -> list[Rejection]:
+        """A person still unseen by the player (B92, §7c) named in the telling before the referee marked them seen: an early
+        tell (B63's conflict), retold. Their name only; the conflict never carries what they are there for."""
+        out: list[Rejection] = []
+        said = " ".join(re.findall(r'"[^"]*"|“[^”]*”', prose)).lower()
+        for term in state.hidden.terms:                  # a secret name said aloud is learned from now on (the leak check reads it)
+            if term not in state.player.names_heard and re.search(r"\b" + re.escape(term.lower()) + r"\b", said):
+                state.player.names_heard.append(term)
+        voice = re.sub(r'"[^"]*"|“[^”]*”', " ", prose)
+        for q in state.people:
+            if not q.hidden_from_player or q.status != "alive" or not self._same_spot(state, q.location, state.player.location):
+                continue
+            names = [q.name] + [n for n in q.name.split() if len(n) > 3 and n[0].isupper()]
+            if any(re.search(r"\b" + re.escape(n) + r"\b", voice) for n in names):
+                out.append(Rejection(path=f"people.{q.id}.hidden_from_player", reason=f"{q.name} was named while {state.player.name} has not seen them",
+                                     value=q.name, kind="conflict", rule="unseen_named",
+                                     fix=f"{q.name} is there unseen. In this retelling {state.player.name} does not see them and the telling does not name them; "
+                                         f"what they do can still be felt (a sound, a movement, a cold feeling)."))
         return out
 
     # ---- the per-turn block ------------------------------------------------------------------------------------------
@@ -402,6 +495,15 @@ class FantasyGame(GameBase):
         marks = [c.name for c in p.conditions] + [w.words for w in sorted(p.wounds, key=lambda x: -wd.WEIGHTS[x.weight])]
         lines.append(f"{p.name}: at {where}; {p.hp_tier}; marks: {', '.join(marks) or 'none'}.")
         lines.append(f"The Watch on {p.name}: {p.heat_word}. What strangers have heard of {p.name}: {p.renown_word}.")
+        if p.hidden_from_others:
+            lines.append(f"{p.name} is hidden.")
+        if "raging" in p.flags_on:
+            lines.append(f"{p.name} is raging.")
+        unseen = [q for q in s.people if q.hidden_from_player and q.status == "alive" and self._same_spot(s, q.location, p.location)]
+        if unseen:                                   # B92 (§7c): act from it, never say it, as with every hidden truth
+            lines.append(f"Present, unseen by {p.name} (the scene acts from this; the telling never names or shows them until {p.name} sees them): "
+                         + "; ".join(f"{q.name}" + (f" [{q.id}]" if engine else "") + (f", {q.role}" if q.role else "") + (f": {q.wants}" if q.wants else "")
+                                     for q in unseen) + ".")
         here = [s.person(x) for x in p.with_them]
         here = [q for q in here if q is not None and q.status == "alive"]
         if here:
@@ -421,7 +523,7 @@ class FantasyGame(GameBase):
             near = [t for t in s.things if self._thing_here(s, t) and (engine or not t.held_by)]   # what someone holds shows when they show it
             if near:
                 lines.append(f"Not on {p.name}, here: " + "; ".join(f"{t.render()}, {self._where(s, t)}" for t in near) + ".")
-        met = [q for q in s.people if q.met]
+        met = [q for q in s.people if q.met and not q.hidden_from_player]
         if met:
             lines.append("")
             lines.append(f"People {p.name} has dealt with:")
@@ -562,6 +664,12 @@ class FantasyGame(GameBase):
                        f"waking and the price in the priest's own words, and stop.")
         if p.location == "Unknown":
             out.append(self.LOST_TRACK.replace("{name}", p.name))
+        party = [q for q in (s.person(x) for x in p.with_them) if q is not None and q.status == "alive" and not q.hidden_from_player]
+        if party and not p.fate:          # the owner (11-08 evening): Tam sat in the boat as scenery while the search was for his own child
+            out.append(f"With {p.name} this turn: " + "; ".join(q.name + (f", who wants this: {q.wants.rstrip('.')}" if q.wants else "")
+                                                              + (f" (now {q.mood})" if q.mood else "") for q in party)
+                       + ". Give each of them something in the telling: a line, an act, or what they notice, true to what they want "
+                         "and how they are. A word or two is enough when the moment belongs to someone else.")
         return out
 
     # ---- the assistant's and the referee's rules ---------------------------------------------------------------------
@@ -600,6 +708,9 @@ class FantasyGame(GameBase):
             f"Paying more gold than {p.name} carries is impossible.",
             "Commands: " + ", ".join(["Rest (short or long)", "Level up"] + [a.name for a in p.abilities if a.count]) + " are commands: list them "
             "under commands when the input asks for them. A command never replaces the rest of the input: an attack or a conversation beside it is still an intent with its check.",
+            *([f"Cunning Action: {p.name} hides or slips away with no check whenever nobody present is watching them closely; call no check for it."]
+              if p.effect("auto_hide") else []),
+            *([f"{p.name} is hidden: an attack they make now is from hiding."] if p.hidden_from_others else []),
             "target_entity only for a listed person the player names or the scene identifies; an unnamed stranger has no id, so leave it null.",
             "Stats are exactly the six listed (str, dex, con, int, wis, cha); never invent one.",
             "Time: a look around is 2 minutes; a search 15 to 30; a conversation 10 to 20; a street a few minutes, across the city half an hour, "
@@ -662,6 +773,9 @@ class FantasyGame(GameBase):
             "same way, +<the injury in a few words>; it comes off (-<the injury>) only when the prose treats it, with how in the note. A lost eye, "
             "hand or ear never comes off.",
             f"- set player.carried true: {p.name} is down and the prose has someone pick up the body and carry it away.",
+            *([f"- set player.hidden_from_others false: the prose shows someone seeing {p.name}; quote it in the note."] if p.hidden_from_others else []),
+            *([f"- set <person id>.hidden_from_player false: the prose shows {p.name} seeing someone who was unseen (the game state lists them); "
+               f"quote it in the note."] if any(q.hidden_from_player for q in s.people) else []),
             "- set <person id>.told value=<tell id>: the person gave that piece of what they know this turn. The game state lists the open pieces, with "
             "their ids, for the people with the player; one row per piece told.",
             "- set <person id>.status alive|dead|missing|gone; set <person id>.condition <a few words>; set <person id>.mood <a word>.",
@@ -727,6 +841,8 @@ class FantasyGame(GameBase):
         for a in p.abilities:
             if not a.stat or not a.mod or req.stat not in a.stat.split(","):
                 continue
+            if a.while_flag and a.while_flag not in p.flags_on:
+                continue
             if a.id == "quick_to_make_friends":
                 if stranger:
                     mods.append(Modifier(label=a.name, value=a.mod))
@@ -754,7 +870,37 @@ class FantasyGame(GameBase):
             hit = next((w for w in _words(req.label) if w in about), None)
             if hit:
                 mods.append(Modifier(label=f"what {p.name} brought ({hit})", value=2))
+        why = self._sneak_attack(state, req, q)
+        if why:                                          # a damage step, not a bonus to hit: a line worth nothing on the sum
+            n = p.effect("sneak_attack")
+            mods.append(Modifier(label=f"Sneak Attack ({why}): the blow lands {'a step' if n == 1 else f'{n} steps'} harder", value=0))
         return mods
+
+    def _sneak_attack(self, s: FantasyState, req: CheckRequest, q: Person | None) -> str:
+        """The case Sneak Attack holds in, in a few words, or "": an attack while hidden, from surprise, or at someone an
+        ally is fighting (§7a)."""
+        p = s.player
+        if not p.effect("sneak_attack") or req.stat not in ("str", "dex") or not ATTACK.search(req.label):
+            return ""
+        if p.hidden_from_others:
+            return "from hiding"
+        if SURPRISE.search(req.label):
+            return "from surprise"
+        allies = [h for h in (s.person(x) for x in p.with_them) if h is not None and h.status == "alive" and h.attitude >= 2]
+        if allies and q is not None and q.attitude < 0:
+            return f"while {allies[0].name} fights them"
+        return ""
+
+    def check_note(self, state: FantasyState, data: dict, label: str) -> str:
+        """A line the narrator reads with a check's result (B92): Sneak Attack's step on a blow that lands."""
+        if data.get("outcome") not in ("success", "huge_success", "critical_success"):
+            return ""
+        line = next((m.get("label", "") for m in data.get("modifiers") or [] if str(m.get("label", "")).startswith("Sneak Attack")), "")
+        if not line:
+            return ""
+        n = state.player.effect("sneak_attack")
+        return (f" The blow lands {'one step' if n == 1 else 'two steps'} harder than it would (Sneak Attack): a scrape becomes a solid blow, "
+                f"a solid blow a serious hit.")
 
     def lethal_stake(self, state: FantasyState, roll: dict, label: str) -> bool:
         return False                    # the fantasy's lethal roll is the engine's own, at 0 hit points (after_turn)
@@ -870,6 +1016,13 @@ class FantasyGame(GameBase):
             return True
         if is_player and field in ("renown", "xp", "level", "hp_max", "stats", "str", "dex", "con", "int", "wis", "cha"):
             w.reject(f"player.{field}", "the engine's: quests, levels and the sheet move it", value)
+            return True
+        if is_player and field in ("hidden_from_others", "hidden") and kind == "set":
+            seen = value.strip().lower() in ("false", "no", "0", "seen")
+            if not seen:
+                w.reject("player.hidden_from_others", "a hide check, Cunning Action or smoke hides the player; the referee only says when they are seen", value)
+            elif p.hidden_from_others and w.set("player.hidden_from_others", True, False):
+                p.hidden_from_others = False
             return True
         if is_player and field == "carried":
             if value.lower() in ("true", "yes", "1"):
@@ -992,11 +1145,24 @@ class FantasyGame(GameBase):
             n = min(n, HEAL_STEP)
         else:
             cap = min(10, max(1, p.hp_max // 2))
-            if p.klass == "Warrior" and s.item("shield") is not None:
+            if s.item("shield") is not None:
                 cap = min(cap, 5)                     # the shield lowers the bound a step (a serious hit lands as a solid blow)
             if -n > cap:
                 w.note(f"player.hp: {-n} bounded to {cap}")
                 n = -cap
+            if "raging" in p.flags_on and p.effect("damage_taken_step"):           # Rage (B92): blows land a step lighter
+                lighter = -step_down(-n)
+                if lighter != n:
+                    w.note(f"player.hp: Rage, {-n} lands as {-lighter}")
+                    p.turn_notes.append("Rage: the blow lands a step lighter")
+                    n = lighter
+            if p.effect("uncanny_dodge") and p.dodge_scene != p.scene_start:     # Uncanny Dodge: the first blow of a scene
+                p.dodge_scene = p.scene_start
+                lighter = -step_down(-n)
+                if lighter != n:
+                    w.note(f"player.hp: Uncanny Dodge, {-n} lands as {-lighter}")
+                    p.turn_notes.append("Uncanny Dodge: the blow lands a step lighter")
+                    n = lighter
         new = max(0, min(p.hp_max, p.hp + n))
         if new != p.hp and w.set("player.hp", p.hp, new):
             p.hp = new
@@ -1181,6 +1347,14 @@ class FantasyGame(GameBase):
 
     def _person_row(self, s: FantasyState, q: Person, kind: str, field: str, value: str, ch: Change, w: Writer) -> bool:
         p = s.player
+        if field in ("hidden_from_player", "hidden", "unseen") and kind == "set":     # B92 (§7c): the referee says when they are seen
+            seen = value.strip().lower() in ("false", "no", "0", "seen")
+            if not seen:
+                w.reject(f"people.{q.id}.hidden_from_player", "content hides a person; the referee only says when they are seen", value)
+            elif q.hidden_from_player and w.set(f"people.{q.id}.hidden_from_player", True, False):
+                q.hidden_from_player = False
+                self._know(s, q, w, met=True)
+            return True
         where = value if (kind == "move" or (kind == "set" and field == "location")) and value in s.places else q.location
         self._know(s, q, w, met=kind != "learned" and self._same_spot(s, where, p.location))
         if kind == "move" or (kind == "set" and field == "location"):
@@ -1312,6 +1486,8 @@ class FantasyGame(GameBase):
 
     @staticmethod
     def _know(s: FantasyState, q: Person, w: Writer, *, met: bool) -> None:
+        if q.hidden_from_player:                          # someone still unseen is neither met nor heard of (B92)
+            return
         if met and not q.met:
             w.note(f"people.{q.id}.met: False -> True")
             q.met = q.heard_of = True
@@ -1383,6 +1559,8 @@ class FantasyGame(GameBase):
                 self._raise(s, info)
                 return s
             p.fate, p.fate_note = "", ""
+        p.shown_notes, p.turn_notes, p.notes_turn = list(p.turn_notes), [], info.turn
+        self._hidden_after(s, info)
         for q in s.people:
             if q.met and q.location and q.location != "Unknown" and self._same_spot(s, q.location, p.location):
                 q.seen_at = q.location
@@ -1406,6 +1584,13 @@ class FantasyGame(GameBase):
         # -- rests
         if p.hp > 0 and not p.fate:
             self._rest(s, info)
+        # -- the scene (B92): it ends when the player moves on, rests, or an hour passes; Rage ends with it, Uncanny Dodge comes back
+        rested = any(lv.get("id") == "rest" and lv.get("status") != "not_completed" for lv in info.levers)
+        if p.location != p.scene_place or rested or now - p.scene_start >= SCENE_MINUTES:
+            if "raging" in p.flags_on:
+                p.flags_on.remove("raging")
+                s.log.append(f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}. {p.name}'s rage burns out.")
+            p.scene_start, p.scene_place = now, p.location
         # -- the player's own quests: 25 XP each, at most two a day
         for t in s.threads:
             if t.status != "open" and not t.id.startswith("hook-") and t.id not in p.paid_threads and t.status == "resolved":
@@ -1437,6 +1622,25 @@ class FantasyGame(GameBase):
             if hid is not None:
                 dk.deal(s, hooks[hid], turn=info.turn, deal_abs=now, name=p.name)
         return s
+
+    def _hidden_after(self, s: FantasyState, info: TurnInfo) -> None:
+        """The player's hidden flag (B92, §7b), from the turn's called checks in order: an attack, a loud act or talk clears it
+        (Sneak Attack has already landed with the check); a hide that succeeds sets it. The Rogue's Cunning Action (level 2)
+        hides with no check: the player asked to hide or slip away and no hide check was called."""
+        p = s.player
+        hid_check = False
+        for c in info.calls:
+            label, stat, ok = str(c.get("label") or ""), c.get("stat"), c.get("outcome") in ("success", "huge_success", "critical_success")
+            if stat == "cha" or ATTACK.search(label) or LOUD.search(label):
+                p.hidden_from_others = False
+            elif HIDE.search(label):
+                hid_check = True
+                if ok:
+                    p.hidden_from_others = True
+        if not hid_check and not info.calls and p.effect("auto_hide") and HIDE.search(info.player_text or "") and not ATTACK.search(info.player_text or ""):
+            p.hidden_from_others = True
+            p.turn_notes.append("Cunning Action: hidden, no roll")
+            p.shown_notes, p.turn_notes = p.shown_notes + p.turn_notes, []
 
     @staticmethod
     def _safe(s: FantasyState) -> bool:
@@ -1714,6 +1918,14 @@ class FantasyGame(GameBase):
                 out.append(f"{it.name[:1].upper()}{it.name[1:]}: {was[iid].count} → {it.count}")
         out += [f"Pockets: − {it.name}" for iid, it in was.items() if iid not in now]
         out += [f"Owed: + {d}" for d in a.debts if d not in b.debts]
+        if a.hidden_from_others != b.hidden_from_others:
+            out.append("Hidden" if a.hidden_from_others else "Seen: no longer hidden")
+        if ("raging" in a.flags_on) != ("raging" in b.flags_on):
+            out.append("Rage" if "raging" in a.flags_on else "Rage: over")
+        if a.notes_turn != b.notes_turn:
+            out += a.shown_notes
+        if a.level != b.level:
+            out.append(f"Level: {b.level} → {a.level}")
         if a.rest_cut and a.rest_cut != b.rest_cut:
             out.append("Rest cut short: no hit points back")
         new_q = [h.title for h in after.hooks if h.status == "live" and (before.hook(h.id) is None or before.hook(h.id).status != "live")]
@@ -1738,11 +1950,21 @@ class FantasyGame(GameBase):
                                 "in the way. Not when the player names a place farther off to sleep: that is a move there, not a rest.",
                            words=["rest", "sleep", "catch my breath", "lie down", "turn in", "bed down", "nap"])]
         nxt = sh.xp_for(p.level)
-        options = self._level_options(p)
         out.append(CommandSpec(id="level_up", label="Level up" + ("" if p.xp >= nxt else f" (at {nxt} XP)"), mode="engine", enabled=p.xp >= nxt,
-                               params=[Param(name="stat", label="Raise", options=[Option(id=k, label=k.upper()) for k in STATS]),
-                                       Param(name="ability", label="Learn", options=[Option(id=a.id, label=a.name) for a in options] or [Option(id="none", label="nothing new")])],
-                               hint="Raise one stat by 1 and learn one thing from the class list, when the XP is there.", words=["level up", "level-up"]))
+                               panel=self._level_panel(p) if p.xp >= nxt else None, typed=False,
+                               hint="Open the level-up screen when the XP is there: what is new, the hit points, a stat raise at levels 4, 8 and 12.",
+                               words=["level up", "level-up"]))
+        rage = p.count("rage")
+        if "raging" in p.flags_on:
+            out.append(CommandSpec(id="end_rage", label="End rage", mode="engine", hint="Let the rage go before the scene ends.",
+                                   words=["calm down", "end the rage", "stop raging", "let the rage go"]))
+        elif rage is not None:
+            out.append(CommandSpec(id="rage", label=f"Rage ({rage.value} left)", mode="narrated", enabled=rage.value > 0,
+                                   hint="Fly into a rage until the scene ends: STR +2 to fight, force, lift and break; blows land a step lighter; CHA -2 to talk.",
+                                   words=["rage", "raging", "fly into a rage", "berserk"]))
+        if p.count("lay_on_hands"):
+            out.append(CommandSpec(id="lay_on_hands", label="Lay on Hands", mode="narrated", hint="A healing touch: 5 hit points back, once between long rests.",
+                                   words=["lay on hands", "lay hands"]))
         if p.count("second_wind"):
             out.append(CommandSpec(id="second_wind", label="Second wind", mode="narrated", hint="Catch a second wind: 5 hit points back, once between long rests.",
                                    words=["second wind"]))
@@ -1754,9 +1976,31 @@ class FantasyGame(GameBase):
         out.append(CommandSpec(id="journal", label="Journal", mode="engine", typed=False, hint="Read the journal, the quests and the people."))
         return out
 
-    def _level_options(self, p: Player) -> list:
-        have = {a.id for a in p.abilities} | {x.lower().replace(" ", "_") for x in p.spells}
-        return [a for lv, a in sh.LEVEL_ABILITIES.get(p.klass, []) if a.id not in have and p.level + 1 >= lv]
+    def _level_up_plan(self, p: Player) -> tuple[int, int, list[cl.Feature], int, list[tuple[str, str]], int]:
+        """The next level as the class file has it: (level, hit points gained, features, stat points, cards (id, line), pick)."""
+        cd = self.class_of(p)
+        lv = p.level + 1
+        gain = max(1, (cd.hp_level if cd else 5) + p.stats.get("con", 0))
+        feats = cd.features_at(lv) if cd else []
+        points = 2 if lv in sh.ASI_LEVELS else sum(f.points for f in feats)
+        cards: list[tuple[str, str]] = []
+        pick = 0
+        for f in feats:
+            if f.choice and f.choice.get("from") == "skills":
+                pick += int(f.choice.get("pick", 2))
+                cards += [(k, f"{v[0]}: {v[1].upper()} +2 more") for k, v in cl.SKILLS.items() if k not in p.expertise]
+        return lv, gain, [f for f in feats if not f.points], points, cards, pick
+
+    def _level_panel(self, p: Player) -> CommandPanel:
+        lv, gain, feats, points, cards, pick = self._level_up_plan(p)
+        lines = [Chip(label=(f.name or next((a.name for a in p.abilities if a.id == f.id), f.id)) + (" (stronger)" if f.upgrade else ""), value=f.text)
+                 for f in feats if not f.choice]
+        lines.append(Chip(label="Hit points", value=f"+{gain} (to {p.hp_max + gain})"))
+        if points:
+            lines.append(Chip(label="Ability Score Improvement", value="click a score twice for +2, or two scores for +1 each"))
+        return CommandPanel(title=f"Level {lv}", lines=lines, points=points, per_stat=2,
+                            stats=[Option(id=k, label=f"{k.upper()} {p.score(k)}") for k in STATS] if points else [],
+                            cards=[Chip(label=k, value=t) for k, t in cards], pick=pick)
 
     def run_command(self, state: FantasyState, command_id: str, args: dict[str, Any]) -> tuple[FantasyState, CommandResult]:
         s = state.model_copy(deep=True)
@@ -1783,32 +2027,62 @@ class FantasyGame(GameBase):
             nxt = sh.xp_for(p.level)
             if p.xp < nxt:
                 return state, CommandResult(ok=False, label="Level up", text=f"Not yet: {p.xp} of {nxt} XP.")
-            stat = (args.get("stat") or "").lower()
-            if stat not in STATS:
-                return state, CommandResult(ok=False, label="Level up", text="Pick a stat to raise: " + ", ".join(k.upper() for k in STATS) + ".")
-            options = self._level_options(p)
-            pick = next((a for a in options if a.id == (args.get("ability") or "")), None)
-            if options and pick is None:
-                return state, CommandResult(ok=False, label="Level up", text="Pick one to learn: " + ", ".join(a.name for a in options) + ".")
-            p.level += 1
-            p.stats[stat] = p.stats.get(stat, 0) + 1
-            gain = max(1, sh.LEVEL_HP[p.klass] + p.stats.get("con", 0))
+            lv, gain, feats, points, cards, pick = self._level_up_plan(p)
+            raises = [x.strip().lower() for x in str(args.get("stats") or args.get("stat") or "").split(",") if x.strip()]
+            if points and (len(raises) != points or any(r not in STATS for r in raises)):
+                return state, CommandResult(ok=False, label="Level up", text=f"Pick {points} score points to spend: " + ", ".join(k.upper() for k in STATS) + ".")
+            if any(raises.count(r) > 2 for r in raises):
+                return state, CommandResult(ok=False, label="Level up", text="At most +2 to one score.")
+            chosen = [x.strip() for x in str(args.get("cards") or "").split(",") if x.strip()]
+            if pick and (len(set(chosen)) != pick or any(c not in {k for k, _ in cards} for c in chosen)):
+                return state, CommandResult(ok=False, label="Level up", text=f"Pick {pick}: " + ", ".join(t for _, t in cards) + ".")
+            cd = self.class_of(p)
+            p.level = lv
+            got: list[str] = []
+            for f in feats:
+                got += cl.grant(p.abilities, p.counts, f, cd.name if cd else p.klass)
+            for r in raises:                                       # +1 to a score; two points make a modifier step (§7b)
+                p.score_bonus[r] = p.score_bonus.get(r, 0) + 1
+                if p.score_bonus[r] >= 2:
+                    p.score_bonus[r] -= 2
+                    p.stats[r] = p.stats.get(r, 0) + 1
+            if raises:
+                got.append(", ".join(f"{k.upper()} {p.score(k)}" for k in dict.fromkeys(raises)))
+            if chosen:
+                p.expertise += chosen
+                p.abilities += cl.expertise_abilities(chosen)
+                got.append("Expertise: " + ", ".join(cl.SKILLS[c][0] for c in chosen))
+            gain = max(1, gain)
             p.hp_max += gain
             p.hp += gain
-            learned = ""
-            if pick is not None:
-                if p.klass == "Mage":
-                    p.spells.append(pick.name)
-                else:
-                    p.abilities.append(pick.model_copy())
-                learned = f" and learns {pick.name}"
-            slots = sh.MAGE_SLOTS.get(p.level) if p.klass == "Mage" else None
-            if slots:
-                c = p.count("spell_slots")
-                if c is not None:
-                    c.max, c.value = slots, c.value + (slots - c.max)
-            line = f"{p.name} is level {p.level}: {stat.upper()} {sh.score(p.stats[stat])} ({p.stats[stat]:+d}), {gain} more hit points{learned}."
+            line = f"{p.name} is level {p.level}: {gain} more hit points" + (f"; {'; '.join(got)}" if got else "") + "."
+            s.journal.append(Note(kind="clue", text=line[:200]))
             return s, CommandResult(label="Level up", text=line, log_line=line)
+        if command_id == "rage":
+            c = p.count("rage")
+            if c is None or c.value <= 0 or "raging" in p.flags_on:
+                return state, CommandResult(ok=False, label="Rage", text="Spent; a long rest brings it back." if c is not None and c.value <= 0 else "Not now.")
+            c.value -= 1
+            p.flags_on.append("raging")
+            p.scene_start, p.scene_place = s.clock.day * DAY + s.clock.minute, p.location
+            return s, CommandResult(label="Rage", player_line="I let the rage take me.", summary=f"{p.name} flies into a rage.",
+                                    directive=f"{p.name} flies into a rage: the blood up, the jaw set, the world narrowed to what is in front of them. "
+                                              f"Show it in a line or two, and play whatever else the player asked for this turn in that state.",
+                                    minutes=0, referee_skip=["rage"])
+        if command_id == "end_rage":
+            if "raging" not in p.flags_on:
+                return state, CommandResult(ok=False, label="End rage", text="Not raging.")
+            p.flags_on.remove("raging")
+            return s, CommandResult(label="End rage", text=f"{p.name} lets the rage go.", log_line=f"{p.name} lets the rage go.")
+        if command_id == "lay_on_hands":
+            c = p.count("lay_on_hands")
+            if c is None or c.value <= 0:
+                return state, CommandResult(ok=False, label="Lay on Hands", text="Spent; a long rest brings it back.")
+            c.value -= 1
+            p.hp = min(p.hp_max, p.hp + 5)
+            return s, CommandResult(label="Lay on Hands", player_line="I lay my hands on the wound.", summary=f"{p.name} lays on hands.",
+                                    directive=f"{p.name} lays a hand on the hurt and the oath answers: warmth, the pain easing. A line or two, then stop where they would act.",
+                                    minutes=1, referee_skip=["lay_on_hands", "hp"])
         if command_id == "second_wind":
             c = p.count("second_wind")
             if c is None or c.value <= 0:
@@ -1823,6 +2097,7 @@ class FantasyGame(GameBase):
             if c is None or c.value <= 0:
                 return state, CommandResult(ok=False, label="Smoke pellets", text="None left.")
             c.value -= 1
+            p.hidden_from_others = True                          # B92: smoke sets the player's hidden flag
             return s, CommandResult(label="Smoke pellets", player_line="I crack a smoke pellet and slip away.", summary=f"{p.name} vanishes in smoke.",
                                     directive=f"{p.name} cracks a smoke pellet: grey smoke fills the place in a breath, and when it thins {p.name} is gone from the scene, "
                                               f"a few streets or a few rooms away and unseen. Say where they come out, and stop.",
@@ -1880,15 +2155,19 @@ class FantasyGame(GameBase):
         s, p = state, state.player
         nxt, floor = sh.xp_for(p.level), sh.xp_floor(p.level)
         gold = s.item("gold").count if s.item("gold") else 0
-        met = [q for q in s.people if q.met]
-        heard = [q for q in s.people if q.heard_of and not q.met]
+        met = [q for q in s.people if q.met and not q.hidden_from_player]
+        heard = [q for q in s.people if q.heard_of and not q.met and not q.hidden_from_player]
         quest_rows = [[TableCell(text=h.title), TableCell(text=h.standing, tone="ok" if h.status == "done" else "bad" if h.status == "failed" else "info"),
                        TableCell(text=h.giver or "")] for h in s.hooks if h.status != "dealt"]
         quest_rows += [[TableCell(text=t.title), TableCell(text=t.status, tone="ok" if t.status == "resolved" else "bad" if t.status == "failed" else "info"),
                         TableCell(text="")] for t in s.threads if not t.id.startswith("hook-")]
         wounds = sorted(p.wounds, key=lambda x: -wd.WEIGHTS[x.weight])
-        sheet = [Chip(label="", value=sh.score_text(k, p.stats.get(k, 0))) for k in STATS]
+        sheet = [Chip(label="", value=sh.score_text(k, p.stats.get(k, 0), p.score_bonus.get(k, 0))) for k in STATS]
         sheet += [Chip(label="Race", value=p.race), Chip(label="Class", value=p.klass), Chip(label="Level", value=str(p.level))]
+        if p.hidden_from_others:
+            sheet.insert(0, Chip(label="", value="Hidden", tone="info"))
+        if "raging" in p.flags_on:
+            sheet.insert(0, Chip(label="", value="Raging", tone="bad"))
         if p.gender:
             sheet.append(Chip(label="Gender", value=p.gender))
         pockets = [Chip(label=it.name + (f" ×{it.count}" if it.count != 1 else ""), value=it.note or "") for it in s.inventory if it.id != "gold"]
@@ -1904,7 +2183,8 @@ class FantasyGame(GameBase):
                                Meter(label="Heat", value=p.heat, tier=p.heat_word, tone=self.HEAT_TONES.get(p.heat_word, "warn"), thresholds=[20, 50, 80])]),
             Commands(title=None, items=self.commands(s)),
             ListPanel(title="Character", items=sheet, layout="grid"),
-            ListPanel(title="Abilities", items=[Chip(label=a.name, value=a.text) for a in p.abilities], layout="stack"),
+            ListPanel(title="Abilities", items=[Chip(label=a.name, value=a.text + (" (now)" if a.while_flag and a.while_flag in p.flags_on else ""))
+                                                for a in p.abilities if a.name], layout="stack"),
             ListPanel(title="Pockets", items=[Chip(label=f"{gold} gold", value=""), *pockets], layout="stack"),
         ]
         if p.spells or p.cantrips or p.counts:

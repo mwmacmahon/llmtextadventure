@@ -80,6 +80,10 @@ class Ability(BaseModel):
     mod: int = 0
     text: str = ""
     count: str = ""                 # the id of the count it spends (second_wind, smoke_pellets, spell_slots, breath)
+    effect: str = ""                # what the engine applies (B92): damage_taken_step, sneak_attack:N, auto_hide, uncanny_dodge
+    while_flag: str = ""            # the modifier holds only while this flag is on (Rage: raging)
+    source: str = ""                # the class or race that gave it
+    part_of: str = ""               # a second trait line of a feature (Danger Sense's DEX), shown under the first
 
 
 class Count(BaseModel):
@@ -110,6 +114,7 @@ class Person(BaseModel):
     secret: str = ""
     tells: list[Tell] = Field(default_factory=list)
     hook: str = ""                  # the hook that brought them, empty for the city's own
+    hidden_from_player: bool = False   # present and unseen (an ambusher in the fog, a pickpocket at the next table; B92, §7c)
 
     @property
     def attitude_word(self) -> str:
@@ -150,9 +155,35 @@ class Player(BaseModel):
     heat_day: int = 0               # the last day heat fell by itself
     paid_threads: list[str] = Field(default_factory=list)   # invented threads already paid their XP
     downs: int = 0                  # times downed and lived: the survived cost rotates by it
+    # the classes (B92, D175)
+    kit: list[str] = Field(default_factory=list)            # the kit picked at creation, in words
+    expertise: list[str] = Field(default_factory=list)      # the Rogue's two skills
+    score_bonus: dict[str, int] = Field(default_factory=dict)   # an odd score point from a stat raise (+1 to a score is half a modifier)
+    hidden_from_others: bool = False                        # the player's hidden flag: set by a hide, cleared by an attack, a loud act, talk
+    flags_on: list[str] = Field(default_factory=list)       # a feature's flag while it holds (raging): ends with the scene
+    scene_start: int = 0                                    # the clock (absolute minutes) the scene began
+    scene_place: str = ""
+    dodge_scene: int = -1                                   # the scene_start of the scene Uncanny Dodge was used in
+    turn_notes: list[str] = Field(default_factory=list)     # what a class feature did to this turn's rows (Rage, Uncanny Dodge), for the § row
+    shown_notes: list[str] = Field(default_factory=list)
+    notes_turn: int = 0
+    names_heard: list[str] = Field(default_factory=list)    # secret names said aloud in the player's hearing (the leak check's)
 
     def count(self, cid: str) -> Count | None:
         return next((c for c in self.counts if c.id == cid), None)
+
+    def score(self, stat: str) -> int:
+        return 10 + 2 * self.stats.get(stat, 0) + self.score_bonus.get(stat, 0)
+
+    def effect(self, name: str) -> int:
+        """The strongest level of an effect the sheet carries: 1 for `auto_hide`, 2 for `sneak_attack:2`, 0 for none."""
+        best = 0
+        for a in self.abilities:
+            for e in (a.effect or "").split(","):
+                k, _, n = e.strip().partition(":")
+                if k == name:
+                    best = max(best, int(n) if n.isdigit() else 1)
+        return best
 
     def has_condition(self, name: str) -> bool:
         return any(c.name == name for c in self.conditions) or any(w.words == name for w in self.wounds)

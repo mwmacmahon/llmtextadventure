@@ -3,18 +3,21 @@ import { api, type GameInfo, type InstanceSummary, type SetupField, type SetupOp
 import { ago, countsLine, endingShort, originMark } from "../saves";
 import { SaveCard } from "./SaveCard";
 
-type Field = { key: string; plain: boolean; kind: "select" | "text" | "textarea"; label: string; hint: string; required: boolean; options: SetupOption[]; initial: string };
+type Field = {
+  key: string; plain: boolean; kind: "select" | "text" | "textarea" | "checks"; label: string; hint: string; required: boolean;
+  options: SetupOption[]; initial: string; showIf: Record<string, string>; pick: number;
+};
 
 // Each setup key as one shape: the plain list is a select labelled by its key (station, noir); a field keeps its kind.
 // The engine appends its own Difficulty select to every game's fields.
 function fieldsOf(g: GameInfo): Field[] {
   return Object.entries(g.setup).map(([key, spec]) => {
-    if (Array.isArray(spec)) return { key, plain: true, kind: "select", label: key.charAt(0).toUpperCase() + key.slice(1), hint: "", required: false, options: spec, initial: spec[0]?.id ?? "" };
+    if (Array.isArray(spec)) return { key, plain: true, kind: "select", label: key.charAt(0).toUpperCase() + key.slice(1), hint: "", required: false, options: spec, initial: spec[0]?.id ?? "", showIf: {}, pick: 0 };
     const f = spec as SetupField;
     const options = (f.options ?? []).map((o) => (typeof o === "string" ? { id: o, name: o } : o));
     const kind = f.kind ?? "select";
     const initial = f.default ?? (kind === "select" ? options[0]?.id ?? "" : "");
-    return { key, plain: false, kind, label: f.label || key, hint: f.hint ?? "", required: !!f.required, options, initial };
+    return { key, plain: false, kind, label: f.label || key, hint: f.hint ?? "", required: !!f.required, options, initial, showIf: f.show_if ?? {}, pick: f.pick ?? 0 };
   });
 }
 
@@ -47,9 +50,12 @@ export function GamePage({ name }: { name: string }) {
   if (missingGame) return <div className="lobby"><h1>No such game</h1><p className="muted">There is no game called “{name}” here. <a className="link" href="#/">All games</a></p></div>;
   if (!game || !saves) return <div className="lobby">{err ?? "loading…"}</div>;
 
-  const fields = fieldsOf(game);
+  const all = fieldsOf(game);
   const valueOf = (f: Field) => values[f.key] ?? f.initial;
-  const missing = fields.filter((f) => f.required && !valueOf(f).trim());
+  // a field with show_if is for one class (its kit, its Expertise): shown and sent only when that class is picked (B92)
+  const fields = all.filter((f) => Object.entries(f.showIf).every(([k, v]) => { const o = all.find((x) => x.key === k); return o ? valueOf(o) === v : false; }));
+  const ticked = (f: Field) => valueOf(f).split(",").filter(Boolean);
+  const missing = fields.filter((f) => (f.required && !valueOf(f).trim()) || (f.kind === "checks" && f.pick > 0 && ticked(f).length !== f.pick));
 
   async function start() {
     setErr(null);
@@ -66,8 +72,8 @@ export function GamePage({ name }: { name: string }) {
     <section className="new-game" key="new">
       <h2>New game</h2>
       <div className="game">
-        {fields.map((f) => (
-          <label key={f.key} className="setup-field">
+        {fields.map((f) => { const Wrap = f.kind === "checks" ? "div" : "label"; return (
+          <Wrap key={f.key} className="setup-field">
             <span>{f.label}</span>
             {f.kind === "select" ? (
               <select value={valueOf(f)} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}>
@@ -75,13 +81,26 @@ export function GamePage({ name }: { name: string }) {
                   <option key={o.id} value={o.id}>{o.name}</option>
                 ))}
               </select>
+            ) : f.kind === "checks" ? (
+              <span className="setup-checks">
+                {f.options.map((o) => {
+                  const on = ticked(f).includes(o.id);
+                  const full = !on && f.pick > 0 && ticked(f).length >= f.pick;
+                  return (
+                    <button type="button" key={o.id} className={`check-chip${on ? " on" : ""}`} disabled={full} aria-pressed={on}
+                      onClick={() => setValues({ ...values, [f.key]: (on ? ticked(f).filter((x) => x !== o.id) : [...ticked(f), o.id]).join(",") })}>
+                      {o.name}
+                    </button>
+                  );
+                })}
+              </span>
             ) : f.kind === "textarea" ? (
               <textarea rows={4} value={valueOf(f)} placeholder={f.hint || undefined} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })} />
             ) : (
               <input type="text" value={valueOf(f)} placeholder={f.hint || undefined} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })} />
             )}
-          </label>
-        ))}
+          </Wrap>
+        ); })}
         {/* Reserved: the game's mods as checkboxes go here, under the setup fields (the mods design). Empty on purpose. */}
         <div className="mods-slot" data-slot="mods" />
         <button className="primary" onClick={start} disabled={missing.length > 0} title={missing.length ? `Fill in: ${missing.map((f) => f.label).join(", ")}` : undefined}>

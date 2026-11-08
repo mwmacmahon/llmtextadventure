@@ -258,7 +258,8 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
               player: str = "the player", cost_for: Callable[[dict, str, str], dict | None] | None = None,
               consequence_for: Callable[[dict, str, str, dict | None], dict | None] | None = None,
               lethal_for: Callable[[dict, str], bool] | None = None, offset: int = 0,
-              holds_back: Callable[[str], str | None] | None = None) -> CallResult:
+              holds_back: Callable[[str], str | None] | None = None,
+              note_for: Callable[[dict, str], str] | None = None) -> CallResult:
     stat = call.stat
     if stat not in stats:
         if fallback_stat and fallback_stat in stats:
@@ -303,7 +304,8 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
         data["cost"] = {k: cost[k] for k in ("kind", "fact", "detail") if cost.get(k)}
     text = (f"[ENGINE] Check: {stat}, {difficulty.replace('_', ' ')} difficulty" + (f", against {target}" if target else "") +
             f". Rolled {res.roll}{sign} = {res.total} against {res.target}: {outcome_words(res.outcome)}. "
-            "Play that in the story; never soften or reverse it, and never mention dice, numbers or how well it rolled." + tail)
+            "Play that in the story; never soften or reverse it, and never mention dice, numbers or how well it rolled."
+            + ((note_for(data, label) or "") if note_for else "") + tail)
     causes = [target] if target and res.outcome in ("success", "huge_success", "critical_success") else []
     return CallResult(text=text, mechanic=render(res), data=data, causes=causes)
 
