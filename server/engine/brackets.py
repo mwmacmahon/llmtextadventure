@@ -261,7 +261,10 @@ def _parse_new(rest: str, raw: str) -> Declaration:
 
 # ---- whole texts ------------------------------------------------------------------
 
-_DECL_RE = re.compile(r"\[\[(.*?)\]\][ \t]*\n?", re.S)
+# A16 (D145): a note's trailing parenthesised word on the same line ("[[Frank carries torch]] (false)") goes with it
+TRAIL = r"[ \t]*\([A-Za-z][\w ]{0,24}\)[ \t]*(?=\n|$)"
+_TRAIL_RE = re.compile(TRAIL)
+_DECL_RE = re.compile(r"\[\[(.*?)\]\](?:" + TRAIL + r")?[ \t]*\n?", re.S)
 _CALL_RE = re.compile(r"<<(.*?)(?:>>|$)[ \t]*\n?", re.S)
 
 
@@ -321,20 +324,44 @@ class StreamFilter:
         self.held = ""          # text not yet released
         self.hidden = False     # inside a bracket span
         self.closer = ""
+        self.after_note = False  # a note just closed: a "(word)" ending its line goes with it (A16)
 
     def feed(self, delta: str) -> str:
         buf = self.held + delta
         self.held = ""
         out = ""
         while buf:
+            if self.after_note:
+                nl = buf.find("\n")
+                line = buf if nl < 0 else buf[:nl]
+                if not re.match(r"[ \t]*\(", line) and line.strip(" \t"):
+                    self.after_note = False                    # not a trailing word: release as usual
+                elif nl < 0 and len(buf) < 32:
+                    self.held = buf                            # undecided until the line ends
+                    buf = ""
+                    break
+                else:
+                    self.after_note = False
+                    if _TRAIL_RE.fullmatch(line):
+                        buf = buf[len(line):]
+                        if buf.startswith("\n"):
+                            buf = buf[1:]
+                    continue
+                continue
             if self.hidden:
                 j = buf.find(self.closer) if self.closer else -1
                 if j < 0:
-                    buf = ""  # swallow; a call never closes (the stream stops), a declaration closes later
+                    # swallow; a call never closes (the stream stops), a declaration closes later. A closer split across
+                    # chunks ("]" then "]") is held, or the note never closed and the rest of the stream was lost (B24)
+                    if self.closer and buf.endswith(self.closer[0]):
+                        self.held = self.closer[0]
+                    buf = ""
                     break
                 buf = buf[j + len(self.closer):]
                 if buf.startswith("\n"):
                     buf = buf[1:]
+                else:
+                    self.after_note = self.closer == CLOSE_DECL
                 self.hidden, self.closer = False, ""
                 continue
             k_decl, k_call = buf.find(OPEN_DECL), buf.find(OPEN_CALL)
@@ -360,5 +387,7 @@ class StreamFilter:
     def end(self) -> str:
         """Release anything held that was not a bracket (a lone trailing '[' or '<')."""
         tail = "" if self.hidden else self.held
-        self.held, self.hidden, self.closer = "", False, ""
+        if self.after_note and _TRAIL_RE.fullmatch(tail):
+            tail = ""
+        self.held, self.hidden, self.closer, self.after_note = "", False, "", False
         return tail

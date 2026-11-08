@@ -16,7 +16,7 @@ reports, scripts), and published pages (claude.ai artifacts, private to the owne
 
 | Page | Generator | Last regenerated | State |
 |---|---|---|---|
-| [Lowtown: Game Design](https://claude.ai/artifact/XBrdicwZAnn1SmGAtyu4xc) (noir) | `notes/design/tools/gen_noir_page.py` | 2026-11-07 | current: the D144 build (2d6 with die faces, the consequence roll and the noir table) on the capture instance, turn 24; the field tables fixed (each field its own comment); no D-numbers |
+| [Lowtown: Game Design](https://claude.ai/artifact/XBrdicwZAnn1SmGAtyu4xc) (noir) | `notes/design/tools/gen_noir_page.py` | 2026-11-07 | current: the D144 build (2d6 with die faces, the consequence roll and the noir table; health gets better only with treatment, D145) on the capture instance, turn 24; the field tables fixed (each field its own comment); no D-numbers |
 | [Station AI: Game Design](https://claude.ai/artifact/NPpFFzmeqjX35pJGqtWVeg) | `gen_station_page.py` | 2026-11-07 | current: the D144 build (2d6 plus a capability; the consequence roll, the station's table with its marks); the state shown is the shadow round 2004e52394dc, turn 39 (`STATION_IID`); no D-numbers |
 | [Before the Prose](https://claude.ai/artifact/DdYxv5pvKFXsHyWYQZBbj4) (how a turn runs, part one; was Turn Anatomy) | `capture.py` then `gen_flow_page.py` | 2026-11-07 | current: the capture instance's turn 24 on the D144 build: two staked 2d6 checks, a success and a huge failure whose consequence roll came up nothing (d100 83), the reply that says so; model labels from the ledger; no history |
 | [After the Prose](https://claude.ai/artifact/4dZUcbzdD6TbNa2w73ehKv) (how a turn runs, part two) | `gen_flow_page.py` | 2026-11-07 | current: the referee (now reading the whole narration, § lines in their tier-only copy), apply, the player's row as the player sees it (D143) and the detail behind its ▸, the referee's marked copy of a slight complication (D144), the player's ruling, on the same turn |
@@ -90,7 +90,7 @@ Regenerate: `cd notes/design/tools && ../../../server/.venv/bin/python gen_<page
 | the local-narrated 25-turn rounds of 11-02 (r11L-*) | Qwen3.8 | read per game in ISSUES P1-P7 | `notes/playtests/2026-11-02-*r11L*` (not published) |
 
 Read a round on a phone: `server/.venv/bin/python server/tools/round_read.py <transcript.md> --out <file> --title "…" --calls <call report URL>` (the call reports run 2-6 MB and the phone viewer will not open them; the light page is about a tenth the size).
-Count a round: `server/.venv/bin/python server/tools/round_counts.py <iid> ...` (D87; one table row a round). Read a round as a player: hand `server/tools/READER_BRIEF.md` to an Opus subagent (D89); the take goes to `notes/playtests/reads/`. Long rounds run one game at a time on the box (D88).
+Count a round: `server/.venv/bin/python server/tools/round_counts.py <iid> ...` (D87; one table row a round; since D145 also the late-turn formula, an opener naming the place and a closer naming the clock, the baseline for Stage 4). Read a round as a player: hand `server/tools/READER_BRIEF.md` to an Opus subagent (D89); the take goes to `notes/playtests/reads/`. Long rounds run one game at a time on the box (D88).
 Make a page: `server/.venv/bin/python server/tools/round_report.py <iid> --artifact --out <file> --title "…"`, publish the file.
 Every playtest also has a transcript `notes/playtests/<date>-<game>-<tag>.md` and a standalone `.html`.
 

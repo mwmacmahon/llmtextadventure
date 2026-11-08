@@ -24,6 +24,46 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from round_report import load  # noqa: E402
 
 SENT = re.compile(r"[^.!?\n]+[.!?]")
+# B5 (D145): the late-turn formula, the baseline Stage 4's own-prose module is measured against: an opener that names
+# the place ("In the Lab, ...", "Back at the Anchor, ...") and a closer that names the clock ("The clock reads 00:44.")
+OPENER = re.compile(r"^(?:back |still |once more |here )?(?:in|inside|at|within|on|outside|beneath|under|down in|up in|across|through)"
+                    r" (?:the )?([^,.;:\n]{2,48}),", re.I)
+CLOSER = re.compile(r"\bclock\b|\b\d{1,2}:\d{2}\b|o'clock", re.I)
+
+
+def _places(sn: dict) -> set[str]:
+    """Every place name a snapshot holds (noir's case and found places and Frank's spot; the station's world rooms)."""
+    out: set[str] = set()
+    def walk(x, key=""):
+        if isinstance(x, dict):
+            for k, v in x.items():
+                if k in ("location", "place", "within") and isinstance(v, str):
+                    out.add(v)
+                elif k in ("locations", "safe_locations") and isinstance(v, list):
+                    out.update(i for i in v if isinstance(i, str))
+                elif k == "name" and key in ("places", "found_places") and isinstance(v, str):
+                    out.add(v)
+                else:
+                    walk(v, k)
+        elif isinstance(x, list):
+            for i in x:
+                walk(i, key)
+    walk(sn)
+    return {p.strip().lower() for p in out if p and p.strip() and p.lower() not in ("unknown", "")}
+
+
+def formula(prose: str, places: set[str]) -> tuple[bool, bool]:
+    """(opener names the place, closer names the clock) for one telling, § lines left out."""
+    paras = [p.strip() for p in prose.split("\n\n") if p.strip() and not p.strip().startswith("§")]
+    if not paras:
+        return False, False
+    first = SENT.findall(paras[0])
+    head = (first[0] if first else paras[0]).strip()
+    m = OPENER.match(head)
+    opener = bool(m) and any(pl in m.group(1).lower() or m.group(1).lower() in pl for pl in places if len(pl) > 2)
+    last = SENT.findall(paras[-1])
+    closer = bool(CLOSER.search((last[-1] if last else paras[-1])))
+    return opener, closer
 
 
 def _when(s: str) -> dt.datetime:
@@ -41,6 +81,7 @@ def counts(iid: str) -> dict:
     minutes = 0
     secs, words, meters = [], [], []
     sentences: dict[str, set[int]] = {}
+    opens, closes, both = [], [], []
     for t in turns:
         row = by_turn[t]
         m = {}
@@ -77,6 +118,9 @@ def counts(iid: str) -> dict:
             if isinstance(v, (int, float)):
                 meters.append(int(v))
         if n:
+            sn = snaps.get(t - 1) or snaps.get(t) or {}
+            o, c = formula(n["text"], _places(sn))
+            opens += [t] if o else []; closes += [t] if c else []; both += [t] if (o and c) else []
             words.append(len(n["text"].split()))
             secs.append((_when(n["created"]) - _when(row["player"]["created"])).total_seconds())
             for s in SENT.findall(n["text"]):
@@ -97,12 +141,17 @@ def counts(iid: str) -> dict:
             "words_median": int(st.median(words)) if words else None, "invented": dict(invented), "invented_n": sum(invented.values()),
             "threads": threads, "levers": levers, "checks": sum(outcomes.values()), "outcomes": dict(outcomes),
             "repeated_sentences": len(repeated), "turns_with_repeat": len(set().union(*repeated.values())) if repeated else 0,
-            "repeats": sorted(repeated, key=lambda s: -len(repeated[s]))[:8]}
+            "repeats": sorted(repeated, key=lambda s: -len(repeated[s]))[:8],
+            # B5 (D145): the formula, over the round and over its second half (the late turns the reads hear it in)
+            "formula_open": len(opens), "formula_close": len(closes), "formula_both": len(both),
+            "formula_late": f"{sum(1 for t in both if t > len(turns) // 2)}/{len(turns) - len(turns) // 2}",
+            "formula_turns": {"open": opens, "close": closes}}
 
 
 COLS = [("turns", "turns"), ("ending", "ending"), ("retells", "retells"), ("forced", "FORCED"), ("rulings_n", "rulings"), ("rejected_n", "rejected"),
         ("errors", "errors"), ("minutes", "clock min"), ("meter", "meter lo-hi (last)"), ("sec_median", "s/turn med"), ("words_median", "words med"),
-        ("invented_n", "invented"), ("threads", "threads"), ("checks", "checks"), ("repeated_sentences", "repeated sent."), ("turns_with_repeat", "turns w/ repeat")]
+        ("invented_n", "invented"), ("threads", "threads"), ("checks", "checks"), ("repeated_sentences", "repeated sent."), ("turns_with_repeat", "turns w/ repeat"),
+        ("formula_open", "opener names place"), ("formula_close", "closer names clock"), ("formula_late", "both, late half")]
 
 
 def md_table(rows: list[dict]) -> str:
@@ -123,7 +172,12 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("iids", nargs="+"); ap.add_argument("--json", type=Path); ap.add_argument("--md", action="store_true")
     a = ap.parse_args()
-    rows = [counts(i) for i in a.iids]
+    rows = []
+    for i in a.iids:
+        try:
+            rows.append(counts(i))
+        except KeyError:
+            print(f"skipped {i}: not in the store", file=sys.stderr)
     if a.json:
         a.json.write_text(json.dumps(rows, indent=1, ensure_ascii=False))
     if a.md or not a.json:

@@ -97,3 +97,21 @@ def test_mechanic_lines():
     t = with_mechanic("Prose.", "Hands, hard. 6 + 2 = 8 against 15. Failure.")
     assert t.endswith("§ Hands, hard. 6 + 2 = 8 against 15. Failure.")
     assert is_mechanic_line(t.splitlines()[-1]) and not is_mechanic_line("Prose.")
+
+
+def test_a_notes_trailing_word_goes_with_it_a16():
+    """A16 (D145): "[[Frank carries torch]] (false)" left " (false)" in the prose the player read (r20L T33)."""
+    text = "He grips it.\n[[Frank carries torch]] (false)\nThe dark waits. (Not a note.)\n[[a fact]] and more text"
+    visible, items, _ = extract(text)
+    assert visible == "He grips it.\nThe dark waits. (Not a note.)\nand more text" and len(items) == 2
+    for size in (1, 2, 3, 5, 7, 40):                     # streamed in any chunking, the same words reach the player
+        f = StreamFilter()
+        out = "".join(f.feed(text[i:i + size]) for i in range(0, len(text), size)) + f.end()
+        assert "(false)" not in out and "The dark waits. (Not a note.)" in out and out.rstrip().endswith("more text")
+
+
+def test_a_closer_split_across_chunks_still_closes_b24():
+    """B24 (D145): "]" then "]" in two chunks left the note open and swallowed the rest of the stream."""
+    f = StreamFilter()
+    out = "".join(f.feed(x) for x in ("Before [[a note", "]", "]\nAfter the note.")) + f.end()
+    assert out == "Before After the note."

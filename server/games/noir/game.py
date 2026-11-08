@@ -39,6 +39,7 @@ from engine.statepath import Actor
 from .state import pocket_key, pocket_word, COUNTED, Case, Condition, FoundPlace, Hidden, Item, NoirState, Note, Person, Player, Tell
 
 HEALTH_VALUES = ["fine", "hurt", "wounded", "critical", "dead"]
+TREATED = re.compile(r"\b(treat|bandag|patch|stitch|dress(ed|es|ing)|splint|sutur|doctor|nurse|medic|heal|tend(ed|s)?\b)", re.I)
 DREAD_STEP = 25                        # a referee row moves dread by at most this (D75: meeting the thing itself is +15 to +25)
 ELDRITCH_MINUTES_PER_POINT = 2         # D75: while something wrong is in the room, +1 dread per 2 minutes (the sanity aura) ...
 ELDRITCH_TURN_CAP = 10                 # ... at most +10 a turn from it
@@ -823,6 +824,13 @@ class NoirGame(GameBase):
             w.reject("player.attitude", "attitude is a listed person's toward Frank; Frank has none", value)
             return True
         if kind == "set" and is_player and field == "health":
+            if (value in HEALTH_VALUES and p.health in HEALTH_VALUES and HEALTH_VALUES.index(value) < HEALTH_VALUES.index(p.health)
+                    and not TREATED.search(f"{ch.note} {value}")):
+                # B4 (D145): "set player.health hurt" on a wounded Frank reads "hurt" as worse, and raised him a step; health
+                # only gets better when the prose treats him (H3: nothing heals by itself), so a better word is no change
+                w.reject("player.health", f"no change: he is already {p.health}, worse than {value}; health gets better only when "
+                         "the prose treats him (a bandage, a doctor), said in the row's note", value)
+                return True
             if value in HEALTH_VALUES:
                 if w.set("player.health", p.health, value):
                     p.health = value

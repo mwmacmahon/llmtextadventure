@@ -704,3 +704,17 @@ def test_the_cards_show_where_frank_last_saw_someone_not_where_they_are(game: No
     s3, _ = apply(game, s2, ref(C(kind="move", target="player", value="Under the docks")))
     s3 = game.after_turn(s3, TurnInfo(turn=2, elapsed_minutes=1, rng=__import__("random").Random(2), applied=[]))
     assert s3.person("creature").seen_at == "Under the docks"
+
+
+def test_health_does_not_step_back_up_without_treatment(game: NoirGame):
+    """B4 (D145): r20L T33 set a wounded Frank to "hurt", reading it as worse; health only improves when treated (H3)."""
+    _, st = game.new_instance({})
+    st.player.health = "wounded"
+    s2, rep = apply(game, st, ref(C(kind="set", target="player", field="health", value="hurt")))
+    assert s2.player.health == "wounded" and [r.kind for r in rep.rejected] == ["duplicate"]
+    s3, _ = apply(game, st, ref(add("player", "health", "+hurt")))
+    assert s3.player.health == "wounded"
+    s4, rep4 = apply(game, st, ref(C(kind="set", target="player", field="health", value="hurt", note="the doctor stitched and bandaged the cut")))
+    assert s4.player.health == "hurt" and not rep4.rejected
+    s5, _ = apply(game, st, ref(C(kind="set", target="player", field="health", value="critical")))
+    assert s5.player.health == "critical"
