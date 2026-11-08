@@ -1181,6 +1181,11 @@ class Engine:
                                    "Call the check and wait for its result, or tell the attempt in plain prose with no roll."})
             log.info("engine.ruling " + logs.kv(iid=iid, turn=turn, rule="fake_check", serious=True, lines=own_lines))
 
+        crossed = _hook(game, "too_far_words", narration, default="") or ""
+        if crossed and not any(r.get("rule") == "too_far" for r in rulings):     # the owner, 11-08 night: the engine's own net
+            rulings.append({"rule": "too_far", "serious": True, "by": "engine", "what": "the telling went where this game does not go",
+                            "fix": str(getattr(game, "extra_rulings", {}).get("too_far", ""))})
+            log.info("engine.ruling " + logs.kv(iid=iid, turn=turn, rule="too_far", serious=True))
         if leaked and not any(r.get("rule") == "leak" for r in rulings):
             rulings.append({"rule": "leak", "serious": True, "by": "engine",
                             "what": "the narration uses " + ", ".join(f"'{t}'" for t in leaked) + " in the player's own voice before the player has learned it",
@@ -2365,7 +2370,7 @@ RETELL_LEADS = {
                     "everything else as it was.",
     # the fantasy's one content line (D139, D160): the referee rules it after a telling has gone past the door; the narrator
     # hears of it only here, in the retelling
-    "too_far": "The telling showed more than this game shows: {what}. {fix} Keep everything before that moment as it was.",
+    "too_far": "The telling went where this game does not go: {what}. {fix} Keep everything before that moment as it was.",
     # a problem about where someone is (the user, 11-03): the retelling must pick a place and say it, never leave it
     # unsaid; the failure mode is "not under the docks, just very clearly under the docks"
     "location": "The telling put someone somewhere the game does not allow: {what}. Where they are instead is yours to decide. "

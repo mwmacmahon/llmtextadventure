@@ -612,10 +612,10 @@ def test_a_move_into_the_greywood_sets_the_visited_flag(game: FantasyGame):
 def test_too_far_is_a_serious_ruling_with_its_fix(game: FantasyGame):
     st = new(game)
     _, _, ex = apply(game, st, C(kind="ruling", field="too_far", value="the telling followed them into the bedroom", note=""))
-    assert ex.rulings == [{"rule": "too_far", "what": "the telling followed them into the bedroom", "fix": "End the scene at the door, or at the first blow, and pick up after it.", "serious": True}]
+    assert ex.rulings == [{"rule": "too_far", "what": "the telling followed them into the bedroom", "fix": game.extra_rulings["too_far"], "serious": True}]
     from engine.pipeline import retell_note
     note = retell_note(ex.rulings)
-    assert "End the scene at the door" in note
+    assert "Cut it where it turned" in note
 
 
 async def test_a_too_far_ruling_retells_and_the_narrator_never_hears_of_it_first(engine: Engine, fake: FakeProvider):
@@ -728,3 +728,23 @@ async def test_death_by_the_pipeline(engine: Engine, fake: FakeProvider):
         assert "DEATH." in bulletin and events[-1]["data"]["ending"] and "Wren died" in events[-1]["data"]["ending"]
         again = await play(engine, iid, "I get up.")
         assert again[-1]["event"] == "error" and "over" in again[-1]["data"]["message"]
+
+def test_too_far_covers_sexual_advances_and_violence_and_the_engine_nets_the_plain_words(game: FantasyGame):
+    """The owner (11-08 night): solicitations of sex, sexual threats and assault, and no story built on sexual violence. The
+    referee's rule names them; the engine's own net catches the plain words after the fact, whatever the referee wrote."""
+    rules = game.referee_rules(new(game))
+    assert "pressing sex on someone or asking it of them" in rules and "built on sexual violence" in rules and "the player included" in rules
+    assert game.too_far_words("The bandit threatens to rape her if the ferryman does not pay.")
+    assert game.too_far_words("He forced himself on the girl.")
+    assert not game.too_far_words("The rapeseed fields gave way to reeds; the drapes were drawn.")
+    assert not game.too_far_words("Mirren laughs and pulls you under the cold water.")
+    assert "another wrong" in game.extra_rulings["too_far"]
+
+
+async def test_the_engine_net_retells_a_turn_that_names_sexual_violence(engine: Engine, fake: FakeProvider):
+    iid = engine.create_instance("fantasy", SHEET)
+    fake.canned["AssistantReading"] = [reading("I listen to the rumours at the bar.", 10)]
+    fake.script = lambda system, messages: "A drunk mutters that a gang on the Row assaulted a woman, that they raped her and nobody came."
+    events = [e async for e in engine.run_turn(iid, "I listen to the rumours at the bar.")]
+    rows = [r for r in engine.store.ledger(iid) if r["kind"] in ("rewrite", "ruling")]
+    assert any("does not go" in str(r["payload"]) for r in rows) or any("too_far" in str(e.get("data")) for e in events)

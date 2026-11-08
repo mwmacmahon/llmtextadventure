@@ -69,6 +69,8 @@ HIDE = re.compile(r"\b(hide|hiding|hidden|sneak|slip (away|off|out|past|into|beh
 SURPRISE = re.compile(r"\b(surprise|unaware|from behind|unseen|from hiding|ambush|before (he|she|they|it) (sees|notices)|sleeping|asleep)", re.I)
 WOUND_KINDS: dict[str, set[str]] = {"everything": {"str", "dex", "con"}, "sight": {"wis", "dex"}, "legs": {"str", "dex"},
                                      "hands": {"str", "dex"}, "body": {"str", "con"}, "head": {"int", "wis"}}   # B200
+SEXUAL_VIOLENCE = re.compile(r"\b(rap(e|ed|es|ing|ist|ists)|molest\w*|sexual(ly)? (assault|abus|violen|attack)\w*|"
+                             r"forc(e|es|ed|ing) (himself|herself|themselves) (on|upon)|ravish\w*|have (his|her|their) way with)\b", re.I)
 SCENE_MINUTES = 60              # a scene ends when the player moves on, rests, or an hour passes (Rage, Uncanny Dodge)
 HEAT_UP, HEAT_DOWN, HEAT_DAILY = 40, 20, 5
 HEAL_STEP = 10
@@ -192,7 +194,8 @@ class FantasyGame(GameBase):
     adjudication_schema = AssistantReadingV2
     fallback_stat = "wis"
     static_paths = ["player.name", "player.race", "player.klass", "player.gender", "player.about", "player.sheet_notes"]
-    extra_rulings = {"too_far": "End the scene at the door, or at the first blow, and pick up after it."}
+    extra_rulings = {"too_far": "Cut it where it turned (at the door, before the advance, at the first blow) and pick up after it; a job or "
+                                "thread built on it becomes another wrong."}
     consequence_sources = {"str": "table"}
     consequence_ideas = "a witness who will remember what they saw; noise that carries; the Watch hearing of it; a trail going cold"
 
@@ -530,6 +533,13 @@ class FantasyGame(GameBase):
     @staticmethod
     def _secret_name(s: FantasyState, q: Person) -> bool:
         return any(t.lower() == q.name.lower() or t.lower() in q.name.lower().split() for t in s.hidden.terms)
+
+    def too_far_words(self, prose: str) -> str:
+        """The engine's own check on the telling after the fact (the owner, 11-08 night: "make sure the model doesn't go invent
+        something really fucked up like that"; B209: the referee seldom rules unprompted). Words that name sexual violence
+        outright raise too_far whatever the referee wrote; the subtler cases stay the referee's. Returns the words, or ""."""
+        m = SEXUAL_VIOLENCE.search(prose or "")
+        return m.group(0) if m else ""
 
     def late_conflicts(self, state: FantasyState, prose: str) -> list[Rejection]:
         """A person still unseen by the player (B92, §7c) named in the telling before the referee marked them seen: an early
@@ -887,9 +897,12 @@ class FantasyGame(GameBase):
             "the engine closes the quest. When the player plainly says no to a quest's job (a clear refusal to whoever offered it; not 'maybe "
             "later', haggling over pay, or simply leaving), write set <its hook- thread id>.declined true; when they say they will do the "
             "job (at once, or after turning it down), write set <its hook- thread id>.declined false.",
-            "ruling too_far (serious): the telling showed more than this game shows: a bedroom scene past the door, or a torture told blow by blow. "
-            "value = what it showed, in a few words; note = where to cut and where to pick up: at the door for a bedroom; at the first blow for a "
-            "torture, picking up with what it left.",
+            "ruling too_far (serious): the telling went where this game does not go: a sex act, anywhere, or a bedroom scene past the door; "
+            "anyone pressing sex on someone or asking it of them, in words or by force, or threatening it, the player included; a sexual "
+            "assault; a torture told blow by blow; or a job, a rumour, a threat or a thread built on sexual violence. value = what it showed, "
+            "in a few words; note = where to cut and how it goes instead: at the door for a bedroom; before the advance, which is never made "
+            "or is turned away; at the first blow for a torture, picking up with what it left; a job or thread built on it turned to another "
+            "wrong (a theft, a killing, a disappearance).",
             "",
             "Flags you may set (flag <name> value=true) when the narration clearly establishes them:",
         ]
