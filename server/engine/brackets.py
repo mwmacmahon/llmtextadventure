@@ -35,7 +35,7 @@ OPEN_DECL, CLOSE_DECL = "[[", "]]"
 STOP_SEQUENCES = [CLOSE_CALL]
 MECHANIC_MARK = "§"
 
-CallVerb = Literal["CHECK", "LOOK", "ODDS"]
+CallVerb = Literal["CHECK", "LOOK", "ODDS", "ENEMY", "HAZARD"]
 DeclVerb = Literal["NEW", "MOVED", "SET", "LEARNED", "GONE"]
 
 DIFFICULTY_WORDS = {
@@ -135,6 +135,15 @@ def parse_call(text: str) -> Call:
     rest = rest.strip()
     if verb in ("CHECK", "CHALLENGE"):
         return _parse_check(rest, inner)
+    if verb == "ENEMY":                                  # B206 (D178): <<ENEMY mirren hold>>: a hostile acts; the engine rolls it
+        words = rest.replace('"', "").split()
+        if not words:
+            raise BracketError("ENEMY needs who acts")
+        return Call(verb="ENEMY", raw=inner, ref=words[0].strip(".,").lower(), stat=(words[1].lower() if len(words) > 1 else ""))
+    if verb == "HAZARD":                                 # B206 (D178): <<HAZARD cold_water>>: a danger reaches the player
+        if not rest:
+            raise BracketError("HAZARD needs the hazard's name")
+        return Call(verb="HAZARD", raw=inner, ref=rest.strip().strip('"').strip(".,"))
     if verb == "LOOK":
         if not rest:
             raise BracketError("LOOK needs an id or a name")

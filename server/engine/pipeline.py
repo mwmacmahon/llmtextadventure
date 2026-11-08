@@ -899,7 +899,7 @@ class Engine:
         calls_block: dict[str, Any] = {}
         try:
             # the narrator may stop to roll or look up (<<CHECK>>, <<LOOK>>) and writes notes ([[…]]) the player never sees (DESIGN2 §4b, §5)
-            system = system + "\n\n" + NARRATOR_PROTOCOL
+            system = system + "\n\n" + NARRATOR_PROTOCOL + (WORLD_PROTOCOL if hasattr(game, "world_call") else "")
             if not role.stop_sequences:
                 role = role.model_copy(update={"stop_sequences": list(STOP_SEQUENCES)})
             expected = self.expected_chars(iid)
@@ -933,6 +933,10 @@ class Engine:
                            "notes": ndone.notes, "exchange": ndone.exchange, "told": [t["label"] + ": " + t["outcome"] for t in told],
                            "problems": ndone.problems, "causes": ndone.causes, "raw": ndone.raw,
                            "assessed_not_called": [a.label for a in res["assessments"] if not a.called]}
+            if hasattr(game, "backstop") and adj is not None and adj.kind == "action":   # B206: a hostile the prose left out acts after it
+                for b in game.backstop(state, getattr(handler, "tally", {}), rng_for(iid, turn, "backstop"), self.target_offset(game, iid)):
+                    calls_block["calls"].append(b)
+                    ledger("world", {"kind": "backstop", **{k: v for k, v in b["result"].items() if k != "verb"}, "mechanic": b["mechanic"]})
         except Exception as e:
             ledger("model_call", {"role": "narrator", "error": repr(e)})
             log.exception("step.failed " + logs.kv(iid=iid, turn=turn, step="narrate"))
@@ -1155,7 +1159,7 @@ class Engine:
         if rep_ruling:                                   # P1: the engine can see a retold turn, so it rules on it
             rulings.append(rep_ruling)
             log.info("engine.ruling " + logs.kv(iid=iid, turn=turn, rule="repetition", serious=True, of_turn=rep_ruling["of_turn"], overlap=rep_ruling["overlap"]))
-        own_lines = sum(1 for ln in narration.splitlines() if ln.strip().startswith("§")) - sum(1 for c in calls_block.get("calls", []) if c.get("mechanic"))
+        own_lines = sum(1 for ln in narration.splitlines() if ln.strip().startswith("§")) - sum(1 for c in calls_block.get("calls", []) if c.get("mechanic") and not c.get("backstop"))
         own_lines -= len(world.mechanics) if world is not None else 0      # the world's rolls are the engine's too (part four)
         if own_lines > 0:                                # P2: a § line the engine did not write is an invented roll
             rulings.append({"rule": "fake_check", "serious": True, "by": "engine",
@@ -1788,6 +1792,8 @@ class Engine:
                 round_costs.append(row)
             return cons
 
+        tally: dict[str, Any] = {"hp": 0, "acted": []}     # the world's calls this turn (B206): hit points taken so far, who acted
+
         def handler(call, n: int) -> CallResult:
             if call.verb == "CHECK":
                 return run_check(call, n, stats, resolver, rng, assessments, modifiers, render,
@@ -1797,7 +1803,12 @@ class Engine:
                                  offset=offset,
                                  holds_back=lambda target: _hook(game, "holds_back", state, target, default=None),
                                  note_for=lambda d, label: _hook(game, "check_note", state, d, label, default="") or "",
-                                 caps=getattr(game, "caps", True))
+                                 caps=getattr(game, "caps", False))
+            if call.verb in ("ENEMY", "HAZARD"):            # B206 (D178): the world's move, rolled when the prose reaches it
+                out = _hook(game, "world_call", state, call, rng_for(iid, turn, f"world:{call.verb}:{call.ref}:{n}"), offset, tally, default=None)
+                if out is None:
+                    return CallResult(text=f"[ENGINE] Nothing in this game answers {call.raw!r}. Play it without a roll.")
+                return CallResult(text="[ENGINE] " + out["text"], mechanic=out.get("mechanic", ""), data=out.get("data", {}))
             if call.verb == "LOOK":
                 text = _hook(game, "look", state, call.ref, default=None)
                 if not text:
@@ -1806,6 +1817,7 @@ class Engine:
             yes = rng.random() * call.den < call.num
             return CallResult(text=f"[ENGINE] Odds of {call.num} in {call.den}: {'YES' if yes else 'NO'}. Play it.",
                               data={"odds": [call.num, call.den], "yes": yes})
+        handler.tally = tally                              # type: ignore[attr-defined]   (the backstop reads who acted)
         return handler
 
     async def _summarize(self, game: Game, state: BaseModel, plan, iid: str | None = None) -> tuple[str, dict]:
@@ -2445,6 +2457,13 @@ def rearmed(pitems: list, new: Any, turn: int, within: int = 3) -> Any:
         if alike >= 0.5 or (who and who == (p.who or "").strip().lower() and alike >= 0.3):
             return p                     # the creature attacks again; never the creature backing off
     return None
+
+
+# B206 (D178): the games whose enemies and dangers act through the narrator's calls (the fantasy) add this to the protocol
+WORLD_PROTOCOL = ("\n  <<ENEMY id move>> and <<HAZARD name>>  when THIS TURN lists people fighting the player or dangers here: at the moment one "
+                  "of them acts or reaches the player, write the call on its own line and stop, as for a check, such as <<ENEMY mirren hold>> or "
+                  "<<HAZARD cold_water>>. The engine rolls it and tells you what happened; play that and go on. Every one THIS TURN lists as "
+                  "fighting acts once a turn.")
 
 
 def _unquiet(game: Game, state: BaseModel, adj: Any) -> str:

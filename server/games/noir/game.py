@@ -109,6 +109,8 @@ CONDITION_MODS: dict[str, dict[str, int]] = {
     "concussed": {"wits": -2, "eye": -1},
     WITHDRAWAL: {"wits": -1, "nerve": -1},
 }
+WOUND_KINDS: dict[str, set[str]] = {"everything": {"muscle", "hands"}, "sight": {"eye", "hands"}, "legs": {"muscle"},
+                                     "hands": {"hands", "muscle"}, "body": {"muscle", "nerve"}, "head": {"wits", "eye"}}   # B200
 HEALTH_MODS: dict[str, dict[str, int]] = {"hurt": {"muscle": -1}, "wounded": {"muscle": -2, "hands": -1}, "critical": {"ALL": -3}}
 
 # trait -> (stat or None for any, keywords in the check label or empty for any, modifier)
@@ -760,7 +762,12 @@ class NoirGame(GameBase):
                 v = CONDITION_MODS[c.name].get(req.stat, CONDITION_MODS[c.name].get("ALL", 0))
                 if v:
                     (fear if c.name in FEAR_CONDITIONS else mods).append(Modifier(label=c.name, value=v))
-        if p.health in HEALTH_MODS:
+        # the wounds' own modifiers (B200, the ladder) or the health word's, whichever bites harder: the same hurt, counted once
+        wmods = wd.wound_modifiers(p.wounds, req.stat, WOUND_KINDS)
+        hv = HEALTH_MODS.get(p.health, {}).get(req.stat, HEALTH_MODS.get(p.health, {}).get("ALL", 0)) if p.health in HEALTH_MODS else 0
+        if wmods and sum(m.value for m in wmods) <= hv:
+            mods.extend(wmods)
+        elif p.health in HEALTH_MODS:
             add(f"health {p.health}", HEALTH_MODS[p.health])
         tier = p.dread_tier(p.dread)
         if tier in DREAD_MODS:

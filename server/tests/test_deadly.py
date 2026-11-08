@@ -38,40 +38,103 @@ def test_armour_class_from_the_pockets(game):
     assert wo.armour_class(rogue)[0] == 10 + 3 + 1
 
 
-def test_a_hostile_strikes_every_turn_and_the_engine_takes_the_hit_points(game):
+def call(verb, ref, move=""):
+    from engine.brackets import Call
+    return Call(verb=verb, raw=f"{verb} {ref} {move}".strip(), ref=ref, stat=move)
+
+
+def test_an_enemy_call_rolls_against_armour_and_lands_a_solid_blow(game):
+    """B206: <<ENEMY maud strike>> rolled when the prose reaches it; the hit points land after the prose."""
     st = new(game)
     foe(st, moves=[{"kind": "strike", "bonus": 30, "damage": "solid", "harm": "cleaver"}])
-    s2, w = game.world_turn(st, act("I look for the door"), "I look for the door", Dice(12, 50), 3, 2)
-    assert s2.player.hp < st.player.hp and "hp" in w.skip
-    assert w.mechanics and "cleaver" in w.mechanics[0] and "a hit" in w.mechanics[0]
-    assert any("lands on Wren" in d for d in w.directives) and w.rows[0]["kind"] == "enemy"
-    miss_st = new(game)
-    foe(miss_st, moves=[{"kind": "strike", "bonus": 0}])
-    s3, w3 = game.world_turn(miss_st, act("I wait"), "I wait", Dice(1), 3, 2)
-    assert s3.player.hp == miss_st.player.hp and "a miss" in w3.mechanics[0]
+    tally = {"hp": 0, "acted": []}
+    out = game.world_call(st, call("ENEMY", "maud", "strike"), Dice(12, 50), 2, tally)
+    assert "cleaver" in out["text"] and "a solid blow" in out["text"] and out["data"]["harm"] in (3, 4, 5) and tally["acted"] == ["maud"]
+    assert "against armour 17" in out["mechanic"]
+    after = game.after_turn(st, info_calls(2, [out["data"]]))
+    assert after.player.hp == st.player.hp - out["data"]["harm"] and not after.player.fate
+    miss = game.world_call(st, call("ENEMY", "maud"), Dice(1), 2, {"hp": 0})
+    assert "misses" in miss["text"] and not miss["data"].get("harm")
 
 
-def test_people_without_moves_strike_by_default_once_fought(game):
+def info_calls(turn, calls):
+    from engine.game import TurnInfo
+    return TurnInfo(turn=turn, elapsed_minutes=1, rng=random.Random(0), calls=[dict(c) for c in calls])
+
+
+def test_a_hazard_call_lands_a_scrape_and_a_condition(game):
     st = new(game)
-    q = st.person("maud")
-    q.location = st.player.location
-    s2, w = game.world_turn(st, act("I punch Maud", entities=["maud"]), "I punch Maud", Dice(20, 0), 3, 2)
-    assert "maud" in s2.player.fighting and w.rows and w.rows[0]["move"] == "strike"
+    st.player.location = "Lake Ambercold"
+    st.city.hazards["Lake Ambercold"] = [{"id": "cold_water", "when": "in the water", "stat": "con", "difficulty": "high", "armour_penalty": -2,
+                                          "fail": {"hp": "scrape", "condition": "chilled"}}]
+    out = game.world_call(st, call("HAZARD", "cold_water"), Dice(5, 0), 2, {"hp": 0})
+    assert out["data"]["step"] == "scrape" and out["data"]["condition"] == "chilled"
+    assert "armour in in the water -6" in str(out) or out["data"]["outcome_player"] in ("failure", "huge_failure", "critical_failure")
+    after = game.after_turn(st, info_calls(3, [out["data"]]))
+    assert after.player.has_condition("chilled") and after.player.hp == st.player.hp - out["data"]["harm"]
+
+
+def test_a_lethal_hazard_kills_outright_with_its_cause_on_the_stone(game):
+    st = new(game)
+    st.player.location = "The Mire"
+    st.city.hazards["The Mire"] = [{"id": "sinkhole", "when": "in the sinkhole", "stat": "dex", "difficulty": "very_high",
+                                     "harm": "the black mud of the Mire", "fail": {"hp": "lethal"}}]
+    out = game.world_call(st, call("HAZARD", "sinkhole"), Dice(2), 2, {"hp": 0})
+    assert out["data"]["kills"] and "kills" in out["text"]
+    after = game.after_turn(st, info_calls(4, [out["data"]]))
+    assert after.player.fate == "dead" and game.dead(after) and after.flags.get("ending")
+    assert game.cause_of_death(after, {}) == "death by the black mud of the Mire"
+
+
+def test_the_backstop_rolls_a_hostile_the_prose_left_out_and_the_next_turn_opens_on_it(game):
+    st = new(game)
+    foe(st, moves=[{"kind": "strike", "bonus": 30, "damage": "scrape", "harm": "fists"}])
+    calls = game.backstop(st, {"hp": 0, "acted": []}, Dice(15, 0), 2)
+    assert len(calls) == 1 and calls[0]["backstop"] and calls[0]["result"]["harm"] in (1, 2)
+    after = game.after_turn(st, info_calls(2, [calls[0]["result"]]))
+    assert after.player.hp < st.player.hp and after.player.carry_lines
+    assert any("Since the last telling" in d for d in game.turn_directives(after))
+    assert game.backstop(st, {"hp": 0, "acted": ["maud"]}, Dice(15), 2) == []
+
+
+def test_a_fight_with_two_hostiles_lists_both_and_takes_two_calls(game):
+    st = new(game)
+    foe(st, "maud", moves=[{"kind": "strike", "bonus": 30, "damage": "scrape", "harm": "a ladle"}])
+    foe(st, "hazel", moves=[{"kind": "strike", "bonus": 30, "damage": "scrape", "harm": "an arrow"}])
+    said = " ".join(game.turn_directives(st))
+    assert "<<ENEMY" in said and "maud" in said and "hazel" in said
+    tally = {"hp": 0, "acted": []}
+    a = game.world_call(st, call("ENEMY", "maud"), Dice(15, 0), 2, tally)
+    b = game.world_call(st, call("ENEMY", "hazel"), Dice(15, 0), 2, tally)
+    assert tally["acted"] == ["maud", "hazel"] and game.backstop(st, tally, Dice(15), 2) == []
+    after = game.after_turn(st, info_calls(2, [a["data"], b["data"]]))
+    assert after.player.hp == st.player.hp - a["data"]["harm"] - b["data"]["harm"]
 
 
 def test_a_hold_that_wins_opens_drowning_and_the_countdown_kills(game):
     st = new(game)
-    foe(st, "mirren" if st.person("mirren") else "maud",
-        moves=[{"kind": "hold", "bonus": 4, "difficulty": "very_high", "peril": "drowning", "harm": "cold hands round the ankles"}])
-    s2, w = game.world_turn(st, act("I swim for the skiff"), "I swim for the skiff", Dice(2), 3, 2)
+    foe(st, moves=[{"kind": "hold", "bonus": 4, "difficulty": "very_high", "peril": "drowning", "harm": "cold hands round the ankles"}])
+    out = game.world_call(st, call("ENEMY", "maud", "hold"), Dice(2), 2, {"hp": 0})
+    assert out["data"]["peril"] == "drowning" and "what does Wren do?" in out["text"]
+    s2 = game.after_turn(st, info_calls(3, [out["data"]]))
     assert s2.player.peril is not None and s2.player.peril.kind == "drowning" and s2.player.peril.turns_left == 2
-    assert any("what does Wren do?" in d for d in w.directives)
     s3, w3 = game.world_turn(s2, act("I kick for the surface"), "I kick for the surface", Dice(2, 2), 4, 2)
-    assert s3.player.peril.turns_left == 1 and "moment 1" in str(w3.rows) or s3.player.peril.step == 1
+    assert s3.player.peril.turns_left == 1
     s4, w4 = game.world_turn(s3, act("I kick for the surface"), "I kick for the surface", Dice(2, 2), 5, 2)
     assert s4.player.fate == "dead" and s4.player.hp == 0 and s4.player.peril is None and "DEATH" in w4.directives[0]
     end = game.after_turn(s4, info(turn=5))
-    assert end.flags.get("ending") and game.dead(end)
+    assert end.flags.get("ending") and game.dead(end) and game.cause_of_death(end, {}).startswith("drowned")
+
+
+def test_zero_hit_points_is_death_with_no_roll_and_no_carry(game):
+    """B205 (D178): no lethal roll, no carry to the Temple, no waking; Hazel devoted and present does nothing today."""
+    st = new(game)
+    hazel = st.person("hazel")
+    hazel.attitude, hazel.location = 3, st.player.location
+    st.player.with_them = ["hazel"]
+    st.player.hp = 0
+    out = game.after_turn(st, info(turn=4))
+    assert out.player.fate == "dead" and not out.player.carried
 
 
 def test_in_a_peril_an_attempt_that_is_no_escape_ends_it(game):
@@ -88,21 +151,15 @@ def test_a_peril_success_with_an_escape_gets_out(game):
     assert s2.player.peril is None and not s2.player.fate
 
 
-def test_a_chosen_death_lands_and_a_devoted_carrier_carries(game):
+def test_a_chosen_death_lands(game):
     st = new(game)
     s2, w = game.world_turn(st, act("I drown myself"), "I stop fighting and let the water take me", Dice(), 3, 2)
-    assert s2.player.fate == "dead" and "DEATH" in w.directives[0]
+    assert s2.player.fate == "dead" and "DEATH" in w.directives[0] and game.cause_of_death(s2, {}).startswith("chose to die")
     st2 = new(game)
     hazel = st2.person("hazel")
     hazel.attitude, hazel.location = 3, st2.player.location
     st2.player.with_them = ["hazel"]
-    s3, w3 = game.world_turn(st2, act("I drown myself"), "I drown myself", Dice(), 3, 2)
-    assert s3.player.fate == "carried" and "Hazel" in s3.player.fate_note
-    st3 = new(game)
-    tam = st3.person("tam")
-    tam.attitude, tam.location = -1, st3.player.location
-    st3.player.with_them = ["tam"]
-    assert game.world_turn(st3, act("I drown myself"), "I drown myself", Dice(), 3, 2)[0].player.fate == "dead"
+    assert game.world_turn(st2, act("I drown myself"), "I drown myself", Dice(), 3, 2)[0].player.fate == "dead"     # B205: no carry
 
 
 def test_a_failure_in_a_fight_costs_hit_points(game):
@@ -118,16 +175,14 @@ def test_a_failure_in_a_fight_costs_hit_points(game):
     assert after.player.hp == st.player.hp - data["harm"]
 
 
-async def test_the_pipeline_rolls_for_the_enemy_and_shows_it(engine, fake):
+async def test_the_pipeline_backstops_a_hostile_the_fake_prose_never_called(engine, fake):
     iid = engine.create_instance("fantasy", SHEET)
     st = state_of(engine, iid)
     q = st.person("maud")
     q.location, q.attitude, q.moves = st.player.location, -3, [{"kind": "strike", "bonus": 40, "damage": "serious", "harm": "cleaver"}]
     engine.store.save_snapshot(iid, 0, st.model_dump(mode="json"))
     fake.canned["AssistantReading"] = [reading("I back away from Maud.", 1)]
-    events = await play(engine, iid, "I back away from Maud.")
+    await play(engine, iid, "I back away from Maud.")
     after = state_of(engine, iid)
-    assert after.player.hp < st.player.hp
-    assert any(r["kind"] == "world" for r in engine.store.ledger(iid))
-    mech = [e["data"]["text"] for e in events if e["event"] == "mechanic"]
-    assert any("cleaver" in m for m in mech)
+    assert after.player.hp < st.player.hp and after.player.carry_lines
+    assert any(r["kind"] == "world" and r["payload"].get("kind") == "backstop" for r in engine.store.ledger(iid))

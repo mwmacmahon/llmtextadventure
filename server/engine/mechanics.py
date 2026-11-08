@@ -48,7 +48,7 @@ class CheckRequest(BaseModel):
     base: int = 0                  # the stat's value
     modifiers: list[Modifier] = Field(default_factory=list)
     offset: int = 0                # the game's target offset (D168): every target moves by it
-    caps: bool = True              # B103 (D176): a game may turn the modifier caps off (the fantasy: stacked penalties count)
+    caps: bool = False             # B200 (D178): no modifier caps on any game; True keeps the old D168 caps for a replay of old rounds
 
     @property
     def total_modifier(self) -> int:

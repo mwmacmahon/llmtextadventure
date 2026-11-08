@@ -19,13 +19,18 @@ from pydantic import BaseModel
 
 from .mechanics import RESOLVERS, CheckRequest, CheckResult, Modifier
 
-Weight = Literal["minor", "serious", "grave"]
-WEIGHTS: dict[str, int] = {"minor": 1, "serious": 2, "grave": 3}
-STEP_DOWN: dict[str, str | None] = {"grave": "serious", "serious": "minor", "minor": None}
+Weight = Literal["minor", "moderate", "serious", "grave", "ruinous"]
+# The wound ladder (B200, D178; supersedes D157's three weights): five steps, each with its modifier on the rolls the wound
+# bears on. Minor is a warning (a word, no modifier); a ruinous wound (the back, both legs, blinded) makes most physical
+# checks nearly impossible (the owner: "if Frank has a shattered back, almost all physical checks should be virtually
+# impossible due to the modifier"). No caps on any game (B200): these land in full.
+WEIGHTS: dict[str, int] = {"minor": 1, "moderate": 2, "serious": 3, "grave": 4, "ruinous": 5}
+WOUND_MODS: dict[str, int] = {"minor": 0, "moderate": -1, "serious": -2, "grave": -4, "ruinous": -5}
+STEP_DOWN: dict[str, str | None] = {"ruinous": "grave", "grave": "serious", "serious": "moderate", "moderate": "minor", "minor": None}
 MAX_WOUNDS = 6
 
 # the noir ladder (the design note's placeholder bands): the sum of weights -> the health word
-HEALTH_LADDER: list[tuple[int, str]] = [(0, "fine"), (1, "hurt"), (3, "wounded"), (5, "critical")]
+HEALTH_LADDER: list[tuple[int, str]] = [(0, "fine"), (1, "hurt"), (4, "wounded"), (7, "critical")]   # the five weights' sums (B200)
 HEALTH_ORDER = ["fine", "hurt", "wounded", "critical", "dead"]
 
 
@@ -44,6 +49,8 @@ INJURY = re.compile(
     r"broken|fractur\w*|cracked|split lip|torn|concuss\w*|bitten|claw(ed)?|lacerat\w*|dislocat\w*|scar(red)?|maim\w*|"
     r"twisted (ankle|knee|wrist)|black eye|missing (an? )?(eye|hand|ear|finger|tooth|teeth)|lost (an? )?(eye|hand|ear|finger))\b", re.I)
 _SERIOUS = re.compile(r"\b(deep|bad(ly)?|serious\w*|broken|fractur\w*|stab\w*|shot|gash\w*|dislocat\w*|concuss\w*|bleeding (badly|heavily))\b", re.I)
+_MODERATE = re.compile(r"\b(bad (leg|knee|ankle|arm|shoulder|wrist|hand)|twisted|sprain\w*|wrench\w*|bruised ribs|limp\w*|cracked rib)\b", re.I)
+_RUINOUS = re.compile(r"\b(broken (back|spine|neck)|spine|both legs|blind(ed)?\b|paraly[sz]\w*|crushed (chest|pelvis|hips?))", re.I)
 _GRAVE = re.compile(r"\b(grave\w*|mortal\w*|gut[- ]?(wound|shot|stab)|through the (chest|belly|lung|gut)|shattered|severed|"
                     r"lost (an? )?(eye|hand|arm|leg)|missing (an? )?(eye|hand|arm|leg))\b", re.I)
 
@@ -54,12 +61,45 @@ def is_injury(text: str) -> bool:
 
 
 def weight_of(text: str, default: Weight = "minor") -> Weight:
-    """The weight the words name: grave (mortal, severed, an eye lost), serious (deep, broken, stabbed), else `default`."""
+    """The weight the words name (B200): ruinous (a broken back, both legs, blinded), grave (mortal, severed, shattered,
+    an eye lost), serious (deep, broken, stabbed), moderate (a bad leg, twisted, sprained), else `default`."""
+    if _RUINOUS.search(text or ""):
+        return "ruinous"
     if _GRAVE.search(text or ""):
         return "grave"
     if _SERIOUS.search(text or ""):
         return "serious"
+    if _MODERATE.search(text or ""):
+        return "moderate"
     return default
+
+
+# What a wound bears on (B200): its part, from its words when no part was written, to a kind of check. A game maps the
+# kinds to its own stats (the fantasy's str/dex/con, noir's muscle/hands).
+_PARTS: list[tuple[str, re.Pattern]] = [
+    ("everything", re.compile(r"\b(back|spine|both legs|paraly)", re.I)),
+    ("sight", re.compile(r"\b(eye|eyes|blind)", re.I)),
+    ("legs", re.compile(r"\b(leg|legs|knee|ankle|foot|feet|hip|thigh|shin)", re.I)),
+    ("hands", re.compile(r"\b(hand|hands|wrist|finger|fingers|arm|arms|shoulder|elbow|palm)", re.I)),
+    ("body", re.compile(r"\b(rib|ribs|chest|gut|belly|stomach|side|lung)", re.I)),
+    ("head", re.compile(r"\b(head|skull|brow|face|jaw|concuss)", re.I)),
+]
+
+
+def bears_on(w: Wound) -> str:
+    text = f"{w.part} {w.words}"
+    return next((k for k, pat in _PARTS if pat.search(text)), "body")
+
+
+def wound_modifiers(wounds: list[Wound], stat: str, kinds: dict[str, set[str]]) -> list[Modifier]:
+    """The modifiers the wounds put on a check of `stat` (B200): each wound's ladder value where its kind bears on the
+    stat (`kinds`: the game's map from a kind to its stats). Minor wounds are words only."""
+    out = []
+    for w in wounds:
+        v = WOUND_MODS.get(w.weight, 0)
+        if v and stat in kinds.get(bears_on(w), set()):
+            out.append(Modifier(label=f"{w.words} ({w.weight})", value=v))
+    return out
 
 
 def add_wound(wounds: list[Wound], new: Wound, cap: int = MAX_WOUNDS) -> tuple[list[Wound], Wound | None]:
@@ -136,7 +176,7 @@ Fate = Literal["dead", "carried", "survived"]
 
 
 def lethal_roll(rng: Any, base: int, modifiers: list[Modifier] | None = None, *, difficulty: str = "high",
-                resolver: str = "dice_d20", label: str = "hold on to life", stat: str = "con", offset: int = 0, caps: bool = True) -> CheckResult:
+                resolver: str = "dice_d20", label: str = "hold on to life", stat: str = "con", offset: int = 0, caps: bool = False) -> CheckResult:
     """The engine's own check when a body reaches the floor: the game's resolver, the stat and modifiers capped as every
     check is (B1), against `difficulty`. Seeded by the caller (the turn's rng), so an undo replays it."""
     req = CheckRequest(id="lethal", label=label, stat=stat, difficulty=difficulty, base=base, offset=offset, caps=caps)  # type: ignore[arg-type]

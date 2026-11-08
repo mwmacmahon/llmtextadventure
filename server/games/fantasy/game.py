@@ -67,6 +67,8 @@ LOUD = re.compile(r"\b(shout|yell|scream|roar|smash|crash|break down|kick (in|do
 HIDE = re.compile(r"\b(hide|hiding|hidden|sneak|slip (away|off|out|past|into|behind)|duck (into|behind|out)|melt into|vanish|"
                   r"keep (out of sight|to the shadows)|unseen|stay out of sight|creep|skulk)", re.I)
 SURPRISE = re.compile(r"\b(surprise|unaware|from behind|unseen|from hiding|ambush|before (he|she|they|it) (sees|notices)|sleeping|asleep)", re.I)
+WOUND_KINDS: dict[str, set[str]] = {"everything": {"str", "dex", "con"}, "sight": {"wis", "dex"}, "legs": {"str", "dex"},
+                                     "hands": {"str", "dex"}, "body": {"str", "con"}, "head": {"int", "wis"}}   # B200
 SCENE_MINUTES = 60              # a scene ends when the player moves on, rests, or an hour passes (Rage, Uncanny Dodge)
 HEAT_UP, HEAT_DOWN, HEAT_DAILY = 40, 20, 5
 HEAL_STEP = 10
@@ -155,7 +157,7 @@ def city_from(sc: dict) -> City:
                 city_description=city.get("description", ""), locations=list(city.get("locations") or []),
                 safe_locations=list(city.get("safe_locations") or []), narrator_flags=dict(sc.get("narrator_flags") or {}),
                 gated=dict(sc.get("gated_places") or {}), aliases={k.lower(): v for k, v in (sc.get("place_aliases") or {}).items()},
-                country=list(sc.get("country") or []))
+                country=list(sc.get("country") or []), hazards={k: list(v or []) for k, v in (sc.get("hazards") or {}).items()})
 
 
 class FantasyGame(GameBase):
@@ -174,7 +176,6 @@ class FantasyGame(GameBase):
     })
     resolver = "dice_d20"
     sleep_by_command = True    # the owner (11-08 evening): only the Rest command makes a turn a night; "I go sleep at <a far place>" is a move
-    caps = False               # B103 (the owner, 11-08 evening): no modifier floors or caps; a drowning dwarf in mail rolls as one
     target_offset = 2          # B83 (the owner, 11-08): one Hard step on the d20; a +2 character passes medium 55%, not 65%
     authority = AUTHORITY
     events_path = "hidden.events"
@@ -731,6 +732,19 @@ class FantasyGame(GameBase):
                        f"waking and the price in the priest's own words, and stop.")
         if p.location == "Unknown":
             out.append(self.LOST_TRACK.replace("{name}", p.name))
+        if p.carry_lines and not p.fate:                 # the backstop's blows (B206): the turn opens on them
+            out.append("Since the last telling: " + " ".join(p.carry_lines) + " Open on it.")
+        foes = wo.present_enemies(self, s)
+        if foes and not p.fate:                          # B206 (D178): every hostile acts once a turn in a fight; the narrator calls it
+            out.append("In a fight with " + p.name + ": " + "; ".join(
+                q.name + " (" + ", ".join(str(m.get("kind")) for m in (q.moves or [wo.DEFAULT_STRIKE])) + ")" for q in foes)
+                + ". Every one of them acts once this turn, where it falls in the telling: write <<ENEMY <their id> <move>>> at that moment "
+                  "(ids: " + ", ".join(q.id for q in foes) + ") and wait for the engine's answer, then play it. You do not know how it "
+                  "goes until the engine says.")
+        hz = (s.city.hazards or {}).get(p.location) or []
+        if hz and not p.fate:
+            out.append("Dangers here: " + "; ".join(f"{h.get('when', h.get('id'))} (<<HAZARD {h.get('id')}>>)" for h in hz)
+                       + f". When the telling puts {p.name} in one, write its call at that moment and wait for the answer.")
         party = [q for q in (s.person(x) for x in p.with_them) if q is not None and q.status == "alive" and not q.hidden_from_player]
         if party and not p.fate:          # the owner (11-08 evening): Tam sat in the boat as scenery while the search was for his own child
             out.append(f"With {p.name} this turn: " + "; ".join(q.name + (f", who wants this: {q.wants.rstrip('.')}" if q.wants else "")
@@ -845,7 +859,6 @@ class FantasyGame(GameBase):
             f"what each one does and how long it lasts. For enthralled or grappled, the note says who holds {p.name}. -<name> when the prose "
             "ends one (dry clothes by a fire, a healer's work, breaking free). An injury goes in the same row as +<the injury in a few words>; "
             "it comes off (-<the injury>) only when the prose treats it, with how in the note. A lost eye, hand or ear never comes off.",
-            f"- set player.carried true: {p.name} is down and the prose has someone pick up the body and carry it away.",
             *([f"- set player.hidden_from_others false: the prose shows someone seeing {p.name}; quote it in the note."] if p.hidden_from_others else []),
             *([f"- set <person id>.hidden_from_player false: the prose shows {p.name} seeing someone who was unseen (the game state lists them); "
                f"quote it in the note."] if any(q.hidden_from_player for q in s.people) else []),
@@ -973,6 +986,7 @@ class FantasyGame(GameBase):
         for c in p.conditions:
             if c.mod and c.stat == req.stat and (not c.words or any(w in label for w in c.words)):
                 mods.append(Modifier(label=c.name, value=c.mod))
+        mods += wd.wound_modifiers(p.wounds, req.stat, WOUND_KINDS)          # the wound ladder (B200): minor 0 to ruinous -5
         if req.stat == "cha":
             if stranger:
                 bonus = {"quiet": 0, "known": 1, "talked about": 2, "famous": 2}[p.renown_word]
@@ -1011,6 +1025,24 @@ class FantasyGame(GameBase):
         if allies and q is not None and q.attitude < 0:
             return f"while {allies[0].name} fights them"
         return ""
+
+    def world_call(self, state: FantasyState, call: Any, rng: Any, offset: int, tally: dict) -> dict | None:
+        """<<ENEMY who move>> and <<HAZARD name>> (B206, D178): rolled now, landed after the prose (world.land)."""
+        return wo.world_call(self, state, call, rng, offset, tally)
+
+    def backstop(self, state: FantasyState, tally: dict, rng: Any, offset: int) -> list[dict]:
+        """The hostiles the prose left out of a fight turn, rolled after it (B206)."""
+        return wo.backstop(self, state, list(tally.get("acted") or []), rng, offset, tally)
+
+    def _land_condition(self, s: FantasyState, name: str, by: str = "") -> None:
+        """A condition the engine sets (a song, a hazard): the table's row, with its compulsion's `by` (B96, part four §6)."""
+        row = cn.match(cn.load(self.content_dir), name, exact=True)
+        if row is None or s.player.has_condition(row.name):
+            return
+        compelled = dict(row.compelled, by=by or row.compelled.get("by", "")) if row.compelled is not None else None
+        now = s.clock.day * DAY + s.clock.minute
+        s.player.conditions.append(Condition(name=row.name, source="engine", stat=row.stat, words=list(row.words), mod=row.mod, duration=row.duration,
+                                             expires_at=now + row.minutes if row.duration == "minutes" else None, compelled=compelled))
 
     def world_turn(self, state: FantasyState, adj: Any, player_text: str, rng: Any, turn: int, offset: int):
         """The engine's own rolls before the narrator writes (part four, D176): a chosen death, a peril's countdown, the
@@ -1759,8 +1791,13 @@ class FantasyGame(GameBase):
                 return s
             p.fate, p.fate_note = "", ""
         p.shown_notes, p.turn_notes, p.notes_turn = list(p.turn_notes), [], info.turn
+        p.carry_lines = []
+        p.shown_notes += wo.land(self, s, info.calls, info.turn)          # the world's calls and the backstop (B206)
+        if p.fate == "dead" and p.fate_turn < info.turn:                  # a death the narrator was told inline: it ends this turn
+            s.flags["ending"] = f"{p.name} died at {p.location or 'Marrowgate'} on day {s.clock.day}. The fog keeps the rest."
+            return s
         for c in info.calls:                                # part four §4: a failed attempt in a fight or a peril, by its tier
-            if c.get("harm") and p.hp > 0 and not p.fate:
+            if c.get("harm") and not c.get("stepped") and p.hp > 0 and not p.fate:
                 n, notes = wo.take(self, s, int(c["harm"]), str(c.get("label") or ""))
                 p.shown_notes.append(f"{c.get('label') or 'The attempt'} failed: {n} hit points" + (f" ({', '.join(notes)})" if notes else ""))
         self._hidden_after(s, info)
@@ -1984,29 +2021,14 @@ class FantasyGame(GameBase):
         return out
 
     def _fall(self, s: FantasyState, info: TurnInfo) -> None:
-        """0 hit points: the lethal roll (a CON check against high; a huge or critical failure, or an execution, is death),
-        then the fork: dead, carried (someone loyal or devoted is with them, or the prose had them carried), or survived."""
+        """Zero hit points is death (B205, D178; supersedes D157's carried branch and D158's downed branch and Temple raise):
+        no roll at zero, no carry, no waking. The next turn tells it (the narrator did not know it was the last blow); a death
+        the narrator was told inline (a lethal move, a peril's end) is closed this turn by world.py."""
         p = s.player
-        executed = p.fate_note == "executed"
-        req = CheckRequest(id="lethal", label="endure: hold on to life", stat="con", difficulty="high", base=p.stats.get("con", 0))
-        offset = self.target_offset if info.target_offset is None else info.target_offset     # the profile's dial when it set one
-        res = wd.lethal_roll(info.rng, req.base, self.modifiers(s, req, None), label=req.label, offset=offset, caps=self.caps)
-        dead = executed or wd.is_fatal(res.outcome, wd.FATAL_D20)
-        carriers = self._carriers(s)
-        fate = wd.death_fork(dead, [q.id for q in carriers] or (["prose"] if p.carried else []))
         stamp = f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}."
-        p.fate_roll = "an execution" if executed else f"{res.roll}{res.total - (res.roll or 0):+d} = {res.total} against {res.target}: {res.outcome}"
-        p.fate, p.fate_turn = fate, info.turn
-        if fate == "dead":
-            p.carried, p.fate_note = False, ""
-            s.log.append(f"{stamp} {p.name} fell and did not get up.")
-        elif fate == "carried":
-            p.carried = True
-            p.fate_note = carriers[0].name if carriers else "the one who picked them up"
-            s.log.append(f"{stamp} {p.name} fell, and {p.fate_note} carried them away.")
-        else:
-            p.carried = False
-            self._survive(s)
+        p.fate, p.fate_turn, p.carried, p.fate_note = "dead", info.turn, False, ""
+        p.fate_roll = "zero hit points"
+        s.log.append(f"{stamp} {p.name} fell and did not get up.")
 
     def _survive(self, s: FantasyState) -> None:
         p = s.player
@@ -2090,6 +2112,8 @@ class FantasyGame(GameBase):
         return state.player.fate == "dead"
 
     def cause_of_death(self, state: FantasyState, info: dict[str, Any]) -> str | None:
+        if state.flags.get("cause"):                   # the world's (B205, B206): a move, a hazard, a peril, a chosen end
+            return str(state.flags["cause"])
         if state.player.fate_roll == "an execution":
             return "executed: " + str(info.get("cause") or "death by the headsman").removeprefix("death by ")
         return None
@@ -2570,7 +2594,7 @@ class FantasyGame(GameBase):
     # the state behind it (the Hidden lines, a person's true place, the numbers behind the words). Stage C (D162).
     HP_TONES = {"fresh": "ok", "scratched": "ok", "hurt": "warn", "bloodied": "bad", "downed": "bad"}
     HEAT_TONES = {"nobody": "neutral", "asked about": "warn", "wanted": "bad", "hunted": "bad"}
-    WOUND_TONES = {"minor": "warn", "serious": "bad", "grave": "bad"}
+    WOUND_TONES = {"minor": "warn", "moderate": "warn", "serious": "bad", "grave": "bad", "ruinous": "bad"}
     ATTITUDE_TONES = {"hostile": "bad", "wary": "warn", "neutral": None, "friendly": "ok", "loyal": "ok", "devoted": "info"}
 
     def _places_panel(self, s: FantasyState) -> list[Chip]:

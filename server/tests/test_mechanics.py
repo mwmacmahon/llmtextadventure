@@ -121,7 +121,7 @@ class _Fixed:
 
 
 def _req(difficulty="medium", base=0, *mods):
-    return CheckRequest(id="c", label="l", stat="s", difficulty=difficulty, base=base,
+    return CheckRequest(id="c", label="l", stat="s", difficulty=difficulty, base=base, caps=True,   # the old caps, on request (B200)
                         modifiers=[Modifier(label=f"m{i}", value=v) for i, v in enumerate(mods)])
 
 

@@ -23,7 +23,7 @@ class _Fixed:
 
 
 def _req(difficulty="medium", base=0, *mods):
-    return CheckRequest(id="c", label="l", stat="hands", difficulty=difficulty, base=base,
+    return CheckRequest(caps=True, id="c", label="l", stat="hands", difficulty=difficulty, base=base,
                         modifiers=[Modifier(label=f"m{i}", value=v) for i, v in enumerate(mods)])
 
 

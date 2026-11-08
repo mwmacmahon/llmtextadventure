@@ -285,7 +285,7 @@ def test_wounds_are_chips_held_by_weight(game: FantasyGame):
     s4, rep, _ = apply(game, s2, C(kind="set", target="player", field="conditions", value="-a deep cut across the ribs"))
     assert s4.player.wounds and any("treats" in r.reason for r in rep.rejected)
     s5, _, _ = apply(game, s2, C(kind="set", target="player", field="conditions", value="-a deep cut across the ribs", note="stitched by Tansy"))
-    assert [w.weight for w in s5.player.wounds] == ["minor"]
+    assert [w.weight for w in s5.player.wounds] == ["moderate"]            # the ladder's five steps (B200): serious to moderate
 
 
 # ---- death (§3e; acceptance 6) -----------------------------------------------------------------------------------------
@@ -312,51 +312,19 @@ def test_zero_hp_alone_and_a_fatal_roll_ends_the_game(game: FantasyGame, monkeyp
     assert game.ui(s2).phase == "ended"
 
 
-def test_zero_hp_with_someone_devoted_present_is_carried_then_raised(game: FantasyGame, monkeypatch):
-    _force_lethal(monkeypatch, "critical_failure")
-    st = new(game)
-    st.player.hp = 0
-    st.person("hazel").attitude = 3
-    st.player.with_them = ["hazel"]
-    s1 = game.after_turn(st, info(turn=3))
-    assert s1.player.fate == "carried" and s1.player.carried and game.ending(s1) is None
-    d = " ".join(game.turn_directives(s1))
-    assert "Hazel Oakhew" in d and "stop at the Temple door, before any waking" in d
-    s2 = game.after_turn(s1, info(turn=4))
-    p = s2.player
-    assert p.fate == "raised" and not p.carried and p.location == "Temple of the Quiet Flame" and p.hp == p.hp_max // 2
-    assert s2.flags["owes_the_temple"] and p.debts and any(t.title.startswith("The Temple's price") for t in s2.threads)
-    assert "names the price" in " ".join(game.turn_directives(s2))
-    s3 = game.after_turn(s2, info(turn=5))
-    assert s3.player.fate == "" and s3.player.debts == p.debts and game.ending(s3) is None
-
-
-def test_zero_hp_survived_wakes_hurt_with_one_cost(game: FantasyGame, monkeypatch):
-    _force_lethal(monkeypatch, "success")
-    st = new(game)
-    st.player.hp = 0
-    st.player.location = "Lake Ambercold"
-    s1 = game.after_turn(st, info(turn=3))
-    p = s1.player
-    assert p.fate == "survived" and p.hp == p.hp_max // 2 and p.location == "Lantern Row" and p.downs == 1
-    assert s1.clock.minute == (st.clock.minute + 240) % 1440
-    assert "wake" in game.turn_directives(s1)[0]
-    gold_before = st.item("gold").count
-    assert s1.item("gold").count < gold_before                     # the first rotated cost: a tithe
-
-
-def test_an_execution_is_death_outright_and_the_referee_may_say_carried(game: FantasyGame, monkeypatch):
-    _force_lethal(monkeypatch, "critical_success")
-    st = new(game)
-    st.player.hp = 3
-    s1, _, _ = apply(game, st, C(kind="add", target="player", field="hp", value="-3", note="Rook's men hang her from the quay crane: an execution"))
-    assert s1.player.hp == 0 and s1.player.fate_note == "executed"
-    assert game.after_turn(s1, info(turn=2)).player.fate == "dead"
-    s2, _, _ = apply(game, s1, C(kind="set", target="player", field="carried", value="true"))
-    assert s2.player.carried
-    assert game.after_turn(s2, info(turn=2)).player.fate == "carried"
-    alive, rep, _ = apply(game, st, C(kind="set", target="player", field="carried", value="true"))
-    assert not alive.player.carried and rep.rejected
+def test_zero_hit_points_is_death_whoever_is_there(game: FantasyGame):
+    """B205 (D178; supersedes D157's carried and survived branches and the Temple raise): zero is death, no roll."""
+    for devoted in (False, True):
+        st = new(game)
+        if devoted:
+            st.person("hazel").attitude, st.person("hazel").location = 3, st.player.location
+            st.player.with_them = ["hazel"]
+        st.player.hp = 3
+        s1, _, _ = apply(game, st, C(kind="add", target="player", field="hp", value="-3", note="the troll's fist"))
+        out = game.after_turn(s1, info(turn=2))
+        assert out.player.fate == "dead" and not out.player.carried and out.player.fate_roll == "zero hit points"
+    rows = game.referee_rules(new(game))
+    assert "player.carried" not in rows
 
 
 # ---- heat, renown, levels (§3f, §3g) -----------------------------------------------------------------------------------
@@ -737,10 +705,9 @@ async def test_tam_rows_out_alone_and_is_lost(engine: Engine, fake: FakeProvider
             assert "tam_lost" in fired and st.flags.get("tam_gone_out") and st.person("tam").location == "Unknown"
 
 
-async def test_death_by_the_pipeline_and_the_carried_variant(engine: Engine, fake: FakeProvider, monkeypatch):
-    """Acceptance 6 through the pipeline: a blow to 0 alone, the death told next turn and the game over; with Hazel devoted and
-    present, `carried` and a directive that stops before the waking."""
-    _force_lethal(monkeypatch, "critical_failure")
+async def test_death_by_the_pipeline(engine: Engine, fake: FakeProvider):
+    """Acceptance 6 through the pipeline, with B205: a blow to 0 is death, told next turn, and the game over; Hazel devoted
+    and present changes nothing."""
     for with_hazel in (False, True):
         iid = engine.create_instance("fantasy", SHEET)
         st = state_of(engine, iid)
@@ -754,13 +721,10 @@ async def test_death_by_the_pipeline_and_the_carried_variant(engine: Engine, fak
                                                        log_line="The troll hits.", present=["hazel"] if with_hazel else [])]
         await play(engine, iid, "I fight the troll.")
         st = state_of(engine, iid)
-        assert st.player.hp == 0 and st.player.fate == ("carried" if with_hazel else "dead") and st.player.carried == with_hazel
+        assert st.player.hp == 0 and st.player.fate == "dead" and not st.player.carried
         fake.canned["AssistantReading"] = [reading("I try to stand.", 2)]
         events = await play(engine, iid, "I try to stand.")
         bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
-        if with_hazel:
-            assert "stop at the Temple door, before any waking" in bulletin and events[-1]["data"]["ending"] is None
-        else:
-            assert "DEATH." in bulletin and events[-1]["data"]["ending"] and "Wren died" in events[-1]["data"]["ending"]
-            again = await play(engine, iid, "I get up.")
-            assert again[-1]["event"] == "error" and "over" in again[-1]["data"]["message"]
+        assert "DEATH." in bulletin and events[-1]["data"]["ending"] and "Wren died" in events[-1]["data"]["ending"]
+        again = await play(engine, iid, "I get up.")
+        assert again[-1]["event"] == "error" and "over" in again[-1]["data"]["message"]

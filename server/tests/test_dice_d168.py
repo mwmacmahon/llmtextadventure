@@ -23,7 +23,7 @@ class _Fixed:
 
 
 def _req(difficulty="medium", base=0, *mods, offset=0):
-    return CheckRequest(id="c", label="l", stat="s", difficulty=difficulty, base=base, offset=offset,
+    return CheckRequest(id="c", label="l", stat="s", difficulty=difficulty, base=base, offset=offset, caps=True,   # the old caps, on request (B200)
                         modifiers=[Modifier(label=f"m{i}", value=v) for i, v in enumerate(mods)])
 
 
@@ -141,18 +141,18 @@ async def test_a_different_stat_after_an_undo_rolls_fresh_through_the_pipeline(m
     assert seen == ["calls:tongue:high:0", "calls:tongue:high:1", "calls:eye:low:0"]
 
 
-def test_caps_are_the_games_and_off_on_the_fantasy():
-    """B103 (D176): the fantasy's checks carry every penalty; the 2d6 games keep -2/+5."""
+def test_no_caps_on_any_game():
+    """B200 (D178; supersedes D168's caps and B103's caps per game): penalties and bonuses unbounded on both dice."""
     import random
     from engine.mechanics import CheckRequest, Modifier, dice_d20, dice_2d6
+    from engine.game import GameBase
+    assert GameBase.caps is False
     req = CheckRequest(id="n", label="swim in mail", stat="str", difficulty="medium", base=1,
-                       modifiers=[Modifier(label="mail", value=-4), Modifier(label="cold", value=-2)])
-    capped_ = dice_d20(random.Random(1), req)
-    open_ = dice_d20(random.Random(1), req.model_copy(update={"caps": False}))
-    assert open_.total - open_.roll == -5 and capped_.total - capped_.roll == -2     # the stat +1 beside penalties capped at -3
-    assert not any("capped" in m.label for m in open_.modifiers)
-    two = dice_2d6(random.Random(1), req)
-    assert two.total - sum(two.dice) == -1                     # +1 stat, penalties capped at -2
+                       modifiers=[Modifier(label="mail", value=-4), Modifier(label="shattered back (ruinous)", value=-5)])
+    for die in (dice_d20, dice_2d6):
+        r = die(random.Random(1), req)
+        roll = sum(r.dice) if r.dice else r.roll
+        assert r.total - roll == -8 and not any("capped" in m.label for m in r.modifiers)
 
 
 def test_normal_is_the_games_offset_alone(tmp_path):

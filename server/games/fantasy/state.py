@@ -191,7 +191,8 @@ class Player(BaseModel):
     notes_turn: int = 0
     names_heard: list[str] = Field(default_factory=list)
     peril: Peril | None = None                              # B102 (D176): moments left
-    fighting: list[str] = Field(default_factory=list)       # the people the player is in a fight with (B95): they act every turn    # secret names said aloud in the player's hearing (the leak check's)
+    fighting: list[str] = Field(default_factory=list)       # the people the player is in a fight with (B95): they act every turn
+    carry_lines: list[str] = Field(default_factory=list)    # what the backstop landed after the prose, for the next THIS TURN (B206)    # secret names said aloud in the player's hearing (the leak check's)
 
     def count(self, cid: str) -> Count | None:
         return next((c for c in self.counts if c.id == cid), None)
@@ -259,6 +260,7 @@ class City(BaseModel):
     aliases: dict[str, str] = Field(default_factory=dict)          # alias -> place
     country: list[dict] = Field(default_factory=list)              # {place, text, from_quay_minutes}
     place_texts: dict[str, list[str]] = Field(default_factory=dict)   # what the dealt hooks add to a place
+    hazards: dict[str, list[dict]] = Field(default_factory=dict)      # place -> its dangers (part four §6, B206): stat, difficulty, steps
 
 
 class HookState(BaseModel):

@@ -259,7 +259,7 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
               consequence_for: Callable[[dict, str, str, dict | None], dict | None] | None = None,
               lethal_for: Callable[[dict, str], bool] | None = None, offset: int = 0,
               holds_back: Callable[[str], str | None] | None = None,
-              note_for: Callable[[dict, str], str] | None = None, caps: bool = True) -> CallResult:
+              note_for: Callable[[dict, str], str] | None = None, caps: bool = False) -> CallResult:
     stat = call.stat
     if stat not in stats:
         if fallback_stat and fallback_stat in stats:
