@@ -10,7 +10,7 @@ the evidence behind it is the state page, `docs/STATE-2026-11-08.md` (published:
 Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a short-term planning document and showed
 "basically nothing left"). Everything here was the roadmap's "Where we are", "Landed today" and Stage 5 queue.
 
-## Where we are (2026-11-08 night, at fc89cad)
+## Where we are (2026-11-09, just after midnight, at 0afdac5)
 
 - **Stage 1 is done** (D135 to D151, 2026-11-07 night to 11-08 dawn): 2d6 with caps, the dice and the player's row,
   the consequence roll with noir's table rewritten, the small faults, the six time rules, and the station's control
@@ -42,18 +42,25 @@ Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a shor
   death (B215).
 - **One model, every role, still holds:** Gemma 4 31B on the box for noir and the station; the fantasy on Sonnet for
   its first play (the profile may differ per run, never per role).
-- The register is `docs/OPEN-ISSUES.md` (B25). 640 tests pass.
+- **Part eight landed within the hour** (11-09, 4d0d02e to ee8d022): the five fields required by name on the local
+  schema and an edge of +2 seen on one Gemma turn; a surrender no longer a chosen death; the engine writes a death the
+  narrator will not; "dead" at zero. The Gemma round with its counts is next.
+- The register is `docs/OPEN-ISSUES.md` (B25).
 
 ## The queue, in order (the owner, 11-08 evening; part seven put first 11-08 night; part eight 11-09)
 
-0. **Part eight: what the readiness rounds found** (B213 to B216, sent 11-09 just after midnight): the local schema
+0. **Part eight §5: the Gemma round** with its report and three counts (checks with an edge, settled with a why,
+   settled fails), the side chat reading it before she plays; with it, the `aim: secret` set on a gift (found with B213).
+   *Landed 11-09 just after midnight:* part eight §1 to §4 (B213 4d0d02e, B214 bd8a5c7, B215 b2aeaba, B216 ee8d022), and
+   one die for one way out in a peril (48ee158).
+0a. *Part eight as sent* (B213 to B216, 11-09 just after midnight): the local schema
    requires the check's edge, its why and its aim and fiat's settled and why (B213: on Gemma none of them is ever
    written, so the edge is 0 and nothing can fail without a roll); the chosen-death net never fires on a surrender
    (B214: "stop fighting the hands" killed Kragga); the narrator told of a death writes it (B215); the strip's word at
    zero (B216); then one Gemma round with its report and three counts. The side chat reads it before she plays.
    *Landed 11-08 night:* part seven (B207 to B211, B63 narrowed; 2669a19, 5a82d9e), part six (B200 to B206; dd4be6c,
    748d653, 0638909, ca47f24, 9538397), B212 (634f5a9), too_far widened (fc89cad).
-1. **She plays.** The first player on the fantasy, on Sonnet, after part eight and its Gemma round. Open before it:
+1. **She plays.** The first player on the fantasy, on Sonnet, after the Gemma round. Open before it:
    which difficulty her save is on (B99: it carries Hard from the copy it was moved from; the owner has not said whether
    that is meant).
 2. **The owner's open answers**, bundled into the next directive as they come: the player UI's four questions
@@ -93,4 +100,4 @@ rounds run once (B145).
   designed, not built; the feedback button not built; W1's first pass done, the sweep proper not.
 - **Stage 6, other models:** not started; the local provider's schema gap (B213) is its first real item.
 
-**Position (2026-11-08 night, at fc89cad; parts four to seven in, the readiness rounds run once, B213 to B216 found).**
+**Position (2026-11-09 just after midnight, at 0afdac5; parts four to eight in, the readiness rounds run once, the Gemma round next).**

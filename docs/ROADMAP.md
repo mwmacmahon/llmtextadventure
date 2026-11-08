@@ -34,20 +34,20 @@ it. *decided*: the owner has ruled, no design yet. *open with the owner*: a ques
 
 | # | Area | State | Design | Left (in one line) |
 |---|---|---|---|---|
-| 1 | The dice, checks and consequences | built; the words-decide design built, unseen on the local model | DESIGN.md §7.1a to §7.1c; DESIGN-time-and-attempts | the edge on the local model, the chosen-death net, tier-only d20 lines, fresh dice on a fork |
+| 1 | The dice, checks and consequences | built; the edge on the local model built 11-09, one Gemma turn seen | DESIGN.md §7.1a to §7.1c; DESIGN-time-and-attempts | the Gemma round's counts, aim secret on a gift, tier-only d20 lines, the two bonuses meeting |
 | 2 | Time and pacing | built, unseen in long rounds | DESIGN-time-and-attempts §3, §4 | travel floors, the fall's hours, a refused rest, "until when" as buttons, per-campaign pacing, missed events |
 | 3 | Measurement and parity | running | MEASURING.md, TESTING.md | the long rounds after parts four to eight, the eval key rebuild, the stale measure pages |
 | 4 | Profiles and the picker | built | DESIGN-context-modules §6 | the model label from the profile, one server for every game, levels edited in the UI |
 | 5 | The narrator's context | not started | DESIGN-context-modules §2 to §4 | the four modules; the chant, the formula, the leak, the retold order are its cases |
 | 6 | The assistant | built | ASSISTANT-DESIGN; DESIGN2 §17 | fiat and levers, a retold turn's stakes, the parked beats, the unsettled attempts |
 | 7 | The world's records | built | DESIGN.md; GAME_AUTHORING | "unknown", a place under another name, one object twice, name clashes, stale time text |
-| 8 | The fantasy game, Marrowgate | built; her first game waits on part eight | FANTASY_DESIGN; DIRECTIVE-fantasy | part eight, the Gemma round, the rescue later, magic, the content questions, the sheet pass live |
+| 8 | The fantasy game, Marrowgate | built; part eight in; her first game waits on the Gemma round | FANTASY_DESIGN; DIRECTIVE-fantasy | the Gemma round, the rescue later, magic, the content questions, the sheet pass live |
 | 9 | Noir, Lowtown | built | notes/design/noir page; DESIGN.md | whether noir takes death is death, the nerves sitting, stray engine lines |
 | 10 | The station | built | DESIGN-time-and-attempts §4; station page | the locked-out text, what each project unlocks, the upgrades, the canister, the station's week |
 | 11 | The player UI | slice one built; slice two designed | DESIGN-lobby-and-saves; DESIGN-player-ui | the play page (four questions open), the feedback button, the ending word, dev mode's gaps |
 | 12 | Mods and variants | designed (mods); idea (variants) | DESIGN-mods | the mod files, Super Dark Fantasy's Conan pass, basic and advanced variants |
 | 13 | Magic | designed, open with the owner | DESIGN-magic | placement and four questions; then the spell data, slots, the Cast lever, the level-up screen |
-| 14 | Models and the box | one model all roles, running | LOCAL_LLM.md; the trials reports | the local schema, Qwen's return through profiles, hosted narrators, the box's faults |
+| 14 | Models and the box | one model all roles, running | LOCAL_LLM.md; the trials reports | Qwen's return through profiles, hosted narrators, the box's faults |
 | 15 | The clown sim | designed, provisional | CLOWN_DESIGN | seven questions, the engine gaps, dev mode gating; nothing committed without discussion |
 | 16 | Writing for models | running; the sweep proper not run | WRITING_FOR_MODELS.md | the full sweep and its rounds |
 | 17 | Tooling, tests and docs | running | INDEX.md §7 | tests on gitignored content, the docs marked behind, the register's statuses, the phone's pages |
@@ -72,18 +72,19 @@ player's words decide first: an attempt that plainly works or fails is settled w
 whose difficulty is how hard the thing is for anyone and whose edge is what this player brought. Design: DESIGN.md
 §7.1a to §7.1c; D135, D143, D144, D168, D176, D178, D179.
 
-**Built:** all of the above. **Built, unseen on the local model:** the words decide and the edge, which Sonnet writes
-and Gemma does not (area 14, B213).
+**Built:** all of the above, and since 11-09 the local schema requires the edge's fields by name (B213, 4d0d02e): on one
+Gemma turn an edge of +2 arrived with its why. The chosen-death net fires only on the wish to die (B214, bd8a5c7).
 
 **Left.**
-- The local provider's schema requires the edge, its why, the aim, and fiat's settled and why (B213; part eight §1).
-- The chosen-death net fires only on the wish to die, never on "stop fighting" (B214; part eight §2).
+- The Gemma round's three counts (checks with an edge, settled with a why, settled fails), part eight §5, not yet run.
+- Gemma set `aim: secret` on a gift because its gain is a tell, and the floor raised a low check to high (found with
+  B213); the aim's wording, or the floor's trigger, needs a look before her game.
 - Every d20 line tier-only to the referee and the summarizer if a round shows a ruling on the sum (B37, later).
 - The old "what the player brought" +2 and a sheet-pass trait can meet on one check (B141); whether the pass retires
   the About-word bonus is the owner's call. With the edge in, the About-word bonus is the likelier one to go.
 - Noir's keyed check grade fell from 22 of 24 to 19 of 24 with the minutes line (B27); count checks matched in the next
   long rounds.
-- Undo replays the same dice and a fork rolls fresh (H4, decided 11-07); confirm it is so since the seeding (B85).
+- Undo replays the same dice and a different attempt rolls fresh: built (H4, D172, D173).
 - A retold turn runs the stakes call again; whether greedy decoding returns the same stakes is unverified (A3).
 
 ## 2. Time and pacing
@@ -97,8 +98,7 @@ one roll a block). Design: DESIGN-time-and-attempts §3 and §4; D146 to D151.
 
 **Left.**
 - A travel floor: a move between distant places took one minute when the clock stopped at a pending (B56).
-- The fall's hours are outside the turn's elapsed minutes, so the row and the clock disagree (B49); moot while death is
-  death, back when the rescue returns (B143).
+- The fall's hours outside the turn's minutes (B49): moot while death is death, back with the rescue (B143).
 - A rest the prose refuses still moves the clock eight hours (B132); the night's minutes after the referee.
 - "Until when" is asked in the story's voice; buttons belong to the play page (B29; area 11).
 - The station's "work on" limit in its own terms, "until Okafor's shift ends" (B31).
@@ -135,8 +135,8 @@ A profile is the whole configuration of a play: provider and model per role, sam
 module levels; one file in `server/profiles/`; the card in Settings with the cost of a hosted turn; the switch through
 the box's helper; the stamp on every turn's rows and in the call report. Design: DESIGN-context-modules §6; D169.
 
-**Built.** **Left:** the ledger's model label comes from the config, not the profile, so the box's rows say
-"qwen3.5-27b" while Gemma runs (B73, L10); one server for every game, so the rounds and the fantasy share a save list
+**Built.** The ledger's model label comes from the profile's model file since D170 (B73, L10; the D98 tables keep the
+old label). **Left:** one server for every game, so the rounds and the fantasy share a save list
 (B77); module levels edited in the UI as an override layer; the cost per profile on the card for a local model.
 
 ## 5. The narrator's context
@@ -188,8 +188,8 @@ The fourth game, for the owner's daughter: a D&D table's tone, a sheet with the 
 points and death as the one ending, heat and renown, levels, sirens on the lake. Design: FANTASY_DESIGN (D136 to
 D145F and the rulings since), DIRECTIVE-fantasy-2026-11-08, the Marrowgate living page; D152 to D179.
 
-**Built** and played by the owner; the readiness rounds ran once. **Her first game waits on:** part eight (area 1's
-B213 and B214, area 9's B215, area 11's B216) and one Gemma round; and which difficulty her save is on (B99: it
+**Built** and played by the owner; the readiness rounds ran once and part eight is in (B213 to B216, 11-09 just
+after midnight). **Her first game waits on:** one Gemma round with its three counts; and which difficulty her save is on (B99: it
 carries Hard from the copy it was moved from; the owner has not said whether that is meant).
 
 **Left, decided or designed.**
@@ -215,6 +215,8 @@ living page; DESIGN.md; D73 to D77, D144, D157, D178.
 **Built.** The talk row is 5 to 15 (B201). **Left.**
 - Whether noir takes "death is death" as the fantasy did (open with the owner since 11-08 night; today noir's wounds
   ladder down and the lethal step kills, but there is no stone).
+- The narrator told of a death writes it, or the engine does (B215, b2aeaba): built on the fantasy; noir and the
+  station take it when they have a death.
 - The sanity sitting on nerves (NV2) and D72 to D76's reading for the station's alarm (INDEX §7.5).
 - Stray engine lines in the prose ("§ Smoke", "§ Reload") that contradict it (B20).
 - Rosa met and heard of at once (N6-1031); the caller filed at The Anchor (I6).
@@ -225,8 +227,7 @@ The station AI, locked out at the start, every system a project; the crew with w
 DESIGN-time-and-attempts §4 (the control model, D151); the station living page; D151, D168, D178.
 
 **Built.** The locked-out start keeps the cameras and the crew's chat channel (B202). **Left.**
-- The scenario's text still assumes the cameras in a locked-out game (B30, open with the owner: a locked variant of
-  those lines, or the cameras held from the start, which B202 now does for the cameras).
+- The scenario's camera lines in a locked-out game (B30): closed by B202, the cameras kept from the start.
 - What comms, drones and the auto-doc unlock when their projects finish (B32); the upgrade and downgrade system with
   unlockables, two projects at once among them (B19, idea).
 - The canister's sample can never be learned (B61, open with the owner: a secret with a How for the catalogue).
@@ -247,7 +248,7 @@ design (the strip's content per game, bottom sheet or tabs, skins now or later, 
 **Left.**
 - The play page, in the design's six commits, phone width checked at each.
 - The feedback button (B10): a note at a turn as a ledger row, listed in the round report.
-- The status strip's word at zero hit points (B216); an ending word per game on the save line (B135).
+- An ending word per game on the save line (B135); the strip's word at zero is the stone's since ee8d022 (B216).
 - Dev mode gates the lists but not a hidden save by id (B134), before the clown sim lands.
 - The call-report pages too large for the phone (B15, worked around with the light page).
 - "Until when" as buttons (B29; area 2).
@@ -281,10 +282,9 @@ One local model serves every role on one GPU in sequence: Gemma 4 31B on gumbo (
 D98, D101.
 
 **Running.** **Left.**
-- The local provider's schema leaves scalar fields with defaults optional, so the local model skips them (B213): the
-  first item of the old Stage 6 and the reason the edge is Sonnet-only today.
+- The local provider's schema required list and object fields only, so Gemma skipped the edge (B213): fixed 11-09 by
+  requiring part seven's five fields by name; any new scalar field a role needs goes on that list.
 - Qwen's return, and hosted narrators, through profiles and module levels (area 5 is what Qwen needs first).
-- The ledger's model label from the served model (L10, B73).
 - The box's faults, open: llama-server's CUDA launch timeouts (L8), no DNS on the box (G1), thinking-off via the
   deprecated template flag (L2), a structured call truncated with thinking on (L4), a thinking narrator writing calls
   that do not exist (N6).
