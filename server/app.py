@@ -246,6 +246,17 @@ async def ask(iid: str, body: AskInput):
     return {**res, "view": engine.instance_view(iid)}
 
 
+@app.post("/api/instances/{iid}/redo")
+def redo(iid: str):
+    """Bring back the last undo's turns when nothing has happened since (the owner, 11-08 evening)."""
+    _exists(iid)
+    try:
+        engine.redo(iid)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    return engine.instance_view(iid)
+
+
 @app.post("/api/instances/{iid}/undo")
 def undo(iid: str, body: UndoInput | None = None):
     _exists(iid)

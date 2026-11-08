@@ -197,6 +197,12 @@ class Graveyard:
             return self.conn.execute("UPDATE graveyard SET undone=1 WHERE instance_id=? AND turn>? AND undone=0", (iid, turn)).rowcount
 
     @_locked
+    def redo_after(self, iid: str, turn: int, upto: int) -> int:
+        """A redo brought these turns back: their deaths stand again."""
+        with self.conn:
+            return self.conn.execute("UPDATE graveyard SET undone=0 WHERE instance_id=? AND turn>? AND turn<=? AND undone=1", (iid, turn, upto)).rowcount
+
+    @_locked
     def retold_away(self, iid: str, turn: int) -> int:
         """A retelling of `turn` in which the death no longer lands: its grave is marked as an undone one is."""
         with self.conn:

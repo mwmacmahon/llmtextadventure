@@ -212,6 +212,16 @@ function Game({ id }: { id: string }) {
     return run(streamRewrite(id, hint), `${last ? last.text : ""}  ↺ ${hint || "tell it again"}`.trim());
   }
 
+  async function redo() {
+    if (streaming !== null) return;
+    setErr(null);
+    try {
+      setView(await api.redo(id));
+    } catch (e) {
+      setErr(String(e));
+    }
+  }
+
   async function undo(toTurn?: number) {
     if (streaming !== null) return;
     setErr(null);
@@ -260,6 +270,11 @@ function Game({ id }: { id: string }) {
         <button onClick={() => undo()} disabled={view.turn === 0 || streaming !== null} title="Rewind one turn">
           undo
         </button>
+        {view.redo && (
+          <button onClick={() => redo()} disabled={streaming !== null} title={`Bring back turns ${view.redo.to_turn + 1} to ${view.redo.from_turn}: nothing has happened since the undo`}>
+            redo
+          </button>
+        )}
         <button onClick={() => rewrite()} disabled={view.turn === 0 || streaming !== null} title="Request a rewrite of the last turn: same facts, same dice, the referee's changes undone. Whatever is in the text box is your explanation or instructions; empty just tells it again.">
           rewrite
         </button>
@@ -275,7 +290,7 @@ function Game({ id }: { id: string }) {
       <main>
         <section className="narrative" ref={scrollRef}>
           {rows.map((r) => (
-            <Row key={r.seq} r={r} first={firstOfUndo.has(r.seq)} onUndo={streaming === null && !r.undone && r.turn > 0 && (r.role === "player" || r.role === "command") ? () => goBack(r) : undefined} />
+            <Row key={r.seq} r={r} first={firstOfUndo.has(r.seq)} onRedo={view.redo && r.undone === view.redo.mark && streaming === null ? () => redo() : undefined} onUndo={streaming === null && !r.undone && r.turn > 0 && (r.role === "player" || r.role === "command") ? () => goBack(r) : undefined} />
           ))}
           {pending && <div className="msg player">{pending}</div>}
           {streaming !== null && streaming && <div className="msg narrator streaming"><Prose text={streaming} /></div>}
@@ -357,12 +372,16 @@ function Game({ id }: { id: string }) {
   );
 }
 
-function Row({ r, first, onUndo }: { r: TranscriptRow; first?: boolean; onUndo?: () => void }) {
+function Row({ r, first, onUndo, onRedo }: { r: TranscriptRow; first?: boolean; onUndo?: () => void; onRedo?: () => void }) {
   if (r.undone) {
     // an undone turn: kept in the record, struck through; nothing a model reads sees it
     return (
       <div className={`undone-row ${r.role}`}>
-        {first && <div className="undone-mark small">undone</div>}
+        {first && (
+          <div className="undone-mark small">
+            undone{onRedo && <> · <button className="link small redo-link" onClick={onRedo} title="Bring these turns back: nothing has happened since">↻ redo</button></>}
+          </div>
+        )}
         <div className={`msg ${r.role} undone`}>{r.role === "narrator" ? <Prose text={r.text} /> : r.text}</div>
       </div>
     );

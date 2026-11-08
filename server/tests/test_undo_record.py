@@ -225,3 +225,25 @@ async def test_undo_across_a_death(engine: Engine, fake: FakeProvider, monkeypat
     assert "Telling number 1 " in ctx
     p = engine.games["fantasy"].load_state(engine.store.load_state(iid)).player
     assert p.fate == "" and p.hp == 2 and not engine.summary(iid)["ending"]
+
+
+async def test_redo_brings_back_an_accidental_undo_until_the_game_moves_on(engine, fake):
+    """The owner (11-08 evening): a redo for an accidental undo, offered beside the undone turns while nothing has diverged."""
+    reading = lambda t, m: AssistantReading(kind="action", summary=t, time_minutes=m, risk="none", intents=[Intent(action=t)])  # noqa: E731
+    iid = engine.create_instance("fantasy", SHEET)
+    for t in ("I look around.", "I sit by the fire.", "I order a drink."):
+        fake.canned["AssistantReading"] = [reading(t, 5)]
+        await play(engine, iid, t)
+    assert engine.store.latest_turn(iid) == 3
+    engine.undo(iid)
+    engine.undo(iid)
+    assert engine.store.latest_turn(iid) == 1 and engine.redoable(iid)["to_turn"] == 1
+    engine.redo(iid)
+    assert engine.store.latest_turn(iid) == 2 and engine.redoable(iid)["to_turn"] == 2
+    engine.redo(iid)
+    assert engine.store.latest_turn(iid) == 3 and engine.redoable(iid) is None
+    assert [r.turn for r in engine.store.transcript(iid, roles=["player"])] == [1, 2, 3]
+    engine.undo(iid)
+    fake.canned["AssistantReading"] = [reading("I leave.", 5)]
+    await play(engine, iid, "I leave.")
+    assert engine.redoable(iid) is None

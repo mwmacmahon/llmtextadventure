@@ -450,6 +450,7 @@ class Engine:
             **self.summary(iid, state=state),
             "ui": self._ui(game, state, self.store.latest_turn(iid)).model_dump(mode="json"),
             "transcript": [asdict(r) for r in rows],
+            "redo": self.redoable(iid),
         }
 
     def card(self, iid: str, chars: int = 300) -> dict[str, Any]:
@@ -505,6 +506,37 @@ class Engine:
             "priced": all(r["priced"] for r in roles.values()),
             "calls": sum(r["calls"] for r in roles.values()),
         }
+
+    def redoable(self, iid: str) -> dict[str, Any] | None:
+        """The undo a redo would bring back (the owner, 11-08 evening: "a redo button for an accidental undo"): the latest
+        live `undo` row, when nothing has happened since (the live game still ends at its target turn). None otherwise."""
+        undos = [r for r in self.store.ledger(iid) if r["kind"] == "undo"]
+        if not undos:
+            return None
+        last = undos[-1]
+        if self.store.latest_turn(iid) != last["payload"].get("to_turn"):
+            return None
+        quiet = ("redo", "difficulty", "precheck")              # an aside (Ask) or a difficulty change is not the game moving on
+        if any(r["seq"] > last["seq"] and r["kind"] not in quiet and not (r["kind"] == "model_call" and r["payload"].get("step") == "ask")
+               for r in self.store.ledger(iid)):
+            return None
+        return {"mark": last["seq"], "to_turn": last["payload"]["to_turn"], "from_turn": last["payload"]["from_turn"]}
+
+    def redo(self, iid: str) -> int:
+        """Bring back the last undo's turns, if the game has not moved on since (redoable)."""
+        r = self.redoable(iid)
+        if r is None:
+            raise ValueError("nothing to redo: the game has moved on since the undo")
+        undo_row = next(x for x in self.store.ledger(iid) if x["seq"] == r["mark"])
+        seq = self.store.append_ledger(iid, r["from_turn"], "redo", {"mark": r["mark"], "from_turn": r["to_turn"], "to_turn": r["from_turn"]})
+        self.store.redo_undo(iid, r["mark"], seq)
+        diff = (undo_row["payload"] or {}).get("difficulty")
+        if diff:
+            self.store.set_difficulty(iid, diff["old"])
+        self.graves.redo_after(iid, r["to_turn"], r["from_turn"])
+        self.store.touch(iid)
+        log.info("instance.redo " + logs.kv(iid=iid, mark=r["mark"], to_turn=r["from_turn"]))
+        return self.store.latest_turn(iid)
 
     def undo(self, iid: str, to_turn: int | None = None) -> int:
         """Rewind to `to_turn` (default: one turn back). Turn 0 is the opening. Undo keeps the record (B82): an `undo`

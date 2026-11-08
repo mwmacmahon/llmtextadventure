@@ -120,7 +120,10 @@ export type InstanceSummary = {
   ending: string | null;
   hidden: boolean;                 // a hidden game's save (shown in dev mode only)
 };
-export type InstanceView = InstanceSummary & { ui: UISchema; transcript: TranscriptRow[] };
+export type InstanceView = InstanceSummary & {
+  ui: UISchema; transcript: TranscriptRow[];
+  redo?: { mark: number; to_turn: number; from_turn: number } | null;   // the undo a Redo brings back, while nothing has diverged
+};
 export type SaveCard = InstanceSummary & { ui: UISchema; last: { turn: number; text: string; clock: string } | null };
 export type SetupOption = { id: string; name: string };
 // A setup key is the plain list (a select) or a field (ISSUES B21): the label is the whole hint unless the game gives one.
@@ -230,6 +233,7 @@ export const api = {
   ask: (id: string, text: string) =>
     req(`/api/instances/${id}/ask`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) })
       .then((r) => j<{ ok: boolean; text: string; view?: InstanceView }>(r)),
+  redo: (id: string) => req(`/api/instances/${id}/redo`, { method: "POST" }).then((r) => j<InstanceView>(r)),
   undo: (id: string, turn?: number) =>
     req(`/api/instances/${id}/undo`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ turn: turn ?? null }) }).then((r) => j<InstanceView>(r)),
   fork: (id: string, turn?: number, title?: string) =>

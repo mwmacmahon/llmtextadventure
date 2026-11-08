@@ -411,6 +411,17 @@ class Store:
                 self.conn.execute(f"UPDATE {t} SET undone=? WHERE instance_id=? AND turn>? AND undone=0", (mark, iid, turn))
 
     @_locked
+    def redo_undo(self, iid: str, mark: int, redo_seq: int) -> int:
+        """Redo (the owner, 11-08 evening): the rows one undo marked are live again; the undo row itself is marked undone
+        by the `redo` row, so it cannot be redone twice. Returns the transcript rows restored."""
+        with self.conn:
+            n = self.conn.execute("UPDATE transcript SET undone=0 WHERE instance_id=? AND undone=?", (iid, mark)).rowcount
+            for t in ("snapshot", "ledger"):
+                self.conn.execute(f"UPDATE {t} SET undone=0 WHERE instance_id=? AND undone=?", (iid, mark))
+            self.conn.execute("UPDATE ledger SET undone=? WHERE instance_id=? AND seq=?", (redo_seq, iid, mark))
+        return n
+
+    @_locked
     def truncate_after_turn(self, iid: str, turn: int) -> None:
         """A retelling: drop the live rows after `turn` (snapshots, transcript, ledger); the turn's earlier telling is kept
         in its `rewrite` row. Undone rows and `undo` rows are the record and stay."""
