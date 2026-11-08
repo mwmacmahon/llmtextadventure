@@ -421,6 +421,24 @@ def lint(content_dir: Path) -> list[str]:
         except Exception as ex:                                     # noqa: BLE001
             say(f"city.{e.get('id')}: does not load: {ex}")
     problems += lint_death_lines(content_dir)
+    problems += lint_conditions(content_dir)
+    return problems
+
+
+def lint_conditions(content_dir: Path) -> list[str]:
+    """The conditions table (B96, D176): it parses, every row names a known stat and duration, no name or alias twice,
+    and no row is a lost piece (the engine's LOST_PIECES) or an ending."""
+    from games.fantasy import conditions as cn
+    path = content_dir / "conditions.yml"
+    if not path.exists():
+        return ["conditions: no conditions.yml (the referee's names come from it)"]
+    try:
+        rows, problems = cn.parse(_load(path))
+    except Exception as ex:                                              # noqa: BLE001
+        return [f"conditions: does not load: {ex}"]
+    for name in rows:
+        if re.search(r"\b(dead|drowned|killed|slain)\b|\blost (an? )?(eye|hand|ear)\b", name):
+            problems.append(f"conditions: {name!r} is the engine's (an ending or a lost piece), not a row")
     return problems
 
 

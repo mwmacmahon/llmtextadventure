@@ -67,13 +67,16 @@ class Tell(BaseModel):
 
 
 class Condition(BaseModel):
-    """A condition with words (a scar, a lost eye, drunk). `stat`/`words`/`mod`: a modifier on checks of that stat whose
-    label has one of the words (empty words: every check of it); a lost piece carries one (D139)."""
+    """A condition from the conditions table (soaked, drunk, a scar; B96) or a lost piece (D139). `stat`/`words`/`mod`: a
+    modifier on checks of that stat whose label has one of the words (empty words: every check of it)."""
     name: str
     source: Literal["narrator", "engine", "case"] = "narrator"
     stat: str = ""
     words: list[str] = Field(default_factory=list)
     mod: int = 0
+    duration: str = ""              # the table's (B96, D176): until_dry, until_warm, until_rest, until_treated, until_freed, minutes, lasting
+    expires_at: int | None = None   # a `minutes` condition: the absolute minute (day * 1440 + minute) it clears at
+    compelled: dict[str, Any] | None = None     # enthralled's compulsion block, stored for its rules
 
 
 class Ability(BaseModel):
