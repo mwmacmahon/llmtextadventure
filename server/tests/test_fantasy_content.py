@@ -20,6 +20,14 @@ KNOWN = {          # B41's place texts fixed (D167); the thing "a frayed bell-ro
     "death_lines: hint 'Talking never needs a roll. Stabbing always does.': the rules make getting something out of a stranger, "
     "a wary or a hostile person a cha check (only talking to a friend needs none), so 'never' overstates it": "B84",
 }
+# B68 (D175): every hook that closes has an ending for the problem gone another way; the cellar has one, the rest are for
+# the fantasy side chat (one register line each)
+NO_OTHER_WAY = {"barrow_under_the_greywood": "B110", "bell_rings_itself": "B111", "body_on_lantern_row": "B112",
+                "clockmakers_apprentice": "B113", "drowned_letters": "B114", "egg_in_the_ice": "B115", "ferrymans_daughter": "B116",
+                "guild_of_quiet_hands": "B117", "lamplighters_shadow": "B118", "lord_of_the_hill": "B119", "night_market": "B120",
+                "singing_on_the_lake": "B121", "toll_of_the_old_bridge": "B122"}
+KNOWN.update({f"{hid}: no ending for the problem gone another way (another_way: a flag of its own that done reads and a reward row pays)": b
+              for hid, b in NO_OTHER_WAY.items()})
 
 
 def test_the_content_passes_the_lint():

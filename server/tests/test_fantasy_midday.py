@@ -85,7 +85,8 @@ def test_on_the_water_in_the_last_day_favours_a_hook_with_a_place_on_the_water(g
 
 def test_acceptance_5_rerun_on_the_file_as_written(game):
     """Acceptance 5 re-run (B39): ten seeded first draws after a trip on the lake, on the file's weight. Logged, not
-    asserted: with weight 2 and the open tier-2 hooks the lake hook is 2 in (n+1); the count goes to STATUS."""
+    asserted. B64 (D175): weight 8; the quay hook is near too (the Lantern visited in the last day), so the lake hook is 8 in
+    20 here and the seeded count was 4 of 10; the count goes to STATUS."""
     st = new(game)
     hooks = game.hooks_content()
     deck = dk.deck_of(game.scenario(st.city.id))

@@ -38,8 +38,8 @@ from engine.statepath import Actor
 from . import deck as dk
 from . import sheet as sh
 from .state import (
-    ATTITUDE_WORDS, HUNTED_AT, STAT_NAMES, STATS, WANTED_AT, City, Condition, FantasyState, FoundPlace, Hidden, Item, Note,
-    Person, Player, tier_of, RENOWN_TIERS, RENOWN_SCALE, HEAT_TIERS,
+    ATTITUDE_WORDS, COINS, COPPERS, COPPERS_TO_GOLD, HUNTED_AT, STAT_NAMES, STATS, WANTED_AT, City, Condition, FantasyState,
+    FoundPlace, Hidden, Item, Note, Person, Player, purse_text, tier_of, RENOWN_TIERS, RENOWN_SCALE, HEAT_TIERS,
 )
 
 DAY = 1440
@@ -82,9 +82,32 @@ AUTHORITY: dict[str, Actor] = {
     "player.wounds": "narrator", "player.counts": "narrator", "player.carried": "narrator", "player.with_them": "narrator",
     "inventory": "narrator", "people": "narrator", "people.*.wants": "script", "people.*.secret": "script",
     "people.*.description": "script", "people.*.tells": "script", "people.*.tells.*.told": "narrator", "things": "narrator",
-    "lost": "narrator", "journal": "narrator", "found_places": "narrator", "hidden": "script", "flags": "narrator",
+    "lost": "narrator", "journal": "narrator", "found_places": "narrator", "places_heard_of": "narrator", "hidden": "script", "flags": "narrator",
     "log": "narrator", "threads": "narrator", "hooks": "engine", "hooks.*.declined": "narrator", "deck": "engine",
 }
+
+
+_NUM = ("nought", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve")
+_MIN = {5: "five", 10: "ten", 15: "a quarter of an hour", 20: "twenty", 25: "twenty-five", 40: "forty", 45: "three quarters of an hour",
+        50: "fifty", 55: "fifty-five"}
+
+
+def span_words(minutes: int) -> str:
+    """Travel minutes as words for the Places panel: 10 ten minutes, 30 half an hour, 60 an hour, 90 an hour and a half,
+    150 two and a half hours, 80 an hour and twenty minutes."""
+    h, m = divmod(max(0, int(minutes)), 60)
+
+    def mins(x: int) -> str:
+        w = _MIN.get(x, str(x))
+        return w if "hour" in w else f"{w} minutes"
+    if h == 0:
+        return "half an hour" if m == 30 else mins(m) if m else "no distance"
+    hours = "an hour" if h == 1 else f"{_NUM[h] if h < len(_NUM) else h} hours"
+    if m == 0:
+        return hours
+    if m == 30:
+        return "an hour and a half" if h == 1 else f"{_NUM[h] if h < len(_NUM) else h} and a half hours"
+    return f"{hours} and {mins(m)}"
 
 
 def part_of_day(minute: int) -> str:
@@ -204,6 +227,8 @@ class FantasyGame(GameBase):
             if hid in hooks:
                 dk.deal(state, hooks[hid], turn=0, deal_abs=now, name=player.name)
         state.player.visited[player.location] = now
+        self._purse(state)
+        state.places_heard_of = [pl for pl in sc0.get("places_heard_of") or [] if pl in state.places and pl not in state.player.visited]
         if sc0.get("opening_text"):                      # B51 (D167): the opening is shown at turn 0; its event is played
             for e in state.hidden.events:
                 if e.id == "opening":
@@ -217,7 +242,15 @@ class FantasyGame(GameBase):
         if sc:
             name = (data.get("player") or {}).get("name", "")
             data = dk.reread(data, sc, self.hooks_content(), name)
-        return FantasyState.model_validate(data)
+        return self._purse(FantasyState.model_validate(data))
+
+    @staticmethod
+    def _purse(s: FantasyState) -> FantasyState:
+        """B69 (D175): the coppers pocket beside the gold, at nought when the game began without one (an older save)."""
+        if s.item(COPPERS) is None or s.item(COPPERS).id != COPPERS:
+            at = next((i + 1 for i, it in enumerate(s.inventory) if it.id == "gold"), len(s.inventory))
+            s.inventory.insert(at, Item(id=COPPERS, name="coppers", count=0, note="small change; a hundred to the gold"))
+        return s
 
     def opening(self, state: FantasyState) -> str | None:
         return self.scenario(state.city.id).get("opening_text")          # B51 (D167): as written, at turn 0
@@ -411,7 +444,7 @@ class FantasyGame(GameBase):
             lines.append(f"At {p.location}, from the quests in motion: " + " ".join(texts))
         if s.found_places:
             lines.append("Places found in play: " + "; ".join(f.name + (f" (in {f.within})" if f.within else "") for f in s.found_places) + ".")
-        lines.append("Pockets: " + ", ".join(it.render() + (f" ({it.note})" if it.note and it.id != "gold" else "") for it in s.inventory) + ".")
+        lines.append("Pockets: " + ", ".join([purse_text(s.inventory)] + [it.render() + (f" ({it.note})" if it.note else "") for it in s.inventory if it.id not in COINS]) + ".")
         if p.counts:
             lines.append(f"Before a night's sleep {p.name} can still use: " + "; ".join(f"{COUNT_WORDS.get(c.id, c.name.lower())}, {c.value} of {c.max}" for c in p.counts)
                          + " (say it in the world, never as a number).")
@@ -635,7 +668,9 @@ class FantasyGame(GameBase):
             *self._gate_lines(s),
             "Places: " + ", ".join(s.places) + ". A move or a location value is one of these. A spot inside a listed place (a table, the stairs, the cellar) "
             "is that place. A room inside one, and a place the prose introduces that lies inside none of them (a clearing in the wood, a house on the Hill), "
-            "are new: new place value=<its name> field=<the listed place it is in or near>, then the move.",
+            "are new: new place value=<its name> field=<the listed place it is in or near>, then the move. "
+            f"new place value=<a listed place>: the prose names a listed place {p.name} has not been to (a boatman offering passage to "
+            "the lake): the game marks it heard of.",
             "Rows this game records:",
             "- move player <place>; move <person id> <place>: where they are when the prose ends. Someone still on the way has not arrived: a soon row "
             "with the minutes, and the move on the turn they get there. move player Unknown: the prose had the player leave and did not show them arriving.",
@@ -651,6 +686,8 @@ class FantasyGame(GameBase):
             "5 to 20. The days lower it by themselves; never count that. A failed check's cost that says the Watch will hear of it is add player.heat +5.",
             "- add gold.count -n: gold spent, paid or lost (never more than carried); add gold.count +n: gold taken, found or paid to the player in the prose. "
             "A quest's reward is the engine's; never write it.",
+            "- add coppers.count -n / +n: coppers the prose shows spent or taken (small change, a tip). Coppers are counted as their own pocket, "
+            "100 to the gold; the game changes them to gold and back.",
             "- add <count id> -1: a use of a count the prose shows (spell_slots: a spell from the known list cast; a cantrip costs nothing). "
             "Never add to a count: rests and the commands refill them.",
             "- add <pocket id>.count ±n; new thing value=<name> field=player: a thing the player took, bought or was given (one row per thing), named as "
@@ -762,7 +799,7 @@ class FantasyGame(GameBase):
     # ---- the cost table (ROADMAP 1c) ---------------------------------------------------------------------------------
     WOUNDS = (("hand", "a cut across the palm"), ("ribs", "a cracked rib that catches on every breath"), ("shoulder", "a wrenched shoulder"),
               ("face", "a split brow bleeding into one eye"), ("leg", "a twisted knee"))
-    KEPT = ("gold", "room_key", "sword", "shield", "staff", "spellbook", "daggers", "thieves_tools", "travelling_pack")
+    KEPT = ("gold", "coppers", "room_key", "sword", "shield", "staff", "spellbook", "daggers", "thieves_tools", "travelling_pack")
 
     def cost_options(self, state: FantasyState, roll: dict, label: str = "", target: str = "") -> list[dict]:
         from engine.assistant import WAY_CLOSED
@@ -1088,6 +1125,8 @@ class FantasyGame(GameBase):
         p = s.player
         if n == 0:
             return True
+        if it.id == COPPERS:
+            return self._coppers(s, it, n, w)
         if n > 0:
             if w.set(f"inventory.{it.id}.count", it.count, it.count + n):
                 it.count += n
@@ -1102,9 +1141,40 @@ class FantasyGame(GameBase):
                 gain = min(POTION_HP * take, p.hp_max - p.hp)
                 if gain > 0 and not p.fate and w.set("player.hp", p.hp, p.hp + gain):
                     p.hp += gain
-            if it.count <= 0 and it.id != "gold":
+            if it.count <= 0 and it.id not in COINS:
                 s.inventory.remove(it)
                 s.lost.append(it)
+        return True
+
+    def _coppers(self, s: FantasyState, cp: Item, n: int, w: Writer) -> bool:
+        """B69 (D175): coppers are their own pocket count, 100 to the gold. A gain past a hundred carries up into gold; a spend
+        past the coppers held breaks as many gold as it needs. The gold's change is written as a note (not a gold row), so
+        it is never read as gold paid to the player this turn (the quest-credit pool counts only gold rows)."""
+        gold = s.item("gold")
+        if gold is None or gold.id != "gold":
+            gold = Item(id="gold", name="gold", count=0)
+            s.inventory.insert(0, gold)
+        if n > 0:
+            if w.set(f"inventory.{COPPERS}.count", cp.count, cp.count + n):
+                cp.count += n
+            up = cp.count // COPPERS_TO_GOLD
+            if up:
+                w.note(f"inventory.gold.count: {gold.count} -> {gold.count + up} ({up * COPPERS_TO_GOLD} coppers carried to the gold)")
+                gold.count += up
+                cp.count -= up * COPPERS_TO_GOLD
+            return True
+        take = -n
+        short = take - cp.count
+        if short > 0 and gold.count > 0:
+            broken = min(gold.count, -(-short // COPPERS_TO_GOLD))
+            w.note(f"inventory.gold.count: {gold.count} -> {gold.count - broken} ({broken} gold broken into coppers)")
+            gold.count -= broken
+            cp.count += broken * COPPERS_TO_GOLD
+        if take > cp.count:
+            w.reject(f"inventory.{COPPERS}.count", f"only {cp.count} coppers and no gold to break; spent {cp.count}", take)
+            take = cp.count
+        if take and w.set(f"inventory.{COPPERS}.count", cp.count, cp.count - take):
+            cp.count -= take
         return True
 
     # -- things, people, places
@@ -1117,7 +1187,7 @@ class FantasyGame(GameBase):
                 return self._relocate(s, lying, False, "player", w)
             it = s.item(value)
             count = self._step(note)
-            if it is not None and (it.count > 1 or it.id == "gold" or (count or 1) > 1) and it.name.lower() != value.strip().lower():
+            if it is not None and (it.count > 1 or it.id in COINS or (count or 1) > 1) and it.name.lower() != value.strip().lower():
                 return self._pocket_add(s, it, max(1, count or 1), "", w)
             if it is not None and it.name.lower() == value.strip().lower():
                 return self._pocket_add(s, it, max(1, count or 1), "", w)
@@ -1161,8 +1231,8 @@ class FantasyGame(GameBase):
                 s.inventory.append(it)
                 w.set(f"inventory.{it.id}", None, "carried")
             return True
-        if carried and it.id == "gold":
-            w.reject("inventory.gold", "gold goes by add gold.count -n", dest)
+        if carried and it.id in COINS:
+            w.reject(f"inventory.{it.id}", f"coins go by add {it.id}.count -n", dest)
             return True
         holder = s.person(low) or (None if self._place(s, dest) else self._same_person(s, dest))
         place = None if holder else self._place(s, dest)
@@ -1342,10 +1412,10 @@ class FantasyGame(GameBase):
         clean = name.strip().strip('"').strip()[:40]
         same = self._place(s, clean)
         if same is not None and same.lower().removeprefix("the ") == clean.lower().removeprefix("the "):
-            w.note(f"new place {clean!r} is {same}: nothing added")
+            self._heard_of_place(s, same, w)
             return
         if clean.lower() in s.city.aliases:
-            w.note(f"new place {clean!r} is {s.city.aliases[clean.lower()]}: nothing added")
+            self._heard_of_place(s, s.city.aliases[clean.lower()], w)
             return
         if len(s.found_places) >= MAX_FOUND:
             w.reject("found_places", "the city has enough new places", clean)
@@ -1353,6 +1423,15 @@ class FantasyGame(GameBase):
         inside = (self._place(s, within) if within.strip() else None) or same or ""
         s.found_places.append(FoundPlace(name=clean, within=inside))
         w.note(f"found_places += {clean!r}" + (f" (in {inside})" if inside else ""))
+
+    @staticmethod
+    def _heard_of_place(s: FantasyState, place: str, w: Writer) -> None:
+        """B87 (D175): a listed place the prose names is heard of (the Places panel), as a listed person named is."""
+        if place == "Unknown" or place in s.player.visited or place in s.places_heard_of:
+            w.note(f"new place {place!r}: already known, nothing added")
+            return
+        if w.set("places_heard_of", None, place):
+            s.places_heard_of.append(place)
 
     def apply_present(self, s: FantasyState, present: list[str], w: Writer) -> FantasyState:
         with_them = [pid for pid in present if s.person(pid) is not None and s.person(pid).status == "alive"]
@@ -1876,6 +1955,29 @@ class FantasyGame(GameBase):
     WOUND_TONES = {"minor": "warn", "serious": "bad", "grave": "bad"}
     ATTITUDE_TONES = {"hostile": "bad", "wary": "warn", "neutral": None, "friendly": "ok", "loyal": "ok", "devoted": "info"}
 
+    def _places_panel(self, s: FantasyState) -> list[Chip]:
+        """B87 (D175): the places the character has been to or heard of, each with how far and how from the city file's
+        travel data ("Lake Ambercold: an hour by boat"); where they are now first, then where they have been, then heard of."""
+        p = s.player
+        country = {r.get("place"): r for r in s.city.country}
+        found = {f.name: f for f in s.found_places}
+
+        def far(pl: str) -> str:
+            r = country.get(pl)
+            if r is not None and r.get("from_quay_minutes"):
+                return " ".join(x for x in (span_words(int(r["from_quay_minutes"])), str(r.get("way") or "")) if x)
+            if pl in found:
+                return f"in {found[pl].within}" if found[pl].within else "found in play"
+            return "in the city"
+
+        order = [pl for pl in s.places if pl != "Unknown"]
+        been = [pl for pl in order if pl in p.visited and pl != p.location]
+        heard = [pl for pl in order if pl in s.places_heard_of and pl not in p.visited and pl != p.location]
+        rows = [Chip(label=p.location, value=f"{far(p.location)} · here", tone="info")] if p.location in order else []
+        rows += [Chip(label=pl, value=f"{far(pl)} · been there") for pl in been]
+        rows += [Chip(label=pl, value=f"{far(pl)} · heard of") for pl in heard]
+        return rows
+
     def ui(self, state: FantasyState) -> UISchema:
         s, p = state, state.player
         nxt, floor = sh.xp_for(p.level), sh.xp_floor(p.level)
@@ -1891,7 +1993,7 @@ class FantasyGame(GameBase):
         sheet += [Chip(label="Race", value=p.race), Chip(label="Class", value=p.klass), Chip(label="Level", value=str(p.level))]
         if p.gender:
             sheet.append(Chip(label="Gender", value=p.gender))
-        pockets = [Chip(label=it.name + (f" ×{it.count}" if it.count != 1 else ""), value=it.note or "") for it in s.inventory if it.id != "gold"]
+        pockets = [Chip(label=it.name + (f" ×{it.count}" if it.count != 1 else ""), value=it.note or "") for it in s.inventory if it.id not in COINS]
         panels: list[Any] = [
             StatusStrip(chips=[Chip(label="Time", value=s.clock.render()), Chip(label="Place", value=p.location or "unknown"),
                                Chip(label="Level", value=str(p.level)), Chip(label="Gold", value=str(gold))]),
@@ -1905,7 +2007,7 @@ class FantasyGame(GameBase):
             Commands(title=None, items=self.commands(s)),
             ListPanel(title="Character", items=sheet, layout="grid"),
             ListPanel(title="Abilities", items=[Chip(label=a.name, value=a.text) for a in p.abilities], layout="stack"),
-            ListPanel(title="Pockets", items=[Chip(label=f"{gold} gold", value=""), *pockets], layout="stack"),
+            ListPanel(title="Pockets", items=[Chip(label=purse_text(s.inventory), value=""), *pockets], layout="stack"),
         ]
         if p.spells or p.cantrips or p.counts:
             panels.append(ListPanel(title="Spells and counts" if (p.spells or p.cantrips) else "Counts",
@@ -1923,6 +2025,7 @@ class FantasyGame(GameBase):
                            details=[Chip(label="Last seen", value=q.seen_at or "unknown")], notes=q.facts)
                 for q in met] + [
                 EntityCard(id=q.id, title=q.name, subtitle="heard of, not met", notes=q.facts) for q in heard]),
+            ListPanel(title="Places", items=self._places_panel(s), layout="stack"),
             Table(title="Quests", columns=["Quest", "Where it stands", "From"], rows=quest_rows),
             ListPanel(title="Journal", items=[Chip(label="contact" if n.kind == "contact" else "", value=n.text) for n in s.journal[-20:]], layout="stack"),
             LogPanel(title="The day's log", lines=[ln for ln in s.log if ln.startswith(f"Day {s.clock.day} ")][-20:] or s.log[-5:]),

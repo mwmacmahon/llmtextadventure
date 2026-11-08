@@ -609,12 +609,12 @@ def test_the_draw_favours_a_hook_whose_reach_is_where_the_player_has_been(game: 
     now = st.clock.day * 1440 + st.clock.minute + 400
     st.player.location = "Reed Island"
     st.player.visited = {"Lake Ambercold": now - 300}
-    deck = dict(deck, weight_near=20)                             # the file's weight is 2 (B39); 20 shows the lean in ten seeded tries
+    deck = dict(deck, weight_near=20)                             # the file's weight is 8 (B64, D175); 20 shows the lean in ten seeded tries
     picks = [dk.draw(st, deck, hooks, random.Random(seed), now, 5) for seed in range(10)]
     assert sum(1 for x in picks if x == "singing_on_the_lake") > 5
     deck2 = dk.deck_of(game.scenario())
     pool = dict(dk.candidates(st, deck2, hooks, now, 5))
-    assert pool["singing_on_the_lake"] == 2 and all(w == 1 for k, w in pool.items() if k != "singing_on_the_lake")
+    assert pool["singing_on_the_lake"] == deck2["weight_near"] == 8 and all(w == 1 for k, w in pool.items() if k != "singing_on_the_lake")
 
 
 # ---- the referee's rows (§3i) ------------------------------------------------------------------------------------------
