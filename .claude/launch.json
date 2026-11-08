@@ -278,6 +278,39 @@
         "8013"
       ],
       "port": 8013
+    },
+    {
+      "name": "api-fantasy-fake",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "TA_PROVIDER=fake",
+        "TA_DATA_DIR=data/fantasy-fake",
+        "server/.venv/bin/uvicorn",
+        "app:app",
+        "--app-dir",
+        "server",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8015"
+      ],
+      "port": 8015
+    },
+    {
+      "name": "web-fantasy-fake",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "API_PORT=8015",
+        "npm",
+        "--prefix",
+        "web",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5175"
+      ],
+      "port": 5175
     }
   ]
 }

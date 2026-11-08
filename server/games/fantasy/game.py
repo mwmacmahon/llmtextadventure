@@ -25,7 +25,7 @@ from engine.events import Event, evaluate, next_moment
 from engine.events import clock_text as ev_clock_text
 from engine.game import (
     ApplyReport, Chip, ClockSpec, CommandResult, Commands, CommandSpec, EntityCard, EntityCards, GameBase, ListPanel,
-    LogPanel, Meter, Option, Param, StatusStrip, Table, TableCell, TaskRow, TurnInfo, UISchema,
+    LogPanel, Meter, MeterGroup, Option, Param, StatusStrip, Table, TableCell, TaskRow, TurnInfo, UISchema,
 )
 from engine.gamekit import Clock, Writer
 from engine.mechanics import CheckRequest, Modifier
@@ -1320,6 +1320,8 @@ class FantasyGame(GameBase):
             kind = "long"
         elif (p.resting in ("short", "long") and info.elapsed_minutes >= SHORT_REST) or (safe and info.elapsed_minutes >= SHORT_REST and not hurt_now):
             kind = "short"
+        if p.resting and not kind:
+            p.rest_cut = info.turn
         p.resting = ""
         if not kind:
             return
@@ -1493,7 +1495,7 @@ class FantasyGame(GameBase):
         if a.hp != b.hp:
             out.append(f"Hit points: {b.hp} → {a.hp}" + (f" ({a.hp_tier})" if a.hp_tier != b.hp_tier else ""))
         if a.heat_word != b.heat_word:
-            out.append(f"The Watch: {b.heat_word} → {a.heat_word}")
+            out.append(f"Heat: {b.heat_word} → {a.heat_word}")
         if a.renown_word != b.renown_word:
             out.append(f"Renown: {b.renown_word} → {a.renown_word}")
         if a.xp != b.xp:
@@ -1509,8 +1511,11 @@ class FantasyGame(GameBase):
             if iid not in was:
                 out.append(f"Pockets: + {it.render()}")
             elif was[iid].count != it.count:
-                out.append(f"{it.name}: {was[iid].count} → {it.count}")
+                out.append(f"{it.name[:1].upper()}{it.name[1:]}: {was[iid].count} → {it.count}")
         out += [f"Pockets: − {it.name}" for iid, it in was.items() if iid not in now]
+        out += [f"Owed: + {d}" for d in a.debts if d not in b.debts]
+        if a.rest_cut and a.rest_cut != b.rest_cut:
+            out.append("Rest cut short: no hit points back")
         new_q = [h.title for h in after.hooks if h.status == "live" and (before.hook(h.id) is None or before.hook(h.id).status != "live")]
         out += [f"Quest: {t}" for t in new_q]
         return out
@@ -1533,7 +1538,7 @@ class FantasyGame(GameBase):
                            words=["rest", "sleep", "catch my breath", "lie down", "turn in", "bed down", "nap"])]
         nxt = sh.xp_for(p.level)
         options = self._level_options(p)
-        out.append(CommandSpec(id="level_up", label="Level up" + ("" if p.xp >= nxt else f" ({p.xp}/{nxt} XP)"), mode="engine",
+        out.append(CommandSpec(id="level_up", label="Level up" + ("" if p.xp >= nxt else f" (at {nxt} XP)"), mode="engine", enabled=p.xp >= nxt,
                                params=[Param(name="stat", label="Raise", options=[Option(id=k, label=k.upper()) for k in STATS]),
                                        Param(name="ability", label="Learn", options=[Option(id=a.id, label=a.name) for a in options] or [Option(id="none", label="nothing new")])],
                                hint="Raise one stat by 1 and learn one thing from the class list, when the XP is there.", words=["level up", "level-up"]))
@@ -1661,49 +1666,62 @@ class FantasyGame(GameBase):
         return [s]
 
     # ---- UI ----------------------------------------------------------------------------------------------------------
+    # The player's view: what the character knows (where a person was last seen, the words for heat and renown), never
+    # the state behind it (the Hidden lines, a person's true place, the numbers behind the words). Stage C (D162).
+    HP_TONES = {"fresh": "ok", "scratched": "ok", "hurt": "warn", "bloodied": "bad", "downed": "bad"}
+    HEAT_TONES = {"nobody": "neutral", "asked about": "warn", "wanted": "bad", "hunted": "bad"}
+    WOUND_TONES = {"minor": "warn", "serious": "bad", "grave": "bad"}
+    ATTITUDE_TONES = {"hostile": "bad", "wary": "warn", "neutral": None, "friendly": "ok", "loyal": "ok", "devoted": "info"}
+
     def ui(self, state: FantasyState) -> UISchema:
         s, p = state, state.player
         nxt, floor = sh.xp_for(p.level), sh.xp_floor(p.level)
+        gold = s.item("gold").count if s.item("gold") else 0
         met = [q for q in s.people if q.met]
+        heard = [q for q in s.people if q.heard_of and not q.met]
         quest_rows = [[TableCell(text=h.title), TableCell(text=h.standing, tone="ok" if h.status == "done" else "bad" if h.status == "failed" else "info"),
                        TableCell(text=h.giver or "")] for h in s.hooks if h.status != "dealt"]
         quest_rows += [[TableCell(text=t.title), TableCell(text=t.status, tone="ok" if t.status == "resolved" else "bad" if t.status == "failed" else "info"),
                         TableCell(text="")] for t in s.threads if not t.id.startswith("hook-")]
-        sheet = [Chip(label=STAT_NAMES[k], value=sh.score_text(k, p.stats.get(k, 0))) for k in STATS]
+        wounds = sorted(p.wounds, key=lambda x: -wd.WEIGHTS[x.weight])
+        sheet = [Chip(label="", value=sh.score_text(k, p.stats.get(k, 0))) for k in STATS]
         sheet += [Chip(label="Race", value=p.race), Chip(label="Class", value=p.klass), Chip(label="Level", value=str(p.level))]
         if p.gender:
             sheet.append(Chip(label="Gender", value=p.gender))
-        sheet += [Chip(label="Ability", value=a.name + (f": {a.text}" if a.text else "")) for a in p.abilities]
-        panels = [
-            StatusStrip(chips=[Chip(label="Time", value=s.clock.render()), Chip(label=p.name, value=p.location or "unknown"),
-                               Chip(label="Level", value=str(p.level)), Chip(label="Gold", value=str((s.item("gold").count if s.item("gold") else 0)))]),
-            Meter(label="Hit points", value=p.hp, min=0, max=p.hp_max, tier=p.hp_tier,
-                  thresholds=[0.5 * p.hp_max, 0.75 * p.hp_max]),
-            *([ListPanel(title="Wounds", items=[Chip(label=x.weight, value=x.words) for x in sorted(p.wounds, key=lambda x: -wd.WEIGHTS[x.weight])])] if p.wounds else []),
-            Meter(label="XP", value=p.xp, min=floor, max=nxt, tier=f"level {p.level}" + (" (ready to level up)" if p.xp >= nxt else "")),
-            Meter(label="Renown", value=p.renown, tier=p.renown_word, thresholds=[25, 50, 75]),
-            Meter(label="Heat", value=p.heat, tier=p.heat_word, thresholds=[20, 50, 80]),
-            Commands(title=p.name, items=self.commands(s)),
-            ListPanel(title="Character", items=sheet),
-            ListPanel(title="Pockets", items=[Chip(label=it.name, value=str(it.count) if it.count != 1 or it.id == "gold" else (it.note or "")) for it in s.inventory]),
+        pockets = [Chip(label=it.name + (f" ×{it.count}" if it.count != 1 else ""), value=it.note or "") for it in s.inventory if it.id != "gold"]
+        panels: list[Any] = [
+            StatusStrip(chips=[Chip(label="Time", value=s.clock.render()), Chip(label="Place", value=p.location or "unknown"),
+                               Chip(label="Level", value=str(p.level)), Chip(label="Gold", value=str(gold))]),
+            Meter(label="Hit points", value=p.hp, min=0, max=p.hp_max, tier=p.hp_tier, text=f"{p.hp} / {p.hp_max}",
+                  tone=self.HP_TONES.get(p.hp_tier, "warn"), thresholds=[0.5 * p.hp_max, 0.75 * p.hp_max],
+                  chips=[Chip(label=x.weight, value=x.words, tone=self.WOUND_TONES.get(x.weight)) for x in wounds]),
+            Meter(label="XP", value=p.xp, min=floor, max=nxt, text=f"{p.xp} / {nxt}", tone="info",
+                  tier="ready to level up" if p.xp >= nxt else f"to level {p.level + 1}"),
+            MeterGroup(meters=[Meter(label="Renown", value=p.renown, tier=p.renown_word, tone="info", thresholds=[25, 50, 75]),
+                               Meter(label="Heat", value=p.heat, tier=p.heat_word, tone=self.HEAT_TONES.get(p.heat_word, "warn"), thresholds=[20, 50, 80])]),
+            Commands(title=None, items=self.commands(s)),
+            ListPanel(title="Character", items=sheet, layout="grid"),
+            ListPanel(title="Abilities", items=[Chip(label=a.name, value=a.text) for a in p.abilities], layout="stack"),
+            ListPanel(title="Pockets", items=[Chip(label=f"{gold} gold", value=""), *pockets], layout="stack"),
         ]
         if p.spells or p.cantrips or p.counts:
-            panels.append(ListPanel(title="Spells and counts", items=[*[Chip(label=c.name, value=f"{c.value} of {c.max}") for c in p.counts],
-                                                                       *[Chip(label="spell", value=x) for x in p.spells],
-                                                                       *[Chip(label="cantrip", value=x) for x in p.cantrips]]))
+            panels.append(ListPanel(title="Spells and counts" if (p.spells or p.cantrips) else "Counts",
+                                    items=[*[Chip(label=c.name, value=f"{c.value} of {c.max}", tone="bad" if c.value <= 0 else None) for c in p.counts],
+                                           *[Chip(label=x, value="spell") for x in p.spells],
+                                           *[Chip(label=x, value="cantrip") for x in p.cantrips]]))
         if p.conditions or p.debts:
-            panels.append(ListPanel(title="Marks and debts", items=[*[Chip(label="mark", value=c.name) for c in p.conditions],
-                                                                     *[Chip(label="owed", value=d) for d in p.debts]]))
+            panels.append(ListPanel(title="Marks and debts", items=[*[Chip(label=c.name, value=f"{STAT_NAMES.get(c.stat, '')} {c.mod:+d}".strip() if c.mod else "") for c in p.conditions],
+                                                                     *[Chip(label="owed", value=d) for d in p.debts]], layout="stack"))
         panels += [
             EntityCards(title="People", cards=[
-                EntityCard(id=q.id, title=q.name, subtitle=f"{q.role} · last seen {q.seen_at or 'unknown'}",
-                           badges=[Chip(label="attitude", value=q.attitude_word), *([Chip(label="status", value=q.status)] if q.status != "alive" else [])],
-                           details=[Chip(label="Last seen", value=q.seen_at or "unknown"), Chip(label="Attitude", value=q.attitude_word)], notes=q.facts)
+                EntityCard(id=q.id, title=q.name, subtitle=q.role or None,
+                           badges=[Chip(label="attitude", value=q.attitude_word, tone=self.ATTITUDE_TONES.get(q.attitude_word)),
+                                   *([Chip(label="status", value=q.status, tone="bad")] if q.status != "alive" else [])],
+                           details=[Chip(label="Last seen", value=q.seen_at or "unknown")], notes=q.facts)
                 for q in met] + [
-                EntityCard(id=q.id, title=q.name, subtitle="heard of, not met", badges=[Chip(label="known", value="heard of")], notes=q.facts)
-                for q in s.people if q.heard_of and not q.met]),
+                EntityCard(id=q.id, title=q.name, subtitle="heard of, not met", notes=q.facts) for q in heard]),
             Table(title="Quests", columns=["Quest", "Where it stands", "From"], rows=quest_rows),
-            ListPanel(title="Journal", items=[Chip(label=n.kind, value=n.text) for n in s.journal[-20:]]),
+            ListPanel(title="Journal", items=[Chip(label="contact" if n.kind == "contact" else "", value=n.text) for n in s.journal[-20:]], layout="stack"),
             LogPanel(title="The day's log", lines=[ln for ln in s.log if ln.startswith(f"Day {s.clock.day} ")][-20:] or s.log[-5:]),
         ]
         return UISchema(phase="ended" if self.ending(s) else "narrate", free_text=not self.ending(s), placeholder=f"What does {p.name} do?", panels=panels)

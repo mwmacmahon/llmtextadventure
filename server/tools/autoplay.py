@@ -60,9 +60,13 @@ def _panel(ui: dict, title: str) -> dict | None:
 def _state_line(game: str, ui: dict) -> str:
     """What the player sees, in one or two lines, from the UI schema (no privileged data)."""
     bits: list[str] = []
-    meter = next((p for p in ui.get("panels", []) if p.get("type") == "meter"), None)
-    if meter:
-        bits.append(f"{meter['label']}: {meter['value']} ({meter.get('tier')})")
+    meters = [p for p in ui.get("panels", []) if p.get("type") == "meter"]
+    if meters and not meters[0].get("text"):
+        bits.append(f"{meters[0]['label']}: {meters[0]['value']} ({meters[0].get('tier')})")
+    elif meters:                            # the fantasy's meters carry their numbers and chips (stage C, D162)
+        bits.append("; ".join(f"{m['label']}: {m['text']} ({m.get('tier')})" + "".join(f", {c['value']}" for c in m.get("chips") or []) for m in meters))
+    for g in (p for p in ui.get("panels", []) if p.get("type") == "meter_group"):
+        bits.append("; ".join(f"{m['label']}: {m.get('tier')}" for m in g["meters"]))
     strip = next((p for p in ui.get("panels", []) if p.get("type") == "status_strip"), None)
     if strip:
         bits.append("; ".join(f"{c['label']} {c['value']}" for c in strip["chips"]))

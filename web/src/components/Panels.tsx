@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { CommandSpec, EntityCard, Widget } from "../api";
+import type { Chip, CommandSpec, EntityCard, MeterWidget, Widget } from "../api";
 
 type OnCommand = (command: string, args: Record<string, unknown>) => void;
 
@@ -30,35 +30,35 @@ function Panel({ w, onChoice, onCommand, busy }: { w: Widget; onChoice?: OnComma
     case "status_strip":
       return (
         <div className="strip">
-          {w.chips.map((c) => (
-            <span key={c.label} className="chip">
-              <span className="chip-label">{c.label}</span>
-              <span className="chip-value">{c.value}</span>
-            </span>
+          {w.chips.map((c, i) => (
+            <ChipView key={`${c.label}-${i}`} c={c} />
           ))}
         </div>
       );
-    case "meter": {
-      const pct = Math.max(0, Math.min(100, ((w.value - w.min) / (w.max - w.min)) * 100));
+    case "meter":
       return (
         <section className="panel">
-          <h3>
-            {w.label} <span className="muted">{w.tier ?? ""}</span>
-          </h3>
-          <div className="meter">
-            <div className="meter-fill" style={{ width: `${pct}%` }} />
-            {w.thresholds.map((t) => (
-              <div key={t} className="meter-tick" style={{ left: `${((t - w.min) / (w.max - w.min)) * 100}%` }} />
+          <MeterBody w={w} />
+        </section>
+      );
+    case "meter_group":
+      return (
+        <section className="panel">
+          {w.title && <h3>{w.title}</h3>}
+          <div className="meter-group">
+            {w.meters.map((m) => (
+              <div key={m.label} className="meter-cell">
+                <MeterBody w={m} small />
+              </div>
             ))}
           </div>
         </section>
       );
-    }
     case "table":
       return (
         <section className="panel">
           <h3>{w.title}</h3>
-          <table>
+          {w.rows.length === 0 ? <div className="muted small">Nothing yet.</div> : <table>
             <thead>
               <tr>
                 {w.columns.map((c) => (
@@ -77,43 +77,65 @@ function Panel({ w, onChoice, onCommand, busy }: { w: Widget; onChoice?: OnComma
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table>}
         </section>
       );
     case "list":
       return (
         <section className="panel">
           <h3>{w.title}</h3>
-          <ul className="kv">
-            {w.items.map((c, i) => (
-              <li key={`${c.label}-${i}`}>
-                <span className="muted">{c.label}</span>
-                <span>{c.value}</span>
-              </li>
-            ))}
-          </ul>
+          {w.items.length === 0 ? (
+            <div className="muted small">Nothing yet.</div>
+          ) : w.layout === "grid" ? (
+            <div className="tiles">
+              {w.items.map((c, i) => (
+                <div key={`${c.label}-${i}`} className={`tile${c.label ? "" : " tile-solo"}${c.tone ? ` tone-${c.tone}` : ""}`}>
+                  {c.label && <span className="tile-label">{c.label}</span>}
+                  <span className="tile-value">{c.value}</span>
+                </div>
+              ))}
+            </div>
+          ) : w.layout === "stack" ? (
+            <ul className="stack">
+              {w.items.map((c, i) => (
+                <li key={`${c.label}-${i}`} className={c.tone ? `tone-${c.tone}` : undefined}>
+                  {c.label && <span className="stack-label">{c.label}</span>}
+                  {c.value && <span className="stack-value">{c.value}</span>}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <ul className="kv">
+              {w.items.map((c, i) => (
+                <li key={`${c.label}-${i}`}>
+                  <span className="muted">{c.label}</span>
+                  <span className={c.tone ? `tone-${c.tone}` : undefined}>{c.value}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       );
     case "entity_cards":
       return (
         <section className="panel">
           <h3>{w.title}</h3>
-          <div className="cards">
+          {w.cards.length === 0 ? <div className="muted small">Nothing yet.</div> : <div className="cards">
             {w.cards.map((c) => (
               <Card key={c.id} card={c} />
             ))}
-          </div>
+          </div>}
         </section>
       );
     case "log":
       return (
         <section className="panel">
           <h3>{w.title}</h3>
-          <ul className="log">
+          {w.lines.length === 0 ? <div className="muted small">Nothing yet.</div> : <ul className="log">
             {w.lines.map((l, i) => (
               <li key={i}>{l}</li>
             ))}
-          </ul>
+          </ul>}
         </section>
       );
     case "choices":
@@ -132,35 +154,74 @@ function Panel({ w, onChoice, onCommand, busy }: { w: Widget; onChoice?: OnComma
   }
 }
 
+function MeterBody({ w, small }: { w: MeterWidget; small?: boolean }) {
+  const span = w.max - w.min || 1;
+  const pct = Math.max(0, Math.min(100, ((w.value - w.min) / span) * 100));
+  const chips = w.chips ?? [];
+  return (
+    <>
+      <div className={`meter-head${small ? " small" : ""}`}>
+        <span className="meter-label">{w.label}</span>
+        {w.tier && <span className={`meter-tier${w.tone ? ` tone-${w.tone}` : ""}`}>{w.tier}</span>}
+        {w.text && <span className="meter-text">{w.text}</span>}
+      </div>
+      <div className={`meter${small ? " meter-small" : ""}`}>
+        <div className={`meter-fill${w.tone ? ` fill-${w.tone}` : ""}`} style={{ width: `${pct}%` }} />
+        {w.thresholds.map((t) => (
+          <div key={t} className="meter-tick" style={{ left: `${((t - w.min) / span) * 100}%` }} />
+        ))}
+      </div>
+      {chips.length > 0 && (
+        <div className="meter-chips">
+          {chips.map((c, i) => (
+            <ChipView key={`${c.label}-${i}`} c={c} />
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function ChipView({ c }: { c: Chip }) {
+  return (
+    <span className={`chip${c.tone ? ` chip-${c.tone}` : ""}`}>
+      {c.label && <span className="chip-label">{c.label}</span>}
+      <span className="chip-value">{c.value}</span>
+    </span>
+  );
+}
+
 function CommandRow({ spec, onRun, busy }: { spec: CommandSpec; onRun?: OnCommand; busy?: boolean }) {
   const [args, setArgs] = useState<Record<string, string>>(() => Object.fromEntries(spec.params.map((p) => [p.name, p.options[0]?.id ?? ""])));
   const ready = spec.params.every((p) => args[p.name]);
+  const enabled = spec.enabled !== false;
   return (
-    <div className="command-row" title={spec.hint}>
-      <span className="command-label">
+    <div className={`command-row${enabled ? "" : " command-off"}`} title={spec.hint + (spec.mode === "narrated" ? " (played in the story)" : "")}>
+      <button className="command-btn" disabled={busy || !ready || !enabled} onClick={() => onRun?.(spec.id, args)}>
         {spec.label}
-        {spec.mode === "narrated" && <span className="muted small"> · narrated</span>}
-      </span>
-      {spec.params.map((p) => (
-        <select key={p.name} value={args[p.name] ?? ""} onChange={(e) => setArgs({ ...args, [p.name]: e.target.value })} aria-label={p.label}>
-          {p.options.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-      ))}
-      <button className="small-btn" disabled={busy || !ready} onClick={() => onRun?.(spec.id, args)}>
-        run
       </button>
+      {enabled &&
+        spec.params.map((p) => (
+          <label key={p.name} className="command-param">
+            {p.label !== spec.label && <span className="muted small">{p.label}</span>}
+            <select value={args[p.name] ?? ""} onChange={(e) => setArgs({ ...args, [p.name]: e.target.value })} aria-label={p.label}>
+              {p.options.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ))}
     </div>
   );
 }
 
 function Card({ card }: { card: EntityCard }) {
   const [open, setOpen] = useState(false);
+  const more = card.details.length > 0 || card.notes.length > 0;
   return (
-    <div className={`card ${open ? "open" : ""}`} onClick={() => setOpen(!open)}>
+    <div className={`card ${open ? "open" : ""}${more ? "" : " card-flat"}`} onClick={() => more && setOpen(!open)}>
       <div className="card-head">
         <div>
           <div className="card-title">{card.title}</div>
@@ -168,13 +229,13 @@ function Card({ card }: { card: EntityCard }) {
         </div>
         <div className="badges">
           {card.badges.map((b, i) => (
-            <span key={`${b.label}-${i}`} className="badge" title={b.label}>
+            <span key={`${b.label}-${i}`} className={`badge${b.tone ? ` chip-${b.tone}` : ""}`} title={b.label}>
               {b.value}
             </span>
           ))}
         </div>
       </div>
-      {open && (
+      {open && more && (
         <div className="card-body">
           <ul className="kv">
             {card.details.map((d, i) => (

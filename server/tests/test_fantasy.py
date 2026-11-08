@@ -115,6 +115,42 @@ def test_scores_show_as_dnd_scores(game: FantasyGame):
     panel = next(x for x in game.ui(st).panels if getattr(x, "title", "") == "Character")
     vals = [c.value for c in panel.items]
     assert "STR 16 (+3)" in vals and "INT 8 (-1)" in vals and "CON 16 (+3)" in vals
+    assert panel.layout == "grid"
+
+
+def test_the_panels_show_what_the_character_knows(game: FantasyGame):
+    """Stage C (§3j): the HP meter with its numbers, tier word and wound chips; the XP meter to the next level; renown and
+    heat as two small meters with words and no numbers; Level up greyed until the XP is there."""
+    from engine.game import MeterGroup
+    st = new(game)
+    st, _, _ = apply(game, st, C(kind="add", target="player", field="hp", value="-4", note="a knife"),
+                     C(kind="set", target="player", field="conditions", value="+a deep cut across the forearm"))
+    ui = game.ui(st)
+    hp = next(x for x in ui.panels if getattr(x, "label", "") == "Hit points")
+    assert hp.text == f"{st.player.hp} / {st.player.hp_max}" and hp.tier == st.player.hp_tier and hp.tone == "warn"
+    assert [(c.label, c.value) for c in hp.chips] == [("serious", "a deep cut across the forearm")]
+    xp = next(x for x in ui.panels if getattr(x, "label", "") == "XP")
+    assert xp.text == "0 / 300" and xp.tier == "to level 2"
+    group = next(x for x in ui.panels if isinstance(x, MeterGroup))
+    assert [(m.label, m.tier, m.text) for m in group.meters] == [("Renown", "quiet", None), ("Heat", "nobody", None)]
+    strip = next(x for x in ui.panels if getattr(x, "type", "") == "status_strip")
+    assert [c.label for c in strip.chips] == ["Time", "Place", "Level", "Gold"]
+    level_up = next(c for c in game.commands(st) if c.id == "level_up")
+    assert not level_up.enabled
+    st.player.xp = 300
+    assert next(c for c in game.commands(st) if c.id == "level_up").enabled
+    assert game.ui(st).panels[2].tier == "ready to level up"
+
+
+def test_the_players_row_says_a_rest_cut_short_and_a_new_debt(game: FantasyGame):
+    st = new(game)
+    st.player.hp = 5
+    ok, _ = game.run_command(st, "rest", {"kind": "short"})
+    cut = game.after_turn(ok, info(turn=3, minutes=47))
+    assert cut.player.hp == 5 and "Rest cut short: no hit points back" in game.seen_changes(ok, cut)
+    owed = cut.model_copy(deep=True)
+    owed.player.debts.append("The Temple of the Quiet Flame: a favour owed")
+    assert "Owed: + The Temple of the Quiet Flame: a favour owed" in game.seen_changes(cut, owed)
 
 
 def test_the_prefix_carries_the_about_text_verbatim_and_the_pronoun_line(game: FantasyGame):

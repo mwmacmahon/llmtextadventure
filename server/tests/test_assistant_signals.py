@@ -51,3 +51,10 @@ def test_ta_stakes_sets_the_narrator_dial(monkeypatch):
     from engine.config import load_config
     monkeypatch.setenv("TA_STAKES", "shadow")
     assert load_config().role("narrator").stakes == "shadow"
+
+
+def test_ta_data_dir_gives_a_server_its_own_store_and_logs(monkeypatch, tmp_path):
+    from engine.config import load_config
+    monkeypatch.setenv("TA_DATA_DIR", str(tmp_path / "fake"))
+    s = load_config().server
+    assert s.data_dir == tmp_path / "fake" and s.log_dir == tmp_path / "fake" / "logs"

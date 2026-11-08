@@ -1,20 +1,25 @@
 // Typed client for the engine API. The UI schema types mirror server/engine/game.py.
 
-export type Chip = { label: string; value: string };
 export type Tone = "neutral" | "ok" | "warn" | "bad" | "info";
+export type Chip = { label: string; value: string; tone?: Tone | null };
 export type TableCell = { text: string; tone: Tone };
 export type EntityCard = { id: string; title: string; subtitle?: string | null; badges: Chip[]; details: Chip[]; notes: string[] };
 export type Choice = { label: string; command: string; args: Record<string, unknown> };
 export type Option = { id: string; label: string };
 export type Param = { name: string; label: string; options: Option[] };
-export type CommandSpec = { id: string; label: string; mode: "engine" | "narrated"; params: Param[]; hint: string };
+export type CommandSpec = { id: string; label: string; mode: "engine" | "narrated"; params: Param[]; hint: string; enabled?: boolean };
+export type MeterWidget = {
+  type: "meter"; label: string; value: number; min: number; max: number; tier?: string | null; thresholds: number[];
+  text?: string | null; tone?: Tone | null; chips?: Chip[];
+};
 
 export type Widget =
   | { type: "status_strip"; chips: Chip[] }
-  | { type: "meter"; label: string; value: number; min: number; max: number; tier?: string | null; thresholds: number[] }
+  | MeterWidget
+  | { type: "meter_group"; title?: string | null; meters: MeterWidget[] }
   | { type: "table"; title: string; columns: string[]; rows: TableCell[][] }
   | { type: "entity_cards"; title: string; cards: EntityCard[] }
-  | { type: "list"; title: string; items: Chip[] }
+  | { type: "list"; title: string; items: Chip[]; layout?: "rows" | "grid" | "stack" }
   | { type: "log"; title: string; lines: string[] }
   | { type: "choices"; title?: string | null; choices: Choice[] }
   | { type: "commands"; title?: string | null; items: CommandSpec[] };

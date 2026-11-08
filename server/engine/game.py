@@ -27,9 +27,13 @@ from .statepath import Actor
 # ---------------------------------------------------------------------------
 
 
+Tone = Literal["neutral", "ok", "warn", "bad", "info"]
+
+
 class Chip(BaseModel):
     label: str
     value: str
+    tone: Tone | None = None        # optional colour for a chip or a badge (a wound's weight, an attitude)
 
 
 class StatusStrip(BaseModel):
@@ -45,11 +49,21 @@ class Meter(BaseModel):
     max: float = 100
     tier: str | None = None        # human label for the current band
     thresholds: list[float] = Field(default_factory=list)
+    text: str | None = None        # the numbers beside the label ("11 / 15"); None shows none
+    tone: Tone | None = None       # a solid fill in this tone; None keeps the green-to-red gradient
+    chips: list[Chip] = Field(default_factory=list)   # shown under the bar (wound chips)
+
+
+class MeterGroup(BaseModel):
+    """Small meters side by side in one panel (the fantasy's renown and heat)."""
+    type: Literal["meter_group"] = "meter_group"
+    title: str | None = None
+    meters: list[Meter]
 
 
 class TableCell(BaseModel):
     text: str
-    tone: Literal["neutral", "ok", "warn", "bad", "info"] = "neutral"
+    tone: Tone = "neutral"
 
 
 class Table(BaseModel):
@@ -78,6 +92,7 @@ class ListPanel(BaseModel):
     type: Literal["list"] = "list"
     title: str
     items: list[Chip]
+    layout: Literal["rows", "grid", "stack"] = "rows"   # rows: label left, value right; grid: tiles; stack: label over value
 
 
 class LogPanel(BaseModel):
@@ -122,6 +137,7 @@ class CommandSpec(BaseModel):
     hint: str = ""
     typed: bool = True              # the adjudicator may map typed input onto it; False for read-only console commands
     words: list[str] = Field(default_factory=list)   # typed use: the input must contain one of these (a word start) for the adjudicator's pick to count
+    enabled: bool = True            # the panel shows it greyed when False (Level up before the XP is there); the engine still refuses
 
 
 class Commands(BaseModel):
@@ -130,7 +146,7 @@ class Commands(BaseModel):
     items: list[CommandSpec]
 
 
-Widget = StatusStrip | Meter | Table | EntityCards | ListPanel | LogPanel | Choices | Commands
+Widget = StatusStrip | Meter | MeterGroup | Table | EntityCards | ListPanel | LogPanel | Choices | Commands
 
 
 class UISchema(BaseModel):

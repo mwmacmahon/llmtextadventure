@@ -201,6 +201,11 @@ def load_config(path: Path | None = None) -> Config:
                 r.slot = i
     # TA_STAKES=off|shadow|live sets the narrator's stakes dial (D109) for one server, so a shadow round needs no edit to
     # the shared config (D111: 5c, the stakes in shadow on Gemma rounds)
+    # TA_DATA_DIR gives one server its own store and logs (a fake server for UI checks beside the live rounds' store)
+    data_dir = os.environ.get("TA_DATA_DIR")
+    if data_dir:
+        cfg.server.data_dir = Path(data_dir).resolve()
+        cfg.server.log_dir = cfg.server.data_dir / "logs"
     stakes = os.environ.get("TA_STAKES")
     if stakes and "narrator" in cfg.roles:
         cfg.roles["narrator"].stakes = stakes  # type: ignore[assignment]

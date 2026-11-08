@@ -143,6 +143,7 @@ class Player(BaseModel):
     fate_note: str = ""             # what the directive says (where they woke, the price, the cost)
     fate_roll: str = ""             # the lethal roll as it fell (for the ledger and the call report; never in a model's text)
     resting: str = ""               # short | long: the Rest command's, applied in after_turn
+    rest_cut: int = 0               # the turn a Rest the player asked for was cut short (the player's row says so)
     visited: dict[str, int] = Field(default_factory=dict)   # place -> the clock (absolute minutes) the player was last there
     thread_xp: dict[str, int] = Field(default_factory=dict) # day -> invented threads paid that day (at most two)
     heat_day: int = 0               # the last day heat fell by itself
