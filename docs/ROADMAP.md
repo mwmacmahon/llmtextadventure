@@ -20,6 +20,13 @@ page is the order; it does not repeat the designs.
   death fork, heat and renown, levels, the panels, its own living page; one 50-turn round on Sonnet read "would play
   on eagerly", a ten-turn smoke after the midday fixes; served on :8014 on Sonnet for its first player today. Noir's
   wounds (H1 to H5) came with it as the shared body piece (D157).
+- **The night's play found the checks hollow** (11-08 night, the owner playing Ungdall on the local model at Hard).
+  Nothing the player says moves a check: the assistant grades difficulty on an abstract scale, nothing weighs the plan
+  or the thing in hand, fiat may not touch what a person feels, and the midday secret-holder floor (B63) made every
+  parley high; a plea to a siren became a roll for her deepest secret, and an offstage siren dragged the player under
+  mid-parley because part four counts anyone hostile at the same place as in the fight. Part seven (B207 to B211)
+  answers it: the words decide first, a situational edge on every check, the floor narrowed, the backstop only for
+  people in the fight.
 - **One model, every role, still holds:** Gemma 4 31B on the box for noir and the station; the fantasy on Sonnet for
   its first play (the profile may differ per run, never per role).
 - The register is `docs/OPEN-ISSUES.md` (B25). 484 tests pass. Stage 3 (profiles, the picker, the settings card) is
@@ -181,7 +188,7 @@ person's files (B9) and the masking sightings are its first cases.
 - **The player UI** as a whole (ISSUES U2). The plain-language pass on every line a model is handed (ISSUES W1) is
   pulled forward to right after the fantasy build (the order line above).
 
-**Position (2026-11-08 evening, at 0017a19).** The fantasy game is built and has been played by the owner; the first
+**Position (2026-11-08 night, at 8c065ae; part four §3 to §5 and the conditions table in, parts five to seven sent).** The fantasy game is built and has been played by the owner; the first
 real game (Marrowgate, Ungdall, 36 turns) found the danger system hollow, and fixing that is now the first item.
 
 *Landed today:* the fantasy (D152 to D167); W1's first pass (D166); the lobby with the bar, game pages, save lines and
@@ -189,10 +196,20 @@ cards, one Settings page, dev mode and the difficulty select (D171, B74 to B77, 
 (D170, B78); the fantasy one Hard step harder and the dice seeded per check (D172, B83, B85); undo that keeps the
 record, the death gallery per character, the death-card lines (D173, B81, B82, B84); rest and the night (D174); the
 twelve SRD classes with Rogue and Barbarian full (B92); the sheet pass (B90); the quest fix (B93); the content fixes
-and the Places panel (B64, B65, B68, B69, B87); hidden games gitignored (B88).
+and the Places panel (B64, B65, B68, B69, B87); hidden games gitignored (B88); part four §3 to §5 (a chosen death lands,
+perils count down by the engine's roll, enemies act every turn, failures cost hit points by tier; D176), the conditions
+table (B96), redo (fb5d406).
 
-*The queue, in order (the owner, 11-08 evening):*
-0. **The night's rulings, part six** (B200 to B206, sent 11-08 night; they change part four where they touch it):
+*The queue, in order (the owner, 11-08 evening; part seven put first 11-08 night):*
+0. **Part seven: the words decide the check** (B207 to B211, B63 narrowed; sent 11-08 night, after the owner's play):
+   first and alone, the backstop rolls only people in the fight (joined by a strike either way or a narrator's call,
+   an ambush included; attitude, moves and place never start it: B208); then as one design the assistant's three-way
+   read of the words (it works, it fails, or it is open; fiat may settle a social attempt the words plainly settle:
+   B207), a situational `edge` with its why on every check from the player's words (d20 -4 to +4, 2d6 the one
+   modifier; guidance per kind; none on levers, enemy moves or hazards: B211), the secret-holder floor only for a
+   check that aims at the secret by force, a tell by its condition never by a die, a leaking stake reworded not
+   dropped (B63, B210); the Hard note (B99, +4 stacks as designed); too_far's silence read last (B209).
+0b. **The night's rulings, part six** (B200 to B206, sent 11-08 night; they change part four where they touch it):
    caps off on every game and a five-step wound ladder (minor 0, moderate -1, serious -2, grave -4, ruinous -5);
    **death is death** (zero hit points is the stone; the downed branch and the carry removed from play, the rescue
    exception a later item); enemy and environment harm through the narrator's inline calls (`ENEMY`, `HAZARD`) with
