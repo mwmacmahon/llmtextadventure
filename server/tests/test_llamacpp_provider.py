@@ -293,3 +293,26 @@ def test_the_other_samplers_are_sent_only_when_set():
                         top_n_sigma=1.0, repeat_last_n=1024), "S", [Msg("user", "x")])
     assert body["dry_multiplier"] == 0.8 and body["dry_allowed_length"] == 4 and body["dry_sequence_breakers"] == ["{", "}", '"']
     assert body["xtc_probability"] == 0.5 and body["top_n_sigma"] == 1.0 and body["repeat_last_n"] == 1024
+
+
+def test_local_schema_requires_part_sevens_fields():
+    """B213: Gemma never wrote edge, edge_why, aim, settled or why (plain fields with defaults stay optional to the
+    grammar). The local schema requires those five by name; the referee's row fields stay optional."""
+    from engine.providers.llamacpp_provider import inline_schema
+    from engine.roles import AssistantReadingStaked, ChangeReport
+
+    def objects(n):
+        if isinstance(n, dict):
+            if n.get("type") == "object" and "properties" in n:
+                yield n
+            for v in n.values():
+                yield from objects(v)
+        elif isinstance(n, list):
+            for v in n:
+                yield from objects(v)
+
+    found = {o.get("title"): set(o["required"]) for o in objects(inline_schema(AssistantReadingStaked.model_json_schema()))}
+    assert {"edge", "edge_why", "aim"} <= found["CheckStaked"]
+    assert {"settled", "why"} <= found["FiatOutcome"]
+    rows = [o for o in objects(inline_schema(ChangeReport.model_json_schema())) if "who" in o["properties"]]
+    assert rows and not any({"who", "note", "minutes", "hidden"} & set(o["required"]) for o in rows)

@@ -944,7 +944,8 @@ class Engine:
                            "notes": ndone.notes, "exchange": ndone.exchange, "told": [t["label"] + ": " + t["outcome"] for t in told],
                            "problems": ndone.problems, "causes": ndone.causes, "raw": ndone.raw,
                            "assessed_not_called": [a.label for a in res["assessments"] if not a.called]}
-            if hasattr(game, "backstop") and adj is not None and adj.kind == "action":   # B206: a hostile the prose left out acts after it
+            if (hasattr(game, "backstop") and adj is not None and adj.kind == "action"      # B206: a hostile the prose left out acts after it
+                    and not any((c.get("result") or {}).get("kills") for c in calls_block["calls"])):   # B215: never on the dead
                 tally_ = getattr(handler, "tally", {})
                 tally_["text"] = " ".join([player_text or "", adj.summary or ""] + [i.action for i in adj.intents])
                 for b in game.backstop(state, tally_, rng_for(iid, turn, "backstop"), self.target_offset(game, iid)):
@@ -1075,6 +1076,15 @@ class Engine:
         if levers and lever_outcomes is None:                    # no referee ran: the levers happened
             state, lever_outcomes = self._commit_levers(game, state, levers, [], iid, turn, ledger)
         lever_outcomes = lever_outcomes or []
+        if force and any(r.get("serious") and r.get("rule") in ("directive_ignored", "contradiction")
+                         for r in (delta_json or {}).get("rulings") or []):
+            # B215: the last telling of a death turn still did not write the death: the engine writes it, no fourth call
+            wrote = _hook(game, "forced_death", state, narration, list(world.rows) if world is not None else [],
+                          calls_block.get("calls", []), default=None)
+            if wrote:
+                ledger("forced_death", {"was": narration, "now": wrote})
+                log.warning("guard.forced_death " + logs.kv(iid=iid, turn=turn))
+                narration = wrote
         narration_stored = narration
         for lv, out in zip(levers, lever_outcomes):
             yield {"event": "mechanic", "data": {"turn": turn, "text": out["text"], "data": {"lever": lv.id, "status": out["status"]}}}

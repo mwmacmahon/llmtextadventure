@@ -256,3 +256,111 @@ def test_swimming_off_reed_island_meets_the_cold_water(game):
     st.player.location = "Reed Island"
     calls = game.backstop(st, {"hp": 0, "acted": [], "text": "I try to swim for the skiff in my gear"}, Dice(3, 0), 2)
     assert [c["call"]["verb"] for c in calls] == ["HAZARD"]
+
+
+def escape_act(text: str, label: str, stat: str = "str"):
+    from engine.roles import CheckProposal
+    return AssistantReading(kind="action", summary=text, time_minutes=1, risk="high", tempo="fast",
+                            intents=[Intent(action=text, check=CheckProposal(label=label, stat=stat, difficulty="high"))])
+
+
+def test_one_die_for_one_way_out(game):
+    """The readiness round (Sonnet, 11-08): the player's own roll to hack free succeeded while a second, countdown roll
+    failed, so the next turn killed a player the prose had on the shore. The player's escape roll now decides the peril."""
+    st = new(game)
+    wo.open_peril(st, "drowning", by="Mirren")
+    a = escape_act("I hack at the hands on my ankles", "hack free of the hands")
+    s2, w = game.world_turn(st, a, "I hack at the hands on my ankles", Dice(1), 3, 2)
+    assert not w.rows and not w.mechanics and "decides it" in w.directives[0] and s2.player.peril is not None
+    ok = {"outcome": "success", "roll": 15, "stat": "str"}
+    assert "way out" in game.check_note(s2, ok, "hack free of the hands")
+    after = game.after_turn(s2, info_calls(3, [ok]))
+    assert after.player.peril is None and not after.player.fate
+    # a failure takes a moment off; the last moment's failure kills, told inline
+    bad = {"outcome": "failure", "roll": 3, "stat": "str"}
+    game.check_note(s2, bad, "hack free of the hands")
+    after = game.after_turn(s2, info_calls(3, [bad]))
+    assert after.player.peril.turns_left == s2.player.peril.turns_left - 1 and not after.player.fate
+    after.player.peril.turns_left = 1
+    last = {"outcome": "failure", "roll": 3, "stat": "str"}
+    assert "dies" in game.check_note(after, last, "hack free of the hands")
+    dead = game.after_turn(after, info_calls(4, [last]))
+    assert dead.player.fate == "dead" and game.cause_of_death(dead, {}).startswith("drowned")
+
+
+def test_a_blow_in_a_peril_is_no_giving_up(game):
+    st = new(game)
+    wo.open_peril(st, "held", by="Mirren")
+    s2, w = game.world_turn(st, act("I swing for her neck"), "I swing for her neck", Dice(15), 3, 2)
+    assert not s2.player.fate
+
+
+def test_a_death_shows_its_line(game):
+    st = new(game)
+    s2, w = game.world_turn(st, act("I drown myself"), "I drown myself", Dice(), 3, 2)
+    assert any("dies" in m for m in w.mechanics)
+
+
+def test_a_surrender_is_not_a_chosen_death(game):
+    """B214 (5528fb9033ac turn 17): 'stop fighting the hands' was read as a wish to die and killed the player before the
+    assistant's cha check ran. A chosen death needs the wish in the words, and the assistant's read as a second witness."""
+    from engine.roles import CheckProposal
+    st = new(game)
+    wo.open_peril(st, "held", by="Mirren")
+    text = ("Held under, I let the axe go and stop fighting the hands. I look at Mirren and mouth it plain: 'Enough. You win. "
+            "I struck the young one; I'll owe you for it. Let me up and I'll leave your water and tell no one the way in.'")
+    a = AssistantReading(kind="action", summary="Kragga yields to Mirren and asks to be let up.", time_minutes=1, risk="high", tempo="fast",
+                         intents=[Intent(action="yield and bargain with Mirren", targets=["mirren"],
+                                         check=CheckProposal(label="talk Mirren into letting go", stat="cha", difficulty="medium", edge=1))])
+    s2, w = game.world_turn(st, a, text, Dice(15), 3, 2)
+    assert not s2.player.fate and not any(r.get("kind") == "death" for r in w.rows)
+    assert not wo.LETHAL.search("I stop fighting and stop struggling; I stop resisting")
+    # the wish in the words, with nothing else read, still lands; with a check, only when the summary names the death
+    assert game.world_turn(new(game), act("I let the water take me"), "I let the water take me", Dice(), 3, 2)[0].player.fate == "dead"
+    b = a.model_copy(update={"summary": "Kragga lets the water take her and drowns."})
+    assert game.world_turn(new(game), b, "I let the water take me", Dice(), 3, 2)[0].player.fate == "dead"
+    c = a.model_copy(update={"summary": "Kragga tries to bargain."})
+    assert not game.world_turn(new(game), c, "I let the water take me", Dice(), 3, 2)[0].player.fate
+
+
+def test_the_engine_writes_a_death_the_last_telling_left_out(game):
+    """B215 (5528fb9033ac turn 23): three tellings had Kragga surface and break the song after the world killed him. On the
+    forced pass the engine writes the death: the prose to the death's moment, then one line in the game's voice."""
+    st = new(game)
+    wo.open_peril(st, "drowning", by="Mirren")
+    s2, w = game.world_turn(st, act("I walk back up the shingle"), "I plant myself on the shingle", Dice(), 3, 2)
+    assert s2.player.fate == "dead"
+    prose = "A voice finds you as the last water leaves your ears.\n\nYou wrench free of it with a roar.\n\n§ STR, medium. 13 + 7 = 20 against 12. Huge success."
+    out = game.forced_death(s2, prose, w.rows, [])
+    assert out.startswith("A voice finds you") and "wrench free" not in out and out.endswith(f"The water closes. {s2.player.name} dies at {s2.player.location}.")
+    # a killing call inline: the prose up to and through its § line
+    kill = {"call": {"raw": "ENEMY maud strike"}, "result": {"kills": True, "cause": "Maud's cleaver"}, "mechanic": "Maud's strike: 19 against armour 17. Hit."}
+    prose2 = "Maud comes over the bar.\n\n§ Maud's strike: 19 against armour 17. Hit.\n\nYou shrug it off and laugh."
+    out2 = game.forced_death(new(game), prose2, [], [kill])
+    assert "Hit." in out2 and "laugh" not in out2 and out2.endswith("dies at " + new(game).player.location + ".")
+    assert game.forced_death(new(game), prose2, [], []) is None
+
+
+def test_nobody_rolls_on_the_dead(game):
+    """B215: after a death row the backstop rolled Mirren and Elowen on a dead player (seq 525, 530, 531)."""
+    st = new(game)
+    foe(st, moves=[{"kind": "strike", "bonus": 30, "damage": "solid"}])
+    st.player.hp, st.player.fate = 0, "dead"
+    assert game.backstop(st, {"hp": 0, "acted": []}, Dice(15, 15), 2) == []
+    live = new(game)
+    foe(live, moves=[{"kind": "strike", "bonus": 30, "damage": "lethal"}])
+    foe(live, pid="hazel", moves=[{"kind": "strike", "bonus": 30, "damage": "solid"}])
+    out = game.backstop(live, {"hp": 0, "acted": []}, Dice(15, 50, 15, 50), 2)
+    assert len(out) == 1 and out[0]["result"].get("kills")
+
+
+
+def test_the_word_at_zero_is_dead(game):
+    """B216: the strip said 'Hit points: 0 / 9 (downed)' while zero is death (B205). The word is the stone's."""
+    st = new(game)
+    st.player.hp = 0
+    assert st.player.hp_tier == "dead"
+    meter = next(m for m in game.ui(st).panels if getattr(m, "label", "") == "Hit points")
+    assert meter.tier == "dead"
+    assert "; dead;" in game.render_bulletin(st, "")
+    assert "downed" not in game.ui(st).model_dump_json()
