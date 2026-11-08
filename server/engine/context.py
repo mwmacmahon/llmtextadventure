@@ -140,7 +140,7 @@ def build_messages(store: Store, instance_id: str, window_turns: int, bulletin: 
         messages=msgs,
         window_first_turn=window[0] if window else None,
         window_turns=len(window),
-        summary_turn=summary.turn if summary else None,
+        summary_turn=summary.folds_to if summary else None,
         dropped_turns=completed[:start],
         trimmed_turns=completed[base:start],
         est_tokens=est,
@@ -164,7 +164,7 @@ def _window_messages(rows: list[TranscriptRow], turns: dict[int, dict[str, str]]
 
 
 def _latest_summary(rows: list[TranscriptRow], before_turn: int | None) -> TranscriptRow | None:
-    cands = [r for r in rows if r.role == "system_note" and (before_turn is None or r.turn < before_turn)]
+    cands = [r for r in rows if r.role == "system_note" and (before_turn is None or r.folds_to < before_turn)]
     return cands[-1] if cands else None
 
 
@@ -181,9 +181,10 @@ class SummaryPlan:
 
 
 def summary_plan(store: Store, instance_id: str, window_turns: int, slide: int) -> SummaryPlan:
-    """The summarizer runs at slide points, over exactly the turns that just left the window.
-    The summary row is stored at the last covered turn, so undo past it drops it and
-    `_latest_summary` picks it up whenever the window starts after it."""
+    """The summarizer runs at slide points, over exactly the turns that just left the window. The summary row is stored at
+    the turn it is written, with `covers` the last turn it folds (B212, D179): an undo or a branch to before the writing
+    drops it, and the next turn folds again. (Filed at the last covered turn before, a summary written at turn 31 that
+    knew of turn 27's kill outlived an undo to turn 26.)"""
     rows = store.transcript(instance_id, roles=["player", "narrator", "system_note", "command", "result"])
     turns: dict[int, dict[str, str]] = {}
     for r in rows:
@@ -193,7 +194,7 @@ def summary_plan(store: Store, instance_id: str, window_turns: int, slide: int) 
     start = window_start(len(completed), window_turns, slide)
     dropped = completed[:start]
     prev = _latest_summary(rows, None)
-    covered = prev.turn if prev else 0
+    covered = prev.folds_to if prev else 0
     to_cover = [t for t in dropped if t > covered]
     if not to_cover:
         return SummaryPlan([], prev)

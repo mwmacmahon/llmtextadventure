@@ -829,10 +829,14 @@ class Engine:
             yield {"event": "summary", "data": {"status": "running", "turns": plan.to_cover}}
             try:
                 text, meta = await self._summarize(game, state, plan, iid)
-                self.store.append_transcript(iid, plan.to_cover[-1], "system_note", text)
+                # B212 (D179): stored at the turn it is written, `covers` the last turn it folds, so an undo or a branch to before
+                # this turn drops it; a retelling of this turn deletes it too, and the next turn folds again (summary_plan)
+                self.store.append_transcript(iid, turn, "system_note", text, covers=plan.to_cover[-1])
+                if LATER_EVENTS.search(text):                 # the summarizer wrote past the folded turns: flagged, for the record
+                    meta["wrote_past"] = LATER_EVENTS.search(text).group(0)
                 # stored at the last covered turn, like the summary row itself: a retelling of this turn deletes this turn's rows and does not
                 # summarize again (ISSUES R11, 11-04: five rounds lost the row)
-                self.store.append_ledger(iid, plan.to_cover[-1], "model_call", {"role": "summarizer", **meta, "covered": plan.to_cover, "previous_turn": plan.previous.turn if plan.previous else None, "text": text})
+                self.store.append_ledger(iid, turn, "model_call", {"role": "summarizer", **meta, "covered": plan.to_cover, "previous_turn": plan.previous.folds_to if plan.previous else None, "text": text})
                 log.info("step " + logs.kv(iid=iid, turn=turn, step="summarize", model=meta["model"], seconds=meta["seconds"],
                                            covered=f"{plan.to_cover[0]}-{plan.to_cover[-1]}", chars=len(text), **logs.usage_kv(meta["usage"])))
                 yield {"event": "summary", "data": {"status": "done", "turns": plan.to_cover, "chars": len(text)}}
@@ -1830,7 +1834,12 @@ class Engine:
     async def _summarize(self, game: Game, state: BaseModel, plan, iid: str | None = None) -> tuple[str, dict]:
         role = self.cfg.role("summarizer")
         provider = self._provider(role, iid, "summarizer")
-        captured = _hook(game, "state_for_models", state, default=game.render_bulletin(state, ""))
+        # B212 (D179): the state block as it stood at the last folded turn, never the latest: the summary covers those turns only
+        try:
+            at = game.load_state(self.store.load_state(iid, plan.to_cover[-1])) if iid else state
+        except Exception:
+            at = state
+        captured = _hook(game, "state_for_models", at, default=game.render_bulletin(at, ""))
         guidance = _hook(game, "summary_guidance", state, default="")
         rows = [(t, [(r, tier_only_view(x) if r == "narrator" else x) for r, x in parts]) for t, parts in plan.rows]
         system, msgs = summarizer_messages(plan.previous.text if plan.previous else None, rows, captured, guidance)
@@ -2162,6 +2171,9 @@ def tier_only_view(narration: str) -> str:
 # the same id (the dice seed on it), and run_turn replays the stored adjudication with Replay(by="eval"), which adds
 # no retelling directive and stops after the narration. So the narrator's request is built by the code that built it
 # live, and a variant (another narrator role, another window) changes only what it names.
+LATER_EVENTS = re.compile(r"\b(later events|now past|later that|in the turns? (since|after)|would later|afterwards?,)", re.I)
+
+
 def doc_upto(doc: dict, turn: int) -> dict:
     """An exported game (Store.export_instance) cut to the turns before `turn`, as it stood when `turn` began: a
     story-so-far summary is filed under the last turn it covers but written later, so transcript rows written after
@@ -2170,7 +2182,8 @@ def doc_upto(doc: dict, turn: int) -> dict:
     rows = [r for r in doc["transcript"] if r["turn"] == turn]
     # the bulletin is written just before the narrator runs, after any summary the turn itself wrote
     start = next((r["created"] for r in rows if r["role"] == "bulletin"), min((r["created"] for r in rows), default=None))
-    return {**doc, "transcript": [r for r in doc["transcript"] if r["turn"] < turn and (start is None or r["created"] < start)],
+    return {**doc, "transcript": [r for r in doc["transcript"] if (r["turn"] < turn or (r["turn"] == turn and r["role"] == "system_note"))
+                                  and (start is None or r["created"] < start)],
             "ledger": [r for r in doc["ledger"] if r["turn"] < turn],
             "snapshots": [x for x in doc["snapshots"] if x["turn"] < turn]}
 

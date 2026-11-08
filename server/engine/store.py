@@ -88,6 +88,7 @@ MIGRATIONS = [
     ("instance", "difficulty", "TEXT NOT NULL DEFAULT 'normal'"), # the player's difficulty: easy | normal | hard (moves the die)
     ("transcript", "undone", "INTEGER NOT NULL DEFAULT 0"),       # undo keeps the record (B82)
     ("ledger", "undone", "INTEGER NOT NULL DEFAULT 0"),
+    ("transcript", "covers", "INTEGER NOT NULL DEFAULT 0"),       # a summary's last folded turn; its own turn is when it was written (B212)
 ]
 
 
@@ -143,6 +144,12 @@ class TranscriptRow:
     text: str
     created: str
     undone: int = 0
+    covers: int = 0          # a story-so-far row: the last turn it folds (B212); 0 on every other row and on old summaries
+
+    @property
+    def folds_to(self) -> int:
+        """The last turn a summary folds: `covers`, or its own turn for a summary written before B212."""
+        return self.covers or self.turn
 
 
 def live(doc: dict) -> dict:
@@ -307,19 +314,19 @@ class Store:
         return int(r["s"] or 0) + 1
 
     @_locked
-    def append_transcript(self, iid: str, turn: int, role: str, text: str) -> int:
+    def append_transcript(self, iid: str, turn: int, role: str, text: str, covers: int = 0) -> int:
         seq = self._next_seq("transcript", iid)
         with self.conn:
             self.conn.execute(
-                "INSERT INTO transcript (instance_id, seq, turn, role, text, created) VALUES (?,?,?,?,?,?)",
-                (iid, seq, turn, role, text, _now()),
+                "INSERT INTO transcript (instance_id, seq, turn, role, text, created, covers) VALUES (?,?,?,?,?,?,?)",
+                (iid, seq, turn, role, text, _now(), covers),
             )
         return seq
 
     @_locked
     def transcript(self, iid: str, roles: Iterable[str] | None = None, undone: bool = False) -> list[TranscriptRow]:
         """The live rows (`undone=True`: the undone ones too, each with its mark: the play page's log)."""
-        q = "SELECT seq, turn, role, text, created, undone FROM transcript WHERE instance_id=?" + ("" if undone else " AND undone=0")
+        q = "SELECT seq, turn, role, text, created, undone, covers FROM transcript WHERE instance_id=?" + ("" if undone else " AND undone=0")
         args: list[Any] = [iid]
         if roles:
             roles = list(roles)
@@ -451,7 +458,7 @@ class Store:
                 "created": inst.created, "status": inst.status, "setup": inst.setup, "prefix_text": inst.prefix_text,
                 "origin": inst.origin, "updated": inst.updated, "difficulty": inst.difficulty,
             },
-            "transcript": rows(f"SELECT seq, turn, role, text, created, undone FROM transcript WHERE instance_id=?{lim} ORDER BY seq"),
+            "transcript": rows(f"SELECT seq, turn, role, text, created, undone, covers FROM transcript WHERE instance_id=?{lim} ORDER BY seq"),
             "ledger": ledger,
             "blobs": self.blobs(blob_refs(ledger)),
             "snapshots": [
@@ -478,8 +485,9 @@ class Store:
                  now, src.get("difficulty") or "normal"),
             )
             self.conn.executemany(
-                "INSERT INTO transcript (instance_id, seq, turn, role, text, created, undone) VALUES (?,?,?,?,?,?,?)",
-                [(iid, r["seq"], r["turn"], r["role"], r["text"], r["created"], int(r.get("undone") or 0)) for r in doc.get("transcript", [])],
+                "INSERT INTO transcript (instance_id, seq, turn, role, text, created, undone, covers) VALUES (?,?,?,?,?,?,?,?)",
+                [(iid, r["seq"], r["turn"], r["role"], r["text"], r["created"], int(r.get("undone") or 0), int(r.get("covers") or 0))
+                 for r in doc.get("transcript", [])],
             )
             self.conn.executemany(
                 "INSERT INTO ledger (instance_id, seq, turn, kind, payload_json, created, undone) VALUES (?,?,?,?,?,?,?)",

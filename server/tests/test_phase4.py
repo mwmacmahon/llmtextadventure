@@ -67,20 +67,23 @@ async def test_summary_written_at_slide_points_and_undone_with_its_turn(engine: 
     for t in range(1, 9):
         events = await play(engine, iid, f"turn {t}")
         seen += [e["data"]["turns"] for e in events if e["event"] == "summary" and e["data"]["status"] == "done"]
-    # completed before turn 6 is 5 -> window starts at 2 -> turns 1-2 summarised (stored at turn 2);
-    # before turn 8 it is 7 -> start 4 -> turns 3-4 folded into a new summary stored at turn 4.
+    # completed before turn 6 is 5 -> window starts at 2 -> turns 1-2 summarised (written at turn 6, covering 2);
+    # before turn 8 it is 7 -> start 4 -> turns 3-4 folded into a new summary written at turn 8, covering 4 (B212, D179).
     assert seen == [[1, 2], [3, 4]]
     notes = engine.store.transcript(iid, roles=["system_note"])
-    assert [n.turn for n in notes] == [2, 4]
-    # the summarizer's call row sits at the last covered turn, beside the summary row, so a retelling of turn 8 keeps it (ISSUES R11)
-    calls = [l["payload"] for l in engine.store.ledger(iid, 4) if l["kind"] == "model_call" and l["payload"].get("role") == "summarizer"]
+    assert [n.turn for n in notes] == [6, 8] and [n.covers for n in notes] == [2, 4]
+    calls = [l["payload"] for l in engine.store.ledger(iid, 8) if l["kind"] == "model_call" and l["payload"].get("role") == "summarizer"]
     assert calls and calls[0]["covered"] == [3, 4] and calls[0]["previous_turn"] == 2 and "usage" in calls[0]
     assert not summary_plan(engine.store, iid, 3, 2).needed
-    # undo past turn 4 drops the second summary; the first one still covers turns 1-2
-    engine.undo(iid, to_turn=3)
-    assert [n.turn for n in engine.store.transcript(iid, roles=["system_note"])] == [2]
+    # undo to turn 7 drops the summary written at turn 8, though it folds only turns 3-4: it was written knowing turn 7
+    engine.undo(iid, to_turn=7)
+    assert [n.covers for n in engine.store.transcript(iid, roles=["system_note"])] == [2]
+    assert summary_plan(engine.store, iid, 3, 2).to_cover == [3, 4]          # the next turn folds them again
+    engine.undo(iid, to_turn=5)
+    assert engine.store.transcript(iid, roles=["system_note"]) == []
+    # with no summary left, turns 1-2 fold again
     plan = summary_plan(engine.store, iid, 3, 2)
-    assert not plan.needed  # completed 3 -> start 0 -> nothing dropped
+    assert plan.to_cover == [1, 2]
 
 
 # ---- threads ----------------------------------------------------------------
