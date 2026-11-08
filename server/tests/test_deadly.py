@@ -299,3 +299,25 @@ def test_a_death_shows_its_line(game):
     st = new(game)
     s2, w = game.world_turn(st, act("I drown myself"), "I drown myself", Dice(), 3, 2)
     assert any("dies" in m for m in w.mechanics)
+
+
+def test_a_surrender_is_not_a_chosen_death(game):
+    """B214 (5528fb9033ac turn 17): 'stop fighting the hands' was read as a wish to die and killed the player before the
+    assistant's cha check ran. A chosen death needs the wish in the words, and the assistant's read as a second witness."""
+    from engine.roles import CheckProposal
+    st = new(game)
+    wo.open_peril(st, "held", by="Mirren")
+    text = ("Held under, I let the axe go and stop fighting the hands. I look at Mirren and mouth it plain: 'Enough. You win. "
+            "I struck the young one; I'll owe you for it. Let me up and I'll leave your water and tell no one the way in.'")
+    a = AssistantReading(kind="action", summary="Kragga yields to Mirren and asks to be let up.", time_minutes=1, risk="high", tempo="fast",
+                         intents=[Intent(action="yield and bargain with Mirren", targets=["mirren"],
+                                         check=CheckProposal(label="talk Mirren into letting go", stat="cha", difficulty="medium", edge=1))])
+    s2, w = game.world_turn(st, a, text, Dice(15), 3, 2)
+    assert not s2.player.fate and not any(r.get("kind") == "death" for r in w.rows)
+    assert not wo.LETHAL.search("I stop fighting and stop struggling; I stop resisting")
+    # the wish in the words, with nothing else read, still lands; with a check, only when the summary names the death
+    assert game.world_turn(new(game), act("I let the water take me"), "I let the water take me", Dice(), 3, 2)[0].player.fate == "dead"
+    b = a.model_copy(update={"summary": "Kragga lets the water take her and drowns."})
+    assert game.world_turn(new(game), b, "I let the water take me", Dice(), 3, 2)[0].player.fate == "dead"
+    c = a.model_copy(update={"summary": "Kragga tries to bargain."})
+    assert not game.world_turn(new(game), c, "I let the water take me", Dice(), 3, 2)[0].player.fate

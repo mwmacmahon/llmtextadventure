@@ -27,8 +27,8 @@ from engine.mechanics import CheckRequest, Modifier, dice_d20
 from .state import Condition, FantasyState, Peril, Person
 
 LETHAL = re.compile(r"\b(drown (myself|himself|herself|themselves)|let (the (water|lake|river|sea|cold|fire|dark)|it) (take|have) me|"
-                    r"stop (fighting|struggling|swimming|breathing)|give up and die|kill (myself|himself|herself|themselves)|"
-                    r"end (it|my life)|let (myself|go and) (drown|sink|die)|i (want to|choose to|let myself) die|i stop resisting|"
+                    r"stop breathing|give up and die|kill (myself|himself|herself|themselves)|"
+                    r"end (it|my life)|let (myself|go and) (drown|sink|die)|i (want to|choose to|let myself) die|"
                     r"breathe (the|in the) water|open my mouth (and|to) (breathe|let the water))", re.I)
 ESCAPE = re.compile(r"\b(swim|surface|climb|break (free|loose|out|her grip|his grip|their grip)|pull (free|loose|away|myself)|kick (free|loose|off|away)|"
                     r"get (out|free|clear|away|loose)|escape|struggle|wrench|twist (free|away)|thrash|claw|grab (for|at|the)|hold (my|our) breath|"
@@ -160,6 +160,21 @@ def _check(game: Any, s: FantasyState, stat: str, difficulty: str, label: str, r
     return dice_d20(rng, req)
 
 
+DEATH_WORDS = re.compile(r"\b(die|dies|dying|death|drown|drowns|drowning|suicide|end (it|their life|his life|her life)|kill (himself|herself|themselves))\b", re.I)
+
+
+def chose_death(adj: Any) -> bool:
+    """The assistant's read is the second witness to a chosen death (B214): it fires only when the reading has no check and
+    no fiat for the attempt, or names the death in its summary. "Stop fighting" is also how a player yields, and a
+    surrender is a parley (a cha attempt against the one holding them)."""
+    if adj is None:
+        return True
+    if DEATH_WORDS.search(getattr(adj, "summary", "") or ""):
+        return True
+    has_check = any(getattr(i, "check", None) is not None for i in getattr(adj, "intents", None) or [])
+    return not has_check and not (getattr(adj, "fiat", None) or [])
+
+
 def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: Any, turn: int, offset: int) -> tuple[FantasyState, WorldTurn]:
     s = state.model_copy(deep=True)
     p = s.player
@@ -168,7 +183,7 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
         return s, w
     text = " ".join([player_text or "", getattr(adj, "summary", "") or ""] + [i.action for i in (getattr(adj, "intents", None) or [])])
     # -- a chosen death (B100 (b)): no roll stands between a player and the end they chose
-    if LETHAL.search(player_text or ""):
+    if LETHAL.search(player_text or "") and chose_death(adj):
         _end(game, s, turn, "by their own choice", w=w, cause=f"chose to die at {p.location}")
         w.skip.append("hp")
         return s, w
