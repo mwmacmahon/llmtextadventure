@@ -50,7 +50,7 @@ Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a shor
 
 ## The queue, in order (the owner, 11-08 evening; part seven put first 11-08 night; part eight 11-09)
 
-0. **Part nine, to write when the owner says ready** (the side chat's read of §5 and the readiness report, 11-09):
+0. **Part nine, written 11-09 about 01:15, carried to the build chat by the owner** (the side chat's read of §5 and the readiness report, 11-09):
    first and alone, the secret-holder floor on an engine witness, never on the model's `aim` (B217: Gemma marks every
    check secret, the floor is back on every parley and on fights); then the settled rows written once from the reading
    (B219), a name masked as a pronoun (B220), the fail branch forced for impossible demands (B225), the grab that follows
