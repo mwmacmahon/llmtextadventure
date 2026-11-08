@@ -37,6 +37,7 @@ export function Bar({ settingsHref }: { settingsHref: string }) {
     <nav className="bar">
       <a className="bar-name" href="#/">Text Adventure</a>
       <a href="#/">Games</a>
+      <a href="#/graveyard">Graveyard</a>
       <a href={settingsHref}>Settings</a>
       <button className="link" onClick={() => fileRef.current?.click()} title="Open a saved game from a file you exported">
         Import

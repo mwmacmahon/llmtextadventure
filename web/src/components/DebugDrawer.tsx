@@ -53,7 +53,7 @@ export function DebugDrawer({
           <button
             className="link small danger"
             onClick={() => {
-              if (confirm(`Rewind to turn ${sel}? Turns ${sel + 1}–${turn} will be deleted.`)) onRewind(sel);
+              if (confirm(`Rewind to turn ${sel}? Turns ${sel + 1}–${turn} will be undone (kept in the log, struck through).`)) onRewind(sel);
             }}
           >
             rewind to here
