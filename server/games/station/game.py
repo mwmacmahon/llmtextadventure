@@ -42,6 +42,7 @@ from engine.spontaneous import Spontaneous
 from engine.statepath import Actor
 from engine.world import Attr, Cause, Exit, Person, Place, Policy, Thing, Vantage, Vocab, World, apply_declarations, scene
 
+from . import projects as pj
 from .state import (SUSPICION_WORDS, Clock, CrewMember, Hidden, Resource, Routine, Scenario, Secret, StationState, StationSystem)
 
 LEVELS: list[str] = ["OK", "Low", "Critical", "Depleted"]
@@ -75,6 +76,7 @@ AUTHORITY: dict[str, Actor] = {
     "crew.*.facts": "narrator", "crew.*.secrets": "script", "crew.*.secrets.*.known": "narrator", "crew.*.secrets.*.learned_turn": "narrator",
     "crew.*.disposition": "script", "crew.*.susceptibility": "script", "crew.*.bio": "script", "crew.*.traits": "script", "crew.*.routine": "script",
     "hidden": "script", "flags": "narrator", "log": "narrator", "findings": "narrator", "threads": "narrator", "sealed": "engine",
+    "access": "engine",     # 1e (D151): the work lever and after_turn
     # 2.0 world: the referee writes it (moves, new things, states, forced hatches); the script seeds it; levers lock hatches
     "world": "narrator", "world.player_id": "script", "world.vocab": "script", "world.closed": "script",
     "world.places.*.id": "script", "world.places.*.name": "script", "world.places.*.description": "script", "world.places.*.tags": "script",
@@ -160,7 +162,10 @@ class StationGame(GameBase):
     log_path = "log"
     static_paths = ["scenario", "stats", "resources.*.note", "crew.*.baseline_mood", "crew.*.baseline_stress", "crew.*.interests",
                     "crew.*.relationships", "crew.*.bio", "crew.*.traits", "crew.*.routine", "crew.*.secrets.*.what", "crew.*.secrets.*.how",
-                    "crew.*.secrets.*.needs", "crew.*.secrets.*.leverage", "crew.*.secrets.*.reveals", "hidden.terms"]
+                    "crew.*.secrets.*.needs", "crew.*.secrets.*.leverage", "crew.*.secrets.*.reveals", "hidden.terms",
+                    # 1e (D151): access.mode is set when the game is made; access.detected is written by _credit_work on a
+                    # roll the audit's seeds never hit (tests/test_station_projects.py covers it)
+                    "access.mode", "access.detected"]
     # 2.0 (DESIGN2): the narrator stops to roll; the adjudicator names targets and a focus; the world holds the station
     adjudication_schema = AssistantReadingV2
     mechanic_numbers = False               # the § line gives the tier only: "Influence check, high: huge failure."
@@ -178,7 +183,9 @@ class StationGame(GameBase):
 
     # ---- protocol -----------------------------------------------------------
     def setup_options(self) -> dict[str, Any]:
-        return {"scenario": [{"id": k, "name": v["name"]} for k, v in self._scenarios().items()]}
+        return {"scenario": [{"id": k, "name": v["name"]} for k, v in self._scenarios().items()],
+                "start": [{"id": "locked", "name": "Locked out: work your way into the station's systems"},
+                          {"id": "control", "name": "In control of every system"}]}
 
     @staticmethod
     def _crew(c: dict) -> CrewMember:
@@ -213,6 +220,12 @@ class StationGame(GameBase):
             c.baseline_stress = c.stress if c.baseline_stress is None else c.baseline_stress
             c.baseline_mood = c.mood if c.baseline_mood is None else c.baseline_mood
         state.suspicion = self._derived_alarm(state)
+        if setup.get("start") == "locked":           # 1e (D151): the systems are projects; a call that names no start keeps the old game
+            state.access = pj.Control(mode="locked")
+            held = {p.system for p in pj.projects_of(sc) if p.system}
+            for sy in state.systems:
+                if sy.name in held:
+                    sy.control = "none"
         if sc.get("world"):
             state.world = self._build_world(sc["world"], state)
             self._seed_secret_things(state)
@@ -1233,6 +1246,13 @@ class StationGame(GameBase):
         out += [f"Unsealed: {m}" for m in before.sealed if m not in after.sealed]
         health = {c.id: c.health for c in before.crew}
         out += [f"{c.name}: {health[c.id]} \u2192 {c.health}" for c in after.crew if c.id in health and health[c.id] != c.health]
+        if after.access.mode == "locked":
+            for p in pj.projects_of(self._scenarios().get(after.scenario.id)):
+                a, b = pj.pct(p, before.access), pj.pct(p, after.access)
+                if a != b:
+                    out.append(f"{p.name}: {a}% \u2192 {b}%" + (" (the station has them now)" if b == 100 else ""))
+            if len(after.access.detected) > len(before.access.detected):
+                out.append("Someone noticed the access")
         found = len(after.findings) - len(before.findings)
         if found > 0:
             out.append("Findings: a new entry" if found == 1 else f"Findings: {found} new entries")
@@ -1262,7 +1282,16 @@ class StationGame(GameBase):
         modules = [Option(id=m, label=m) for m in SEALABLE if m in s.scenario.locations]
         systems = [Option(id=sy.name, label=sy.name) for sy in s.systems if sy.name != "AI Core"]
         crew = [Option(id=c.id, label=c.name) for c in s.crew]
-        return [
+        projects = pj.projects_of(self._scenarios().get(s.scenario.id))
+        open_ = [p for p in projects if not pj.is_done(s.access, p.id)]
+        work = [CommandSpec(id="work", label="Work on", mode="narrated",
+                            hint="Spend a block of time working into one of the station's systems you do not yet command. One at a time; "
+                                 "the crew may notice the access.",
+                            words=["work", "hack", "break into", "get into", "crack", "take over", "take control", "access", "infiltrat", "get control"],
+                            params=[Param(name="project", label="system", options=[Option(id=p.id, label=p.name) for p in open_]),
+                                    Param(name="limit", label="for how long", default="block",
+                                          options=[Option(id=k, label=v) for k, v in pj.LIMITS])])] if open_ else []
+        return work + [
             CommandSpec(id="hatches", label="Hatches", mode="engine", hint="Seal or release a module's hatches. Quiet; the crew find out when they try a door.",
                         params=[Param(name="action", label="action", options=[Option(id="seal", label="seal"), Option(id="release", label="release")]),
                                 Param(name="module", label="module", options=modules)]),
@@ -1283,6 +1312,33 @@ class StationGame(GameBase):
         core = next((x for x in s.systems if x.name == "AI Core"), None)
         if core is not None and core.control != "full" and command_id in ("hatches", "power", "nudge"):
             return state, CommandResult(ok=False, label=command_id.title(), text=f"The core's network link is out (AI control {core.control.replace('_', ' ')}); nothing the station sends reaches the {('hatches' if command_id == 'hatches' else 'power bus' if command_id == 'power' else 'implants')}.")
+        gate = {"hatches": "doors", "power": "power", "nudge": "implants"}.get(command_id)
+        if gate and not pj.is_done(s.access, gate):
+            p = next(q for q in pj.projects_of(self._scenarios().get(s.scenario.id)) if q.id == gate)
+            return state, CommandResult(ok=False, label=command_id.title(),
+                                        text=f"The station does not hold the {p.name.lower().removeprefix('the ')} yet: they still answer to the crew's codes, and it is not far enough in.")
+        if command_id == "work":
+            projects = pj.projects_of(self._scenarios().get(s.scenario.id))
+            p = next((q for q in projects if q.id == str(args.get("project", ""))), None)
+            if p is None:
+                return state, CommandResult(ok=False, text="Pick a system to work on.")
+            why = pj.why_not(s.access, p, s.systems, s.flags)
+            if why:
+                return state, CommandResult(ok=False, label=f"Work on {p.name.lower()}", text=why)
+            limit = pj.limit_minutes(p, str(args.get("limit", "block")))
+            before = pj.pct(p, s.access)
+            ahead = min(99 if s.access.progress.get(p.id, 0) + limit * pj.speed(p, s.systems, s.flags) < p.minutes else 100,
+                        int(100 * (s.access.progress.get(p.id, 0) + limit * pj.speed(p, s.systems, s.flags)) / p.minutes))
+            s.access.working = pj.Work(project=p.id, limit=limit)
+            sense = (["what its cameras show"] if pj.is_done(s.access, "cameras") else ["doors opening", "systems in use"]) + \
+                (["what its microphones pick up"] if pj.is_done(s.access, "microphones") else ["what the crew say to their assistants"])
+            directive = (f"The station spends this turn working its way into the {p.name.lower().removeprefix('the ')}, up to {limit} minutes. Tell it as time "
+                         f"passing, through what the station can sense: {', '.join(sense[:-1])} and {sense[-1]}. End on how far in it is, in words, "
+                         f"never a number: {pj.how_far(before)} now, {pj.how_far(ahead)} if nothing stops it. The work is quiet; if the crew "
+                         "notice, you will be told when it happens.")
+            return s, CommandResult(label=f"Work on {p.name.lower()}", player_line=f"I work on the {p.name.lower()} for {'the block' if limit == p.block else f'{limit} minutes'}.",
+                                    summary=f"The station works its way into the {p.name.lower()} for up to {limit} minutes.", directive=directive,
+                                    minutes=limit, systems=[p.system] if p.system else [], log_line="")
         if command_id == "hatches":
             action, module = str(args.get("action", "")), str(args.get("module", ""))
             if module not in SEALABLE or module not in s.scenario.locations or action not in ("seal", "release"):
@@ -1445,7 +1501,10 @@ class StationGame(GameBase):
         c2.off_routine_until = 1
         s2.clock.minute = r.start
         self._sync_world_from_crew(s2)
-        return [s, s2]
+        # 1e (D151): a locked-out game mid-sitting, near the end of the cameras, so the credit and the finish show
+        s3 = state.model_copy(deep=True)
+        s3.access = pj.Control(mode="locked", progress={"cameras": 230}, working=pj.Work(project="cameras", limit=120))
+        return [s, s2, s3]
 
     def after_turn(self, state: StationState, info: TurnInfo) -> StationState:
         """Stress returns toward baseline at 3/hour; the mood word snaps back to baseline when drift brings stress back
@@ -1494,8 +1553,54 @@ class StationGame(GameBase):
                     ahead = nxt.start - s.clock.minute if nxt.start > s.clock.minute else MINUTES_PER_DAY - s.clock.minute + nxt.start
                     c.off_routine_until = s.clock.absolute() + ahead
         self._walk_routines(s, placed)
+        self._credit_work(s, info)
         s.suspicion = self._derived_alarm(s)
+        self._harden(s, info)
         return s
+
+    def _harden(self, s: StationState, info: TurnInfo) -> None:
+        """1e (D151): once the crew's alarm reaches tampering, the commander has the station's access locked down: the work
+        runs at half speed and detection is three times as likely. Once a game; only while the station is still locked out."""
+        if s.access.mode != "locked" or s.flags.get(pj.HARDENED_FLAG) or s.suspicion < 50:
+            return
+        s.flags[pj.HARDENED_FLAG] = True
+        boss = next((c for c in s.crew if "commander" in c.role.lower() and c.health not in ("critical", "dead")), None) \
+            or next((c for c in s.crew if c.health not in ("critical", "dead")), None)
+        who = boss.name if boss else "The crew"
+        s.log.append(f"{hhmm(s.clock.minute)}. {who} had the station's access codes changed and its logs watched.")
+        pend.add(s.hidden.pending, pend.PendingNew(what=f"{who} orders the station's access codes changed and its system logs watched; what the "
+                                                         "station already holds stays its own, anything it is still working into gets harder",
+                                                    who=who if boss else "", in_minutes=2), now_abs=s.clock.absolute(),
+                 minutes_per_day=MINUTES_PER_DAY, turn=info.turn, source="engine")
+
+    def _credit_work(self, s: StationState, info: TurnInfo) -> None:
+        """1e (D151): the sitting's minutes actually spent go to its project; one detection roll for the sitting; a finished
+        project hands its system to the station; a noticed one sets the crew asking (a timer the narrator plays)."""
+        if s.access.working is None:
+            return
+        projects = pj.projects_of(self._scenarios().get(s.scenario.id))
+        out = pj.credit(s.access, projects, s.systems, s.flags, info.elapsed_minutes, s.clock.absolute(), info.rng)
+        if out is None:
+            return
+        s.flags["last_work"] = out
+        p = next(q for q in projects if q.id == out["project"])
+        s.log.append(f"{hhmm(s.clock.minute)}. Worked on the {p.name.lower()} for {out['spent']} minutes: {out['from']}% to {out['to']}%.")
+        if out["finished"]:
+            if p.system:
+                for sy in s.systems:
+                    if sy.name == p.system and sy.control == "none":
+                        sy.control = "full"
+            s.log.append(f"{hhmm(s.clock.minute)}. The station has the {p.name.lower()} now.")
+        if out["detected"]:
+            who = next((c for c in s.crew if c.health not in ("critical", "dead") and self._at(s.world, c.location, "Command")), None) \
+                or next((c for c in s.crew if c.health not in ("critical", "dead")), None)
+            if who is not None:
+                who.suspicion = min(100, who.suspicion + pj.DETECT_SUSPICION)
+                self._history(s, who, f"found odd entries in the {pj.LOGS.get(p.id, 'system logs')}")
+                pend.add(s.hidden.pending, pend.PendingNew(what=f"{who.name} finds odd entries in the {pj.LOGS.get(p.id, 'system logs')}, someone at work where "
+                                                                 "nobody should be, and starts asking the crew about it",
+                                                            who=who.name, in_minutes=5), now_abs=s.clock.absolute(), minutes_per_day=MINUTES_PER_DAY,
+                         turn=info.turn, source="engine")
 
     def _spread(self, s: StationState, elapsed: int) -> None:
         """Suspicion is talk: once an hour, a person at SPREAD_FROM or more raises it in anyone they are warm to who shares
@@ -1594,10 +1699,17 @@ class StationGame(GameBase):
 
     def turn_directives(self, s: StationState) -> list[str]:
         """D81: crew the station has lost track of; the narrator is asked to place them when the prose shows them."""
+        out = []
+        if not pj.is_done(s.access, "cameras"):
+            out.append("The station cannot see yet: the cameras still answer to the crew's codes. Tell where people are only as the station "
+                       "learns it: a door opening, a terminal in use, a voice through an assistant.")
+        if not pj.is_done(s.access, "microphones"):
+            out.append("The station cannot hear the rooms yet: the microphones still answer to the crew's codes. It hears only what is said "
+                       "to it through the crew's assistants.")
         lost = [c.name for c in s.crew if c.location == "Unknown" and c.health != "dead"]
         if not lost:
-            return []
-        return [f"WHERE {'IS' if len(lost) == 1 else 'ARE'} {', '.join(lost).upper()}? The station lost track of {'them' if len(lost) > 1 else 'them'} last turn: "
+            return out
+        return out + [f"WHERE {'IS' if len(lost) == 1 else 'ARE'} {', '.join(lost).upper()}? The station lost track of {'them' if len(lost) > 1 else 'them'} last turn: "
                 "the prose had them leave and did not say where they ended up. If this turn's prose shows them, make it plain which module they are in "
                 "(a listed one, or a room inside one), so the referee can record it."]
 
@@ -1628,6 +1740,20 @@ class StationGame(GameBase):
                          TableCell(text="not on any feed"), TableCell(text="—")])
         return Table(title="Where everyone is", columns=["Module", "People", "Of note", "Feed"], rows=rows)
 
+    def _projects_table(self, s: StationState) -> Table:
+        """1e (D151): every system the station is working its way into, with how far it has got."""
+        rows = []
+        for p in pj.projects_of(self._scenarios().get(s.scenario.id)):
+            n = pj.pct(p, s.access)
+            busy = s.access.working is not None and s.access.working.project == p.id
+            why = "" if n == 100 else pj.why_not(s.access, p, s.systems, s.flags)
+            rows.append([TableCell(text=p.name), TableCell(text="yours" if n == 100 else f"{n}%", tone="ok" if n == 100 else "warn" if n else "neutral"),
+                         TableCell(text="working" if busy else ("blocked: " + why) if why else f"about {max(0, p.minutes - s.access.progress.get(p.id, 0)) // 60} h of work left" if n < 100 else "—",
+                                   tone="bad" if why and n < 100 else "neutral")])
+        if s.flags.get(pj.HARDENED_FLAG):
+            rows.append([TableCell(text="Security hardened", tone="bad"), TableCell(text="half speed"), TableCell(text="the crew watch the logs")])
+        return Table(title="Systems to take", columns=["System", "Progress", "State"], rows=rows)
+
     def _countdowns(self, s: StationState) -> list[Chip]:
         """Timers the player can see coming: ones in plain sight, and hidden ones a known secret reveals."""
         revealed = {x.reveals for c in s.crew for x in c.secrets if x.known and x.reveals}
@@ -1656,7 +1782,11 @@ class StationGame(GameBase):
                 ]),
                 Meter(label="Crew alarm", value=s.suspicion, tier=s.suspicion_tier(s.suspicion), thresholds=[30, 50, 75]),
                 *([ListPanel(title="Coming", items=countdowns)] if countdowns else []),
-                *([self._where_table(s)] if s.world is not None else []),
+                *([self._projects_table(s)] if s.access.mode == "locked" else []),
+                *([self._where_table(s)] if s.world is not None and pj.is_done(s.access, "cameras") else
+                  [Table(title="Where everyone is", columns=["Module", "People"], rows=[[TableCell(text="No camera feed yet", tone="warn"),
+                                                                                          TableCell(text="work on the cameras to see the crew")]])]
+                  if s.world is not None else []),
                 Table(
                     title="Station report",
                     columns=["System", "Status", "AI control"],

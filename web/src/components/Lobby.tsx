@@ -39,7 +39,8 @@ export function Lobby({ onOpen }: { onOpen: (id: string) => void }) {
 
   async function start(g: GameInfo) {
     try {
-      const v = await api.create(g.name, setup[g.name] ?? {});
+      const shown = Object.fromEntries(Object.entries(g.setup).map(([k, opts]) => [k, opts[0]?.id ?? ""]));   // what the selects show
+      const v = await api.create(g.name, { ...shown, ...(setup[g.name] ?? {}) });
       onOpen(v.id);
     } catch (e) {
       setErr(String(e));

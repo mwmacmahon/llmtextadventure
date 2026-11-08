@@ -156,6 +156,9 @@ class Scenario(BaseModel):
     narrator_flags: dict[str, str] = Field(default_factory=dict)   # flag -> meaning (referee may set)
 
 
+from .projects import Control  # noqa: E402
+
+
 class StationState(BaseModel):
     scenario: Scenario
     clock: Clock = Field(default_factory=Clock)
@@ -171,6 +174,7 @@ class StationState(BaseModel):
     stats: dict[str, int] = Field(default_factory=dict)   # the AI's capabilities as check modifiers
     hidden: Hidden = Field(default_factory=Hidden)
     world: World | None = None          # 2.0: places, things, people as rows (engine/world.py); None on pre-2.0 instances
+    access: "Control" = Field(default_factory=lambda: Control())   # 1e (D151): the systems the AI has worked its way into; "full" on older games
 
     # ---- helpers ------------------------------------------------------------
     @staticmethod
