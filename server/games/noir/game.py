@@ -622,7 +622,7 @@ class NoirGame(GameBase):
         if not gates:
             return []
         return ["Gated places: " + "; ".join(f"{place} needs the flag {flag}" + (" (set)" if s.flags.get(flag) else "") for place, flag in gates.items())
-                + ". A move there is refused until its flag is set: when the prose shows Frank finding or being taken through the way in, write the flag row (flag <name> value=true) and then the move."]
+                + ". When the prose shows Frank finding or being taken through the way in, write the flag row (flag <name> value=true) and then the move."]
 
     @staticmethod
     def _mapping_lines(s: NoirState) -> list[str]:

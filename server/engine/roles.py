@@ -282,7 +282,7 @@ REFEREE_PARTS: dict[str, str] = {
              "and the timers, unseen facts and rulings: leave those out. Write present, log_line and confidence for the whole narration.",
     "time": "THIS PASS: report only what is coming and what went wrong: soon rows for what the prose or the notes set in motion, unseen "
             "rows for what is happening out of the player's sight, set <pending id>.resolved for a listed pending the prose settled, "
-            "not_done for a lever not completed, and ruling and issue rows: always check the four things. Other passes report every "
+            "not_done for a lever not completed, and ruling and issue rows: always check the five things. Other passes report every "
             "change to people, things and places: leave those out. Write present, log_line and confidence for the whole narration.",
 }
 
@@ -299,7 +299,7 @@ SUMMARIZER_INSTRUCTIONS = """You keep the running memory of a text adventure for
 The game engine already records the hard facts in a state block the narrator sees every turn, so do not repeat those. Record what the state cannot hold:
 - Tone and texture: how the story has felt, running motifs, sensory details that recur, jokes that landed.
 - The player's character: how they have been behaving, their style, what kind of mind they are becoming, what they seem to want.
-- Relationships and dynamics between characters as they have actually played out in the prose, not as the dossier describes them.
+- Relationships and dynamics between characters as they have actually played out in the prose, not as they were set up at the start.
 - Every lie, cover story, forged message and promise: what was said, by whom, to whom, and who believes it now.
 - Things said or noticed that may come back: suspicions voiced, favours owed, threats, loose ends.
 - The beats in order, briefly, with enough specificity (names, places, what exactly happened) that the narrator could refer back to any of them.

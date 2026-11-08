@@ -387,8 +387,8 @@ class Engine:
                     "and nothing else. Say nothing about this note, the ruling, or that this is a retelling.")
             else:
                 extra_directives.append(
-                    "The player asked for this turn to be told again. That telling was set aside: tell it again from the same facts above, "
-                    "differently, and do not mention that this is a retelling.")
+                    "The player asked for this turn to be told again. Write the whole turn again from the same facts above, differently. "
+                    "Say nothing about this note or that this is a retelling.")
         if adj is not None:
             yield {"event": "adjudication", "data": adj.model_dump(mode="json")}
 
@@ -1003,7 +1003,9 @@ class Engine:
                 directives.append(f"The player did not say how long. Ask them, in a line or two in the story's voice: {q[len(UNTIL_ASK):].strip()} "
                                   "The scene stays as it is; nothing happens and no time passes this turn.")
             else:
-                directives.append(f"CLARIFY: the player's input could not be acted on ({adj.kind}). Ask or explain in character, briefly: {q} Do not move time forward and do not narrate consequences.")
+                why = "it cannot be done" if adj.kind == "impossible" else "it is not clear what they mean"
+                directives.append(f"CLARIFY: what the player tried could not be acted on ({why}). Ask or explain in character, briefly: {q} "
+                                  "The scene stays as it is: no time passes, and nothing comes of it this turn.")
         elif adj is not None:
             # checks are assessed here and called by the narrator when the fiction reaches them (DESIGN2 §5); no dice before the prose
             stats = _hook(game, "stats", state, default={})
@@ -2249,5 +2251,5 @@ def _this_turn_block(res: dict[str, Any], clock_text: str = "") -> str:
     if not (res.get("assessments") or res["directives"]):     # a quiet turn: say what quiet means
         lines.append("- Nothing scripted is due. The world does not wait: anyone with a reason to act acts, a threat that was closing in arrives, "
                      "time spent costs something. Narrate what the player perceives and, in an [[unseen: …]] line, what is happening beyond it; "
-                     "stop at the next reaction point.")
+                     "end on the moment the player acts next.")
     return "\n".join(lines)

@@ -565,7 +565,7 @@ class StationGame(GameBase):
         secrets = self._secrets_open(s)
         if secrets:
             lines.append("")
-            lines.append("What the station could learn now, by piece (the prefix says what each is). None of these is known yet: nothing in the prose shows or hints at them until the player looks in the right place; then the referee marks the piece known:")
+            lines.append("What the station could learn now, by piece (the briefing says what each is). None of these is known yet: nothing in the prose shows or hints at them until the player looks in the right place; then the referee marks the piece known:")
             lines.extend(secrets)
         if s.findings:
             lines.append("")

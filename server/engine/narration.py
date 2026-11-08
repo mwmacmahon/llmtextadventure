@@ -27,7 +27,8 @@ from .mechanics import CheckRequest, CheckResult, Modifier, TIER_ORDER, Tier, ou
 from .providers.base import Msg, Provider, StreamDone, TextDelta, Usage
 
 CONTINUE = ("Continue the narration from exactly where you stopped. Do not repeat anything already written "
-            "and do not restate the result in the engine's words; play it. Stop at the next reaction point.")
+            "and do not restate the result in the engine's words; play it. End on the moment the player acts next, or on a "
+            "check line if you call another check.")
 
 WORD = re.compile(r"[a-z0-9']+")
 
@@ -310,7 +311,7 @@ def _cost_tail(data: dict, label: str, target: str, stake: dict | None, failed: 
     branch = branch_text(stake, failed) if stake else ""
     if cost:
         tail = (NOTHING_SOUGHT + f"{branch} What it costs, the engine has chosen: {cost['fact']} Play "
-                + ("that outcome and that cost" if branch else "that cost") + ", and no other: no further hurt, nothing else lost.")
+                + ("that outcome and that cost" if branch else "that cost") + "; no further hurt, nothing else lost, and the story goes on from there.")
     elif failed and branch:
         tail = NOTHING_SOUGHT + f"{branch} Play that outcome."
     elif branch:
@@ -342,7 +343,7 @@ def _consequence_tail(data: dict, label: str, target: str, stake: dict | None, f
     if marks:
         facts = " ".join(_full(m["fact"]) for m in marks)
         tail = (NOTHING_SOUGHT + f"{branch} What it costs, the engine has chosen: {facts} Play "
-                + ("that outcome and that cost" if branch else "that cost") + ", and no other: no further hurt, nothing else lost.")
+                + ("that outcome and that cost" if branch else "that cost") + "; no further hurt, nothing else lost, and the story goes on from there.")
     elif branch:                                     # the cold read (D144): "no other" stalls a weak model; "costs" invites harm
         tail = NOTHING_SOUGHT + f"{branch} Play that outcome" + (" and what comes with it" if comp else "") + GOES_ON
     else:
@@ -362,8 +363,8 @@ def _full(s: str) -> str:
 def fail_forward(player: str) -> str:
     """The failure sentence when the last turn's rolls all failed too (D93): a scene is never stalled by failed checks
     more than once in a row; the second failure costs something and moves the scene."""
-    return (f" Failed twice now. Make it cost {player} one real thing (a hurt, a loss, a way closed, someone coming), and close the"
-            f" same attempt: end with a different opening in front of {player}.")
+    return (f" {player[:1].upper() + player[1:]}'s attempts last turn failed too. Make it cost {player} one real thing (a hurt, a loss, a way"
+            f" closed, someone coming), and that attempt is finished: end with something else {player} could try.")
 
 
 DIE_FACES = "\u2680\u2681\u2682\u2683\u2684\u2685"      # ⚀ ⚁ ⚂ ⚃ ⚄ ⚅ (ISSUES R17)

@@ -63,11 +63,11 @@ def test_the_second_failure_in_a_row_moves_the_scene():
     stats = {"hands": 1}
     rng = rng_for("i", 1, "calls")
     first = run_check(Call(verb="CHECK", raw="", stat="hands", difficulty="medium"), 1, stats, lambda r, q: _failed(), rng, [], lambda req, tgt: [], default_mechanic_line)
-    assert "A failure gives nothing" in first.text and "second failure" not in first.text
+    assert "A failure gives nothing" in first.text and "failed too" not in first.text
     second = run_check(Call(verb="CHECK", raw="", stat="hands", difficulty="medium"), 1, stats, lambda r, q: _failed(), rng, [], lambda req, tgt: [], default_mechanic_line,
                        fail_streak=1, player="Frank")
-    assert "Failed twice now. Make it cost Frank one real thing" in second.text and "A failure gives nothing" not in second.text
-    assert fail_forward("the station").endswith("end with a different opening in front of the station.")
+    assert "Frank's attempts last turn failed too. Make it cost Frank one real thing" in second.text and "A failure gives nothing" not in second.text
+    assert fail_forward("the station").endswith("end with something else the station could try.")
 
 
 def test_fail_streak_reads_the_previous_turns_narrator_rows(engine: Engine):
