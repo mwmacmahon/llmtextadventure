@@ -21,6 +21,9 @@ data/
 # Private notes, living docs, creative/reference material
 notes/
 
+# Hidden games (dev mode): every hidden game stays out of the repo for now (the owner, 2026-11-08); content under notes/
+server/games/hidden/
+
 # Legacy on-disk leftovers from the 2023 codebase (kept out of main)
 /chat_histories/
 /logs/

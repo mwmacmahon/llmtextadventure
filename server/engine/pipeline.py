@@ -1748,7 +1748,7 @@ def adjudicator_inputs(game: Game, state: BaseModel, recent: list[Msg], player_t
         extra = stakes_blocks(game, state, fresh)
     system, msgs = adjudicator_messages(rules, state_text, recent, player_text, _commands_text(_hook(game, "commands", state, default=[])), extra=extra)
     if extra:
-        game_rules = STAKES_RULES.get(game.name, "").replace("The rules of this game.", "In the futures, complications and fiat you write, these rules hold.", 1)
+        game_rules = STAKES_RULES.get(getattr(game, "family", None) or game.name, "").replace("The rules of this game.", "In the futures, complications and fiat you write, these rules hold.", 1)
         system += "\n\n" + ADJUDICATOR_STAKES + ("\n\n" + game_rules if game_rules else "")
         ideas = getattr(game, "consequence_ideas", "")
         if ideas:                                       # ROADMAP 1c (D144): the author's table, as ideas for the assistant's own

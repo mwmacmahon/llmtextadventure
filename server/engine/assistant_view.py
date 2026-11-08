@@ -31,6 +31,11 @@ NARRATOR_SENTENCES = (r"\s*Work it in; it does not stop anything\.", r"\s*Do not
                       r":?\s*nothing in the prose shows or hints at them until the player looks in the right place; then the referee marks the piece known",
                       r"\s*Hidden is what a person knows, not what they say[^.]*\.")
 
+def _fam(game) -> str:
+    """The game's family: a copy of a game (a hidden variant) reads the original's tables (GameBase.family)."""
+    return getattr(game, "family", None) or game.name
+
+
 PEOPLE_GAMES = ("noir", "fantasy")      # games whose cast is `people` (noir's shape); the station's is `crew`
 
 PLAYER = {"fantasy": "The player is the adventurer named in THE GAME NOW, the one whose pockets and hurts it lists. \"I\" in the move is that "
@@ -140,7 +145,7 @@ def _hidden_cast(game, state) -> list[str]:
     """What each person hides and how it comes out, as the narrator's prefix holds it today (5e moves it here): noir's Hidden
     lines and Tells; the station's secrets by piece, with how the station learns each."""
     out = []
-    if game.name == "station":
+    if _fam(game) == "station":
         for c in state.crew:
             left = [x for x in c.secrets if not x.known]
             if not left:
@@ -169,7 +174,7 @@ def _hidden_cast(game, state) -> list[str]:
 
 def _invented(game, state, fresh) -> list[str]:
     out: list[str] = []
-    if game.name in PEOPLE_GAMES:
+    if _fam(game) in PEOPLE_GAMES:
         cast = {p.id for p in fresh.people}
         out += [f"person: {p.name} ({p.location or 'somewhere'})" for p in state.people if p.id not in cast and p.status == "alive"]
         out += [f"place: {f.name}" + (f" (in {f.within})" if f.within else "") for f in state.found_places]
@@ -333,10 +338,10 @@ def build_view(game: Any, state: Any, fresh: Any, *, turn: int, snaps: dict[int,
     for t in range(max(1, turn - 3), turn):
         if t in by and "narrator" in by[t]:
             tellings.append(f"Turn {t}. The player: {by[t].get('player', '').strip()}\n" + re.sub(r"\n§ .*", "", by[t]["narrator"]).strip())
-    sig_lines, sig_nums = _signals(game.name, turn, ledger, tr, snaps)
-    who = ([f"{q.id} = {q.name}" for q in state.people if q.met or q.id in {p.id for p in fresh.people}] if game.name in PEOPLE_GAMES
+    sig_lines, sig_nums = _signals(_fam(game), turn, ledger, tr, snaps)
+    who = ([f"{q.id} = {q.name}" for q in state.people if q.met or q.id in {p.id for p in fresh.people}] if _fam(game) in PEOPLE_GAMES
            else [f"{c.id} = {c.name}" for c in state.crew])
-    return {"game": game.name, "state": state, "state_text": state_text, "sections": _sections(state_text), "who": who,
+    return {"game": _fam(game), "state": state, "state_text": state_text, "sections": _sections(state_text), "who": who,
             "impending": impending, "ahead": _case_ahead(game, state), "hidden_cast": _hidden_cast(game, state),
             "invented": _invented(game, state, fresh), "tellings": tellings, "reading": _reading(adj), "adj": adj,
             "signals": sig_lines, "signal_nums": sig_nums, "player": player}
@@ -449,7 +454,7 @@ def stakes_blocks(game: Any, state: Any, fresh: Any) -> str:
     """What the adjudicator is shown more while the stakes dial is on: the assistant's view, from the state alone (so a
     graded replay builds the same prompt as the live turn). Its own message already holds the state with IMPENDING and
     the last two turns of prose."""
-    who = ([f"{q.id} = {q.name}" for q in state.people if q.met or q.id in {p.id for p in fresh.people}] if game.name in PEOPLE_GAMES
+    who = ([f"{q.id} = {q.name}" for q in state.people if q.met or q.id in {p.id for p in fresh.people}] if _fam(game) in PEOPLE_GAMES
            else [f"{c.id} = {c.name}" for c in state.crew])
     ahead, hidden, invented = _case_ahead(game, state), _hidden_cast(game, state), _invented(game, state, fresh)
     return ("[WHO IS WHO: id = name]\n" + ("; ".join(who) or "nobody") + "\n\n"
