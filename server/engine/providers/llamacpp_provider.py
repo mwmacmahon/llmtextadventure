@@ -54,6 +54,13 @@ def _structured(prop: dict) -> bool:
     return "array" in kinds or "object" in kinds
 
 
+# B213: plain fields with defaults the grammar still makes the model write, by the model's title (a subclass carries its
+# own title, so each is named)
+_CHECK_FIELDS = ("edge", "edge_why", "aim")
+REQUIRED_BY_NAME: dict[str, tuple[str, ...]] = {"CheckProposal": _CHECK_FIELDS, "CheckStaked": _CHECK_FIELDS,
+                                                "FiatOutcome": ("settled", "why")}
+
+
 def inline_schema(js: dict) -> dict:
     """The schema as llama.cpp's grammar builder enforces it. pydantic emits nested models as `$ref`s
     into `$defs`, which the server (gumbo's build, 2026-10) does not resolve: the referenced object
@@ -64,6 +71,9 @@ def inline_schema(js: dict) -> dict:
     kind, summary, time and carried, and never `intents`, on 22 of 24 turns). An empty list or a null is still
     allowed; leaving the field out is not. Plain fields with defaults (a row's who, note, minutes, hidden)
     stay optional: requiring them made every referee row spell them out, 40% more tokens a call.
+    A few plain fields are required by name (B213): part seven's edge, edge_why and aim on a check, settled and why on
+    a fiat. Gemma left all five out of 25 readings (every check at edge 0, every fiat a 'works' with no why). Only these;
+    the referee's row fields stay optional.
     Recursive schemas have no finite inline form; none of the roles' schemas are."""
     defs = js.get("$defs") or js.get("definitions") or {}
 
@@ -82,7 +92,8 @@ def inline_schema(js: dict) -> dict:
         if out.get("type") == "object" and "properties" in out:
             out.setdefault("additionalProperties", False)
             req = list(out.get("required", []))
-            out["required"] = req + [k for k, v in out["properties"].items() if k not in req and _structured(v)]
+            named = REQUIRED_BY_NAME.get(str(out.get("title") or ""), ())
+            out["required"] = req + [k for k, v in out["properties"].items() if k not in req and (_structured(v) or k in named)]
         return out
 
     return walk(js, frozenset())
