@@ -69,6 +69,19 @@ HIDE = re.compile(r"\b(hide|hiding|hidden|sneak|slip (away|off|out|past|into|beh
 SURPRISE = re.compile(r"\b(surprise|unaware|from behind|unseen|from hiding|ambush|before (he|she|they|it) (sees|notices)|sleeping|asleep)", re.I)
 WOUND_KINDS: dict[str, set[str]] = {"everything": {"str", "dex", "con"}, "sight": {"wis", "dex"}, "legs": {"str", "dex"},
                                      "hands": {"str", "dex"}, "body": {"str", "con"}, "head": {"int", "wis"}}   # B200
+TITLES = {"the", "a", "old", "young", "big", "little", "lord", "lady", "captain", "brother", "sister", "mother", "father", "master",
+          "mistress", "sergeant", "constable", "sir", "dame", "goodwife", "goodman", "uncle", "aunt", "granny", "grandfather"}
+
+
+def first_name(name: str) -> str:
+    """A name's first word past any title ('Old Hob' -> 'hob', 'Captain Isolde Marr' -> 'isolde'), lower case, no 's."""
+    words = [re.sub(r"['’]s$", "", w).strip(".,").lower() for w in name.split()]
+    words = [w for w in words if w]
+    while len(words) > 1 and words[0] in TITLES:
+        words = words[1:]
+    return "" if not words or words[0] in TITLES else words[0]
+
+
 SEXUAL_VIOLENCE = re.compile(r"\b(rap(e|ed|es|ing|ist|ists)|molest\w*|sexual(ly)? (assault|abus|violen|attack)\w*|"
                              r"forc(e|es|ed|ing) (himself|herself|themselves) (on|upon)|ravish\w*|have (his|her|their) way with)\b", re.I)
 SCENE_MINUTES = 60              # a scene ends when the player moves on, rests, or an hour passes (Rage, Uncanny Dodge)
@@ -284,8 +297,18 @@ class FantasyGame(GameBase):
                    hp=hp, hp_max=hp, location=pl.get("location", "The Drowned Lantern"))
         return p, inv
 
+    NAME_TAKEN = "That name belongs to someone in the city; pick another."
+
+    def cast_first_names(self, sc: dict) -> set[str]:
+        """B45: the first names of everyone the scenario can bring on: its own people and every hook's."""
+        people = list(sc.get("people") or []) + [q for h in self.hooks_content().values() for q in h.get("people") or []]
+        return {w for q in people if (w := first_name(str(q.get("name") or "")))}
+
     def new_instance(self, setup: dict[str, Any]) -> tuple[str, FantasyState]:
         sc0 = self.scenario(str(setup.get("scenario") or ""))
+        wanted = first_name(str(setup.get("name") or ""))
+        if wanted and wanted in self.cast_first_names(sc0):
+            raise ValueError(self.NAME_TAKEN)           # B45: the Rogue round's Wren took the ferryman's daughter's rows
         player, inv = self.build_player(setup, sc0)
         sc = dk.fill(sc0, player.name)
         start = sc.get("start") or {}

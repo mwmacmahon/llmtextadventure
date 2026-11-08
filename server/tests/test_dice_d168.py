@@ -87,7 +87,7 @@ def test_a_tell_told_before_its_condition_is_a_conflict_the_guard_retells():
         g = games.get(name)
         if g is None:
             continue
-        setup = {"name": "Wren", "klass": "Rogue", "race": "Human"} if name == "fantasy" else {}
+        setup = {"name": "Brin", "klass": "Rogue", "race": "Human"} if name == "fantasy" else {}
         st = g.new_instance(setup)[1]
         q, t = next((q, t) for q in st.people for t in q.tells if not t.told and not g.tell_open(st, t))
         w = Writer(g.authority, ApplyReport())

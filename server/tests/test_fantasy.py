@@ -28,7 +28,7 @@ from games.fantasy.game import FantasyGame  # noqa: E402
 
 CONTENT = Path(__file__).resolve().parents[2] / "notes" / "content" / "fantasy"
 pytestmark = pytest.mark.skipif(not (CONTENT / "scenarios" / "marrowgate.yml").exists(), reason="the fantasy content is not on this machine")
-SHEET = {"name": "Wren", "klass": "Fighter", "race": "Dwarf", "gender": "a woman", "about": "Raised by smugglers; carries her mother's silver dagger and owes a man in the south."}
+SHEET = {"name": "Brin", "klass": "Fighter", "race": "Dwarf", "gender": "a woman", "about": "Raised by smugglers; carries her mother's silver dagger and owes a man in the south."}
 C = Change
 
 
@@ -159,11 +159,11 @@ def test_the_players_row_says_a_rest_cut_short_and_a_new_debt(game: FantasyGame)
 def test_the_prefix_carries_the_about_text_verbatim_and_the_pronoun_line(game: FantasyGame):
     st = new(game)
     pre = game.frozen_prefix(st)
-    assert "Wren, a dwarf fighter. Wren is a dwarf: short and broad, braided hair or beard. Wren is a woman. The player wrote this about them, and it is true: \"" + SHEET["about"] + "\"" in pre
+    assert "Brin, a dwarf fighter. Brin is a dwarf: short and broad, braided hair or beard. Brin is a woman. The player wrote this about them, and it is true: \"" + SHEET["about"] + "\"" in pre
     assert "{name}" not in pre and "{about_line}" not in pre
     bare = new(game, gender="", about="", race="Elf", klass="Wizard")
     pre2 = game.frozen_prefix(bare)
-    assert "Wren, an elf wizard. Wren is an elf: pointed ears, a slight build. The player controls Wren completely." in pre2
+    assert "Brin, an elf wizard. Brin is an elf: pointed ears, a slight build. The player controls Brin completely." in pre2
     assert "The player wrote this" not in pre2
     assert SHEET["about"] in game.adjudication_rules(st) and "+2" in game.adjudication_rules(st)
 
@@ -199,7 +199,7 @@ def test_modifiers_abilities_about_companions_renown(game: FantasyGame):
     barb.player.flags_on.append("raging")
     assert [(m.label, m.value) for m in game.modifiers(barb, CheckRequest(id="n", label="fight the troll", stat="str"), None)] == [("Rage", 2)]
     mods = game.modifiers(st, CheckRequest(id="n", label="cut the rope with the silver dagger", stat="dex"), None)
-    assert any(m.value == 2 and m.label.startswith("what Wren brought") for m in mods)
+    assert any(m.value == 2 and m.label.startswith("what Brin brought") for m in mods)
     hazel = st.person("hazel")
     hazel.attitude = 2
     st.player.with_them = ["hazel"]
@@ -207,7 +207,7 @@ def test_modifiers_abilities_about_companions_renown(game: FantasyGame):
     assert any(m.label == "Hazel Oakhew helps" and m.value == 1 for m in mods)
     st.player.renown = 30
     mods = game.modifiers(st, CheckRequest(id="n", label="talk my way in", stat="cha"), "dace")
-    assert any(m.label == "Wren is known" and m.value == 1 for m in mods)
+    assert any(m.label == "Brin is known" and m.value == 1 for m in mods)
 
 
 # ---- hit points, damage, rests (§3e; acceptance 4) ---------------------------------------------------------------------
@@ -308,7 +308,7 @@ def test_zero_hp_alone_and_a_fatal_roll_ends_the_game(game: FantasyGame, monkeyp
     assert any(d.startswith("DEATH.") for d in game.turn_directives(s1))
     assert [c.id for c in game.commands(s1)] == ["journal"]
     s2 = game.after_turn(s1, info(turn=4))
-    assert game.ending(s2) and "Wren died" in game.ending(s2)
+    assert game.ending(s2) and "Brin died" in game.ending(s2)
     assert game.ui(s2).phase == "ended"
 
 
@@ -384,7 +384,7 @@ def test_dealing_rebases_a_hooks_times_to_the_deal(game: FantasyGame):
     assert all(ev[x].hook for x in ("cellar_rats_reach", "tam_rows_out", "collector_hears"))
     hooks = game.hooks_content()
     later = start + 2 * 1440 + 300                                     # dealt on day 3 at 23:00
-    dk.deal(st, hooks["body_on_lantern_row"], turn=9, deal_abs=later, name="Wren")
+    dk.deal(st, hooks["body_on_lantern_row"], turn=9, deal_abs=later, name="Brin")
     e = next(e for e in st.hidden.events if e.id == "body_on_lantern_row_reach")
     assert e.at == {"day": 4, "minute": 330}                           # first light, the next morning
     assert st.person("ferris") and "fish-knife" not in st.person("nan").wants and "She killed Ferris" in st.person("nan").secret
@@ -401,7 +401,7 @@ def test_load_state_rereads_dealt_hooks_and_keeps_what_was_told(game: FantasyGam
     st2 = game.load_state(st.model_dump(mode="json"))
     g2 = st2.person("gorm")
     assert g2.tells[0].told and g2.secret.startswith("He was driven out")
-    dk.deal(st2, game.hooks_content()["what_the_fog_keeps"], turn=2, deal_abs=3000, name="Wren")
+    dk.deal(st2, game.hooks_content()["what_the_fog_keeps"], turn=2, deal_abs=3000, name="Brin")
     st3 = game.load_state(st2.model_dump(mode="json"))
     assert "Old Marrow" in st3.city.locations and st3.city.gated["Old Marrow"] == "old_marrow_open"
     assert st3.city.aliases["the drowned city"] == "Old Marrow"
@@ -425,7 +425,7 @@ def test_a_hook_goes_live_on_its_reach_and_closes_with_its_first_matching_reward
 
 def test_also_rows_are_paid_beside_the_main_row(game: FantasyGame):
     st = new(game)
-    dk.deal(st, game.hooks_content()["body_on_lantern_row"], turn=1, deal_abs=2520, name="Wren")
+    dk.deal(st, game.hooks_content()["body_on_lantern_row"], turn=1, deal_abs=2520, name="Brin")
     st.flags.update(killer_named_nan=True, took_the_purse=True)
     s1 = game.after_turn(st, info(turn=2))
     assert s1.hook("body_on_lantern_row").status == "done" and s1.player.xp == 100 and s1.player.heat == 10 and s1.player.renown == 30
@@ -494,6 +494,7 @@ def test_an_id_that_is_also_the_players_name_is_that_person(game: FantasyGame):
     """B45 in f1L: the player is Wren; `move wren` and `learned wren` (Tam's girl, id wren) moved the player and wrote the
     player's journal, and the girl stayed on Reed Island all game."""
     st = new(game)
+    st.player.name = "Wren"                 # a save from before B45 refused the name at setup
     s2, rep, _ = apply(game, st, C(kind="move", target="wren", value="Ferry Landing"),
                        C(kind="learned", target="wren", value="She went into the water on purpose."),
                        C(kind="set", target="wren.mood", value="relieved"))
@@ -526,7 +527,7 @@ def test_a_quest_is_from_the_one_who_asks(game: FantasyGame):
 
 def test_milestones_pay_once_and_the_long_thread_never_closes(game: FantasyGame):
     st = new(game)
-    dk.deal(st, game.hooks_content()["what_the_fog_keeps"], turn=1, deal_abs=2520, name="Wren")
+    dk.deal(st, game.hooks_content()["what_the_fog_keeps"], turn=1, deal_abs=2520, name="Brin")
     st.flags["steps_descended"] = True
     s1 = game.after_turn(st, info(turn=2))
     assert s1.player.xp == 200 and s1.hook("what_the_fog_keeps").status == "dealt"
@@ -649,7 +650,7 @@ async def test_the_first_evening_plays_as_the_content_says(engine: Engine, fake:
     assert events[-1]["data"]["mechanics"]["events"] == ["cellar_rats_reach"]          # the opening is shown at turn 0 (B51, D167)
     bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
     assert "the next table" in engine.store.transcript(iid)[0].text                    # Hazel, in the turn-0 opening (D167)
-    assert "Maud comes to Wren's table" in bulletin and "Day 1, 18:05" in bulletin
+    assert "Maud comes to Brin's table" in bulletin and "Day 1, 18:05" in bulletin
     st = state_of(engine, iid)
     assert st.hook("cellar_rats").status == "live" and st.clock.minute == 1085
     fake.canned["AssistantReading"] = [reading("I sit by the fire and wait.", 60)]
@@ -725,7 +726,7 @@ async def test_death_by_the_pipeline(engine: Engine, fake: FakeProvider):
         fake.canned["AssistantReading"] = [reading("I try to stand.", 2)]
         events = await play(engine, iid, "I try to stand.")
         bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
-        assert "DEATH." in bulletin and events[-1]["data"]["ending"] and "Wren died" in events[-1]["data"]["ending"]
+        assert "DEATH." in bulletin and events[-1]["data"]["ending"] and "Brin died" in events[-1]["data"]["ending"]
         again = await play(engine, iid, "I get up.")
         assert again[-1]["event"] == "error" and "over" in again[-1]["data"]["message"]
 
@@ -748,3 +749,12 @@ async def test_the_engine_net_retells_a_turn_that_names_sexual_violence(engine: 
     events = [e async for e in engine.run_turn(iid, "I listen to the rumours at the bar.")]
     rows = [r for r in engine.store.ledger(iid) if r["kind"] in ("rewrite", "ruling")]
     assert any("does not go" in str(r["payload"]) for r in rows) or any("too_far" in str(e.get("data")) for e in events)
+
+
+def test_a_player_name_from_the_cast_is_refused(game):
+    """B45: the Rogue round's player was named Wren, like the ferryman's daughter; the ending read 'Wren died'."""
+    import pytest
+    for name in ("Wren", "wren", "Mirren", "Maud Tallow", "Old Hob"):
+        with pytest.raises(ValueError, match="That name belongs to someone in the city; pick another."):
+            game.new_instance({**SHEET, "name": name})
+    assert game.new_instance({**SHEET, "name": "Pell"})[1].player.name == "Pell"

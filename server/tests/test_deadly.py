@@ -117,7 +117,7 @@ def test_a_hold_that_wins_opens_drowning_and_the_countdown_kills(game):
     st = new(game)
     foe(st, moves=[{"kind": "hold", "bonus": 4, "difficulty": "very_high", "peril": "drowning", "harm": "cold hands round the ankles"}])
     out = game.world_call(st, call("ENEMY", "maud", "hold"), Dice(2), 2, {"hp": 0})
-    assert out["data"]["peril"] == "drowning" and "what does Wren do?" in out["text"]
+    assert out["data"]["peril"] == "drowning" and "what does Brin do?" in out["text"]
     s2 = game.after_turn(st, info_calls(3, [out["data"]]))
     assert s2.player.peril is not None and s2.player.peril.kind == "drowning" and s2.player.peril.turns_left == 2
     s3, w3 = game.world_turn(s2, act("I kick for the surface"), "I kick for the surface", Dice(2, 2), 4, 2)
@@ -201,7 +201,7 @@ def test_an_invented_danger_takes_the_step_the_stake_named(game):
     after = game.after_turn(st, info_calls(2, [{**data, "label": "cross the rotten floor"}]))
     assert after.player.hp == max(0, st.player.hp - data["harm"])
     void = {"outcome": "failure", "roll": 3, "stat": "dex", "stake": {"branch": "failure", "danger": "lethal"}}
-    assert "kills Wren" in game.check_note(st, void, "leap the chasm")
+    assert "kills Brin" in game.check_note(st, void, "leap the chasm")
     dead = game.after_turn(st, info_calls(2, [{**void, "label": "leap the chasm"}]))
     assert dead.player.fate == "dead" and dead.flags.get("ending") and game.cause_of_death(dead, {}) == "died trying to leap the chasm"
 

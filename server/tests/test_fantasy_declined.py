@@ -24,7 +24,7 @@ def test_a_refused_job_leaves_the_quests_in_motion_and_maud_goes_back_to_her_bar
     assert s1.hook("cellar_rats").declined and s1.hook("cellar_rats").standing == "turned down"
     b = game.render_bulletin(s1, "")
     assert "Quests in motion" not in b or "- Rats in the Cellar (from" not in b
-    assert "Jobs Wren turned down. Whoever offered one treats Wren as before" in b and "- Rats in the Cellar (offered by Maud Tallow)" in b
+    assert "Jobs Brin turned down. Whoever offered one treats Brin as before" in b and "- Rats in the Cellar (offered by Maud Tallow)" in b
     assert dk.in_motion(s1) == dk.in_motion(st) - 1                       # the deck may deal another
     s2, _, _ = apply(game, s1, C(kind="set", target="hook-cellar_rats", field="declined", value="false"))
     assert not s2.hook("cellar_rats").declined and s2.hook("cellar_rats").standing == "taken up"

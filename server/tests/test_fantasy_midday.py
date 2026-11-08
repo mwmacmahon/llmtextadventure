@@ -31,9 +31,9 @@ def test_the_opening_is_shown_at_turn_zero_and_its_event_is_played(engine, game)
 
 def test_the_race_line_is_one_fact_in_the_player_section(game):
     pre = game.frozen_prefix(new(game, race="Tiefling", gender=""))
-    assert "a tiefling fighter. Wren is a tiefling: horns, a tail, eyes that catch the light. The player wrote" in pre
+    assert "a tiefling fighter. Brin is a tiefling: horns, a tail, eyes that catch the light. The player wrote" in pre
     elf = game.frozen_prefix(new(game, race="Elf"))
-    assert "Wren is an elf: pointed ears, a slight build. Wren is a woman." in elf
+    assert "Brin is an elf: pointed ears, a slight build. Brin is a woman." in elf
     human = game.frozen_prefix(new(game, race="Human"))
     assert "Wren is a human" not in human
 
