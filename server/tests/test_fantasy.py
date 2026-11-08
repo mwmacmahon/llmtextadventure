@@ -785,3 +785,40 @@ def test_a_crime_in_open_view_raises_heat(game):
         if q.id != "velvet_merchant" and q.location == alone.player.location:
             q.location = "Lantern Row"
     assert game.after_turn(alone, info).player.heat == 0
+
+
+def test_money_guards(game):
+    """B223. The duplicate: the cellar's reward paid 2 gold and the next turn the referee added Maud's 2 gold again
+    (8c106d354426 turns 8-9, Maud not beside the player): the same sum within the credit window is the same pay. A night's
+    rest adds no money (5528fb9033ac turn 13: five coins Tam laid on the table landed as one gold). A gold amulet is a thing,
+    not a gold piece (turn 20). A copper spent from an empty copper pocket breaks a gold, which is right; the strip now
+    shows the coppers beside it."""
+    import dataclasses
+    from engine.game import TurnInfo
+    st = new(game)
+    gold = st.item("gold")
+    h = st.hooks[0]
+    h.gold_credit, h.credit_until = 2, 9
+    start = gold.count
+    gold.count += 2
+    info = TurnInfo(turn=4, elapsed_minutes=5, rng=random.Random(0), applied=[f"inventory.gold.count: {start} -> {start + 2}"])
+    assert game.after_turn(st, info).item("gold").count == start
+    # a night's rest adds none
+    night = new(game)
+    g0 = night.item("gold").count
+    night.item("gold").count += 1
+    night.player.resting = "long"
+    out = game.after_turn(night, TurnInfo(turn=5, elapsed_minutes=480, rng=random.Random(0), applied=[f"inventory.gold.count: {g0} -> {g0 + 1}"]))
+    assert out.item("gold").count == g0 and any("A rest adds no money" in ln for ln in out.log)
+    # a gold amulet is a thing; five gold coins are five
+    s2, rep, _ = apply(game, new(game), C(kind="new", target="thing", field="player", value="gold amulet with a violet stone"))
+    assert s2.item("gold").count == new(game).item("gold").count and any("amulet" in it.name for it in s2.inventory)
+    s3, _, _ = apply(game, new(game), C(kind="new", target="thing", field="player", value="five damp gold coins"))
+    assert s3.item("gold").count == new(game).item("gold").count + 5
+    cp = st.item("coppers")
+    if cp is None:
+        st.inventory.append(type(gold)(id="coppers", name="coppers", count=99))
+    else:
+        cp.count = 99
+    strip = next(x for x in game.ui(st).panels if type(x).__name__ == "StatusStrip")
+    assert any(c.label == "Gold" and c.value.endswith("(99 coppers)") for c in strip.chips)

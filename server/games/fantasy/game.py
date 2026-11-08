@@ -69,6 +69,20 @@ HIDE = re.compile(r"\b(hide|hiding|hidden|sneak|slip (away|off|out|past|into|beh
 SURPRISE = re.compile(r"\b(surprise|unaware|from behind|unseen|from hiding|ambush|before (he|she|they|it) (sees|notices)|sleeping|asleep)", re.I)
 WOUND_KINDS: dict[str, set[str]] = {"everything": {"str", "dex", "con"}, "sight": {"wis", "dex"}, "legs": {"str", "dex"},
                                      "hands": {"str", "dex"}, "body": {"str", "con"}, "head": {"int", "wis"}}   # B200
+MONEY = re.compile(r"\b(coins?|gold pieces?|pieces of gold|gp|crowns?|purse|coppers?|pennies|money)\b|^\s*gold\s*$", re.I)
+NUMBER_WORDS = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+                "twelve": 12, "twenty": 20, "fifty": 50, "hundred": 100}
+
+
+def number_in(text: str) -> int | None:
+    """The first count in a thing's words ('five damp gold coins' -> 5)."""
+    m = re.search(r"\b(\d+|" + "|".join(NUMBER_WORDS) + r")\b", text, re.I)
+    if not m:
+        return None
+    w = m.group(1).lower()
+    return int(w) if w.isdigit() else NUMBER_WORDS.get(w)
+
+
 FINESSE = re.compile(r"\b(rapier|short ?sword|dagger|scimitar|whip|knife|stiletto)s?\b", re.I)
 HEAVY = re.compile(r"\b(great ?axe|axe|great ?sword|longsword|maul|hammer|mace|club|spear|halberd|pike|flail|morningstar)\b", re.I)
 WOUNDED = re.compile(r"\b(wound\w*|stabb\w*|cut|slash\w*|bleed\w*|bloodied|incapacitat\w*|dead|dying|killed|slain|beaten|unconscious|"
@@ -1634,7 +1648,9 @@ class FantasyGame(GameBase):
             if lying is not None:
                 return self._relocate(s, lying, False, "player", w)
             it = s.item(value)
-            count = self._step(note)
+            if it is not None and it.id in COINS and not MONEY.search(value):
+                it = None                                # B223: a gold amulet is a thing, not a gold piece
+            count = self._step(note) or (number_in(value) if it is not None and it.id in COINS else None)
             if it is not None and (it.count > 1 or it.id in COINS or (count or 1) > 1) and it.name.lower() != value.strip().lower():
                 return self._pocket_add(s, it, max(1, count or 1), "", w)
             if it is not None and it.name.lower() == value.strip().lower():
@@ -2039,11 +2055,14 @@ class FantasyGame(GameBase):
             kind = "long"
         elif (p.resting in ("short", "long") and info.elapsed_minutes >= SHORT_REST) or (safe and info.elapsed_minutes >= SHORT_REST and not hurt_now):
             kind = "short"
+        commanded = bool(p.resting)
         if p.resting and not kind:
             p.rest_cut = info.turn
         p.resting = ""
         if not kind:
             return
+        if kind == "long" or commanded:
+            self._rest_adds_no_money(s, info)
         for c in [c for c in p.conditions if c.source == "narrator" and c.duration in cn.RESTED[kind]]:
             p.conditions.remove(c)                       # B96: a rest dries and warms; a long one ends what lasts until rested
         if kind == "long":
@@ -2068,6 +2087,21 @@ class FantasyGame(GameBase):
         m = re.match(r"player\.hp: (-?\d+) -> (-?\d+)", line)
         return bool(m) and int(m.group(2)) < int(m.group(1))
 
+    def _rest_adds_no_money(self, s: FantasyState, info: TurnInfo) -> None:
+        """B223: a rest never adds money (the Barbarian's night's sleep put five coins Tam laid on the table into the purse as
+        one gold). Coins the referee's rows added on a resting turn come off again, logged."""
+        for coin in COINS:
+            it = s.item(coin)
+            gained = 0
+            for a in info.applied:
+                m = re.match(rf"inventory\.{coin}\.count: (-?\d+) -> (-?\d+)$", a)
+                if m and int(m.group(2)) > int(m.group(1)):
+                    gained += int(m.group(2)) - int(m.group(1))
+            if it is not None and gained > 0:
+                it.count = max(0, it.count - gained)
+                s.log.append(f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}. A rest adds no money: "
+                             f"{gained} {coin} the telling put in the purse are not counted.")
+
     @staticmethod
     def _gold_gained(applied: list[str]) -> int:
         """Gold the referee's rows added this turn (the delta's "inventory.gold.count: 14 -> 19" lines)."""
@@ -2089,7 +2123,8 @@ class FantasyGame(GameBase):
                 h.gold_credit = 0
                 continue
             giver = self._same_person(s, h.giver) if h.giver else None
-            if gold is None or pool["gold"] <= 0 or giver is None or giver.id not in s.player.with_them:
+            exact = pool["gold"] == h.gold_credit           # B223: the same sum again is the same pay, wherever the giver stands
+            if gold is None or pool["gold"] <= 0 or (not exact and (giver is None or giver.id not in s.player.with_them)):
                 continue
             take = min(pool["gold"], h.gold_credit, gold.count)
             if take <= 0:
@@ -2097,8 +2132,8 @@ class FantasyGame(GameBase):
             gold.count -= take
             pool["gold"] -= take
             h.gold_credit -= take
-            s.log.append(f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}. {h.title}: what {giver.name} paid "
-                         f"was the quest's reward, already counted ({take} gold).")
+            s.log.append(f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}. {h.title}: what "
+                         f"{giver.name if giver else 'the giver'} paid was the quest's reward, already counted ({take} gold).")
 
     def _pay(self, s: FantasyState, row: dict, why: str, pool: dict | None = None, turn: int = 0) -> None:
         """A reward row: XP, gold, renown, heat, a thing (an id the hook declared, or a thing written inline), attitudes,
@@ -2783,7 +2818,8 @@ class FantasyGame(GameBase):
         pockets = [Chip(label=it.name + (f" ×{it.count}" if it.count != 1 else ""), value=it.note or "") for it in s.inventory if it.id not in COINS]
         panels: list[Any] = [
             StatusStrip(chips=[Chip(label="Time", value=s.clock.render()), Chip(label="Place", value=p.location or "unknown"), *now,
-                               Chip(label="Level", value=str(p.level)), Chip(label="Gold", value=str(gold))]),
+                               Chip(label="Level", value=str(p.level)),
+                               Chip(label="Gold", value=str(gold) + (f" ({cps} coppers)" if (cps := next((it.count for it in s.inventory if it.id == COPPERS), 0)) else ""))]),
             Meter(label="Hit points", value=p.hp, min=0, max=p.hp_max, tier=p.hp_tier, text=f"{p.hp} / {p.hp_max}",
                   tone=self.HP_TONES.get(p.hp_tier, "warn"), thresholds=[0.5 * p.hp_max, 0.75 * p.hp_max],
                   chips=[Chip(label=x.weight, value=x.words, tone=self.WOUND_TONES.get(x.weight)) for x in wounds]),
