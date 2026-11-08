@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 from pydantic.json_schema import SkipJsonSchema
 
 from .mechanics import Tier
@@ -28,6 +28,8 @@ class CheckProposal(BaseModel):
     edge: int = Field(default=0, description="What the player's own words and things bring to this attempt, as a number (see EDGE in the rules); 0 when nothing.")
     edge_why: str = Field(default="", description="The edge in a few words, in the player's own terms (\"the rope and the climbing irons\", \"a bluff with nothing behind it\"); empty when the edge is 0.")
     aim: Literal["other", "secret"] = Field(default="other", description="secret only when the attempt is to get a person's secret out of them by force or trick (a threat, a lie, a bribe for it, a search of their things); other for everything else, a conversation included.")
+    # B217: advisory only (logged, never read by run_check); the floor's witness is the engine's (the stake masked for a leak)
+    _masked: bool = PrivateAttr(default=False)
 
 
 class Intent(BaseModel):

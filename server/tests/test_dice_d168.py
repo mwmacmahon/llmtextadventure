@@ -53,11 +53,11 @@ def test_the_caps_are_the_resolvers_own():
 
 
 def _A(target, difficulty="low", aim="secret"):
-    return Assessment(stat="tongue", difficulty=difficulty, target=target, label="ask about June", aim=aim)
+    return Assessment(stat="tongue", difficulty=difficulty, target=target, label="ask about June", aim=aim, prying=aim == "secret")
 
 
 def test_a_check_aimed_at_someone_keeping_a_tell_back_is_staked_high():
-    """B63 narrowed (B210, D179): only an attempt at the secret itself by force or trick (aim secret) takes the floor."""
+    """B63 narrowed (B210, D179, B217): only an attempt the engine witnesses as prying (`prying`) takes the floor."""
     call = Call(verb="CHECK", stat="tongue", difficulty="low", raw="<<CHECK tongue low>>")
     talk = run_check(call, 9, {"tongue": 1}, lambda rng, req: dice_2d6(_Fixed(6, 5), req), random.Random(0), [_A("szabo", aim="other")],
                      lambda req, t: [], lambda res: "", holds_back=lambda t: "Szabo" if t == "szabo" else None)
@@ -69,7 +69,7 @@ def test_a_check_aimed_at_someone_keeping_a_tell_back_is_staked_high():
     free = run_check(call, 2, {"tongue": 1}, lambda rng, req: dice_2d6(_Fixed(6, 5), req), random.Random(0), [_A("maud")],
                      lambda req, t: [], lambda res: "", holds_back=lambda t: "Szabo" if t == "szabo" else None)
     assert free.data["difficulty"] == "low" and not any("keeps something back" in m["label"] for m in free.data["modifiers"])
-    by_about = Assessment(stat="tongue", difficulty="medium", label="question Szabo about June", about="szabo", aim="secret")   # no target, the person in about
+    by_about = Assessment(stat="tongue", difficulty="medium", label="question Szabo about June", about="szabo", aim="secret", prying=True)   # no target, the person in about
     via = run_check(call, 4, {"tongue": 1}, lambda rng, req: dice_2d6(_Fixed(6, 5), req), random.Random(0), [by_about],
                     lambda req, t: [], lambda res: "", holds_back=lambda t: "Szabo" if t == "szabo" else None)
     assert via.data["difficulty"] == "high"
@@ -172,3 +172,36 @@ def test_normal_is_the_games_offset_alone(tmp_path):
     assert eng.difficulty(iid) == "normal" and eng.target_offset(game, iid) == 2
     eng.set_difficulty(iid, "hard")
     assert eng.target_offset(game, iid) == 4
+
+
+def test_the_floor_needs_the_engines_witness_not_the_models_aim():
+    """B217 (219a98e03aa9): Gemma set aim secret on 9 of 9 checks, so gold offered and two stabs at Mirren took the floor.
+    The floor fires only when the attempt is no fight and the stake is about the secret (masked for a leak, or 'the piece
+    comes' / 'says more')."""
+    from engine.pipeline import prying
+    from engine.roles import CheckStaked as CheckProposal, IntentStaked as Intent
+
+    def floor(intent, stat, difficulty):
+        a = Assessment(stat=stat, difficulty=difficulty, target="mirren", label=intent.check.label, aim=intent.check.aim,
+                       prying=prying(intent, stat))
+        call = Call(verb="CHECK", stat=stat, difficulty=difficulty, raw=f"<<CHECK {stat} {difficulty}>>")
+        out = run_check(call, 1, {stat: 1}, lambda rng, req: dice_2d6(_Fixed(6, 5), req), random.Random(0), [a],
+                        lambda req, t: [], lambda res: "", holds_back=lambda t: "Mirren" if t == "mirren" else None)
+        return out.data["difficulty"]
+
+    gold = Intent(action="hold out two gold coins to Mirren", targets=["mirren"],
+                  check=CheckProposal(label="offer gold", stat="cha", difficulty="low", target_entity="mirren", aim="secret", edge=-2,
+                                      success_gain="Mirren is pleased and lets Pell stay."))
+    assert floor(gold, "cha", "low") == "low"
+    masked = Intent(action="ask what she keeps back", targets=["mirren"],
+                    check=CheckProposal(label="ask Mirren", stat="cha", difficulty="low", target_entity="mirren", aim="other",
+                                        success_gain="she tells what they keep back"))
+    masked.check._masked = True
+    assert floor(masked, "cha", "low") == "high"
+    tell = Intent(action="press her", targets=["mirren"],
+                  check=CheckProposal(label="press Mirren", stat="cha", difficulty="medium", target_entity="mirren", success_gain="the piece comes"))
+    assert floor(tell, "cha", "medium") == "high"
+    stab = Intent(action="stab at Mirren", targets=["mirren"],
+                  check=CheckProposal(label="stab Mirren", stat="str", difficulty="medium", target_entity="mirren", aim="secret",
+                                      success_gain="the piece comes"))
+    assert floor(stab, "str", "medium") == "medium"

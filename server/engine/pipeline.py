@@ -1576,6 +1576,7 @@ class Engine:
                 assessments.append(Assessment(stat=stat, difficulty=intent.check.difficulty, target=intent.check.target_entity or "",
                                               label=intent.check.label, edge=int(getattr(intent.check, "edge", 0) or 0),
                                               edge_why=str(getattr(intent.check, "edge_why", "") or ""), aim=str(getattr(intent.check, "aim", "other") or "other"),
+                                              prying=prying(intent, stat),
                                               about=intent.check.target_entity or next(iter(getattr(intent, "targets", None) or []), "")))
             for name in getattr(adj, "carried", []) or []:   # the input leans on something in the player's pockets: is it there?
                 missing = _hook(game, "not_carried", state, name, default=None)
@@ -2109,6 +2110,8 @@ def scrub_hidden(game: Game, state: BaseModel, adj: Any, player_text: str) -> di
                 v = getattr(c, f, "")
                 if v and leaks(v):
                     setattr(c, f, mask(v))
+                    if f == "success_gain":
+                        c._masked = True             # B217: the engine's witness that the attempt is at the secret
             if any(leaks(getattr(c, f, "")) for f in ("success_gain", "failure_outcome", "complication_what")):
                 for f, v in (("success_gain", ""), ("failure_outcome", ""), ("complication_what", ""), ("complication", "none")):
                     if hasattr(c, f):
@@ -2554,6 +2557,23 @@ def _unquiet(game: Game, state: BaseModel, adj: Any) -> str:
     return str(_hook(game, "unquiet", state, default="") or "")
 
 
+PRY_GAIN = re.compile(r"\b(the piece comes|(she|he|they) says? more|says more|what they keep back)\b", re.I)
+
+
+def prying(intent: Any, stat: str) -> bool:
+    """B217: the secret-holder floor's engine witness. The attempt is no fight (no fight words in it; not str or dex aimed
+    at someone), and the assistant's own stake is about the secret: its gain was masked for a leak, or reads "the piece
+    comes" or "says more". The model's aim field is advisory and never read here."""
+    c = getattr(intent, "check", None)
+    if c is None:
+        return False
+    words = f"{getattr(intent, 'action', '')} {getattr(c, 'label', '')}"
+    aimed = bool(getattr(c, "target_entity", None) or getattr(intent, "targets", None))
+    if (stat in ("str", "dex") and aimed) or TASK_WORDS_FIGHT.search(words):
+        return False
+    return bool(getattr(c, "_masked", False)) or bool(PRY_GAIN.search(str(getattr(c, "success_gain", "") or "")))
+
+
 def is_fight(adj: Any) -> bool:
     """A fight beat: read as a fight, or as one fast beat (a blow, a shot, a lunge). Takes a reading or its ledger row."""
     if isinstance(adj, dict):
@@ -2576,6 +2596,7 @@ TASK_WORDS: list[tuple[str, re.Pattern]] = [       # D148: the longer kind wins 
                          r"wrestles?|struggles?|grapples?|dodges?|lunges?|flees?|runs? from|chases?|tackles?|kicks?|bites?|retreats?|"
                          r"scrambles?|backs? away|wrench(?:es)?)\b", re.I)),
 ]
+TASK_WORDS_FIGHT = dict(TASK_WORDS)["fight"]
 
 
 def task_of(adj: Any) -> str:

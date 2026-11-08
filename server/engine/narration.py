@@ -228,7 +228,8 @@ class Assessment:
     about: str = ""            # who or what the attempt is aimed at (the intent's first target id): a retry of the same attempt shuts the way (D122)
     edge: int = 0              # B211 (D179): what the player's words bring, the assistant's number (a modifier line on the roll)
     edge_why: str = ""
-    aim: str = "other"         # B63/B210 (D179): secret when the attempt is for a person's secret by force or trick (the floor's only case)
+    aim: str = "other"         # the assistant's aim, advisory and logged (B217: never read for the floor)
+    prying: bool = False       # B217: the engine's witness that the attempt is at a kept secret (no fight; the stake about the secret)
 
 
 EDGE_RANGE: dict[str, tuple[int, int]] = {"dice_d20": (-4, 4), "dice_2d6": (-1, 2)}   # B211: the edge by die
@@ -281,8 +282,8 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
     target = (a.target or call.target) if a else call.target        # the assessment's id wins over a called name
     raised = ""
     aimed = target or (a.about if a is not None else "")              # the assistant names the person in `about` (the smoke, D168)
-    # B63 narrowed (B210, D179): the floor only for an attempt at the secret itself by force or trick, never a conversation
-    who = holds_back(aimed) if (holds_back and aimed and a is not None and a.aim == "secret") else None
+    # B63 narrowed (B210, D179), B217: the floor only on the engine's witness (no fight, the stake about the secret)
+    who = holds_back(aimed) if (holds_back and aimed and a is not None and a.prying) else None
     if who and TIER_ORDER.index(difficulty) < TIER_ORDER.index("high"):    # B63 (D168): a person keeping a tell back is a high check
         raised, difficulty = difficulty, "high"
     label = (a.label if a and a.label else f"{stat} check" + (f" against {target}" if target else ""))
