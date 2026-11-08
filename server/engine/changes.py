@@ -310,14 +310,18 @@ def apply_changes(game: Any, state: BaseModel, report: ChangeReport, *, present:
         elif k == "issue":
             ex.issues.append((ch.value or ch.note).strip())
         elif k == "ruling":
-            rule = (ch.field or ch.target).strip().lower().replace(" ", "_") or "issue"
+            extra = dict(getattr(game, "extra_rulings", {}) or {})     # a game's own serious rules (the fantasy's too_far, D160)
+            rules = tuple(RULES) + tuple(extra)
+            rule = (ch.field or ch.target).strip().lower().replace(" ", "_").replace("-", "_") or "issue"
             what, fix = (ch.value or ch.note).strip(), (ch.note or ch.value).strip()
-            if rule not in RULES and ch.value.strip().lower().replace(" ", "_") in RULES:
+            if rule not in rules and ch.value.strip().lower().replace(" ", "_") in rules:
                 rule, what, fix = ch.value.strip().lower().replace(" ", "_"), (ch.note or ch.value).strip(), (ch.note or ch.value).strip()   # the rule put in value, the sentence in note
-            if rule not in RULES:                      # a rule the table does not know is an observation, not a verdict
+            if rule not in rules:                      # a rule the table does not know is an observation, not a verdict
                 ex.issues.append(f"{rule}: {what}")
             else:
-                row = {"rule": rule, "what": what, "fix": fix, "serious": rule in SERIOUS_RULES}
+                if rule in extra and (not fix or fix == what):
+                    fix = extra[rule]                  # the game's own fix when the row wrote none
+                row = {"rule": rule, "what": what, "fix": fix, "serious": rule in SERIOUS_RULES or rule in extra}
                 if row["serious"] and fix_declines(fix):       # N5: noticed, not worth a retell: recorded, softened
                     row.update(serious=False, softened=True, softened_by="fix_declines")
                 ex.rulings.append(row)

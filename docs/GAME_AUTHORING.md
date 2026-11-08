@@ -156,7 +156,8 @@ Optional, with defaults that do nothing:
 | `modifiers(state, req, target_entity)` | situational check modifiers |
 | `apply_change(state, change, writer)` | land one referee row that names the game's fields (validate, clamp, write); False for rows that are not the game's (§8) |
 | `narrator_flags`, `apply_present`, `after_changes`, `land_declarations` | the flags the referee may set; mark present people; derived values after the rows; world rows (§8) |
-| `after_turn(state, TurnInfo)` | drift: meters toward baseline, moods following; skip paths in `info.applied` |
+| `after_turn(state, TurnInfo)` | drift: meters toward baseline, moods following; skip paths in `info.applied`. `info.calls` holds the turn's called checks' results (a check staked lethal that came up fatal carries `fatal`, D157); `info.rejected` the rows the game refused |
+| `lethal_stake(state, roll, label)` | True when a called check is staked lethal (noir: a fight at critical health); a critical failure on it is marked `fatal` in the result and the game kills in `after_turn` (H5, D157). Bodies, wounds held by weight, treatment and the lethal roll and death fork are `engine/wounds.py`, shared |
 | `summary_guidance(state)` | what the state already records (so the summarizer skips it) and what to keep |
 | `commands(state)` / `run_command(state, id, args)` | commands, clicked or typed; engine or narrated mode (§7) |
 | `audit_probes(state)` | extra starting states for the authority audit (§3) |
@@ -165,7 +166,8 @@ Optional, with defaults that do nothing:
 | `consequence_sources` / `consequence_source(state, roll, label, target)` | where a failed check's complication comes from, by kind of check (the stat by default): `"table"` (the rows above) or `"stake"` (the assistant's own, the table when it wrote none). A kind not listed takes the stake. With `consequence_ideas`, a line of the table's ideas the assistant's stakes rules show as "what this world can charge" (complications only: never the player's own condition or loss) |
 | `leaked_terms(state, text, player_text)` | the words of the hidden truth the text uses in its own voice (outside quoted speech) before the player has learned them. In the narration it is a serious leak ruling (§8); in the adjudication, when the stakes dial shows the assistant the cast's secrets, the field is scrubbed before the narrator sees it (a label becomes its stat, a staked check loses its futures) |
 
-Declarations on the class: `clock`, `resolver` (a key in `mechanics.RESOLVERS`; both games name `dice_2d6`), `authority`, `events_path`, `spontaneous_path`,
+Declarations on the class: `extra_rulings` (`{rule: default fix}`: a game's own serious ruling kinds for the referee, retold as
+the engine's are; the fantasy's `too_far`, D160; the game's `referee_rules` say when to write it), `clock`, `resolver` (a key in `mechanics.RESOLVERS`; both games name `dice_2d6`), `authority`, `events_path`, `spontaneous_path`,
 `recent_path`, `threads_path`, `log_path`, `skip_adjudication`, `skip_referee`, `fallback_stat`,
 `static_paths` (engine-owned fields the audit should not expect a writer for), `player_name(state)` (the name the
 engine's lines call the player: Frank, the station) and

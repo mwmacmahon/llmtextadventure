@@ -255,7 +255,8 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
               assessments: list[Assessment], modifiers: Callable[[CheckRequest, str | None], list[Modifier]],
               render: Callable[[CheckResult], str], *, fallback_stat: str | None = None, fail_streak: int = 0,
               player: str = "the player", cost_for: Callable[[dict, str, str], dict | None] | None = None,
-              consequence_for: Callable[[dict, str, str, dict | None], dict | None] | None = None) -> CallResult:
+              consequence_for: Callable[[dict, str, str, dict | None], dict | None] | None = None,
+              lethal_for: Callable[[dict, str], bool] | None = None) -> CallResult:
     stat = call.stat
     if stat not in stats:
         if fallback_stat and fallback_stat in stats:
@@ -277,6 +278,9 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
     sign = f"{mods:+d}" if mods else ""
     data = res.model_dump(mode="json")
     data["about"] = (a.about if a and a.about else target) or ""       # D122: what the attempt was aimed at, for telling a retry
+    if lethal_for is not None and lethal_for(data, label):                 # H5 (D157): the game staked this check lethal
+        data["lethal"] = True
+        data["fatal"] = res.outcome == "critical_failure"
     failed = res.outcome in ("failure", "huge_failure", "critical_failure")
     stake = a.stake if a is not None else None                                           # D109: the assistant's branch, live
     if consequence_for is not None:                                                      # D144: the hidden consequence roll

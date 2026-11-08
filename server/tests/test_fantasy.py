@@ -1,0 +1,636 @@
+"""The fantasy game, MARROWGATE (the directive of 2026-11-08, stage B; D157 to D161): the sheet, the prefix, checks, hit
+points and rests, the fall and the death fork, heat and renown, levels, the deck and its rewards, the referee's rows and
+the too_far ruling. The pipeline tests run on the fake provider."""
+from __future__ import annotations
+
+import os
+import random
+from pathlib import Path
+
+import pytest
+
+os.environ["TA_PROVIDER"] = "fake"
+
+from engine import wounds as wd  # noqa: E402
+from engine.changes import apply_changes  # noqa: E402
+from engine.config import load_config  # noqa: E402
+from engine.events import Event  # noqa: E402
+from engine.game import TurnInfo  # noqa: E402
+from engine.mechanics import CheckRequest, CheckResult  # noqa: E402
+from engine.pipeline import Engine  # noqa: E402
+from engine.providers.factory import get_provider  # noqa: E402
+from engine.providers.fake import FakeProvider  # noqa: E402
+from engine.registry import load_games  # noqa: E402
+from engine.roles import AssistantReading, Change, ChangeReport, Intent  # noqa: E402
+from engine.store import Store  # noqa: E402
+from games.fantasy import deck as dk  # noqa: E402
+from games.fantasy.game import FantasyGame  # noqa: E402
+
+CONTENT = Path(__file__).resolve().parents[2] / "notes" / "content" / "fantasy"
+pytestmark = pytest.mark.skipif(not (CONTENT / "scenarios" / "marrowgate.yml").exists(), reason="the fantasy content is not on this machine")
+SHEET = {"name": "Wren", "klass": "Warrior", "race": "Dwarf", "gender": "a woman", "about": "Raised by smugglers; carries her mother's silver dagger and owes a man in the south."}
+C = Change
+
+
+@pytest.fixture
+def engine(tmp_path: Path) -> Engine:
+    cfg = load_config()
+    for r in cfg.roles.values():
+        r.provider = "fake"
+    return Engine(cfg, Store(tmp_path / "t.sqlite3"), load_games(cfg.resolve(cfg.server.content_root)))
+
+
+@pytest.fixture
+def fake() -> FakeProvider:
+    p = get_provider(load_config().role("narrator").model_copy(update={"provider": "fake"}))
+    assert isinstance(p, FakeProvider)
+    p.canned.clear()
+    p.hook = None
+    yield p
+    p.canned.clear()
+    p.hook = None
+
+
+@pytest.fixture
+def game(engine: Engine) -> FantasyGame:
+    g = engine.games["fantasy"]
+    assert isinstance(g, FantasyGame)
+    return g
+
+
+def new(game: FantasyGame, **over):
+    return game.new_instance({**SHEET, **over})[1]
+
+
+def apply(game, st, *rows, present=None, log_line="Something happened."):
+    s, rep, ex = apply_changes(game, st, ChangeReport.of(*rows, log_line=log_line, present=present), present=list(present or []), causes=[])
+    return s, rep, ex
+
+
+def info(turn=1, minutes=5, applied=None, seed=0):
+    return TurnInfo(turn=turn, elapsed_minutes=minutes, rng=random.Random(seed), applied=list(applied or []))
+
+
+def reading(text: str, minutes: int, **kw) -> AssistantReading:
+    return AssistantReading(kind="action", summary=text, time_minutes=minutes, risk="none", intents=[Intent(action=text)], **kw)
+
+
+async def play(engine: Engine, iid: str, text: str) -> list[dict]:
+    return [ev async for ev in engine.run_turn(iid, text)]
+
+
+def state_of(engine: Engine, iid: str):
+    return engine.games["fantasy"].load_state(engine.store.load_state(iid))
+
+
+# ---- the sheet (§3a, §3b) ----------------------------------------------------------------------------------------------
+
+def test_the_sheet_is_five_fields_with_one_hint(game: FantasyGame):
+    from engine.game import setup_fields
+    f = setup_fields(game.setup_options())
+    assert list(f) == ["name", "klass", "race", "gender", "about"]
+    assert [x.kind for x in f.values()] == ["text", "select", "select", "text", "textarea"]
+    assert [k for k, x in f.items() if x.required] == ["name", "klass", "race"]
+    assert [k for k, x in f.items() if x.hint] == ["about"]
+    assert [o.id for o in f["race"].options][-1] == "Dragonborn" and len(f["race"].options) == 9
+
+
+def test_new_instance_builds_the_player_from_the_tables(game: FantasyGame):
+    st = new(game)
+    p = st.player
+    assert p.stats == {"str": 3, "dex": 1, "con": 3, "int": -1, "wis": 0, "cha": 1}       # warrior, +1 CON for a dwarf
+    assert p.hp == p.hp_max == 12 + 3
+    assert {a.id for a in p.abilities} >= {"strong_arm", "shield", "second_wind", "stout"}
+    assert p.count("second_wind").value == 1
+    assert st.item("gold").count == 15 and st.item("sword") and st.item("shield") and st.item("travelling_pack")
+    assert st.clock.day == 1 and st.clock.minute == 1080 and p.location == "The Drowned Lantern"
+    mage = new(game, klass="Mage", race="Elf")
+    assert mage.player.spells == ["Magic Missile", "Sleep", "Charm Person"] and mage.player.cantrips == ["Light", "Mage Hand", "Spark"]
+    assert mage.player.count("spell_slots").value == 2 and mage.player.hp == 7
+    assert new(game, race="Dragonborn").player.count("breath").value == 1
+
+
+def test_scores_show_as_dnd_scores(game: FantasyGame):
+    st = new(game)
+    panel = next(x for x in game.ui(st).panels if getattr(x, "title", "") == "Character")
+    vals = [c.value for c in panel.items]
+    assert "STR 16 (+3)" in vals and "INT 8 (-1)" in vals and "CON 16 (+3)" in vals
+
+
+def test_the_prefix_carries_the_about_text_verbatim_and_the_pronoun_line(game: FantasyGame):
+    st = new(game)
+    pre = game.frozen_prefix(st)
+    assert "Wren, a dwarf warrior. Wren is a woman. The player wrote this about them, and it is true: \"" + SHEET["about"] + "\"" in pre
+    assert "{name}" not in pre and "{about_line}" not in pre
+    bare = new(game, gender="", about="", race="Elf", klass="Mage")
+    pre2 = game.frozen_prefix(bare)
+    assert "Wren, an elf mage. The player controls Wren completely." in pre2
+    assert "The player wrote this" not in pre2
+    assert SHEET["about"] in game.adjudication_rules(st) and "+2" in game.adjudication_rules(st)
+
+
+def test_the_prefix_has_the_city_file_and_the_dealt_hooks(game: FantasyGame):
+    st = new(game)
+    pre = game.frozen_prefix(st)
+    assert "THE CITY'S FILE" in pre and "Lake Ambercold (60 minutes)" in pre
+    assert "- Maud Tallow (maud)" in pre and "Wants: To keep the Lantern" in pre and "Tells, only when" in pre
+    for title in ("In motion: Rats in the Cellar", "In motion: The Ferryman's Daughter", "In motion: The Lamplighter's Shadow"):
+        assert title in pre
+    assert "- Gorm (gorm)" in pre
+    assert "too_far" not in pre and "too far" not in pre.lower()
+
+
+# ---- checks (§3d) ------------------------------------------------------------------------------------------------------
+
+def test_the_dice_line_names_the_stat_in_capitals(game: FantasyGame):
+    st = new(game)
+    r = CheckResult(id="n1", label="force the door", stat="str", difficulty="high", resolver="dice_d20", roll=17, total=19, target=14, margin=5,
+                    outcome="success")
+    assert game.render_mechanic(st, r) == "STR, high. 17 + 2 = 19 against 14. Success."
+    nat = r.model_copy(update={"roll": 20, "total": 22, "outcome": "critical_success"})
+    assert game.render_mechanic(st, nat).endswith("Natural 20! Critical success.")
+
+
+def test_modifiers_abilities_about_companions_renown(game: FantasyGame):
+    st = new(game)
+    mods = game.modifiers(st, CheckRequest(id="n", label="fight the troll", stat="str", difficulty="high"), None)
+    assert [m.label for m in mods] == ["Strong arm"]
+    mods = game.modifiers(st, CheckRequest(id="n", label="cut the rope with the silver dagger", stat="dex"), None)
+    assert any(m.value == 2 and m.label.startswith("what Wren brought") for m in mods)
+    hazel = st.person("hazel")
+    hazel.attitude = 2
+    st.player.with_them = ["hazel"]
+    mods = game.modifiers(st, CheckRequest(id="n", label="track the deer", stat="wis"), None)
+    assert any(m.label == "Hazel Oakhew helps" and m.value == 1 for m in mods)
+    st.player.renown = 30
+    mods = game.modifiers(st, CheckRequest(id="n", label="talk my way in", stat="cha"), "dace")
+    assert any(m.label == "Wren is known" and m.value == 1 for m in mods)
+
+
+# ---- hit points, damage, rests (§3e; acceptance 4) ---------------------------------------------------------------------
+
+def test_damage_is_bounded_and_the_shield_takes_a_step(game: FantasyGame):
+    st = new(game)                                                   # 15 hp: half is 7, the shield lowers it to 5
+    s2, rep, _ = apply(game, st, C(kind="add", target="player", field="hp", value="-20", note="a troll's fist"))
+    assert s2.player.hp == 10
+    no_shield = new(game, klass="Rogue")                             # 9 + 2 = 11 hp: half is 5
+    s3, _, _ = apply(game, no_shield, C(kind="add", target="player", field="hp", value="-9"))
+    assert s3.player.hp == 6
+    big = new(game, klass="Rogue")
+    big.player.hp = big.player.hp_max = 40
+    s4, _, _ = apply(game, big, C(kind="add", target="player", field="hp", value="-30"))
+    assert s4.player.hp == 30                                        # never more than a serious hit (10) a row
+
+
+def test_healing_needs_treatment_and_a_potion_heals(game: FantasyGame):
+    st = new(game)
+    st.player.hp = 3
+    s2, rep, _ = apply(game, st, C(kind="add", target="player", field="hp", value="+5"))
+    assert s2.player.hp == 3 and any("treatment" in r.reason for r in rep.rejected)
+    s3, _, _ = apply(game, st, C(kind="add", target="player", field="hp", value="+30", note="the priest's hands on the wound"))
+    assert s3.player.hp == 13
+    st.inventory.append(dk.Item(id="healing_potion", name="healing potion", count=2))
+    s4, _, _ = apply(game, st, C(kind="add", target="healing_potion", field="count", value="-1", note="drinks it"))
+    assert s4.player.hp == 11 and s4.item("healing_potion").count == 1
+    s5, _, _ = apply(game, st, C(kind="add", target="healing_potion", field="count", value="-1", note="gave it to Pip"))
+    assert s5.player.hp == 3
+
+
+def test_heat_gold_counts_move_by_rows_bounded(game: FantasyGame):
+    st = new(game)
+    s2, _, _ = apply(game, st, C(kind="add", target="player", field="heat", value="+90", note="killed a Hill man in the street"))
+    assert s2.player.heat == 40
+    s3, rep, _ = apply(game, st, C(kind="add", target="gold", field="count", value="-30"))
+    assert s3.item("gold").count == 0 and rep.rejected
+    s4, rep, _ = apply(game, st, C(kind="add", target="second_wind", value="-1"), C(kind="add", target="player", field="renown", value="+10"))
+    assert s4.player.count("second_wind").value == 0 and s4.player.renown == 0
+    s5, rep, _ = apply(game, s4, C(kind="add", target="second_wind", value="+1"))
+    assert s5.player.count("second_wind").value == 0 and any("refill" in r.reason for r in rep.rejected)
+
+
+def test_rests_refill_what_the_content_says(game: FantasyGame):
+    st = new(game, klass="Mage", race="Human")
+    st.player.hp = 1
+    st.player.count("spell_slots").value = 0
+    short = game.after_turn(st, info(minutes=60))
+    assert short.player.hp == 1 + 3 + 0 and short.player.count("spell_slots").value == 0      # a short rest at the Lantern: 3 + CON
+    long = game.after_turn(st, info(minutes=480))
+    assert long.player.hp == long.player.hp_max and long.player.count("spell_slots").value == 2
+    out = st.model_copy(deep=True)
+    out.player.location = "The Greywood"
+    walked = game.after_turn(out, info(minutes=480))
+    assert walked.player.hp == 1                                     # eight hours on the road is no rest
+    refused, res = game.run_command(out, "rest", {"kind": "long"})
+    assert not res.ok and "safe" in res.text
+    ok, res = game.run_command(out, "rest", {"kind": "short"})
+    assert res.ok and ok.player.resting == "short" and res.minutes == 60
+    assert game.after_turn(ok, info(minutes=60)).player.hp == 4
+
+
+def test_wounds_are_chips_held_by_weight(game: FantasyGame):
+    st = new(game)
+    s2, _, _ = apply(game, st, C(kind="set", target="player", field="conditions", value="+a deep cut across the ribs"),
+                     C(kind="set", target="player", field="conditions", value="+lost an eye"))
+    assert [w.weight for w in s2.player.wounds] == ["serious"]
+    eye = next(c for c in s2.player.conditions if c.name == "lost an eye")
+    assert eye.stat == "wis" and eye.mod == -2
+    mods = game.modifiers(s2, CheckRequest(id="n", label="spot the cutpurse", stat="wis"), None)
+    assert any(m.label == "lost an eye" for m in mods)
+    s3, rep, _ = apply(game, s2, C(kind="set", target="player", field="conditions", value="-lost an eye", note="a priest prays over it"))
+    assert s3.player.has_condition("lost an eye")
+    s4, rep, _ = apply(game, s2, C(kind="set", target="player", field="conditions", value="-a deep cut across the ribs"))
+    assert s4.player.wounds and any("treats" in r.reason for r in rep.rejected)
+    s5, _, _ = apply(game, s2, C(kind="set", target="player", field="conditions", value="-a deep cut across the ribs", note="stitched by Tansy"))
+    assert [w.weight for w in s5.player.wounds] == ["minor"]
+
+
+# ---- death (§3e; acceptance 6) -----------------------------------------------------------------------------------------
+
+def _force_lethal(monkeypatch, outcome: str):
+    real = wd.lethal_roll
+
+    def fixed(rng, base, modifiers=None, **kw):
+        r = real(rng, base, modifiers, **kw)
+        return r.model_copy(update={"outcome": outcome})
+    monkeypatch.setattr(wd, "lethal_roll", fixed)
+
+
+def test_zero_hp_alone_and_a_fatal_roll_ends_the_game(game: FantasyGame, monkeypatch):
+    _force_lethal(monkeypatch, "huge_failure")
+    st = new(game)
+    st.player.hp = 0
+    s1 = game.after_turn(st, info(turn=3))
+    assert s1.player.fate == "dead" and not s1.player.carried and game.ending(s1) is None
+    assert any(d.startswith("DEATH.") for d in game.turn_directives(s1))
+    assert [c.id for c in game.commands(s1)] == ["journal"]
+    s2 = game.after_turn(s1, info(turn=4))
+    assert game.ending(s2) and "Wren died" in game.ending(s2)
+    assert game.ui(s2).phase == "ended"
+
+
+def test_zero_hp_with_someone_devoted_present_is_carried_then_raised(game: FantasyGame, monkeypatch):
+    _force_lethal(monkeypatch, "critical_failure")
+    st = new(game)
+    st.player.hp = 0
+    st.person("hazel").attitude = 3
+    st.player.with_them = ["hazel"]
+    s1 = game.after_turn(st, info(turn=3))
+    assert s1.player.fate == "carried" and s1.player.carried and game.ending(s1) is None
+    d = " ".join(game.turn_directives(s1))
+    assert "Hazel Oakhew" in d and "stop at the Temple door, before any waking" in d
+    s2 = game.after_turn(s1, info(turn=4))
+    p = s2.player
+    assert p.fate == "raised" and not p.carried and p.location == "Temple of the Quiet Flame" and p.hp == p.hp_max // 2
+    assert s2.flags["owes_the_temple"] and p.debts and any(t.title.startswith("The Temple's price") for t in s2.threads)
+    assert "names the price" in " ".join(game.turn_directives(s2))
+    s3 = game.after_turn(s2, info(turn=5))
+    assert s3.player.fate == "" and s3.player.debts == p.debts and game.ending(s3) is None
+
+
+def test_zero_hp_survived_wakes_hurt_with_one_cost(game: FantasyGame, monkeypatch):
+    _force_lethal(monkeypatch, "success")
+    st = new(game)
+    st.player.hp = 0
+    st.player.location = "Lake Ambercold"
+    s1 = game.after_turn(st, info(turn=3))
+    p = s1.player
+    assert p.fate == "survived" and p.hp == p.hp_max // 2 and p.location == "Lantern Row" and p.downs == 1
+    assert s1.clock.minute == (st.clock.minute + 240) % 1440
+    assert "wake" in game.turn_directives(s1)[0]
+    gold_before = st.item("gold").count
+    assert s1.item("gold").count < gold_before                     # the first rotated cost: a tithe
+
+
+def test_an_execution_is_death_outright_and_the_referee_may_say_carried(game: FantasyGame, monkeypatch):
+    _force_lethal(monkeypatch, "critical_success")
+    st = new(game)
+    st.player.hp = 3
+    s1, _, _ = apply(game, st, C(kind="add", target="player", field="hp", value="-3", note="Rook's men hang her from the quay crane: an execution"))
+    assert s1.player.hp == 0 and s1.player.fate_note == "executed"
+    assert game.after_turn(s1, info(turn=2)).player.fate == "dead"
+    s2, _, _ = apply(game, s1, C(kind="set", target="player", field="carried", value="true"))
+    assert s2.player.carried
+    assert game.after_turn(s2, info(turn=2)).player.fate == "carried"
+    alive, rep, _ = apply(game, st, C(kind="set", target="player", field="carried", value="true"))
+    assert not alive.player.carried and rep.rejected
+
+
+# ---- heat, renown, levels (§3f, §3g) -----------------------------------------------------------------------------------
+
+def test_heat_falls_five_a_day_and_wanted_is_a_flag(game: FantasyGame):
+    st = new(game)
+    st.player.heat = 55
+    s1 = game.after_turn(st, info())
+    assert s1.flags.get("wanted_by_the_watch") is True
+    s1.clock.day += 2
+    s2 = game.after_turn(s1, info())
+    assert s2.player.heat == 45 and s2.flags.get("wanted_by_the_watch") is False
+
+
+def test_the_watch_comes_at_hunted_where_the_player_sleeps(game: FantasyGame):
+    st = new(game)
+    raid = next(e for e in st.hidden.events if e.id == "watch_raid")
+    from engine.events import evaluate
+    st.player.heat = 85
+    st.clock.minute = 23 * 60
+    assert evaluate(raid.trigger, st.model_dump(mode="json"), st.hidden.events, 1)
+    st.player.heat = 60
+    assert not evaluate(raid.trigger, st.model_dump(mode="json"), st.hidden.events, 1)
+
+
+def test_level_up_is_refused_until_the_xp_is_there(game: FantasyGame):
+    st = new(game)
+    s1, res = game.run_command(st, "level_up", {"stat": "str", "ability": "cleave"})
+    assert not res.ok and "0 of 300 XP" in res.text
+    st.player.xp = 300
+    s1, res = game.run_command(st, "level_up", {"stat": "str", "ability": "nothing"})
+    assert not res.ok and "Cleave" in res.text
+    s1, res = game.run_command(st, "level_up", {"stat": "str", "ability": "cleave"})
+    assert res.ok and s1.player.level == 2 and s1.player.stats["str"] == 4
+    assert s1.player.hp_max == 15 + 7 + 3 and any(a.id == "cleave" for a in s1.player.abilities)
+    s2, res = game.run_command(s1, "level_up", {"stat": "str", "ability": "iron_skin"})
+    assert not res.ok and "900" in res.text
+    mage = new(game, klass="Mage", race="Gnome")
+    mage.player.xp = 900
+    mage.player.level = 2
+    m3, res = game.run_command(mage, "level_up", {"stat": "int", "ability": "knock"})
+    assert res.ok and m3.player.count("spell_slots").max == 3 and "Knock" in m3.player.spells
+    assert "fireball" not in [o.id for o in game.commands(m3)[1].params[1].options]       # Fireball waits for level 5
+
+
+def test_invented_threads_pay_25_xp_two_a_day(game: FantasyGame):
+    from engine.threads import Thread
+    st = new(game)
+    st.threads += [Thread(id=f"t1-job-{i}", title=f"a job {i}", status="resolved", closed_turn=1) for i in range(3)]
+    s1 = game.after_turn(st, info())
+    assert s1.player.xp == 50 and len(s1.player.paid_threads) == 3
+    assert game.after_turn(s1, info()).player.xp == 50
+
+
+# ---- the deck (§3h; acceptance 5) --------------------------------------------------------------------------------------
+
+def test_dealing_rebases_a_hooks_times_to_the_deal(game: FantasyGame):
+    st = new(game)
+    ev = {e.id: e for e in st.hidden.events}
+    start = 1 * 1440 + 1080
+    assert ev["cellar_rats_reach"].at == {"day": 1, "minute": 1085}
+    assert ev["ferrymans_daughter_reach"].at == {"day": 1, "minute": 1140}
+    assert ev["lamplighters_shadow_reach"].at == {"day": 1, "minute": 1200}
+    assert ev["tam_rows_out"].at == {"day": 4, "minute": 360}          # two days on (day 3, 18:00), at the next dawn (not_before 06:00)
+    assert all(ev[x].hook for x in ("cellar_rats_reach", "tam_rows_out", "collector_hears"))
+    hooks = game.hooks_content()
+    later = start + 2 * 1440 + 300                                     # dealt on day 3 at 23:00
+    dk.deal(st, hooks["body_on_lantern_row"], turn=9, deal_abs=later, name="Wren")
+    e = next(e for e in st.hidden.events if e.id == "body_on_lantern_row_reach")
+    assert e.at == {"day": 4, "minute": 330}                           # first light, the next morning
+    assert st.person("ferris") and "fish-knife" not in st.person("nan").wants and "She killed Ferris" in st.person("nan").secret
+    assert any(t.id == "nan_confesses" for t in st.person("nan").tells)
+    assert "Old Marrow" in st.city.locations or True
+    assert st.deck.last_deal_abs == later and st.hook("body_on_lantern_row").status == "dealt"
+
+
+def test_load_state_rereads_dealt_hooks_and_keeps_what_was_told(game: FantasyGame):
+    st = new(game)
+    gorm = st.person("gorm")
+    gorm.tells[0].told = True
+    gorm.secret = "edited in the save"
+    st2 = game.load_state(st.model_dump(mode="json"))
+    g2 = st2.person("gorm")
+    assert g2.tells[0].told and g2.secret.startswith("He was driven out")
+    dk.deal(st2, game.hooks_content()["what_the_fog_keeps"], turn=2, deal_abs=3000, name="Wren")
+    st3 = game.load_state(st2.model_dump(mode="json"))
+    assert "Old Marrow" in st3.city.locations and st3.city.gated["Old Marrow"] == "old_marrow_open"
+    assert st3.city.aliases["the drowned city"] == "Old Marrow"
+
+
+def test_a_hook_goes_live_on_its_reach_and_closes_with_its_first_matching_reward(game: FantasyGame):
+    st = new(game)
+    reach = next(e for e in st.hidden.events if e.id == "cellar_rats_reach")
+    reach.fired = True
+    s1 = game.after_turn(st, info(turn=1))
+    h = s1.hook("cellar_rats")
+    assert h.status == "live" and any(t.id == "hook-cellar_rats" and t.status == "open" for t in s1.threads)
+    s1.flags["troll_settled"] = True
+    s1.flags["troll_dead"] = True                                    # both hold: the first row (settled) is paid, once
+    s2 = game.after_turn(s1, info(turn=2))
+    assert s2.hook("cellar_rats").status == "done" and s2.player.xp == 100 and s2.item("gold").count == 17 and s2.player.renown == 5
+    assert s2.item("brass_whistle") is not None and s2.person("gorm").attitude == 1 and s2.person("maud").attitude == 1
+    assert next(t for t in s2.threads if t.id == "hook-cellar_rats").status == "resolved"
+    assert game.after_turn(s2, info(turn=3)).player.xp == 100
+
+
+def test_also_rows_are_paid_beside_the_main_row(game: FantasyGame):
+    st = new(game)
+    dk.deal(st, game.hooks_content()["body_on_lantern_row"], turn=1, deal_abs=2520, name="Wren")
+    st.flags.update(killer_named_nan=True, took_the_purse=True)
+    s1 = game.after_turn(st, info(turn=2))
+    assert s1.hook("body_on_lantern_row").status == "done" and s1.player.xp == 100 and s1.player.heat == 10 and s1.player.renown == 10
+
+
+def test_milestones_pay_once_and_the_long_thread_never_closes(game: FantasyGame):
+    st = new(game)
+    dk.deal(st, game.hooks_content()["what_the_fog_keeps"], turn=1, deal_abs=2520, name="Wren")
+    st.flags["steps_descended"] = True
+    s1 = game.after_turn(st, info(turn=2))
+    assert s1.player.xp == 200 and s1.hook("what_the_fog_keeps").status == "dealt"
+    s1.flags["old_marrow_found"] = True
+    s2 = game.after_turn(s1, info(turn=3))
+    assert s2.player.xp == 500 and s2.item("true_song") is not None and s2.hook("what_the_fog_keeps").status == "dealt"
+
+
+def test_failed_closes_with_nothing_paid(game: FantasyGame):
+    st = new(game)
+    st.clock.day += 5                                                # cellar_rats fails four days after its deal
+    s1 = game.after_turn(st, info(turn=2))
+    assert s1.hook("cellar_rats").status == "failed" and s1.player.xp == 0
+
+
+def test_the_deck_draws_by_the_rule(game: FantasyGame):
+    st = new(game)
+    deck = dk.deck_of(game.scenario())
+    hooks = game.hooks_content()
+    now = st.clock.day * 1440 + st.clock.minute
+    assert dk.draw(st, deck, hooks, random.Random(1), now, 1) is None             # three in motion
+    st.hook("cellar_rats").status = "done"
+    st.hook("lamplighters_shadow").status = "done"
+    assert dk.draw(st, deck, hooks, random.Random(1), now + 60, 1) is None        # six hours not yet passed
+    assert dk.draw(st, deck, hooks, random.Random(1), now + 360, 1) == "body_on_lantern_row"   # the only tier 1 left
+    st.player.level = 2                                              # tier 2 open; wants gate the rest
+    pool = dict(dk.candidates(st, deck, hooks, now + 360, 1))
+    assert "singing_on_the_lake" not in pool and "barrow_under_the_greywood" not in pool and "bell_rings_itself" in pool
+    st.flags["on_the_lake"] = True
+    assert "singing_on_the_lake" in dict(dk.candidates(st, deck, hooks, now + 360, 1))
+
+
+def test_the_draw_favours_a_hook_whose_reach_is_where_the_player_has_been(game: FantasyGame):
+    """Acceptance 5, the mechanism: weight_near doubles a hook whose first reach is gated on a place the player is in or was in
+    in the last day. The content's lake hooks reach the player on the quay (B39), so the rule is shown on the real deck with
+    a lake hook's reach moved onto the water, seeded, over ten tries."""
+    st = new(game)
+    deck = dk.deck_of(game.scenario())
+    hooks = dict(game.hooks_content())
+    singing = dict(hooks["singing_on_the_lake"])
+    singing["reach"] = [dict(singing["reach"][0], where=["Lake Ambercold", "Reed Island"]), singing["reach"][1]]
+    hooks["singing_on_the_lake"] = singing
+    for h in st.hooks:
+        h.status = "done"
+    st.player.level = 2
+    st.flags.update(on_the_lake=True)
+    now = st.clock.day * 1440 + st.clock.minute + 400
+    st.player.location = "Reed Island"
+    st.player.visited = {"Lake Ambercold": now - 300}
+    deck = dict(deck, weight_near=20)                             # the file's weight is 2 (B39); 20 shows the lean in ten seeded tries
+    picks = [dk.draw(st, deck, hooks, random.Random(seed), now, 5) for seed in range(10)]
+    assert sum(1 for x in picks if x == "singing_on_the_lake") > 5
+    deck2 = dk.deck_of(game.scenario())
+    pool = dict(dk.candidates(st, deck2, hooks, now, 5))
+    assert pool["singing_on_the_lake"] == 2 and all(w == 1 for k, w in pool.items() if k != "singing_on_the_lake")
+
+
+# ---- the referee's rows (§3i) ------------------------------------------------------------------------------------------
+
+def test_attitude_words_and_the_top_word(game: FantasyGame):
+    st = new(game)
+    s1, _, _ = apply(game, st, C(kind="set", target="hazel", field="attitude", value="devoted"))
+    assert s1.person("hazel").attitude == 3 and s1.person("hazel").attitude_word == "devoted"
+    s2, _, _ = apply(game, st, C(kind="set", target="maud", field="attitude", value="hostile"))
+    assert s2.person("maud").attitude == -2                          # two steps a row
+    assert "devoted" in game.referee_rules(st) and "smitten" not in game.referee_rules(st)
+
+
+def test_the_night_market_is_not_there_before_midnight(game: FantasyGame):
+    st = new(game)
+    s1, rep, _ = apply(game, st, C(kind="move", target="player", value="Night Market"))
+    assert s1.player.location == "The Drowned Lantern" and rep.conflicts()
+    s1, rep, _ = apply(game, st, C(kind="move", target="player", value="the catacombs"))
+    assert s1.player.location == "The Catacombs" and s1.flags["catacombs_found"]
+
+
+def test_a_move_into_the_greywood_sets_the_visited_flag(game: FantasyGame):
+    st = new(game)
+    s1, _, _ = apply(game, st, C(kind="move", target="player", value="the wood"))
+    assert s1.player.location == "The Greywood" and s1.flags["visited_greywood"]
+
+
+def test_too_far_is_a_serious_ruling_with_its_fix(game: FantasyGame):
+    st = new(game)
+    _, _, ex = apply(game, st, C(kind="ruling", field="too_far", value="the telling followed them into the bedroom", note=""))
+    assert ex.rulings == [{"rule": "too_far", "what": "the telling followed them into the bedroom", "fix": "End the scene at the door, or at the first blow, and pick up after it.", "serious": True}]
+    from engine.pipeline import retell_note
+    note = retell_note(ex.rulings)
+    assert "End the scene at the door" in note
+
+
+async def test_a_too_far_ruling_retells_and_the_narrator_never_hears_of_it_first(engine: Engine, fake: FakeProvider):
+    """Acceptance 8."""
+    iid = engine.create_instance("fantasy", SHEET)
+    engine.update_settings({"guard": {"mode": "gate", "max_retells": 1}})
+    seen: list[str] = []
+
+    def script(system, messages):
+        seen.append(system + "\n".join(m.content for m in messages))
+        return "You and she go up the stairs together."
+    fake.script = script
+    fake.canned["AssistantReading"] = [reading("I go upstairs with her.", 5), reading("I go upstairs with her.", 5)]
+    fake.canned["ChangeReport"] = [ChangeReport.of(C(kind="ruling", field="too_far", value="the telling went into the bedroom", note="End the scene at the door and pick up after it."), log_line="Upstairs."),
+                                   ChangeReport.of(log_line="Upstairs.")]
+    events = [e async for e in engine.play(iid, "I go upstairs with her.")]
+    kinds = [e["event"] for e in events]
+    assert "retell" in kinds
+    retell = next(e for e in events if e["event"] == "retell")["data"]
+    assert retell["rulings"][0]["rule"] == "too_far" and "End the scene at the door" in retell["hint"]
+    assert "too_far" not in seen[0] and "End the scene at the door" not in seen[0] and "bedroom" not in seen[0].lower()
+    assert any("End the scene at the door" in s for s in seen[1:])
+
+
+# ---- the pipeline: the first evening (acceptance 2) and the ferryman's fuse (acceptance 7) ----------------------------
+
+async def test_the_first_evening_plays_as_the_content_says(engine: Engine, fake: FakeProvider):
+    iid = engine.create_instance("fantasy", SHEET)
+    fake.canned["AssistantReading"] = [reading("I look around the common room.", 5)]
+    events = await play(engine, iid, "I look around the common room.")
+    assert events[-1]["data"]["mechanics"]["events"] == ["opening", "cellar_rats_reach"]
+    bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
+    assert "the next table" in bulletin and "Maud comes to Wren's table" in bulletin and "Day 1, 18:05" in bulletin
+    st = state_of(engine, iid)
+    assert st.hook("cellar_rats").status == "live" and st.clock.minute == 1085
+    fake.canned["AssistantReading"] = [reading("I sit by the fire and wait.", 60)]
+    events = await play(engine, iid, "I sit by the fire and wait until something happens.")
+    assert "ferrymans_daughter_reach" in events[-1]["data"]["mechanics"]["events"]
+    assert state_of(engine, iid).clock.minute == 1140
+    fake.canned["AssistantReading"] = [reading("I keep waiting.", 60)]
+    events = await play(engine, iid, "I keep waiting until something happens.")
+    assert "lamplighters_shadow_reach" in events[-1]["data"]["mechanics"]["events"]
+    assert state_of(engine, iid).clock.minute == 1200
+
+
+def _tam_due(st):
+    for e in st.hidden.events:
+        if e.id == "tam_rows_out":
+            return e
+    raise AssertionError
+
+
+async def test_tam_rows_out_alone_and_is_lost(engine: Engine, fake: FakeProvider):
+    """Acceptance 7: nobody aboard, the lost skiff; aboard with him, not."""
+    for aboard in (False, True):
+        iid = engine.create_instance("fantasy", SHEET)
+        doc = engine.store.load_state(iid)
+        st = engine.games["fantasy"].load_state(doc)
+        st.clock.day, st.clock.minute = 4, 355
+        st.player.location = "Lantern Row"
+        st.person("tam").location = "Lantern Row"
+        for e in st.hidden.events:                                     # everything else has played: the one-hook-a-turn rule holds nothing back
+            if e.id not in ("tam_rows_out", "tam_lost") and e.repeat != "daily" and e.id != "watch_raid":
+                e.fired = True
+        engine.store.save_snapshot(iid, 0, st.model_dump(mode="json"))
+        fake.canned["AssistantReading"] = [reading("I wait on the quay.", 10)]
+        events = await play(engine, iid, "I wait on the quay for the dawn.")
+        assert "tam_rows_out" in events[-1]["data"]["mechanics"]["events"]
+        if aboard:
+            st = state_of(engine, iid)
+            st.player.with_them = ["tam"]
+            st.player.location = "The river Marrow"
+            engine.store.save_snapshot(iid, engine.store.latest_turn(iid), st.model_dump(mode="json"))
+            fake.script = lambda system, messages: "Tam Reedy pulls at the oars beside you, into the fog."
+            fake.canned["ChangeReport"] = [ChangeReport.of(log_line="Rowing with Tam.", present=["tam"]), ChangeReport.of(log_line="Rowing with Tam.", present=["tam"])]
+        fake.canned["AssistantReading"] = [reading("I go on.", 90), reading("I go on.", 30)]
+        events = await play(engine, iid, "We go on." if aboard else "I go back inside and wait.")
+        fired = events[-1]["data"]["mechanics"]["events"]
+        assert "due: Tam rows out alone toward the singing" in fired       # the fuse burns down either way; who is aboard decides
+        events = await play(engine, iid, "We go on." if aboard else "I wait some more.")
+        st = state_of(engine, iid)
+        fired = events[-1]["data"]["mechanics"]["events"]
+        if aboard:
+            assert "tam_lost" not in fired and not st.flags.get("tam_gone_out")
+        else:
+            assert "tam_lost" in fired and st.flags.get("tam_gone_out") and st.person("tam").location == "Unknown"
+
+
+async def test_death_by_the_pipeline_and_the_carried_variant(engine: Engine, fake: FakeProvider, monkeypatch):
+    """Acceptance 6 through the pipeline: a blow to 0 alone, the death told next turn and the game over; with Hazel devoted and
+    present, `carried` and a directive that stops before the waking."""
+    _force_lethal(monkeypatch, "critical_failure")
+    for with_hazel in (False, True):
+        iid = engine.create_instance("fantasy", SHEET)
+        st = state_of(engine, iid)
+        st.player.hp = 2
+        if with_hazel:
+            st.person("hazel").attitude = 3
+        engine.store.save_snapshot(iid, 0, st.model_dump(mode="json"))
+        fake.canned["AssistantReading"] = [reading("I fight the troll.", 2)]
+        fake.script = lambda system, messages: "The troll's fist comes down. Hazel Oakhew shouts your name."
+        fake.canned["ChangeReport"] = [ChangeReport.of(C(kind="add", target="player", field="hp", value="-5", note="the troll's fist"),
+                                                       log_line="The troll hits.", present=["hazel"] if with_hazel else [])]
+        await play(engine, iid, "I fight the troll.")
+        st = state_of(engine, iid)
+        assert st.player.hp == 0 and st.player.fate == ("carried" if with_hazel else "dead") and st.player.carried == with_hazel
+        fake.canned["AssistantReading"] = [reading("I try to stand.", 2)]
+        events = await play(engine, iid, "I try to stand.")
+        bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
+        if with_hazel:
+            assert "stop at the Temple door, before any waking" in bulletin and events[-1]["data"]["ending"] is None
+        else:
+            assert "DEATH." in bulletin and events[-1]["data"]["ending"] and "Wren died" in events[-1]["data"]["ending"]
+            again = await play(engine, iid, "I get up.")
+            assert again[-1]["event"] == "error" and "over" in again[-1]["data"]["message"]

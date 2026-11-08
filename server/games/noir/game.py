@@ -35,6 +35,7 @@ from engine.pending import Pending
 from engine.roles import AssistantReadingV2, Change
 from engine.spontaneous import Spontaneous
 from engine.statepath import Actor
+from engine import wounds as wd
 
 from .state import pocket_key, pocket_word, COUNTED, Case, Condition, FoundPlace, Hidden, Item, NoirState, Note, Person, Player, Tell
 
@@ -122,7 +123,7 @@ AUTHORITY: dict[str, Actor] = {
     "clock": "engine", "player.stats": "engine", "player.proficiencies": "engine", "player.weaknesses": "engine",
     "player.minutes_since_smoke": "engine", "player.baseline_dread": "engine", "player.drift_bank": "engine", "player.sanity": "engine",
     "player.withdrawal_bank": "engine", "player.name": "engine", "player.description": "engine",
-    "player.location": "narrator", "player.health": "narrator", "player.dread": "narrator", "player.conditions": "narrator",
+    "player.location": "narrator", "player.health": "narrator", "player.wounds": "narrator", "player.dread": "narrator", "player.conditions": "narrator",
     "inventory": "narrator", "people": "narrator",
     "people.*.agenda": "script", "people.*.secret": "script", "people.*.description": "script",
     "people.*.tells": "script", "people.*.tells.*.told": "narrator", "things": "narrator", "lost": "narrator",
@@ -466,7 +467,7 @@ class NoirGame(GameBase):
     def render_bulletin(self, state: NoirState, player_text: str) -> str:
         s, p = state, state.player
         lines: list[str] = [f"Time: {s.clock.render()}, {part_of_day(s.clock.minute)}"]
-        conds = ", ".join(c.name for c in p.conditions) or "none"
+        conds = ", ".join([c.name for c in p.conditions] + [x.words for x in sorted(p.wounds, key=lambda x: -wd.WEIGHTS[x.weight])]) or "none"
         where = "a place the game has lost track of (say where he is this turn)" if p.location == "Unknown" else (p.location or "unknown")
         lines.append(f"{p.name}: at {where}; health {p.health}; nerves {p.dread_tier(p.dread)}; conditions: {conds}.")
         if p.dread_tier(p.dread) in NERVES_NOTES and not nerves_due(p):     # plan A: not this turn; the engine times it
@@ -699,9 +700,10 @@ class NoirGame(GameBase):
             "Rows this game records:",
             "- move player <place>; move <person id> <place>: where they are when the prose ends. Someone still on the way (the creature dragging him toward the water, a man heading for the docks) has not arrived: that is a soon row with the minutes, and the move is reported on the turn they get there.",
             "- move player Unknown: the prose had Frank leave where he was (dragged, carried, knocked out and moved, lost in the dark, on the way somewhere) and did not show him arriving at a listed place. Write this rather than leaving him recorded where he no longer is; the engine then asks the narrator to say where he is next turn.",
-            "- set player.health <" + "|".join(HEALTH_VALUES) + ">, only when the prose says Frank was hurt or treated.",
+            "- set player.health <" + "|".join(HEALTH_VALUES[:4]) + ">, only when the prose says Frank was hurt or treated. Never dead: whether a blow kills him is the dice's, and the engine says so.",
             "- add player.dread ±n: 0 on an ordinary turn, including successes and calm conversations. Up, by how badly it would shake a tired man. Tension with people is small: an interrogation, a threat in words, a hand on his wrist, bad news, a cell door: +0 to +2, and 0 again the turn after if nothing new frightens him. +3 to +10 for a blow, a shot fired at him, or something wrong in a small way (a sound from under the floor, a smell, a shape seen for a second, a word nobody should know); +10 to +25 when he is badly hurt, fights for his life, or meets the thing itself or what it leaves behind; something he only imagined (what the nerves note describes) +1 to +2, never more. Down: -5 to -20 when he rests, drinks with someone he trusts, wins clearly, reaches safety or is treated kindly: an hour's drink and talk with a friend is -20, a clear win -5 to -10. The engine moves it with time as well (down when nothing frightens him, up while the thing is near) and handles a cigarette's calm: never count those here.",
-            "- set player.conditions +<name> or -<name>: conditions with mechanical weight are " + ", ".join(k for k in CONDITION_MODS if k != WITHDRAWAL) + "; others are allowed as flavour; '" + WITHDRAWAL + "' is the engine's, never add or remove it. Remove only a condition the state lists.",
+            "- set player.conditions +<name> or -<name>: conditions with mechanical weight are " + ", ".join(k for k in CONDITION_MODS if k != WITHDRAWAL) + "; others are allowed as flavour; '" + WITHDRAWAL + "' is the engine's, never add or remove it. Remove only a condition the state lists. "
+            "An injury (a torn palm, a cracked rib) is written the same way, +<the injury in a few words>; that row moves his health by itself, so write no health row for the same hurt. It comes off (-<the injury>) only when the prose treats it, and the note says how (bandaged, stitched, a doctor).",
             "- add revolver.loaded -n: rounds Frank actually fired this turn (never as a lost item). add cigarettes.count -n: cigarettes Frank LIT this turn (finishing one lit earlier is nothing); the engine handles the rest of smoking. add dollars.count -n: dollars spent. add bullets.count ±n when the prose plainly says so. Matches are a book: striking matches changes nothing; gone matches only when the book is used up, given away or lost.",
             "- new thing value=<name> field=player (target thing, field player, always): a thing Frank picked up, was given, bought, borrowed, pocketed, or found and kept (anything he folds into a pocket counts, one row per thing: a map, a carbon copy), named as Frank would name it from what the prose shows (a small brass key, a folded slip of paper; never whose it is or what it opens until the prose says), note=what it looks like (or the count for several). gone <thing>: used up or destroyed; the revolver only on an explicit loss of the revolver. Reloading is a lever the engine applies: never report its rounds.",
             "- move <thing> <place>: Frank dropped it or left it somewhere; it stays there (listed under 'Not on Frank'). move <thing> <person id>: he handed it over or it was taken from him. move <thing> player: he picked it up again or got it back. Counted things (dollars, bullets, cigarettes) go by add, never by move.",
@@ -739,7 +741,7 @@ class NoirGame(GameBase):
 
         label = req.label.lower()
         fear: list[Modifier] = []       # fear sources do not stack: the worst one applies
-        for c in p.conditions:
+        for c in [*p.conditions, *(Condition(name=x.words) for x in p.wounds)]:     # a wound named as a weighted condition keeps its modifier
             if c.name in CONDITION_MODS:
                 v = CONDITION_MODS[c.name].get(req.stat, CONDITION_MODS[c.name].get("ALL", 0))
                 if v:
@@ -830,6 +832,11 @@ class NoirGame(GameBase):
         if kind in ("add", "set") and is_player and field == "attitude":
             w.reject("player.attitude", "attitude is a listed person's toward Frank; Frank has none", value)
             return True
+        if kind == "set" and is_player and field == "health" and value == "dead":
+            # H5 (D157): death is the dice's, never a row's: a check staked lethal at critical health that comes up a critical
+            # failure (lethal_stake, after_turn). The row lands as the worst short of it.
+            w.reject("player.health", "death comes only from the dice (a fight at critical health that goes badly wrong); recorded as critical", value)
+            value = "critical"
         if kind == "set" and is_player and field == "health":
             if (value in HEALTH_VALUES and p.health in HEALTH_VALUES and HEALTH_VALUES.index(value) < HEALTH_VALUES.index(p.health)
                     and not TREATED.search(f"{ch.note} {value}")):
@@ -839,6 +846,13 @@ class NoirGame(GameBase):
                          "the prose treats him (a bandage, a doctor), said in the row's note", value)
                 return True
             if value in HEALTH_VALUES:
+                better = HEALTH_VALUES.index(value) < HEALTH_VALUES.index(p.health) if p.health in HEALTH_VALUES else False
+                if better and p.wounds:                          # H3: treatment the prose shows heals the wounds as far as the word says
+                    healed = wd.treat_to(p.wounds, value)
+                    if healed != p.wounds and w.set("player.wounds", [x.chip() for x in p.wounds], [x.chip() for x in healed]):
+                        p.wounds = healed
+                if not better:                                   # H1: never better than the wounds say
+                    value = wd.worse(value, wd.derived_health(p.wounds))
                 if w.set("player.health", p.health, value):
                     p.health = value
             else:
@@ -867,6 +881,19 @@ class NoirGame(GameBase):
                 return True
             if removing:
                 c = next((c for c in p.conditions if c.name == name), None)
+                hurt = next((x for x in p.wounds if name in x.words.lower() or x.words.lower() in name), None) if c is None else None
+                if hurt is not None:                             # H3: a wound comes off only with treatment, a step at a time
+                    if not TREATED.search(f"{ch.note} {value}"):
+                        w.reject("player.wounds", "a wound heals only when the prose treats it (a bandage, a doctor), said in the row's note", name)
+                    else:
+                        healed, _ = wd.treat(p.wounds, hurt.words)
+                        if w.set("player.wounds", [x.chip() for x in p.wounds], [x.chip() for x in healed]):
+                            p.wounds = healed
+                            step = HEALTH_VALUES[max(0, HEALTH_VALUES.index(p.health) - 1)] if p.health in HEALTH_VALUES[:4] else p.health
+                            new_h = wd.worse(step, wd.derived_health(p.wounds))
+                            if new_h != p.health and w.set("player.health", p.health, new_h):
+                                p.health = new_h
+                    return True
                 if c is None:
                     w.reject("player.conditions", "not a current condition", name)
                 elif c.source == "engine":
@@ -878,6 +905,9 @@ class NoirGame(GameBase):
                 return True
             if name == WITHDRAWAL:
                 w.reject("player.conditions", "engine condition", name)
+                return True
+            if wd.is_injury(name):                               # H1, H2 (D157): a wound, held by weight, moves his health
+                self._wound(s, name, f"{ch.note} {value}", w)
                 return True
             narr = [c for c in p.conditions if c.source == "narrator"]
             if len(narr) >= MAX_NARRATOR_CONDITIONS:          # D77: the view is bounded, the prose is not; the oldest makes room
@@ -1233,6 +1263,30 @@ class NoirGame(GameBase):
         within = {f.name.lower(): f.within.lower() for f in s.found_places}
         return within.get(a) == b or within.get(b) == a
 
+    def _wound(self, s: NoirState, name: str, said: str, w: Writer, part: str = "", turn: int = 0) -> None:
+        """An injury the prose gave Frank (H1, H2): a wound by its words, held by weight (the lightest goes when there are
+        too many, never a heavier one for a lighter); his health is then no better than the wounds say."""
+        p = s.player
+        new = wd.Wound(part=part, words=name[:40], weight=wd.weight_of(f"{name} {said}"), turn=turn)
+        held, dropped = wd.add_wound(p.wounds, new)
+        if w.set("player.wounds", [x.chip() for x in p.wounds], [x.chip() for x in held]):
+            p.wounds = held
+            if dropped is not None:
+                w.note(f"player.wounds: {dropped.chip()} folded (lighter than every wound held)")
+        h = wd.worse(p.health, wd.derived_health(p.wounds)) if p.health in HEALTH_VALUES[:4] else p.health
+        if h != p.health and w.set("player.health", p.health, h):
+            p.health = h
+
+    FIGHT_WORDS = re.compile(r"\b(fight|punch|hit|strike|struggle|wrestle|grapple|shoot|fire|gun|revolver|dodge|duck|flee|escape|run|"
+                             r"swing|stab|knife|lunge|tackle|break free|hold (it|him|her|them) off|fend)\w*", re.I)
+
+    def lethal_stake(self, state: NoirState, roll: dict, label: str) -> bool:
+        """H5 (D157): a check is staked lethal when Frank is at critical health and it is a fight for his life: muscle, or
+        a check whose label is a fight, a shot or a flight. A botched lock never kills him."""
+        if state.player.health != "critical":
+            return False
+        return roll.get("stat") == "muscle" or bool(self.FIGHT_WORDS.search(label or ""))
+
     def apply_present(self, s: NoirState, present: list[str], w: Writer) -> NoirState:
         with_him = [pid for pid in present if s.person(pid) is not None]
         if with_him != s.player.with_him:
@@ -1451,6 +1505,9 @@ class NoirGame(GameBase):
             out.append(f"Nerves: {b.dread_tier(b.dread)} \u2192 {a.dread_tier(a.dread)}")
         had, has = [c.name for c in b.conditions], [c.name for c in a.conditions]
         out += [f"Condition: + {n}" for n in has if n not in had] + [f"Condition: \u2212 {n}" for n in had if n not in has]
+        bw, aw = {x.words: x.weight for x in b.wounds}, {x.words: x.weight for x in a.wounds}
+        out += [f"Wound: + {n} ({wt})" for n, wt in aw.items() if n not in bw] + [f"Wound: \u2212 {n}" for n in bw if n not in aw]
+        out += [f"Wound: {n} {bw[n]} \u2192 {wt}" for n, wt in aw.items() if n in bw and bw[n] != wt]
         was = {it.id: it for it in before.inventory}
         now = {it.id: it for it in after.inventory}
         for iid, it in now.items():
@@ -1563,6 +1620,11 @@ class NoirGame(GameBase):
         frightened him (1 per 10 somewhere safe), a night in a bed takes SLEEP_RELIEF off, and while one of the case's
         eldritch characters is where Frank is they rise 1 per 2 minutes; in withdrawal nothing passive brings them down
         and they sit no lower than NICOTINE_FLOOR."""
+        if state.player.health != "dead" and any(c.get("fatal") for c in info.calls):
+            # H5 (D157): a check staked lethal at critical health came up a critical failure; the case's ending_dead fires next turn
+            state = state.model_copy(deep=True)
+            state.player.health = "dead"
+            return state
         tier = state.player.dread_tier(state.player.dread)
         if tier in NERVES_NOTES or state.player.nerves_wait:          # plan A: the flicker's clock runs every turn, timed or not
             state = state.model_copy(deep=True)
@@ -1645,6 +1707,7 @@ class NoirGame(GameBase):
                 ListPanel(title="Pockets", items=[Chip(label=it.name, value=self._pocket_value(it)) for it in s.inventory]),
                 *([ListPanel(title="Not on him", items=[Chip(label=t.name, value=self._thing_line(s, t).split(", ", 1)[-1]) for t in s.things])] if s.things else []),
                 ListPanel(title="Condition", items=[
+                    *[Chip(label="wound", value=x.chip()) for x in sorted(p.wounds, key=lambda x: -wd.WEIGHTS[x.weight])],
                     *[Chip(label="condition", value=c.name) for c in p.conditions],
                     Chip(label="last cigarette", value=f"{p.minutes_since_smoke} min ago"),
                     *[Chip(label="good at", value=x) for x in p.proficiencies],

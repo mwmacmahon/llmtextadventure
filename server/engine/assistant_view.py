@@ -31,7 +31,11 @@ NARRATOR_SENTENCES = (r"\s*Work it in; it does not stop anything\.", r"\s*Do not
                       r":?\s*nothing in the prose shows or hints at them until the player looks in the right place; then the referee marks the piece known",
                       r"\s*Hidden is what a person knows, not what they say[^.]*\.")
 
-PLAYER = {"noir": "The player is Frank, the detective. \"I\" in the move is Frank; everyone else listed is someone else.",
+PEOPLE_GAMES = ("noir", "fantasy")      # games whose cast is `people` (noir's shape); the station's is `crew`
+
+PLAYER = {"fantasy": "The player is the adventurer named in THE GAME NOW, the one whose pockets and hurts it lists. \"I\" in the move is that "
+                     "adventurer; everyone else listed is someone else.",
+          "noir": "The player is Frank, the detective. \"I\" in the move is Frank; everyone else listed is someone else.",
           "station": "The player is the station's AI. It sees every module through cameras, sensors and logs, speaks through speakers and screens, "
                      "and moves no one. Every crew member below is someone else; \"I\" in the move is the station."}
 
@@ -40,6 +44,10 @@ RULES = {
              "A place is one the game lists, or a spot inside one of them. Nothing you add reveals the hidden truth or gives the player a "
              "piece of a person's Hidden line they have not earned by its Tells: what you add can point somewhere, never answer the question. "
              "Nobody new carries a gun."),
+    "fantasy": ("The rules of this game. A new person has a name and something they want; a nameless stranger stays nobody and is not added. "
+                "A place is one the game lists, a spot inside one of them, or a new place with a word on where it is. Nothing you add reveals "
+                "a hidden truth or gives the player a piece of a person's Hidden line they have not earned by its Tells: what you add can point "
+                "somewhere, never answer the question."),
     "station": ("The rules of this game. The crew listed are the only people aboard; nobody new arrives. A new place is a compartment inside "
                 "one of the station's listed modules. Nothing you add reveals a crew member's secret, or any piece of one, beyond what its How allows. The station cannot make a "
                 "person do anything; it can only change what is around them."),
@@ -161,7 +169,7 @@ def _hidden_cast(game, state) -> list[str]:
 
 def _invented(game, state, fresh) -> list[str]:
     out: list[str] = []
-    if game.name == "noir":
+    if game.name in PEOPLE_GAMES:
         cast = {p.id for p in fresh.people}
         out += [f"person: {p.name} ({p.location or 'somewhere'})" for p in state.people if p.id not in cast and p.status == "alive"]
         out += [f"place: {f.name}" + (f" (in {f.within})" if f.within else "") for f in state.found_places]
@@ -176,7 +184,7 @@ def _invented(game, state, fresh) -> list[str]:
 
 
 def _moved_key(game_name: str, d: dict) -> str:
-    if game_name == "noir":
+    if game_name in PEOPLE_GAMES:
         keep = {"loc": (d.get("player") or {}).get("location"), "people": [(p.get("id"), p.get("location"), p.get("status")) for p in d.get("people", [])],
                 "notes": len(d.get("notebook", [])), "threads": [(t.get("id"), t.get("status")) for t in d.get("threads", [])],
                 "found": len(d.get("found_places", [])), "flags": d.get("flags")}
@@ -278,7 +286,7 @@ def _signals(game_name: str, turn: int, ledger, tr, snaps) -> tuple[list[str], d
     nums = {"still": still, "place": same + 1, "fails": streak, "minutes3": elapsed, "copy": copy, "plot": plot}
     tag = lambda key: " [past the mark]" if nums[key] >= STALL[key] else ""   # noqa: E731
     lines = [f"Turns since anything in THE GAME NOW changed (someone moved, something learned, a thread opened or settled): {still}{tag('still')}"]
-    if game_name == "noir":
+    if game_name in PEOPLE_GAMES:
         lines.append(f"Turns in the same place: {same + 1}{tag('place')}")
     else:
         lines.append(f"Turns since a thread was settled or a scripted event fired or came a condition closer (the clock alone does not count): {plot}{tag('plot')}")
@@ -286,7 +294,7 @@ def _signals(game_name: str, turn: int, ledger, tr, snaps) -> tuple[list[str], d
               f"Minutes the clock moved over the last three turns: {elapsed}",
               f"How much of the last turn's wording repeats the twelve turns before it: {copy}%{tag('copy')}"]
     nums["past_the_mark"] = [k for k in ("still", "place", "fails", "copy", "plot") if nums[k] >= STALL[k]
-                             and (k != "place" or game_name == "noir") and (k != "plot" or game_name == "station")]
+                             and (k != "place" or game_name in PEOPLE_GAMES) and (k != "plot" or game_name == "station")]
     return lines, nums
 
 
@@ -326,7 +334,7 @@ def build_view(game: Any, state: Any, fresh: Any, *, turn: int, snaps: dict[int,
         if t in by and "narrator" in by[t]:
             tellings.append(f"Turn {t}. The player: {by[t].get('player', '').strip()}\n" + re.sub(r"\n§ .*", "", by[t]["narrator"]).strip())
     sig_lines, sig_nums = _signals(game.name, turn, ledger, tr, snaps)
-    who = ([f"{q.id} = {q.name}" for q in state.people if q.met or q.id in {p.id for p in fresh.people}] if game.name == "noir"
+    who = ([f"{q.id} = {q.name}" for q in state.people if q.met or q.id in {p.id for p in fresh.people}] if game.name in PEOPLE_GAMES
            else [f"{c.id} = {c.name}" for c in state.crew])
     return {"game": game.name, "state": state, "state_text": state_text, "sections": _sections(state_text), "who": who,
             "impending": impending, "ahead": _case_ahead(game, state), "hidden_cast": _hidden_cast(game, state),
@@ -441,7 +449,7 @@ def stakes_blocks(game: Any, state: Any, fresh: Any) -> str:
     """What the adjudicator is shown more while the stakes dial is on: the assistant's view, from the state alone (so a
     graded replay builds the same prompt as the live turn). Its own message already holds the state with IMPENDING and
     the last two turns of prose."""
-    who = ([f"{q.id} = {q.name}" for q in state.people if q.met or q.id in {p.id for p in fresh.people}] if game.name == "noir"
+    who = ([f"{q.id} = {q.name}" for q in state.people if q.met or q.id in {p.id for p in fresh.people}] if game.name in PEOPLE_GAMES
            else [f"{c.id} = {c.name}" for c in state.crew])
     ahead, hidden, invented = _case_ahead(game, state), _hidden_cast(game, state), _invented(game, state, fresh)
     return ("[WHO IS WHO: id = name]\n" + ("; ".join(who) or "nobody") + "\n\n"

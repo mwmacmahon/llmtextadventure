@@ -320,6 +320,14 @@ lies and who believes them, beats in order.
   ambient), `time_of_day` windows, `told`, `open_tell`, `not_before` on a pending, a hook's deal-relative
   times rebased by `rebase_event` when the deck deals it, and a `hook` tag: two hooks' directives due in one
   tick are told one hook a turn (GAME_AUTHORING §6).
+- **Bodies and death** (`wounds.py`, D157; ISSUES H1 to H5). Wounds `{part, words, weight}` held by weight (a lesser
+  never shoves out a greater), a health word derived from them (noir), healing a step per treatment the prose shows,
+  and death only from the dice: a check the game stakes lethal (`lethal_stake`) that comes up a critical failure is
+  `fatal` in the call's result, and `after_turn` reads it (`TurnInfo.calls`); the fantasy's own lethal roll at 0 hit
+  points (a CON check against high, fatal on a huge or critical failure) and the death fork (dead, carried, survived).
+- **The fantasy's deck** (`games/fantasy/deck.py`, D161). Hooks dealt in play: people merged by id, places, things,
+  flags, hidden lines and events rebased to the deal; `after_turn` settles them (live on the reach, done or failed,
+  first-match rewards, `also` rows, milestones) and draws when fewer than two are in motion.
 - **Happenings** (`spontaneous.py`). Chance per in-game hour → per-turn chance from elapsed
   minutes; optional predicate; cooldown; `once`; at most two per turn. The narrator is always told
   the reason; `visible` decides whether the player sees it.

@@ -17,6 +17,7 @@ from engine.gamekit import Clock
 from engine.pending import Pending
 from engine.spontaneous import Spontaneous
 from engine.threads import Thread
+from engine.wounds import Wound
 
 Health = Literal["fine", "hurt", "wounded", "critical", "dead"]
 PersonStatus = Literal["alive", "dead", "missing", "unknown"]
@@ -110,13 +111,15 @@ class Player(BaseModel):
     nerves_shown_tier: str = ""       # the tier it went out at; a rise to a worse tier shows at once
     with_him: list[str] = Field(default_factory=list)   # ids the last telling placed with him (the referee's present); the cost table's witnesses (H6)
     conditions: list[Condition] = Field(default_factory=list)
+    wounds: list[Wound] = Field(default_factory=list)   # H1-H3 (D157): the injuries, held by weight; they move his health
     proficiencies: list[str] = Field(default_factory=list)
     weaknesses: list[str] = Field(default_factory=list)
     stats: dict[str, int] = Field(default_factory=dict)
     minutes_since_smoke: int = 0
 
     def has_condition(self, name: str) -> bool:
-        return any(c.name == name for c in self.conditions)
+        """A condition, or a wound by its words (an injury the referee wrote as a condition is kept as a wound, D157)."""
+        return any(c.name == name for c in self.conditions) or any(w.words == name for w in self.wounds)
 
     @staticmethod
     def dread_tier(v: int) -> str:
