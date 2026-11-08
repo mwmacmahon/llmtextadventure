@@ -177,6 +177,12 @@ change in a turn with `seen_changes(before, after) -> list[str]`: short lines fr
 → hurt", "Pockets: − revolver", "Nerves: uneasy → rattled"; the station: "Crew alarm: quiet → doubt"), never its
 internals. The row under the prose shows them with the time in words; the default shows nothing (D143).
 
+**The lobby's hooks (D171).** `save_line(state) -> list[Chip]`: what a saved game's line says before a click (the
+fantasy: "Wren, tiefling rogue, level 2", the place, "Day 3"; noir: the place, "Day 2, 21:40", the health word when not
+fine; the station: the clock, the alarm word, "locked out" or "in control", the project in hand). `hidden: bool`
+(default False): a hidden game is listed, started and its saves shown only in dev mode (`X-Dev: 1`). The difficulty
+select is the engine's, not the game's: do not name a setup field `difficulty`.
+
 ## 5. The bulletin
 
 `render_bulletin` is the per-turn state block the narrator sees. It is never cached, so keep it

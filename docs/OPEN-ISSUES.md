@@ -31,6 +31,11 @@ the design is `notes/DESIGN-lobby-and-saves-2026-11-08.md`; the first slice of U
 - B76 *decided (the owner, 11-08), to build with B74.* A "dev mode" checkbox in Settings reveals hidden games (the clown sim when it exists: "don't want kids seeing that one"). Gated on the server (`GameBase.hidden`; `/api/games`, `/api/instances` and the create route leave hidden games out without an `X-Dev` header); an optional dev PIN in the server config is the lean, since a checkbox is not a lock.
 - B77 *later, with Stage 3.* One server for every game: today the rounds (:8013, Gemma) and the fantasy (:8014, Sonnet) are two servers with two save lists; the profile per game (Stage 3) is what lets one serve all; until then the lobby's bar names the server and profile it talks to.
 
+**Added 2026-11-08 afternoon (the lobby, D171).**
+
+- B86 *flagged (11-08 afternoon, D171).* Dev mode gates the lists, create and import, but not `GET /api/instances/{id}` or its card: anyone holding a hidden game's save id can open it. Fine while no game is hidden; gate it before the clown sim lands.
+- B87 *flagged (11-08 afternoon, D171).* "ended: …" on a save line is the ending sentence cut to about 46 characters ("ended: Ash died at The Drowned Lantern on day 1. The…"); games have no ending word. A short `ending_word` hook (died, solved, escaped) would read better.
+
 **Added 2026-11-08 midday (the fantasy smoke f2S, 71ece23d1876, Sonnet, ten turns).**
 
 - B68 *for the fantasy side chat (11-08 midday).* The cellar job can end in a way the hook has no ending for: Wren bricked and limed the hole with the troll behind it and Maud paid her three gold, but `cellar_rats` has four endings (settled, sold, dead, driven off) and none fits walling it in, so the quest stays open, pays no XP or renown, and renown never moved in the smoke. The player's own thread paid 25 XP. Content (a fifth ending, or "driven off" read wider).
