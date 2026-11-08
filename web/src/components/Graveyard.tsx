@@ -13,7 +13,7 @@ const SCORE_LABELS: [string, string][] = [
   ["level", "Level"], ["xp", "XP"], ["renown_word", "Renown"], ["gold", "Gold"], ["quests_done", "Quests done"], ["days", "Days"], ["turns", "Turns"],
 ];
 
-/** The graveyard: every death, per character, each a stone; a stone opens its card. */
+/** The graveyard: every death, per saved game (the owner, 11-08 night), each a stone; a stone opens its card. */
 export function Graveyard({ game }: { game: string | null }) {
   const [gal, setGal] = useState<Gallery | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -61,6 +61,7 @@ function CharacterRow({ c, onOpen, showGame }: { c: Character; onOpen: (id: stri
     <section className="character">
       <h2>
         <span className="pixel-name">{c.name}</span>
+        {c.save && c.save !== c.name && <span className="muted small"> {c.save}</span>}
         <span className="muted small">
           {showGame ? `${c.game_title} · ` : ""}
           {c.deaths === 1 ? "1 death" : `${c.deaths} deaths`}

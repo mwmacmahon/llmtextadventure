@@ -8,7 +8,7 @@ A grave is written by the engine the moment a death lands (engine/pipeline.py, a
 can happen): the fantasy's fall with nobody to carry, noir's fatal call. Undo does not dig it up: a death the player
 undid still stands, marked `undone`. Deleting a save keeps its graves; export and import carry them.
 
-The gallery is per character (the owner, 11-08): graves are grouped by the game and the game's `player_name` at death,
+The gallery is per saved game (the owner, 11-08 night; per character before, B81): graves are grouped by the save; each keeps the game's `player_name` at death,
 so every death of "Wren" is in one row across her saves, branches and undos.
 
 The death-card lines (B84) are content, `<content>/<game>/death_lines.yml`; the engine shows one at random under the
@@ -248,11 +248,12 @@ class Graveyard:
         return [{**dict(r)} for r in self.conn.execute("SELECT * FROM graveyard WHERE instance_id=? ORDER BY created", (iid,)).fetchall()]
 
     def characters(self, game: str | None = None) -> list[dict[str, Any]]:
-        """The gallery: one row per character (a game and a name), most recent death first; each with her stones in the
-        order she died, her death count and her best run (the highest level, the longest survived)."""
+        """The gallery: one row per saved game (the owner, 11-08 night; it was per character, B81), most recent death first;
+        each with its stones in the order they fell, its death count and its best run (the highest level, the longest
+        survived). `key` is the save's id; a branch is a save of its own."""
         groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
-        for g in self.all(game):
-            groups.setdefault((g["game"], character_key(g["character"])), []).append(g)
+        for g in self.all(game):                       # one row per saved game (the owner, 11-08 night: "per-save-game")
+            groups.setdefault((g["game"], g["instance_id"]), []).append(g)
         out = []
         for (gname, key), graves in groups.items():
             best: dict[str, Any] = {}

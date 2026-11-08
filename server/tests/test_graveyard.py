@@ -126,15 +126,15 @@ async def test_undo_delete_export_import_and_the_gallery(engine: Engine, fake: F
     engine.undo(iid, to_turn=0)                                               # undo from the death card, past the death
     assert engine.death_card(iid) is None
     await die(engine, fake, iid)                                              # she dies again: a second stone
-    other = engine.create_instance("fantasy", {**SHEET, "name": "wren "})    # the same name in a new game: the same character
+    other = engine.create_instance("fantasy", {**SHEET, "name": "wren "})    # the same name in a new game: a save of its own (11-08 night)
     await die(engine, fake, other)
     tess = engine.create_instance("fantasy", {**SHEET, "name": "Tess"})
     graves = engine.graves.all()
     assert len(graves) == 3 and [g["undone"] for g in graves] == [True, False, False]
     gal = engine.gallery()
-    assert [c["name"] for c in gal["characters"]] == ["wren"] and gal["deaths"] == 3
-    wren = gal["characters"][0]
-    assert wren["deaths"] == 3 and [g["instance_id"] for g in wren["graves"]] == [iid, iid, other]
+    assert [c["key"] for c in gal["characters"]] == [other, iid] and gal["deaths"] == 3      # one row per saved game
+    wren = next(c for c in gal["characters"] if c["key"] == iid)
+    assert wren["deaths"] == 2 and [g["instance_id"] for g in wren["graves"]] == [iid, iid] and wren["save"].startswith("Marrowgate")
     assert wren["best"]["level"] == 1 and wren["best"]["turns"] >= 1
     assert engine.gallery("noir")["characters"] == [] and tess
 

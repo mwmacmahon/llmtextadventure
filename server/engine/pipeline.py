@@ -1358,6 +1358,9 @@ class Engine:
     def gallery(self, game: str | None = None, dev: bool = False) -> dict[str, Any]:
         """The graveyard page: the characters, each with her stones (B81). A hidden game's only in dev mode."""
         chars = [c for c in self.graves.characters(game) if dev or not getattr(self.games.get(c["game"]), "hidden", False)]
+        for c in chars:                                  # a save's row is named by the save (its title), the character's name when it is gone
+            inst = self.store.get_instance(c["key"])
+            c["save"] = inst.title if inst else ""
         titles = {n: g.title for n, g in self.games.items()}
         for c in chars:
             c["game_title"] = titles.get(c["game"], c["game"])

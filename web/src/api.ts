@@ -149,7 +149,7 @@ export type Grave = {
 };
 /** A gravestone's card (and the play page's death card): the grave, the final state as panels, one line under the cause. */
 export type GraveCard = Grave & { game_title: string; save_stands: boolean; ui: UISchema | null; death_line: string | null; cause_from: string };
-export type Character = { game: string; game_title: string; key: string; name: string; deaths: number; best: { level?: number; turns?: number; days?: number }; last: string; graves: Grave[] };
+export type Character = { game: string; game_title: string; key: string; name: string; save?: string; deaths: number; best: { level?: number; turns?: number; days?: number }; last: string; graves: Grave[] };
 export type Gallery = { characters: Character[]; deaths: number };
 
 export type LedgerEntry = { seq: number; turn: number; kind: string; created: string; payload: Record<string, any> };
