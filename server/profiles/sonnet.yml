@@ -1,8 +1,8 @@
 # The hosted play (Stage 3): every role on Claude Sonnet 5.5 through Anthropic, as config.yml has them, the stakes off and
 # the checks called, as config.yml has them. The fantasy plays on it. No model file and no server block: nothing is loaded
-# on the GPU box, so switching to it is immediate. The guard is gate (nothing shows until the referee has read it; a
-# serious ruling is retold first), so the fantasy's too_far ruling and the early-tell conflict are retold, which they are
-# not under log, the shared setting the local rounds measure with. Each game keeps its own check offset (the station's +1).
+# on the GPU box, so switching to it is immediate. The guard is rewrite, as on every server (the owner, 11-08, B78: the
+# prose streams, and a serious ruling such as too_far or an early tell has it retold once). Each game keeps its own check
+# offset (the station's +1).
 config: config.yml
 note: every role on Claude Sonnet 5.5, hosted
 roles:
@@ -13,4 +13,4 @@ roles:
 dials:
   stakes: "off"
   checks: called
-  guard: gate
+  guard: rewrite

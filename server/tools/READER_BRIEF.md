@@ -97,6 +97,10 @@ Write it to OUT, markdown, 800 to 1500 words before the timeline, under these he
   Keep the cells short; the table is read at a glance and compared across rounds. Flag words are the same words every
   reader uses, so do not invent new ones.
 
+- **Retold turns** (from 11-08, the guard rewrites everywhere). When the call for this read lists retold turns with
+  their first and final tellings, add one line each after the timeline: `turn N: final better | first better | same`,
+  and why in ten words. This shows whether the retelling helps the player's story.
+
 Describe what you saw; do not guess at causes (the prompt, the parameters, the context window). The causes are our
 job, and a guess in the take becomes a fact in the next reader's head. Quote the transcript, not your memory of it.
 

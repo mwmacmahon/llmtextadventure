@@ -58,7 +58,7 @@ def test_config_role_wears_the_loaded_profile_s_overrides(monkeypatch, tmp_path:
     assert not cfg.role("referee").thinking                   # nothing loaded: the config as written
     monkeypatch.setenv("TA_PROFILE", "thinker")
     r = cfg.role("referee")
-    assert (r.thinking, r.thinking_budget, r.temperature, r.model) == (True, 800, 0.3, "m")
+    assert (r.thinking, r.thinking_budget, r.temperature, r.model) == (True, 800, 0.3, "a")      # the profile's model file names what ran (B73)
     assert not cfg.role("narrator").thinking                  # no override for it
     assert not cfg.roles["referee"].thinking                  # the configured role itself is untouched
     monkeypatch.setenv("TA_PROFILE", "nobody-wrote-this")

@@ -350,6 +350,26 @@ def profile_runs(runs: list[list]) -> str:
     return ", ".join(f"{n} ({'turns ' if i == 0 else ''}{a}{'' if a == b else f' to {b}'})" for i, (n, a, b) in enumerate(runs))
 
 
+def retell_counts(ledger: list[dict]) -> tuple[int, Counter, list[int]]:
+    """The guard's retellings in a round (B78: kept in every report from 11-08): how many, by the rule that sent each back
+    (from the earlier telling's serious rulings in the rewrite history), and on which turns. The player's own rewrites
+    (by player) are not counted."""
+    n, rules, turns = 0, Counter(), []
+    for r in ledger:
+        if r["kind"] != "rewrite" or (r["payload"] or {}).get("by") != "referee":
+            continue
+        n += 1
+        turns.append(r["turn"])
+        hist = (r["payload"] or {}).get("history") or []
+        try:
+            mech = json.loads((hist[-1] or {}).get("mechanics") or "{}") if hist else {}
+        except (TypeError, ValueError):
+            mech = {}
+        got = [x.get("rule") or "?" for x in (mech.get("rulings") or []) if x.get("serious")] or ["?"]
+        rules.update(got)
+    return n, rules, sorted(set(turns))
+
+
 def build(inst: dict, ledger: list[dict], blobs: dict[str, str], transcript: list[dict], title: str | None = None, standalone: bool = True) -> str:
     by_turn: dict[int, list[dict]] = defaultdict(list)
     for r in ledger:
@@ -399,12 +419,16 @@ def build(inst: dict, ledger: list[dict], blobs: dict[str, str], transcript: lis
 
     opening = said.get(0, {}).get("narrator", "")
     who = "".join(f"<div class='stat'>{E(ROLE_LABEL.get(r, r or '?'))} <b>{E(m or '?')}</b> ×{n}</div>" for (r, m), n in sorted(models.items(), key=lambda x: str(x[0])))
+    rn, rrules, rturns = retell_counts(ledger)
+    retold_text = (f"{rn} time{'s' if rn != 1 else ''}: " + ", ".join(f"{k} ×{v}" for k, v in rrules.most_common())
+                   + f" (turns {', '.join(str(x) for x in rturns)})") if rn else "never"
     head = (f"<h1>{E(title or inst.get('title') or inst['id'])}</h1>"
             f"<p class='lede'>Every turn of this game, every telling of it, and every model call in it: what each model was sent, in full, and what it "
             f"answered, between the engine's own steps. Open a call's sections to read its prompts.</p>"
             f"<dl class='meta'><dt>game</dt><dd>{E(inst['game'])} (version {E(inst.get('game_version') or '')})</dd><dt>instance</dt><dd>{E(inst['id'])}</dd>"
             f"<dt>started</dt><dd>{E(inst.get('created', '')[:16].replace('T', ' '))} UTC</dd><dt>turns</dt><dd>{len(turns)}</dd><dt>model calls kept</dt><dd>{calls_n}</dd>"
-            f"<dt>profile</dt><dd>{E(profile_runs(runs))}</dd></dl>"
+            f"<dt>profile</dt><dd>{E(profile_runs(runs))}</dd>"
+            f"<dt>retold by the guard</dt><dd>{E(retold_text)}</dd></dl>"
             f"<div class='stats'>{who}</div>")
     if opening:
         head += f"<details><summary>The opening</summary><div class='prose'>{E(opening)}</div></details>"

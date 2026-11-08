@@ -101,11 +101,11 @@ def test_every_profile_file_loads_and_keeps_meaning_what_it_meant(monkeypatch):
     assert (card.temperature, card.top_p, card.top_k, card.stakes, card.checks) == (1.0, 0.95, 64, "off", "called")
 
 
-def test_the_hosted_profile_is_every_role_on_sonnet_with_the_stakes_off_and_the_guard_gate(monkeypatch):
+def test_the_hosted_profile_is_every_role_on_sonnet_with_the_stakes_off_and_the_guard_rewrite(monkeypatch):
     monkeypatch.delenv("TA_PROVIDER")
     p = profiles.load("sonnet")
     assert (p.local, p.model, p.base, p.server) == (False, None, "config.yml", {})
-    assert (p.dials.stakes, p.dials.checks, p.dials.guard, p.dials.target_offset) == ("off", "called", "gate", {})
+    assert (p.dials.stakes, p.dials.checks, p.dials.guard, p.dials.target_offset) == ("off", "called", "rewrite", {})
     cfg = config_for(p)
     assert set(cfg.roles) == {"narrator", "assistant", "referee", "summarizer"}
     assert all((cfg.role(n).provider, cfg.role(n).model) == ("anthropic", SONNET) for n in cfg.roles)
@@ -154,16 +154,16 @@ async def test_a_hosted_switch_is_at_once_and_its_guard_is_this_server_s(engine:
     assert engine.cfg.profile_name is None and engine.guard_mode() == "log"
     view = await picker.switch(engine, "sonnet")
     assert view["active"] == "sonnet" and view["loading"] is None and box.calls == []
-    assert engine.cfg.profile_name == "sonnet" and engine.guard_mode() == "gate"
+    assert engine.cfg.profile_name == "sonnet" and engine.guard_mode() == "rewrite"
     s = engine.get_settings()
-    assert s["guard"]["mode"] == "gate" and s["guard_from"] == "profile" and s["shared_guard"] == "log"
+    assert s["guard"]["mode"] == "rewrite" and s["guard_from"] == "profile" and s["shared_guard"] == "log"
     settings_file = tmp_path / "settings.json"
     assert not settings_file.exists()                                   # nothing written to the shared settings
-    engine.update_settings({"guard": {"mode": "rewrite"}})              # the menu, while the profile names a guard
-    assert engine.guard_mode() == "rewrite" and engine.get_settings()["guard_from"] == "this server"
+    engine.update_settings({"guard": {"mode": "gate"}})              # the menu, while the profile names a guard
+    assert engine.guard_mode() == "gate" and engine.get_settings()["guard_from"] == "this server"
     assert not settings_file.exists() and engine.settings["guard"]["mode"] == "log"
     await picker.switch(engine, "sonnet")                               # a switch drops the menu's in-memory choice
-    assert engine.guard_mode() == "gate"
+    assert engine.guard_mode() == "rewrite"
 
 
 async def test_a_local_switch_goes_through_the_helper_and_the_card_shows_the_load(engine: Engine, monkeypatch):
@@ -309,7 +309,7 @@ def test_the_cost_of_a_turn_is_the_mean_over_the_turns_stamped_with_the_profile(
 async def test_the_card_of_a_hosted_profile_shows_roles_dials_modules_and_cost(engine: Engine):
     card = await picker.card(engine, "sonnet")
     assert card["roles"]["narrator"]["model"] == SONNET and "box" not in card and card["cost"]["usd_per_turn"] is None
-    assert card["dials"]["guard"] == {"value": "gate", "from": "profile"}
+    assert card["dials"]["guard"] == {"value": "rewrite", "from": "profile"}
     assert card["dials"]["target_offset"]["station"] == {"value": 1, "from": "game"}
     mods = {m["id"]: m for m in card["modules"]}
     assert mods["own_prose"]["level"] == "not yet" and not mods["own_prose"]["built"] and mods["window"]["level"] == "full"

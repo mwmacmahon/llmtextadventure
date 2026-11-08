@@ -121,7 +121,7 @@ class Pricing(BaseModel):
 class GuardConfig(BaseModel):
     """How the narrator is guarded (DESIGN2 §8). The runtime value lives in data/settings.json (the UI's
     settings menu); this is the default when that file does not say."""
-    mode: Literal["log", "rewrite", "gate"] = "log"     # log: show, record rulings. rewrite: show, then retell. gate: hold, retell, then show.
+    mode: Literal["log", "rewrite", "gate"] = "rewrite"  # the owner, 11-08 (B78): rewrite everywhere. log: show, record rulings. rewrite: show, then retell. gate: hold, retell, then show.
     max_retells: int = 3                                  # automatic retellings per turn, at most (D77: three, then the prose wins, flagged)
     default_chars: int = 1400                             # the progress estimate before an instance has its own average
 
@@ -222,7 +222,11 @@ class Config(BaseModel):
         forced = self._forced.get(name)
         if ov and forced:                         # the role itself already holds the forced values (read_config)
             ov = {**ov, **{k: v for k, v in forced.items() if k in ov}}
-        return r.model_copy(update=ov) if ov else r
+        out = r.model_copy(update=ov) if ov else r
+        if out.provider == "llamacpp" and prof is not None and getattr(prof, "model", None):
+            # B73: the ledger names what ran, the profile's model file, not the config's label for the slot
+            out = out.model_copy(update={"model": prof.model.removesuffix(".gguf")})
+        return out
 
     def resolve(self, p: Path) -> Path:
         return (SERVER_DIR / p).resolve() if not p.is_absolute() else p
@@ -252,6 +256,10 @@ def read_config(path: Path) -> Config:
     if data_dir:
         cfg.server.data_dir = Path(data_dir).resolve()
         cfg.server.log_dir = cfg.server.data_dir / "logs"
+    # TA_GUARD=log|rewrite|gate sets this server's default guard mode (the test suite pins log: its fake prose repeats)
+    guard = os.environ.get("TA_GUARD", "").strip()
+    if guard:
+        cfg.guard = GuardConfig.model_validate({**cfg.guard.model_dump(), "mode": guard})
     stakes = os.environ.get("TA_STAKES")
     if stakes and "narrator" in cfg.roles:
         cfg.roles["narrator"].stakes = stakes  # type: ignore[assignment]

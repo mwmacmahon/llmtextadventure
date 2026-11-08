@@ -12,10 +12,16 @@ referee as config.yml says.
 """
 from __future__ import annotations
 
+import os
+
 import pytest
 
-from engine import spontaneous as spon
-from engine.config import Config
+# The guard is rewrite on every server (the owner, 11-08, B78); the suite's fake narrator repeats its prose, which a
+# rewrite would retell, so the suite pins log and the tests of the guard set their mode themselves.
+os.environ.setdefault("TA_GUARD", "log")
+
+from engine import spontaneous as spon  # noqa: E402
+from engine.config import Config  # noqa: E402
 
 _REAL_ROLL = spon.roll
 
