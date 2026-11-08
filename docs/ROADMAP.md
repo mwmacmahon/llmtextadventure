@@ -184,7 +184,9 @@ line by the owner on 11-08 midday (the lobby with games and settings on the main
 lines name the character, place and day, a save card, and a dev-mode checkbox that reveals hidden games: B74 to B76,
 `notes/DESIGN-lobby-and-saves-2026-11-08.md`); the clown sim waits, hidden behind dev mode when it comes. **Undo that keeps the record** (B82: undone turns struck through, never shown to a model) and **the death gallery** (B81:
 every death as a gravestone with a roguelike cause, a graveyard table no model reads; `notes/DESIGN-death-gallery-2026-11-08.md`)
-are part of the fantasy's rollout (the owner, 11-08 afternoon). **A difficulty select** (B80: Easy, Normal, Hard on every new game and changeable in play, for now only the player's
+are part of the fantasy's rollout (the owner, 11-08 afternoon), with the dice seed salted by the check's stat and
+difficulty so the same attempt after an undo replays and a different one rolls fresh (B85), the fantasy one Hard step
+harder by its own offset (+2 on the d20, B83), and twenty-two death-card lines drafted by the side chat (B84). **A difficulty select** (B80: Easy, Normal, Hard on every new game and changeable in play, for now only the player's
 target offset on the die) comes with the lobby work, ahead of mods (the owner, 11-08 afternoon). **Mods** (B79: hand-tuned patches to a game's
 content, prompts and starting state, toggled before a game starts, uploaded, downloaded and deleted from the lobby;
 `notes/DESIGN-mods-2026-11-08.md`) come next after the fantasy game is considered ready (the owner, 11-08 afternoon).
