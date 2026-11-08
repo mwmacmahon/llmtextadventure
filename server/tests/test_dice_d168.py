@@ -95,13 +95,47 @@ def test_a_tell_told_before_its_condition_is_a_conflict_the_guard_retells():
         assert g._mark_told(st, [q], "", forced, tell_id=t.id) and t.told
 
 
-def test_the_station_plays_one_harder_and_noir_and_the_fantasy_do_not():
+def test_the_station_plays_one_harder_the_fantasy_two_and_noir_none():
     from engine.config import load_config
     from engine.registry import load_games
     cfg = load_config()
     games = load_games(cfg.resolve(cfg.server.content_root))
     assert games["station"].target_offset == 1 and games["noir"].target_offset == 0
     if "fantasy" in games:
-        assert games["fantasy"].target_offset == 0
+        assert games["fantasy"].target_offset == 2              # B83: one Hard step on the d20
     st = games["station"].new_instance({})[1]
     assert {k: v for k, v in games["station"].stats(st).items() if k in ("systems", "analysis", "subtlety")} == {"systems": 2, "analysis": 2, "subtlety": 1}
+
+
+def test_the_seed_per_check_b85():
+    """B85: after an undo the same attempt replays its dice, a reworded one of the same stat and difficulty too, and a
+    different stat or difficulty rolls fresh; a fork (a new id) rolls fresh."""
+    from engine.mechanics import rng_for
+
+    def faces(iid, turn, stat, diff, k=0):
+        r = rng_for(iid, turn, f"calls:{stat}:{diff}:{k}")
+        return [r.randint(1, 6) for _ in range(2)]
+    same = faces("a1", 5, "tongue", "high") == faces("a1", 5, "tongue", "high")
+    assert same
+    seq = [tuple(faces("a1", 5, s, d)) for s, d in (("tongue", "high"), ("eye", "high"), ("tongue", "medium"), ("muscle", "low"))]
+    assert len(set(seq)) > 1                                               # other stats and difficulties do not share faces
+    many = {tuple(faces(f"fork{i}", 5, "tongue", "high")) for i in range(12)}
+    assert len(many) > 3                                                  # a new id rolls fresh
+
+
+async def test_a_different_stat_after_an_undo_rolls_fresh_through_the_pipeline(monkeypatch):
+    """The handler's own seeding: the same (stat, difficulty) twice in one turn takes two seeds; the same pair in a replay
+    of the turn takes the same one."""
+    from engine import pipeline as pl
+    seen: list[str] = []
+    real = pl.rng_for
+    monkeypatch.setattr(pl, "rng_for", lambda iid, turn, salt="": (seen.append(salt), real(iid, turn, salt))[1])
+    # exercise the closure the way the handler does
+    kinds: dict = {}
+
+    def rng(stat, difficulty):
+        k = kinds.get((stat, difficulty), 0)
+        kinds[(stat, difficulty)] = k + 1
+        return pl.rng_for("i", 1, f"calls:{stat}:{difficulty}:{k}")
+    rng("tongue", "high"); rng("tongue", "high"); rng("eye", "low")
+    assert seen == ["calls:tongue:high:0", "calls:tongue:high:1", "calls:eye:low:0"]

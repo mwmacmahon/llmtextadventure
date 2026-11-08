@@ -282,7 +282,7 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
     req.modifiers = modifiers(req, target or None)
     if raised:                                       # shown as a cap is: a line in the modifiers, worth nothing on the sum
         req.modifiers.append(Modifier(label=f"{who} keeps something back: {raised.replace('_', ' ')} raised to high", value=0))
-    res = resolver(rng, req)
+    res = resolver(rng(stat, difficulty) if callable(rng) and not hasattr(rng, "randint") else rng, req)   # B85: a seed per check
     mods = res.total - (res.roll or 0)
     sign = f"{mods:+d}" if mods else ""
     data = res.model_dump(mode="json")

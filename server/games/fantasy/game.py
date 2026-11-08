@@ -125,6 +125,7 @@ class FantasyGame(GameBase):
         "sleep": TaskRow(least=60, most=600, lost=0),
     })
     resolver = "dice_d20"
+    target_offset = 2          # B83 (the owner, 11-08): one Hard step on the d20; a +2 character passes medium 55%, not 65%
     authority = AUTHORITY
     events_path = "hidden.events"
     spontaneous_path = "hidden.spontaneous"

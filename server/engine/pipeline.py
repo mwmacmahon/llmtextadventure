@@ -1262,7 +1262,16 @@ class Engine:
         same turn rolls the same numbers in the same order."""
         stats = _hook(game, "stats", state, default={})
         resolver = RESOLVERS[getattr(game, "resolver", "dice_d20")]
-        rng = rng_for(iid, turn, "calls")
+        # B85 (the owner, 11-08; H4): each check's dice are seeded by the turn and the check's stat and difficulty (and how
+        # many of that kind came before it this turn), so the same attempt after an undo replays its dice, a reworded one of
+        # the same stat and difficulty does too, and a different stat or difficulty rolls fresh. Its consequence roll and
+        # its cost choice take the same salt. A fork is a new id and rolls fresh.
+        seen_kinds: dict[tuple[str, str], int] = {}
+
+        def rng(stat: str, difficulty: str):
+            k = seen_kinds.get((stat, difficulty), 0)
+            seen_kinds[(stat, difficulty)] = k + 1
+            return rng_for(iid, turn, f"calls:{stat}:{difficulty}:{k}")
         show_numbers = bool(getattr(game, "mechanic_numbers", True))
 
         def modifiers(req: CheckRequest, target: str | None) -> list:
@@ -1284,7 +1293,13 @@ class Engine:
                 if r.get("outcome") in FAILURES:
                     last_fail = {"label": r.get("label") or "", "about": r.get("about") or (c.get("call") or {}).get("target") or "",
                                  "stat": r.get("stat") or ""}
-        cost_rng = rng_for(iid, turn, "costs")
+        cost_kinds: dict[tuple[str, str], int] = {}
+
+        def cost_rng_for(roll: dict) -> Any:              # B85: the check's own salt, as its dice
+            key = (str(roll.get("stat") or ""), str(roll.get("difficulty") or ""))
+            k = cost_kinds.get(key, 0)
+            cost_kinds[key] = k + 1
+            return rng_for(iid, turn, f"costs:{key[0]}:{key[1]}:{k}")
 
         def cost_for(roll: dict, label: str, target: str) -> dict | None:
             target = target or roll.get("about") or ""     # D131: the check's own target is often empty; the intent's is who it was aimed at
@@ -1293,7 +1308,7 @@ class Engine:
                 options = default_cost_options(state, roll, label, target)
             about = roll.get("about") or target
             retry = is_retry(last_fail, label=label, about=about, stat=roll.get("stat") or "")
-            cost = choose_cost(options, roll, recent=recent, rng=cost_rng, fail_streak=fail_streak, round_costs=round_costs, retry=retry)
+            cost = choose_cost(options, roll, recent=recent, rng=cost_rng_for(roll), fail_streak=fail_streak, round_costs=round_costs, retry=retry)
             if roll.get("outcome") in FAILURES:
                 last_fail.clear(); last_fail.update({"label": label, "about": about, "stat": roll.get("stat") or ""})
             if cost:
@@ -1314,7 +1329,7 @@ class Engine:
             about = roll.get("about") or target
             retry = is_retry(last_fail, label=label, about=about, stat=roll.get("stat") or "")
             source = dial if dial in ("table", "off") else _hook(game, "consequence_source", state, roll, label, target, default="stake")
-            cons = choose_consequence(options, roll, stake=stake, source=source, chances=chances, rng=cost_rng,
+            cons = choose_consequence(options, roll, stake=stake, source=source, chances=chances, rng=cost_rng_for(roll),
                                       recent=recent, round_costs=round_costs, retry=retry)
             if roll.get("outcome") in FAILURES:
                 last_fail.clear(); last_fail.update({"label": label, "about": about, "stat": roll.get("stat") or ""})
