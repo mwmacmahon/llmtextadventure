@@ -1545,7 +1545,8 @@ class FantasyGame(GameBase):
         p = s.player
         executed = p.fate_note == "executed"
         req = CheckRequest(id="lethal", label="endure: hold on to life", stat="con", difficulty="high", base=p.stats.get("con", 0))
-        res = wd.lethal_roll(info.rng, req.base, self.modifiers(s, req, None), label=req.label, offset=self.target_offset)
+        offset = self.target_offset if info.target_offset is None else info.target_offset     # the profile's dial when it set one
+        res = wd.lethal_roll(info.rng, req.base, self.modifiers(s, req, None), label=req.label, offset=offset)
         dead = executed or wd.is_fatal(res.outcome, wd.FATAL_D20)
         carriers = self._carriers(s)
         fate = wd.death_fork(dead, [q.id for q in carriers] or (["prose"] if p.carried else []))

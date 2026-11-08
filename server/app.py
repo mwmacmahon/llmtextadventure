@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from engine import logs
+from engine import logs, picker
 from engine.config import load_config
 from engine.pipeline import Engine
 from engine.registry import load_games
@@ -24,7 +24,7 @@ log = logs.setup_logging(cfg.resolve(cfg.server.log_dir), cfg.server.log_level)
 store = Store(cfg.resolve(cfg.server.data_dir) / "textadventure.sqlite3")
 games = load_games(cfg.resolve(cfg.server.content_root))
 engine = Engine(cfg, store, games)
-log.info("startup " + logs.kv(db=store.path, content=cfg.resolve(cfg.server.content_root), games=",".join(games),
+log.info("startup " + logs.kv(db=store.path, content=cfg.resolve(cfg.server.content_root), games=",".join(games), profile=cfg.profile_label,
                                **{f"role.{k}": f"{v.provider}:{v.model}/{v.effort}" for k, v in cfg.roles.items()}))
 
 app = FastAPI(title="textadventure")
@@ -203,6 +203,38 @@ def settings():
 def update_settings(body: SettingsInput):
     try:
         return engine.update_settings(body.model_dump(exclude_none=True))
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+# ---- the profile picker (Stage 3, engine/picker.py): the profiles, one's card, the switch -------------------
+class SwitchInput(BaseModel):
+    name: str
+
+
+@app.get("/api/profiles")
+def list_profiles():
+    return picker.list_view(engine)
+
+
+@app.get("/api/profiles/{name}")
+async def profile_card(name: str):
+    try:
+        return await picker.card(engine, name)
+    except FileNotFoundError:
+        raise HTTPException(404, "no such profile")
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+@app.post("/api/profiles/switch")
+async def switch_profile(body: SwitchInput):
+    try:
+        return await picker.switch(engine, body.name)
+    except FileNotFoundError:
+        raise HTTPException(404, "no such profile")
+    except picker.SwitchRefused as e:
+        raise HTTPException(e.status, str(e))
     except ValueError as e:
         raise HTTPException(422, str(e))
 

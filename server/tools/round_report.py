@@ -325,11 +325,29 @@ def render_telling(t: dict, blobs: dict[str, str], prose: str) -> str:
                          f"the player's next input was played as this turn. {E(p.get('error') or '')}</div>")
         elif k in ENGINE_KINDS:
             parts.append(render_engine(r))
-        elif k not in ("rewrite", "world_verdict", "motion_verdict"):
+        elif k not in ("rewrite", "world_verdict", "motion_verdict", "profile"):     # the profile shows in the turn's header
             parts.append(render_engine(r))
     if prose:
         parts.append(f"<details{' open' if not t['old'] else ''}><summary>The prose{' the player saw' if not t['old'] else ' of this telling'}</summary><div class='prose'>{E(prose)}</div></details>")
     return f"<div class='telling{' old' if t['old'] else ''}'>{''.join(parts)}</div>"
+
+
+def turn_profile(mech: dict, rows: list[dict]) -> str | None:
+    """The profile a turn played on (Stage 3): its mechanics row's stamp, else its `profile` ledger row's; None before
+    the stamp existed."""
+    if mech.get("profile"):
+        return str(mech["profile"])
+    stamp = next((r["payload"] for r in reversed(rows) if r["kind"] == "profile"), None)
+    return str(stamp.get("name")) if stamp and stamp.get("name") else None
+
+
+def profile_runs(runs: list[list]) -> str:
+    """'sonnet' for one profile throughout; 'sonnet (turns 1 to 5), gemma4-31b (6 to 9)' where it changed."""
+    if not runs:
+        return "not recorded (played before the profile stamp)"
+    if len(runs) == 1:
+        return runs[0][0]
+    return ", ".join(f"{n} ({'turns ' if i == 0 else ''}{a}{'' if a == b else f' to {b}'})" for i, (n, a, b) in enumerate(runs))
 
 
 def build(inst: dict, ledger: list[dict], blobs: dict[str, str], transcript: list[dict], title: str | None = None, standalone: bool = True) -> str:
@@ -348,6 +366,7 @@ def build(inst: dict, ledger: list[dict], blobs: dict[str, str], transcript: lis
             calls_n += 1
             models[(r["payload"].get("role"), r["payload"].get("model"))] += 1
     idx_rows, sections_html = [], []
+    runs: list[list] = []                       # the profile each stretch of turns played on: [name, first turn, last turn]
     for t in turns:
         rows = by_turn.get(t, [])
         tl = tellings(rows)
@@ -356,13 +375,21 @@ def build(inst: dict, ledger: list[dict], blobs: dict[str, str], transcript: lis
             mech = json.loads(said[t].get("mechanics") or "{}")
         except Exception:
             pass
+        prof = turn_profile(mech, rows)
+        changed = prof is not None and (not runs or runs[-1][0] != prof)
+        if prof is not None:
+            if changed:
+                runs.append([prof, t, t])
+            else:
+                runs[-1][2] = t
         n_calls = sum(1 for x in tl for r in x["rows"] if r["kind"] == "exchange")
         player = said[t].get("player") or said[t].get("command") or ""
         idx_rows.append(f"<tr><td class='num'><a href='#t{t}'>{t}</a></td><td>{E(_short(player, 110))}</td><td>{E(mech.get('kind') or '')}</td>"
                         f"<td class='num'>{mech.get('elapsed', '')}</td><td class='num'>{n_calls}</td><td class='num'>{len(mech.get('applied') or [])}</td>"
-                        f"<td class='num'>{len(mech.get('rejected') or [])}</td><td class='num'>{len(tl) - 1 or ''}</td></tr>")
+                        f"<td class='num'>{len(mech.get('rejected') or [])}</td><td class='num'>{len(tl) - 1 or ''}</td>"
+                        f"<td>{E(prof) if changed else ''}</td></tr>")
         body = [f"<header><h2>Turn {t}</h2><span class='id'>{E(mech.get('kind') or '')} · {mech.get('elapsed', '?')} min · {n_calls} model calls"
-                f"{' · told ' + str(len(tl)) + ' times' if len(tl) > 1 else ''}</span></header>"]
+                f"{' · told ' + str(len(tl)) + ' times' if len(tl) > 1 else ''}{' · profile ' + E(prof) if changed else ''}</span></header>"]
         if player:
             body.append(f"<div class='player'>{E(player)}</div>")
         for i, x in enumerate(tl):
@@ -376,12 +403,13 @@ def build(inst: dict, ledger: list[dict], blobs: dict[str, str], transcript: lis
             f"<p class='lede'>Every turn of this game, every telling of it, and every model call in it: what each model was sent, in full, and what it "
             f"answered, between the engine's own steps. Open a call's sections to read its prompts.</p>"
             f"<dl class='meta'><dt>game</dt><dd>{E(inst['game'])} (version {E(inst.get('game_version') or '')})</dd><dt>instance</dt><dd>{E(inst['id'])}</dd>"
-            f"<dt>started</dt><dd>{E(inst.get('created', '')[:16].replace('T', ' '))} UTC</dd><dt>turns</dt><dd>{len(turns)}</dd><dt>model calls kept</dt><dd>{calls_n}</dd></dl>"
+            f"<dt>started</dt><dd>{E(inst.get('created', '')[:16].replace('T', ' '))} UTC</dd><dt>turns</dt><dd>{len(turns)}</dd><dt>model calls kept</dt><dd>{calls_n}</dd>"
+            f"<dt>profile</dt><dd>{E(profile_runs(runs))}</dd></dl>"
             f"<div class='stats'>{who}</div>")
     if opening:
         head += f"<details><summary>The opening</summary><div class='prose'>{E(opening)}</div></details>"
     index = ("<div class='scroll'><table class='idx'><thead><tr><th>turn</th><th>input</th><th>kind</th><th>min</th><th>calls</th><th>applied</th>"
-             f"<th>refused</th><th>retold</th></tr></thead><tbody>{''.join(idx_rows)}</tbody></table></div>")
+             f"<th>refused</th><th>retold</th><th>profile</th></tr></thead><tbody>{''.join(idx_rows)}</tbody></table></div>")
     data = json.dumps(blobs, ensure_ascii=False).replace("</", "<\\/")
     body = head + index + "".join(sections_html) + f"<script type='application/json' id='blobs'>{data}</script>" + JS
     return page(title or f"Round {inst['id']}", body, standalone=standalone)

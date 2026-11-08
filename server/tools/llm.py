@@ -55,6 +55,8 @@ def loaded() -> dict | None:
 
 
 def describe(p: profiles.Profile) -> str:
+    if not p.local:
+        return f"hosted, on {p.base}" + (f": {p.note}" if p.note else "")
     srv = " ".join(f"{k}={v}" for k, v in p.server.items())
     roles = "; ".join(f"{r}: " + " ".join(f"{k}={v}" for k, v in ov.items()) for r, ov in p.roles.items()) or "no role overrides"
     return f"{p.model}  {srv}  [{roles}]"
@@ -91,7 +93,8 @@ def status() -> int:
 
 def show(name: str) -> int:
     p = profiles.load(name)
-    print(json.dumps({"swap": p.swap_body(), "roles": p.roles, "note": p.note}, indent=1))
+    print(json.dumps({"swap": p.swap_body() if p.local else None, "config": p.base, "roles": p.roles,
+                      "dials": p.dials.model_dump(exclude_none=True), "modules": p.levels(), "note": p.note}, indent=1))
     return 0
 
 
@@ -100,6 +103,9 @@ def use(name: str, wait: bool = True, timeout: float = 600) -> int:
         p = profiles.load(name)
     except FileNotFoundError:
         print(f"no profile {name!r} here; profiles: " + ", ".join(profiles.names()))
+        return 1
+    if not p.local:
+        print(f"{name} is a hosted profile: there is nothing to load on the box (switch to it in the settings menu)")
         return 1
     code, out = call(f"{HELPER}/use", p.swap_body())
     if code != 200:
