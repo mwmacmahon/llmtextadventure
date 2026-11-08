@@ -10,7 +10,7 @@ the evidence behind it is the state page, `docs/STATE-2026-11-08.md` (published:
 Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a short-term planning document and showed
 "basically nothing left"). Everything here was the roadmap's "Where we are", "Landed today" and Stage 5 queue.
 
-## Where we are (2026-11-09, just after midnight, at 0afdac5)
+## Where we are (2026-11-09, about 01:00, at bb3234a)
 
 - **Stage 1 is done** (D135 to D151, 2026-11-07 night to 11-08 dawn): 2d6 with caps, the dice and the player's row,
   the consequence roll with noir's table rewritten, the small faults, the six time rules, and the station's control
@@ -44,15 +44,22 @@ Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a shor
   its first play (the profile may differ per run, never per role).
 - **Part eight landed within the hour** (11-09, 4d0d02e to ee8d022): the five fields required by name on the local
   schema and an edge of +2 seen on one Gemma turn; a surrender no longer a chosen death; the engine writes a death the
-  narrator will not; "dead" at zero. The Gemma round with its counts is next.
+  narrator will not; "dead" at zero. The §5 round on Gemma then showed the edge working (8 of 9 checks) and the model marking every check `aim: secret`, so the
+  floor is back on Gemma (B217); the readiness report's open list is B221 to B228.
 - The register is `docs/OPEN-ISSUES.md` (B25).
 
 ## The queue, in order (the owner, 11-08 evening; part seven put first 11-08 night; part eight 11-09)
 
-0. **Part eight §5: the Gemma round** with its report and three counts (checks with an edge, settled with a why,
-   settled fails), the side chat reading it before she plays; with it, the `aim: secret` set on a gift (found with B213).
-   *Landed 11-09 just after midnight:* part eight §1 to §4 (B213 4d0d02e, B214 bd8a5c7, B215 b2aeaba, B216 ee8d022), and
-   one die for one way out in a peril (48ee158).
+0. **Part nine, to write when the owner says ready** (the side chat's read of §5 and the readiness report, 11-09):
+   first and alone, the secret-holder floor on an engine witness, never on the model's `aim` (B217: Gemma marks every
+   check secret, the floor is back on every parley and on fights); then the settled rows written once from the reading
+   (B219), a name masked as a pronoun (B220), the fail branch forced for impossible demands (B225), the grab that follows
+   off the island (B226), the player-name check (B45), heat on a crime in open view (B227), Sneak Attack and Rage on
+   the strip (B222), the money guards (B223), the panel and journal read (B224), the three small ones (B228); and the
+   owner's XP question (B221) when answered.
+   *Landed 11-09 just after midnight:* part eight §1 to §5 (B213 4d0d02e, B214 bd8a5c7, B215 b2aeaba, B216 ee8d022; the
+   §5 round 219a98e03aa9: edge on 8 of 9 checks, 2 settled rows with a why, 0 settled fails), one die for one way out in
+   a peril (48ee158), the readiness report (`notes/REPORT-2026-11-08-fantasy-readiness.md`).
 0a. *Part eight as sent* (B213 to B216, 11-09 just after midnight): the local schema
    requires the check's edge, its why and its aim and fiat's settled and why (B213: on Gemma none of them is ever
    written, so the edge is 0 and nothing can fail without a roll); the chosen-death net never fires on a surrender
@@ -60,9 +67,12 @@ Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a shor
    zero (B216); then one Gemma round with its report and three counts. The side chat reads it before she plays.
    *Landed 11-08 night:* part seven (B207 to B211, B63 narrowed; 2669a19, 5a82d9e), part six (B200 to B206; dd4be6c,
    748d653, 0638909, ca47f24, 9538397), B212 (634f5a9), too_far widened (fc89cad).
-1. **She plays.** The first player on the fantasy, on Sonnet, after the Gemma round. Open before it:
-   which difficulty her save is on (B99: it carries Hard from the copy it was moved from; the owner has not said whether
-   that is meant).
+1. **She plays, on Sonnet (:8014).** The side chat's read 11-09: on Sonnet the design holds (edge on 15 of 21 checks,
+   `aim` never misused, 14 attempts settled by the words, death is death); she can play now if the owner accepts what
+   is still open there: XP moves only when a quest closes (B221), money drift (B223), the People panel ahead of the
+   prose (B224), impossible demands rolled rather than refused (B225), heat not moving on an open crime (B227), no
+   check on a player name that is a cast member's (B45). On Gemma she waits for B217. She has no save yet; the Hard
+   saves are the owner's Ungdall games (B99).
 2. **The owner's open answers**, bundled into the next directive as they come: the player UI's four questions
    (`notes/DESIGN-player-ui-2026-11-08.md`), magic's placement and its four questions (B91,
    `notes/DESIGN-magic-2026-11-08.md`), the content questions (B40, B43, B44, B58, B61, B110 to B122, B136), the
@@ -100,4 +110,4 @@ rounds run once (B145).
   designed, not built; the feedback button not built; W1's first pass done, the sweep proper not.
 - **Stage 6, other models:** not started; the local provider's schema gap (B213) is its first real item.
 
-**Position (2026-11-09 just after midnight, at 0afdac5; parts four to eight in, the readiness rounds run once, the Gemma round next).**
+**Position (2026-11-09 about 01:00, at bb3234a; parts four to eight in with the §5 round read; part nine to write; she can play on Sonnet with the open items accepted).**

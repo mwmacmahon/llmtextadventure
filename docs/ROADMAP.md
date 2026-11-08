@@ -34,14 +34,14 @@ it. *decided*: the owner has ruled, no design yet. *open with the owner*: a ques
 
 | # | Area | State | Design | Left (in one line) |
 |---|---|---|---|---|
-| 1 | The dice, checks and consequences | built; the edge on the local model built 11-09, one Gemma turn seen | DESIGN.md §7.1a to §7.1c; DESIGN-time-and-attempts | the Gemma round's counts, aim secret on a gift, tier-only d20 lines, the two bonuses meeting |
+| 1 | The dice, checks and consequences | built; the edge on the local model built 11-09, one Gemma turn seen | DESIGN.md §7.1a to §7.1c; DESIGN-time-and-attempts | the floor on an engine witness (B217), the fail branch unused (B225), tier-only d20 lines, the two bonuses meeting |
 | 2 | Time and pacing | built, unseen in long rounds | DESIGN-time-and-attempts §3, §4 | travel floors, the fall's hours, a refused rest, "until when" as buttons, per-campaign pacing, missed events |
 | 3 | Measurement and parity | running | MEASURING.md, TESTING.md | the long rounds after parts four to eight, the eval key rebuild, the stale measure pages |
 | 4 | Profiles and the picker | built | DESIGN-context-modules §6 | the model label from the profile, one server for every game, levels edited in the UI |
 | 5 | The narrator's context | not started | DESIGN-context-modules §2 to §4 | the four modules; the chant, the formula, the leak, the retold order are its cases |
 | 6 | The assistant | built | ASSISTANT-DESIGN; DESIGN2 §17 | fiat and levers, a retold turn's stakes, the parked beats, the unsettled attempts |
 | 7 | The world's records | built | DESIGN.md; GAME_AUTHORING | "unknown", a place under another name, one object twice, name clashes, stale time text |
-| 8 | The fantasy game, Marrowgate | built; part eight in; her first game waits on the Gemma round | FANTASY_DESIGN; DIRECTIVE-fantasy | the Gemma round, the rescue later, magic, the content questions, the sheet pass live |
+| 8 | The fantasy game, Marrowgate | built; part eight in; playable on Sonnet with open items accepted | FANTASY_DESIGN; DIRECTIVE-fantasy | part nine (B217 to B228), the XP question, the rescue later, magic, the content questions |
 | 9 | Noir, Lowtown | built | notes/design/noir page; DESIGN.md | whether noir takes death is death, the nerves sitting, stray engine lines |
 | 10 | The station | built | DESIGN-time-and-attempts §4; station page | the locked-out text, what each project unlocks, the upgrades, the canister, the station's week |
 | 11 | The player UI | slice one built; slice two designed | DESIGN-lobby-and-saves; DESIGN-player-ui | the play page (four questions open), the feedback button, the ending word, dev mode's gaps |
@@ -76,9 +76,12 @@ whose difficulty is how hard the thing is for anyone and whose edge is what this
 Gemma turn an edge of +2 arrived with its why. The chosen-death net fires only on the wish to die (B214, bd8a5c7).
 
 **Left.**
-- The Gemma round's three counts (checks with an edge, settled with a why, settled fails), part eight §5, not yet run.
-- Gemma set `aim: secret` on a gift because its gain is a tell, and the floor raised a low check to high (found with
-  B213); the aim's wording, or the floor's trigger, needs a look before her game.
+- The §5 round ran (219a98e03aa9, Gemma, twelve turns): edge on 8 of 9 checks pointing the right way, 2 settled rows
+  with a why, 0 settled fails. Gemma marked all 9 checks `aim: secret`, so the floor raised the gold and both stabs to
+  high (B217): the floor needs an engine witness (a stake about the secret, not a fight), never the model's own field.
+- The "it fails" branch is never used on either model; impossible demands roll at very high with edge -4 (B225).
+- A retold turn writes no settled rows (B219); a masked name reads as nonsense (B220); `danger: none` on a stab is
+  likely right since the backstop answers (B218, to decide).
 - Every d20 line tier-only to the referee and the summarizer if a round shows a ruling on the sum (B37, later).
 - The old "what the player brought" +2 and a sheet-pass trait can meet on one check (B141); whether the pass retires
   the About-word bonus is the owner's call. With the edge in, the About-word bonus is the likelier one to go.
@@ -188,9 +191,9 @@ The fourth game, for the owner's daughter: a D&D table's tone, a sheet with the 
 points and death as the one ending, heat and renown, levels, sirens on the lake. Design: FANTASY_DESIGN (D136 to
 D145F and the rulings since), DIRECTIVE-fantasy-2026-11-08, the Marrowgate living page; D152 to D179.
 
-**Built** and played by the owner; the readiness rounds ran once and part eight is in (B213 to B216, 11-09 just
-after midnight). **Her first game waits on:** one Gemma round with its three counts; and which difficulty her save is on (B99: it
-carries Hard from the copy it was moved from; the owner has not said whether that is meant).
+**Built** and played by the owner; the readiness rounds ran, part eight is in and its §5 round read (11-09). **On
+Sonnet she can play now** with the open items accepted (the queue, item 1); on Gemma she waits for B217. She has no
+save yet; the Hard saves are the owner's Ungdall games (B99).
 
 **Left, decided or designed.**
 - The rescue from death, later (B143, the owner 11-08 night): only a devoted companion present or a cleric in the
@@ -199,6 +202,13 @@ carries Hard from the copy it was moved from; the owner has not said whether tha
 - The fantasy on local Gemma as a served game, after the edge arrives there (B213).
 - The sheet pass live: one call on Sonnet and one on Gemma read before her next game (B140); the lobby shows nothing
   while the sheet call runs and the re-read has no box of its own (B142).
+
+**Left, from the readiness report (11-09; B221 to B228, B45):** XP moves only when a quest closes (B221, the owner's
+call: kills, milestones, a found person, or closes only); Sneak Attack never reaches the strip and Rage is invisible
+(B222); money drift (B223); the People panel and the Journal ahead of or behind the prose (B224); impossible demands
+rolled (B225, area 1); the siren's grab following the player off the island (B226); heat not moving on an open crime
+(B227); the clock and the question in the prose, an error string shown to the player (B228); no check on a player name
+that is a cast member's (B45).
 
 **Open with the owner (content).** The Watch raid the build added (B40); the Temple's price as a hook (B43); a quest
 settled a way no flag names (B58); the thirteen hooks whose endings the lint found one-sided (B110 to B122, each with
