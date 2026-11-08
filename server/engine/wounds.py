@@ -136,10 +136,10 @@ Fate = Literal["dead", "carried", "survived"]
 
 
 def lethal_roll(rng: Any, base: int, modifiers: list[Modifier] | None = None, *, difficulty: str = "high",
-                resolver: str = "dice_d20", label: str = "hold on to life", stat: str = "con", offset: int = 0) -> CheckResult:
+                resolver: str = "dice_d20", label: str = "hold on to life", stat: str = "con", offset: int = 0, caps: bool = True) -> CheckResult:
     """The engine's own check when a body reaches the floor: the game's resolver, the stat and modifiers capped as every
     check is (B1), against `difficulty`. Seeded by the caller (the turn's rng), so an undo replays it."""
-    req = CheckRequest(id="lethal", label=label, stat=stat, difficulty=difficulty, base=base, offset=offset)  # type: ignore[arg-type]
+    req = CheckRequest(id="lethal", label=label, stat=stat, difficulty=difficulty, base=base, offset=offset, caps=caps)  # type: ignore[arg-type]
     req.modifiers = list(modifiers or [])
     return RESOLVERS[resolver](rng, req)
 

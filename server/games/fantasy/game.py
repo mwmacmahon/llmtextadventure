@@ -172,6 +172,7 @@ class FantasyGame(GameBase):
     })
     resolver = "dice_d20"
     sleep_by_command = True    # the owner (11-08 evening): only the Rest command makes a turn a night; "I go sleep at <a far place>" is a move
+    caps = False               # B103 (the owner, 11-08 evening): no modifier floors or caps; a drowning dwarf in mail rolls as one
     target_offset = 2          # B83 (the owner, 11-08): one Hard step on the d20; a +2 character passes medium 55%, not 65%
     authority = AUTHORITY
     events_path = "hidden.events"
@@ -1925,7 +1926,7 @@ class FantasyGame(GameBase):
         executed = p.fate_note == "executed"
         req = CheckRequest(id="lethal", label="endure: hold on to life", stat="con", difficulty="high", base=p.stats.get("con", 0))
         offset = self.target_offset if info.target_offset is None else info.target_offset     # the profile's dial when it set one
-        res = wd.lethal_roll(info.rng, req.base, self.modifiers(s, req, None), label=req.label, offset=offset)
+        res = wd.lethal_roll(info.rng, req.base, self.modifiers(s, req, None), label=req.label, offset=offset, caps=self.caps)
         dead = executed or wd.is_fatal(res.outcome, wd.FATAL_D20)
         carriers = self._carriers(s)
         fate = wd.death_fork(dead, [q.id for q in carriers] or (["prose"] if p.carried else []))

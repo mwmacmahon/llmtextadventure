@@ -48,6 +48,7 @@ class CheckRequest(BaseModel):
     base: int = 0                  # the stat's value
     modifiers: list[Modifier] = Field(default_factory=list)
     offset: int = 0                # the game's target offset (D168): every target moves by it
+    caps: bool = True              # B103 (D176): a game may turn the modifier caps off (the fantasy: stacked penalties count)
 
     @property
     def total_modifier(self) -> int:
@@ -124,8 +125,10 @@ def capped(req: CheckRequest, resolver: str = "dice_d20") -> tuple[int, list[Mod
     than BONUS_CAP (fear sources already take only the worst; this caps the rest). The stat counts as a bonus or a
     penalty by its sign. A cap that bites adds a line to the modifiers, so the ledger shows what was cut. The caps are
     the resolver's own (CAPS)."""
-    pen_cap, bon_cap = CAPS.get(resolver, (PENALTY_CAP, BONUS_CAP))
     terms = [req.base] + [m.value for m in req.modifiers]
+    if not req.caps:                                     # the game's caps are off (the fantasy, B103): every point counts
+        return sum(terms), list(req.modifiers)
+    pen_cap, bon_cap = CAPS.get(resolver, (PENALTY_CAP, BONUS_CAP))
     pen = sum(v for v in terms if v < 0)
     bon = sum(v for v in terms if v > 0)
     mods = list(req.modifiers)

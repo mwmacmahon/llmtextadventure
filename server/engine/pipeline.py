@@ -364,11 +364,14 @@ class Engine:
         except Exception as e:
             ledger("model_call", {"role": "assistant", "step": "ask", "error": repr(e)})
             return {"ok": False, "text": "The game master could not answer just now."}
-        answer = (done.text.strip() if done else "") or f"{name} cannot tell from here."
-        if _hook(game, "leaked_terms", state, answer, q, default=[]):          # an aside never teaches a word the story has not
+        raw = (done.text.strip() if done else "")
+        answer = raw or f"{name} cannot tell from here."
+        leaked = _hook(game, "leaked_terms", state, answer, q, default=[]) or []
+        if leaked:                                                             # an aside never teaches a word the story has not
             answer = f"{name} cannot tell from here."
         ledger("model_call", {"role": "assistant", "step": "ask", "provider": provider.name, "model": (done.model if done else role.model),
-                              "seconds": round(time.monotonic() - t0, 2), "usage": asdict(done.usage) if done else {}, "question": q, "answer": answer})
+                              "seconds": round(time.monotonic() - t0, 2), "usage": asdict(done.usage) if done else {}, "question": q, "answer": answer,
+                              **({"raw": raw, "leaked": leaked} if raw != answer else {})})
         self.store.append_transcript(iid, turn, "ask", q)
         self.store.append_transcript(iid, turn, "aside", answer)
         return {"ok": True, "text": answer, "turn": turn}
@@ -1743,7 +1746,8 @@ class Engine:
                                  lethal_for=lambda d, label: bool(_hook(game, "lethal_stake", state, d, label, default=False)),
                                  offset=offset,
                                  holds_back=lambda target: _hook(game, "holds_back", state, target, default=None),
-                                 note_for=lambda d, label: _hook(game, "check_note", state, d, label, default="") or "")
+                                 note_for=lambda d, label: _hook(game, "check_note", state, d, label, default="") or "",
+                                 caps=getattr(game, "caps", True))
             if call.verb == "LOOK":
                 text = _hook(game, "look", state, call.ref, default=None)
                 if not text:

@@ -139,3 +139,32 @@ async def test_a_different_stat_after_an_undo_rolls_fresh_through_the_pipeline(m
         return pl.rng_for("i", 1, f"calls:{stat}:{difficulty}:{k}")
     rng("tongue", "high"); rng("tongue", "high"); rng("eye", "low")
     assert seen == ["calls:tongue:high:0", "calls:tongue:high:1", "calls:eye:low:0"]
+
+
+def test_caps_are_the_games_and_off_on_the_fantasy():
+    """B103 (D176): the fantasy's checks carry every penalty; the 2d6 games keep -2/+5."""
+    import random
+    from engine.mechanics import CheckRequest, Modifier, dice_d20, dice_2d6
+    req = CheckRequest(id="n", label="swim in mail", stat="str", difficulty="medium", base=1,
+                       modifiers=[Modifier(label="mail", value=-4), Modifier(label="cold", value=-2)])
+    capped_ = dice_d20(random.Random(1), req)
+    open_ = dice_d20(random.Random(1), req.model_copy(update={"caps": False}))
+    assert open_.total - open_.roll == -5 and capped_.total - capped_.roll == -2     # the stat +1 beside penalties capped at -3
+    assert not any("capped" in m.label for m in open_.modifiers)
+    two = dice_2d6(random.Random(1), req)
+    assert two.total - sum(two.dice) == -1                     # +1 stat, penalties capped at -2
+
+
+def test_normal_is_the_games_offset_alone(tmp_path):
+    """B99 (D176): Normal is the fantasy's +2 alone; Hard adds +2 (her save of 11-08 was Hard, from the copy it was moved from)."""
+    from engine.config import load_config
+    from engine.pipeline import Engine
+    from engine.registry import load_games
+    from engine.store import Store
+    cfg = load_config()
+    eng = Engine(cfg, Store(tmp_path / "t.sqlite3"), load_games(cfg.resolve(cfg.server.content_root)))
+    game = eng.games["fantasy"]
+    iid = eng.create_instance("fantasy", {"name": "W", "klass": "Rogue", "race": "Human"})
+    assert eng.difficulty(iid) == "normal" and eng.target_offset(game, iid) == 2
+    eng.set_difficulty(iid, "hard")
+    assert eng.target_offset(game, iid) == 4
