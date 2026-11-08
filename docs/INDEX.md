@@ -7,7 +7,7 @@ Published as a page: [Project Index](https://claude.ai/artifact/CivViGMFsdW3qGvx
 `python3 notes/scripts/md2page.py docs/INDEX.md <out.html> notes/scripts/index-head.html`, then publish `<out.html>` to that URL.
 
 The order of work is `docs/ROADMAP.md` (published: [Roadmap](https://claude.ai/artifact/7n8jqWaQmb47y1SKRA7zRQ)); §7 below is the detail behind its stages.
-The position against that order, dated: `docs/STATE-2026-11-07.md` (published: [Where Things Stand](https://claude.ai/artifact/CD4hS5Z5G4Aa9JSXUy25qS); what is live, what the rounds said, the register by area, what waits on the owner). The swept backlog, reconciled against ISSUES: `docs/BACKLOG-2026-11-07.md` (published: [Backlog, Reconciled](https://claude.ai/artifact/PHkBTRo6RezpJLisoN7Efm)).
+The position against that order, dated: `docs/STATE-2026-11-08.md` (published: [Where Things Stand, 11-08](https://claude.ai/artifact/MSX6c7ttSrFuxkvvdYxZBU); Stage 1 done, the parity verdict and the D168 tuning, the fantasy built, Stage 3 in progress). The previous one: `docs/STATE-2026-11-07.md` (published: [Where Things Stand](https://claude.ai/artifact/CD4hS5Z5G4Aa9JSXUy25qS); what is live, what the rounds said, the register by area, what waits on the owner). The swept backlog, reconciled against ISSUES: `docs/BACKLOG-2026-11-07.md` (published: [Backlog, Reconciled](https://claude.ai/artifact/PHkBTRo6RezpJLisoN7Efm)).
 
 Three kinds of place: the repo (`docs/`, `server/`), the gitignored `notes/` (decisions, issues, content, results,
 reports, scripts), and published pages (claude.ai artifacts, private to the owner).

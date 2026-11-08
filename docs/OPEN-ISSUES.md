@@ -24,7 +24,7 @@ N6-1031, N7-1031, A1-1031, A2-1031, C1-1101); a bare id is the newer item.
 
 **Added 2026-11-08 midday (the dice tuning, D168).**
 
-- B67 *for the owner (11-08 midday, D168).* The midday directive gives the station's offset as +1 and says "its 2d6 table becomes 6/8/10/12/14"; +1 on the table (3/5/7/9/11) makes 4/6/8/10/12, and "Systems +2 at medium 8 is 72%" agrees with +1. Built +1 (medium 8). If 6/8/10/12/14 was meant, the offset is +3 at the top and +1 in the middle, which one offset cannot give.
+- B67 *answered (the side chat, 11-08 midday): +1 is right; the directive's "6/8/10/12/14" was the side chat's arithmetic slip (the table for a +2 shift mis-added). Nothing to change. Was for the owner (11-08 midday, D168).* The midday directive gives the station's offset as +1 and says "its 2d6 table becomes 6/8/10/12/14"; +1 on the table (3/5/7/9/11) makes 4/6/8/10/12, and "Systems +2 at medium 8 is 72%" agrees with +1. Built +1 (medium 8). If 6/8/10/12/14 was meant, the offset is +3 at the top and +1 in the middle, which one offset cannot give.
 
 **Added 2026-11-08 midday (the fantasy's fixes, D167).**
 
