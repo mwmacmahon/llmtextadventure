@@ -286,6 +286,7 @@ class Engine:
             return
         game = self.games[inst.game]
         state: BaseModel = game.load_state(self.store.load_state(iid))
+        start = state.model_copy(deep=True)            # the turn's opening state, for what the player sees change (B18)
         turn = self.store.latest_turn(iid) + 1
         over = _hook(game, "ending", state)
         if over:
@@ -748,6 +749,7 @@ class Engine:
                        **({"stake": (c.get("result") or {})["stake"]} if (c.get("result") or {}).get("stake") else {})} for c in calls_block.get("calls", [])],
             "declarations": [d.get("raw") for d in calls_block.get("declarations", [])],
             "notes": calls_block.get("notes", []),
+            "seen": seen_lines(game, start, state, calls_block.get("calls", [])),
         }
         if replay is not None:
             mechanics["rewritten"] = {"hint": replay.hint, "attempt": replay.attempt, "by": replay.by}
@@ -1169,7 +1171,8 @@ class Engine:
         provider = self._provider(role, iid, "summarizer")
         captured = _hook(game, "state_for_models", state, default=game.render_bulletin(state, ""))
         guidance = _hook(game, "summary_guidance", state, default="")
-        system, msgs = summarizer_messages(plan.previous.text if plan.previous else None, plan.rows, captured, guidance)
+        rows = [(t, [(r, tier_only_view(x) if r == "narrator" else x) for r, x in parts]) for t, parts in plan.rows]
+        system, msgs = summarizer_messages(plan.previous.text if plan.previous else None, rows, captured, guidance)
         t0 = time.monotonic()
         done: StreamDone | None = None
         async for sev in provider.stream(role, system, msgs):
@@ -1454,7 +1457,19 @@ def referee_inputs(game: Game, state: BaseModel, directives: list[str], player_t
                    recent: list[tuple[int, str, str]] | None = None) -> tuple[str, list[Msg]]:
     """Everything the referee is sent (see adjudicator_inputs). `recent`: the TRIAL earlier turns (D59)."""
     rules = _hook(game, "referee_rules", state, default="")
-    return referee_messages(rules, _engine_state_text(game, state, adj), directives, player_text, narration, levers=levers, recent=recent)
+    return referee_messages(rules, _engine_state_text(game, state, adj), directives, player_text, tier_only_view(narration), levers=levers, recent=recent)
+
+
+_FACES_LINE = re.compile(r"^§ ([^.\n]+?), ([a-z ]+)\. [\u2680-\u2685] [\u2680-\u2685][^\n]*?\. (?:[A-Z][a-z]+ [a-z]+: )?([A-Za-z][a-z ]*)\.$", re.M)
+
+
+def tier_only_view(narration: str) -> str:
+    """The prose as the referee and the summarizer read it: a § line with die faces becomes the tier-only line the station's § lines
+    already use ("§ Hands check, very high: critical success."). The player's line can read as a wrong sum ("⚅ ⚅ -3 = 9
+    against 11. Double sixes: critical success.") and a weak referee may rule on the sum (the cold read, D143); "double
+    sixes" is a story-sounding phrase either could hand the narrator (a retelling, the story so far). Lines without faces (the d20's, taped
+    turns) pass unchanged, so the keyed sets' referee inputs do not move."""
+    return _FACES_LINE.sub(lambda m: f"§ {m.group(1)} check, {m.group(2)}: {m.group(3).lower()}.", narration)
 
 
 # ---- the narrator replay (tools/eval_replay.py narrate; notes/TASK-narrator-review.md) ----------------------
@@ -1684,6 +1699,21 @@ def _lever_lines(levers: list["PendingLever"]) -> list[str]:
             out.append(f"{lv.id} ({lv.label}): {lv.preview.text.strip()}")
     return out
 
+
+
+def seen_lines(game: Game, before: BaseModel, after: BaseModel, calls: list[dict]) -> list[str]:
+    """The player's row under the prose (ISSUES B18, D143): what the player should see change this turn. The game says
+    what its panels show (`seen_changes`); the engine adds a way the cost table closed. A failing hook shows nothing."""
+    try:
+        out = list(_hook(game, "seen_changes", before, after, default=[]) or [])
+    except Exception:
+        log.exception("seen_changes failed")
+        out = []
+    for c in calls:
+        r = c.get("result") or {}
+        if (r.get("cost") or {}).get("kind") == "way_closed":
+            out.append("Way closed: " + (r.get("label") or r.get("about") or "that attempt"))
+    return out
 
 def _hook(game: Any, name: str, *args: Any, default: Any = None) -> Any:
     fn = getattr(game, name, None)

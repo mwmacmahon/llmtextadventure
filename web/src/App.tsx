@@ -257,7 +257,9 @@ function Prose({ text }: { text: string }) {
     <>
       {blocks.map((b, i) =>
         b.startsWith("§ ") ? (
-          <div key={i} className="mechanic-line">{b.slice(2)}</div>
+          <div key={i} className="mechanic-line">
+            {b.slice(2).split(/([\u2680-\u2685])/).map((part, k) => (/^[\u2680-\u2685]$/.test(part) ? <span key={k} className="die">{part}</span> : part))}
+          </div>
         ) : (
           <p key={i}>{b}</p>
         ),
@@ -266,6 +268,30 @@ function Prose({ text }: { text: string }) {
   );
 }
 
+const ONES = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
+  "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"];
+const TENS = ["", "", "twenty", "thirty", "forty", "fifty"];
+
+function numberWord(n: number): string {
+  if (n < 20) return ONES[n];
+  if (n < 60) return TENS[Math.floor(n / 10)] + (n % 10 ? `-${ONES[n % 10]}` : "");
+  return String(n);
+}
+
+/** Time in words for the player's row (B18): "One minute elapsed.", "An hour and ten minutes elapsed." */
+export function timeWords(minutes: number): string {
+  if (!minutes || minutes <= 0) return "";
+  const h = Math.floor(minutes / 60), m = minutes % 60;
+  const parts: string[] = [];
+  if (h) parts.push(h === 1 ? "an hour" : `${numberWord(h)} hours`);
+  if (m) parts.push(m === 1 ? "one minute" : `${numberWord(m)} minutes`);
+  const s = parts.join(" and ");
+  return s.charAt(0).toUpperCase() + s.slice(1) + " elapsed.";
+}
+
+/** The player's row under the prose (ISSUES B18, D143): the time in words and what the player should see change
+ *  (pockets, health and nerves, a thing lost, a way closed). The checks are already in the § lines above; the
+ *  engine's internals (events due, counts, drift, rulings) open with a tap on the row's ▸. */
 function MechanicsRow({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
   let m: Mechanics;
@@ -275,23 +301,18 @@ function MechanicsRow({ text }: { text: string }) {
     return null;
   }
   if (m.kind === "command") return null;
-  const bits: string[] = [];
-  if (m.kind === "clarify") bits.push("the engine could not tell what you meant and asked; no time passed");
-  if (m.kind === "impossible") bits.push("not possible with what you have; no time passed");
-  if (m.elapsed) bits.push(`+${m.elapsed} min`);
-  for (const c of m.calls ?? []) bits.push(c.outcome ? `${c.call}: ${c.outcome.replace(/_/g, " ")}` : `${c.call}`);
-  for (const e of m.events) bits.push(`event ${e}`);
-  for (const e of m.expired) bits.push(`expired ${e}`);
-  for (const h of m.happenings ?? []) bits.push(`unscripted: ${h.id.replace(/_/g, " ")}${h.reason ? ` (${h.reason})` : ""}`);
-  if (m.applied.length) bits.push(`${m.applied.length} change${m.applied.length === 1 ? "" : "s"}`);
-  if (m.rejected.length) bits.push(`${m.rejected.length} rejected`);
-  for (const lv of m.levers ?? []) if (lv.status !== "applied") bits.push(`${lv.id}: ${lv.status.replace("_", " ")}`);
-  if (m.drift?.length) bits.push(`${m.drift.length} drifted`);
-  if (m.rewritten) bits.push(`retold${m.rewritten.by === "referee" ? " by the referee" : ""}${m.rewritten.attempt > 1 ? ` (${m.rewritten.attempt}×)` : ""}`);
-  for (const r of m.rulings ?? []) bits.push(`${r.serious ? "ruling" : "note"}: ${r.rule.replace(/_/g, " ")}`);
-  if (!bits.length) return null;
+  const shown: string[] = [];
+  if (m.kind === "clarify") shown.push("The engine could not tell what you meant and asked; no time passed.");
+  if (m.kind === "impossible") shown.push("Not possible with what you have; no time passed.");
+  const time = timeWords(m.elapsed);
+  if (time) shown.push(time);
+  const seen = m.seen ?? [];
   const lines = [
-    ...(m.rewritten ? [`${m.rewritten.by === "referee" ? "referee's" : "your"} ruling: ${m.rewritten.hint || "(tell it again)"}`] : []),
+    ...(m.calls ?? []).map((c) => (c.outcome ? `${c.call}: ${c.outcome.replace(/_/g, " ")}` : `${c.call}`)),
+    ...m.events.map((e) => `event ${e}`),
+    ...m.expired.map((e) => `expired ${e}`),
+    ...(m.happenings ?? []).map((h) => `unscripted: ${h.id.replace(/_/g, " ")}${h.reason ? ` (${h.reason})` : ""}`),
+    ...(m.rewritten ? [`retold${m.rewritten.by === "referee" ? " by the referee" : ""}${m.rewritten.attempt > 1 ? ` (${m.rewritten.attempt}×)` : ""}: ${m.rewritten.hint || "(tell it again)"}`] : []),
     ...(m.rulings ?? []).map((r) => `${r.serious ? "ruling" : "note"} ${r.rule.replace(/_/g, " ")}: ${r.what}${r.fix && r.fix !== r.what ? ` → ${r.fix}` : ""}`),
     ...(m.levers ?? []).map((lv) => `lever ${lv.id} ${lv.status.replace("_", " ")}: ${lv.text}`),
     ...m.applied,
@@ -299,11 +320,17 @@ function MechanicsRow({ text }: { text: string }) {
     ...(m.drift ?? []).map((d) => `drift ${d}`),
     ...(m.issues ?? []).map((i) => `issue: ${i}`),
   ];
+  if (!shown.length && !seen.length && !lines.length) return null;
   // The detail used to live in a hover tooltip, which a phone cannot show: tap to open it.
   return (
     <div className={"mechanics" + (open ? " open" : "")} onClick={() => lines.length && setOpen(!open)} role={lines.length ? "button" : undefined}>
-      {bits.join(" · ")}
-      {lines.length > 0 && <span className="mechanics-toggle">{open ? " ▾" : " ▸"}</span>}
+      <div className="mechanics-head">
+        {shown.length > 0 && <span>{shown.join(" ")}</span>}
+        {seen.map((x, i) => (
+          <span key={i} className="seen-chip">{x}</span>
+        ))}
+        {lines.length > 0 && <span className="mechanics-toggle" title="the engine's detail">{open ? "▾" : "▸"}</span>}
+      </div>
       {open && (
         <ul className="mechanics-detail">
           {lines.map((l, i) => (

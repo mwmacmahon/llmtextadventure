@@ -161,7 +161,10 @@ Declarations on the class: `clock`, `resolver` (a key in `mechanics.RESOLVERS`; 
 `static_paths` (engine-owned fields the audit should not expect a writer for), `player_name(state)` (the name the
 engine's lines call the player: Frank, the station) and
 `mechanic_numbers` (the engine's § line shows the die and the target, as noir does, or the tier
-only, as the station does; the narrator never writes numbers on either).
+only, as the station does; the narrator never writes numbers on either). A game also says what the player should see
+change in a turn with `seen_changes(before, after) -> list[str]`: short lines from its own panels (noir: "Health: fine
+→ hurt", "Pockets: − revolver", "Nerves: uneasy → rattled"; the station: "Crew alarm: quiet → doubt"), never its
+internals. The row under the prose shows them with the time in words; the default shows nothing (D143).
 
 ## 5. The bulletin
 

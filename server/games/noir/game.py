@@ -1417,6 +1417,29 @@ class NoirGame(GameBase):
             p.dread = new_d
         return s, w.report
 
+    def seen_changes(self, before: NoirState, after: NoirState) -> list[str]:
+        """The player's row (B18, D143): health, the nerves tier, conditions, pockets, the notebook. A dread move inside
+        one tier is not shown (the meter shows it); the last-cigarette clock is not shown."""
+        b, a, out = before.player, after.player, []
+        if a.health != b.health:
+            out.append(f"Health: {b.health} \u2192 {a.health}")
+        if b.dread_tier(b.dread) != a.dread_tier(a.dread):
+            out.append(f"Nerves: {b.dread_tier(b.dread)} \u2192 {a.dread_tier(a.dread)}")
+        had, has = [c.name for c in b.conditions], [c.name for c in a.conditions]
+        out += [f"Condition: + {n}" for n in has if n not in had] + [f"Condition: \u2212 {n}" for n in had if n not in has]
+        was = {it.id: it for it in before.inventory}
+        now = {it.id: it for it in after.inventory}
+        for iid, it in now.items():
+            if iid not in was:
+                out.append(f"Pockets: + {it.name}")
+            elif self._pocket_value(was[iid]) != self._pocket_value(it) and (it.loaded is not None or it.id == "dollars" or it.count != was[iid].count):
+                out.append(f"{it.name}: {self._pocket_value(was[iid])} \u2192 {self._pocket_value(it)}")
+        out += [f"Pockets: \u2212 {it.name}" for iid, it in was.items() if iid not in now]
+        new_notes = len(after.notebook) - len(before.notebook)
+        if new_notes > 0:
+            out.append("Notebook: a new entry" if new_notes == 1 else f"Notebook: {new_notes} new entries")
+        return out
+
     def ending(self, state: NoirState) -> str | None:
         e = state.flags.get("ending")
         return str(e) if e else None

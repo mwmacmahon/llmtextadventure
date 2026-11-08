@@ -66,6 +66,12 @@ fiction has moved, the state follows it (D80, D81); the note is for what can sti
   huge success gives you more" in the prose; a number in the crew line ("stress 85") became "stress 85, breaking";
   "the player" in the summarizer's instruction became "The player is going to make it speak". Say it in the fiction's
   words ("it goes very well", "close to breaking", Frank, the station), and the model has only those to echo (D91).
+- **Don't show a model the player's version of a number.** The player's § line for a critical reads "⚅ ⚅ -3 = 9
+  against 11. Double sixes: critical success.": the sum fails and the words succeed. A cold read (D143) said a weak
+  referee may do the sum and rule check_ignored against a narrator that played it right, and could hand "double sixes"
+  to the narrator in a retelling note. The referee and the summarizer read a tier-only copy instead ("§ Eye check, low:
+  huge success."), the form the station's referee already knew; a rule saying "trust the words over the numbers" was
+  the alternative, and a trap removed beats a rule against it.
 - **Don't make a standing note a quota.** A tier note the bulletin repeats on every turn in tier ("let it show in what
   he half-sees, a face at a window") is followed on every turn: eight turns of the same face. Say "at most once this
   turn, where the scene gives it room, and not the way the last turn did" (D91).

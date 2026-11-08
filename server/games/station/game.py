@@ -1213,6 +1213,31 @@ class StationGame(GameBase):
                 out.append(term)
         return out
 
+    def seen_changes(self, before: StationState, after: StationState) -> list[str]:
+        """The player's row (B18, D143), for the station's own panels: the crew-alarm tier, systems (status and the AI's
+        control), resources, sealed hatches, findings, a crew member's health. Suspicion inside a tier is the meter's."""
+        out: list[str] = []
+        tb, ta = before.suspicion_tier(before.suspicion), after.suspicion_tier(after.suspicion)
+        if tb != ta:
+            out.append(f"Crew alarm: {tb} \u2192 {ta}")
+        was = {sy.name: sy for sy in before.systems}
+        for sy in after.systems:
+            old = was.get(sy.name)
+            if old and old.status != sy.status:
+                out.append(f"{sy.name}: {old.status} \u2192 {sy.status}")
+            if old and old.control != sy.control:
+                out.append(f"{sy.name}, AI control: {old.control.replace('_', ' ')} \u2192 {sy.control.replace('_', ' ')}")
+        levels = {r.name: r.level for r in before.resources}
+        out += [f"{r.name}: {levels[r.name]} \u2192 {r.level}" for r in after.resources if r.name in levels and levels[r.name] != r.level]
+        out += [f"Sealed: {m}" for m in after.sealed if m not in before.sealed]
+        out += [f"Unsealed: {m}" for m in before.sealed if m not in after.sealed]
+        health = {c.id: c.health for c in before.crew}
+        out += [f"{c.name}: {health[c.id]} \u2192 {c.health}" for c in after.crew if c.id in health and health[c.id] != c.health]
+        found = len(after.findings) - len(before.findings)
+        if found > 0:
+            out.append("Findings: a new entry" if found == 1 else f"Findings: {found} new entries")
+        return out
+
     def ending(self, state: StationState) -> str | None:
         e = state.flags.get("ending")
         return str(e) if e else None

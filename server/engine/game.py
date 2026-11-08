@@ -359,6 +359,12 @@ class GameBase:
         """What <<LOOK ref>> returns to the narrator: the record of a person, thing or place. None: nothing recorded."""
         return None
 
+    def seen_changes(self, before: BaseModel, after: BaseModel) -> list[str]:
+        """What the player should see change this turn, in the player's row under the prose (ISSUES B18, D143): pockets,
+        health and nerves, a thing lost. Short lines from the turn's start and end states; only what the player's own
+        panels show, never the engine's internals (those stay behind the row's detail click). Default: nothing."""
+        return []
+
     def render_mechanic(self, state: BaseModel, result: Any) -> str | None:
         """The player-facing mechanics line for a check the narrator called. None: the engine's default line."""
         return None

@@ -406,7 +406,14 @@ Branch `1.0` preserves the first engine; `main` stays there until 2.0 is playabl
   carries `roles.NARRATOR_WORLD` and `roles.NARRATOR_PROTOCOL`, the SSE stream has `mechanic` events, the
   transcript's narrator row is flat (prose plus `§` lines), and the ledger's narrator `model_call`
   carries `requests`, `calls`, `declarations`, `notes`, `problems` and `raw`. Hooks: `look(state, ref)`,
-  `render_mechanic(state, result)`; `GameBase.mechanic_numbers` picks die-and-target or tier-only lines.
+  `render_mechanic(state, result)`; `GameBase.mechanic_numbers` picks die-and-target or tier-only lines. On 2d6 the
+  line shows the faces ("Eye, low. ⚃ ⚃ +2 = 10 against 5. Huge success."), and a critical names its cause ("Double
+  sixes: critical success.", "A natural 20: …") (D143). The referee and the summarizer read a tier-only copy of
+  each line with faces (`pipeline.tier_only_view`); the narrator's history softens past lines to words.
+- The player's row under the prose (D143): the time in words and the mechanics payload's `seen` list, which the
+  game's `seen_changes(before, after)` hook writes from the turn's opening and closing states, plus "Way closed: …"
+  from a way_closed cost. Everything else in the payload (calls, events due, counts, drift, rulings, issues) opens
+  behind the row's ▸.
 - Clients: the web app renders `mechanic` events and `§` paragraphs in a mechanics style; `play.py`
   dims them and lists calls and declarations in the turn summary.
 - Tests: `tests/test_brackets.py`, `tests/test_world.py`, `tests/test_narration.py`,
