@@ -256,3 +256,46 @@ def test_swimming_off_reed_island_meets_the_cold_water(game):
     st.player.location = "Reed Island"
     calls = game.backstop(st, {"hp": 0, "acted": [], "text": "I try to swim for the skiff in my gear"}, Dice(3, 0), 2)
     assert [c["call"]["verb"] for c in calls] == ["HAZARD"]
+
+
+def escape_act(text: str, label: str, stat: str = "str"):
+    from engine.roles import CheckProposal
+    return AssistantReading(kind="action", summary=text, time_minutes=1, risk="high", tempo="fast",
+                            intents=[Intent(action=text, check=CheckProposal(label=label, stat=stat, difficulty="high"))])
+
+
+def test_one_die_for_one_way_out(game):
+    """The readiness round (Sonnet, 11-08): the player's own roll to hack free succeeded while a second, countdown roll
+    failed, so the next turn killed a player the prose had on the shore. The player's escape roll now decides the peril."""
+    st = new(game)
+    wo.open_peril(st, "drowning", by="Mirren")
+    a = escape_act("I hack at the hands on my ankles", "hack free of the hands")
+    s2, w = game.world_turn(st, a, "I hack at the hands on my ankles", Dice(1), 3, 2)
+    assert not w.rows and not w.mechanics and "decides it" in w.directives[0] and s2.player.peril is not None
+    ok = {"outcome": "success", "roll": 15, "stat": "str"}
+    assert "way out" in game.check_note(s2, ok, "hack free of the hands")
+    after = game.after_turn(s2, info_calls(3, [ok]))
+    assert after.player.peril is None and not after.player.fate
+    # a failure takes a moment off; the last moment's failure kills, told inline
+    bad = {"outcome": "failure", "roll": 3, "stat": "str"}
+    game.check_note(s2, bad, "hack free of the hands")
+    after = game.after_turn(s2, info_calls(3, [bad]))
+    assert after.player.peril.turns_left == s2.player.peril.turns_left - 1 and not after.player.fate
+    after.player.peril.turns_left = 1
+    last = {"outcome": "failure", "roll": 3, "stat": "str"}
+    assert "dies" in game.check_note(after, last, "hack free of the hands")
+    dead = game.after_turn(after, info_calls(4, [last]))
+    assert dead.player.fate == "dead" and game.cause_of_death(dead, {}).startswith("drowned")
+
+
+def test_a_blow_in_a_peril_is_no_giving_up(game):
+    st = new(game)
+    wo.open_peril(st, "held", by="Mirren")
+    s2, w = game.world_turn(st, act("I swing for her neck"), "I swing for her neck", Dice(15), 3, 2)
+    assert not s2.player.fate
+
+
+def test_a_death_shows_its_line(game):
+    st = new(game)
+    s2, w = game.world_turn(st, act("I drown myself"), "I drown myself", Dice(), 3, 2)
+    assert any("dies" in m for m in w.mechanics)

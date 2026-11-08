@@ -123,6 +123,7 @@ def _end(game: Any, s: FantasyState, turn: int, why: str, w: WorldTurn, cause: s
     w.directives.append(f"DEATH. {p.name} dies of it, here: {why}. Write it straight: how it takes them, the last thing {p.name} "
                         f"sees, and who is there, if anyone. This is the end of the story; write nothing after the last breath.")
     w.rows.append({"kind": "death", "why": why})
+    w.mechanics.append(f"{p.name} dies: {why}.")
 
 
 def open_peril(s: FantasyState, kind: str, by: str = "", turns: int | None = None) -> Peril:
@@ -174,11 +175,20 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
     # -- a peril: the countdown (B102), and the chosen end inside one (B100 (a))
     if p.peril is not None:
         pr = p.peril
-        if getattr(adj, "kind", "action") == "action" and not ESCAPE.search(text):
+        from .game import ATTACK
+        if getattr(adj, "kind", "action") == "action" and not (ESCAPE.search(text) or ATTACK.search(text)):
             _end(game, s, turn, f"{PERILS.get(pr.kind, {}).get('what', pr.kind)}, and no fight left in them", w=w,
                  cause=f"{PERIL_CAUSE.get(pr.kind, 'died')} at {p.location}")
             w.skip.append("hp")
             return s, w
+        own = escape_check(adj)
+        if own is not None:                       # one die for one way out: the player's own roll decides it (check_note)
+            what = PERILS.get(pr.kind, {}).get("what", pr.kind)
+            last = pr.turns_left <= 1
+            w.directives.append(f"{p.name} is {what}, with {'one moment' if last else 'a few moments'} left. The player's own roll for "
+                                f"'{own}' decides it, nothing else: on a success the way out works ({pr.way}); on a failure it is worse"
+                                + (", and with one moment left a failure is the end: write the death." if last else "."))
+            return _after_peril(game, s, adj, player_text, rng, turn, offset, w, text)
         pr.step += 1
         res = _check(game, s, pr.stat, "medium", f"{pr.kind}: hold on", rng, [Modifier(label=f"{pr.kind}, moment {pr.step}", value=-2 * pr.step)], offset)
         ok = res.outcome in ("success", "huge_success", "critical_success")
@@ -203,6 +213,46 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
                                 f"It is worse now ({'one moment' if pr.turns_left == 1 else 'a few moments'} left before it is over). Play it, and "
                                 f"end the turn on the question, in the city's voice: what does {p.name} do?")
         w.rows.append({"kind": "peril", "peril": pr.kind, "outcome": res.outcome, "turns_left": pr.turns_left, "line": line})
+    return _after_peril(game, s, adj, player_text, rng, turn, offset, w, text)
+
+
+def escape_check(adj: Any) -> str | None:
+    """The label of the player's own check this turn that is a way out of a peril (a physical attempt whose words are an
+    escape or a blow at what holds them), or None."""
+    from .game import ATTACK
+    for i in getattr(adj, "intents", None) or []:
+        c = getattr(i, "check", None)
+        if c is None:
+            continue
+        stat = re.sub(r"\s*\(.*?\)\s*$", "", str(getattr(c, "stat", ""))).strip().lower()
+        words = f"{getattr(c, 'label', '')} {getattr(i, 'action', '')}"
+        if stat in ("str", "dex", "con") and (ESCAPE.search(words) or ATTACK.search(words)):
+            return str(getattr(c, "label", "") or getattr(i, "action", ""))
+    return None
+
+
+def peril_by_check(s: FantasyState, data: dict, label: str) -> str:
+    """check_note's half of a peril (one die, one way out): the player's escape roll decides the peril. A success ends it
+    after the prose; a failure takes a moment off, and the last moment's failure kills. Marks `data` for after_turn."""
+    pr = s.player.peril
+    if pr is None or data.get("peril_roll"):
+        return ""
+    from .game import ATTACK
+    if str(data.get("stat") or "") not in ("str", "dex", "con") or not (ESCAPE.search(label) or ATTACK.search(label)):
+        return ""
+    data["peril_roll"] = pr.kind
+    what = PERILS.get(pr.kind, {}).get("what", pr.kind)
+    if data.get("outcome") in ("success", "huge_success", "critical_success"):
+        return f" That is the way out: {s.player.name} is no longer {what}. Write it working."
+    if pr.turns_left <= 1:
+        data.update(kills=True, cause=f"{what}", death_cause=f"{PERIL_CAUSE.get(pr.kind, 'died')} at {s.player.location or 'Marrowgate'}")
+        return f" That was the last moment: {s.player.name} dies of it, {what}. Write the death straight; this is the end of the story."
+    return f" Still {what}, and worse: one moment left. End the turn on the question: what does {s.player.name} do?"
+
+
+def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: Any, turn: int, offset: int, w: "WorldTurn",
+                 text: str) -> tuple[FantasyState, "WorldTurn"]:
+    p = s.player
     # -- a compulsion (part four §6, B97): the resist check before any attempt against the compeller, away from them, or
     #    against the pull, at the floor the condition names; a failure means the attempt does not happen
     held = next((c for c in p.conditions if getattr(c, "compelled", None)), None)

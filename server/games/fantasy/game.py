@@ -1075,7 +1075,13 @@ class FantasyGame(GameBase):
 
     def check_note(self, state: FantasyState, data: dict, label: str) -> str:
         """A line the narrator reads with a check's result: Sneak Attack's step on a blow that lands (B92); what a failure
-        costs in a fight or a peril (part four §4: the engine takes the hit points, `data["harm"]`)."""
+        costs in a fight or a peril (part four §4: the engine takes the hit points, `data["harm"]`); in a peril, the escape roll
+        decides it (one die for one way out)."""
+        pline = wo.peril_by_check(state, data, label)
+        if data.get("kills"):
+            return pline
+        if pline and data.get("outcome") in ("success", "huge_success", "critical_success"):
+            return pline
         if data.get("outcome") not in ("success", "huge_success", "critical_success"):
             danger = str((data.get("stake") or {}).get("danger") or "")
             if danger in ("scrape", "solid", "serious", "lethal"):        # B206: the step the assistant's stake named
@@ -1084,14 +1090,14 @@ class FantasyGame(GameBase):
                     return (f" The danger is past surviving: it kills {state.player.name}. Write the death straight; this is the end "
                             f"of the story.")
                 data["harm"] = wo.harm(danger, int(data.get("roll") or 0))
-                return f" It costs {state.player.name}: {wo.STEP_WORDS[danger]} lands on them (the engine counts it). Write it landing."
+                return pline + f" It costs {state.player.name}: {wo.STEP_WORDS[danger]} lands on them (the engine counts it). Write it landing."
             n = wo.failure_harm(self, state, data, label)
             if not n:
-                return ""
+                return pline
             data["harm"] = n
             step = wo.TIER_STEP.get(str(data.get("outcome")), "scrape")
-            return (f" It costs {state.player.name}: {wo.STEP_WORDS[step]} lands on them in the attempt (the engine counts it). "
-                    f"Write it landing.")
+            return pline + (f" It costs {state.player.name}: {wo.STEP_WORDS[step]} lands on them in the attempt (the engine counts it). "
+                            f"Write it landing.")
         line = next((m.get("label", "") for m in data.get("modifiers") or [] if str(m.get("label", "")).startswith("Sneak Attack")), "")
         if not line:
             return ""
@@ -1833,9 +1839,18 @@ class FantasyGame(GameBase):
             if c.get("kills") and not c.get("verb") and not p.fate:
                 p.hp, p.peril = 0, None
                 p.fate, p.fate_turn, p.fate_roll = "dead", info.turn - 1, str(c.get("cause") or c.get("label") or "")
-                s.flags["cause"] = f"died trying to {c.get('cause') or c.get('label')}"
+                s.flags["cause"] = c.get("death_cause") or f"died trying to {c.get('cause') or c.get('label')}"
                 s.flags["ending"] = f"{p.name} died at {p.location or 'Marrowgate'} on day {s.clock.day}. The fog keeps the rest."
                 return s
+        for c in info.calls:                                # one die for one way out: the player's escape roll settles the peril
+            if c.get("peril_roll") and p.peril is not None and not p.fate:
+                if c.get("outcome") in ("success", "huge_success", "critical_success"):
+                    p.shown_notes.append(f"Out of it: no longer {wo.PERILS.get(p.peril.kind, {}).get('what', p.peril.kind)}")
+                    p.peril = None
+                else:
+                    p.peril.turns_left -= 1
+                    p.peril.step += 1
+                break
         for c in info.calls:                                # part four §4: a failed attempt in a fight or a peril, by its tier
             if c.get("harm") and not c.get("stepped") and p.hp > 0 and not p.fate:
                 n, notes = wo.take(self, s, int(c["harm"]), str(c.get("label") or ""))
