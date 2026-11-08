@@ -83,7 +83,7 @@ AUTHORITY: dict[str, Actor] = {
     "inventory": "narrator", "people": "narrator", "people.*.wants": "script", "people.*.secret": "script",
     "people.*.description": "script", "people.*.tells": "script", "people.*.tells.*.told": "narrator", "things": "narrator",
     "lost": "narrator", "journal": "narrator", "found_places": "narrator", "hidden": "script", "flags": "narrator",
-    "log": "narrator", "threads": "narrator", "hooks": "engine", "deck": "engine",
+    "log": "narrator", "threads": "narrator", "hooks": "engine", "hooks.*.declined": "narrator", "deck": "engine",
 }
 
 
@@ -442,12 +442,19 @@ class FantasyGame(GameBase):
             lines.append("")
             lines.append(f"What the people here at {p.location} could tell {p.name} (they give up a piece only when its condition is met, one at a time):")
             lines.extend(tells)
-        live = [h for h in s.hooks if h.status == "live"]
+        live = [h for h in s.hooks if h.status == "live" and not h.declined]
         if live:
             lines.append("")
             lines.append("Quests in motion that " + p.name + " has heard of:")
             for h in live:
                 lines.append(f"- {h.title}" + (f" (from {h.giver})" if h.giver else ""))
+        down = [h for h in s.hooks if h.status == "live" and h.declined]
+        if down:
+            lines.append("")
+            lines.append(f"Jobs {p.name} turned down. Whoever offered one treats {p.name} as before (serving, selling, chatting of other "
+                         f"things) and stops pitching the job; if {p.name} asks about it, they answer freely:")
+            for h in down:
+                lines.append(f"- {h.title}" + (f" (offered by {h.giver})" if h.giver else ""))
         if s.journal:
             lines.append("")
             lines.append("Journal (most recent):")
@@ -665,7 +672,9 @@ class FantasyGame(GameBase):
             "Threads: open one for a job, a promise or a rumour the player took up that is not one of the quests in motion (a notice from the board, "
             "a favour asked at the bar). Close it when the prose settles it, with how in the note. The quests the game deals have thread ids "
             "starting with hook-. You never close these. When the prose settles one, write the flag marked below with that quest's title, and "
-            "the engine closes the quest.",
+            "the engine closes the quest. When the player plainly says no to a quest's job (a clear refusal to whoever offered it; not 'maybe "
+            "later', haggling over pay, or simply leaving), write set <its hook- thread id>.declined true; if they later say they will do the "
+            "job, set <its hook- thread id>.declined false.",
             "ruling too_far (serious): the telling showed more than this game shows: a bedroom scene past the door, or a torture told blow by blow. "
             "value = what it showed, in a few words; note = where to cut and where to pick up: at the door for a bedroom; at the first blow for a "
             "torture, picking up with what it left.",
@@ -832,6 +841,16 @@ class FantasyGame(GameBase):
             target, field = (x.strip() for x in target.split(".", 1))
             field = field.lower()
             is_player = target.lower() in ("player", p.name.lower()) and not any(q.id == target for q in s.people)
+        # ---- a quest turned down (the owner, 11-08: Maud kept on about the rats after the player refused the job)
+        hk = s.hook(target.removeprefix("hook-")) if target.startswith("hook-") or s.hook(target) is not None else None
+        if hk is not None and field == "declined" and kind == "set":
+            down = value.strip().lower() in ("true", "yes", "1", "declined", "turned down")
+            if hk.status in ("done", "failed"):
+                w.reject(f"hooks.{hk.id}.declined", "the quest is already settled", value)
+            elif down != hk.declined and w.set(f"hooks.{hk.id}.declined", hk.declined, down):
+                hk.declined = down
+                hk.standing = "turned down" if down else "taken up"
+            return True
         if kind in ("move", "set") and (kind == "move" or field == "location"):
             value = self._place(s, value) or value
         # ---- the player's body and standing
@@ -1368,6 +1387,11 @@ class FantasyGame(GameBase):
                 q.seen_at = q.location
         if p.location and p.location != "Unknown":
             self._visit(s, p.location)
+        # -- a job turned down is taken up again when the player goes where it happens (its own places, not where it was offered)
+        hooks_now = self.hooks_content()
+        for h in s.hooks:
+            if h.declined and h.status == "live" and p.location in {x.get("name") for x in (hooks_now.get(h.id) or {}).get("places") or []}:
+                h.declined, h.standing = False, "taken up"
         # -- the Watch: a day lowers it; one of the Watch turned hostile raises it a step (B55); wanted is a flag
         self._watch_turned(s, info.applied)
         if s.clock.day > p.heat_day:

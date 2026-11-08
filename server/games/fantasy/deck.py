@@ -360,7 +360,7 @@ def candidates(state: FantasyState, deck: dict, content_hooks: dict[str, dict], 
 
 
 def in_motion(state: FantasyState) -> int:
-    return sum(1 for h in state.hooks if h.status in ("dealt", "live"))
+    return sum(1 for h in state.hooks if h.status in ("dealt", "live") and not h.declined)     # a job turned down is not in motion
 
 
 def due(state: FantasyState, deck: dict, now_abs: int) -> bool:

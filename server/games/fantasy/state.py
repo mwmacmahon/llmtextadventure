@@ -216,6 +216,7 @@ class HookState(BaseModel):
     closed_turn: int | None = None
     giver: str = ""                 # from whom (the quest log's column)
     standing: str = ""              # where it stands, in a few words (the quest log's column)
+    declined: bool = False          # the player turned the job down (the referee's row); it comes back when they take it up
     thread: str = ""                # the thread id it opened when its reach fired
     paid: list[int] = Field(default_factory=list)   # milestones paid (the long thread)
     reward: str = ""                # what was paid, for the log
