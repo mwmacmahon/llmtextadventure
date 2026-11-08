@@ -43,12 +43,12 @@ def test_2d6_line_shows_the_faces_the_modifier_and_the_target():
 def test_2d6_line_without_a_modifier_and_with_a_penalty():
     assert default_mechanic_line(dice_2d6(_Fixed(4, 3), _req("medium"))) == "Hands, medium. ⚃ ⚂ = 7 against 7. Success."
     assert default_mechanic_line(dice_2d6(_Fixed(4, 3), _req("medium", -1, -9))) == \
-        "Hands, medium. ⚃ ⚂ -3 = 4 against 7. Huge failure."       # capped at -3, D135
+        "Hands, medium. ⚃ ⚂ -2 = 5 against 7. Failure."            # 2d6 capped at -2 (D168; was -3, D135)
 
 
 def test_a_critical_names_its_cause_a11():
     hi = default_mechanic_line(dice_2d6(_Fixed(6, 6), _req("very_high", -3)))
-    assert hi == "Hands, very high. ⚅ ⚅ -3 = 9 against 11. Double sixes: critical success."
+    assert hi == "Hands, very high. ⚅ ⚅ -2 = 10 against 11. Double sixes: critical success."
     lo = default_mechanic_line(dice_2d6(_Fixed(1, 1), _req("very_low", 5)))
     assert lo.endswith("Double ones: critical failure.")
 
@@ -174,6 +174,6 @@ def test_the_referee_reads_tier_only_lines_for_dice_faces():
              + "§ Hands, high. 20 - 9 = 11 against 14. Critical success.")
     seen = tier_only_view(prose).split("\n")
     assert seen[1] == "§ Hands check, very high: critical success."
-    assert seen[3] == "§ Hands check, medium: huge failure."
+    assert seen[3] == "§ Hands check, medium: failure."
     assert seen[4] == "§ Hands, high. 20 - 9 = 11 against 14. Critical success."     # a taped d20 line is untouched
     assert seen[0] == "Frank leans on the bar." and seen[2] == "It gives."

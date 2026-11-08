@@ -324,7 +324,7 @@
         "/Users/dadbook/source/old/llmtextadventure/server/.venv/bin/uvicorn",
         "app:app",
         "--app-dir",
-        "/Users/dadbook/source/old/llmtextadventure-rounds/server",
+        "/Users/dadbook/source/old/llmtextadventure/server",
         "--host",
         "127.0.0.1",
         "--port",
@@ -338,9 +338,9 @@
       "runtimeArgs": [
         "app:app",
         "--app-dir",
-        "/Users/dadbook/source/old/llmtextadventure-fantasy/server",
+        "/Users/dadbook/source/old/llmtextadventure/server",
         "--host",
-        "127.0.0.1",
+        "0.0.0.0",
         "--port",
         "8014"
       ],

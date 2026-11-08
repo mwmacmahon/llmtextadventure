@@ -167,7 +167,7 @@ Optional, with defaults that do nothing:
 | `leaked_terms(state, text, player_text)` | the words of the hidden truth the text uses in its own voice (outside quoted speech) before the player has learned them. In the narration it is a serious leak ruling (§8); in the adjudication, when the stakes dial shows the assistant the cast's secrets, the field is scrubbed before the narrator sees it (a label becomes its stat, a staked check loses its futures) |
 
 Declarations on the class: `extra_rulings` (`{rule: default fix}`: a game's own serious ruling kinds for the referee, retold as
-the engine's are; the fantasy's `too_far`, D160; the game's `referee_rules` say when to write it), `clock`, `resolver` (a key in `mechanics.RESOLVERS`; both games name `dice_2d6`), `authority`, `events_path`, `spontaneous_path`,
+the engine's are; the fantasy's `too_far`, D160; the game's `referee_rules` say when to write it), `clock`, `resolver` (a key in `mechanics.RESOLVERS`; noir and the station name `dice_2d6`, the fantasy `dice_d20`; §7c), `target_offset` (§7c), `authority`, `events_path`, `spontaneous_path`,
 `recent_path`, `threads_path`, `log_path`, `skip_adjudication`, `skip_referee`, `fallback_stat`,
 `static_paths` (engine-owned fields the audit should not expect a writer for), `player_name(state)` (the name the
 engine's lines call the player: Frank, the station) and
@@ -502,6 +502,29 @@ state as it stands), so write an event's time anywhere in its trigger; an event 
 that passed is handed to the narrator as having happened in the background. Actors are written by name, never by
 id: an id the narrator reads every turn is a word it will use. A game needs nothing else; set the paths to
 `None` to switch it off.
+
+## 7c. Checks: the dice
+
+A game names its resolver (`resolver`, a key in `engine/mechanics.RESOLVERS`) and its **target offset**
+(`target_offset`, default 0): the dial for making a game easier or harder. Every check's target moves by the offset, on
+either resolver; the ledger keeps the moved target and the offset beside it, and the player's § line shows the moved
+target. A non-zero offset is named on the game's living page. Today: the station +1 (its 2d6 targets 6/8/10/12/14), noir
+0, the fantasy 0 (D168).
+
+| resolver | targets (very low … very high) | penalties capped at | bonuses capped at | huge |
+|---|---|---|---|---|
+| `dice_2d6` (noir, the station) | 3 / 5 / 7 / 9 / 11 | −2 | +5 | a miss or make by 3; double ones and double sixes are criticals |
+| `dice_d20` (the fantasy) | 3 / 6 / 10 / 14 / 17 | −3 | +5 | a miss or make by 8; natural 1 and natural 20 are criticals |
+
+A cap that bites adds a line to the check's modifiers, so the ledger shows what was cut. A check aimed at a person who
+holds a tell whose condition has not been met is staked no lower than high, shown as a modifier line worth nothing on the
+sum (`holds_back`, B63); a tell the prose gives up before its condition holds is a conflict the guard retells.
+
+**Choosing the die (the owner's design note, 2026-11-08).** 2d6 is consistent, but near the middle of the bell each point
+of modifier is worth about 14% against a d20's 5%. So a 2d6 game holds its stats to about −1..+3 and does not stack
+situational bonuses: two or three small bonuses on the bell turn a medium check into a certainty. A game built on
+stacking small bonuses (the fantasy, a D&D table: abilities, renown, attitude, a helper, the about text) stays on the
+d20, where each one is a nudge.
 
 ## 8. The referee's rows
 

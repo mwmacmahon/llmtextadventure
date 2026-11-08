@@ -152,14 +152,15 @@ def test_2d6_doubles_override_the_sum():
 
 
 def test_2d6_caps_are_asymmetric_and_shown():
-    total, mods = capped(_req("medium", -1, -2, -3, -2))                         # the noir death spiral: -8
-    assert total == PENALTY_CAP == -3
-    assert mods[-1].label.startswith("penalties capped") and mods[-1].value == 5
-    total, mods = capped(_req("medium", 3, 2, 2))                                # +7
+    total, mods = capped(_req("medium", -1, -2, -3, -2), "dice_2d6")             # the noir death spiral: -8
+    assert total == -2                                                           # 2d6's own cap (D168); the d20 keeps PENALTY_CAP
+    assert mods[-1].label.startswith("penalties capped") and mods[-1].value == 6
+    assert capped(_req("medium", -1, -2, -3, -2))[0] == PENALTY_CAP == -3
+    total, mods = capped(_req("medium", 3, 2, 2), "dice_2d6")                    # +7
     assert total == BONUS_CAP == 5 and mods[-1].value == -2
-    total, mods = capped(_req("medium", 3, 2, -6))                               # +5 and -6: each side capped on its own
-    assert total == 5 + PENALTY_CAP and len(mods) == 3
-    total, mods = capped(_req("medium", 1, -1))                                  # nothing bites: no extra line
+    total, mods = capped(_req("medium", 3, 2, -6), "dice_2d6")                   # +5 and -6: each side capped on its own
+    assert total == 5 - 2 and len(mods) == 3
+    total, mods = capped(_req("medium", 1, -1), "dice_2d6")                      # nothing bites: no extra line
     assert total == 0 and len(mods) == 1
     r = dice_2d6(_Fixed(3, 4), _req("medium", -1, -4, -4))
-    assert r.total == 7 - 3 and r.total - r.roll == -3 and sum(m.value for m in r.modifiers) == -2   # the stat is the rest
+    assert r.total == 7 - 2 and r.total - r.roll == -2 and sum(m.value for m in r.modifiers) == -1   # the stat is the rest

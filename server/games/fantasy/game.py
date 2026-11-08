@@ -491,6 +491,14 @@ class FantasyGame(GameBase):
         except ValueError:
             return True
 
+    def holds_back(self, s, target: str) -> str | None:
+        """B63 (D168): the name of the person a check is aimed at when they hold a tell whose condition has not been met
+        (the engine stakes that check no lower than high); None otherwise."""
+        q = s.person(target) if target else None
+        if q is None or q.status == "dead":
+            return None
+        return q.name if any(not t.told and not self.tell_open(s, t) for t in q.tells) else None
+
     def _tells_here(self, s: FantasyState, engine: bool = False) -> list[str]:
         """The pieces the people here could give up. The referee's and the assistant's copy has the ids and the locked pieces;
         the narrator's has the open pieces only, and a line saying a person keeps more (the cold read, D161: a locked piece
@@ -1237,10 +1245,15 @@ class FantasyGame(GameBase):
                     tw = _words(t.what)
                     shared = words & tw
                     hit = len(shared) >= 3 and len(shared) / max(1, min(len(words), len(tw))) >= 0.5
-                if hit and w.set(f"people.{q.id}.tells.{t.id}.told", False, True):
+                if not hit:
+                    continue
+                if not self.tell_open(s, t) and not w.conflict(           # B63 (D168): a conflict the guard retells, not a note
+                        f"people.{q.id}.tells.{t.id}", f"{q.name} gave away too early something they keep back", t.what, "early_tell",
+                        f"{q.name} keeps it until this holds: {re.sub(r'[ ]*[(][^)]*[)]', '', t.when or 'they are asked').rstrip('.')}. "
+                        f"That has not happened yet in this telling."):
+                    return True                          # handled: refused, and the turn is retold
+                if w.set(f"people.{q.id}.tells.{t.id}.told", False, True):
                     t.told = True
-                    if not self.tell_open(s, t):
-                        w.note(f"people.{q.id}.tells.{t.id}: told before its condition held")
                     return True
         return False
 
@@ -1532,7 +1545,7 @@ class FantasyGame(GameBase):
         p = s.player
         executed = p.fate_note == "executed"
         req = CheckRequest(id="lethal", label="endure: hold on to life", stat="con", difficulty="high", base=p.stats.get("con", 0))
-        res = wd.lethal_roll(info.rng, req.base, self.modifiers(s, req, None), label=req.label)
+        res = wd.lethal_roll(info.rng, req.base, self.modifiers(s, req, None), label=req.label, offset=self.target_offset)
         dead = executed or wd.is_fatal(res.outcome, wd.FATAL_D20)
         carriers = self._carriers(s)
         fate = wd.death_fork(dead, [q.id for q in carriers] or (["prose"] if p.carried else []))

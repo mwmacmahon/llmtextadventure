@@ -130,7 +130,7 @@ def finish(a: argparse.Namespace) -> int:
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    n = sub.add_parser("new"); n.add_argument("game"); n.add_argument("--tag", required=True); n.add_argument("--title"); n.add_argument("--setup", nargs="*")
+    n = sub.add_parser("new"); n.add_argument("game"); n.add_argument("--tag", required=True); n.add_argument("--title"); n.add_argument("--setup", nargs="*", action="extend")
     p = sub.add_parser("play"); p.add_argument("iid"); p.add_argument("text", nargs="*"); p.add_argument("--command")
     f = sub.add_parser("finish"); f.add_argument("iid"); f.add_argument("--title")
     a = ap.parse_args(argv)

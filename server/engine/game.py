@@ -345,6 +345,7 @@ class GameBase:
     # --- declarations -------------------------------------------------------
     clock: ClockSpec | None = None                    # None: no engine clock
     resolver: str = "dice_d20"                        # key in mechanics.RESOLVERS
+    target_offset: int = 0                            # the dice spec's dial (D168): every check's target moves by it (+1 harder)
     authority: dict[str, Actor] = {}                  # path pattern -> who may write (default engine)
     events_path: str = "hidden.events"                # where Event records live in the state doc
     spontaneous_path: str | None = None               # where Spontaneous records live; None: no happenings

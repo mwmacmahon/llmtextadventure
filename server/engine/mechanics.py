@@ -1,9 +1,11 @@
 """Checks and resolvers (DESIGN §7.1). The engine rolls; models never do.
 
 A check is (stat, difficulty tier, modifiers) -> outcome. Four resolvers:
-  dice_2d6   roll 2d6 + the stat + modifiers vs a target per tier on the bell; penalties capped at -3, bonuses at +5
-             (ROADMAP 1a, ISSUES R16 and B1); both games use it
-  dice_d20   roll d20 + the stat + modifiers vs a target number per tier (the 2023 noir table), capped as 2d6 (the fantasy)
+  dice_2d6   roll 2d6 + the stat + modifiers vs a target per tier on the bell; penalties capped at -2, bonuses at +5
+             (ROADMAP 1a, ISSUES R16 and B1; D168); noir and the station
+  dice_d20   roll d20 + the stat + modifiers vs a target number per tier (the 2023 noir table); penalties capped at -3,
+             bonuses at +5 (the fantasy)
+Both dice resolvers move every target by the game's target offset (D168: a per-game dial, easier or harder).
   threshold  deterministic: stat total >= target (Long Live the Queen style)
   weighted   probability from stat vs target, one roll
 
@@ -26,7 +28,10 @@ TIER_ORDER = ["very_low", "low", "medium", "high", "very_high"]
 # smidge easier". At the games' typical stat (+1): very low 97%, low 92%, medium 72%, high 42%, very high 17% (the d20
 # table gave 95, 80, 60, 40, 25). Double ones always fail and double sixes always succeed, so nothing is certain.
 TARGET_2D6: dict[str, int] = {"very_low": 3, "low": 5, "medium": 7, "high": 9, "very_high": 11}
-PENALTY_CAP, BONUS_CAP = -3, 5     # the user (B1): "super awful modifiers are no fun; super good ones are allowed"
+PENALTY_CAP, BONUS_CAP = -3, 5     # the user (B1): "super awful modifiers are no fun; super good ones are allowed" (the d20's pair)
+# The caps per resolver (D168): on 2d6 each point near the middle is worth about 14% against a d20's 5%, so the bell's
+# penalties stop at -2; on a flat die -3 is mild. Bonuses stay +5 on both.
+CAPS: dict[str, tuple[int, int]] = {"dice_2d6": (-2, BONUS_CAP), "dice_d20": (PENALTY_CAP, BONUS_CAP)}
 HUGE_2D6 = 3                       # a miss by three or more is a huge failure; a make by three or more a huge success
 
 
@@ -42,6 +47,7 @@ class CheckRequest(BaseModel):
     difficulty: Tier = "medium"
     base: int = 0                  # the stat's value
     modifiers: list[Modifier] = Field(default_factory=list)
+    offset: int = 0                # the game's target offset (D168): every target moves by it
 
     @property
     def total_modifier(self) -> int:
@@ -61,6 +67,7 @@ class CheckResult(BaseModel):
     margin: int
     outcome: Outcome
     modifiers: list[Modifier] = Field(default_factory=list)
+    offset: int = 0                # the target offset already in `target` (D168), so the ledger shows the table's number and the move
 
     def tier_text(self) -> str:
         return self.outcome.replace("_", " ")
@@ -98,8 +105,8 @@ def dice_d20(rng: random.Random, req: CheckRequest) -> CheckResult:
     """d20 + the capped modifier (B1, as 2d6: the fantasy's checks, D156) against TARGET. A natural 1 is a critical
     failure and a natural 20 a critical success whatever the sum; otherwise a miss or make by 8 is huge."""
     roll = rng.randint(1, 20)
-    target = TARGET[req.difficulty]
-    mod, mods = capped(req)
+    target = TARGET[req.difficulty] + req.offset
+    mod, mods = capped(req, "dice_d20")
     total = roll + mod
     margin = total - target
     if roll == 1:
@@ -109,22 +116,24 @@ def dice_d20(rng: random.Random, req: CheckRequest) -> CheckResult:
     else:
         outcome = _outcome(margin)
     return CheckResult(id=req.id, label=req.label, stat=req.stat, difficulty=req.difficulty, resolver="dice_d20",
-                       roll=roll, total=total, target=target, margin=margin, outcome=outcome, modifiers=mods)
+                       roll=roll, total=total, target=target, margin=margin, outcome=outcome, modifiers=mods, offset=req.offset)
 
 
-def capped(req: CheckRequest) -> tuple[int, list[Modifier]]:
+def capped(req: CheckRequest, resolver: str = "dice_d20") -> tuple[int, list[Modifier]]:
     """The stat and the modifiers as one total, penalties summed to no worse than PENALTY_CAP and bonuses to no better
     than BONUS_CAP (fear sources already take only the worst; this caps the rest). The stat counts as a bonus or a
-    penalty by its sign. A cap that bites adds a line to the modifiers, so the ledger shows what was cut."""
+    penalty by its sign. A cap that bites adds a line to the modifiers, so the ledger shows what was cut. The caps are
+    the resolver's own (CAPS)."""
+    pen_cap, bon_cap = CAPS.get(resolver, (PENALTY_CAP, BONUS_CAP))
     terms = [req.base] + [m.value for m in req.modifiers]
     pen = sum(v for v in terms if v < 0)
     bon = sum(v for v in terms if v > 0)
     mods = list(req.modifiers)
-    if pen < PENALTY_CAP:
-        mods.append(Modifier(label=f"penalties capped at {PENALTY_CAP}", value=PENALTY_CAP - pen))
-    if bon > BONUS_CAP:
-        mods.append(Modifier(label=f"bonuses capped at +{BONUS_CAP}", value=BONUS_CAP - bon))
-    return max(pen, PENALTY_CAP) + min(bon, BONUS_CAP), mods
+    if pen < pen_cap:
+        mods.append(Modifier(label=f"penalties capped at {pen_cap}", value=pen_cap - pen))
+    if bon > bon_cap:
+        mods.append(Modifier(label=f"bonuses capped at +{bon_cap}", value=bon_cap - bon))
+    return max(pen, pen_cap) + min(bon, bon_cap), mods
 
 
 def dice_2d6(rng: random.Random, req: CheckRequest) -> CheckResult:
@@ -132,8 +141,8 @@ def dice_2d6(rng: random.Random, req: CheckRequest) -> CheckResult:
     success whatever the sum; otherwise a miss by HUGE_2D6 or more is a huge failure, a make by as much a huge success."""
     dice = [rng.randint(1, 6), rng.randint(1, 6)]
     roll = sum(dice)
-    mod, mods = capped(req)
-    target = TARGET_2D6[req.difficulty]
+    mod, mods = capped(req, "dice_2d6")
+    target = TARGET_2D6[req.difficulty] + req.offset
     total = roll + mod
     margin = total - target
     if dice == [1, 1]:
@@ -149,7 +158,7 @@ def dice_2d6(rng: random.Random, req: CheckRequest) -> CheckResult:
     else:
         outcome = "success"
     return CheckResult(id=req.id, label=req.label, stat=req.stat, difficulty=req.difficulty, resolver="dice_2d6",
-                       roll=roll, dice=dice, total=total, target=target, margin=margin, outcome=outcome, modifiers=mods)
+                       roll=roll, dice=dice, total=total, target=target, margin=margin, outcome=outcome, modifiers=mods, offset=req.offset)
 
 
 def threshold(rng: random.Random, req: CheckRequest) -> CheckResult:

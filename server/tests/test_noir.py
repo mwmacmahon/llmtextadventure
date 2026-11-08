@@ -456,10 +456,11 @@ def test_people_tell_piece_by_piece_and_the_engine_gates_some(game: NoirGame):
     assert "Rosa [rosa, tell rosa_marlowe_car]: may tell" in game.render_bulletin(s2, "")    # her attitude opened the second
     s3, rep = apply(game, s2, ref(C(kind="set", target="rosa", field="told", value="rosa_marlowe_car"), C(kind="set", target="rosa", field="told", value="no_such")))
     assert all(t.told for t in s3.person("rosa").tells) and rep.rejected[0].reason == "no such piece for this person"
-    # told before the engine's condition held: still told, and noted
+    # told before the engine's condition held: a conflict the guard retells, not told (B63, D168)
     st.player.location = "Lowtown streets"
     s4, rep = apply(game, st, ref(C(kind="set", target="szabo", field="told", value="szabo_inside")))
-    assert s4.person("szabo").tells[1].told and any("before its condition" in a for a in rep.applied)
+    assert not s4.person("szabo").tells[1].told
+    assert any(r.kind == "conflict" and r.rule == "early_tell" for r in rep.rejected)
 
 
 def test_hearing_about_someone_is_not_meeting_them(game: NoirGame):

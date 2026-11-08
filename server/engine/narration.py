@@ -257,7 +257,8 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
               render: Callable[[CheckResult], str], *, fallback_stat: str | None = None, fail_streak: int = 0,
               player: str = "the player", cost_for: Callable[[dict, str, str], dict | None] | None = None,
               consequence_for: Callable[[dict, str, str, dict | None], dict | None] | None = None,
-              lethal_for: Callable[[dict, str], bool] | None = None) -> CallResult:
+              lethal_for: Callable[[dict, str], bool] | None = None, offset: int = 0,
+              holds_back: Callable[[str], str | None] | None = None) -> CallResult:
     stat = call.stat
     if stat not in stats:
         if fallback_stat and fallback_stat in stats:
@@ -271,9 +272,15 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
     else:
         difficulty = call.difficulty or "medium"  # type: ignore[assignment]
     target = (a.target or call.target) if a else call.target        # the assessment's id wins over a called name
+    raised = ""
+    who = holds_back(target) if (holds_back and target) else None
+    if who and TIER_ORDER.index(difficulty) < TIER_ORDER.index("high"):    # B63 (D168): a person keeping a tell back is a high check
+        raised, difficulty = difficulty, "high"
     label = (a.label if a and a.label else f"{stat} check" + (f" against {target}" if target else ""))
-    req = CheckRequest(id=f"n{n}", label=label, stat=stat, difficulty=difficulty, base=stats[stat])
+    req = CheckRequest(id=f"n{n}", label=label, stat=stat, difficulty=difficulty, base=stats[stat], offset=offset)
     req.modifiers = modifiers(req, target or None)
+    if raised:                                       # shown as a cap is: a line in the modifiers, worth nothing on the sum
+        req.modifiers.append(Modifier(label=f"{who} keeps something back: {raised.replace('_', ' ')} raised to high", value=0))
     res = resolver(rng, req)
     mods = res.total - (res.roll or 0)
     sign = f"{mods:+d}" if mods else ""

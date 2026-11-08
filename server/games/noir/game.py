@@ -562,6 +562,14 @@ class NoirGame(GameBase):
         except ValueError:
             return True
 
+    def holds_back(self, s, target: str) -> str | None:
+        """B63 (D168): the name of the person a check is aimed at when they hold a tell whose condition has not been met
+        (the engine stakes that check no lower than high); None otherwise."""
+        q = s.person(target) if target else None
+        if q is None or q.status == "dead":
+            return None
+        return q.name if any(not t.told and not self.tell_open(s, t) for t in q.tells) else None
+
     def _tells_here(self, s: NoirState) -> list[str]:
         out: list[str] = []
         for q in s.cast:
@@ -590,10 +598,15 @@ class NoirGame(GameBase):
                     tw = _words(t.what)
                     shared = words & tw
                     hit = len(shared) >= 3 and len(shared) / min(len(words), len(tw)) >= 0.5
-                if hit and w.set(f"people.{q.id}.tells.{t.id}.told", False, True):
+                if not hit:
+                    continue
+                if not self.tell_open(s, t) and not w.conflict(           # B63 (D168): a conflict the guard retells, not a note
+                        f"people.{q.id}.tells.{t.id}", f"{q.name} gave away too early something they keep back", t.what, "early_tell",
+                        f"{q.name} keeps it until this holds: {re.sub(r'[ ]*[(][^)]*[)]', '', t.when or 'they are asked').rstrip('.')}. "
+                        f"That has not happened yet in this telling."):
+                    return True                          # handled: refused, and the turn is retold
+                if w.set(f"people.{q.id}.tells.{t.id}.told", False, True):
                     t.told = True
-                    if not self.tell_open(s, t):
-                        w.note(f"people.{q.id}.tells.{t.id}: told before its condition held")
                     return True
         return False
 
