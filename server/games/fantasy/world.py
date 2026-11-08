@@ -86,14 +86,21 @@ def harm(step: str, roll: int) -> int:
 
 
 def present_enemies(game: Any, s: FantasyState) -> list[Person]:
+    """The people in the fight with the player, here (B208, D179; supersedes part four's "each hostile present acts"):
+    `player.fighting` is the only source. Combat is joined when the player strikes at someone, or someone strikes through a
+    narrator's <<ENEMY>> call (an ambush included). Attitude, moves and place never join anyone; the place test ends a fight
+    the scene has left behind."""
     p = s.player
-    out = []
-    for q in s.people:
-        if q.status != "alive" or q.hidden_from_player or not q.location or not game._same_spot(s, q.location, p.location):
-            continue
-        if q.attitude <= -2 or q.id in p.fighting or any(m.get("kind") in ("hold", "grab", "song") and q.attitude <= -1 for m in q.moves):
-            out.append(q)
-    return out
+    return [q for x in p.fighting if (q := s.person(x)) is not None and q.status == "alive" and not q.hidden_from_player
+            and q.location and game._same_spot(s, q.location, p.location)]
+
+
+def could_turn(game: Any, s: FantasyState) -> list[Person]:
+    """Hostile or dangerous people here who are not in the fight (B208): THIS TURN lists them so the narrator can open a fight
+    with a call when the fiction does."""
+    p = s.player
+    return [q for q in s.people if q.status == "alive" and not q.hidden_from_player and q.id not in p.fighting and q.location
+            and game._same_spot(s, q.location, p.location) and (q.attitude <= -2 or (q.moves and q.attitude <= -1))]
 
 
 def in_fight(game: Any, s: FantasyState) -> bool:
@@ -221,7 +228,7 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
                                     f"{p.name} do?")
     # -- who the player is fighting (B95): the turn's attack targets join; the gone, the dead and the far leave
     from engine.pipeline import is_fight
-    if adj is not None and getattr(adj, "kind", "") == "action" and is_fight(adj):
+    if adj is not None and getattr(adj, "kind", "") == "action" and is_fight(adj):     # B208: the player struck at them
         for e in list(getattr(adj, "entities", None) or []):
             q = s.person(e)
             if q is not None and q.status == "alive" and q.id not in p.with_them and q.id not in p.fighting:
@@ -276,7 +283,7 @@ def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tal
         tally.setdefault("acted", []).append(q.id)
         move = _pick_move(q, call.stat, p)
         kind, bonus, what = move.get("kind", "strike"), int(move.get("bonus", 2)), move.get("harm") or "blow"
-        data: dict[str, Any] = {"verb": "ENEMY", "who": q.id, "move": kind, "label": f"{q.name}: {what}"}
+        data: dict[str, Any] = {"verb": "ENEMY", "who": q.id, "move": kind, "label": f"{q.name}: {what}", "join": q.id}   # B208: this joins the fight
         if kind == "strike":
             ac, ac_how = armour_class(s)
             roll = rng.randint(1, 20)
@@ -405,6 +412,8 @@ def land(game: Any, s: FantasyState, calls: list[dict], turn: int) -> list[str]:
     for c in calls:
         if c.get("verb") not in ("ENEMY", "HAZARD") or c.get("none") or p.fate:
             continue
+        if c.get("join") and c["join"] not in p.fighting:          # B208: a narrator's <<ENEMY>> call joins them to the fight
+            p.fighting.append(c["join"])
         if c.get("harm"):
             n = int(c["harm"])
             p.hp = max(0, p.hp - n)

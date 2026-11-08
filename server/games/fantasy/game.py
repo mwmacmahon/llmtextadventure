@@ -741,6 +741,12 @@ class FantasyGame(GameBase):
                 + ". Every one of them acts once this turn, where it falls in the telling: write <<ENEMY <their id> <move>>> at that moment "
                   "(ids: " + ", ".join(q.id for q in foes) + ") and wait for the engine's answer, then play it. You do not know how it "
                   "goes until the engine says.")
+        wary = wo.could_turn(self, s)
+        if wary and not p.fate:                          # B208: not in the fight; a call opens it when the fiction does
+            out.append("Here, not fighting " + p.name + " now, but could turn on " + p.name + ": " + "; ".join(
+                q.name + " (" + ", ".join(str(m.get("kind")) for m in (q.moves or [wo.DEFAULT_STRIKE])) + ")" for q in wary)
+                + ". If the telling has one of them attack, write <<ENEMY <their id> <move>>> at that moment (ids: " + ", ".join(q.id for q in wary)
+                + "); that opens the fight. Otherwise they do not act against " + p.name + ".")
         hz = (s.city.hazards or {}).get(p.location) or []
         if hz and not p.fate:
             out.append("Dangers here: " + "; ".join(f"{h.get('when', h.get('id'))} (<<HAZARD {h.get('id')}>>)" for h in hz)

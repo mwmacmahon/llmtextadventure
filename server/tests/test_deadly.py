@@ -24,9 +24,11 @@ def act(text: str, entities=()):
     return AssistantReading(kind="action", summary=text, time_minutes=1, risk="high", intents=[Intent(action=text)], entities=list(entities), tempo="fast")
 
 
-def foe(st, pid="maud", moves=None, attitude=-3):
+def foe(st, pid="maud", moves=None, attitude=-3, joined=True):
     q = st.person(pid)
     q.location, q.attitude, q.moves = st.player.location, attitude, list(moves or [])
+    if joined and pid not in st.player.fighting:                    # B208: in the fight only once combat is joined
+        st.player.fighting.append(pid)
     return q
 
 
@@ -180,6 +182,7 @@ async def test_the_pipeline_backstops_a_hostile_the_fake_prose_never_called(engi
     st = state_of(engine, iid)
     q = st.person("maud")
     q.location, q.attitude, q.moves = st.player.location, -3, [{"kind": "strike", "bonus": 40, "damage": "serious", "harm": "cleaver"}]
+    st.player.fighting = ["maud"]
     engine.store.save_snapshot(iid, 0, st.model_dump(mode="json"))
     fake.canned["AssistantReading"] = [reading("I back away from Maud.", 1)]
     await play(engine, iid, "I back away from Maud.")
@@ -220,3 +223,17 @@ def test_swimming_in_the_lake_with_no_call_is_rolled_after_the_prose(game):
     calls = game.backstop(st, {"hp": 0, "acted": [], "text": "I dive into the water after the girl"}, Dice(3, 0), 2)
     assert [c["call"]["verb"] for c in calls] == ["HAZARD"] and calls[0]["result"]["outcome_player"] in ("failure", "huge_failure", "critical_failure")
     assert game.backstop(st, {"hp": 0, "acted": [], "hazards": ["cold_water"], "text": "I dive in"}, Dice(3), 2) == []
+
+
+
+def test_a_hostile_who_has_not_joined_the_fight_is_never_rolled(game):
+    """B208 (D179): Sael offstage, never met, no blow struck, dragged the owner under. Only the fight list is rolled; the
+    others are listed as could turn on you, and a narrator's call joins them."""
+    st = new(game)
+    sael = foe(st, "maud", moves=[{"kind": "hold", "bonus": 4, "peril": "drowning"}], attitude=-1, joined=False)
+    assert game.backstop(st, {"hp": 0, "acted": []}, Dice(2), 2) == []
+    said = " ".join(game.turn_directives(st))
+    assert "could turn on" in said and "In a fight with" not in said
+    out = game.world_call(st, call("ENEMY", "maud", "hold"), Dice(2), 2, {"hp": 0, "acted": []})
+    after = game.after_turn(st, info_calls(2, [out["data"]]))
+    assert after.player.fighting == ["maud"] and "In a fight with" in " ".join(game.turn_directives(after))
