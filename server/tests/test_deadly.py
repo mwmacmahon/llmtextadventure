@@ -321,3 +321,35 @@ def test_a_surrender_is_not_a_chosen_death(game):
     assert game.world_turn(new(game), b, "I let the water take me", Dice(), 3, 2)[0].player.fate == "dead"
     c = a.model_copy(update={"summary": "Kragga tries to bargain."})
     assert not game.world_turn(new(game), c, "I let the water take me", Dice(), 3, 2)[0].player.fate
+
+
+def test_the_engine_writes_a_death_the_last_telling_left_out(game):
+    """B215 (5528fb9033ac turn 23): three tellings had Kragga surface and break the song after the world killed him. On the
+    forced pass the engine writes the death: the prose to the death's moment, then one line in the game's voice."""
+    st = new(game)
+    wo.open_peril(st, "drowning", by="Mirren")
+    s2, w = game.world_turn(st, act("I walk back up the shingle"), "I plant myself on the shingle", Dice(), 3, 2)
+    assert s2.player.fate == "dead"
+    prose = "A voice finds you as the last water leaves your ears.\n\nYou wrench free of it with a roar.\n\n§ STR, medium. 13 + 7 = 20 against 12. Huge success."
+    out = game.forced_death(s2, prose, w.rows, [])
+    assert out.startswith("A voice finds you") and "wrench free" not in out and out.endswith(f"The water closes. {s2.player.name} dies at {s2.player.location}.")
+    # a killing call inline: the prose up to and through its § line
+    kill = {"call": {"raw": "ENEMY maud strike"}, "result": {"kills": True, "cause": "Maud's cleaver"}, "mechanic": "Maud's strike: 19 against armour 17. Hit."}
+    prose2 = "Maud comes over the bar.\n\n§ Maud's strike: 19 against armour 17. Hit.\n\nYou shrug it off and laugh."
+    out2 = game.forced_death(new(game), prose2, [], [kill])
+    assert "Hit." in out2 and "laugh" not in out2 and out2.endswith("dies at " + new(game).player.location + ".")
+    assert game.forced_death(new(game), prose2, [], []) is None
+
+
+def test_nobody_rolls_on_the_dead(game):
+    """B215: after a death row the backstop rolled Mirren and Elowen on a dead player (seq 525, 530, 531)."""
+    st = new(game)
+    foe(st, moves=[{"kind": "strike", "bonus": 30, "damage": "solid"}])
+    st.player.hp, st.player.fate = 0, "dead"
+    assert game.backstop(st, {"hp": 0, "acted": []}, Dice(15, 15), 2) == []
+    live = new(game)
+    foe(live, moves=[{"kind": "strike", "bonus": 30, "damage": "lethal"}])
+    foe(live, pid="hazel", moves=[{"kind": "strike", "bonus": 30, "damage": "solid"}])
+    out = game.backstop(live, {"hp": 0, "acted": []}, Dice(15, 50, 15, 50), 2)
+    assert len(out) == 1 and out[0]["result"].get("kills")
+

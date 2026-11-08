@@ -451,8 +451,10 @@ def armour_steps(s: FantasyState) -> int:
 def backstop(game: Any, s: FantasyState, acted: list[str], rng: Any, offset: int, tally: dict) -> list[dict]:
     """A hostile that did not act in a fight turn is rolled after the prose (B206): its blow lands in the state and the
     player's row, and the next turn opens on it. Returns the calls' records, as the narrator's calls are kept."""
-    out = []
+    out: list[dict] = []
     from engine.brackets import Call
+    if s.player.fate or s.player.hp <= 0 or tally.get("dead") or _hp_after(s, tally) <= 0:   # B215: nobody rolls on the dead
+        return out
     for q in present_enemies(game, s)[:3]:
         if q.id in acted:
             continue
@@ -462,10 +464,12 @@ def backstop(game: Any, s: FantasyState, acted: list[str], rng: Any, offset: int
         r["data"]["backstop"] = True
         out.append({"call": {"verb": "ENEMY", "raw": f"ENEMY {q.id}", "ref": q.id}, "result": r["data"], "mechanic": r.get("mechanic", ""),
                     "backstop": True, "told": r["text"]})
+        if r["data"].get("kills"):
+            return out
     # a hazard the player's own attempt walked into (its words), when the prose made no call for it (part four §6, B98)
     text = str(tally.get("text") or "")
     for hz in (getattr(s.city, "hazards", None) or {}).get(s.player.location) or []:
-        if hz.get("id") in tally.get("hazards", []) or not text:
+        if hz.get("id") in tally.get("hazards", []) or not text or any(o["result"].get("kills") for o in out):
             continue
         words = [w.lower() for w in hz.get("words") or []]
         if words and any(re.search(r"\b" + re.escape(w) + r"\b", text.lower()) for w in words):
@@ -529,3 +533,32 @@ def failure_harm(game: Any, s: FantasyState, data: dict, label: str) -> int:
     if not (ATTACK.search(label) or ESCAPE.search(label) or data.get("stat") in ("str", "dex", "con")):
         return 0
     return harm(step, int(data.get("roll") or 0))
+
+
+DEATH_OPENERS = [(r"water|drown|lake|river|under|sea|siren", "The water closes."), (r"fire|burn|flame", "The fire takes the rest."),
+                 (r"cold|freez|ice", "The cold finishes it."), (r"bleed|blood", "The blood runs out."),
+                 (r"fall|drop|cliff", "The ground comes up.")]
+
+
+def told_death_line(s: FantasyState, rows: list[dict], calls: list[dict]) -> tuple[str, str] | None:
+    """B215: a death the narrator was told this turn (the world's before the prose, or a call's inline). Returns (the
+    engine's line in the game's voice, the killing call's § line or "" for a death before the prose), or None."""
+    p = s.player
+    pre = next((r for r in rows if r.get("kind") == "death"), None)
+    kill = next((c for c in calls if (c.get("result") or {}).get("kills") and not c.get("backstop")), None)
+    if pre is None and kill is None:
+        return None
+    why = str((pre or {}).get("why") or (kill.get("result") or {}).get("death_cause") or (kill.get("result") or {}).get("cause") or "")
+    opener = next((o for pat, o in DEATH_OPENERS if re.search(pat, f"{why} {(p.peril.kind if p.peril else '')}", re.I)), "It is over.")
+    return f"{opener} {p.name} dies at {p.location or 'Marrowgate'}.", ("" if kill is None or pre is not None else str(kill.get("mechanic") or ""))
+
+
+def cut_at_death(narration: str, mechanic: str) -> str:
+    """The narrator's prose up to the death's moment (B215): through the killing call's § line, or, for a death the world
+    rolled before the prose, its first paragraph."""
+    if mechanic:
+        i = narration.find(mechanic)
+        if i >= 0:
+            return narration[: i + len(mechanic)].rstrip()
+    first = next((para for para in narration.split("\n\n") if para.strip() and not para.lstrip().startswith("§")), "")
+    return first.strip()

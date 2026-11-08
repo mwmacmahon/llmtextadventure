@@ -1073,6 +1073,16 @@ class FantasyGame(GameBase):
         enemies' moves. Returns (state, WorldTurn)."""
         return wo.world_turn(self, state, adj, player_text, rng, turn, offset)
 
+    def forced_death(self, state: FantasyState, narration: str, rows: list[dict], calls: list[dict]) -> str | None:
+        """B215: the guard's last telling of a death turn still did not write the death. The engine writes it: the prose up
+        to the death's moment, then one line in the game's voice (the stone follows, as after any death)."""
+        got = wo.told_death_line(state, rows, calls)
+        if got is None:
+            return None
+        line, mech = got
+        head = wo.cut_at_death(narration, mech)
+        return (head + "\n\n" if head else "") + line
+
     def check_note(self, state: FantasyState, data: dict, label: str) -> str:
         """A line the narrator reads with a check's result: Sneak Attack's step on a blow that lands (B92); what a failure
         costs in a fight or a peril (part four §4: the engine takes the hit points, `data["harm"]`); in a peril, the escape roll
