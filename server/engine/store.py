@@ -113,6 +113,8 @@ def blob_refs(ledger: list[dict]) -> set[str]:
             elif r.get("kind") == "rewrite":
                 for h in p.get("history", []):
                     walk(h.get("ledger", []))
+            elif r.get("kind") == "sheet_built":         # the state as built before the sheet pass (B90): a re-read starts from it
+                out.add(p.get("state", ""))
     walk(ledger)
     out.discard("")
     return out
@@ -392,6 +394,12 @@ class Store:
         """A turn that failed part way: its transcript rows go (the next turn takes its number); its ledger rows stay."""
         with self.conn:
             self.conn.execute("DELETE FROM transcript WHERE instance_id=? AND turn=? AND undone=0", (iid, turn))
+
+    @_locked
+    def drop_transcript_role(self, iid: str, turn: int, role: str) -> None:
+        """The live rows of one role at one turn go (the sheet pass's line under the opening, replaced on a re-read, B90)."""
+        with self.conn:
+            self.conn.execute("DELETE FROM transcript WHERE instance_id=? AND turn=? AND role=? AND undone=0", (iid, turn, role))
 
     # ---- undo -------------------------------------------------------------
     @_locked

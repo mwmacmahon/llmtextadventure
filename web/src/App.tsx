@@ -172,6 +172,12 @@ function Game({ id }: { id: string }) {
 
   function sendCommand(command: string, args: Record<string, unknown>) {
     if (!view || streaming !== null) return;
+    if (command === "reread_sheet") {
+      // B90: before the first turn, whatever is in the text box is the player's correction to the sheet
+      const text = input.trim();
+      setInput("");
+      return run(streamCommand(id, command, { ...args, text }), text ? `Re-read my sheet: ${text}` : "Re-read my sheet");
+    }
     return run(streamCommand(id, command, args), command);
   }
 

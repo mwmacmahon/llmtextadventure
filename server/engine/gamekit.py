@@ -64,6 +64,16 @@ class Writer:
         self.actor = actor
         self.force = force          # the last telling under the guard (D77): the prose wins, conflicts are applied and flagged
 
+    @classmethod
+    def for_setup(cls, authority: dict[str, Actor], report: ApplyReport) -> "Writer":
+        """The sheet pass's writer (B90, D175): rows from the player's own sheet at creation. It may write every field, and
+        a game's `apply_change` that sees `writer.setup` skips the referee's bounds and keeps only the field types."""
+        return cls(authority, report, actor="setup")
+
+    @property
+    def setup(self) -> bool:
+        return self.actor == "setup"
+
     def set(self, path: str, old: Any, new: Any) -> bool:
         if not may_write(path, self.actor, self.authority):
             self.report.rejected.append(Rejection(path=path, reason=f"{self.actor} may not write this field", value=new))
@@ -76,6 +86,9 @@ class Writer:
         """Apply a bounded step to a number. Returns the new value, or None if nothing changed."""
         if not change:
             return None
+        if self.setup:                                      # the sheet: no step, no range (B90)
+            new = old + int(change)
+            return new if new != old and self.set(path, old, new) else None
         step = max(-limit, min(limit, int(change)))
         new = max(lo, min(hi, old + step))
         if new == old or not self.set(path, old, new):

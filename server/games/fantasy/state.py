@@ -148,6 +148,7 @@ class Player(BaseModel):
     wounds: list[Wound] = Field(default_factory=list)
     with_them: list[str] = Field(default_factory=list)
     debts: list[str] = Field(default_factory=list)
+    sheet_notes: list[str] = Field(default_factory=list)    # what the sheet said that no field holds (B90): the narrator reads them
     carried: bool = False           # dead, and someone present carries the body to the Temple (D139)
     fate: str = ""                  # the engine's word after the lethal roll: dead, carried, survived, raised (told next turn)
     fate_turn: int = 0

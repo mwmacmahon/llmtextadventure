@@ -46,7 +46,8 @@ from .brackets import STOP_SEQUENCES, Call, Note, StreamFilter, extract, is_mech
 from .context import build_messages, summary_plan
 from .narration import (Assessment, CallResult, Mechanic, NarrationDone, Visible, default_mechanic_line, fail_forward, narrate,
                         run_check)
-from .game import ApplyReport, CommandResult, Game, GameBase, Rejection, TurnInfo, check_setup
+from .game import ApplyReport, CommandResult, Commands, CommandSpec, Game, GameBase, Rejection, TurnInfo, check_setup
+from . import sheet as sheet_mod
 from .assistant_view import RULES as STAKES_RULES, adjudication_stakes, match_stakes, stakes_blocks
 from .mechanics import RESOLVERS, CheckRequest, CheckResult, outcome_words, rng_for
 from .providers import Msg, StreamDone, TextDelta, get_provider
@@ -254,6 +255,105 @@ class Engine:
             self.store.append_transcript(iid, 0, "narrator", opening)
         return iid
 
+    # ---- the sheet pass (B90, D175; engine/sheet.py) -----------------------
+    def sheet_on(self, game: Game, state: BaseModel) -> bool:
+        return bool(str(_hook(game, "sheet_fields", state, default="") or "").strip())
+
+    def _built_state(self, iid: str, game: Game) -> BaseModel:
+        """The state as the game built it at creation, before any sheet pass: kept once in a turn-0 `sheet_built` row (its
+        state by blob hash), so a re-read starts again from it instead of stacking on the last pass."""
+        row = next((r for r in self.store.ledger(iid, turn=0) if r["kind"] == "sheet_built"), None)
+        if row is not None:
+            text = self.store.blobs([row["payload"].get("state", "")]).get(row["payload"].get("state", ""))
+            if text:
+                return game.load_state(json.loads(text))
+            inst = self.store.get_instance(iid)        # an imported save without its blob: build it again from the setup
+            return game.new_instance(dict(inst.setup) if inst else {})[1]
+        state = game.load_state(self.store.load_state(iid, 0))
+        self.store.append_ledger(iid, 0, "sheet_built", {"state": self.store.put_blob(json.dumps(state.model_dump(mode="json")))})
+        return state
+
+    async def read_sheet(self, iid: str, correction: str = "") -> dict[str, Any]:
+        """The sheet pass: once at creation, and again on `Re-read my sheet` before the first turn, with the player's
+        correction. Returns {ok, text, line, skipped?}. Never raises for a model failure: the game starts (or stays) as it is,
+        and the ledger says so."""
+        inst = self.store.get_instance(iid)
+        if not inst:
+            raise KeyError(iid)
+        game = self.games[inst.game]
+        if self.store.latest_turn(iid) != 0:
+            return {"ok": False, "text": "Your sheet is read before the first turn only. The story has begun: say it in play, or undo to the start and re-read it there."}
+        current = game.load_state(self.store.load_state(iid, 0))
+        if not self.sheet_on(game, current):
+            return {"ok": False, "text": "This game does not read a sheet."}
+        again = any(r["kind"] == "sheet_built" for r in self.store.ledger(iid, turn=0))
+        nothing = {"ok": True, "skipped": True, "line": "",
+                   "text": "Nothing written to read: write what to change in the text box, then Re-read my sheet."}
+        if not again and not str(_hook(game, "sheet_text", current, default="") or "").strip() and not correction.strip():
+            return nothing                              # an empty About box: no call, no rows (the game starts as built)
+        built = self._built_state(iid, game)
+        text = str(_hook(game, "sheet_text", built, default="") or "")
+        if not text.strip() and not correction.strip():
+            return nothing
+        fields = str(_hook(game, "sheet_fields", built, default="") or "")
+        ledger = lambda kind, payload: self.store.append_ledger(iid, 0, kind, payload)  # noqa: E731
+        role = self.cfg.role("assistant")
+        self._tapes[iid] = ledger
+        t0 = time.monotonic()
+        try:
+            provider = self._provider(role, iid, "sheet")
+            system, msgs = sheet_mod.messages(fields, text, correction)
+            report, usage = await provider.extract(role, system, msgs, sheet_mod.SheetReport)
+        except Exception as e:
+            ledger("model_call", {"role": "assistant", "step": "sheet", "error": repr(e)})
+            outcome = "the character stays as it was" if again else "the game starts as built"
+            ledger("sheet_pass", {"from": "the sheet", "failed": f"{type(e).__name__}: {e}"[:500], "outcome": outcome, "correction": correction})
+            log.exception("sheet.failed " + logs.kv(iid=iid, again=again))
+            return {"ok": False, "text": f"The sheet could not be read just now; {outcome}.", "line": ""}
+        finally:
+            self._tapes.pop(iid, None)
+        ledger("model_call", {"role": "assistant", "step": "sheet", "provider": provider.name, "model": usage.extra.get("model") or role.model,
+                              "seconds": round(time.monotonic() - t0, 2), "usage": asdict(usage), "rows": [r.model_dump() for r in report.rows]})
+        state, landed = sheet_mod.land(game, built, report.rows, text + "\n" + correction)
+        for r in landed:
+            ledger("sheet_row", {"from": "the sheet", **{k: v for k, v in r.items() if k not in ("change", "before")}})
+        line = sheet_mod.outfitted(game, landed, state)
+        self.store.save_snapshot(iid, 0, state.model_dump(mode="json"))
+        self.store.drop_transcript_role(iid, 0, "result")
+        if line:
+            self.store.append_transcript(iid, 0, "result", line)
+        counts = {k: sum(1 for r in landed if r["status"] == k) for k in ("applied", "as_note", "dropped", "rejected")}
+        ledger("sheet_pass", {"from": "the sheet", "line": line, "correction": correction, "again": again, **counts})
+        log.info("sheet " + logs.kv(iid=iid, again=again, rows=len(report.rows), **counts))
+        return {"ok": True, "text": line or "The sheet matches the character as built.", "line": line}
+
+    async def _reread(self, iid: str, correction: str) -> AsyncIterator[dict[str, Any]]:
+        """`Re-read my sheet` (B90): an engine console action at turn 0, not a turn."""
+        res = await self.read_sheet(iid, correction)
+        label = sheet_mod.COMMAND_LABEL
+        if not res["ok"] or res.get("skipped"):
+            yield {"event": "command", "data": {"ok": False, "text": res["text"], "mode": "engine", "label": label}}
+            return
+        yield {"event": "command", "data": {"ok": True, "text": res["text"], "mode": "engine", "label": label, "turn": 0}}
+        inst = self.store.get_instance(iid)
+        game = self.games[inst.game]
+        state = game.load_state(self.store.load_state(iid))
+        yield {"event": "done", "data": {"turn": 0, "text": res["text"], "note": None, "model": None, "usage": {}, "seconds": 0,
+                                         "mechanics": {"kind": "command", "applied": [f"command {sheet_mod.COMMAND}"]}, "ending": None,
+                                         "ui": self._ui(game, state, 0).model_dump(mode="json")}}
+
+    def _ui(self, game: Game, state: BaseModel, turn: int) -> Any:
+        """The game's panels, with the engine's `Re-read my sheet` among the commands before the first turn (B90)."""
+        ui = game.ui(state)
+        if turn == 0 and self.sheet_on(game, state):
+            spec = CommandSpec(id=sheet_mod.COMMAND, label=sheet_mod.COMMAND_LABEL, mode="engine", typed=False, hint=sheet_mod.COMMAND_HINT)
+            box = next((p for p in ui.panels if isinstance(p, Commands)), None)
+            if box is None:
+                ui.panels.append(Commands(title=None, items=[spec]))
+            else:
+                box.items.append(spec)
+        return ui
+
     def summary(self, iid: str, state: BaseModel | None = None) -> dict[str, Any]:
         """A save as the lobby lists it: the row, the turn, last played, and from the latest state the game's save line and
         its ending. `state`: the latest state already loaded (the play view), so it is not loaded twice."""
@@ -299,7 +399,7 @@ class Engine:
         rows = self.store.transcript(iid, undone=True)       # the undone turns too, each marked: the log strikes them through (B82)
         return {
             **self.summary(iid, state=state),
-            "ui": game.ui(state).model_dump(mode="json"),
+            "ui": self._ui(game, state, self.store.latest_turn(iid)).model_dump(mode="json"),
             "transcript": [asdict(r) for r in rows],
         }
 
@@ -443,6 +543,10 @@ class Engine:
 
     async def _play(self, iid: str, player_text: str | None, command: tuple[str, dict[str, Any]] | None,
                     *, rewrite: bool, hint: str) -> AsyncIterator[dict[str, Any]]:
+        if command is not None and command[0] == sheet_mod.COMMAND:     # B90: an engine action at turn 0, not a turn
+            async for ev in self._reread(iid, str((command[1] or {}).get("text") or "")):
+                yield ev
+            return
         mode = self.guard_mode()
         max_retells = int(self.settings["guard"]["max_retells"])
         gen = self.rewrite_turn(iid, hint, by="player") if rewrite else self.run_turn(iid, player_text, command)
