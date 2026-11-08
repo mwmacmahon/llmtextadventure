@@ -489,7 +489,8 @@ sees. The referee turns them into `soon` rows (what, who, minutes, hidden, note=
 listed pendings with `set p3.resolved`, and records `unseen` rows; the engine lands all of these
 (§8). Your rules must say that unseen things never go in a clue, the log line or any player-visible field. The engine keeps pendings at `GameBase.pending_path` (default `hidden.pending`; your hidden-state
 model needs `pending: list[Pending]`), appends unseen facts to `recent_path` (the narrator's
-"behind the scenes" list), stops the clock where a pending falls due, and hands the narrator DUE
+"behind the scenes" list), stops the clock where a pending the player would see falls due (a hidden one never stops it;
+it goes on in the background, D174), and hands the narrator DUE
 NOW or UNSEEN. A scripted timer (scenario `pending:`, `source: script`) happens whatever the player does;
 one the narrator or referee set in play is contestable: its DUE NOW says it does not happen if its `unless`
 has, and that an attempt to stop it is decided by its check. A scripted timer with its outcomes written

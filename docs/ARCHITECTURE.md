@@ -175,8 +175,10 @@ RESOLVE      engine, deterministic
                event or pending and never past the turn's cap; the note never reaches the referee
              - the kind of turn (D148): `task_of` reads it from the tempo and the summary's verbs and picks a row of ClockSpec.tasks
                (noir: fight 1-3, talk 5-20, search 10-30, travel 5-60), which keeps the minutes in range
-               and sets the time-lost cap; wait and sleep only floor. A wait or sleep with no limit in the
-               input is asked "until when" first (D149, a clarify turn); "until something happens" runs
+               and sets the time-lost cap; wait and sleep only floor. A wait with no limit in the input is
+               asked "until when" first (D149, a clarify turn), and a sleep by day; a sleep in the evening
+               or the night runs to morning (D174), and a question turn previews no lever; a hidden pending
+               never stops the clock (D174); "until something happens" runs
                to the turn's cap and the next trigger. A run of fight beats reaching ClockSpec.scene_mark
                (noir 4) marks the scene long (D150): one THIS TURN line, the note's cap lifted to the
                turn's cap, and a timer repeating one fired in the last three turns is not landed

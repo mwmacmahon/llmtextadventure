@@ -1369,7 +1369,10 @@ class Engine:
                     want = at - now
                     clock_note = (clock_note + "; " if clock_note else "") + f"stopped at scheduled event {nxt.id}"
                 ppath = getattr(game, "pending_path", None)
-                nxt_p = pend.next_due(pend.load(doc, ppath), clock.minutes_per_day) if ppath else None
+                # the owner (11-08 evening), every game: what the player cannot see happen does not stop their clock; it goes
+                # on in the background and the narrator is told it happened unseen (the tick below fires it with the turn's time)
+                seen_p = [x for x in pend.load(doc, ppath) if not x.hidden] if ppath else []
+                nxt_p = pend.next_due(seen_p, clock.minutes_per_day) if ppath else None
                 if nxt_p is not None:
                     at = nxt_p.due_abs(clock.minutes_per_day)
                     if now < at <= now + want:          # the world does not wait: the clock stops where something falls due

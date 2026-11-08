@@ -197,7 +197,7 @@ async def test_a_hidden_pending_fires_unseen(engine: Engine, fake: FakeProvider)
     assert "IMPENDING" in seen["referee"] and "- p1: Lindqvist opens the cabinet; by Dr. Maja Lindqvist; in about 3 min" in seen["referee"] and "the player does not know" in seen["referee"]
     events = await play(engine, iid, "I wait.")
     res = next(e for e in events if e["event"] == "resolution")["data"]
-    assert res["elapsed"] == 3
+    assert res["elapsed"] == 30                          # what the player cannot see does not stop the clock (the owner, 11-08)
     bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
     assert "UNSEEN BY THE PLAYER, at Day 1" in bulletin and "Lindqvist opens the cabinet (Dr. Maja Lindqvist). It has happened; do not show it." in bulletin
     done = events[-1]["data"]
