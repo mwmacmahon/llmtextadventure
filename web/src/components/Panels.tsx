@@ -4,10 +4,12 @@ import type { Chip, CommandSpec, EntityCard, MeterWidget, Widget } from "../api"
 type OnCommand = (command: string, args: Record<string, unknown>) => void;
 
 // B50 (D167): after the ending only the console commands (mode "engine": no story, no clock) still run, so a Journal can be read.
-export function Panels({ panels, onChoice, onCommand, busy, ended }: { panels: Widget[]; onChoice?: OnCommand; onCommand?: OnCommand; busy?: boolean; ended?: boolean }) {
+// readOnly (the save card in the lobby, B75): the state as the player sees it, with nothing to run (no commands, no choices).
+export function Panels({ panels, onChoice, onCommand, busy, ended, readOnly }: { panels: Widget[]; onChoice?: OnCommand; onCommand?: OnCommand; busy?: boolean; ended?: boolean; readOnly?: boolean }) {
+  const shown = readOnly ? panels.filter((w) => w.type !== "commands" && w.type !== "choices") : panels;
   return (
     <div className="panels">
-      {panels.map((w, i) => (
+      {shown.map((w, i) => (
         <Panel key={i} w={w} onChoice={onChoice} onCommand={onCommand} busy={busy} ended={ended} />
       ))}
     </div>
@@ -183,7 +185,7 @@ function MeterBody({ w, small }: { w: MeterWidget; small?: boolean }) {
   );
 }
 
-function ChipView({ c }: { c: Chip }) {
+export function ChipView({ c }: { c: Chip }) {
   return (
     <span className={`chip${c.tone ? ` chip-${c.tone}` : ""}`}>
       {c.label && <span className="chip-label">{c.label}</span>}

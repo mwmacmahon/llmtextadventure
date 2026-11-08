@@ -64,6 +64,8 @@ export type Settings = {
   profile: string;
   profile_guard: string | null;
   roles: Record<string, { provider: string; model: string; effort: string | null }>;
+  dev_pin: boolean;                                  // dev mode asks for a pin on this server
+  difficulties: { id: string; name: string }[];
 };
 
 // The profile picker (server/engine/picker.py): a profile is the whole configuration of a play.
@@ -101,8 +103,16 @@ export type ProfileCard = ProfileSummary & {
 };
 
 export type Origin = { forked_from?: string; at_turn?: number; imported?: boolean; original_id?: string; exported?: string };
-export type InstanceSummary = { id: string; game: string; game_version: string; title: string; created: string; turn: number; origin: Origin };
-export type InstanceView = InstanceSummary & { ui: UISchema; transcript: TranscriptRow[]; ending?: string | null };
+export type InstanceSummary = {
+  id: string; game: string; game_version: string; title: string; created: string; turn: number; origin: Origin;
+  updated: string;                 // last played (ISO)
+  difficulty: string;              // easy | normal | hard
+  save_line: Chip[];               // the game's line for this save (who, where, when), plus the difficulty when not normal
+  ending: string | null;
+  hidden: boolean;                 // a hidden game's save (shown in dev mode only)
+};
+export type InstanceView = InstanceSummary & { ui: UISchema; transcript: TranscriptRow[] };
+export type SaveCard = InstanceSummary & { ui: UISchema; last: { turn: number; text: string; clock: string } | null };
 export type SetupOption = { id: string; name: string };
 // A setup key is the plain list (a select) or a field (ISSUES B21): the label is the whole hint unless the game gives one.
 export type SetupField = {
@@ -113,7 +123,10 @@ export type SetupField = {
   options?: (SetupOption | string)[];
   default?: string | null;
 };
-export type GameInfo = { name: string; title: string; description: string; version: string; setup: Record<string, SetupOption[] | SetupField> };
+export type GameInfo = {
+  name: string; title: string; description: string; version: string; setup: Record<string, SetupOption[] | SetupField>;
+  saves: number; hidden: boolean;
+};
 
 export type LedgerEntry = { seq: number; turn: number; kind: string; created: string; payload: Record<string, any> };
 
@@ -126,31 +139,91 @@ async function j<T>(r: Response): Promise<T> {
   return r.json();
 }
 
+// Dev mode (Settings): kept in this browser; while it is on, every request carries X-Dev (and the pin, when the server
+// asks for one), and the server shows the hidden games.
+const DEV_KEY = "ta.dev";
+const PIN_KEY = "ta.devPin";
+
+function readKey(k: string): string | null {
+  try {
+    return localStorage.getItem(k);
+  } catch {
+    return null;
+  }
+}
+
+function writeKey(k: string, v: string | null) {
+  try {
+    if (v == null) localStorage.removeItem(k);
+    else localStorage.setItem(k, v);
+  } catch {
+    /* storage blocked: dev mode lasts this page only */
+  }
+}
+
+let devOn = readKey(DEV_KEY) === "1";
+let devPin = readKey(PIN_KEY) ?? "";
+
+export const devMode = {
+  on: () => devOn,
+  set(on: boolean, pin = "") {
+    devOn = on;
+    devPin = on ? pin : "";
+    writeKey(DEV_KEY, on ? "1" : null);
+    writeKey(PIN_KEY, on && pin ? pin : null);
+    dispatchEvent(new Event("ta-dev"));
+  },
+};
+
+function devHeaders(): Record<string, string> {
+  if (!devOn) return {};
+  return devPin ? { "X-Dev": "1", "X-Dev-Pin": devPin } : { "X-Dev": "1" };
+}
+
+/** fetch with the dev-mode headers on every request while dev mode is on. A 403 to them means the server's pin changed
+ *  (or was set since): dev mode turns off in this browser and the request goes again without them. */
+async function req(url: string, init: RequestInit = {}): Promise<Response> {
+  const own = (init.headers as Record<string, string>) ?? {};
+  const r = await fetch(url, { ...init, headers: { ...devHeaders(), ...own } });
+  if (r.status === 403 && devOn) {
+    devMode.set(false);
+    return fetch(url, { ...init, headers: own });
+  }
+  return r;
+}
+
+const JSON_HEADERS = { "content-type": "application/json" };
+
 export const api = {
-  games: () => fetch("/api/games").then((r) => j<GameInfo[]>(r)),
-  instances: () => fetch("/api/instances").then((r) => j<InstanceSummary[]>(r)),
-  instance: (id: string) => fetch(`/api/instances/${id}`).then((r) => j<InstanceView>(r)),
+  games: () => req("/api/games").then((r) => j<GameInfo[]>(r)),
+  /** Try the dev headers before keeping them: a wrong pin answers 403. */
+  checkDev: (pin: string) => fetch("/api/games", { headers: pin ? { "X-Dev": "1", "X-Dev-Pin": pin } : { "X-Dev": "1" } }).then((r) => r.ok),
+  instances: (game?: string) => req(`/api/instances${game ? `?game=${encodeURIComponent(game)}` : ""}`).then((r) => j<InstanceSummary[]>(r)),
+  instance: (id: string) => req(`/api/instances/${id}`).then((r) => j<InstanceView>(r)),
+  card: (id: string) => req(`/api/instances/${id}/card`).then((r) => j<SaveCard>(r)),
+  setDifficulty: (id: string, difficulty: string) =>
+    req(`/api/instances/${id}/difficulty`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ difficulty }) }).then((r) => j<InstanceSummary>(r)),
   create: (game: string, setup: Record<string, unknown>) =>
-    fetch("/api/instances", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ game, setup }) }).then((r) => j<InstanceView>(r)),
+    req("/api/instances", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ game, setup }) }).then((r) => j<InstanceView>(r)),
   undo: (id: string, turn?: number) =>
-    fetch(`/api/instances/${id}/undo`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ turn: turn ?? null }) }).then((r) => j<InstanceView>(r)),
+    req(`/api/instances/${id}/undo`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ turn: turn ?? null }) }).then((r) => j<InstanceView>(r)),
   fork: (id: string, turn?: number, title?: string) =>
-    fetch(`/api/instances/${id}/fork`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ turn: turn ?? null, title: title ?? null }) }).then((r) => j<InstanceView>(r)),
+    req(`/api/instances/${id}/fork`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ turn: turn ?? null, title: title ?? null }) }).then((r) => j<InstanceView>(r)),
   rename: (id: string, title: string) =>
-    fetch(`/api/instances/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ title }) }).then((r) => j<InstanceSummary>(r)),
-  remove: (id: string) => fetch(`/api/instances/${id}`, { method: "DELETE" }).then((r) => j<{ ok: boolean }>(r)),
+    req(`/api/instances/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ title }) }).then((r) => j<InstanceSummary>(r)),
+  remove: (id: string) => req(`/api/instances/${id}`, { method: "DELETE" }).then((r) => j<{ ok: boolean }>(r)),
   exportUrl: (id: string) => `/api/instances/${id}/export`,
   importDoc: (doc: unknown) =>
-    fetch("/api/instances/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(doc) }).then((r) => j<InstanceView>(r)),
-  ledger: (id: string, turn?: number) => fetch(`/api/instances/${id}/ledger${turn != null ? `?turn=${turn}` : ""}`).then((r) => j<LedgerEntry[]>(r)),
-  usage: (id: string) => fetch(`/api/instances/${id}/usage`).then((r) => j<InstanceUsage>(r)),
-  settings: () => fetch("/api/settings").then((r) => j<Settings>(r)),
+    req("/api/instances/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(doc) }).then((r) => j<InstanceView>(r)),
+  ledger: (id: string, turn?: number) => req(`/api/instances/${id}/ledger${turn != null ? `?turn=${turn}` : ""}`).then((r) => j<LedgerEntry[]>(r)),
+  usage: (id: string) => req(`/api/instances/${id}/usage`).then((r) => j<InstanceUsage>(r)),
+  settings: () => req("/api/settings").then((r) => j<Settings>(r)),
   updateSettings: (patch: { guard?: Partial<Settings["guard"]>; progress?: Partial<Settings["progress"]> }) =>
-    fetch("/api/settings", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) }).then((r) => j<Settings>(r)),
-  profiles: () => fetch("/api/profiles").then((r) => j<ProfileList>(r)),
-  profile: (name: string) => fetch(`/api/profiles/${encodeURIComponent(name)}`).then((r) => j<ProfileCard>(r)),
+    req("/api/settings", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) }).then((r) => j<Settings>(r)),
+  profiles: () => req("/api/profiles").then((r) => j<ProfileList>(r)),
+  profile: (name: string) => req(`/api/profiles/${encodeURIComponent(name)}`).then((r) => j<ProfileCard>(r)),
   switchProfile: (name: string) =>
-    fetch("/api/profiles/switch", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) }).then(async (r) => {
+    req("/api/profiles/switch", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) }).then(async (r) => {
       if (!r.ok) {
         let msg = r.statusText;
         try {
@@ -195,7 +268,7 @@ export function streamCommand(id: string, command: string, args: Record<string, 
 }
 
 async function* streamSse(url: string, body: unknown, signal?: AbortSignal): AsyncGenerator<TurnEvent> {
-  const r = await fetch(url, {
+  const r = await req(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),

@@ -1,30 +1,57 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, streamCommand, streamRewrite, streamTurn, type InstanceView, type Mechanics, type Settings, type TranscriptRow, type TurnEvent } from "./api";
+import { api, streamCommand, streamRewrite, streamTurn, type InstanceView, type Mechanics, type TranscriptRow, type TurnEvent } from "./api";
+import { Bar } from "./components/Bar";
 import { DebugDrawer } from "./components/DebugDrawer";
-import { Lobby } from "./components/Lobby";
+import { GamePage } from "./components/GamePage";
+import { Home } from "./components/Home";
 import { Panels } from "./components/Panels";
-import { ProfilePicker } from "./components/ProfilePicker";
+import { SettingsPage } from "./components/SettingsPage";
 
-function useHashRoute(): [string | null, (id: string | null) => void] {
-  const read = () => (location.hash.startsWith("#/g/") ? location.hash.slice(4) : null);
-  const [id, setId] = useState<string | null>(read);
+// The pages, by hash: #/ home (the games), #/games/<name> a game's page (its saves, New game), #/g/<id> play,
+// #/settings Settings (#/settings/<id>: opened from that game, with its difficulty).
+type Route = { page: "home" } | { page: "game"; name: string } | { page: "play"; id: string } | { page: "settings"; id: string | null };
+
+function readRoute(): Route {
+  const h = location.hash.replace(/^#/, "");
+  let m: RegExpMatchArray | null;
+  if ((m = h.match(/^\/g\/([^/?]+)/))) return { page: "play", id: decodeURIComponent(m[1]) };
+  if ((m = h.match(/^\/games\/([^/?]+)/))) return { page: "game", name: decodeURIComponent(m[1]) };
+  if ((m = h.match(/^\/settings(?:\/([^/?]+))?/))) return { page: "settings", id: m[1] ? decodeURIComponent(m[1]) : null };
+  return { page: "home" };
+}
+
+function useRoute(): Route {
+  const [route, setRoute] = useState<Route>(readRoute);
   useEffect(() => {
-    const h = () => setId(read());
+    const h = () => {
+      setRoute(readRoute());
+      scrollTo(0, 0);
+    };
     addEventListener("hashchange", h);
     return () => removeEventListener("hashchange", h);
   }, []);
-  return [id, (v) => (location.hash = v ? `#/g/${v}` : "")];
+  return route;
 }
 
 export default function App() {
-  const [id, setId] = useHashRoute();
-  if (!id) return <Lobby onOpen={setId} />;
-  return <Game id={id} onExit={() => setId(null)} />;
+  const route = useRoute();
+  const settingsHref = route.page === "play" ? `#/settings/${route.id}` : route.page === "settings" && route.id ? `#/settings/${route.id}` : "#/settings";
+  return (
+    <div className={`app app-${route.page}`}>
+      <Bar settingsHref={settingsHref} />
+      <div className="page">
+        {route.page === "home" && <Home />}
+        {route.page === "game" && <GamePage key={route.name} name={route.name} />}
+        {route.page === "play" && <Game key={route.id} id={route.id} />}
+        {route.page === "settings" && <SettingsPage key={route.id ?? ""} iid={route.id} />}
+      </div>
+    </div>
+  );
 }
 
 const SHOWN: TranscriptRow["role"][] = ["player", "narrator", "mechanics", "command", "result", "system_note"];
 
-function Game({ id, onExit }: { id: string; onExit: () => void }) {
+function Game({ id }: { id: string }) {
   const [view, setView] = useState<InstanceView | null>(null);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState<string | null>(null);
@@ -32,7 +59,6 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
   const [pending, setPending] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [debug, setDebug] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(() => api.instance(id).then(setView).catch((e) => setErr(String(e))), [id]);
@@ -158,9 +184,9 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
   return (
     <div className="layout">
       <header>
-        <button className="link" onClick={onExit}>
-          ← games
-        </button>
+        <a className="link" href={`#/games/${view.game}`} title="This game's saved games and New game">
+          ← saves
+        </a>
         <strong>{view.title}</strong>
         <span className="muted">turn {view.turn}</span>
         <span className="spacer" />
@@ -170,7 +196,7 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
         <button onClick={() => rewrite()} disabled={view.turn === 0 || streaming !== null} title="Request a rewrite of the last turn: same facts, same dice, the referee's changes undone. Whatever is in the text box is your explanation or instructions; empty just tells it again.">
           rewrite
         </button>
-        <button onClick={() => setSettingsOpen(!settingsOpen)} title="The narrator guard and the profile this server plays on">settings</button>
+        <a className="button-like" href={`#/settings/${id}`} title="Settings: this game's difficulty, the narrator guard, the profile this server plays on">settings</a>
         <button onClick={() => branch()} disabled={streaming !== null} title="Copy this game as a new branch from here">
           branch
         </button>
@@ -179,7 +205,6 @@ function Game({ id, onExit }: { id: string; onExit: () => void }) {
         </a>
         <button onClick={() => setDebug(!debug)}>GM debug</button>
       </header>
-      {settingsOpen && <SettingsMenu onClose={() => setSettingsOpen(false)} />}
       <main>
         <section className="narrative" ref={scrollRef}>
           {rows.map((r) => (
@@ -346,45 +371,3 @@ function MechanicsRow({ text }: { text: string }) {
     </div>
   );
 }
-
-/** The settings menu: the narrator guard (changeable) and the profile picker (the profiles, the selected one's card, the switch). */
-function SettingsMenu({ onClose }: { onClose: () => void }) {
-  const [s, setS] = useState<Settings | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const reload = useCallback(() => {
-    api.settings().then(setS).catch((e) => setErr(String(e)));
-  }, []);
-  useEffect(reload, [reload]);
-  async function setMode(mode: string) {
-    try {
-      setS(await api.updateSettings({ guard: { mode } }));
-    } catch (e) {
-      setErr(String(e));
-    }
-  }
-  if (!s) return <div className="settings muted small">{err ?? "loading settings…"}</div>;
-  return (
-    <div className="settings">
-      <div className="settings-row">
-        <strong>Narrator guard</strong>
-        <select value={s.guard.mode} onChange={(e) => setMode(e.target.value)}>
-          {Object.keys(s.modes).map((m) => (
-            <option key={m} value={m}>{m}</option>
-          ))}
-        </select>
-        <span className="muted small">{s.modes[s.guard.mode]}</span>
-      </div>
-      {s.guard_from !== "settings" && (
-        <div className="settings-row muted small">
-          {s.guard_from === "profile"
-            ? `Set by the profile ${s.profile}, on this server only; a change here stays on this server until the next switch.`
-            : `Changed here, on this server only (the profile ${s.profile} says ${s.profile_guard}); the other servers keep ${s.shared_guard}.`}
-        </div>
-      )}
-      <ProfilePicker onSwitched={reload} />
-      {err && <div className="error small">{err}</div>}
-      <button className="link small" onClick={onClose}>close</button>
-    </div>
-  );
-}
-
