@@ -192,9 +192,12 @@ twelve SRD classes with Rogue and Barbarian full (B92); the sheet pass (B90); th
 and the Places panel (B64, B65, B68, B69, B87); hidden games gitignored (B88).
 
 *The queue, in order (the owner, 11-08 evening):*
-0. **The night's rulings** (B200 to B203): caps off on every game, grave wounds carrying -4 or -5; noir's talk row 5
-   to 15; the locked-out station keeps its cameras and the crew's chat channel, microphones the first project; the
-   fantasy's B66 and B70 to the build chat. Small, with §1.
+0. **The night's rulings, part six** (B200 to B206, sent 11-08 night; they change part four where they touch it):
+   caps off on every game and a five-step wound ladder (minor 0, moderate -1, serious -2, grave -4, ruinous -5);
+   **death is death** (zero hit points is the stone; the downed branch and the carry removed from play, the rescue
+   exception a later item); enemy and environment harm through the narrator's inline calls (`ENEMY`, `HAZARD`) with
+   damage steps up to lethal and an engine backstop; noir's talk row 5 to 15; the locked-out station keeps its cameras
+   and the crew's chat channel; the fantasy's B66 and B70 to the build chat.
 1. **Questions do not move time** (B105): a pre-check line to the assistant, the engine's trivial turn, an Ask mode.
    Front of the line, a quick fix. **Reaches wait for a quiet turn and a carrier** (B104) behind it.
 2. **Deadliness** (B94 to B103, part four): the stakes live by default; no modifier caps on the fantasy; a chosen death
