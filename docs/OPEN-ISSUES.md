@@ -31,6 +31,10 @@ the design is `notes/DESIGN-lobby-and-saves-2026-11-08.md`; the first slice of U
 - B76 *decided (the owner, 11-08), to build with B74.* A "dev mode" checkbox in Settings reveals hidden games (the clown sim when it exists: "don't want kids seeing that one"). Gated on the server (`GameBase.hidden`; `/api/games`, `/api/instances` and the create route leave hidden games out without an `X-Dev` header); an optional dev PIN in the server config is the lean, since a checkbox is not a lock.
 - B77 *later, with Stage 3.* One server for every game: today the rounds (:8013, Gemma) and the fantasy (:8014, Sonnet) are two servers with two save lists; the profile per game (Stage 3) is what lets one serve all; until then the lobby's bar names the server and profile it talks to.
 
+**Added 2026-11-08 evening (the owner playing, Sonnet).**
+
+- B88 *flagged (11-08 evening; 8e346753d427, was 917d8224ffb7 T4).* A thing handed back to the player was never recorded: the prose said Pip hands Ungdall his sword and "You take the sword and buckle it on", and the referee wrote moves, a mood, an unseen and a soon, but no row bringing `sword` back from the Lantern's floor to the pockets. The owner noticed two turns later; fixed by hand in the save's latest snapshot (the sword put back in his pockets; the state before is kept in the session scratchpad). Watch for it: the referee rules may need a line for a listed thing coming back into the player's hands.
+
 **Added 2026-11-08 afternoon (the lobby, D171).**
 
 - B86 *flagged (11-08 afternoon, D171).* Dev mode gates the lists, create and import, but not `GET /api/instances/{id}` or its card: anyone holding a hidden game's save id can open it. Fine while no game is hidden; gate it before the clown sim lands.
