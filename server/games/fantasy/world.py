@@ -187,6 +187,13 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
         _end(game, s, turn, "by their own choice", w=w, cause=f"chose to die at {p.location}")
         w.skip.append("hp")
         return s, w
+    # -- contact broken (B226): a move to another place, or words that break contact (smoke, a slip away, the boat), end
+    #    every hold on the player and its peril; the fight is left, and whoever follows does so by a narrator's call
+    if getattr(adj, "kind", "") == "action" and escape_check(adj) is None and breaks_contact(adj, text, p.location):
+        broken = _break_contact(s, w)
+        if broken:
+            w.directives.append(f"{p.name} breaks contact: {broken}. Nothing holds {p.name} now; play the getting away. Anyone who "
+                                f"comes after {p.name} does so in the prose, by an <<ENEMY>> call.")
     # -- a peril: the countdown (B102), and the chosen end inside one (B100 (a))
     if p.peril is not None:
         pr = p.peril
@@ -229,6 +236,48 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
                                 f"end the turn on the question, in the city's voice: what does {p.name} do?")
         w.rows.append({"kind": "peril", "peril": pr.kind, "outcome": res.outcome, "turns_left": pr.turns_left, "line": line})
     return _after_peril(game, s, adj, player_text, rng, turn, offset, w, text)
+
+
+BREAK = re.compile(r"\b(smoke( pellet| bomb)?|slip (away|off|out|free)|vanish|disappear|melt (away|into)|"
+                   r"(get|climb|jump|scramble|clamber|tumble) (back )?(in|into|aboard) the (boat|skiff)|push off|row (away|off|back|for))", re.I)
+HOLDING = ("grappled", "held", "restrained", "pinned")
+
+
+def breaks_contact(adj: Any, text: str, here: str) -> bool:
+    """B226: the turn takes the player out of reach: a move to another place (an intent's transition), or words that break
+    contact (smoke, a slip away, into the boat, rowing off), with no blow in them."""
+    from .game import ATTACK
+    if ATTACK.search(text):
+        return False
+    for i in getattr(adj, "intents", None) or []:
+        t = str(getattr(i, "transition", "") or "")
+        dest = t.split("move:", 1)[1].split(" via:", 1)[0].strip() if t.startswith("move:") else t.strip()
+        if dest and ":" not in dest and here and dest.lower() != here.lower() and not dest.lower().startswith("the boat"):
+            return True
+    return bool(BREAK.search(text))         # backing away or running in reach is an attempt the fight can answer, not a break
+
+
+def _break_contact(s: FantasyState, w: "WorldTurn") -> str:
+    p = s.player
+    said: list[str] = []
+    row: dict[str, Any] = {"kind": "contact_broken"}
+    if p.peril is not None and p.peril.kind in ("held", "drowning"):
+        row["peril"], row["by"] = p.peril.kind, p.peril.by
+        said.append(f"no longer {PERILS.get(p.peril.kind, {}).get('what', p.peril.kind)}")
+        p.peril = None
+    held = [c.name for c in p.conditions if c.name.lower().startswith(HOLDING)]
+    if held:
+        p.conditions = [c for c in p.conditions if c.name not in held]
+        row["conditions"] = held
+        said.append("out of the grip")
+    if p.fighting:
+        row["left"] = list(p.fighting)
+        said.append("out of reach of " + ", ".join((s.person(x).name if s.person(x) else x) for x in p.fighting))
+        p.fighting = []
+    if len(row) > 1:
+        w.rows.append(row)
+        w.mechanics.append(f"Out of reach: {'; '.join(said)}.")
+    return "; ".join(said)
 
 
 def escape_check(adj: Any) -> str | None:

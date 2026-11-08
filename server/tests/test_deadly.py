@@ -364,3 +364,28 @@ def test_the_word_at_zero_is_dead(game):
     assert meter.tier == "dead"
     assert "; dead;" in game.render_bulletin(st, "")
     assert "downed" not in game.ui(st).model_dump_json()
+
+
+def test_a_hold_ends_when_the_player_leaves_its_reach(game):
+    """B226 (8c106d354426): Sael's grab followed the Rogue off the island twice (a smoke pellet; the boat home), the
+    backstop rolling her each turn and the drowning peril counting down. Leaving breaks contact: the hold, its peril and
+    the fight end, with a row; whoever follows does so by a narrator's call."""
+    st = new(game)
+    foe(st, pid="maud", moves=[{"kind": "hold", "bonus": 4, "stat": "str", "difficulty": "high", "peril": "drowning"}])
+    wo.open_peril(st, "drowning", by="Maud")
+    s2, w = game.world_turn(st, act("I crack a smoke pellet and slip away"), "I crack a smoke pellet and slip away", Dice(1), 3, 2)
+    assert s2.player.peril is None and not s2.player.fate and s2.player.fighting == []
+    assert any(r["kind"] == "contact_broken" and r["left"] == ["maud"] and r["peril"] == "drowning" for r in w.rows)
+    assert game.backstop(s2, {"hp": 0, "acted": []}, Dice(20, 20), 2) == []
+    # the boat home: a move to another place
+    st2 = new(game)
+    foe(st2, pid="maud", moves=[{"kind": "hold", "bonus": 4}])
+    boat = AssistantReading(kind="action", summary="rows home", time_minutes=30, risk="low", tempo="slow",
+                            intents=[Intent(action="get back in the boat and row home", transition="The river Marrow")])
+    s3, w3 = game.world_turn(st2, boat, "Hazel and I get back in the boat and Tam rows us home.", Dice(), 3, 2)
+    assert s3.player.fighting == [] and any(r["kind"] == "contact_broken" for r in w3.rows)
+    # a blow is no leaving
+    st3 = new(game)
+    foe(st3, pid="maud")
+    s4, _ = game.world_turn(st3, act("I run my blade at her"), "I run at her and stab", Dice(), 3, 2)
+    assert s4.player.fighting == ["maud"]
