@@ -96,8 +96,9 @@ Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a shor
    save at last); the People cards showing seed facts she was never told and never updating (B243); the game master's
    asides not canon (B244); the clock's floor in a tense scene (B245: Sonnet never writes a fast turn); a thing given
    away kept, because the engine held it twice (B246); a fallback quest reaching her on the island by boat (B247, B104
-   reopened); the Rats job "offered" after the deed, no close flag written (B224.22 seen again, B58). The directive for
-   these is written when the owner says; her server moves after it, on his word.
+   reopened); the Rats job "offered" after the deed, no close flag written (B224.22 seen again, B58). Part eleven written 11-09
+   as two pastes: §1 the interrupting people (B241, B247, B104; on top of the build chat's own B235 walk-up hold), §2 to
+   §7 the rest (B242 to B246, B224.22, B58); her server moves after it, on the owner's word.
 1. **She plays, on her own server** (started 11-09; 28 turns the first night, 25a51df64905, Normal, Sonnet). The side chat's read after part nine: on Sonnet the design holds (edge on 15 of 21 checks,
    `aim` never misused, 14 attempts settled by the words, death is death); she can play now if the owner accepts what
    is still open there: XP moves only when a quest closes (B221), money drift (B223), the People panel ahead of the
