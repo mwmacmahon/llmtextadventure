@@ -17,15 +17,22 @@ you'll need to run your own trials. I think running a Gemma trial right now rega
 1. **Now: her server moves** to 83ac136, part twelve complete (§1 to §6 landed tonight, 49501d3 to 83ac136), on the
    owner's word given 11-09 night: part thirteen §1. The owner smoke-tests with a side game; Lilith plays at her own
    pace and the side chat reads her save when there is new play.
-2. **Now: the X3 trial on Gemma** (part thirteen §2 to §5): the defaults-left count built into the call report and the
+2. **Now: the introductions** (part fourteen, written 11-09 night by the side chat at the owner's ask: "some kind of
+   introductory paragraph... the world and your character's state within it"; Lilith: nothing told her who, where or
+   what at the start). Each scenario gets an `introduction` shown first at turn 0, before the opening: noir's tells the
+   case so far (Brandt's file, Ada two nights ago, the caller tonight; the 2023 histories show the game always began on
+   the roof, the office visit was only ever the summary's back-story, so nothing is recovered, it is told); the
+   fantasy's the city and "you came in on the evening barge" with the sheet's name, race and class; the station's the
+   station, the five, and what you are. The grimdark game inherits; the mod may patch it.
+3. **Now: the X3 trial on Gemma** (part thirteen §2 to §5): the defaults-left count built into the call report and the
    replay scorer; the chain of small questions as a dial on the assistant role; both arms replayed on the box over the
    Sonnet-keyed turns that exist (her 28, the two 11-08 readiness rounds); the cache verified from prompt_n and cache_n;
    a report page. No new Sonnet calls. The owner decides on the numbers; nothing adopted on 60/40.
-3. **The owner plays Super Grimdark Fantasy on Gemma** (:8013); the side chat reads those saves as they come. Sonnet
+4. **The owner plays Super Grimdark Fantasy on Gemma** (:8013); the side chat reads those saves as they come. Sonnet
    rounds, when the side chat needs them, are its own to run.
-4. **Proposed, after the trial: the reading says where and what** (the consolidation of the word lists into fields the
+5. **Proposed, after the trial: the reading says where and what** (the consolidation of the word lists into fields the
    adjudicator writes; the trial's numbers say whether the one call can carry more fields or the chain should).
-5. **XP** (B221) when her play warrants it. 6. **The play page on the phone** (DESIGN-player-ui; §6's Timeline and
+6. **XP** (B221) when her play warrants it. 7. **The play page on the phone** (DESIGN-player-ui; §6's Timeline and
    Journal landed first).
 
 ## Waiting on the owner

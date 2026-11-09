@@ -239,6 +239,9 @@ its proposed `another_way` flag); a `standing:` line per hook (B136).
 **To check.** The too_far ruling's silence on the owner's explicit forks (B209, lower priority; the engine net since
 B144 covers the plain words).
 
+- An introduction at turn 0 (part fourteen, written 11-09 night; Lilith's complaint): the city, and "you came in on the
+  evening barge" with the sheet's name, race and class, before the common room.
+
 ## 9. Noir, Lowtown
 
 Frank's case in Lowtown: 2d6, the notebook, the city's table of consequences, nerves, the wounds. Design: the noir
@@ -253,6 +256,8 @@ living page; DESIGN.md; D73 to D77, D144, D157, D178.
 - Stray engine lines in the prose ("§ Smoke", "§ Reload") that contradict it (B20).
 - Rosa met and heard of at once (N6-1031); the caller filed at The Anchor (I6).
 
+- An introduction at turn 0 (part fourteen, written 11-09 night): who Frank is, the city, the case so far, before the roof.
+
 ## 10. The station
 
 The station AI, locked out at the start, every system a project; the crew with wants and suspicion; the alarm. Design:
@@ -265,6 +270,8 @@ DESIGN-time-and-attempts §4 (the control model, D151); the station living page;
 - The canister's sample can never be learned (B61, open with the owner: a secret with a How for the catalogue).
 - The station's week (ST1), after the sanity sitting.
 - Voss's suspicion and the crew alarm jumping (S12); the drone carrying the canister into the Lab on every run (W1-1031).
+
+- An introduction at turn 0 (part fourteen, written 11-09 night): the station, the five, what you are, before 08:00.
 
 ## 11. The player UI
 
