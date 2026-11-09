@@ -2680,23 +2680,32 @@ ON_THE_MOVE = re.compile(r"\b(?:walks?|walking|strides?|striding|struts?|strutti
                          r"leaves?|leaving|exits?|climbs?|climbing|ascen(?:t|ds?)|descen(?:t|ds?)|crosses|crossing|steps? out|"
                          r"up ?stairs|down ?stairs|up the stairs|down the stairs|to (?:my|his|her|their|the) room|on (?:my|his|her|their) way)\b", re.I)
 SPACING_TURNS = 2
+SPACING_MINUTES = 20            # and within this much game time: a long wait after someone came is room enough
 
 
 def busy_for_callers(adj: Any, doc: dict, game: Any, turn: int) -> str:
     """Why nobody should walk up to the player this turn (B235), or "": the turn is a move (the reading's summary, its
-    intents' actions, or a move: transition), or a hook's person or a happening's person came in the last two turns."""
+    intents' actions, or a move: transition), or a hook's person or a happening's person came in the last two turns and
+    less than twenty game minutes ago."""
     if adj is not None and getattr(adj, "kind", "") == "action":
         words = " ".join([adj.summary or ""] + [i.action or "" for i in adj.intents])
         if ON_THE_MOVE.search(words) or any(str(getattr(i, "transition", "") or "").startswith("move:") for i in adj.intents):
             return "on the move"
     recent = range(turn - SPACING_TURNS, turn)
+    clock = getattr(game, "clock", None)
+    clk = (sp.lookup(doc, clock.path, None) or {}) if clock else {}
+    now = int(clk.get("day", 1)) * clock.minutes_per_day + int(clk.get("minute", 0)) if clock else None
+
+    def lately(t, at) -> bool:
+        return t in recent and (now is None or at is None or now - int(at) < SPACING_MINUTES)
+
     for e in sp.lookup(doc, getattr(game, "events_path", "hidden.events"), []) or []:
-        if e.get("hook") and e.get("fired") and e.get("fired_turn") in recent:
-            return "someone came to the player a turn or two ago"
+        if e.get("hook") and e.get("fired") and e.get("directive") and lately(e.get("fired_turn"), e.get("fired_at")):
+            return "someone came to the player a moment ago"
     spath = getattr(game, "spontaneous_path", None)
     for h in (sp.lookup(doc, spath, []) or []) if spath else []:
-        if h.get("who") and h.get("last_fired_turn") in recent:
-            return "someone came to the player a turn or two ago"
+        if h.get("who") and lately(h.get("last_fired_turn"), h.get("last_fired_at")):
+            return "someone came to the player a moment ago"
     return ""
 
 

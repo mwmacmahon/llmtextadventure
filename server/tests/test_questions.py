@@ -111,6 +111,8 @@ def test_nobody_walks_up_while_the_player_crosses_the_room(engine, no_happenings
     assert busy_for_callers(sit, doc, game, 12).startswith("someone came")  # two turns of room after he came
     assert busy_for_callers(sit, doc, game, 13).startswith("someone came")
     assert busy_for_callers(sit, doc, game, 14) == ""
+    doc["clock"]["minute"] += 30
+    assert busy_for_callers(sit, doc, game, 12) == ""                      # or half an hour of game time
     pip = spon.Spontaneous(id="pip", chance_per_hour=1.0, who=["pip"], directive="Pip asks where they are going.")
     bells = spon.Spontaneous(id="bells", chance_per_hour=1.0, directive="The bells ring.")
     from engine.events import evaluate
