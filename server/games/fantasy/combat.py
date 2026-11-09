@@ -931,7 +931,7 @@ def fight_panel(game: Any, s: FantasyState) -> list:
         b = ensure_block(q)
         hps = list(b.hps) if b.count > 1 and b.hps else [b.hp or 0]
         for n, h in enumerate(hps):
-            label = name_of(q, n) if b.count > 1 else q.name
+            label = game.unnamed(s, name_of(q, n) if b.count > 1 else q.name)   # B286
             chips = [Chip(label="", value=a) for a in _ailments_of(q)]
             if c.last.get(q.id):
                 chips.append(Chip(label="last", value=c.last[q.id]))
@@ -940,9 +940,7 @@ def fight_panel(game: Any, s: FantasyState) -> list:
             meters.append(Meter(label=label, value=max(0, h), min=0, max=max(1, b.hp_max or 1), text=f"{max(0, h)} / {b.hp_max}",
                                 tier=hp_word(h, b.hp_max or 1, fallen_word(q)), tone="bad" if h * 2 < (b.hp_max or 1) else None, chips=chips))
     title = f"Fight, round {c.round + 1}"
-    chips = [cs for cs in game.commands(s) if cs.id in ("flee", "yield")]
-    return [MeterGroup(title=title, meters=meters, place="main", pinned=True),
-            Commands(title=None, items=chips, place="main", pinned=True)]
+    return [MeterGroup(title=title, meters=meters, place="main", pinned=True)]     # B287: flee and yield are typed, no buttons
 
 
 def run_fight_command(game: Any, state: FantasyState, command_id: str) -> tuple[FantasyState, Any]:

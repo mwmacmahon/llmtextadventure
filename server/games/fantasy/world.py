@@ -357,8 +357,8 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
                     if q is not None and q.status == "alive" and q.location and not game._same_spot(s, q.location, p.location):
                         q.location = p.location                             # a blow at them says they are here (a stale place, B262)
                 struck += list(getattr(a, "targets", None) or [])
-        if not struck and is_fight(adj):
-            struck = list(getattr(adj, "entities", None) or [])
+        if not struck and is_fight(adj) and ATTACK.search(" ".join([player_text or "", text])):
+            struck = list(getattr(adj, "entities", None) or [])     # B286: a fast beat with no blow in it (a shout, a question) joins nobody
         for e in struck:
             q = s.person(e) or game._same_person(s, e)
             if q is not None and q.status == "alive" and q.id not in p.with_them and q.id not in p.fighting:

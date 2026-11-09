@@ -151,6 +151,7 @@ class Person(BaseModel):
     id: str
     name: str
     role: str = ""
+    called: str = ""                # B286 (the owner, 11-09): what the player calls them before the name ("Troll"); derived from the role when empty
     description: str = ""
     aliases: list[str] = Field(default_factory=list)
     location: str = ""

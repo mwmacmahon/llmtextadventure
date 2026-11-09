@@ -62,6 +62,7 @@ def test_hit_point_words_for_everyone_and_a_band():
 def test_a_hurt_person_shows_the_word_in_the_state_block_and_on_the_card(game):
     st = new(game)
     st.person("maud").met = True
+    st.player.names_heard.append("Maud Tallow")                     # B286: until then she is the Innkeeper
     q = st.person("maud")
     cb.ensure_block(q)
     q.combat.hp = 1
@@ -381,12 +382,12 @@ def test_the_fight_panel_shows_everyone_with_numbers_and_the_chips(game):
     fp = next(p for p in panels if getattr(p, "type", "") == "meter_group" and (p.title or "").startswith("Fight, round"))
     assert fp.place == "main" and fp.pinned
     labels = [m.label for m in fp.meters]
-    assert labels[0] == "Brin" and "the catacomb dead (the second)" in labels
-    second = next(m for m in fp.meters if m.label == "the catacomb dead (the second)")
+    assert labels[0] == "Brin" and "Skeletons (the second)" in labels          # B286: what the player calls them
+    second = next(m for m in fp.meters if m.label == "Skeletons (the second)")
     assert second.text == "5 / 13" and second.tier == "bloodied"
-    chips = next(p for p in panels if getattr(p, "type", "") == "commands" and p.place == "main")
-    assert [c.id for c in chips.items] == ["flee", "yield"]
-    assert not any(c.id in ("flee", "yield") for p in panels if getattr(p, "type", "") == "commands" and p.place != "main" for c in p.items)
+    assert not any(c.id in ("flee", "yield") for p in panels if getattr(p, "type", "") == "commands" for c in p.items)   # B287: no buttons
+    typed = {c.id: c for c in game.commands(st)}
+    assert typed["flee"].typed and "run" in typed["flee"].words and typed["yield"].typed and "surrender" in typed["yield"].words
 
 
 def test_flee_ends_the_fight_with_a_free_blow_from_each_and_yield_is_taken_by_people_only(game):
@@ -441,3 +442,66 @@ def test_rage_runs_through_the_grammar(game):
     s1, res = game.run_command(st, "rage", {})
     assert res.ok and "raging" in s1.player.flags_on and s1.player.count("rage").value == 1
     assert any(c.id == "end_rage" for c in game.commands(s1))
+
+
+# ---- B286 (the owner, 11-09, Lilith's server): a shout started a fight; the dice lines leaked a name; what to call the unnamed --------
+def _troll(st, heard=False):
+    st.people = [q for q in st.people if q.id != "gorm"] + [Person(id="gorm", name="Gorm", role="A small troll", called="Troll", location=st.player.location,
+                                                                 met=True, attitude=-1, combat=CombatBlock(block="brute"))]
+    st.hidden.terms = list(st.hidden.terms) + ([] if "Gorm" in st.hidden.terms else ["Gorm"])
+    st.player.names_heard += ["Hazel", "Hazel Oakhew"]
+    if heard:
+        st.player.names_heard.append("Gorm")
+    return st.person("gorm")
+
+
+def test_a_fast_shout_with_no_blow_joins_nobody_to_a_fight(game):
+    st = new(game)
+    _troll(st)
+    st.player.with_them = ["hazel"]
+    talk = AssistantReadingCombat(kind="action", summary="Brin calls a warning to Hazel, then asks the troll if it is a troll.", time_minutes=1,
+                                  tempo="fast", risk="low", entities=["gorm", "hazel"],
+                                  intents=[IntentCombat(action="Warn Hazel loudly, then quietly ask the troll if it is a troll", targets=["hazel", "gorm"])])
+    s, w = game.world_turn(st, talk, "I shout back to the girl \"Careful! This is probably a troll!\" Then: \"Umm, troll, right?\"", random.Random(1), 6, 2)
+    assert s.player.fighting == [] and s.combat is None and not any("A FIGHT" in d for d in w.directives)
+    swing = AssistantReadingCombat(kind="action", summary="Brin swings at the troll.", time_minutes=1, tempo="fast", risk="high", entities=["gorm"],
+                                   intents=[IntentCombat(action="Swing at the troll", targets=["gorm"])])
+    s2, _ = game.world_turn(st, swing, "I swing my sword at the troll", random.Random(1), 6, 2)
+    assert s2.player.fighting == ["gorm"]
+
+
+def test_engine_lines_call_the_unnamed_what_the_player_calls_them(game):
+    st = new(game)
+    q = _troll(st)
+    assert game.called(q) == "Troll" and game.shown_name(st, q) == "Troll"
+    assert game.unnamed(st, "Hazel Oakhew's blow at Gorm: 15 against AC 14, hit; Gorm is scratched. <<ENEMY gorm strike>>") \
+        == "Hazel Oakhew's blow at Troll: 15 against AC 14, hit; Troll is scratched. <<ENEMY gorm strike>>"
+    assert game.called(Person(id="x", name="Mirabel", role="A young siren of Reed Island")) == "Young siren"     # no label: the role's words
+    block = game.render_bulletin(st, "")
+    assert "- Troll (Gorm; Brin has not heard the name: in the telling they are 'Troll'" in block
+    st.player.names_heard.append("Gorm")
+    assert game.unnamed(st, "Gorm's blow") == "Gorm's blow" and "- Gorm:" in game.render_bulletin(st, "")
+
+
+def test_the_leak_guard_does_not_read_the_engines_dice_lines(game):
+    st = new(game)
+    _troll(st)
+    assert game.leaked_terms(st, "§ Gorm's blow: 22 against AC 17, hit.\n\nThe fist comes down.", "") == []
+    assert game.leaked_terms(st, "Gorm has not followed.", "") == ["Gorm"]
+
+
+def test_every_person_in_the_content_has_a_called_label():
+    import yaml
+    missing = []
+    for f in sorted([*(CONTENT / "scenarios").glob("*.yml"), *(CONTENT / "hooks").glob("*.yml")]):
+        def walk(x):
+            if isinstance(x, dict):
+                if "name" in x and "role" in x and not str(x.get("called", "")).strip():
+                    missing.append(f"{f.name}: {x.get('id')}")
+                for v in x.values():
+                    walk(v)
+            elif isinstance(x, list):
+                for v in x:
+                    walk(v)
+        walk(yaml.safe_load(f.read_text(encoding="utf-8")))
+    assert missing == []
