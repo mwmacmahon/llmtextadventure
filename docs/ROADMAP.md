@@ -34,7 +34,7 @@ it. *decided*: the owner has ruled, no design yet. *open with the owner*: a ques
 
 | # | Area | State | Design | Left (in one line) |
 |---|---|---|---|---|
-| 1 | The dice, checks and consequences | built; the edge on the local model built 11-09, one Gemma turn seen | DESIGN.md §7.1a to §7.1c; DESIGN-time-and-attempts | the floor on an engine witness (B217), the fail branch unused (B225), tier-only d20 lines, the two bonuses meeting |
+| 1 | The dice, checks and consequences | built; combat (attack rolls, hit points for everyone, rounds) designed 11-09 night | DESIGN.md §7.1a to §7.1c; DESIGN-time-and-attempts | the floor on an engine witness (B217), the fail branch unused (B225), tier-only d20 lines, the two bonuses meeting |
 | 2 | Time and pacing | built, unseen in long rounds | DESIGN-time-and-attempts §3, §4 | travel floors, the fall's hours, a refused rest, "until when" as buttons, per-campaign pacing, missed events |
 | 3 | Measurement and parity | running | MEASURING.md, TESTING.md | the long rounds after parts four to eight, the eval key rebuild, the stale measure pages |
 | 4 | Profiles and the picker | built | DESIGN-context-modules §6 | the model label from the profile, one server for every game, levels edited in the UI |
@@ -46,7 +46,7 @@ it. *decided*: the owner has ruled, no design yet. *open with the owner*: a ques
 | 10 | The station | built | DESIGN-time-and-attempts §4; station page | the locked-out text, what each project unlocks, the upgrades, the canister, the station's week |
 | 11 | The player UI | slice one built; slice two designed | DESIGN-lobby-and-saves; DESIGN-player-ui | the play page (four questions open), the feedback button, the ending word, dev mode's gaps |
 | 12 | Mods and variants | mods now (B231); idea (variants) | DESIGN-mods | the mods first cut, Super Grimdark Fantasy as a derived game with the R-rated mod, basic and advanced variants |
-| 13 | Magic | designed, open with the owner | DESIGN-magic | placement and four questions; then the spell data, slots, the Cast lever, the level-up screen |
+| 13 | Magic | designed; the Paladin first designed 11-09 night, three questions open | DESIGN-magic | placement and four questions; then the spell data, slots, the Cast lever, the level-up screen |
 | 14 | Models and the box | one model all roles, running | LOCAL_LLM.md; the trials reports | Qwen's return through profiles, hosted narrators, the box's faults |
 | 15 | The clown sim (Clown Maker) | built hidden, in the repo; stage A done; the hand of bookings built (D186C); no model round | CLOWN_DESIGN, CLOWN_ROADMAP, the design page | the first Sonnet round, the money dials, the content pass |
 | 16 | Writing for models | running; the sweep proper not run | WRITING_FOR_MODELS.md | the full sweep and its rounds |
@@ -89,6 +89,14 @@ Gemma turn an edge of +2 arrived with its why. The chosen-death net fires only o
   long rounds.
 - Undo replays the same dice and a different attempt rolls fresh: built (H4, D172, D173).
 - A retold turn runs the stakes call again; whether greedy decoding returns the same stakes is unverified (A3).
+
+**Combat (the owner, 11-09 night; DESIGN-combat-2026-11-09, designed, not built).** "It's fun to see enemies take damage
+and die." The fantasy's fights move from stat checks to attack rolls against an armour number, damage dice, and saves (a
+check under another name); every person carries a combat block (AC, hit points, attack, damage, weight) with defaults by
+role; a fight is a mode with a round per player turn, rolled before the prose and told from a round sheet, enemies
+acting programmatically, allies too; down and dead; cleave-through and sweep; a Fight panel; the engine sizes a fight
+by a budget from level, party and band (§9b), numbers before bodies before inflation; a fight simulator tunes it. Six
+questions open with the owner. Noir and the station keep 2d6 and their own fights.
 
 ## 2. Time and pacing
 
