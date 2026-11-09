@@ -34,7 +34,7 @@ it. *decided*: the owner has ruled, no design yet. *open with the owner*: a ques
 
 | # | Area | State | Design | Left (in one line) |
 |---|---|---|---|---|
-| 1 | The dice, checks and consequences | built; combat (attack rolls, hit points for everyone, rounds) designed 11-09 night | DESIGN.md §7.1a to §7.1c; DESIGN-time-and-attempts | the floor on an engine witness (B217), the fail branch unused (B225), tier-only d20 lines, the two bonuses meeting |
+| 1 | The dice, checks and consequences | built; combat (attack rolls, hit points for everyone, rounds) directed 11-09 night, part fifteen | DESIGN.md §7.1a to §7.1c; DESIGN-time-and-attempts | the floor on an engine witness (B217), the fail branch unused (B225), tier-only d20 lines, the two bonuses meeting |
 | 2 | Time and pacing | built, unseen in long rounds | DESIGN-time-and-attempts §3, §4 | travel floors, the fall's hours, a refused rest, "until when" as buttons, per-campaign pacing, missed events |
 | 3 | Measurement and parity | running | MEASURING.md, TESTING.md | the long rounds after parts four to eight, the eval key rebuild, the stale measure pages |
 | 4 | Profiles and the picker | built | DESIGN-context-modules §6 | the model label from the profile, one server for every game, levels edited in the UI |
@@ -46,7 +46,7 @@ it. *decided*: the owner has ruled, no design yet. *open with the owner*: a ques
 | 10 | The station | built | DESIGN-time-and-attempts §4; station page | the locked-out text, what each project unlocks, the upgrades, the canister, the station's week |
 | 11 | The player UI | slice one built; slice two designed | DESIGN-lobby-and-saves; DESIGN-player-ui | the play page (four questions open), the feedback button, the ending word, dev mode's gaps |
 | 12 | Mods and variants | mods now (B231); idea (variants) | DESIGN-mods | the mods first cut, Super Grimdark Fantasy as a derived game with the R-rated mod, basic and advanced variants |
-| 13 | Magic | designed; the Paladin first designed 11-09 night, three questions open | DESIGN-magic | placement and four questions; then the spell data, slots, the Cast lever, the level-up screen |
+| 13 | Magic | designed; the Paladin first directed 11-09 night with combat, part fifteen | DESIGN-magic | placement and four questions; then the spell data, slots, the Cast lever, the level-up screen |
 | 14 | Models and the box | one model all roles, running | LOCAL_LLM.md; the trials reports | Qwen's return through profiles, hosted narrators, the box's faults |
 | 15 | The clown sim (Clown Maker) | built hidden, in the repo; stage A done; the hand of bookings built (D186C); no model round | CLOWN_DESIGN, CLOWN_ROADMAP, the design page | the first Sonnet round, the money dials, the content pass |
 | 16 | Writing for models | running; the sweep proper not run | WRITING_FOR_MODELS.md | the full sweep and its rounds |
@@ -98,7 +98,8 @@ owner: more exciting, keeps the narrator on its toes), the engine backstopping e
 by a budget from level, party and band (§9b), every fight tough but winnable unless marked fixed (a boss, a set piece;
 the owner's ruling), numbers before bodies before inflation; a fight simulator tunes it. Enemies die at 0, allies go down
 and are revived after (dead at -10 or by a lethal hazard), the player is dead (the owner, 11-09 night). Five
-questions open with the owner. Noir and the station keep 2d6 and their own fights.
+questions all answered 11-09 night (numbers and ailments on the Fight panel, allies on their own, SRD, fights pay XP,
+the simulator at 90/70/50 with an all-out character); part fifteen written. Noir and the station keep 2d6 and their own fights.
 - Later: the player downed rather than dead at 0 (the owner, 11-09 night: "a future roadmap item"); death is death until then.
 
 ## 2. Time and pacing
@@ -338,7 +339,7 @@ spells: a feature grammar on the class file with four kinds the engine implement
 turn the undead, a timed buff), replacing the four hand-coded branches (Rage, Lay on Hands, Second Wind, Smoke); the
 paladin's three level-2 spells as features with a slot cost and a card, the smallest exercise of the casting lever; a
 canned kit by level, no choices; `kind: undead` on people and skeletons in at least two places (the Catacombs under a
-Temple hook, the Mire's chapels, a ghost). Open: Turn Undead at level 1 or 2; the placements; SRD 5.1 or 5.2.
+Temple hook, the Mire's chapels, a ghost). Answered 11-09 night: Turn Undead at level 1; the placements, with a skeleton quest from the Lantern; SRD 5.1. Part fifteen.
 
 ## 14. Models and the box
 

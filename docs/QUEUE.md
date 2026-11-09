@@ -24,14 +24,13 @@ you'll need to run your own trials. I think running a Gemma trial right now rega
    the roof, the office visit was only ever the summary's back-story, so nothing is recovered, it is told); the
    fantasy's the city and "you came in on the evening barge" with the sheet's name, race and class; the station's the
    station, the five, and what you are. The grimdark game inherits; the mod may patch it.
-3. **Designed, 11-09 night: combat** (DESIGN-combat-2026-11-09; the owner: "it's fun to see enemies take damage and
-   die"): hit points for everyone, attack rolls and saves, a combat mode with a round per turn, blows rolled at the narrator's call and backstopped,
-   cleave, allies, a Fight panel, enemy scaling by an engine budget (the owner: tough but winnable unless marked a
-   boss), a fight simulator. Six questions open; the
-   directive after the owner answers, with the Paladin's (one build: combat first, the paladin on it).
-3a. **Designed, 11-09 night: the Paladin first** (DESIGN-magic §8; the owner's son would play a knight): features as
-   data with four kinds, the undead tagged and placed, a canned kit; the directive after the owner answers three
-   questions (Turn Undead's level, the placements, the SRD).
+3. **Part fifteen written 11-09 night: combat, and the Paladin on it** (DESIGN-combat-2026-11-09 and DESIGN-magic §8,
+   every question answered by the owner the same night): a combat block on every person with hit points, attack rolls
+   and saves beside the check, a combat mode with a round per turn rolled at the narrator's calls and backstopped,
+   enemies die and allies go down, cleave, a Fight panel with numbers and ailments, fights sized by an engine budget
+   (tough but winnable unless fixed), a fight simulator at 90/70/50; features as data with four kinds, the paladin's
+   canned kit with Turn Undead at level 1, the undead placed and a skeleton quest from the Lantern (`the_quiet_dead`).
+   One build, combat first.
 4. **Now: the X3 trial on Gemma** (part thirteen §2 to §5): the defaults-left count built into the call report and the
    replay scorer; the chain of small questions as a dial on the assistant role; both arms replayed on the box over the
    Sonnet-keyed turns that exist (her 28, the two 11-08 readiness rounds); the cache verified from prompt_n and cache_n;
