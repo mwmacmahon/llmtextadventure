@@ -1279,6 +1279,24 @@ class Engine:
         if rep_ruling:                                   # P1: the engine can see a retold turn, so it rules on it
             rulings.append(rep_ruling)
             log.info("engine.ruling " + logs.kv(iid=iid, turn=turn, rule="repetition", serious=True, of_turn=rep_ruling["of_turn"], overlap=rep_ruling["overlap"]))
+        if "repeated_beat" not in off and not any(r.get("rule") in ("repeated_beat", "repetition") for r in rulings):
+            # B242 (K3): the referee never raised the broom thumping after the rats three turns running; the engine finds
+            # a short sentence giving someone the same business as a recent turn, and the referee's model is asked once.
+            names = repetition.name_words(people_names(state.model_dump(mode="json")))
+            cands = repetition.beat_candidates(narration, earlier, names)
+            c = repetition.beat_group(narration, cands)
+            if c:
+                try:
+                    again, why, bmeta = await self._beat_check(iid, c, narration)
+                    ledger("beat_check", {**c, "repeated": again, "why": why, "_call": bmeta})
+                except Exception as e:  # noqa: BLE001 - a net; the turn stands without it
+                    again = False
+                    ledger("beat_check", {**c, "error": repr(e)[:300]})
+                if again:
+                    these = " ".join('"' + x.replace('"', "").replace("\u201c", "").replace("\u201d", "") + '"' for x in c["these"])
+                    rulings.append({"rule": "repeated_beat", "serious": True, "by": "engine", "what": these, "of_turn": c["of_turn"],
+                                    "fix": f"Turn {c['of_turn']} already gave that moment; leave it out of this turn or give them something new."})
+                    log.info("engine.ruling " + logs.kv(iid=iid, turn=turn, rule="repeated_beat", serious=True, of_turn=c["of_turn"], words=c["words"]))
         own_lines = sum(1 for ln in narration.splitlines() if ln.strip().startswith("§")) - sum(1 for c in calls_block.get("calls", []) if c.get("mechanic") and not c.get("backstop"))
         own_lines -= len(world.mechanics) if world is not None else 0      # the world's rolls are the engine's too (part four)
         if own_lines > 0:                                # P2: a § line the engine did not write is an invented roll
@@ -2068,6 +2086,17 @@ class Engine:
         meta = {"provider": provider.name, "model": usage.extra.get("model") or role.model, "seconds": round(time.monotonic() - t0, 2), "usage": asdict(usage)}
         return str(out.ending), str(out.why or "")[:300], meta
 
+    async def _beat_check(self, iid: str, c: dict, narration: str) -> tuple[bool, str, dict]:
+        """B242 (K3): one short question to the referee's model about a beat the engine thinks is told again."""
+        role = self.cfg.role("referee")
+        provider = self._provider(role, iid, "referee")
+        schema = create_model("BeatCheck", why=(str, ...), repeated=(bool, ...))    # the reason first
+        system, msgs = beat_check_messages(c, narration)
+        t0 = time.monotonic()
+        out, usage = await provider.extract(role, system, msgs, schema)
+        meta = {"provider": provider.name, "model": usage.extra.get("model") or role.model, "seconds": round(time.monotonic() - t0, 2), "usage": asdict(usage)}
+        return bool(out.repeated), str(out.why or "")[:300], meta
+
     async def _referee(self, game: Game, state: BaseModel, directives: list[str], player_text: str, narration: str,
                        adj: AssistantReading | None = None, levers: list[str] | None = None, iid: str | None = None) -> tuple[ChangeReport, dict]:
         role = self.cfg.role("referee")
@@ -2106,6 +2135,30 @@ QUEST_CHECK_SYSTEM = ("You check one thing for a text adventure's engine: whethe
                       "the telling and the quest's notes say has already happened. Who did it does not matter (the player, or someone "
                       "they set to it); that it is done does. A plan, a promise or a search only begun has not settled it. If in doubt, "
                       "answer none: a quest left open is easily put right, one closed early is not.")
+
+
+BEAT_CHECK_SYSTEM = ("You check one thing for a text adventure's engine: whether a sentence of this turn's telling plays again, as if it "
+                     "were new, a moment an earlier turn already told: the same gesture, sound or bit of business given to the same "
+                     "person again. Not a repeat: a sentence that moves it on (it ends, it changes, it has a consequence, someone "
+                     "answers it), or one that only names a thing still true in passing to say something new. If in doubt, answer false.")
+
+
+def beat_check_messages(c: dict, narration: str) -> tuple[str, list[Msg]]:
+    """B242 (K3): the referee's model asked about one pair the engine found (repetition.beat_candidates)."""
+    user = (f"EARLIER TURN (turn {c['of_turn']}) SAID:\n{c['that']}\n\nTHIS TURN SAYS:\n{c['this']}\n\nTHIS TURN'S WHOLE TELLING:\n{narration}\n\n"
+            "why: first, what each sentence shows of that person, and whether this turn's sentence adds anything to it. "
+            "repeated: then true when it plays the same moment again, false when it moves on.")
+    return BEAT_CHECK_SYSTEM, [Msg("user", user)]
+
+
+def people_names(doc: dict) -> list[str]:
+    """Every named person in a game's state (people, crew), for the beat check; the player is left out."""
+    out = []
+    for key in ("people", "crew", "npcs"):
+        v = doc.get(key)
+        rows = v.values() if isinstance(v, dict) else (v or [])
+        out += [str(r.get("name") or "") for r in rows if isinstance(r, dict)]
+    return [n for n in out if n]
 
 
 def quest_check_messages(q: dict, player_text: str, narration: str) -> tuple[str, list[Msg]]:

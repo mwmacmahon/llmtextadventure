@@ -173,3 +173,53 @@ async def test_repeated_beat_needs_this_turn_and_an_earlier_one_quoted(engine: E
     mech = (await _play(engine, iid, "I go on."))[-1]["data"]["mechanics"]
     assert bool([r for r in mech["rulings"] if r["rule"] == "repeated_beat"]) is kept
     assert any(i.startswith("referee ruled repeated_beat, dropped") for i in mech["issues"]) is (not kept)
+
+
+# ---- B242 (K3): a beat told again that the referee did not raise ---------------------------------------------------
+# Lilith's save 25a51df64905, turns 11 and 12 (Sonnet): Maud's broom thumped after the rats on both turns and the referee's
+# time pass raised nothing (its raw content holds no ruling row); the engine finds the pair and asks the referee's model once.
+T11 = ("Below, the whistle gives its ugly little note again and a river of small feet drains away along the passage, with Tansy's "
+       "delighted shrieking riding on top of it and Maud's broom thumping after. In the arch, Gorm's grey hand opens in thanks.")
+T12 = ("Hazel falls in beside you without a word, bow unslung. Behind you, from somewhere along the passage, Tansy's whistle trills "
+       "thinly and a flood of small feet pours off toward the river. Maud's broom thumps after it. Nobody asks whether you are coming back.")
+
+
+def test_the_broom_is_found_as_a_beat_told_again():
+    from engine import repetition
+    names = repetition.name_words(["Maud Tallow", "Tansy", "Gorm", "Hazel Oakhew", "Old Hesk"])
+    assert "hesk" in names and "old" not in names
+    g = repetition.beat_group(T12, repetition.beat_candidates(T12, [(10, "Maud follows with a broom."), (11, T11)], names))
+    assert g is not None and g["of_turn"] == 11
+    assert g["these"] == ["Behind you, from somewhere along the passage, Tansy's whistle trills thinly and a flood of small feet pours off toward the river.",
+                          "Maud's broom thumps after it."]
+    assert "maud broom thump" in g["words"]
+    assert repetition.beat_candidates(T12, [(11, T11)], set()) == []                     # nobody named: nothing to ask
+    moved = "Maud sets the broom down at last and pours you a cup."
+    assert repetition.beat_candidates(moved, [(11, T11)], names) == []                   # the same person, new business
+
+
+@pytest.mark.parametrize("answer", [True, False])
+async def test_the_engine_rules_on_a_beat_the_referee_left(engine: Engine, fake: FakeProvider, answer: bool):
+    engine.update_settings({"guard": {"mode": "log"}})
+    iid = engine.create_instance("station", {})
+    fake.canned["AssistantReading"] = [_adj(), _adj()]
+    tellings = iter(["Park leans on the hatch. Park's boot heel taps the deck plate twice.",
+                     "The lights dim. Park's boot heel taps the deck plate again, twice."])
+    fake.script = lambda system, messages: next(tellings)
+    asked = []
+
+    def hook(schema, last):
+        if schema.__name__ == "BeatCheck":
+            asked.append(last)
+            return schema.model_validate({"why": "the same tapping again", "repeated": answer})
+        return ChangeReport.of(log_line="x") if schema is ChangeReport else None
+    fake.hook = hook
+    await _play(engine, iid, "I wait.")
+    mech = (await _play(engine, iid, "I wait more."))[-1]["data"]["mechanics"]
+    assert len(asked) == 1
+    beat = [r for r in mech["rulings"] if r["rule"] == "repeated_beat"]
+    assert bool(beat) is answer
+    if answer:
+        assert beat[0]["by"] == "engine" and beat[0]["what"] == "\"Park's boot heel taps the deck plate again, twice.\""
+    row = next(r for r in engine.store.ledger(iid, 2) if r["kind"] == "beat_check")
+    assert row["payload"]["repeated"] is answer and row["payload"]["of_turn"] == 1

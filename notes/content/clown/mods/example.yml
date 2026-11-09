@@ -1,0 +1,43 @@
+# The shape of a mod for the clown game (B79; notes/DESIGN-mods-2026-11-08.md). Never offered on the form. A mod is a YAML
+# file in this directory; the new-game form shows it as a checkbox with its `about` line; it is applied when a new game
+# is made and never after; the save keeps the mod's name, hash and text.
+name: Example
+about: "One line on what it changes."
+game: clown
+order: 10
+
+# The house file (scenarios/tumbler_house.yml) as a JSON merge patch: nested keys merge, null deletes; lists of objects with ids
+# (girls, people, events, spontaneous, the deck's hooks) are patched by id.
+scenario:
+  people:
+    judge:
+      client: {pays: 80}
+  girls:
+    dot:
+      skills: {acrobatics: 60}
+      love: 2
+
+# The narrator's prefix by its ALL-CAPS section heading (THE PREMISE, THE TONE, THE PLAYER'S REACH, TRAINING AND THE WEEK,
+# THE SHOW, HOW YOU NARRATE, WHAT YOU DO NOT DO, THE GAME STATE): replace a section or append to it. {name} is the proprietor.
+prefix:
+  append:
+    "THE TONE": |
+      One more line of voice.
+
+# The assistant's and the referee's rules text, by section heading the same way.
+rules:
+  assistant:
+    append:
+      "THE WORDS DECIDE FIRST.": "One more line for the assistant."
+  referee:
+    append:
+      "GAME RULES FOR THE REFEREE": "One more line for the referee."
+
+# The starting state the game built from the setup, as a merge patch (lists with ids patched by id).
+state:
+  house: {money: 500}
+  player:
+    stats: {charm: 5}
+
+# The game's own rulings switched off (this game declares none).
+rulings_off: []

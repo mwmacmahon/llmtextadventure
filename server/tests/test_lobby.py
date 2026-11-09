@@ -221,13 +221,14 @@ def test_with_a_pin_dev_mode_needs_it(client, engine: Engine, monkeypatch):
 
 
 def test_no_shipped_game_is_hidden_and_hidden_ones_live_only_in_the_gitignored_folder():
-    """The repo's games are all public; a hidden game (dev mode) is a package under server/games/hidden/, gitignored, loaded
-    when present on this machine (the owner, 11-08)."""
+    """The repo's games are all public but the clown; a hidden game (dev mode) is a package under server/games/hidden/, loaded
+    when present on this machine; the folder is gitignored (the owner, 11-08) with the clown excepted (the owner, 11-09: in the
+    repo with its tools and tests, still hidden)."""
     cfg = load_config()
     for g in load_games(cfg.resolve(cfg.server.content_root)).values():
         assert g.hidden == type(g).__module__.startswith("games.hidden."), g.name
-    ignore = (Path(__file__).resolve().parents[2] / ".gitignore").read_text()
-    assert "server/games/hidden/" in ignore.splitlines()
+    lines = (Path(__file__).resolve().parents[2] / ".gitignore").read_text().splitlines()
+    assert "server/games/hidden/*" in lines and "!server/games/hidden/clown/" in lines
 
 
 def test_the_pin_comes_from_the_environment_too(monkeypatch):

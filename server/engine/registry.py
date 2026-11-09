@@ -1,7 +1,7 @@
 """Game registry. Add a game by importing it here.
 
-Hidden games (dev mode, D171) live in `server/games/hidden/<name>/`, which is gitignored (the owner, 11-08: every hidden
-game stays out of the repo for now). Each such package exposes `make_game(content_root) -> Game`; the registry loads any
+Hidden games (dev mode, D171) live in `server/games/hidden/<name>/`, gitignored but for the clown (the owner, 11-09: the
+clown game is in the repo with its tools and tests, still hidden; its content and mods stay under notes/). Each such package exposes `make_game(content_root) -> Game`; the registry loads any
 that are present on this machine and skips the folder when it is absent.
 """
 from __future__ import annotations
