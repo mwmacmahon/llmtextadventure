@@ -43,6 +43,10 @@ class Clock(BaseModel):
     day: int = 1
     minute: int = 8 * 60  # minutes since midnight
 
+    def stamp(self) -> str:
+        """B284: the Timeline's "Day N HH:MM. " prefix, as the log lines carry it."""
+        return f"Day {self.day} {hhmm(self.minute)}. "
+
     def render(self) -> str:
         return f"Day {self.day}, {hhmm(self.minute)}"
 

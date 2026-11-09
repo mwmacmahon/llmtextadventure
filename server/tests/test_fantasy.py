@@ -1119,14 +1119,19 @@ def test_the_log_goes_to_the_timeline_and_the_journal_folds(engine: Engine, game
     assert log.timeline and log.lines == list(st.log)
     m = st.clock.minute
     assert log.learned[3] == f"Day {st.clock.day} {m // 60:02d}:{m % 60:02d}. clue 3" and log.learned[0] == "clue 0" and len(log.learned) == 9   # no contact
-    for name, jt, lt in (("noir", "Notebook", "Case log"), ("station", "Findings", "Logfile")):
+    for name, jt, lt in (("noir", "Notebook", "Case log"), ("station", "Findings", "Logfile")):   # B284: every game folds it in
         g = engine.games[name]
         s = g.new_instance({})[1]
         if name == "station":
             s.findings = ["a"]
+            s.findings_when = {"a": s.clock.stamp()}
+        else:
+            from games.noir.state import Note as NoirNote
+            s.notebook = [NoirNote(kind="clue", text="a").stamped(s.clock), NoirNote(kind="contact", text="Rosa: a singer")]
         ps = g.ui(s).panels
-        assert next(p for p in ps if getattr(p, "title", "") == jt).journal
-        assert next(p for p in ps if getattr(p, "title", "") == lt).timeline
+        assert not any(getattr(p, "title", "") == jt for p in ps)
+        tl = next(p for p in ps if getattr(p, "title", "") == lt)
+        assert tl.timeline and tl.learned == [s.clock.stamp() + "a"]
 
 
 def test_a_journal_line_that_says_the_log_line_again_is_dropped(game: FantasyGame):

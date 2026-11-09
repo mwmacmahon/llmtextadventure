@@ -1125,6 +1125,7 @@ class StationGame(GameBase):
             w.reject("findings", "the station's findings are full", f)
             return
         s.findings.append(f)
+        s.findings_when[f] = s.clock.stamp()
         w.note(f"findings += {f[:120]!r}")
         self._mark_known(s, s.crew, f, w)
 
@@ -1845,10 +1846,11 @@ class StationGame(GameBase):
                     ],
                 ),
                 Commands(title="Station controls", items=self.commands(s)),
-                *([ListPanel(title="Findings", items=[Chip(label="found", value=f) for f in reversed(s.findings)], fold=6, journal=True)] if s.findings else []),
+
                 threads_panel(s.threads, names=self.entity_names(s)),
                 ListPanel(title="Capabilities", items=[Chip(label=k, value=f"{v:+d}") for k, v in s.stats.items()]),
-                LogPanel(title="Logfile", lines=list(s.log), timeline=True),
+                # B284: what the station found rides in the Logfile at its moment, marked (the journal folds into the timeline)
+                LogPanel(title="Logfile", lines=list(s.log), timeline=True, learned=[s.findings_when.get(f, "") + f for f in s.findings]),
             ],
         )
 
