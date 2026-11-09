@@ -84,3 +84,25 @@ def test_the_combat_lint_names_the_old_moves(game):
     notes = lint_combat(CONTENT)
     assert any("still uses moves" in n for n in notes)
 
+
+# ---- §2 the rolls ----------------------------------------------------------------------------------------------------------
+def test_attack_damage_and_save_rolls_and_their_lines():
+    from engine.mechanics import attack_roll, roll_dice, save_roll
+
+    class R(random.Random):
+        def __init__(self, seq):
+            super().__init__(0)
+            self.seq = list(seq)
+
+        def randint(self, a, b):
+            return self.seq.pop(0)
+    a = attack_roll(R([12]), 5, 13)
+    assert (a.total, a.hit, a.crit) == (17, True, False)
+    assert cb.attack_line("Longsword", "the skeleton", a, 7, "the skeleton is bloodied") == "Longsword at the skeleton: 17 against AC 13, hit; 7 damage, the skeleton is bloodied."
+    m = attack_roll(R([5]), 4, 16)
+    assert not m.hit and cb.enemy_line("The skeleton's blade", m) == "The skeleton's blade: 9 against AC 16, miss."
+    assert attack_roll(R([20]), -5, 30).hit and not attack_roll(R([1]), 50, 3).hit          # natural 20 and 1
+    assert roll_dice(R([3, 5]), "1d8+3", crit=True) == (11, [3, 5]) and roll_dice(R([2]), "1d6-4") == (0, [2])
+    sv = save_roll(R([11]), 3, 13)
+    assert cb.save_line("wis", "the siren's song", sv) == "Wisdom save against the siren's song: 14 against 13, holds."
+    assert [cb.step_lighter(n) for n in (9, 4, 1)] == [6, 2, 0]

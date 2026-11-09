@@ -259,3 +259,42 @@ def weight_of(q: Person) -> float:
 def _ceil(x: float) -> int:
     return int(math.ceil(x))
 
+
+# ---- §2: the dice line's three forms (the record §4) -------------------------------------------------------------------
+STAT_NAMES = {"str": "Strength", "dex": "Dexterity", "con": "Constitution", "int": "Intelligence", "wis": "Wisdom", "cha": "Charisma"}
+# a "step lighter" on the player is a flat reduction by the blow's size, from one table, so Rage, the shield and Uncanny Dodge
+# keep working on dice (the record §2): a blow of 6 or more loses 3, of 3 to 5 loses 2, smaller ones 1
+STEP_DICE: list[tuple[int, int]] = [(6, 3), (3, 2), (1, 1)]
+
+
+def step_lighter(n: int) -> int:
+    cut = next((c for at, c in STEP_DICE if n >= at), 0)
+    return max(0, n - cut)
+
+
+def attack_line(who: str, at: str, res: Any, dmg: int | None = None, after: str = "") -> str:
+    """'Longsword at the skeleton: 17 against AC 13, hit; 7 damage, the skeleton is bloodied.' or '...: 9 against AC 16, miss.'"""
+    head = f"{who} at {at}: {res.total} against AC {res.ac}"
+    if res.crit:
+        head += " (a natural 20)"
+    elif res.fumble:
+        head += " (a natural 1)"
+    if not res.hit:
+        return head + ", miss."
+    return head + f", {'critical hit' if res.crit else 'hit'}; {dmg} damage" + (f", {after}" if after else "") + "."
+
+
+def enemy_line(whose: str, res: Any, dmg: int | None = None, after: str = "") -> str:
+    """'The skeleton's blade: 9 against AC 16, miss.' / '...: 15 against AC 16... hit; 5 damage, you are hurt.'"""
+    head = f"{whose}: {res.total} against AC {res.ac}"
+    if res.crit:
+        head += " (a natural 20)"
+    if not res.hit:
+        return head + ", miss."
+    return head + f", {'critical hit' if res.crit else 'hit'}; {dmg} damage" + (f", {after}" if after else "") + "."
+
+
+def save_line(stat: str, against: str, res: Any) -> str:
+    """'Wisdom save against the siren's song: 14 against 13, holds.'"""
+    return f"{STAT_NAMES.get(stat, stat.capitalize())} save against {against}: {res.total} against {res.dc}, {'holds' if res.holds else 'fails'}."
+
