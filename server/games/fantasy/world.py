@@ -432,6 +432,7 @@ def plan_fight(game: Any, s: FantasyState, adj: Any, player_text: str, rng: Any,
         return
     s.combat.free_turns = 0
     s.combat.plan = cb.plan_round(game, s, adj, player_text, turn, rng)
+    w.directives += cb.round_lines(game, s)      # THIS TURN's round list (the game's standing lines are read before the plan exists)
 
 
 def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tally: dict) -> dict | None:

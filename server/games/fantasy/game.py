@@ -916,11 +916,9 @@ class FantasyGame(GameBase):
             out.append("Since the last telling: " + " ".join(p.carry_lines) + " Open on it.")
         foes = wo.present_enemies(self, s)
         from . import combat as cb
-        rnd = cb.round_lines(self, s) if not p.fate else []
-        if rnd:                                          # part fifteen §3: the round, every blow rolled where the telling reaches it
-            out += rnd
+        if s.combat is not None:                         # part fifteen §3: the round list comes from world_turn, where the plan is made
             foes = []
-        if foes and not p.fate and (s.combat is None or s.combat.plan):   # B206 (D178): every hostile acts once a turn; a free turn holds them
+        if foes and not p.fate:                          # B206 (D178): every hostile acts once a turn in a fight; the narrator calls it
             out.append("In a fight with " + p.name + ": " + "; ".join(
                 q.name + " (" + ", ".join(str(m.get("kind")) for m in (q.moves or [wo.DEFAULT_STRIKE])) + ")" for q in foes)
                 + ". Every one of them acts once this turn, where it falls in the telling: write <<ENEMY <their id> <move>>> at that moment "

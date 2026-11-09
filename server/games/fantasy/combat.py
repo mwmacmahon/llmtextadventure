@@ -461,8 +461,12 @@ def round_lines(game: Any, s: FantasyState) -> list[str]:
     for e in c.plan:
         if e["side"] == "player":
             names = ", ".join(s.person(t).name if s.person(t) else t for t in e["targets"])
+            from . import features as ft
+            armed = [f["name"] for fid, f in ft.specs(game, p).items() if f.get("kind") == "rider"
+                     and (f.get("armed_flag") or f"{fid}_armed") in p.flags_on and f["name"] not in (e.get("riders") or [])]
+            riders = list(e.get("riders") or []) + [f"{n} ready, on the blow if it lands" for n in armed]
             rows.append(f"{p.name}'s attack at {names}" + (f" with the {e['weapon']}" if e.get("weapon") else "") +
-                        (f" ({', '.join(e['riders'])})" if e.get("riders") else "") + f": <<ATTACK {e['targets'][0]}>>")
+                        (f" ({', '.join(riders)})" if riders else "") + f": <<ATTACK {e['targets'][0]}>>")
         elif e["side"] == "ally":
             q, t = s.person(e["who"]), s.person(e["target"])
             rows.append(f"{q.name if q else e['who']} at {t.name if t else e['target']}: <<ALLY {e['who']}>>")
@@ -830,6 +834,10 @@ def land(game: Any, s: FantasyState, calls: list[dict], turn: int, offset: int, 
             q.status = "dead" if (b.hp or 0) <= -10 else "down"
             notes.append(f"{q.name}: {q.status}")
     p.fighting = [x for x in p.fighting if (q := s.person(x)) is not None and q.status == "alive"]
+    for x in p.fighting:                                               # the fight goes where the player goes (a chase through the wall)
+        q = s.person(x)
+        if q is not None and q.location != p.location and "turned" not in (q.condition or ""):
+            q.location = p.location
     for x in p.fighting:                                               # regeneration (a troll's), unless burned this fight
         q = s.person(x)
         b = q.combat if q is not None else None

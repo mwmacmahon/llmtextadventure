@@ -138,8 +138,7 @@ def test_a_fight_is_a_round_a_turn_to_its_end_with_xp(game):
         st, w = wo.world_turn(game, st, adj, "I hack at the skeletons.", rng, turn, 2)
         if turn == 1:
             assert st.combat is not None and [e["side"] for e in st.combat.plan] == ["player", "enemy", "enemy"]
-            lines = game.turn_directives(st)
-            assert any(l.startswith("A FIGHT, round 1.") and "<<ATTACK dead>>" in l and "<<ENEMY dead strike>>" in l for l in lines)
+            assert any(l.startswith("A FIGHT, round 1.") and "<<ATTACK dead>>" in l and "<<ENEMY dead strike>>" in l for l in w.directives)
         tally = {"hp": 0, "acted": []}
         called = [wo.world_call(game, st, __import__("engine.brackets", fromlist=["Call"]).Call(verb="ATTACK", raw="ATTACK dead", ref="dead"), rng, 2, tally)]
         rest = wo.backstop(game, st, [], rng, 2, tally)
@@ -216,6 +215,8 @@ async def test_a_fight_turn_through_the_pipeline(tmp_path):
     assert any(str(v).startswith("ATTACK") for v in verbs)
     after = g.load_state(eng.store.load_state(iid))
     assert after.combat is None or after.combat.round == 1
+    bulletin = next(r.text for r in eng.store.transcript(iid) if r.turn == 1 and r.role == "bulletin")
+    assert "A FIGHT, round 1." in bulletin and "<<ATTACK dead>>" in bulletin          # the round list reached THIS TURN (the live round's miss)
 
 
 # ---- §4 more than one blow -------------------------------------------------------------------------------------------------
@@ -267,6 +268,14 @@ def test_extra_attack_at_five_and_smite_spends_on_a_hit_only(game):
     assert st.player.count("holy_power").value == 0 and "Divine Smite" in r["mechanic"]  # the miss kept it, the hit spent it
     r2 = cb.resolve_attack(game, st, {"key": "player", "side": "player", "targets": ["dead"], "riders": ["smite", "whirlwind"]}, _Seq([15, 4, 15, 4]), 2, {"hp": 0})
     assert "no Divine Smite left" in r2["mechanic"] and "whirlwind: not something" in r2["mechanic"]
+
+
+def test_an_armed_smite_is_on_the_round_line(game):
+    st, q = _fight(game, 2)
+    st.player.flags_on.append("smite_armed")                                        # the chip, pressed a turn before
+    st.combat.plan = [{"key": "player", "side": "player", "targets": ["dead"], "weapon": "longsword"}]
+    line = cb.round_lines(game, st)[0]
+    assert "Divine Smite ready, on the blow if it lands" in line and "<<ATTACK dead>>" in line
 
 
 def test_a_bow_spends_arrows(game):
