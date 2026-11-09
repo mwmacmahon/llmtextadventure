@@ -106,7 +106,8 @@ Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a shor
    same thing twice (B261: a Timeline button opening an in-page overlay, the Journal cut to the newest few with "See
    more", the referee told the two apart, the Journal command gone); the cards never update (B243, asked again: not
    fixed, it is §3). **Part twelve written 11-09 night, one paste for all that is unfinished:** §1 the party rule and K3
-   (B242), §2 the People cards (B243), §3 asides as canon (B244), §4 the clock in a tense scene (B245), §5 a thing held
+   (B242), §2 the People cards (B243), §3 asides as canon and the game master deciding what the character could plainly see, an age, clothes, the room (B244, widened
+   11-09 night from the owner's grimdark saves), §4 the clock in a tense scene (B245), §5 a thing held
    once and a gift that leaves the pockets, with the Ferryman's Daughter closing on its goal flag and Hazel's thread's
    giver (B246, B224.23, B224.24), §6 the Timeline overlay and the Journal (B261). The build chat's lines run from B262.
 1a. **Her first game's notes** (the owner, 11-09, after 28 turns of Lillian on :8016 at 6c9099a; the side chat read the save):
