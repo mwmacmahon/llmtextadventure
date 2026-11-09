@@ -67,9 +67,11 @@ class EffectContext(BaseModel):
     minutes_per_day: int = 1440
     turn: int = 0
     location_path: str = "player.location"      # what an event's `where` reads
-    unquiet: str = ""                           # B104 (D177): why this turn is not quiet ("in a fight on the lake"); empty when it is
+    unquiet: str = ""                           # B104, B248: why this turn is not quiet ("in a fight", "on the move", "in a scene with
+                                                # Gorm"); empty when it is. One definition (pipeline.quiet_why); every hook's caller waits on it
+    soft: bool = False                          # B248: the why is only a scene in progress or a recent caller: a hook held this long gives way
+    patience: int = 120                         # game minutes a hook waits out a soft why before it comes anyway
     holds: list[dict] = Field(default_factory=list)   # what waited this turn for a quiet one, and why (the ledger's)
-    busy: str = ""                              # B235: why nobody walks up to the player this turn ("on the move"), even in their own scene
 
 Strictness = Literal["scripted", "guided", "advisory"]
 
@@ -120,6 +122,7 @@ class Event(BaseModel):
     expired: bool = False
     exited: bool = True                         # False while an exit predicate is pending
     fired_at: int | None = None                 # the clock (absolute minutes) when it last fired
+    held_since: int | None = None               # B248: the clock (absolute minutes) when it was first held for a quiet turn
     seen_abs: int | None = None                 # the clock at the last tick that looked at it (at_minute_of_day's crossing)
 
     @model_validator(mode="after")
@@ -401,15 +404,18 @@ def tick(events: list[Event], doc: dict, turn: int, clock_path: str = "clock", l
                                    and _said(o) for o in events):
             held.add(e.id)                          # another hook spoke this turn: this one waits for the next
             continue
-        own_scene = variant == "trigger" and bool(e.where)
-        if e.hook and says and ctx is not None and ctx.busy:
-            held.add(e.id)                          # B235: a hook's person waits until the player is not crossing the room or just interrupted
-            ctx.holds.append({"event": e.id, "hook": e.hook, "variant": variant, "why": ctx.busy})
-            continue
-        if e.hook and says and not own_scene and ctx is not None and ctx.unquiet:
-            held.add(e.id)                          # B104 (D177): word from elsewhere waits for a quiet turn and a carrier
-            ctx.holds.append({"event": e.id, "hook": e.hook, "variant": variant, "why": ctx.unquiet})
-            continue
+        if e.hook and says and ctx is not None and ctx.unquiet:
+            # B104, B235, B248: a hook's caller (in its own scene too) and word from elsewhere wait for a quiet turn; a hook
+            # that has waited `patience` game minutes gives way to a soft why (a scene in progress, a recent caller)
+            now_abs = _clock_abs(doc, clock_path, mpd)
+            waited = now_abs - e.held_since if e.held_since is not None else 0
+            if not (ctx.soft and waited >= ctx.patience):
+                if e.held_since is None:
+                    e.held_since = now_abs
+                held.add(e.id)
+                ctx.holds.append({"event": e.id, "hook": e.hook, "variant": variant, "why": ctx.unquiet, "waited": waited})
+                continue
+        e.held_since = None
         e.fired, e.fired_turn, e.variant = True, turn, variant
         e.fired_at = _clock_abs(doc, clock_path, mpd)
         e.exited = e.exit is None

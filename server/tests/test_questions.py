@@ -87,12 +87,14 @@ def test_nobody_walks_up_while_the_player_crosses_the_room(engine, no_happenings
     move, and for two turns after someone else came; a happening with nobody in it (bells) still happens."""
     import random
     from engine import events as ev, spontaneous as spon
-    from engine.pipeline import busy_for_callers
+    from engine.pipeline import quiet_why
     from engine.roles import AssistantReadingStaked
     roll = no_happenings                                                   # the real roll (conftest stubs it out)
     game = engine.games["fantasy"]
     iid = engine.create_instance("fantasy", SHEET)
-    doc = state_of(engine, iid).model_dump(mode="json")
+    st = state_of(engine, iid)
+    doc = st.model_dump(mode="json")
+    busy_for_callers = lambda adj, d, g, t: quiet_why(g, st, adj, d, t)[0]   # noqa: E731
     walk = AssistantReadingStaked.model_validate({"kind": "action", "risk": "low", "time_minutes": 2,
         "summary": "Ungdall struts through the common room completely nude to get upstairs.",
         "intents": [{"action": "strut nude through the common room", "targets": [], "check": None}]})
@@ -102,7 +104,7 @@ def test_nobody_walks_up_while_the_player_crosses_the_room(engine, no_happenings
     tam = ev.Event.model_validate({"id": "tam_reach", "hook": "ferrymans_daughter", "trigger": True, "where": ["The Drowned Lantern"],
                                    "directive": "Tam Reedy comes in wet and stands by the table."})
     doc["player"]["location"] = "The Drowned Lantern"
-    ctx = ev.EffectContext(busy=busy_for_callers(walk, doc, game, 10))
+    ctx = ev.EffectContext(unquiet=busy_for_callers(walk, doc, game, 10))
     fired, _, _ = ev.tick([tam], doc, 10, ctx=ctx)
     assert not fired and ctx.holds[0]["why"] == "on the move"              # even in his own scene, the inn
     fired, _, _ = ev.tick([tam], doc, 11, ctx=ev.EffectContext())
@@ -122,3 +124,39 @@ def test_nobody_walks_up_while_the_player_crosses_the_room(engine, no_happenings
     pip2 = spon.Spontaneous(id="pip2", chance_per_hour=1.0, who=["pip"], directive="Pip asks.")
     happened, _ = roll([hazel, pip2], doc, random.Random(1), 60, 14, 3000)
     assert len(happened) == 1                                              # one person at a time
+
+
+def test_a_scene_in_progress_holds_callers_and_a_long_hold_gives_way(engine, no_happenings):
+    """B248 (part eleven §1a), turn 8's shape on Lilith's save: talking to someone here, Hazel's offer (a who-happening) and
+    a hook's arrival wait; so do last turn's check at a person here, a pending question, and a person here quoted last turn.
+    A hook held two game hours by a soft why (a scene) comes anyway; a hard why (on the move) still holds it."""
+    import random
+    from engine import events as ev, spontaneous as spon
+    from engine.pipeline import quiet_why
+    from engine.roles import AssistantReadingStaked
+    game = engine.games["fantasy"]
+    iid = engine.create_instance("fantasy", SHEET)
+    st = state_of(engine, iid)
+    st.player.location = "The Drowned Lantern"
+    st.person("maud").location = "The Drowned Lantern"
+    doc = st.model_dump(mode="json")
+    talk = AssistantReadingStaked.model_validate({"kind": "action", "risk": "low", "time_minutes": 5, "summary": "Brin asks Maud about the cellar.",
+                                                  "intents": [{"action": "ask Maud about the cellar", "targets": ["maud"], "check": None}]})
+    look = talk.model_copy(update={"summary": "Brin looks around the room.", "intents": []})
+    why, soft = quiet_why(game, st, talk, doc, 8)
+    assert why == "in a scene with Maud Tallow" and soft
+    assert quiet_why(game, st, look, doc, 8) == ("", False)
+    assert quiet_why(game, st, look, doc, 8, {"about": ["maud"]})[0].startswith("in a scene with Maud")
+    assert quiet_why(game, st, look, doc, 8, {"clarify": True})[0] == "a question to the player is waiting"
+    assert quiet_why(game, st, look, doc, 8, {"present": ["maud"], "quoted": True})[0] == "Maud Tallow was talking with the player"
+    assert quiet_why(game, st, look, doc, 8, {"present": ["maud"], "quoted": False}) == ("", False)
+    hazel = spon.Spontaneous(id="hazel_offers", chance_per_hour=1.0, who=["hazel"], directive="Hazel says the wood is no place to go alone.")
+    happened, _ = no_happenings([hazel], doc, random.Random(1), 30, 8, 2000, busy=why)
+    assert not happened
+    reach = ev.Event.model_validate({"id": "x_reach", "hook": "x", "trigger": True, "where": ["The Drowned Lantern"], "directive": "Someone comes in."})
+    ctx = ev.EffectContext(unquiet=why, soft=soft)
+    assert not ev.tick([reach], doc, 8, ctx=ctx)[0] and ctx.holds[0]["why"] == why and reach.held_since is not None
+    doc["clock"]["minute"] += 130
+    assert not ev.tick([reach], doc, 9, ctx=ev.EffectContext(unquiet="on the move", soft=False))[0]     # hard: still waits
+    assert [f.event_id for f in ev.tick([reach], doc, 10, ctx=ev.EffectContext(unquiet=why, soft=True))[0]] == ["x_reach"]
+    assert reach.held_since is None

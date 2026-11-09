@@ -593,6 +593,15 @@ class FantasyGame(GameBase):
                 out.append(term)
         return out
 
+    def people_here(self, state: FantasyState) -> list[str]:
+        """B248: the ids of the people the player can see where they are (with them or met there): for quiet_why."""
+        s, p = state, state.player
+        return [q.id for q in s.people if q.status == "alive" and not q.hidden_from_player and q.location and self._same_spot(s, q.location, p.location)]
+
+    def person_name(self, state: FantasyState, pid: str) -> str | None:
+        q = next((q for q in state.people if q.id == pid), None)
+        return q.name if q is not None else None
+
     def unquiet(self, state: FantasyState) -> str:
         """Why word from elsewhere cannot reach the player now (B104, D177), or "": someone hostile here, a compulsion or a
         peril, or open water or the wild with nobody here to carry it (Tam beside them is not a carrier of the city's news)."""

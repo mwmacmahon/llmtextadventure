@@ -1728,7 +1728,7 @@ class Engine:
         events = _events_of(game, doc)
         ectx = ev.EffectContext(pending_path=ppath or "hidden.pending", clock_path=clock_path, minutes_per_day=clock.minutes_per_day if clock else 1440, turn=turn,
                                 location_path=getattr(game, "location_path", "player.location"),
-                                unquiet=_unquiet(game, state, adj), busy=busy_for_callers(adj, doc, game, turn))
+                                **dict(zip(("unquiet", "soft"), quiet_why(game, state, adj, doc, turn, self._last_turn(iid, turn)))))
         # B105 (D177): a question about the scene (kind trivial) moves nothing: no event, pending or hazard ticks on it
         quiet = adj is not None and adj.kind == "trivial"
         fired, expired, ev_directives = ([], [], []) if quiet else ev.tick(events, doc, turn, clock_path, log_path, ectx, since_abs=since_abs)
@@ -1751,7 +1751,7 @@ class Engine:
             if items:
                 clk = sp.lookup(doc, clock_path, {}) or {}
                 now_abs = int(clk.get("day", 1)) * (clock.minutes_per_day if clock else 1440) + int(clk.get("minute", 0))
-                busy = ectx.busy or ("someone came to the player this turn" if any(e.hook and e.fired and e.fired_turn == turn and e.directive for e in events) else "")
+                busy = ectx.unquiet or ("someone came to the player this turn" if any(e.hook and e.fired and e.fired_turn == turn and e.directive for e in events) else "")
                 happened, h_directives = spon.roll(items, doc, rng_for(iid, turn, "spontaneous"), elapsed, turn, now_abs, clock_path, log_path,
                                                    ctx=ectx, busy=busy)
                 sp.assign(doc, spath, [i.model_dump(mode="json") for i in items])
@@ -1775,6 +1775,29 @@ class Engine:
                 "notes": notes, "pending_fired": pending_fired, "pending_lapsed": pending_lapsed, "holds": list(ectx.holds),
                 "fail_streak": self._fail_streak(iid, turn) if assessments else 0,
                 "player_name": _hook(game, "player_name", state, default="the player")}
+
+    def _last_turn(self, iid: str, turn: int) -> dict:
+        """Last turn as quiet_why reads it (B248): the people the referee had present, the people checks were rolled at,
+        whether the telling quoted anyone, and whether the turn was a question to the player."""
+        t = turn - 1
+        if t < 0:
+            return {}
+        out: dict = {"present": [], "about": [], "quoted": False, "clarify": False}
+        try:
+            rows = self.store.ledger(iid, t)
+        except Exception:  # noqa: BLE001 - a store without the instance (a replay's scratch): nothing known
+            return {}
+        for r in rows:
+            p = r["payload"]
+            if r["kind"] == "verdict":
+                out["present"] = [x for x in p.get("present") or [] if x != "player"]
+            elif r["kind"] == "adjudication":
+                out["clarify"] = p.get("kind") == "clarify"
+            elif r["kind"] == "model_call" and p.get("role") == "narrator":
+                out["about"] += [str((c.get("result") or {}).get("about") or "") for c in p.get("calls") or [] if (c.get("result") or {}).get("about")]
+        told = [x.text for x in self.store.transcript(iid, roles=["narrator"]) if x.turn == t]
+        out["quoted"] = any(ch in (told[-1] if told else "") for ch in ('"', "\u201c"))
+        return out
 
     def _scene_run(self, iid: str, turn: int, adj: AssistantReading | None, clock: Any) -> int:
         """The scene-length mark (time doc §3 (vi), D150): when this turn is a fight beat and the turns running before it
@@ -2683,14 +2706,24 @@ SPACING_TURNS = 2
 SPACING_MINUTES = 20            # and within this much game time: a long wait after someone came is room enough
 
 
-def busy_for_callers(adj: Any, doc: dict, game: Any, turn: int) -> str:
-    """Why nobody should walk up to the player this turn (B235), or "": the turn is a move (the reading's summary, its
-    intents' actions, or a move: transition), or a hook's person or a happening's person came in the last two turns and
-    less than twenty game minutes ago."""
-    if adj is not None and getattr(adj, "kind", "") == "action":
+def quiet_why(game: Any, state: Any, adj: Any, doc: dict, turn: int, last: dict | None = None) -> tuple[str, bool]:
+    """Why this turn is not quiet, and whether that why is soft (B248: one definition, for word from elsewhere (B104) and for
+    anyone walking up (B235)), or ("", False). Hard: a fight this turn; the game's own (a peril, a compulsion, someone hostile
+    here); the turn is a move. Soft (a hook that has waited two game hours comes anyway): someone came to the player in the
+    last two turns and twenty minutes; the player is mid-scene with someone here: this turn's attempt is at a person here,
+    a check was rolled at a person here last turn, a question to the player is waiting, or last turn's telling had a person
+    here speaking (the referee's `present` and a quoted line). `last` is last turn as the ledger has it (Engine._last_turn)."""
+    last = last or {}
+    action = adj is not None and getattr(adj, "kind", "") == "action"
+    if action and is_fight(adj):
+        return "in a fight", False
+    why = str(_hook(game, "unquiet", state, default="") or "")
+    if why:
+        return why, False
+    if action:
         words = " ".join([adj.summary or ""] + [i.action or "" for i in adj.intents])
-        if ON_THE_MOVE.search(words) or any(str(getattr(i, "transition", "") or "").startswith("move:") for i in adj.intents):
-            return "on the move"
+        if any(str(getattr(i, "transition", "") or "").startswith("move:") for i in adj.intents) or ON_THE_MOVE.search(words):
+            return "on the move", False
     recent = range(turn - SPACING_TURNS, turn)
     clock = getattr(game, "clock", None)
     clk = (sp.lookup(doc, clock.path, None) or {}) if clock else {}
@@ -2701,20 +2734,26 @@ def busy_for_callers(adj: Any, doc: dict, game: Any, turn: int) -> str:
 
     for e in sp.lookup(doc, getattr(game, "events_path", "hidden.events"), []) or []:
         if e.get("hook") and e.get("fired") and e.get("directive") and lately(e.get("fired_turn"), e.get("fired_at")):
-            return "someone came to the player a moment ago"
+            return "someone came to the player a moment ago", True
     spath = getattr(game, "spontaneous_path", None)
     for h in (sp.lookup(doc, spath, []) or []) if spath else []:
         if h.get("who") and lately(h.get("last_fired_turn"), h.get("last_fired_at")):
-            return "someone came to the player a moment ago"
-    return ""
-
-
-def _unquiet(game: Game, state: BaseModel, adj: Any) -> str:
-    """Why this turn is not quiet, or "" (B104, D177): a fight this turn, or the game's own reason (a hostile present, a
-    peril, a compulsion, open water or the wild with nobody near). Word from elsewhere waits while it is not quiet."""
-    if adj is not None and getattr(adj, "kind", "") == "action" and is_fight(adj):
-        return "in a fight"
-    return str(_hook(game, "unquiet", state, default="") or "")
+            return "someone came to the player a moment ago", True
+    here = _hook(game, "people_here", state, default=None)
+    here = set(here if here is not None else [x for x in last.get("present") or [] if x != "player"])
+    name = lambda pid: str(_hook(game, "person_name", state, pid, default=None) or pid)  # noqa: E731
+    if action:
+        for i in adj.intents:
+            at = set(getattr(i, "targets", None) or []) | ({i.check.target_entity} if i.check and getattr(i.check, "target_entity", None) else set())
+            if at & here:
+                return f"in a scene with {name(sorted(at & here)[0])}", True
+    if last.get("clarify"):
+        return "a question to the player is waiting", True
+    if set(last.get("about") or []) & here:
+        return f"in a scene with {name(sorted(set(last['about']) & here)[0])} (a check last turn)", True
+    if last.get("quoted") and set(last.get("present") or []) & here:
+        return f"{name(sorted(set(last['present']) & here)[0])} was talking with the player", True
+    return "", False
 
 
 SHE = re.compile(r"\b(she|her|hers|woman|girl|wife|mother|daughter|sister|widow|lady|siren|queen|witch|maid|niece|aunt|grandmother)\b", re.I)
