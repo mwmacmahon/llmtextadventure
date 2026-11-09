@@ -249,6 +249,7 @@ class FantasyGame(GameBase):
     recent_path = "hidden.recent"
     threads_path = "threads"
     log_path = "log"
+    journal_path = "journal"            # B261: what was learned (a journal line that says the turn's log line again is dropped)
     mechanic_numbers = True
     adjudication_schema = AssistantReadingV2
     fallback_stat = "wis"
@@ -1043,7 +1044,8 @@ class FantasyGame(GameBase):
             "- learned <person id> value=fact: what they told the player or what the player learned about them, one sentence; when it makes something "
             "already known about them false now (they moved, changed sides, were lying), note=replaces followed by a few words copied exactly from the "
             "old fact as listed; not when the new fact only adds to the old. learned player value=clue: "
-            "a fact the player learned (a name, a place, a time, what a thing is), only when new.",
+            "a fact the player learned and may need again (a name, a place, a time, a price, what a thing is), only when new; not "
+            "what happened this turn (that is the log line).",
             "- new person value=name, field=<place>, note=role: anyone the prose names who is not listed (at most two a turn). An alias of a listed "
             "person is that person: use their id.",
             "present: the listed people in the scene with the player when the prose ends; someone only talked about is not present.",
@@ -3167,7 +3169,8 @@ class FantasyGame(GameBase):
                            details=[Chip(label="Said to be at", value=q.location)] if q.location and q.location != "Unknown" else []) for q in heard]),
             ListPanel(title="Places", items=self._places_panel(s), layout="stack"),
             QuestPanel(title="Quests", rows=self.quest_rows(s)),
-            ListPanel(title="Journal", items=[Chip(label="contact" if n.kind == "contact" else "", value=n.text) for n in s.journal[-20:]], layout="stack"),
-            LogPanel(title="The day's log", lines=[ln for ln in s.log if ln.startswith(f"Day {s.clock.day} ")][-20:] or s.log[-5:]),
+            ListPanel(title="Journal", items=[Chip(label="contact" if n.kind == "contact" else "", value=n.text) for n in reversed(s.journal)],
+                      layout="stack", fold=6, journal=True),
+            LogPanel(title="Timeline", lines=list(s.log), timeline=True),
         ]
         return UISchema(phase="ended" if self.ending(s) else "narrate", free_text=not self.ending(s), placeholder=f"What does {p.name} do?", panels=panels)

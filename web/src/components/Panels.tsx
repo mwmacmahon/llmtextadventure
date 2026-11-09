@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Chip, CommandSpec, EntityCard, MeterWidget, Widget } from "../api";
 
 type OnCommand = (command: string, args: Record<string, unknown>) => void;
@@ -8,7 +8,8 @@ type OnCommand = (command: string, args: Record<string, unknown>) => void;
 export function Panels({ panels, onChoice, onCommand, busy, ended, readOnly, place }: { panels: Widget[]; onChoice?: OnCommand; onCommand?: OnCommand; busy?: boolean; ended?: boolean; readOnly?: boolean; place?: "side" | "main" }) {
   // `place` picks the column's panels (a widget with no place is the side's); the pinned ones come first, in a block that
   // stays at the top of the column while the rest scrolls (the clown's girl in training).
-  const mine = place ? panels.filter((w) => (w.place || "side") === place) : panels;
+  // B261: the game's timeline (its log) is never in a column: the Timeline overlay shows it, by day
+  const mine = (place ? panels.filter((w) => (w.place || "side") === place) : panels).filter((w) => !(w.type === "log" && w.timeline));
   const shown = readOnly ? mine.filter((w) => w.type !== "commands" && w.type !== "choices") : mine;
   const pinned = shown.filter((w) => w.pinned);
   const rest = shown.filter((w) => !w.pinned);
@@ -96,6 +97,7 @@ function Panel({ w, onChoice, onCommand, busy, ended }: { w: Widget; onChoice?: 
         </section>
       );
     case "list":
+      if (w.fold) return <FoldedList w={w} />;
       return (
         <section className="panel">
           <h3>{w.title}</h3>
@@ -185,6 +187,87 @@ function Panel({ w, onChoice, onCommand, busy, ended }: { w: Widget; onChoice?: 
         </section>
       );
   }
+}
+
+// B261: a long list (the Journal) shows its first `fold` lines (the newest: the game sends them newest first) and the rest
+// behind "See more", which unfolds them in place.
+type ListWidget = Extract<Widget, { type: "list" }>;
+export function FoldedList({ w, open: startOpen }: { w: ListWidget; open?: boolean }) {
+  const [open, setOpen] = useState(!!startOpen);
+  const n = w.fold ?? 0;
+  const shown = open || !n ? w.items : w.items.slice(0, n);
+  const more = w.items.length - shown.length;
+  return (
+    <section className="panel">
+      <h3>{w.title}</h3>
+      {w.items.length === 0 ? (
+        <div className="muted small">Nothing yet.</div>
+      ) : (
+        <ul className="stack">
+          {shown.map((c, i) => (
+            <li key={`${c.label}-${i}`} className={c.tone ? `tone-${c.tone}` : undefined}>
+              {c.label && <span className="stack-label">{c.label}</span>}
+              {c.value && <span className="stack-value">{c.value}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {more > 0 && <button className="link small see-more" onClick={() => setOpen(true)}>See more ({more} older)</button>}
+      {open && n > 0 && w.items.length > n && <button className="link small see-more" onClick={() => setOpen(false)}>See less</button>}
+    </section>
+  );
+}
+
+// B261: the Timeline, an in-page overlay over the story: the game's log by day (today open, earlier days folded) and the
+// Journal, read-only; a tap outside the sheet, the close button or Escape closes it.
+export function Timeline({ panels, tab, onTab, onClose }: { panels: Widget[]; tab: "timeline" | "journal"; onTab: (t: "timeline" | "journal") => void; onClose: () => void }) {
+  const logs = panels.filter((w): w is Extract<Widget, { type: "log" }> => w.type === "log" && !!w.timeline);
+  const journal = panels.find((w): w is ListWidget => w.type === "list" && !!w.journal);
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    addEventListener("keydown", esc);
+    return () => removeEventListener("keydown", esc);
+  }, [onClose]);
+  const lines = logs.flatMap((w) => w.lines);
+  const days: { day: string; lines: string[] }[] = [];
+  for (const l of lines) {
+    const m = l.match(/^(Day \d+)\s+(.*)$/);
+    const day = m ? m[1] : "Earlier";
+    const text = m ? m[2] : l;
+    if (!days.length || days[days.length - 1].day !== day) days.push({ day, lines: [] });
+    days[days.length - 1].lines.push(text);
+  }
+  return (
+    <div className="overlay" onClick={onClose} role="presentation">
+      <div className="overlay-sheet" role="dialog" aria-modal="true" aria-label="Timeline and journal" onClick={(e) => e.stopPropagation()}>
+        <div className="overlay-head">
+          <div className="overlay-tabs" role="tablist">
+            <button role="tab" aria-selected={tab === "timeline"} className={tab === "timeline" ? "on" : ""} onClick={() => onTab("timeline")}>Timeline</button>
+            {journal && <button role="tab" aria-selected={tab === "journal"} className={tab === "journal" ? "on" : ""} onClick={() => onTab("journal")}>{journal.title}</button>}
+          </div>
+          <button className="link overlay-close" onClick={onClose} aria-label="Close">close</button>
+        </div>
+        <div className="overlay-body">
+          {tab === "journal" && journal ? (
+            <FoldedList w={{ ...journal, fold: 0 }} />
+          ) : days.length === 0 ? (
+            <div className="muted small">Nothing has happened yet.</div>
+          ) : (
+            [...days].reverse().map((d, i) => (
+              <details key={d.day} className="day" open={i === 0}>
+                <summary>{d.day} <span className="muted small">· {d.lines.length} {d.lines.length === 1 ? "entry" : "entries"}</span></summary>
+                <ul className="log">
+                  {d.lines.map((l, k) => (
+                    <li key={k}>{l}</li>
+                  ))}
+                </ul>
+              </details>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function MeterBody({ w, small }: { w: MeterWidget; small?: boolean }) {

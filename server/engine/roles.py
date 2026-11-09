@@ -223,7 +223,7 @@ class Change(BaseModel):
 class ChangeReport(BaseModel):
     changes: list[Change] = Field(default_factory=list, description="Every change the narration established, one row each, in the order they happened. Empty when nothing changed.")
     present: list[str] = Field(default_factory=list, description="Ids of listed people who appear or act in the narration.")
-    log_line: str = Field(description="One short, player-visible line summarising what just happened, in past tense, for the game's log. No hidden information.")
+    log_line: str = Field(description="One short, player-visible line: what happened this turn, in past tense, for the game's log. No hidden information. What was learned and may be needed again is a learned player row, not this line.")
     confidence: Literal["low", "medium", "high"] = Field(description="How sure you are of this whole report.")
 
     @classmethod

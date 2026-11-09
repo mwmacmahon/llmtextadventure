@@ -5,7 +5,7 @@ import { DebugDrawer } from "./components/DebugDrawer";
 import { GamePage } from "./components/GamePage";
 import { DeathCardBody, Graveyard } from "./components/Graveyard";
 import { Home } from "./components/Home";
-import { Panels } from "./components/Panels";
+import { Panels, Timeline } from "./components/Panels";
 import { SettingsPage } from "./components/SettingsPage";
 import { prefs } from "./saves";
 
@@ -72,6 +72,7 @@ function Game({ id }: { id: string }) {
   const [debug, setDebug] = useState(false);
   const [hideUndone, setHideUndone] = useState(prefs.hideUndone());
   const [death, setDeath] = useState<GraveCard | null>(null);
+  const [overlay, setOverlay] = useState<"timeline" | "journal" | null>(null);    // B261: the Timeline overlay and its tab
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(() => api.instance(id).then(setView).catch((e) => setErr(String(e))), [id]);
@@ -192,6 +193,7 @@ function Game({ id }: { id: string }) {
   }
 
   function sendCommand(command: string, args: Record<string, unknown>) {
+    if (command === "journal" || command === "notebook") return setOverlay("journal");   // B261: the overlay, not the story
     if (!view || streaming !== null) return;
     if (command === "reread_sheet") {
       // B90: before the first turn, whatever is in the text box is the player's correction to the sheet
@@ -201,6 +203,8 @@ function Game({ id }: { id: string }) {
     }
     return run(streamCommand(id, command, args), command);
   }
+
+  const hasTimeline = !!view && view.ui.panels.some((w) => w.type === "log" && w.timeline);
 
   // B228: a clicked command's turn cannot be told again (no words to retell); the rewrite button is not offered for it
   const lastWasCommand = !!view && view.transcript.some((r) => r.turn === view.turn && r.role === "command");
@@ -290,6 +294,7 @@ function Game({ id }: { id: string }) {
           export
         </a>
         <button onClick={() => setDebug(!debug)}>GM debug</button>
+        {hasTimeline && <button onClick={() => setOverlay("timeline")} title="What has happened, day by day, and the journal">timeline</button>}
       </header>
       <main>
         <div className="centre">
@@ -369,7 +374,18 @@ function Game({ id }: { id: string }) {
             </button>
           </div>
         </form>
+        {hasTimeline && (
+          <div className="footer-chips">
+            <button type="button" className="check-chip small" onClick={() => setOverlay("timeline")}>Timeline</button>
+            {view.ui.panels.some((w) => w.type === "list" && w.journal) && (
+              <button type="button" className="check-chip small" onClick={() => setOverlay("journal")}>
+                {(view.ui.panels.find((w) => w.type === "list" && w.journal) as { title: string } | undefined)?.title ?? "Journal"}
+              </button>
+            )}
+          </div>
+        )}
       </footer>
+      {overlay && <Timeline panels={view.ui.panels} tab={overlay} onTab={setOverlay} onClose={() => setOverlay(null)} />}
       <DebugDrawer
         instanceId={id}
         turn={view.turn}

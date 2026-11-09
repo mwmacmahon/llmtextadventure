@@ -10,7 +10,7 @@
   hook's copies, among those not in the hand or booked whose tier is open (by the house's Name) and whose `wants`
   holds; a hook with `repeat` comes round again after its `after_days`, as a new instance ("judge_dinner#2"): the
   repeat customer. A once-only hook is dealt locked (it stays in the hand until taken); an ordinary one locks by chance
-  when what it asks is within the gap cap of the house's best.
+  when the house could get there: the best girl trained nonstop at what it wants until its show day would reach its ask.
 - `pick`: a card taken (Book) books its show; the other unlocked cards in the hand are passed (back in the deck); the
   picked hook's copies go back to one; the refill clock is set sooner the more girls are in the house. No deadline
   anywhere: a card is never lost by the calendar (the owner, 11-09).
@@ -210,11 +210,13 @@ DIALS: dict[str, float] = {
     "hand_size": 2,          # cards in the hand at the start (house.hand_size; reward rows `hand: +1` raise it)
     "refill_days": 3,        # the hand refills this many days after a pick, divided by the girls in the house, never under a day
     "lock_chance": 0.25,     # an ordinary card locks in the hand with this chance, when within the gap cap
-    "lock_gap": 25,          # a card may lock only when its ask (30 + 20 x difficulty) is within this of the house's best at what it wants
+    "lock_slack": 0,         # a card may lock when the best girl, trained nonstop at what it wants until its show day, would reach its ask, less this
     "self_train": 1,         # a girl on the bench with a booking of her own gains this a slot at the booking's skills (nothing past finished)
     "booking_boost": 1.5,    # the girl in training gains this much more at a skill her own booking wants
     "student_pay": 0.25,     # a student's show pays this share of the fee; a graduate's pays the whole
     "trouble_days": 5,       # troubles are dealt one at a time, at least this many days apart, when one is eligible
+    "job_pay": 6,            # a slot at a job in town pays the house this much
+    "job_diligence": 3,      # and raises her diligence by this
 }
 
 
@@ -390,23 +392,63 @@ def ask_of(state: ClownState, hook: dict) -> int:
     return 30 + 20 * int(info.difficulty if info else 1)
 
 
-def gap_of(state: ClownState, hook: dict) -> int:
-    """How far the house is from what the card asks: its ask less the house's best at the skills it wants (the weakest of them)."""
+def wants_of(state: ClownState, hook: dict) -> list[str]:
     cid = str(hook.get("client") or "")
     q = state.person(cid)
-    wants = list(q.client.wants) if q is not None and q.client else [k for pr in hook.get("people") or [] if pr.get("id") == cid for k in (pr.get("client") or {}).get("wants") or []]
-    best = min((int(state.house.best.get(k, 0)) for k in wants), default=0)
-    return ask_of(state, hook) - best
+    return list(q.client.wants) if q is not None and q.client else [k for pr in hook.get("people") or [] if pr.get("id") == cid for k in (pr.get("client") or {}).get("wants") or []]
 
 
-def lock_for(state: ClownState, hook: dict, rng: Any) -> bool:
-    """Locked in the hand: every once-only card; an ordinary card by chance, and only when the house is within the gap cap of
-    what it asks (a locked card is a stretch, never a wall)."""
+def slots_until_show(state: ClownState, hook: dict, now_abs: int) -> int:
+    """Training slots (Monday to Friday, two a day) between now and the card's next show day, as a booking made now would set it."""
+    from .state import SLOTS, TRAINING_DAYS, weekday
+    bk = hook.get("booking") or {}
+    wd, minute = int(bk.get("weekday", 5)), int(bk.get("minute", 1200))
+    day = now_abs // DAY
+    while weekday(day) != wd or day * DAY + minute <= now_abs + 120:
+        day += 1
+    n = 0
+    for d in range(now_abs // DAY, day + 1):
+        if weekday(d) not in TRAINING_DAYS:
+            continue
+        for a, b in SLOTS.values():
+            if now_abs < d * DAY + b <= day * DAY + minute:
+                n += 1
+    return n
+
+
+def reach_of(state: ClownState, hook: dict, now_abs: int) -> int:
+    """What the best-placed girl in the house would have at the card's weakest wanted skill if she trained nothing else until its
+    show day: the slots split across the skills it wants, the base gain with the booking's boost a slot, half past sound. An
+    estimate, not a simulation (the owner, 11-09)."""
+    from .game import GAIN_BASE
+    wants = wants_of(state, hook)
+    if not wants:
+        return 100
+    girls = state.in_house() or []
+    if not girls:
+        return 0
+    per = slots_until_show(state, hook, now_abs) // len(wants)
+    rate = GAIN_BASE * dial(state, "booking_boost")
+    best = max(girls, key=lambda g: min(g.skills.get(k, 0) for k in wants))
+
+    def after(v: int) -> int:
+        n1 = max(0, -(-(60 - v) // int(rate))) if v < 60 else 0          # slots to sound
+        if per <= n1:
+            return min(100, int(v + per * rate))
+        return min(100, int(max(v, 60) + (per - n1) * rate / 2))
+
+    return min(after(best.skills.get(k, 0)) for k in wants)
+
+
+def lock_for(state: ClownState, hook: dict, rng: Any, now_abs: int | None = None) -> bool:
+    """Locked in the hand: every once-only card; an ordinary card by chance, and only when the house could get there (the best
+    girl trained nonstop at what it wants until its show day would reach its ask, within the slack): a stretch, never a wall."""
     if hook.get("kind") != "booking":
         return False
     if not hook.get("repeat"):
         return True
-    if gap_of(state, hook) > dial(state, "lock_gap"):
+    now = state.now_abs if now_abs is None else now_abs
+    if reach_of(state, hook, now) < ask_of(state, hook) - dial(state, "lock_slack"):
         return False
     return rng.random() < dial(state, "lock_chance")
 
@@ -419,7 +461,7 @@ def deal_hand(state: ClownState, deck: dict, content_hooks: dict[str, dict], rng
         if hid is None:
             return out
         h = deal(state, content_hooks[hid], turn=turn, deal_abs=now_abs, name=name)
-        h.locked = lock_for(state, content_hooks[hid], rng)
+        h.locked = lock_for(state, content_hooks[hid], rng, now_abs)
         out.append(h.title)
 
 
