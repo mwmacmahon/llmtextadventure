@@ -7,27 +7,26 @@ page, `docs/STATE-2026-11-08.md` ([Where Things Stand](https://claude.ai/artifac
 one are the register, `docs/OPEN-ISSUES.md`. Kept by the design side chat; the owner carries each directive to the
 build chat by hand. Re-cut 2026-11-09 night (the owner: "I don't know what is next").
 
-## Next (2026-11-09 night, at 05e2fef)
+## Next (2026-11-09 night, at 83ac136; the owner's order)
 
-*Now* is in the build chat's hands; *then* follows from it; *proposed* is the side chat's suggestion until the owner
-says, and he sets the order.
+The owner, 11-09 night: "She's not going to just go play a game two for us, she will probably play hers a while at
+her own pace. Let's go ahead and update her server and I'll make a little side game real quick to smoke test. I can
+play some of the grimdark Gemma one potentially too. That's where I'd probably play more. If you need more Sonnet
+you'll need to run your own trials. I think running a Gemma trial right now regarding the X3 thing is a good idea."
 
-1. **Now: part twelve §6**, the Timeline overlay and the Journal (B261: the day's log leaves the side column for a
-   Timeline button and an in-page overlay by day; the Journal cut to the newest six with "See more"; the referee told
-   what the log is for and what the journal is for, a line that restates the other dropped; the Journal command opens
-   the overlay). §1 to §5 landed tonight (49501d3, b73b99e, 4b4eeb2, 6df1e00, 05e2fef).
-2. **Then: her server moves** to the commit that carries part twelve (`lilith_update.sh`, dry-run first; the owner
-   says when), **and she plays game two.** Her games are the measure. The side chat reads the save after.
-3. **Proposed: the reading says where and what.** One schema change, no new call: the word lists over the player's
-   words that gate the holds, the floor and the gift path (on the move, in their room, a fight, waits until, gives what
-   to whom) become fields the adjudicator writes, computed once into one scene record a turn that the hold, the floor,
-   the deck and the gift path read; the regexes stay as backstops and lint tests; the replays the build chat has (her
-   save, the grimdark saves) must come out the same. Before more holds pile up on word lists.
-4. **Proposed: one Gemma round of the fantasy on the box**, with the call report counting the reading's fields left at
-   their default each turn. The local backend is the goal; the count says whether the one structured call is too big
-   for the local model, and gates X3 (the chain of small questions, roadmap area 18).
-5. **After her second game: XP** (B221), as ruled; the possibilities are on its register line.
-6. **Then the play page on the phone** (DESIGN-player-ui, its six commits; §6 is its item 7, landing first).
+1. **Now: her server moves** to 83ac136, part twelve complete (§1 to §6 landed tonight, 49501d3 to 83ac136), on the
+   owner's word given 11-09 night: part thirteen §1. The owner smoke-tests with a side game; Lilith plays at her own
+   pace and the side chat reads her save when there is new play.
+2. **Now: the X3 trial on Gemma** (part thirteen §2 to §5): the defaults-left count built into the call report and the
+   replay scorer; the chain of small questions as a dial on the assistant role; both arms replayed on the box over the
+   Sonnet-keyed turns that exist (her 28, the two 11-08 readiness rounds); the cache verified from prompt_n and cache_n;
+   a report page. No new Sonnet calls. The owner decides on the numbers; nothing adopted on 60/40.
+3. **The owner plays Super Grimdark Fantasy on Gemma** (:8013); the side chat reads those saves as they come. Sonnet
+   rounds, when the side chat needs them, are its own to run.
+4. **Proposed, after the trial: the reading says where and what** (the consolidation of the word lists into fields the
+   adjudicator writes; the trial's numbers say whether the one call can carry more fields or the chain should).
+5. **XP** (B221) when her play warrants it. 6. **The play page on the phone** (DESIGN-player-ui; §6's Timeline and
+   Journal landed first).
 
 ## Waiting on the owner
 
@@ -38,7 +37,7 @@ too_far check on the forks (B209); the go for a long-round measure on Gemma (pla
 
 ## Just landed (11-09, newest first)
 
-- **Part twelve §1 to §5** (11-09 night): the party line asks nothing of each person and a beat told again is caught
+- **Part twelve, all six sections** (11-09 night, 49501d3 to 83ac136): the Timeline overlay and the Journal (B261); the party line asks nothing of each person and a beat told again is caught
   by the engine (B242); the cards show a content fact clause by clause as it is told, learned facts newest first, a
   learned row may replace one (B243); the game master decides what can plainly be seen and the aside's learned pass
   makes it canon, Gemma answering "about sixteen years old" (B244); the clock's floor stands down where the scene is

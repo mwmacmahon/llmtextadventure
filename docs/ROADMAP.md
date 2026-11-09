@@ -374,7 +374,7 @@ A referee review pass, a second call over the referee's own report (X1). A prefe
 blind-pair judgements (X2). The station AI upgrading and downgrading itself (B19). Basic and advanced variants (area
 12). Per-campaign pacing numbers (B13). Each needs a measured run before it is kept.
 
-**The adjudicator as a chain of small questions (X3; the owner, 11-09 night; not for now).** The structured call keeps
+**The adjudicator as a chain of small questions (X3; the owner, 11-09 night; the trial ordered the same night, part thirteen §2 to §5).** The structured call keeps
 growing (intents, checks, stakes, tempo, open_to_callers, and more to come), and weak models fill big schemas badly
 (B213). The idea: one conversation, several messages in turn, each with its own small schema and, before it, only the
 state and the examples that question needs ("the reading" first; then, only if there is an attempt, the check; then
