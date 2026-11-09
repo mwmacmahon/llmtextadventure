@@ -316,3 +316,35 @@ def test_local_schema_requires_part_sevens_fields():
     assert {"settled", "why"} <= found["FiatOutcome"]
     rows = [o for o in objects(inline_schema(ChangeReport.model_json_schema())) if "who" in o["properties"]]
     assert rows and not any({"who", "note", "minutes", "hidden"} & set(o["required"]) for o in rows)
+
+
+@pytest.mark.asyncio
+async def test_a_call_without_thinking_that_loops_is_sent_again_with_the_loop_penalty():
+    """B234: Gemma (no thinking, temperature 0) looped in its intents twice; the plain retry was the same call."""
+    bodies: list[dict] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(req.content))
+        if len(bodies) == 1:
+            return httpx.Response(200, json={"choices": [{"message": {"content": '{"kind": "a'}, "finish_reason": "length"}]})
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"kind": "action", "minutes": 3}'}, "finish_reason": "stop"}]})
+
+    out, _ = await LlamaCppProvider(transport=httpx.MockTransport(handler)).extract(role(stop_sequences=[], loop_penalty=1.5), "S", [Msg("user", "x")], Verdict)
+    assert out == Verdict(kind="action", minutes=3) and bodies[1]["presence_penalty"] == 1.5
+
+
+def test_the_grammar_caps_intents_and_fiat_at_four():
+    from engine.providers.llamacpp_provider import inline_schema
+    from engine.roles import AssistantReadingStaked
+    props = inline_schema(AssistantReadingStaked.model_json_schema())["properties"]
+    assert props["intents"]["maxItems"] == 4 and props["fiat"]["maxItems"] == 4
+    assert "maxItems" not in props["entities"]
+
+
+def test_a_repeated_intent_is_kept_once():
+    from engine.pipeline import without_repeats
+    from engine.roles import AssistantReadingStaked
+    one = {"action": "shout to Maud", "targets": ["maud"], "check": None}
+    adj = AssistantReadingStaked.model_validate({"kind": "action", "summary": "s", "time_minutes": 1, "risk": "low",
+                                                  "intents": [one, one, one, {"action": "run", "targets": [], "check": None}]})
+    assert [i.action for i in without_repeats(adj).intents] == ["shout to Maud", "run"]

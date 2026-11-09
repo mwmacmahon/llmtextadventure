@@ -54,6 +54,11 @@ def _structured(prop: dict) -> bool:
     return "array" in kinds or "object" in kinds
 
 
+# B234: list fields the grammar caps by name. Gemma, on the grimdark save 3acb923619a3 turn 7, wrote one intent and then
+# '{"action": "shout to Maud", ...}' about forty times until max_tokens, twice (temperature 0: the retry is the same call).
+# The rules say "usually one, at most three"; at four the grammar closes the list and the reading goes on to its other fields.
+LIST_CAP: dict[str, int] = {"intents": 4, "fiat": 4}
+
 # B213: plain fields with defaults the grammar still makes the model write, by the model's title (a subclass carries its
 # own title, so each is named)
 _CHECK_FIELDS = ("edge", "edge_why")          # B217: aim is advisory, no longer required
@@ -94,6 +99,10 @@ def inline_schema(js: dict) -> dict:
             req = list(out.get("required", []))
             named = REQUIRED_BY_NAME.get(str(out.get("title") or ""), ())
             out["required"] = req + [k for k, v in out["properties"].items() if k not in req and (_structured(v) or k in named)]
+            for k, cap in LIST_CAP.items():
+                v = out["properties"].get(k)
+                if isinstance(v, dict) and v.get("type") == "array":
+                    v.setdefault("maxItems", cap)
         return out
 
     return walk(js, frozenset())
@@ -267,10 +276,11 @@ class LlamaCppProvider:
             r.raise_for_status()
             data = r.json()
             choice = data["choices"][0]
-            if role.thinking and choice.get("finish_reason") == "length" and role.loop_penalty:
+            if choice.get("finish_reason") == "length" and role.loop_penalty:
                 # after a think block the greedy grammar pass loops now and then (4 of 48 A3B referee calls, D34);
                 # a presence penalty stops the loops but costs rows on every call, so it is paid only here, on
-                # the retry of a call that looped
+                # the retry of a call that looped. Without thinking too (B234): at temperature 0 a plain retry is the
+                # same call and loops the same way (Gemma, 3acb923619a3 turn 7, twice)
                 log.warning("llamacpp.extract looped after thinking role=%s chars=%s; retrying with presence_penalty=%s",
                             role.model, len((choice.get("message") or {}).get("content") or ""), role.loop_penalty)
                 body["presence_penalty"] = role.loop_penalty
