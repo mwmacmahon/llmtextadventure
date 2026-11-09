@@ -104,6 +104,46 @@ class Count(BaseModel):
     refill: Literal["long", "short", "never"] = "long"
 
 
+class CombatBlock(BaseModel):
+    """Part fifteen §1 (the combat record §1): a person's fighting numbers, SRD 5.1. `block` names one from the library
+    (games/fantasy/combat.py BLOCKS) whose numbers fill what this one leaves out. A band (`count` > 1) is that many of the
+    block, their hit points in `hps`. Hit points move only by the engine."""
+    block: str = ""                 # a library block this one starts from (skeleton, watchman, ...)
+    ac: int | None = None
+    hp: int | None = None           # now (a single body); a band keeps each body's in hps
+    hp_max: int | None = None
+    attack: int | None = None       # to-hit bonus
+    damage: str | None = None       # dice and bonus, "1d6+2"
+    saves: dict[str, int] = Field(default_factory=dict)
+    kind: str = ""                  # person, beast, undead (Turn Undead and Smite read it)
+    weight: float | None = None     # the SRD's challenge in the engine's units (§9b); derived from the numbers when None
+    actions: list[dict] = Field(default_factory=list)   # strike, grab, hold, song, breath (the old moves read as these)
+    dc: int | None = None           # its actions' save DC when an action names none
+    count: int = 1                  # a band: this many of the block
+    hps: list[int] = Field(default_factory=list)        # a band's bodies' hit points (filled at its first fight)
+    band: str = ""                  # easy | fair | hard | deadly: scale the count to the player (§9b); "" is hard unless fixed
+    fixed: bool = False             # a set piece: its numbers at any level (Gorm, the wight, the Watch's six)
+    regen: int = 0                  # hit points back each round (a troll) unless `regen_unless` was done to it this fight
+    regen_unless: str = ""
+    fanatic: bool = False           # never yields
+    lead: str = ""                  # a lieutenant block the scaling may spend the remainder on
+    sized: bool = False             # the scaling has run (once, at its first fight)
+    notes: list[str] = Field(default_factory=list)      # what the scaling did, for the mechanics line
+
+
+class CombatState(BaseModel):
+    """Part fifteen §3: a fight in progress. The player's `fighting` list is who is in it on the other side."""
+    round: int = 0
+    since_turn: int = 0
+    allies: list[str] = Field(default_factory=list)
+    target: str = ""                # the player's current target (the reading's, or the last one)
+    orders: dict[str, str] = Field(default_factory=dict)   # ally id -> target id, from the player's words, from the next turn
+    surprise: str = ""              # "enemies" (an ambush: they act first) | "player" (from hiding: the target loses its action)
+    defeated: list[str] = Field(default_factory=list)      # who fell or yielded on the other side (XP when it ends)
+    weight_won: float = 0.0
+    last: dict[str, str] = Field(default_factory=dict)     # id -> their last action in a word (the Fight panel)
+
+
 class Person(BaseModel):
     id: str
     name: str
@@ -126,6 +166,7 @@ class Person(BaseModel):
     hook: str = ""                  # the hook that brought them, empty for the city's own
     moves: list[dict] = Field(default_factory=list)   # what they do in a fight (B95, D176): [{kind: strike|hold|grab|song, bonus, damage, peril, harm}]
     hidden_from_player: bool = False   # present and unseen (an ambusher in the fog, a pickpocket at the next table; B92, §7c)
+    combat: CombatBlock | None = None  # part fifteen §1: the fighting numbers; a default by the role words when None
 
     @property
     def attitude_word(self) -> str:
@@ -319,6 +360,7 @@ class FantasyState(BaseModel):
     hidden: Hidden = Field(default_factory=Hidden)
     hooks: list[HookState] = Field(default_factory=list)
     deck: Deck = Field(default_factory=Deck)
+    combat: CombatState | None = None  # part fifteen §3: a fight in progress
 
     @property
     def places(self) -> list[str]:

@@ -45,6 +45,7 @@ from . import conditions as cn
 from . import world as wo
 from . import deck as dk
 from . import sheet as sh
+from .combat import person_hp_word
 from .state import (
     ATTITUDE_WORDS, COINS, COPPERS, COPPERS_TO_GOLD, HUNTED_AT, STAT_NAMES, STATS, WANTED_AT, Ability, City, Condition, Count,
     FantasyState, FoundPlace, Hidden, Item, Note, Person, Player, find_item, purse_text, tier_of, RENOWN_TIERS, RENOWN_SCALE, HEAT_TIERS,
@@ -757,7 +758,8 @@ class FantasyGame(GameBase):
             lines.append("")
             lines.append(f"People {p.name} has dealt with:")
             for q in met:
-                bits = [q.status if q.status != "alive" else "", f"at {q.location or 'unknown'}", f"{q.attitude_word} toward {p.name}", q.mood, q.condition]
+                bits = [q.status if q.status != "alive" else "", f"at {q.location or 'unknown'}", f"{q.attitude_word} toward {p.name}",
+                        person_hp_word(q) if q.status == "alive" else "", q.mood, q.condition]      # part fifteen §1: the hit point word
                 lines.append(f"- {q.name}: " + ", ".join(x for x in bits if x) + ".")
                 if q.wants:
                     lines.append(f"    Wants: {q.wants}")
@@ -931,7 +933,8 @@ class FantasyGame(GameBase):
         party = [q for q in (s.person(x) for x in p.with_them) if q is not None and q.status == "alive" and not q.hidden_from_player]
         if party and not p.fate:          # the owner (11-08 evening): Tam sat in the boat as scenery while the search was for his own child
             out.append(f"With {p.name} this turn: " + "; ".join(q.name + (f", who wants this: {q.wants.rstrip('.')}" if q.wants else "")
-                                                              + (f" (now {q.mood})" if q.mood else "") for q in party)
+                                                              + (f" (now {q.mood})" if q.mood else "")
+                                                              + (f" ({person_hp_word(q)})" if person_hp_word(q) else "") for q in party)
                        + ". Those the moment touches speak or act, true to what they want and how they are; the rest are there and need "
                          "nothing, or a word. Not everyone every turn.")
         return out
@@ -2183,8 +2186,16 @@ class FantasyGame(GameBase):
         elsewhere = elsewhere if elsewhere and not self._same_spot(s, elsewhere, p.location) else None
         loc = elsewhere or p.location
         nid = slug(name)
+        fights = bool(re.search(r"\bfights?\b(\s*:\s*true)?", role or "", re.I))       # part fifteen §1: an invented enemy
+        role = re.sub(r"[,;]?\s*\bfights?\b(\s*:\s*true)?", "", role or "", flags=re.I).strip()
         s.people.append(Person(id=nid, name=name.strip()[:40], role=role.strip()[:60], location=loc, seen_at=loc if elsewhere is None else "",
                                met=elsewhere is None, heard_of=True))
+        if fights and elsewhere is None:
+            from .combat import ensure_block
+            ensure_block(s.people[-1])
+            if nid not in p.fighting:
+                p.fighting.append(nid)
+            w.note(f"people.{nid} fights: a {s.people[-1].combat.block} block, in the fight")
         s.journal.append(Note(kind="contact", text=f"{name.strip()}: {role.strip()}" + (f" ({loc})" if loc else "")))
         w.note(f"people += {nid} ({name.strip()}, {role.strip()})")
 
@@ -3169,6 +3180,7 @@ class FantasyGame(GameBase):
                            subtitle=(q.role or None) if self.name_shown(s, q) else "not yet named",
                            badges=[Chip(label="attitude", value=q.attitude_word, tone=self.ATTITUDE_TONES.get(q.attitude_word)),
                                    *([Chip(label="mood", value=q.mood)] if q.mood else []),
+                                   *([Chip(label="hit points", value=person_hp_word(q), tone="bad")] if person_hp_word(q) else []),
                                    *([Chip(label="status", value=q.status, tone="bad")] if q.status != "alive" else [])],
                            details=[Chip(label="Last seen", value=q.seen_at or "unknown")], notes=self.card_notes(s, q))
                 for q in met] + [

@@ -674,3 +674,26 @@ def lint_death_lines(content_dir: Path, game: Any = None) -> list[str]:
         if why:
             problems.append(f"death_lines: hint {text!r}: {why}")
     return problems
+
+
+def lint_combat(content_dir: Path) -> list[str]:
+    """Part fifteen §1 (advisory, not part of `lint`): the records that still use the old `moves` (read as actions until the
+    content is rewritten), and who fights (attitude -2 or below, moves, or an undead/fighter block by role) with no block of
+    their own (they get the default by their role words)."""
+    from games.fantasy.combat import ROLE_BLOCKS
+    out: list[str] = []
+    city = _load(content_dir / "scenarios" / "marrowgate.yml")
+    docs = [("city", city)] + [(p.stem, _load(p)) for p in sorted((content_dir / "hooks").glob("*.yml"))]
+    for where, doc in docs:
+        for pr in doc.get("people") or []:
+            if not isinstance(pr, dict):
+                continue
+            if pr.get("moves"):
+                out.append(f"{where}: {pr.get('id')} still uses moves (read as actions)")
+            words = f"{pr.get('role', '')} {pr.get('name', '')}"
+            fights = (pr.get("attitude") or 0) <= -2 or pr.get("moves") or any(p.search(words) for p, b in ROLE_BLOCKS if b != "commoner")
+            if fights and not pr.get("combat"):
+                out.append(f"{where}: {pr.get('id')} fights with no combat block (the default by role words)")
+            if (pr.get("combat") or {}).get("kind") == "undead" and not ((pr.get("combat") or {}).get("actions") or pr.get("moves")):
+                out.append(f"{where}: {pr.get('id')} is undead with no actions")
+    return out
