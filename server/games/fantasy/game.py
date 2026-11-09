@@ -290,7 +290,8 @@ class FantasyGame(GameBase):
         classes = self.classes()
         out: dict[str, Any] = {
             "name": {"kind": "text", "label": "Name", "required": True},
-            "klass": {"kind": "select", "label": "Class", "required": True, "options": [{"id": c.name, "name": c.label} for c in classes.values()]},
+            "klass": {"kind": "select", "label": "Class", "required": True, "options": [{"id": c.name, "name": c.label} for c in      # the playable classes first (the owner, 11-09)
+                                                                                   sorted(classes.values(), key=lambda c: c.status != "full")]},
         }
         for c in classes.values():                         # the kit as selects in the SRD's manner, shown for the class picked (B92)
             for key, ch in c.kit_fields():

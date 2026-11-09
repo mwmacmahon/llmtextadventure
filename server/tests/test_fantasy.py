@@ -99,7 +99,7 @@ def test_the_sheet_is_five_fields_with_one_hint(game: FantasyGame):
     assert shown == ["name", "klass", "race", "gender", "about"]
     assert [f[k].kind for k in shown] == ["text", "select", "select", "text", "textarea"]
     assert [k for k, x in f.items() if x.required] == ["name", "klass", "race"]
-    assert [o.name for o in f["klass"].options][:2] == ["Barbarian", "Bard (under construction)"] and len(f["klass"].options) == 12
+    assert [o.name for o in f["klass"].options][:4] == ["Barbarian", "Paladin", "Rogue", "Bard (under construction)"] and len(f["klass"].options) == 12
     assert f["kit_barbarian_1"].show_if == {"klass": "Barbarian"} and f["expertise_rogue"].kind == "checks" and f["expertise_rogue"].pick == 2
     assert [k for k, x in f.items() if x.hint] == ["about"]
     assert [o.id for o in f["race"].options][-1] == "Dragonborn" and len(f["race"].options) == 9
