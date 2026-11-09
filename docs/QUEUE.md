@@ -61,6 +61,20 @@ Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a shor
   mid-stream leaves no half turn (B257). :8016 moved 6c9099a to 7c77af6 at 05:13 UTC on the owner's word, dev mode
   off, with everything from part eight on. §2 to §7 (B242 to B246, B224.22, B58) are written and not yet built.
 
+## Suggested next (the side chat, 11-09 night; the owner's order stands until he says)
+
+1. Part twelve §4 to §6, then her server moves and she plays game two. Her games are the measure; nothing else is.
+2. **The reading says where and what** (a consolidation, one schema change, no new call): the player's-words regexes
+   that gate holds and floors (ON_THE_MOVE, PRIVATE_IN, the fight words, WAIT_SAID and the until lists, GIVE and
+   HERE_TAKE) become fields the adjudicator writes (on the move, private, a fight, waits until, gives what to whom),
+   computed once into one scene record per turn that quiet_why, the floor, the deck and the gift path all read; the
+   regexes stay as backstops and as lint tests. The replays the build chat already has (her save, the grimdark saves)
+   must come out the same. Before more holds pile up on word lists.
+3. One Gemma round of the fantasy on the box (she plays on Sonnet; the local backend is the goal), with the call
+   report's count of reading fields left at their default. That count gates X3 (the chain of small questions): run X3's
+   measure only if it says the one call is failing, since item 2 makes the schema bigger.
+4. XP (B221) after her second game, as ruled. 5. The play page's slice two on the phone, after §6's Timeline and Journal.
+
 ## The queue, in order (the owner, 11-08 evening; part seven put first 11-08 night; part eight 11-09)
 
 0. *(Built: B230, aa380a8, ec93ec6; see 0c.)* Her server, then she plays on it. Part ten, later: the floor's witness and a fair trade (B229), B224's unplain rest. B221 (XP) is on the docket
@@ -109,7 +123,11 @@ Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a shor
    (B242), §2 the People cards (B243), §3 asides as canon and the game master deciding what the character could plainly see, an age, clothes, the room (B244, widened
    11-09 night from the owner's grimdark saves), §4 the clock in a tense scene (B245), §5 a thing held
    once and a gift that leaves the pockets, with the Ferryman's Daughter closing on its goal flag and Hazel's thread's
-   giver (B246, B224.23, B224.24), §6 the Timeline overlay and the Journal (B261). The build chat's lines run from B262.
+   giver (B246, B224.23, B224.24), §6 the Timeline overlay and the Journal (B261). The build chat's lines run from B262. §1 to §3 built within the hour (49501d3, b73b99e, 4b4eeb2: the party
+   line softened and a beat told again caught by the engine; the cards clause by clause as told; the game master decides
+   what can plainly be seen and the aside's learned pass, Gemma answering "about sixteen years old"); §4 to §6 to come.
+   Also 5f952d3: the Clown Maker into the repo under server/games/hidden/ with its tests; 36505ee: the update script
+   backs up her store before a move.
 1a. **Her first game's notes** (the owner, 11-09, after 28 turns of Lillian on :8016 at 6c9099a; the side chat read the save):
    a can-be-ally offering herself to a stranger mid-scene (B241, Hazel; content and a hold on happenings); everyone with
    her given a line every turn, and the beat-level repeat never ruled (B242: the party rule softened, K3 traced on her
