@@ -112,7 +112,7 @@ one roll a block). Design: DESIGN-time-and-attempts §3 and §4; D146 to D151.
   (T6).
 - Questions move no time and an Ask mode answers out of the story (B105): built (D177); reaches wait for a quiet turn
   (B104): built, its content half (a fallback names its carrier) is the fantasy's.
-- The slow floor of five in a tense scene (B238, flagged from her save): Sonnet never writes a fast turn, so the
+- The slow floor of five in a tense scene (B245, flagged from her save): Sonnet never writes a fast turn, so the
   one-minute floor is unreachable; the floor to stand down where the engine can see the scene is tense.
 
 ## 3. Measurement and parity
@@ -159,8 +159,8 @@ before the roll (R9); the chant across turns on the local models (R1, P1, K3: th
 narrator's reasoning reaching the player as prose (R19); the same beat told again (A7). The first thing Qwen needs
 (area 14).
 
-**From her first game (11-09).** The party rule gives everyone with her a line every turn (B235, flagged: softened to
-those the moment touches); the game master's asides never reach the story (B237, flagged: read back as learned rows);
+**From her first game (11-09).** The party rule gives everyone with her a line every turn (B242, flagged: softened to
+those the moment touches); the game master's asides never reach the story (B244, flagged: read back as learned rows);
 K3 to be traced on her save, the first Sonnet transcript with a beat told again and no ruling.
 
 ## 6. The assistant
@@ -191,9 +191,9 @@ the journal and the story so far. Design: DESIGN.md; GAME_AUTHORING; the world p
   (B137); the pre-check hint on every turn a giver is named (B138); hooks with no player-safe standing line (B136).
 - A serious ruling whose fix says there is nothing to fix (N5); a contradiction ruled when the state is stale (N7-1031).
 - From her first game (11-09, flagged): a content thing the player takes is written as a new one and held twice, and
-  a thing handed to a named person stays in the pockets (B239); a hook's deed done in the prose and the note with no
+  a thing handed to a named person stays in the pockets (B246); a hook's deed done in the prose and the note with no
   close flag written (B224.22 again, B58: the engine asks the referee which flag the note makes true); the People
-  cards show seed facts never told and never replace a fact (B236; area 11 shows them).
+  cards show seed facts never told and never replace a fact (B243; area 11 shows them).
 
 ## 8. The fantasy game, Marrowgate
 
@@ -220,9 +220,9 @@ rolled (B225, area 1); the siren's grab following the player off the island (B22
 (B227); the clock and the question in the prose, an error string shown to the player (B228); no check on a player name
 that is a cast member's (B45).
 
-**Left, from her first game (11-09; B234 to B240, flagged):** Hazel offers herself to a stranger mid-scene (B234:
+**Left, from her first game (11-09; B241 to B247, flagged):** Hazel offers herself to a stranger mid-scene (B241:
 content, and happenings held while the player is mid-attempt); a fallback quest reaching her on the island by boat
-(B240, B104 reopened: the hold needs a place); the rest are the engine's (areas 2, 5, 7, 11).
+(B247, B104 reopened: the hold needs a place); the rest are the engine's (areas 2, 5, 7, 11).
 
 **Open with the owner (content).** The Watch raid the build added (B40); the Temple's price as a hook (B43); a quest
 settled a way no flag names (B58); the thirteen hooks whose endings the lint found one-sided (B110 to B122, each with
@@ -276,7 +276,7 @@ design (the strip's content per game, bottom sheet or tabs, skins now or later, 
 - Dev mode gates the lists but not a hidden save by id (B134), before the clown sim lands.
 - The call-report pages too large for the phone (B15, worked around with the light page).
 - "Until when" as buttons (B29; area 2).
-- The People cards (B236, flagged from her save): notes are the facts learned in play, newest first, seed facts only
+- The People cards (B243, flagged from her save): notes are the facts learned in play, newest first, seed facts only
   once told; the mood word beside the attitude word; a learned row may replace a fact.
 
 ## 12. Mods and variants

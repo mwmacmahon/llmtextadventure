@@ -91,11 +91,11 @@ Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a shor
    *Landed 11-08 night:* part seven (B207 to B211, B63 narrowed; 2669a19, 5a82d9e), part six (B200 to B206; dd4be6c,
    748d653, 0638909, ca47f24, 9538397), B212 (634f5a9), too_far widened (fc89cad).
 1a. **Her first game's notes** (the owner, 11-09, after 28 turns of Lillian on :8016 at 6c9099a; the side chat read the save):
-   a can-be-ally offering herself to a stranger mid-scene (B234, Hazel; content and a hold on happenings); everyone with
-   her given a line every turn, and the beat-level repeat never ruled (B235: the party rule softened, K3 traced on her
-   save at last); the People cards showing seed facts she was never told and never updating (B236); the game master's
-   asides not canon (B237); the clock's floor in a tense scene (B238: Sonnet never writes a fast turn); a thing given
-   away kept, because the engine held it twice (B239); a fallback quest reaching her on the island by boat (B240, B104
+   a can-be-ally offering herself to a stranger mid-scene (B241, Hazel; content and a hold on happenings); everyone with
+   her given a line every turn, and the beat-level repeat never ruled (B242: the party rule softened, K3 traced on her
+   save at last); the People cards showing seed facts she was never told and never updating (B243); the game master's
+   asides not canon (B244); the clock's floor in a tense scene (B245: Sonnet never writes a fast turn); a thing given
+   away kept, because the engine held it twice (B246); a fallback quest reaching her on the island by boat (B247, B104
    reopened); the Rats job "offered" after the deed, no close flag written (B224.22 seen again, B58). The directive for
    these is written when the owner says; her server moves after it, on his word.
 1. **She plays, on her own server** (started 11-09; 28 turns the first night, 25a51df64905, Normal, Sonnet). The side chat's read after part nine: on Sonnet the design holds (edge on 15 of 21 checks,
