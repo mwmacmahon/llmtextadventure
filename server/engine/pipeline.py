@@ -1191,7 +1191,12 @@ class Engine:
                     if len(kept_rows) != len(delta.changes):
                         ledger("precheck", {"kind": "trivial_rows", "dropped": [c.model_dump(mode="json") for c in delta.changes if c.kind != "learned"]})
                         delta = delta.model_copy(update={"changes": kept_rows})
+                before_rows = state
                 state, report, extras = apply_changes(game, state, delta, present=present, causes=causes, skip=skip, force=force)
+                got = _hook(game, "after_rows", before_rows, state, player_text or "", narration, default=None)
+                if got is not None:                           # B246 (b): the game's own reading of the rows against the player's words
+                    state, more = got
+                    report.applied.extend(more)
                 if not force:                                 # a game's own check on the prose after the rows landed (B92: a hidden person named)
                     report.rejected.extend(_hook(game, "late_conflicts", state, narration, default=[]) or [])
                 for r in screened:

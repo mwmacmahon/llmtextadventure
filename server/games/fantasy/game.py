@@ -1113,7 +1113,8 @@ class FantasyGame(GameBase):
                 for h in s.hooks if h.status != "dealt"]
         names = self.entity_names(s)
         rows += [QuestRow(title=t.title, line=quest_line(t.about, t.note), standing=THREAD_STANDING.get(t.status, t.status),
-                          giver=names.get(t.who, t.who), tone="ok" if t.status == "resolved" else "bad" if t.status == "failed" else "info")
+                          giver="" if t.who.strip().lower() in ("player", "you", s.player.name.lower()) else names.get(t.who, t.who),   # B224.24
+                          tone="ok" if t.status == "resolved" else "bad" if t.status == "failed" else "info")
                  for t in s.threads if not t.id.startswith("hook-")]
         return rows
 
@@ -1828,8 +1829,12 @@ class FantasyGame(GameBase):
         where = (where_ or "").strip().lower()
         if where in ("player", "pockets", "inventory", "", p.name.lower()):
             lying = s.thing(value)
-            if lying is not None:
+            if lying is not None:                        # a listed thing by that name is that thing moved, never a second
                 return self._relocate(s, lying, False, "player", w)
+            held = find_item(s.inventory, value, strict=True)
+            if held is not None and held.id not in COINS and held.count == 1 and not self._step(note) and not number_in(value):
+                w.note(f"new thing {value!r}: already carried as {held.name!r}, nothing added")     # B246 (a): two passes, one whistle
+                return True
             it = s.item(value)
             if it is not None and it.id in COINS and not MONEY.search(value):
                 it = None                                # B223: a gold amulet is a thing, not a gold piece
@@ -1864,6 +1869,61 @@ class FantasyGame(GameBase):
         s.things.append(t)
         w.note(f"things += {t.name!r} ({self._where(s, t)})")
         return True
+
+    GIVE = re.compile(r"\b(?:give|gives|gave|giving|hand|hands|handed|handing|pass|passes|passed|passing|toss|tosses|tossed|tossing|offer|offers|offered)\b"
+                      r"\s+(?P<rest>[^.!?\"\u201c\u201d]{1,80})", re.I)
+    HERE_TAKE = re.compile(r"\bhere,?\s+take\s+(?P<rest>[^.!?\"\u201c\u201d]{1,60})", re.I)
+
+    def after_rows(self, before: FantasyState, after: FantasyState, player_text: str, prose: str) -> tuple[FantasyState, list[str]] | None:
+        """B246 (b): the player's own words hand a thing in the pockets to someone here by name ("handing the whistle to
+        Tansy"); when the rows took it from the pockets (gone) or did nothing with it, it goes to that person this turn, with
+        a note. Lilith's turn 10: the referee zeroed the brass whistle and it left the world."""
+        gifts = self._gifts(before, player_text)
+        if not gifts:
+            return None
+        s = after.model_copy(deep=True)
+        notes: list[str] = []
+        for it, q in gifts:
+            if any(t.id == it.id and t.held_by and not any(b.id == t.id and b.held_by == t.held_by for b in before.things) for t in s.things):
+                continue                                                   # the rows already put it in someone's hands this turn
+            still = next((x for x in s.inventory if x.id == it.id), None)
+            if still is not None and still.count > 1:
+                continue                                                   # one of several: the rows' count stands
+            words = [w for w in re.findall(r"[a-z]{4,}", it.name.lower()) if w not in STOP]
+            if words and not any(w in (prose or "").lower() for w in words):
+                continue                                                   # the telling never touched it: leave it
+            if still is not None:
+                s.inventory.remove(still)
+            gift = it.model_copy(update={"place": "", "held_by": q.id, "count": 1})
+            if s.thing(gift.id) is not None and s.thing(gift.id).id == gift.id:
+                gift.id = f"{gift.id}_{len(s.things)}"
+            s.things.append(gift)
+            line = f"{it.name} given to {q.name}"
+            s.player.turn_notes.append(line[:1].upper() + line[1:])
+            notes.append(f"things.{gift.id}: carried -> held by {q.id} (the player's words gave it; B246)")
+        return (s, notes) if notes else None
+
+    def _gifts(self, s: FantasyState, player_text: str) -> list[tuple[Item, Person]]:
+        """(the thing, the person) for each gift the player's words make to someone here by name, the thing in the pockets."""
+        voice = re.sub(r'"[^"]*"|\u201c[^\u201d]*\u201d', " ", player_text or "")      # the player's acts, not their speech
+        here = [s.person(x) for x in self.people_here(s)]
+        here = [q for q in here if q is not None]
+        out: list[tuple[Item, Person]] = []
+        for m in [*self.GIVE.finditer(voice), *self.HERE_TAKE.finditer(voice)]:
+            rest = m.group("rest").strip()
+            for q in here:
+                names = [n for n in {q.name, q.name.split()[0], *q.aliases} if n and len(n) > 2]
+                for n in names:
+                    pat = re.escape(n)
+                    m2 = re.match(rf"(?P<thing>.+?)\s+(?:to|for)\s+{pat}\b", rest, re.I) or re.match(rf"{pat}\s+(?P<thing>.+)", rest, re.I)
+                    if not m2:
+                        continue
+                    phrase = re.sub(r"^(?:the|my|a|an|his|her|this|that|their)\s+", "", m2.group("thing").strip(), flags=re.I)
+                    it = find_item(s.inventory, phrase, strict=True)
+                    if it is not None and it.id not in COINS and all(it is not x for x, _ in out):
+                        out.append((it, q))
+                    break
+        return out
 
     def _relocate(self, s: FantasyState, it: Item, carried: bool, dest: str, w: Writer) -> bool:
         low = (dest or "").strip().lower()

@@ -1048,3 +1048,49 @@ def test_a_learned_row_may_replace_a_fact(game: FantasyGame):
     assert q.shown == [] and _card(game, s1, "hazel").notes == ["Hazel sleeps on Reed Island now, in Mirren's hut."]
     s2, _, _ = apply(game, s1, C(kind="learned", target="hazel", value="Hazel likes the rain.", note="replaces nothing she ever said"))
     assert "Hazel likes the rain." in s2.person("hazel").facts and len(s2.person("hazel").facts) == 2     # no match: added
+
+
+# ---- B246: a thing is held once, a gift leaves the pockets; B224.23-24 -------------------------------------------------
+
+def test_two_passes_writing_the_same_new_thing_make_one(game: FantasyGame):
+    """Lilith's turn 8: the player pass and the world pass both wrote 'new brass whistle'; the first moved Gorm's into her
+    pockets, the second made brass_whistle_10. Now the second finds it already carried."""
+    from games.fantasy.state import Item
+    st = new(game)
+    if st.thing("brass_whistle") is None:
+        st.things.append(Item(id="brass_whistle", name="a brass whistle", held_by="gorm"))
+    s1, rep, _ = apply(game, st, C(kind="new", target="", field="player", value="brass whistle"),
+                       C(kind="new", target="thing", field="player", value="brass whistle"))
+    assert [x.id for x in s1.inventory if "whistle" in x.name] == ["brass_whistle"] and s1.thing("brass_whistle") is None
+    assert any("already carried" in a for a in rep.applied)
+    s2, _, _ = apply(game, s1, C(kind="new", target="thing", field="player", value="torch", note="2"))
+    assert s2.item("torches").count == s1.item("torches").count + 2                      # counted things still add
+
+
+def test_a_gift_in_the_players_words_goes_to_that_person(game: FantasyGame):
+    """Lilith's turn 10: 'before handing the whistle to Tansy, saying "go nuts!"'; the referee zeroed it and it left the
+    world. The engine gives it to Tansy, with a note; speech does not count, and a thing the telling never touched stays."""
+    from games.fantasy.state import Item
+    st = new(game)
+    st.inventory.append(Item(id="tin_whistle", name="a tin whistle"))
+    st.person("tansy").location = st.player.location
+    s1, _, _ = apply(game, st, C(kind="gone", target="tin_whistle", note="given to Tansy"))
+    assert s1.item("tin_whistle") is None
+    got = game.after_rows(st, s1, 'I say "go nuts!" before handing the whistle to Tansy.', "Tansy snatches the whistle and blows.")
+    s2, notes = got
+    assert s2.thing("tin_whistle").held_by == "tansy" and notes and "A tin whistle given to Tansy Fell" in s2.player.turn_notes
+    assert game.after_rows(st, s1, 'I say "hand the whistle to Tansy".', "Tansy blows it.") is None       # only speech
+    assert game.after_rows(st, st, "I hand the whistle to Tansy.", "Nobody moves.") is None              # the telling never touched it
+    s3 = game.after_rows(st, st, "I give Tansy the whistle.", "She turns the whistle over.")[0]          # the rows did nothing
+    assert s3.thing("tin_whistle").held_by == "tansy" and s3.item("tin_whistle") is None
+
+
+def test_a_threads_giver_is_who_gave_it(game: FantasyGame):
+    """B224.24: Kragga hired Hazel; the referee's who was Hazel and the card read 'from Hazel Oakhew'. who=player is the
+    player's own job: no giver."""
+    from engine.threads import Thread
+    st = new(game)
+    st.threads.append(Thread(id="t12-hazel", title="Hazel hired for the lake", about="Hazel paid ten gold to go", who="player"))
+    st.threads.append(Thread(id="t13-oswin", title="Oswin's shadow", about="find it", who="oswin"))
+    rows = {r.title: r for r in game.quest_rows(st)}
+    assert rows["Hazel hired for the lake"].giver == "" and rows["Oswin's shadow"].giver
