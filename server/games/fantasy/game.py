@@ -903,8 +903,8 @@ class FantasyGame(GameBase):
         if party and not p.fate:          # the owner (11-08 evening): Tam sat in the boat as scenery while the search was for his own child
             out.append(f"With {p.name} this turn: " + "; ".join(q.name + (f", who wants this: {q.wants.rstrip('.')}" if q.wants else "")
                                                               + (f" (now {q.mood})" if q.mood else "") for q in party)
-                       + ". Give each of them something in the telling: a line, an act, or what they notice, true to what they want "
-                         "and how they are. A word or two is enough when the moment belongs to someone else.")
+                       + ". Those the moment touches speak or act, true to what they want and how they are; the rest are there and need "
+                         "nothing, or a word. Not everyone every turn.")
         return out
 
     # ---- the assistant's and the referee's rules ---------------------------------------------------------------------
