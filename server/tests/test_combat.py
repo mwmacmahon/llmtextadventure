@@ -342,6 +342,13 @@ def test_a_fine_weapon_is_plus_one_to_hit_and_damage(game):
     assert fine["damage"] == "1d8+4" and plain["damage"] == "1d8+3"
 
 
+def test_an_enemy_the_rows_put_in_the_company_is_no_ally_on_the_fight_panel(game):
+    st, q = _fight(game, 1)
+    st.player.with_them.append("dead")                                  # the referee's row (the keeper in 09196b219219)
+    group = cb.fight_panel(game, st)[0]
+    assert not any(c.value == "ally" for m in group.meters for c in m.chips)
+
+
 def test_a_bow_spends_arrows(game):
     st, q = _fight(game, 1, klass="Rogue", kit_rogue_2="a shortbow and twenty arrows")
     arrows = next(it for it in st.inventory if "arrow" in it.name.lower())

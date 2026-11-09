@@ -935,7 +935,7 @@ def fight_panel(game: Any, s: FantasyState) -> list:
             chips = [Chip(label="", value=a) for a in _ailments_of(q)]
             if c.last.get(q.id):
                 chips.append(Chip(label="last", value=c.last[q.id]))
-            if q.id in p.with_them:
+            if q.id in p.with_them and q.id not in p.fighting:    # B282: someone the rows put in the company but fighting the player is no ally
                 chips.insert(0, Chip(label="", value="ally", tone="ok"))
             meters.append(Meter(label=label, value=max(0, h), min=0, max=max(1, b.hp_max or 1), text=f"{max(0, h)} / {b.hp_max}",
                                 tier=hp_word(h, b.hp_max or 1, fallen_word(q)), tone="bad" if h * 2 < (b.hp_max or 1) else None, chips=chips))

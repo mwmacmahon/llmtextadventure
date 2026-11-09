@@ -73,6 +73,7 @@ function Game({ id }: { id: string }) {
   const [hideUndone, setHideUndone] = useState(prefs.hideUndone());
   const [death, setDeath] = useState<GraveCard | null>(null);
   const [overlay, setOverlay] = useState<"timeline" | "journal" | null>(null);    // B261: the Timeline overlay and its tab
+  const [panelsOpen, setPanelsOpen] = useState(prefs.phonePanelsOpen());          // B282: at phone width the story gets the screen
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(() => api.instance(id).then(setView).catch((e) => setErr(String(e))), [id]);
@@ -290,11 +291,11 @@ function Game({ id }: { id: string }) {
         <button onClick={() => branch()} disabled={streaming !== null} title="Copy this game as a new branch from here">
           branch
         </button>
-        <a className="link small" href={api.exportUrl(id)} download title="Download this game as JSON">
+        <a className="link small hdr-extra" href={api.exportUrl(id)} download title="Download this game as JSON">
           export
         </a>
-        <button onClick={() => setDebug(!debug)}>GM debug</button>
-        {hasTimeline && <button onClick={() => setOverlay("timeline")} title="What has happened, day by day, and the journal">timeline</button>}
+        <button className="hdr-extra" onClick={() => setDebug(!debug)}>GM debug</button>
+        {hasTimeline && <button className="hdr-extra" onClick={() => setOverlay("timeline")} title="What has happened, day by day, and the journal">timeline</button>}
       </header>
       <main>
         <div className="centre">
@@ -338,8 +339,14 @@ function Game({ id }: { id: string }) {
           </section>
         )}
         </div>
-        <aside className="side">
-          <Panels panels={view.ui.panels} place="side" onChoice={(cmd) => send(cmd)} onCommand={sendCommand} busy={streaming !== null} ended={!!view.ending} />
+        <aside className={`side${panelsOpen ? "" : " side-closed"}`}>
+          <div className="side-full">
+            <Panels panels={view.ui.panels} place="side" onChoice={(cmd) => send(cmd)} onCommand={sendCommand} busy={streaming !== null} ended={!!view.ending} />
+          </div>
+          {/* B282: at phone width with the panels closed, the game's first two (the status strip and its key meter) stay in view */}
+          <div className="side-compact">
+            <Panels panels={view.ui.panels.filter((w) => (w.place || "side") === "side" && !(w.type === "log" && w.timeline)).slice(0, 2)} place="side" readOnly />
+          </div>
         </aside>
       </main>
       <footer>
@@ -374,16 +381,22 @@ function Game({ id }: { id: string }) {
             </button>
           </div>
         </form>
+        <div className="footer-chips">
+          <button type="button" className="check-chip small panels-toggle" aria-expanded={panelsOpen}
+            onClick={() => { setPanelsOpen(!panelsOpen); prefs.setPhonePanelsOpen(!panelsOpen); }}>
+            {panelsOpen ? "Hide panels" : "Panels"}
+          </button>
         {hasTimeline && (
-          <div className="footer-chips">
+          <>
             <button type="button" className="check-chip small" onClick={() => setOverlay("timeline")}>Timeline</button>
             {view.ui.panels.some((w) => w.type === "list" && w.journal) && (
               <button type="button" className="check-chip small" onClick={() => setOverlay("journal")}>
                 {(view.ui.panels.find((w) => w.type === "list" && w.journal) as { title: string } | undefined)?.title ?? "Journal"}
               </button>
             )}
-          </div>
+          </>
         )}
+        </div>
       </footer>
       {overlay && <Timeline panels={view.ui.panels} tab={overlay} onTab={setOverlay} onClose={() => setOverlay(null)} />}
       <DebugDrawer
