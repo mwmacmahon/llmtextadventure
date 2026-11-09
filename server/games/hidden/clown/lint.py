@@ -4,7 +4,7 @@ Checks: ids unique; the deck names hooks that exist; a booking names a client th
 people) with a `client` block; reward rows name girls, people and skills that exist; the girls' skills are the grid's;
 traits named are in the table; every event, reach and happening loads and rebases; prose-timed hook events carry
 `not_before`; a hook's `done` reads flags the hook, the engine or the house file declares; no engine word in a directive;
-aliases unique across the cast; secret terms never in the open text; every predicate's and effect's state path resolves
+aliases unique across the cast; secret terms never in the open text; the harbour deck's cards (harbour.lint_cards); every predicate's and effect's state path resolves
 against a fresh game's state (C6: a mistyped `house.best.crwd` is silently false), `house.best.<skill>` by the grid.
 """
 from __future__ import annotations
@@ -246,6 +246,17 @@ def lint(content_dir: Path, scenario: dict | None = None, state: dict | None = N
         for where, pth in named:
             if not _path_ok(state, pth, skills):
                 problems.append(f"{where}: the path {pth!r} does not resolve in the state")
+    # the harbour deck's cards (harbour.py)
+    gd = content_dir / "girls" / "deck.yml"
+    if gd.exists():
+        from .harbour import lint_cards
+        cards = {}
+        for p in sorted((content_dir / "girls").glob("*.yml")):
+            if p.name != "deck.yml":
+                c = yaml.safe_load(p.read_text()) or {}
+                if c.get("id"):
+                    cards[c["id"]] = c
+        problems += lint_cards(yaml.safe_load(gd.read_text()) or {}, cards, sc)
     # secret terms in the open
     open_text = " ".join([str(sc.get("premise", "")), str((sc.get("house") or {}).get("description", "")), str(sc.get("opening_text", ""))]
                          + [str(q.get("description", "")) + str(q.get("wants", "")) for q in people.values()]

@@ -37,6 +37,7 @@ SLOTS: dict[str, tuple[int, int]] = {"mornings": (540, 720), "afternoons": (840,
 TRAINING_DAYS = (0, 1, 2, 3, 4)          # Monday to Friday
 WEEK_END_MINUTE = 1320                   # Sunday 22:00
 STATUS = Literal["active", "passive", "graduated", "gone", "away"]
+AGE_BUCKETS = ((0, "youth"), (18, "young"), (25, "grown"), (40, "older"))   # set by her age, never moved by a model; what each binds is the deck file's (D194C)
 
 
 def tier_of(value: int, tiers: tuple[tuple[int, str], ...]) -> str:
@@ -124,6 +125,14 @@ class Girl(BaseModel):
     routine: list[Routine] = Field(default_factory=list)
     untrainable: list[str] = Field(default_factory=list)
     arc: str = ""
+    before: str = ""                # a written girl, until she comes to the house: where she is about the town (she may be met there first; D195C)
+    card: str = ""                  # the harbour deck's card she came from ("" for a written girl); a deck girl's contract may be sold (D194C)
+    tags: list[str] = Field(default_factory=list)   # the card's tags, completed by the lottery at the Take (what she hides, wants, tends to)
+    voice: str = ""                 # one line in her own words, the card's
+    origin: str = ""                # the origin tag (mill, docks, chapel, ...)
+    bound_for: str = ""             # what her contract bound her for, before the house bought it
+    never: list[str] = Field(default_factory=list)  # tags she may never carry (the bucket's and the card's own)
+    price_paid: int = 0             # what the house paid the clerk for her contract
     off_routine_until: int = 0
     arrived_day: int = 0
     week_gains: dict[str, int] = Field(default_factory=dict)   # this week's gains per skill, for the report
@@ -147,6 +156,16 @@ class Girl(BaseModel):
 
     def in_house(self) -> bool:
         return self.status in ("active", "passive", "graduated")
+
+    @property
+    def age_bucket(self) -> str:
+        return tier_of(self.age, AGE_BUCKETS)
+
+    @property
+    def contract_value(self) -> int:
+        """What her contract is worth sold on: her commercial value as a performer, nothing of how she stands to anyone (the owner,
+        11-09): half a point of gold a skill point above ten, ten a point of her name in the trade, twenty-five for a graduate."""
+        return max(5, int(0.5 * sum(max(0, v - 10) for v in self.skills.values()) + 10 * self.credibility + (25 if self.graduated else 0)))
 
     @property
     def credibility_word(self) -> str:
@@ -314,6 +333,20 @@ class Deck(BaseModel):
     counts: dict[str, int] = Field(default_factory=dict)     # content id -> how many times dealt
 
 
+class Harbour(BaseModel):
+    """The deck of girls off the ships (D194C): the cards in the order they wait (the save's seed shuffles them once; a card not
+    taken goes to the back of the line, so none comes round again before every other has been seen), the hand on the clerk's
+    slip, the cards taken (gone for good), and this turn's word of a boat."""
+    queue: list[str] = Field(default_factory=list)
+    hand: list[str] = Field(default_factory=list)
+    gone: list[str] = Field(default_factory=list)
+    ships: int = 0                  # boats come in so far (the first at the open)
+    dealt_week: int = 0
+    taken_week: int = 0             # the week of the last Take (one a week, a dial)
+    announce: bool = False          # a boat came in since the last telling: the narrator is told the slip this turn
+    overrides: dict[str, dict[str, str]] = Field(default_factory=dict)   # Customize (dev): card id -> {tag group: tag} the lottery honours
+
+
 class Note(BaseModel):
     kind: Literal["clue", "contact", "house"] = "clue"
     text: str
@@ -369,6 +402,7 @@ class ClownState(BaseModel):
     shows: list[Show] = Field(default_factory=list)
     hooks: list[HookState] = Field(default_factory=list)
     deck: Deck = Field(default_factory=Deck)
+    harbour: Harbour = Field(default_factory=Harbour)
     journal: list[Note] = Field(default_factory=list)
     log: list[str] = Field(default_factory=list)            # words only: the narrator reads its tail (C2)
     tally: list[str] = Field(default_factory=list)          # the engine's arithmetic with the numbers: the player's panel

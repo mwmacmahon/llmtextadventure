@@ -2,7 +2,8 @@
 two turns, the week's end on the scripted pending, the referee's rows on the axes, the hand of bookings (dealt full, a card
 taken by any girl, the rest passed, locks, the refill clock), the bench training at its own bookings, the student's share,
 Switch at will, graduation as a flag, the deck's repeat customers, troubles on their own clock, the endings as stones, the
-content lint, and a turn through the pipeline on the fake provider."""
+content lint, the harbour deck (the boat's Sundays, the slip of four, Take, Sell contract, the contract value, the lottery within the age
+bucket, the keep per girl; D194C), and a turn through the pipeline on the fake provider."""
 from __future__ import annotations
 
 import random
@@ -82,6 +83,8 @@ def test_the_setup_is_four_fields_and_the_first_morning(game: ClownGame):
     f = setup_fields(game.setup_options())
     assert set(f) == {"name", "kind", "first_girl", "about"}
     assert f["about"].hint and not f["kind"].hint
+    assert [o.id for o in f["first_girl"].options] == game.content.girls_deck()["starters"] and f["first_girl"].options[0].name.startswith("Ada Vosk, 23")
+    assert "dot" not in [o.id for o in f["first_girl"].options]                    # the written three come later; dot still works unlisted, for the tools
     st = new(game)
     assert st.player.stats == {"charm": 3, "menace": -1, "business": 1, "connections": 1, "craft": 0}
     assert st.active == "dot" and st.active_girl.status == "active" and st.active_girl.location == "The practice room"
@@ -98,7 +101,7 @@ def test_the_setup_is_four_fields_and_the_first_morning(game: ClownGame):
 
 def test_the_empty_setup_builds_a_game_too(game: ClownGame):
     _, st = game.new_instance({})
-    assert st.player.name == "the proprietor" and st.active == "dot"
+    assert st.player.name == "the proprietor" and st.active == "ada_vosk"
 
 
 def test_a_saved_game_rereads_the_script(game: ClownGame):
@@ -535,13 +538,13 @@ def test_every_ending_is_a_stone(game: ClownGame):
 
 async def test_a_turn_through_the_pipeline(engine: Engine):
     assert "clown" in engine.games
-    iid = engine.create_instance("clown", dict(SETUP))
+    iid = engine.create_instance("clown", dict(SETUP, first_girl="ada_vosk"))     # the setup's choice is a harbour starter; the written three come later
     events = [ev async for ev in engine.run_turn(iid, "I go through to the practice room and watch her for a minute before I say anything.")]
     assert events[-1]["event"] == "done", [ev["event"] for ev in events]
     st = engine.games["clown"].load_state(engine.store.load_state(iid))
     assert st.now_abs > 1 * DAY + 540
     bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
-    assert "Dorothea Vance (the girl in training)" in bulletin and "Pratfalls 35" not in bulletin
+    assert "Ada Vosk (the girl in training)" in bulletin and "Timing 30" not in bulletin and st.girl("dot").status == "away"
     ui = engine.games["clown"].ui(st)
     assert ui.panels and ui.free_text
     # the plan, clicked: no model call, no clock
@@ -630,7 +633,7 @@ def test_graduation_needs_the_record_and_a_sunday_and_a_graduate_earns_on_her_ow
     money = s2.house.money
     s3 = game.after_turn(s2, info(turn=3, minutes=60))
     assert s3.girl("dot").skills["acrobatics"] == 90 and s3.girl("rosalind").skills["children"] > 50
-    assert s3.house.money == money - 20 and not any("own bookings" in ln for ln in s3.house.report_numbers)   # the keep
+    assert s3.house.money == money - 23 and not any("own bookings" in ln for ln in s3.house.report_numbers)   # the keep, two girls in the house
     from games.hidden.clown.state import Show
     x = Show(id="s", hook="judge_dinner", title="The Judge's dinner", client="judge", venue="The Judge's house", at_abs=s3.now_abs, wants=["acrobatics"],
              stat="charm", difficulty=0, fee=60, variance=0, girl="dot")
@@ -645,3 +648,200 @@ def test_graduation_needs_the_record_and_a_sunday_and_a_graduate_earns_on_her_ow
     st4.shows.append(Show(id="show_chandlers_dinner", hook="chandlers_dinner", title="The Chandlers' Company dinner", client="chandlers_secretary",
                           venue="The Hill Road", at_abs=st4.now_abs, girl="dot", result="triumph"))
     assert game._graduate_why(st4, st4.active_girl) == ""
+
+
+# ---- the harbour deck (D194C) ------------------------------------------------------------------------------------------
+
+def _close_week(game: ClownGame, st, turn: int):
+    pend = next(p for p in st.hidden.pending if p.tag == "week_end" and p.live)
+    t = pend.due_abs(DAY)
+    st.clock.day, st.clock.minute = t // DAY, t % DAY
+    pend.fired, pend.fired_turn = True, turn
+    return game.after_turn(st, info(turn=turn, minutes=600))
+
+
+def test_the_deck_is_sixty_cards_shuffled_by_the_name_and_the_slip_holds_four_at_the_open(game: ClownGame):
+    from games.hidden.clown import harbour as hb
+    deck, cards = game.content.girls_deck(), game.content.girl_cards()
+    assert len(cards) == 60 and set(deck["cards"]) == set(cards)
+    assert hb.lint_cards(deck, cards, game.scenario()) == []
+    st = new(game)
+    assert len(st.harbour.hand) == 4 and st.harbour.ships == 1 and st.harbour.announce and len(st.harbour.queue) == 60
+    open_ = [c for c in st.harbour.queue if int(game.content.girl_cards()[c].get("tier", 1)) == 1]
+    assert st.harbour.hand == open_[:4]                                  # the first four whose tier the Name opens; the rest keep their places
+    assert new(game, name="Somebody Else").harbour.queue != st.harbour.queue       # the save's name shuffles
+    assert any(ln.startswith("WORD FROM THE SHED") for ln in game.turn_directives(st))
+    assert "On the clerk's slip" in game.render_bulletin(st, "") and "THE HARBOURMASTER'S SHED" in game.frozen_prefix(st)
+    assert {c.id for c in game.commands(st)} >= {"take", "customize"}
+    st = advance(game, st, 5, 1)
+    assert not st.harbour.announce and not any(ln.startswith("WORD FROM THE SHED") for ln in game.turn_directives(st))
+
+
+def test_a_tier_two_card_waits_in_its_place_until_the_name_opens_it(game: ClownGame):
+    from games.hidden.clown import harbour as hb
+    deck, cards = game.content.girls_deck(), game.content.girl_cards()
+    st = new(game)
+    tier3 = next(c for c in cards.values() if int(c.get("tier", 1)) == 3)["id"]
+    st.harbour.queue = [tier3] + [c for c in st.harbour.queue if c != tier3]
+    st.harbour.hand = []
+    hb.deal(st, deck, cards, 4)
+    assert tier3 not in st.harbour.hand and st.harbour.queue[0] == tier3
+    st.house.name = 50
+    st.harbour.hand = []
+    hb.deal(st, deck, cards, 4)
+    assert st.harbour.hand[0] == tier3
+
+
+def test_the_boat_comes_on_the_first_and_third_sunday_and_the_untaken_go_to_the_back_of_the_line(game: ClownGame):
+    st = new(game)
+    first = list(st.harbour.hand)
+    st = _close_week(game, st, 9)                                    # week 1's Sunday: a boat
+    assert st.house.week == 2 and st.harbour.ships == 2 and st.harbour.announce
+    assert set(st.harbour.hand) <= set(st.harbour.queue) and st.harbour.queue[-4:] == first and not set(first) & set(st.harbour.hand)
+    assert any("A boat came in" in ln for ln in st.log) and any(ln.startswith("WORD FROM THE SHED") for ln in game.turn_directives(st))
+    second = list(st.harbour.hand)
+    st = _close_week(game, st, 10)                                   # week 2's Sunday: no boat
+    assert st.house.week == 3 and st.harbour.ships == 2 and st.harbour.hand == second
+    st = _close_week(game, st, 11)                                   # week 3's Sunday: a boat
+    assert st.harbour.ships == 3 and st.harbour.hand != second
+    st = _close_week(game, st, 12)
+    assert st.harbour.ships == 3                                     # week 4's: the rent, no boat
+
+
+def test_take_pays_the_clerk_once_a_week_and_the_girl_comes_whole_with_her_tags_in_her_bucket(game: ClownGame):
+    from games.hidden.clown import harbour as hb
+    deck, cards = game.content.girls_deck(), game.content.girl_cards()
+    st = new(game)
+    cid = st.harbour.hand[1]
+    card = cards[cid]
+    st.house.money = card["price"] - 1
+    _, res = game.run_command(st, "take", {"girl": cid})
+    assert not res.ok and "gold" in res.text
+    st.house.money = 200
+    s, res = game.run_command(st, "take", {"girl": cid})
+    assert res.ok and res.directive and "shed" in res.directive and res.minutes == 90
+    g = s.girl(cid)
+    assert g is not None and g.status == "passive" and g.card == cid and g.location == "The office" and g.price_paid == card["price"]
+    assert s.house.money == 200 - card["price"] and cid in s.harbour.gone and cid not in s.harbour.queue and cid not in s.harbour.hand and len(s.harbour.hand) == 3
+    assert all(g.skills.get(k) == v for k, v in card["seed"].items()) and all(5 <= v <= 15 for k, v in g.skills.items() if k not in card["seed"])
+    assert set(card["tags"]) <= set(g.tags) and not set(g.tags) & set(hb.never_for(card, deck))
+    for grp in ("bind", "wants", "bent", "arc", "quest"):
+        assert sum(1 for t in g.tags if hb.group_of(deck, t) == grp) == 1, grp
+    assert 1 <= sum(1 for t in g.tags if hb.group_of(deck, t) == "hidden") <= 2
+    assert g.age_bucket == hb.bucket_of(card["age"]) and g.routine and g.voice == card["voice"].strip()
+    assert "The girls bought off the boats" in game.render_bulletin(s, "") and g.name in game.render_bulletin(s, "")
+    assert any(f"{g.name}: her contract bought" in ln for ln in game.seen_changes(st, s))
+    _, res = game.run_command(s, "take", {"girl": s.harbour.hand[0]})
+    assert not res.ok and "this week" in res.text                     # one a week
+    s2 = _close_week(game, s, 9)
+    assert game.run_command(s2, "take", {"girl": s2.harbour.hand[0]})[1].ok
+    # the girl may be booked and switched like any other, and her bent helps the gain
+    s.flags["second_girl_come"] = True
+    s3, res = game.run_command(s, "switch", {"girl": cid})
+    assert res.ok and s3.active == cid
+    bent = next((t for t in g.tags if t.startswith("bent_")), "")
+    if bent:
+        skill = next(k for k in s3.scenario.skills[bent[5:]])
+        gain, why = game._gain(s3, s3.girl(cid), skill, False, "x")
+        assert "it comes easily to her +1" in why
+
+
+def test_the_youth_bucket_never_draws_what_it_forbids_and_the_lint_catches_a_card_that_does(game: ClownGame):
+    from games.hidden.clown import harbour as hb
+    deck, cards = game.content.girls_deck(), game.content.girl_cards()
+    youth = [c for c in cards.values() if c["age"] < 18]
+    assert len(youth) == 6
+    forbidden = set(deck["buckets"]["youth"]["never"])
+    for c in youth:
+        for seed in range(40):
+            assert not set(hb.lottery(c, deck, random.Random(seed))) & forbidden
+        assert hb.bucket_of(c["age"]) == "youth"
+    older = next(c for c in cards.values() if c["age"] >= 40)
+    assert hb.bucket_of(older["age"]) == "older" and "pregnant" in hb.never_for(older, deck)
+    bad = dict(youth[0], tags=list(youth[0]["tags"]) + ["hidden_child"])
+    problems = hb.lint_cards(deck, {**cards, bad["id"]: bad}, game.scenario())
+    assert any("forbidden to the youth bucket" in p for p in problems)
+    bad2 = dict(cards["pim_dace"], id="dot")
+    assert any("written girl's id" in p for p in hb.lint_cards(deck, {**cards, "dot": bad2}, game.scenario()))
+    assert hb.girl_file_lines(hb.make_girl(youth[0], deck, new(game).scenario, random.Random(1), 1, 25), deck)[-1].strip().startswith("She is a child")
+
+
+def test_the_contract_value_is_her_worth_as_a_performer_and_a_sale_pays_a_share_and_she_is_gone(game: ClownGame):
+    from games.hidden.clown.state import Girl
+    g = Girl(id="x", name="X", skills={"a": 10, "b": 30, "c": 50})
+    assert g.contract_value == 30                                     # (0 + 20 + 40) / 2
+    g.credibility, g.graduated = 2, True
+    assert g.contract_value == 75                                     # +20 for the name, +25 the graduate
+    assert Girl(id="y", name="Y", skills={}).contract_value == 5
+    st = new(game)
+    _, res = game.run_command(st, "sell", {"girl": "dot"})
+    assert not res.ok                                                 # a written girl's contract is not for sale
+    cid = st.harbour.hand[0]
+    s, _ = game.run_command(st, "take", {"girl": cid})
+    g = s.girl(cid)
+    s.girl("dot").bonds[cid] = 2
+    money, value = s.house.money, g.contract_value
+    assert any(c.id == "sell" for c in game.commands(s))
+    s2, res = game.run_command(s, "sell", {"girl": cid})
+    assert res.ok and res.directive and "contract is sold on" in res.directive and f"girls.{cid}.status" in res.referee_skip
+    assert s2.house.money == money + int(round(value * 0.75)) and s2.girl(cid).status == "gone" and s2.girl(cid) not in s2.in_house()
+    assert s2.girl("dot").love == s.girl("dot").love - 1              # she was close to her
+    assert cid in s2.harbour.gone and cid not in s2.harbour.queue     # not back on the slip
+    assert "her contract sold on" in " ".join(game.seen_changes(s, s2)) and "gone" not in " ".join(game.seen_changes(s, s2))
+    assert any("Contract" == c.label for p in game.ui(s).panels if getattr(p, "layout", "") == "grid" for c in p.items)
+
+
+def test_customize_fixes_a_lottery_group_within_the_bucket(game: ClownGame):
+    from games.hidden.clown import harbour as hb
+    st = new(game)
+    cid = st.harbour.hand[0]
+    s, res = game.run_command(st, "customize", {"girl": cid, "group": "arc", "tag": "spy"})
+    assert res.ok and s.harbour.overrides[cid] == {"arc": "spy"}
+    _, res = game.run_command(s, "customize", {"girl": cid, "group": "arc", "tag": "wants_money"})
+    assert not res.ok
+    youth = next((c for c in s.harbour.hand if game.content.girl_cards()[c]["age"] < 18), None)
+    if youth:
+        _, res = game.run_command(s, "customize", {"girl": youth, "group": "hidden", "tag": "hidden_child"})
+        assert not res.ok and "forbidden" in res.text
+    s2, _ = game.run_command(s, "take", {"girl": cid})
+    assert "spy" in s2.girl(cid).tags and sum(1 for t in s2.girl(cid).tags if hb.group_of(game.content.girls_deck(), t) == "arc") == 1
+
+
+def test_the_keep_rises_per_girl_in_the_house(game: ClownGame):
+    st = new(game)
+    s = _close_week(game, st, 9)
+    assert any("The week's keep, 20 gold, was paid." in ln for ln in s.house.report_numbers)
+    st = new(game)
+    st.girl("rosalind").status, st.girl("billie").status = "passive", "passive"
+    s = _close_week(game, st, 9)
+    assert any("The week's keep, 26 gold (3 girls), was paid." in ln for ln in s.house.report_numbers)
+
+
+def test_a_save_from_before_the_harbour_gets_its_first_boat_on_load(game: ClownGame):
+    st = new(game)
+    data = st.model_dump(mode="json")
+    data.pop("harbour")
+    back = game.load_state(data)
+    assert back.harbour.ships == 1 and len(back.harbour.hand) == 4 and back.harbour.hand == st.harbour.hand
+
+
+def test_the_first_girl_is_a_harbour_girl_and_the_written_three_come_to_the_door_later(game: ClownGame):
+    st = new(game, first_girl="pim_dace")
+    g = st.active_girl
+    assert g.id == "pim_dace" and g.card == "pim_dace" and g.status == "active" and g.location == "The practice room" and g.price_paid == 30
+    assert st.house.money == 200 and "pim_dace" in st.harbour.gone and "pim_dace" not in st.harbour.queue and "pim_dace" not in st.harbour.hand
+    assert {x.id: x.status for x in st.girls if not x.card} == {"dot": "away", "rosalind": "away", "billie": "away"}
+    assert st.house.best["pratfalls"] == 30 and game._at_the_door(st) is None
+    prefix = game.frozen_prefix(st)
+    assert "Until then she is about the town: she sleeps in what is left of the Vance wagon" in prefix
+    assert "dot (Dorothea Vance, not yet in the house; about the town)" in game.adjudication_rules(st) and "pim_dace" in game.referee_rules(st)
+    assert "Pim Dace" in game.render_bulletin(st, "") and "bought off the boats" in game.render_bulletin(st, "")
+    st.flags["first_girl_come"] = True                                   # day 8, by the event
+    assert game._at_the_door(st).id == "dot"
+    st = advance(game, st, 5, 2)
+    assert st.girl("dot").status == "passive" and st.active == "pim_dace" and game._at_the_door(st) is None
+    st.flags["second_girl_come"] = True
+    assert game._at_the_door(st).id == "rosalind"
+    # a setup that names nobody, or nonsense, gets the first starter
+    assert game.new_instance({})[1].active == "ada_vosk" and game.new_instance({"first_girl": "nobody"})[1].active == "ada_vosk"
+    assert any(e.id == "first_girl_arrives" for e in st.hidden.events)

@@ -8,6 +8,7 @@ by week. The model-free way to tune the numbers and to find a week that cannot b
     cd server && .venv/bin/python -m games.hidden.clown.tools.dry_run --weeks 8 --kind charmer --girl dot --plan pratfalls,children
     .venv/bin/python -m games.hidden.clown.tools.dry_run --weeks 12 --plan wants --rest-at 60 --book all --attend --verbose
 
+`--take N` buys a contract off the clerk's slip whenever the house has N gold to spare over the price (the cheapest first);
 `--plan a,b` trains a in the mornings and b in the afternoons; `--plan wants` trains the next booked show's wants (the
 weaker first), else the `--focus` list; `--rest-at N` puts the afternoons to rest when her fatigue reaches N on a Monday.
 """
@@ -76,7 +77,7 @@ def choose_plan(game: ClownGame, st: ClownState, plan: str, focus: list[str], re
 
 
 def run(weeks: int = 8, kind: str = "charmer", girl: str = "dot", plan: str = "pratfalls,children", focus: str = "", rest_at: int = 0,
-        book: str = "all", attend: bool = True, seed: int = 0, verbose: bool = False, content: Path = CONTENT, out=print) -> ClownState:
+        book: str = "all", attend: bool = True, seed: int = 0, verbose: bool = False, content: Path = CONTENT, out=print, take: int = 0) -> ClownState:
     game = make_game(content)
     _, st = game.new_instance({"name": "the proprietor", "kind": kind, "first_girl": girl})
     rng = random.Random(seed)
@@ -109,6 +110,16 @@ def run(weeks: int = 8, kind: str = "charmer", girl: str = "dot", plan: str = "p
                     booked_week.append(f"{h.title} ({free[0].name})")
                 if verbose:
                     out(f"  {hhmm(st.clock.minute)} book {h.title} for {free[0].name}: {r.text}")
+        # the shed: the cheapest contract on the slip when the house can spare it
+        if take and st.harbour.hand:
+            cards = game.content.girl_cards()
+            slip = sorted((cards[c] for c in st.harbour.hand if c in cards), key=lambda c: int(c.get("price") or 0))
+            if slip and st.house.money >= int(slip[0].get("price") or 0) + take:
+                st, r = game.run_command(st, "take", {"girl": slip[0]["id"]})
+                if r.ok:
+                    booked_week.append(f"took {slip[0]['name']} ({int(slip[0].get('price') or 0)} gold)")
+                if verbose:
+                    out(f"  {hhmm(st.clock.minute)} take {slip[0]['name']}: {r.text or r.log_line}")
         to = next_stop(st)
         show = next((x for x in st.shows if not x.result and x.at_abs == to), None)
         st.player.location = show.venue if (show is not None and attend) else OFFICE
@@ -148,6 +159,8 @@ def run(weeks: int = 8, kind: str = "charmer", girl: str = "dot", plan: str = "p
             out(f"  {x.name} ({x.status}): love {x.love} respect {x.respect} fear {x.fear}, fatigue {x.fatigue}; "
                 + ", ".join(f"{k} {v} {tier_of(v, SKILL_TIERS)[0]}" for k, v in x.skills.items()))
     out("  hooks: " + "; ".join(f"{h.id} {h.status}" for h in st.hooks))
+    out(f"  the shed: {st.harbour.ships} boats; on the slip " + ", ".join(st.harbour.hand) + f"; taken " + (", ".join(st.harbour.gone) or "nobody")
+        + "; contract values " + ", ".join(f"{x.name} {x.contract_value}" for x in st.girls if x.in_house()))
     out("  shows: " + "; ".join(f"{x.title} {x.result} q{x.quality}" for x in st.shows if x.result))
     return st
 
@@ -164,8 +177,9 @@ def main() -> None:
     ap.add_argument("--no-attend", action="store_true")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--take", type=int, default=0, help="buy the cheapest contract on the slip when the house has this much over its price")
     a = ap.parse_args()
-    run(a.weeks, a.kind, a.girl, a.plan, a.focus, a.rest_at, a.book, not a.no_attend, a.seed, a.verbose)
+    run(a.weeks, a.kind, a.girl, a.plan, a.focus, a.rest_at, a.book, not a.no_attend, a.seed, a.verbose, take=a.take)
 
 
 if __name__ == "__main__":

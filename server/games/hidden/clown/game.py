@@ -24,13 +24,15 @@ from engine.roles import Change
 from engine.spontaneous import Spontaneous
 
 from . import deck as dk
+from . import harbour as hb
 from .state import (AXES, AXIS_WORDS, DAY, SHOW_WORDS, SKILL_TIERS, SLOTS, STATS, STAT_NAMES, TIER_POINTS, TRAINING_DAYS, WEEKDAYS, WEEK_END_MINUTE, ClownState,
                     Condition, Girl, Hidden, House, Note, Person, Plan, Proprietor, Scenario, Show, Thing, axis_word, hhmm, tier_of,
                     week_of, weekday)
 
 AUTHORITY = {
     "clock": "engine", "house": "engine", "house.money": "narrator", "house.heat": "narrator", "plan": "engine", "shows": "engine",
-    "deck": "engine", "hooks": "engine", "active": "engine",
+    "deck": "engine", "hooks": "engine", "active": "engine", "harbour": "engine",
+    "girls.*.tags": "engine", "girls.*.card": "script", "girls.*.voice": "script", "girls.*.price_paid": "engine", "girls.*.never": "script",
     "girls.*.skills": "engine", "girls.*.skills.*": "engine", "girls.*.fatigue": "engine", "girls.*.week_gains": "engine", "girls.*.diligence": "engine",
     "girls.*.love": "narrator", "girls.*.respect": "narrator", "girls.*.fear": "narrator", "girls.*.mood": "narrator",
     "girls.*.condition": "narrator", "girls.*.conditions": "narrator", "girls.*.location": "narrator", "girls.*.facts": "narrator",
@@ -174,9 +176,21 @@ class ClownGame(GameBase):
             "kind": {"kind": "select", "label": "What kind of proprietor", "required": True,
                      "options": [{"id": k["id"], "name": k["name"]} for k in sc.get("proprietors") or []], "default": "charmer"},
             "first_girl": {"kind": "select", "label": "The first girl", "required": True,
-                           "options": [{"id": g["id"], "name": g["name"]} for g in sc.get("girls") or []], "default": "dot"},
+                           "options": self._starter_options(),
+                           "default": (self._starter_options() or [{"id": "dot"}])[0]["id"],
+                           "hint": "Her contract came with the house, off the boat on Saturday. The three the file tells of come to the door later; you may meet them about the town first."},
             "about": {"kind": "textarea", "label": "About you", "hint": "Anything you like: how you came by the house, what you were before, what you want."},
         }
+
+    def _starter_options(self) -> list[dict[str, str]]:
+        """The first girl's choices: the deck file's starters (a written girl's id is taken too, unlisted, for the tools and the tests)."""
+        deck, cards = self.content.girls_deck(), self.content.girl_cards()
+        out = []
+        for cid in deck.get("starters") or []:
+            c = cards.get(cid)
+            if c is not None:
+                out.append({"id": cid, "name": f"{c['name']}, {c.get('age')}, {hb.tag_meaning(deck, str(c.get('origin') or ''))}"})
+        return out
 
     def new_instance(self, setup: dict[str, Any]) -> tuple[str, ClownState]:
         sc0 = self.scenario(str(setup.get("scenario") or ""))
@@ -186,7 +200,11 @@ class ClownGame(GameBase):
         sc = dk.fill(sc0, name)
         start = sc.get("start") or {}
         clock = Clock(day=int(start.get("day", 1)), minute=int(start.get("minute", 540)))
-        first = str(setup.get("first_girl") or "") or (sc.get("girls") or [{}])[0].get("id", "")
+        deck_g, cards = self.content.girls_deck(), self.content.girl_cards()
+        starters = [o["id"] for o in self._starter_options()]
+        first = str(setup.get("first_girl") or "").strip().lower() or (starters or [(sc.get("girls") or [{}])[0].get("id", "")])[0]
+        if first not in cards and not any(g["id"] == first for g in sc.get("girls") or []):
+            first = (starters or [(sc.get("girls") or [{}])[0].get("id", "")])[0]
         girls = []
         for raw in sc.get("girls") or []:
             g = girl_from(raw, "active" if raw["id"] == first else "away")
@@ -194,6 +212,11 @@ class ClownGame(GameBase):
                 g.arrived_day = clock.day
                 g.location = PRACTICE
             girls.append(g)
+        if first in cards:          # a harbour girl: her contract came with the house (the card's price, paid before the game)
+            g = hb.make_girl(cards[first], deck_g, scenario_from(sc), random.Random(f"first:{name}:{first}"), clock.day - 2, hb.price_of(cards[first]))
+            g.status, g.location, g.mood = "active", PRACTICE, "new"
+            g.history.append(f"{clock_text(clock.day - 2, 600)}. her contract bought at the shed with the house's lease")
+            girls.insert(0, g)
         for gid, bonds in (sc.get("bonds") or {}).items():
             g = next((x for x in girls if x.id == gid), None)
             if g is not None:
@@ -224,6 +247,7 @@ class ClownGame(GameBase):
                 h.locked = dk.lock_for(state, hooks[hid], random.Random(f"lock:{name}:{hid}"))
         self._best(state)
         dk.deal_hand(state, dk.deck_of(sc0), hooks, random.Random(f"hand:{name}"), now, 0, name)   # the first hand, dealt full
+        self._first_boat(state)
         if sc0.get("opening_text"):
             for e in state.hidden.events:
                 if e.id == "opening":
@@ -237,7 +261,22 @@ class ClownGame(GameBase):
         for g in data.get("girls") or []:           # a save from before the graduated flag: the status carried it
             if g.get("status") == "graduated":
                 g["status"], g["graduated"] = "passive", True
-        return ClownState.model_validate(data)
+        st = ClownState.model_validate(data)
+        if not st.harbour.ships and not st.harbour.queue:   # a save from before the harbour deck: the boat comes in now
+            self._first_boat(st)
+        return st
+
+    def _first_boat(self, s: ClownState) -> None:
+        """The deck shuffled once by the save's name, and the first boat in (the slip is up when the house opens)."""
+        deck = self.content.girls_deck()
+        if not deck:
+            return
+        s.harbour.queue = hb.shuffle(deck, random.Random(f"harbour:{s.player.name}"))
+        for g in s.girls:           # the first girl's card, if she came off the boat, is gone from the deck
+            if g.card and g.card in s.harbour.queue:
+                s.harbour.queue.remove(g.card)
+                s.harbour.gone.append(g.card)
+        hb.deal(s, deck, self.content.girl_cards(), int(dk.dial(s, "harbour_hand")))
 
     def opening(self, state: ClownState) -> str | None:
         return self.scenario(state.scenario.id).get("opening_text")
@@ -277,7 +316,8 @@ class ClownGame(GameBase):
                  f"a graduate (the game state says) stays in the house, works bookings like the rest and may be put back in training.")
         for g in s.girls:
             b.append(f"- {g.name} ({g.id}; also {', '.join(g.aliases)}), {g.age}. {g.bio.strip()} Traits: {', '.join(g.traits)}."
-                     + (" Comes to the house later; the game state says when she is there." if g.status == "away" else ""))
+                     + ((" Comes to the house later; the game state says when she is there. Until then she is about the town" + (f": she {g.before.rstrip('.')}" if g.before else "")
+                         + f"; {p.name} may meet her there, and she may be talked of, but she comes to the door only when THIS TURN brings her.") if g.status == "away" else ""))
             if g.routine:
                 b.append("    Her days: " + "; ".join(f"{hhmm(r.start)} to {hhmm(r.end)} {r.place.lower() if r.place[0].isupper() and r.place.startswith('The') else r.place}, {r.doing}" for r in g.routine) + ".")
             for sec in g.secrets:
@@ -314,6 +354,12 @@ class ClownGame(GameBase):
         b.append("")
         b.append(f"BOOKINGS AND TROUBLE. The town's offers and troubles reach the house in play; each comes with its whole in the game state block "
                  f"once it has reached {p.name} (\"In motion\"), and not before: nobody in the house knows of one until THIS TURN brings it.")
+        b.append("")
+        b.append(f"THE HARBOURMASTER'S SHED. The ships bring indentured people, and some would rather be clowns: a clerk at the shed on the quay keeps a slip "
+                 f"of contracts for sale, refreshed when a boat comes in (the first and third Sunday of the month). {p.name} may buy a contract and bring the "
+                 f"woman home, or sell one on through the shed's book; the game state block carries the slip and, for every girl so bought, her file, written "
+                 f"like the girls' above and kept the same way. A girl under eighteen in the house is a child in it and is written as one: a mascot, a kid "
+                 f"sister, nothing else, ever.")
         return "\n".join(b)
 
     def _in_motion_lines(self, s: ClownState) -> list[str]:
@@ -367,7 +413,7 @@ class ClownGame(GameBase):
         return out
 
     def entity_ids(self, state: ClownState) -> list[str]:
-        return [g.id for g in state.girls if g.status != "away"] + [q.id for q in state.people]
+        return [g.id for g in state.girls if g.status != "gone"] + [q.id for q in state.people]
 
     def locations(self, state: ClownState) -> list[str]:
         return list(state.scenario.locations)
@@ -443,11 +489,13 @@ class ClownGame(GameBase):
 
     def _at_the_door(self, s: ClownState) -> Girl | None:
         """The girl whose arrival event has fired this turn and whose status has not caught up (after_turn sets it)."""
-        order = [g for g in s.girls if g.status == "away"]
+        written = [g for g in s.girls if not g.card]
+        order = [g for g in written if g.status == "away"]
         if not order:
             return None
-        n_come = int(bool(s.flags.get("second_girl_come"))) + int(bool(s.flags.get("third_girl_come")))
-        arrived = sum(1 for g in s.girls if g.status != "away") - 1
+        first_is_card = bool(s.girls and s.girls[0].card)        # the first girl off the boat: the week-two event brings the first of the file's three
+        n_come = sum(int(bool(s.flags.get(k))) for k in ("second_girl_come", "third_girl_come")) + int(first_is_card and bool(s.flags.get("first_girl_come")))
+        arrived = sum(1 for g in written if g.status != "away") - (0 if first_is_card else 1)
         return order[0] if n_come > arrived else None
 
     def render_bulletin(self, state: ClownState, player_text: str, engine: bool = False) -> str:
@@ -491,6 +539,7 @@ class ClownGame(GameBase):
         door = self._at_the_door(s)
         if door is not None:
             lines.append(f"At the door this turn: {door.name}, {door.age}: {door.bio.strip()} She has come to ask to be taken on.")
+        lines.extend(self._harbour_lines(s))
         shows = [x for x in s.shows if not x.result and x.at_abs > s.now_abs]
         if shows:
             lines.append("Booked: " + "; ".join(f"{x.title} at {x.venue}, {WEEKDAYS[weekday(x.at_abs // DAY)]} at {hhmm(x.at_abs % DAY)}"
@@ -565,6 +614,28 @@ class ClownGame(GameBase):
             lines.append(f"Do not narrate past {ev_clock_text(nxt[1], DAY)}.")
         return "\n".join(lines)
 
+    def _harbour_lines(self, s: ClownState) -> list[str]:
+        """The clerk's slip (what is for sale, in words and the price), and the files of the girls bought off it (the frozen prefix cannot
+        carry a girl dealt later; the narrator reads her whole here, as the written girls' in the prefix)."""
+        deck, cards = self.content.girls_deck(), self.content.girl_cards()
+        if not deck:
+            return []
+        out: list[str] = []
+        slip = [cards[c] for c in s.harbour.hand if c in cards]
+        if slip:
+            out.append("")
+            out.append(f"On the clerk's slip at the Harbourmaster's shed (contracts for sale; {s.player.name} buys one with the Take command, in their own time; "
+                       f"a new boat on the first and third Sunday of the month):")
+            for c in slip:
+                out.append(f"- {hb.card_line(c, deck, self.skill_name)}. In her own words: \"{str(c.get('voice') or '').strip()}\"")
+        bought = [g for g in s.girls if g.card and g.in_house()]
+        if bought:
+            out.append("")
+            out.append(f"The girls bought off the boats (their files; yours to know, as the girls' in the house's file, and {s.player.name} learns what they hide only in play):")
+            for g in bought:
+                out.extend(hb.girl_file_lines(g, deck))
+        return out
+
     def _needs_hold(self, s: ClownState, needs: Any) -> bool:
         if needs is None:
             return True
@@ -611,6 +682,13 @@ class ClownGame(GameBase):
         if h.report and s.flags.get("_report_fresh"):
             out.append("The week was counted on Sunday night: " + " ".join(h.report) + f" Write a few sentences on how the week went for her and the house, "
                        f"in your own words, consistent with those facts; then go on to what the player just did. If a show is told this turn as well, the show first, in full, then the week in two sentences.")
+        if s.harbour.announce and s.harbour.hand:
+            deck, cards = self.content.girls_deck(), self.content.girl_cards()
+            slip = "; ".join(hb.card_line(cards[c], deck, self.skill_name) for c in s.harbour.hand if c in cards)
+            out.append(f"WORD FROM THE SHED: a boat came in over the weekend and the clerk's slip at the Harbourmaster's shed is new: {slip}. Let the word reach "
+                       f"{p.name} in a line or two, where it fits (the clerk's boy with the slip, Mrs Pell back from the market, a note under the door): "
+                       f"the names and what each is said to do, in words; {p.name} may go down and look them over, or not. Nothing is bought this turn unless "
+                       f"the player says so.")
         if p.location == "Unknown":
             out.append(f"WHERE IS {p.name}? Last turn they moved and the prose did not say where they ended up. This turn, pick where they are and say it, "
                        f"in the prose or in a line [[unseen: {p.name} is at <place>]]. Use one of the listed places, or a place of your own with a word on where it is.")
@@ -647,7 +725,9 @@ class ClownGame(GameBase):
             "not a Plan command: it is a scene, and the referee records the slot off; only a standing change (\"afternoons she rests from now\") is the Plan. Taking a booking by name is the Book command with "
             "booking=<its title as the game state lists it> and girl=<the id of the girl who goes; the one in training when the input names nobody>; "
             "a booking is never turned down, only left in hand. Switch and Graduate take girl=<her id>; Skip takes to=tomorrow|saturday|sunday|show. "
-            "A command never replaces the rest of the input.",
+            "Buying a contract off the clerk's slip at the Harbourmaster's shed (taking a girl on from the boats) is the Take command with girl=<the "
+            "card's id as the game state lists it>; selling a girl's contract on (putting her out of the house for money) is the Sell command with "
+            "girl=<her id>, only for a girl bought off the boats. A command never replaces the rest of the input.",
             f"Paying more than the house has is impossible (the game state block says what money there is). Putting another girl into training is the "
             f"Switch command, any day, any girl in the house. Letting the days run to a named point (tomorrow morning, Saturday, Sunday night, the next "
             f"show) is the Skip command with to=tomorrow|saturday|sunday|show; a wait of an hour or an afternoon is a wait. Passing a girl out as a "
@@ -658,7 +738,7 @@ class ClownGame(GameBase):
             "an evening; waiting is however long they wait, and the week ends on Sunday night whatever they do.",
             "",
             f"Where {p.name} is, who is with them, the money, the attention on the house: the game state block. Read it before ruling something impossible.",
-            "Entities (the girls and the people, by id): " + ", ".join(f"{g.id} ({g.name})" for g in s.girls if g.status != "away")
+            "Entities (the girls and the people, by id): " + ", ".join(f"{g.id} ({g.name}" + (", not yet in the house; about the town)" if g.status == "away" else ")") for g in s.girls if g.status != "gone")
             + "; " + ", ".join(f"{q.id} ({q.name}, {q.role})" for q in s.people) + ".",
             "Places: " + ", ".join(s.places) + ".",
             "There are no systems in this game; leave `systems` empty.",
@@ -667,10 +747,10 @@ class ClownGame(GameBase):
 
     def referee_rules(self, state: ClownState) -> str:
         s, p = state, state.player
-        girls = [g for g in s.girls if g.status != "away"]
+        girls = [g for g in s.girls if g.status != "gone"]
         lines = [
             "GAME RULES FOR THE REFEREE",
-            f"Targets: player ({p.name}); the girls by id: " + ", ".join(f"{g.id} = {g.name} (also {', '.join(g.aliases[:3])})" for g in girls)
+            f"Targets: player ({p.name}); the girls by id: " + ", ".join(f"{g.id} = {g.name} (also {', '.join(g.aliases[:3])})" + ("; not yet in the house, met about the town: learned rows only" if g.status == "away" else "") for g in girls)
             + "; people by id: " + ", ".join(f"{q.id} = {q.name}" + (f" (also {', '.join(q.aliases[:2])})" if q.aliases else "") for q in s.people)
             + "; things by id as the game state lists them; the house as house.",
             "Places: " + ", ".join(s.places) + ". A move or a location value is one of these. A spot inside a listed place (the desk, the mats, the "
@@ -1283,6 +1363,9 @@ class ClownGame(GameBase):
             v = 1 + max(0, c) // 2
             gain += v
             why.append(f"you worked with her {v:+d}")
+        if f"bent_{group}" in g.tags:
+            gain += 1
+            why.append("it comes easily to her +1")
         if g.diligence >= 75:
             gain += 2
             why.append("diligent +2")
@@ -1611,11 +1694,11 @@ class ClownGame(GameBase):
                 lines.append(f"{x.name} worked at her own booking's turn on her own: {gains}.")
                 nums.append(f"{x.name}, on her own for her booking: " + ", ".join(f"{self.skill_name(k)} {x.skills.get(k, 0) - v} to {x.skills.get(k, 0)}" for k, v in x.week_gains.items() if v) + ".")
                 x.week_gains = {}
-        keep = int(dk.dial(s, "keep"))
+        keep = int(dk.dial(s, "keep")) + int(dk.dial(s, "keep_per_girl")) * max(0, len(s.in_house()) - 1)
         if keep:
             h.money -= keep
             lines.append("The coal, the food and Mrs Pell's wages were paid.")        # never "keep": the reader heard the ledger's word in the prose
-            nums.append(f"The week's keep, {keep} gold, was paid.")
+            nums.append(f"The week's keep, {keep} gold" + (f" ({len(s.in_house())} girls)" if len(s.in_house()) > 1 else "") + ", was paid.")
         if h.week % 4 == 0:
             h.money -= h.rent
             lines.append("The rent was paid.")
@@ -1645,6 +1728,12 @@ class ClownGame(GameBase):
         s.plan.carried = True
         s.flags["_report_fresh"] = True
         self._note(s, f"Week {h.week - 1} closed.", f"Week {h.week - 1} closed. " + " ".join(nums))
+        deck = self.content.girls_deck()
+        if deck and hb.ship_sunday(h.week - 1):
+            cards = self.content.girl_cards()
+            hand = hb.deal(s, deck, cards, int(dk.dial(s, "harbour_hand")))
+            names = [cards[c]["name"] for c in hand if c in cards]
+            self._note(s, "A boat came in; the clerk's slip at the shed is new" + (": " + ", ".join(names) if names else "") + ".")
 
     def _walk_routines(self, s: ClownState) -> None:
         m = s.clock.minute
@@ -1703,6 +1792,7 @@ class ClownGame(GameBase):
         h, p = s.house, s.player
         now = s.now_abs
         s.deck.dealt_this_turn = []
+        s.harbour.announce = False
         s.flags.pop("_report_fresh", None)
         for x in s.shows:
             if x.result and x.resolved_turn is not None and x.resolved_turn < info.turn:
@@ -1799,7 +1889,7 @@ class ClownGame(GameBase):
         for ga in a.girls:
             gb = b.girl(ga.id)
             if gb is None or not ga.in_house():
-                if gb is not None and gb.in_house() and not ga.in_house():
+                if gb is not None and gb.in_house() and not ga.in_house() and not (ga.history and "contract sold" in ga.history[-1]):
                     out.append(f"{ga.name}: gone")
                 continue
             if ga.graduated and not gb.graduated:
@@ -1818,6 +1908,14 @@ class ClownGame(GameBase):
             out += [f"{ga.name}: + {n}" for n in has if n not in had] + [f"{ga.name}: − {n}" for n in had if n not in has]
             if gb.status == "away" and ga.in_house():
                 out.append(f"{ga.name} came to the house")
+        for ga in a.girls:
+            gb = b.girl(ga.id)
+            if gb is None and ga.card:
+                out.append(f"{ga.name}: her contract bought, {ga.price_paid} gold")
+            elif gb is not None and gb.in_house() and ga.status == "gone" and ga.card and ga.history and "contract sold" in ga.history[-1]:
+                out.append(f"{ga.name}: her contract sold on")
+        if a.harbour.ships != b.harbour.ships:
+            out.append("A boat came in: the clerk's slip is new")
         for x in a.shows:
             xb = b.show(x.id)
             if xb is None:
@@ -1885,6 +1983,32 @@ class ClownGame(GameBase):
                                    hint="Pass a girl out as a finished clown, on a Sunday, once three of her skills are sound and one is finished (or she has had a "
                                         "triumph at a good house). She stays in the house, her shows pay the house in full, and she may be put back in training.",
                                    words=["graduate", "pass her out", "she is finished", "she is made", "her training is over"]))
+        deck, cards = self.content.girls_deck(), self.content.girl_cards()
+        slip = [cards[c] for c in s.harbour.hand if c in cards]
+        if slip:
+            can = s.harbour.taken_week != s.house.week or not s.harbour.taken_week
+            afford = [c for c in slip if hb.price_of(c) <= s.house.money]
+            out.append(CommandSpec(id="take", label="Take" + ("" if can else " (one a week)"), mode="narrated", enabled=bool(can and afford),
+                                   params=[Param(name="girl", label="contract", options=[Option(id=c["id"], label=f"{c['name']}, {c.get('age')}, {hb.tag_meaning(deck, str(c.get('origin') or ''))}; {hb.price_of(c)} gold"
+                                                                                                           + ("" if hb.price_of(c) <= s.house.money else " (too dear)")) for c in slip],
+                                                 default=(afford or slip)[0]["id"])],
+                                   hint="Buy a contract off the clerk's slip at the Harbourmaster's shed and bring her home: the price from the house's money, one a week. "
+                                        "She comes passive, with her own grid and her own story; a boat refreshes the slip on the first and third Sunday of the month.",
+                                   words=["take her on", "buy her contract", "buy the contract", "take the contract", "bring her home", "take on", "the shed", "the slip"]))
+            groups = [grp for grp in hb.LOTTERY_GROUPS if grp in (deck.get("tags") or {})]
+            out.append(CommandSpec(id="customize", label="Customize (dev)", mode="engine",
+                                   params=[Param(name="girl", label="card", options=[Option(id=c["id"], label=c["name"]) for c in slip], default=slip[0]["id"]),
+                                           Param(name="group", label="group", options=[Option(id=grp, label=grp) for grp in groups], default=groups[0] if groups else ""),
+                                           Param(name="tag", label="tag", options=[Option(id=tg, label=f"{grp}: {tg}") for grp in groups for tg in (deck.get("tags") or {})[grp]],
+                                                 default=next(iter((deck.get("tags") or {}).get(groups[0], {})), "") if groups else "")],
+                                   hint="Dev: fix one of a card's lottery groups to a tag before she is taken (the age bucket's rules still hold).", typed=False))
+        bought = [g for g in s.in_house() if g.card]
+        if bought:
+            out.append(CommandSpec(id="sell", label="Sell contract", mode="narrated",
+                                   params=[Param(name="girl", label="whose", options=[Option(id=g.id, label=f"{g.name} ({int(round(g.contract_value * dk.dial(s, 'sell_share')))} gold)") for g in bought], default=bought[0].id)],
+                                   hint="Sell a girl's contract on through the shed's book, for a share of what she is worth as a performer (her contract value on her panel). "
+                                        "She leaves the house for good; the girls close to her think less of you. Only a girl bought off the boats.",
+                                   words=["sell her contract", "sell the contract", "sell her on", "put her out", "sell contract"]))
         targets = self._skip_targets(s)
         out.append(CommandSpec(id="skip", label="Skip", mode="narrated",
                                params=[Param(name="to", label="to", options=[Option(id=k, label=lb[0].upper() + lb[1:]) for k, lb, _ in targets], default=targets[0][0])],
@@ -2036,6 +2160,65 @@ class ClownGame(GameBase):
                          f"in a few lines; she stays in the house and works its bookings as a clown of the house from now. Stop where {p.name} would next decide.")
             return s, CommandResult(label="Graduate", player_line=f"I tell {g.name} she is finished: a clown, trained, and the house will book her on her own account.",
                                     summary=f"{p.name} passes {g.name} out as a finished clown.", directive=directive, minutes=20, log_line=line)
+        if command_id == "take":
+            deck, cards = self.content.girls_deck(), self.content.girl_cards()
+            cid = str(args.get("girl") or "").strip().lower()
+            if cid not in s.harbour.hand:
+                by_name = {cards[c]["name"].lower(): c for c in s.harbour.hand if c in cards}
+                cid = by_name.get(cid, cid)
+            g, why = hb.take(s, cid, deck, cards, random.Random(f"take:{s.player.name}:{cid}:{s.house.week}"), lambda k: dk.dial(s, k))
+            if g is None:
+                return state, CommandResult(ok=False, label="Take", text=(why[:1].upper() + why[1:] + ".") if cid in s.harbour.hand or cid in cards else
+                                            "Whose contract? " + ", ".join(cards[c]["name"] for c in s.harbour.hand if c in cards))
+            p = s.player
+            g.history.append(stamp(s, f"her contract bought at the shed for {g.price_paid} gold"))
+            g.off_routine_until = self._next_slot_start(g, s.now_abs)
+            self._note(s, f"{g.name}'s contract bought at the shed; she came to the house.", f"{g.name}'s contract bought at the shed for {g.price_paid} gold; she came to the house.")
+            self._tally(s, f"The shed: {g.name}'s contract, {g.price_paid} gold; her contract value {g.contract_value} gold.")
+            line = f"{g.name}'s contract is the house's; she is in the house from today." + (" She is in training; the plan is empty." if s.active == g.id else "")
+            if s.active == g.id:
+                s.plan = Plan(set_week=s.house.week)
+            directive = (f"{p.name} goes down to the Harbourmaster's shed, pays the clerk {g.price_paid} gold for {g.name}'s contract, and brings her home to the house. "
+                         f"Play the shed (the clerk, the slip, the woman herself as her file in the game state has her, in her own voice: \"{g.voice}\"), the walk "
+                         f"back along Harbour Street, and the door; a line from whoever is in the house when she comes in. She is in the house from now, not in "
+                         f"training unless the game state says so. Stop where {p.name} would next decide.")
+            return s, CommandResult(label="Take", player_line=f"I go down to the shed and buy {g.name}'s contract, and bring her home.",
+                                    summary=f"{p.name} buys {g.name}'s contract at the shed and brings her to the house.", directive=directive, minutes=90, log_line=line,
+                                    entities=[g.id])
+        if command_id == "customize":
+            deck = self.content.girls_deck()
+            cid, grp, tag = str(args.get("girl") or "").strip().lower(), str(args.get("group") or "").strip().lower(), str(args.get("tag") or "").strip().lower()
+            if cid not in s.harbour.hand:
+                return state, CommandResult(ok=False, label="Customize", text="Which card? " + ", ".join(s.harbour.hand))
+            if grp not in hb.LOTTERY_GROUPS or tag not in ((deck.get("tags") or {}).get(grp) or {}):
+                return state, CommandResult(ok=False, label="Customize", text=f"The tag must be one of the group's: {grp} has " + ", ".join((deck.get("tags") or {}).get(grp) or {}))
+            card = self.content.girl_cards().get(cid) or {}
+            if tag in hb.never_for(card, deck):
+                return state, CommandResult(ok=False, label="Customize", text=f"{tag} is forbidden to her age bucket ({hb.bucket_of(int(card.get('age', 30)))}).")
+            s.harbour.overrides.setdefault(cid, {})[grp] = tag
+            return s, CommandResult(label="Customize", text=f"{card.get('name', cid)}: {grp} fixed to {tag} for when she is taken.")
+        if command_id == "sell":
+            g = s.girl(str(args.get("girl") or ""))
+            if g is None or not g.in_house() or not g.card:
+                return state, CommandResult(ok=False, label="Sell contract", text="Whose contract? Only a girl bought off the boats: " + (", ".join(x.name for x in s.in_house() if x.card) or "nobody"))
+            p = s.player
+            value = g.contract_value
+            paid = hb.sell(s, g, lambda k: dk.dial(s, k))
+            g.history.append(stamp(s, f"her contract sold on through the shed's book for {paid} gold"))
+            self._note(s, f"{g.name}'s contract sold on; she left the house.", f"{g.name}'s contract sold on for {paid} gold (her contract value {value} gold); she left the house.")
+            self._tally(s, f"The shed's book: {g.name}'s contract value {value} gold, sold on at {dk.dial(s, 'sell_share'):g} for {paid} gold.")
+            tail = ""
+            if s.active and s.active_girl is not None and s.active_girl.id != g.id and s.plan.set_week and g.id == state.active:
+                s.plan = Plan(set_week=s.house.week)
+                tail = f" {s.active_girl.name} is in training from now; the plan is empty."
+            line = f"{g.name}'s contract is sold on; she is gone from the house." + tail
+            directive = (f"{p.name} tells {g.name} her contract is sold on through the shed's book, and she is to go today. Play the telling where she is (the game "
+                         f"state says), short: what she says back in her own voice (her file in the game state: heartbroken, defiant, relieved, silent, whatever she "
+                         f"is), what she takes with her, the faces of the other girls in the house if any saw it. To whom the contract went is not said; the clerk's "
+                         f"book has it. She is gone from the house by the end of the turn. Stop where {p.name} would next decide.")
+            return s, CommandResult(label="Sell contract", player_line=f"I tell {g.name} her contract is sold on, and she goes today.",
+                                    summary=f"{p.name} sells {g.name}'s contract on; she leaves the house.", directive=directive, minutes=30, log_line=line, entities=[g.id],
+                                    referee_skip=[f"girls.{g.id}.status"])
         if command_id == "journal":
             lines = [n.text for n in s.journal[-12:]] or ["Nothing written yet."]
             return state, CommandResult(label="Journal", text="\n".join(lines))
@@ -2083,6 +2266,7 @@ class ClownGame(GameBase):
                     v, gain = x.skills.get(k, 0), x.week_gains.get(k, 0)
                     tiles.append(Chip(label=nm, value=f"{v}" + (f" (+{gain})" if gain else "") + f" {x.tier(k)}", tone=self.SKILL_TONES.get(x.tier(k))))
             tiles.append(Chip(label="Diligence", value=f"{x.diligence} {x.diligence_word}", tone="ok" if x.diligence >= 50 else "neutral"))
+            tiles.append(Chip(label="Contract", value=f"{x.contract_value} gold" + (f" (paid {x.price_paid})" if x.card else ""), tone="info"))
             shows_x = [y for y in s.shows if y.girl == x.id and not y.result]
             what = "in training" if x.id == s.active else "a graduate" if x.graduated else "not in training"
             booked_x = ("; " + "; ".join(f"booked: {y.title} ({WEEKDAYS[weekday(y.at_abs // DAY)][:3]} {hhmm(y.at_abs % DAY)})" for y in shows_x)) if shows_x else ""
@@ -2107,6 +2291,20 @@ class ClownGame(GameBase):
         hand_rows = [r for r in self.quest_rows(s) if r.standing in ("in hand", "booked")]
         panels.append(QuestPanel(title=f"The hand ({len(dk.hand(s))} of {h.hand_size} cards)", rows=hand_rows, place="main"))
         panels.append(QuestPanel(title="Bookings and trouble", rows=[r for r in self.quest_rows(s) if r.standing not in ("in hand", "booked")]))
+        deck, cards = self.content.girls_deck(), self.content.girl_cards()
+        if deck:
+            nxt = next((w for w in range(h.week, h.week + 4) if hb.ship_sunday(w)), h.week)
+            rows = []
+            for c in s.harbour.hand:
+                card = cards.get(c)
+                if card is None:
+                    continue
+                price = hb.price_of(card)
+                rows.append(QuestRow(title=f"{card['name']}, {card.get('age')} · {hb.tag_meaning(deck, str(card.get('origin') or ''))}",
+                                     line=f"{price} gold · bound for {card.get('bound_for')} · {hb.seed_words(card, self.skill_name)} · " + ", ".join(card.get("traits") or []),
+                                     standing="for sale" if price <= h.money else "too dear", giver="the clerk at the shed", tone="info" if price <= h.money else "neutral"))
+            panels.append(QuestPanel(title=f"The clerk's slip ({len(rows)} contracts; the next boat Sunday of week {nxt}" + ("; one bought this week" if s.harbour.taken_week == h.week and h.week else "") + ")",
+                                     rows=rows, place="main"))
         met = [q for q in s.people if q.met]
         heard = [q for q in s.people if q.heard_of and not q.met]
         panels.append(EntityCards(title="People", cards=[
