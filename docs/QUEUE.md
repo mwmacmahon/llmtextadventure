@@ -24,15 +24,18 @@ you'll need to run your own trials. I think running a Gemma trial right now rega
    the roof, the office visit was only ever the summary's back-story, so nothing is recovered, it is told); the
    fantasy's the city and "you came in on the evening barge" with the sheet's name, race and class; the station's the
    station, the five, and what you are. The grimdark game inherits; the mod may patch it.
-3. **Now: the X3 trial on Gemma** (part thirteen §2 to §5): the defaults-left count built into the call report and the
+3. **Designed, 11-09 night: the Paladin first** (DESIGN-magic §8; the owner's son would play a knight): features as
+   data with four kinds, the undead tagged and placed, a canned kit; the directive after the owner answers three
+   questions (Turn Undead's level, the placements, the SRD).
+4. **Now: the X3 trial on Gemma** (part thirteen §2 to §5): the defaults-left count built into the call report and the
    replay scorer; the chain of small questions as a dial on the assistant role; both arms replayed on the box over the
    Sonnet-keyed turns that exist (her 28, the two 11-08 readiness rounds); the cache verified from prompt_n and cache_n;
    a report page. No new Sonnet calls. The owner decides on the numbers; nothing adopted on 60/40.
-4. **The owner plays Super Grimdark Fantasy on Gemma** (:8013); the side chat reads those saves as they come. Sonnet
+5. **The owner plays Super Grimdark Fantasy on Gemma** (:8013); the side chat reads those saves as they come. Sonnet
    rounds, when the side chat needs them, are its own to run.
-5. **Proposed, after the trial: the reading says where and what** (the consolidation of the word lists into fields the
+6. **Proposed, after the trial: the reading says where and what** (the consolidation of the word lists into fields the
    adjudicator writes; the trial's numbers say whether the one call can carry more fields or the chain should).
-6. **XP** (B221) when her play warrants it. 7. **The play page on the phone** (DESIGN-player-ui; §6's Timeline and
+7. **XP** (B221) when her play warrants it. 8. **The play page on the phone** (DESIGN-player-ui; §6's Timeline and
    Journal landed first).
 
 ## Waiting on the owner

@@ -322,6 +322,13 @@ DESIGN-magic-2026-11-08; B91, B92.
 first cut; whether Cleric and Druid come with their lists; whether a failed cast spends the slot). Built from the same
 design already: the twelve classes (B92), the sheet pass (B90).
 
+**The Paladin first (the owner, 11-09 night; DESIGN-magic §8, designed).** His son would play a knight. Features before
+spells: a feature grammar on the class file with four kinds the engine implements once (heal pool, a rider on the attack,
+turn the undead, a timed buff), replacing the four hand-coded branches (Rage, Lay on Hands, Second Wind, Smoke); the
+paladin's three level-2 spells as features with a slot cost and a card, the smallest exercise of the casting lever; a
+canned kit by level, no choices; `kind: undead` on people and skeletons in at least two places (the Catacombs under a
+Temple hook, the Mire's chapels, a ghost). Open: Turn Undead at level 1 or 2; the placements; SRD 5.1 or 5.2.
+
 ## 14. Models and the box
 
 One local model serves every role on one GPU in sequence: Gemma 4 31B on gumbo (:8013), the fantasy also on Sonnet
