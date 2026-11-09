@@ -138,6 +138,13 @@ def lint(content_dir: Path, scenario: dict | None = None, state: dict | None = N
         for a in g.get("aliases") or []:
             if a.lower() in aliases:
                 problems.append(f"alias {a!r} shared by {aliases[a.lower()]} and the girl {gid}")
+    # the dials
+    from .deck import DIALS
+    for k, v in (sc.get("dials") or {}).items():
+        if k not in DIALS:
+            problems.append(f"dial {k!r} is not one the game reads ({', '.join(DIALS)})")
+        elif not isinstance(v, (int, float)) or isinstance(v, bool):
+            problems.append(f"dial {k!r} is not a number")
     # the deck
     deck = sc.get("deck") or {}
     for hid in deck.get("deal_at_start") or []:

@@ -1,7 +1,7 @@
 """Dry run: N weeks of Clown Maker with no model (CLOWN_ROADMAP area 1 and 11; stage A).
 
 Plays the house through `run_command` and `after_turn`, ticking the events and the pendings as the pipeline would (no
-holds, no happenings, no narrator): the plan set on Mondays by a strategy, every booking offered taken (or not), the
+holds, no happenings, no narrator): the plan set on Mondays by a strategy, every card in hand taken by a free girl (or not), the
 proprietor at the venue for the show (or not), and prints the grid, fatigue, money, Heat, Name and the shows' words week
 by week. The model-free way to tune the numbers and to find a week that cannot be survived.
 
@@ -94,14 +94,18 @@ def run(weeks: int = 8, kind: str = "charmer", girl: str = "dot", plan: str = "p
             st, r2 = game.run_command(st, "plan", {"slot": "afternoons", "skill": b})
             if verbose:
                 out(f"  {hhmm(st.clock.minute)} plan: {a} / {b}" + ("" if r1.ok and r2.ok else f" ({r1.text} {r2.text})"))
+        # the hand: take the first card a free girl can go to (the girl in training first, then the bench); the rest are passed
         for h in list(st.hooks):
-            if h.status == "live" and h.kind == "booking" and not h.show and not h.declined:
-                take = book == "all" or h.hook in book.split(",")
-                st, r = game.run_command(st, "book" if take else "turn_down", {"booking": h.id})
+            if h.status == "live" and h.kind == "booking" and not h.show and (book == "all" or h.hook in book.split(",")):
+                free = [x for x in st.in_house() if not any(y.girl == x.id and not y.result for y in st.shows)]
+                free.sort(key=lambda x: x.id != st.active)
+                if not free:
+                    break
+                st, r = game.run_command(st, "book", {"booking": h.id, "girl": free[0].id})
                 if r.ok:
-                    booked_week.append(h.title + ("" if take else " (turned down)"))
+                    booked_week.append(f"{h.title} ({free[0].name})")
                 if verbose:
-                    out(f"  {hhmm(st.clock.minute)} {'book' if take else 'turn down'} {h.title}: {r.text}")
+                    out(f"  {hhmm(st.clock.minute)} book {h.title} for {free[0].name}: {r.text}")
         to = next_stop(st)
         show = next((x for x in st.shows if not x.result and x.at_abs == to), None)
         st.player.location = show.venue if (show is not None and attend) else OFFICE

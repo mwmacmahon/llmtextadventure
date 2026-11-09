@@ -110,6 +110,8 @@ class Girl(BaseModel):
     condition: str = ""
     conditions: list[Condition] = Field(default_factory=list)
     status: STATUS = "away"
+    graduated: bool = False         # passed out as a finished clown; she may be put back in training (Switch) and her shows pay in full
+    credibility: int = 0            # -3..3, her own name in the trade, moved by her shows
     location: str = ""
     secrets: list[Secret] = Field(default_factory=list)
     bonds: dict[str, int] = Field(default_factory=dict)
@@ -136,6 +138,12 @@ class Girl(BaseModel):
 
     def in_house(self) -> bool:
         return self.status in ("active", "passive", "graduated")
+
+    @property
+    def credibility_word(self) -> str:
+        c = self.credibility
+        return "a name that goes before her" if c >= 2 else "a name the trade knows" if c >= 1 else "a name that counts against her" if c <= -2 else "a name nobody trusts yet" if c <= -1 else "no name yet"
+
 
 
 class Tell(BaseModel):
@@ -248,6 +256,7 @@ class House(BaseModel):
     closed_until_abs: int = 0
     closed_until_abs_add: int = 0   # an effect's request (the fire): added by after_turn
     rent: int = 60                  # due at every fourth week's end
+    hand_size: int = 2              # how many booking cards the hand holds: two at the start, raised by reward rows (hand +1)
     report: list[str] = Field(default_factory=list)          # last Sunday's facts in words (the narrator's)
     report_numbers: list[str] = Field(default_factory=list)  # the same with the numbers (the player's Last week panel)
     week_lines: list[str] = Field(default_factory=list)      # this week's facts so far
@@ -269,7 +278,7 @@ class HookState(BaseModel):
     title: str
     kind: str = "booking"
     tier: int = 1
-    status: Literal["dealt", "live", "done", "failed"] = "dealt"
+    status: Literal["dealt", "live", "done", "failed", "passed"] = "dealt"   # passed: a card not picked when another was, back in the deck
     dealt_turn: int = 0
     dealt_abs: int = 0
     closed_turn: int | None = None
@@ -281,11 +290,16 @@ class HookState(BaseModel):
     note: str = ""
     thread: str = ""
     show: str = ""                  # the show scheduled for a booking taken
+    girl: str = ""                  # the girl booked for it (any girl in the house)
+    locked: bool = False            # the card stays in the hand until taken: every once-only card, and an ordinary one by chance within the gap cap
     reward: str = ""
 
 
 class Deck(BaseModel):
     last_deal_abs: int = 0
+    refill_at_abs: int = 0          # the hand refills from this clock on (set at a pick: sooner the more girls are in the house)
+    trouble_at_abs: int = 0         # the next trouble may be dealt from this clock on (one at a time, dials: trouble_days apart)
+    copies: dict[str, int] = Field(default_factory=dict)     # content id -> copies in the deck (the influence activity adds; a pick takes them back to one)
     dealt_this_turn: list[str] = Field(default_factory=list)
     repeats: dict[str, int] = Field(default_factory=dict)    # content id -> the clock it last closed (repeat customers)
     counts: dict[str, int] = Field(default_factory=dict)     # content id -> how many times dealt
@@ -324,6 +338,7 @@ class Scenario(BaseModel):
     conditions: dict[str, dict] = Field(default_factory=dict)
     stone_words: dict[str, str] = Field(default_factory=dict)
     fate_lines: dict[str, dict[str, str]] = Field(default_factory=dict)   # fate -> {line, cause}: the ending's words, the stone's cause
+    dials: dict[str, Any] = Field(default_factory=dict)      # the house file's numbers a mod may turn (DIALS in game.py has the defaults)
 
     def skill_names(self) -> dict[str, str]:
         return {k: v for g in self.skills.values() for k, v in g.items()}

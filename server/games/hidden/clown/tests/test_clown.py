@@ -1,6 +1,8 @@
-"""THE COLUMBINE ROOMS (D181C): the setup and the first morning, the week's slots landing their gains, the show formula and
-its two turns, the week's end on the scripted pending, the referee's rows on the axes, bookings taken and turned down, the
-deck's repeat customers, the endings as stones, the content lint, and a turn through the pipeline on the fake provider."""
+"""CLOWN MAKER (D181C, D184C): the setup and the first morning, the week's slots landing their gains, the show formula and its
+two turns, the week's end on the scripted pending, the referee's rows on the axes, the hand of bookings (dealt full, a card
+taken by any girl, the rest passed, locks, the refill clock), the bench training at its own bookings, the student's share,
+Switch at will, graduation as a flag, the deck's repeat customers, troubles on their own clock, the endings as stones, the
+content lint, and a turn through the pipeline on the fake provider."""
 from __future__ import annotations
 
 import random
@@ -173,32 +175,92 @@ def _offer(game: ClownGame, st):
     return advance(game, st, 5, 1)
 
 
-def test_a_booking_offered_can_be_taken_and_the_show_is_set_for_its_day(game: ClownGame):
+def test_a_card_in_hand_can_be_taken_for_any_girl_and_the_show_is_set_for_its_day(game: ClownGame):
     st = _offer(game, new(game))
     h = st.hook("rope_walk_birthday")
-    assert h.status == "live" and dk.standing_of(h) == "offered"
-    assert any(c.id == "book" for c in game.commands(st))
-    st, res = game.run_command(st, "book", {"booking": "rope_walk_birthday"})
-    assert res.ok, res.text
+    assert h.status == "live" and dk.standing_of(h) == "in hand" and h.locked      # a once-only card is dealt locked
+    book = next(c for c in game.commands(st) if c.id == "book")
+    assert [p.name for p in book.params] == ["booking", "girl"] and not any(c.id == "turn_down" for c in game.commands(st))
+    st, res = game.run_command(st, "book", {"booking": "rope_walk_birthday", "girl": "dot"})
+    assert res.ok and "Dorothea Vance goes" in res.text, res.text
     x = st.shows[0]
-    assert weekday(x.at_abs // DAY) == 5 and x.at_abs % DAY == 900 and x.venue == "Rope Walk" and x.fee == 15
-    assert dk.standing_of(h := st.hook("rope_walk_birthday")) == "booked"
+    assert weekday(x.at_abs // DAY) == 5 and x.at_abs % DAY == 900 and x.venue == "Rope Walk" and x.fee == 15 and x.girl == "dot"
+    assert dk.standing_of(h := st.hook("rope_walk_birthday")) == "booked" and h.girl == "dot"
     assert any(e.id == "curtain_rope_walk_birthday" and e.where == ["Rope Walk"] for e in st.hidden.events)
+    assert st.deck.refill_at_abs > st.now_abs                                      # the hand refills on its clock
     st2, res2 = game.run_command(st, "book", {"booking": "rope_walk_birthday"})
     assert not res2.ok
+    _, res3 = game.run_command(st, "turn_down", {"booking": "rope_walk_birthday"})
+    assert not res3.ok and "turned down" in res3.text
 
 
-def test_a_booking_turned_down_stops_asking(game: ClownGame):
+def test_the_hand_is_dealt_full_and_a_pick_passes_the_unlocked_cards_and_keeps_the_locked(game: ClownGame):
+    st = new(game)
+    assert st.house.hand_size == 2 and len(dk.hand(st)) == 1                       # day one: only Rope Walk qualifies yet
+    st.clock.day = 12                                                              # the Judge (day 10) and the Widow (day 6) qualify
+    hooks = game.hooks_content()
+    dk.deal_hand(st, dk.deck_of(game.scenario()), hooks, random.Random(1), st.now_abs, 1, "Hal")
+    hand = dk.hand(st)
+    assert len(hand) == 2 and all(h.kind == "booking" for h in hand)
+    other = next(h for h in hand if h.hook != "rope_walk_birthday")
+    other.status, other.offered, other.locked = "live", True, False
+    st.hooks[0].status, st.hooks[0].offered = "live", True
+    st, res = game.run_command(st, "book", {"booking": "rope_walk_birthday", "girl": "dot"})
+    assert res.ok and st.hook(other.id).status == "passed" and dk.standing_of(st.hook(other.id)) == "passed over"
+    assert len(dk.hand(st)) == 0 and not dk.due(st, st.now_abs)                   # short, but the refill clock has not passed
+    assert dk.due(st, st.deck.refill_at_abs)
+    assert any(r.standing == "booked" for r in game.quest_rows(st)) and not any(r.title.startswith(other.title) for r in game.quest_rows(st))
+    # a locked card survives a pick
+    st = new(game)
+    st.clock.day = 12
+    dk.deal_hand(st, dk.deck_of(game.scenario()), hooks, random.Random(1), st.now_abs, 1, "Hal")
+    other = next(h for h in dk.hand(st) if h.hook != "rope_walk_birthday")
+    other.status, other.offered, other.locked = "live", True, True
+    st.hooks[0].status, st.hooks[0].offered = "live", True
+    st, res = game.run_command(st, "book", {"booking": "rope_walk_birthday", "girl": "dot"})
+    assert res.ok and st.hook(other.id).status == "live" and len(dk.hand(st)) == 1
+    assert "stays in hand" in next(r.title for r in game.quest_rows(st) if r.title.startswith(other.title))
+
+
+def test_a_once_only_card_always_locks_and_an_ordinary_one_only_within_reach(game: ClownGame):
+    st = new(game)
+    hooks = game.hooks_content()
+
+    class R:
+        def __init__(self, v): self.v = v
+        def random(self): return self.v
+
+    assert dk.lock_for(st, hooks["rope_walk_birthday"], R(0.99))                   # no repeat block: locked whatever the roll
+    judge = hooks["judge_dinner"]                                                  # wants mime and poise at a hard room: ask 90
+    assert dk.gap_of(st, judge) > 25 and not dk.lock_for(st, judge, R(0.0))       # Dot's mime is 15: too far to lock
+    st.active_girl.skills["mime"], st.active_girl.skills["poise"] = 70, 70
+    game._best(st)
+    assert dk.gap_of(st, judge) <= 25 and dk.lock_for(st, judge, R(0.1)) and not dk.lock_for(st, judge, R(0.9))
+
+
+def test_the_referees_yes_books_it_for_the_girl_named_and_nothing_is_declined(game: ClownGame):
     st = _offer(game, new(game))
-    st, res = game.run_command(st, "turn_down", {"booking": "rope_walk_birthday"})
-    assert res.ok and st.hook("rope_walk_birthday").declined and dk.standing_of(st.hook("rope_walk_birthday")) == "turned down"
-    assert dk.in_motion(st) == 0
+    st.girl("rosalind").status, st.girl("rosalind").location = "passive", "The kitchen"
+    s, rep, _ = apply(game, st, C(kind="set", target="hook-rope_walk_birthday", field="taken", value="rosalind"))
+    assert s.hook("rope_walk_birthday").show and s.shows[0].girl == "rosalind"
+    s2, rep2, _ = apply(game, st, C(kind="set", target="hook-rope_walk_birthday", field="declined", value="true"))
+    assert not s2.hook("rope_walk_birthday").declined and rep2.rejected
+    s3, _, _ = apply(game, st, C(kind="set", target="hook-rope_walk_birthday", field="taken", value="true"))
+    assert s3.shows and s3.shows[0].girl == "dot"
 
 
-def test_the_referees_yes_books_it_too(game: ClownGame):
-    st = _offer(game, new(game))
-    s, rep, _ = apply(game, st, C(kind="set", target="hook-rope_walk_birthday", field="declined", value="false"))
-    assert s.hook("rope_walk_birthday").show and s.shows
+def test_troubles_come_one_at_a_time_on_their_own_clock(game: ClownGame):
+    st = new(game)
+    st.girl("billie").status, st.girl("billie").location = "passive", "The yard"    # the debt collector wants Billie in the house
+    st.clock.day = 40                                                               # the insurance man wants day 36 and Dot in the house
+    hooks, deck = game.hooks_content(), dk.deck_of(game.scenario())
+    pool = dict(dk.candidates(st, deck, hooks, st.now_abs, 1, kind="trouble"))
+    assert "debt_collector" in pool and "insurance_man" in pool and "rope_walk_birthday" not in pool
+    t1 = dk.deal_trouble(st, deck, hooks, random.Random(0), st.now_abs, 1, "Hal")
+    assert t1 and st.deck.trouble_at_abs == st.now_abs + 5 * DAY
+    assert dk.deal_trouble(st, deck, hooks, random.Random(0), st.now_abs + DAY, 2, "Hal") is None
+    assert dk.deal_trouble(st, deck, hooks, random.Random(0), st.now_abs + 6 * DAY, 3, "Hal")
+    assert sum(1 for h in st.hooks if h.kind == "trouble") == 2
 
 
 def test_the_show_resolves_at_its_hour_by_the_formula_and_is_told_next_turn(game: ClownGame):
@@ -209,9 +271,11 @@ def test_the_show_resolves_at_its_hour_by_the_formula_and_is_told_next_turn(game
     st.player.location = "Rope Walk"
     st = advance(game, st, x.at_abs - st.now_abs + 1, 5)
     x = st.shows[0]
-    assert x.result in ("fine", "good", "triumph") and x.attended and x.paid >= 15 and x.resolved_turn == 5
+    from games.hidden.clown.game import SHOW_PAY
+    assert x.result in ("fine", "good", "triumph") and x.attended and x.resolved_turn == 5
+    assert x.paid == int(round(15 * SHOW_PAY[x.result] * 0.25)) and any("student" in ln for ln in x.why_numbers)   # a student's share
     assert st.flags.get("rope_walk_birthday_played") and st.flags.get(f"rope_walk_birthday_{x.result}")
-    assert st.house.money == 200 + x.paid
+    assert st.house.money == 200 + x.paid and st.active_girl.credibility > 0
     assert any(ln.startswith("THE SHOW, as it went") for ln in game.turn_directives(st))
     client = st.person("rope_walk_mother")
     assert client.client.history == [x.result]
@@ -346,14 +410,51 @@ def test_the_second_girl_arrives_when_her_flag_lands(game: ClownGame):
     assert st.girl("rosalind").status == "passive" and st.girl("rosalind").location == "The office" and game._at_the_door(st) is None
 
 
-def test_a_switch_only_on_sunday_and_the_one_put_aside_loses_a_little_love(game: ClownGame):
+def test_a_switch_any_day_to_any_girl_in_the_house_and_the_one_put_aside_loses_a_little_love(game: ClownGame):
     st = new(game)
     st.girl("rosalind").status, st.girl("rosalind").location = "passive", "The kitchen"
-    _, res = game.run_command(st, "switch", {"girl": "rosalind"})
-    assert not res.ok
-    st.clock.day = 7
-    s, res = game.run_command(st, "switch", {"girl": "rosalind"})
+    _, res = game.run_command(st, "switch", {"girl": "dot"})
+    assert not res.ok                                                              # she is in training already
+    s, res = game.run_command(st, "switch", {"girl": "rosalind"})                 # a Wednesday is fine
     assert res.ok and s.active == "rosalind" and s.girl("dot").status == "passive" and s.girl("dot").love == -1 and s.plan.mornings == ""
+    s.girl("dot").graduated = True                                                 # a graduate may be put back in training
+    s2, res = game.run_command(s, "switch", {"girl": "dot"})
+    assert res.ok and s2.active == "dot" and s2.girl("dot").graduated and s2.girl("rosalind").status == "passive"
+
+
+def test_the_bench_trains_a_little_at_her_own_booking_and_the_student_gets_a_boost_at_hers(game: ClownGame):
+    from games.hidden.clown.state import Show
+    st = new(game)
+    st.girl("rosalind").status, st.girl("rosalind").location = "passive", "The kitchen"
+    far = st.now_abs + 10 * DAY
+    st.shows.append(Show(id="s_r", hook="rope_walk_birthday", title="A birthday", client="rope_walk_mother", venue="Rope Walk", at_abs=far, wants=["children", "balloons"], girl="rosalind"))
+    st.shows.append(Show(id="s_d", hook="judge_dinner", title="The Judge's dinner", client="judge", venue="The Judge's house", at_abs=far, wants=["mime", "poise"], girl="dot"))
+    st, _ = game.run_command(st, "plan", {"slot": "mornings", "skill": "mime"})
+    st, _ = game.run_command(st, "plan", {"slot": "afternoons", "skill": "pratfalls"})
+    r0, r0_fatigue = dict(st.girl("rosalind").skills), st.girl("rosalind").fatigue
+    st.player.location = "The office"
+    st = advance(game, st, SLOTS["mornings"][1] - st.clock.minute + 1, 2)         # the morning slot ends
+    r1 = st.girl("rosalind").skills
+    assert r1["balloons"] == r0["balloons"] + 1 and r1["children"] == r0["children"]      # her weakest wanted skill, a point
+    assert st.girl("rosalind").week_gains == {"balloons": 1} and st.girl("rosalind").fatigue == r0_fatigue      # no tiredness from it
+    gain, why = game._gain(st, st.active_girl, "mime", False, "x")
+    assert any("her booking wants it" in w for w in why)
+    plain, _ = game._gain(st, st.active_girl, "pratfalls", False, "x")
+    assert gain > plain
+    # the week's end tells it
+    pend = next(p for p in st.hidden.pending if p.tag == "week_end")
+    t = pend.due_abs(DAY)
+    st.clock.day, st.clock.minute = t // DAY, t % DAY
+    pend.fired, pend.fired_turn = True, 3
+    s3 = game.after_turn(st, info(turn=3, minutes=60))
+    assert any("Rosalind Vell worked at her own booking" in ln for ln in s3.house.report)
+    assert any("on her own for her booking" in ln for ln in s3.house.report_numbers)
+
+
+def test_a_reward_row_may_grow_the_hand(game: ClownGame):
+    st = new(game)
+    game._pay(st, {"hand": 1, "log": "The Guild's clerk sends two more names."}, "x")
+    assert st.house.hand_size == 3 and any("the hand holds 3" in ln for ln in st.tally)
 
 
 def test_every_ending_is_a_stone(game: ClownGame):
@@ -449,12 +550,13 @@ def test_graduation_needs_the_record_and_a_sunday_and_a_graduate_earns_on_her_ow
     s2, res = game.run_command(st, "graduate", {"girl": "dot"})
     assert res.ok and res.minutes == 20 and res.directive and res.player_line
     d = s2.girl("dot")
-    assert d.status == "graduated" and d.in_house() and d.love == 1 and d.respect == 1 and s2.flags["dot_graduated"]
+    assert d.status == "passive" and d.graduated and d.in_house() and d.love == 1 and d.respect == 1 and s2.flags["dot_graduated"]
     assert s2.active == "rosalind" and s2.girl("rosalind").status == "active" and s2.plan.mornings == ""
     assert f"Dorothea Vance: graduated" in game.seen_changes(st, s2)
-    # the referee may still not write graduated; the switch list leaves the graduate out
-    assert not any(o.id == "dot" for c in game.commands(s2) if c.id == "switch" for o in c.params[0].options)
-    # a graduate trains no slots and earns the house a fee at the week's end by her best skill's tier (finished: $30)
+    # the graduate may be put back in training (Switch lists her); she is no longer a Graduate option
+    assert any(o.id == "dot" for c in game.commands(s2) if c.id == "switch" for o in c.params[0].options)
+    assert not any(o.id == "dot" for c in game.commands(s2) if c.id == "graduate" for o in c.params[0].options)
+    # on the bench she trains no slots; her shows pay the house in full where a student's pay a share
     s2, _ = game.run_command(s2, "plan", {"slot": "mornings", "skill": "children"})
     pend = next(p for p in s2.hidden.pending if p.tag == "week_end")
     t = pend.due_abs(DAY)
@@ -463,8 +565,14 @@ def test_graduation_needs_the_record_and_a_sunday_and_a_graduate_earns_on_her_ow
     money = s2.house.money
     s3 = game.after_turn(s2, info(turn=3, minutes=60))
     assert s3.girl("dot").skills["acrobatics"] == 90 and s3.girl("rosalind").skills["children"] > 50
-    assert s3.house.money == money + 30 and any("own bookings: $30" in ln for ln in s3.house.report_numbers)
-    assert any("Dorothea Vance, a clown of the house" in ln for ln in s3.house.report)
+    assert s3.house.money == money and not any("own bookings" in ln for ln in s3.house.report_numbers)
+    from games.hidden.clown.state import Show
+    x = Show(id="s", hook="judge_dinner", title="The Judge's dinner", client="judge", venue="The Judge's house", at_abs=s3.now_abs, wants=["acrobatics"],
+             stat="charm", difficulty=0, fee=60, variance=0, girl="dot")
+    s3.shows.append(x)
+    s3.player.location = "The office"
+    game._resolve_show(s3, x, 4)
+    assert x.paid == int(round(60 * {"disaster": 0.0, "poor": 0.5, "fine": 1.0, "good": 1.0, "triumph": 1.5}[x.result])) and x.paid >= 60
     # a triumph at a tier-2 house makes her too
     st4 = new(game)
     from games.hidden.clown.state import HookState, Show

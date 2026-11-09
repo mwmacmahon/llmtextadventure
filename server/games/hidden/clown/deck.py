@@ -5,9 +5,15 @@
   events rebased to the deal (engine/events.py rebase_event, reach_event) and tagged with the hook, its happenings.
 - `settle`: each turn a dealt hook goes live when its reach fires (a thread opens), and closes when `done` or `failed`
   holds; `reward` is a first-match `{when}` list paid by the game's `pay`.
-- `draw`: when fewer than `min_live` hooks are in motion and `hours_between_deals` have passed, one hook at random among
-  those not in motion whose tier is open (by the house's Name) and whose `wants` holds; a hook with `repeat` is dealt
-  again after its `after_days`, with a new instance id ("judge_dinner#2"): the repeat customer.
+- `deal_hand`: the hand of bookings (the house's `hand_size` cards: two at the start, more as the spine rewards it) is dealt
+  full whenever it is short and the refill clock has passed: one hook at random, weighted by the deck's row and the
+  hook's copies, among those not in the hand or booked whose tier is open (by the house's Name) and whose `wants`
+  holds; a hook with `repeat` comes round again after its `after_days`, as a new instance ("judge_dinner#2"): the
+  repeat customer. A once-only hook is dealt locked (it stays in the hand until taken); an ordinary one locks by chance
+  when what it asks is within the gap cap of the house's best.
+- `pick`: a card taken (Book) books its show; the other unlocked cards in the hand are passed (back in the deck); the
+  picked hook's copies go back to one; the refill clock is set sooner the more girls are in the house. No deadline
+  anywhere: a card is never lost by the calendar (the owner, 11-09).
 """
 from __future__ import annotations
 
@@ -197,21 +203,38 @@ def first_match(rows: list[dict], doc: dict, events: list[Event], turn: int) -> 
     return None
 
 
-STANDING_TONES = {"done": "ok", "failed": "bad", "turned down": "neutral", "booked": "ok"}
+STANDING_TONES = {"done": "ok", "failed": "bad", "passed over": "neutral", "booked": "ok", "in hand": "info"}
+
+# the dials a house file may set (`dials:`) and a mod may turn; the defaults
+DIALS: dict[str, float] = {
+    "hand_size": 2,          # cards in the hand at the start (house.hand_size; reward rows `hand: +1` raise it)
+    "refill_days": 3,        # the hand refills this many days after a pick, divided by the girls in the house, never under a day
+    "lock_chance": 0.25,     # an ordinary card locks in the hand with this chance, when within the gap cap
+    "lock_gap": 25,          # a card may lock only when its ask (30 + 20 x difficulty) is within this of the house's best at what it wants
+    "self_train": 1,         # a girl on the bench with a booking of her own gains this a slot at the booking's skills (nothing past finished)
+    "booking_boost": 1.5,    # the girl in training gains this much more at a skill her own booking wants
+    "student_pay": 0.25,     # a student's show pays this share of the fee; a graduate's pays the whole
+    "trouble_days": 5,       # troubles are dealt one at a time, at least this many days apart, when one is eligible
+}
+
+
+def dial(state: ClownState, key: str) -> float:
+    v = (state.scenario.dials or {}).get(key)
+    return float(v) if v is not None else float(DIALS[key])
 
 
 def standing_of(h: HookState) -> str:
     if h.status in ("done", "failed"):
         return h.status
+    if h.status == "passed":
+        return "passed over"
     if h.status == "dealt":
         return "not yet heard of"
-    if h.declined:
-        return "turned down"
     if h.show:
         return "booked"
     if h.taken:
         return "taken up"
-    return "offered" if h.offered else "heard of"
+    return "in hand" if h.offered else "heard of"
 
 
 def _own_flags(pred: Any, hook_id: str, deal_id: str) -> Any:
@@ -255,6 +278,8 @@ def settle(state: ClownState, content_hooks: dict[str, dict], turn: int, pay) ->
         restand(h)
         if h.status not in ("dealt", "live"):
             continue
+        if h.kind == "booking" and not h.show:
+            continue                    # in the hand: no deadline ever takes a card (the owner, 11-09); only its show settles it
         if h.show and (x := state.show(h.show)) is not None and not x.result:
             continue                    # booked and not yet played: the clock cannot fail it (the dry run, 11-09)
         own = lambda pred: _own_flags(pred, h.hook, h.id)  # noqa: E731
@@ -290,12 +315,22 @@ def tier_open(tier: int, tiers: dict, name: int) -> bool:
 
 
 def in_motion(state: ClownState) -> int:
-    return sum(1 for h in state.hooks if h.status in ("dealt", "live") and not h.declined)
+    return sum(1 for h in state.hooks if h.status in ("dealt", "live"))
 
 
-def candidates(state: ClownState, deck: dict, content_hooks: dict[str, dict], now_abs: int, turn: int) -> list[tuple[str, int]]:
-    """The hooks the deck may deal now, each with its weight: not in motion, the tier open by Name, `wants` holding, and a
-    repeat customer only after its cooldown (never a hook without `repeat` twice)."""
+def hand(state: ClownState) -> list[HookState]:
+    """The booking cards in the hand: dealt or reached, not yet booked (a passed card is back in the deck)."""
+    return [h for h in state.hooks if h.kind == "booking" and h.status in ("dealt", "live") and not h.show]
+
+
+def booked(state: ClownState) -> list[HookState]:
+    return [h for h in state.hooks if h.kind == "booking" and h.status in ("dealt", "live") and h.show]
+
+
+def candidates(state: ClownState, deck: dict, content_hooks: dict[str, dict], now_abs: int, turn: int, kind: str = "booking") -> list[tuple[str, int]]:
+    """The hooks the deck may deal now, each with its weight: not in the hand or booked or at the door, the tier open by Name,
+    `wants` holding, a repeat customer only after its cooldown (never a hook without `repeat` twice); the weight times the
+    hook's copies in the deck (the influence activity adds copies; a pick takes them back to one)."""
     live = {h.hook for h in state.hooks if h.status in ("dealt", "live")}
     tiers = deck.get("tiers") or {}
     doc = state.model_dump(mode="json")
@@ -303,10 +338,11 @@ def candidates(state: ClownState, deck: dict, content_hooks: dict[str, dict], no
     for row in deck.get("hooks") or []:
         hid = row.get("id")
         hk = content_hooks.get(hid or "")
-        if not hid or hid in live or hk is None:
+        if not hid or hid in live or hk is None or str(hk.get("kind") or "booking") != kind:
             continue
+        played_before = any(h.hook == hid and h.status in ("done", "failed") for h in state.hooks)
         dealt_before = state.deck.counts.get(hid, 0) > 0
-        if dealt_before:
+        if played_before:
             rep = hk.get("repeat") or {}
             if not rep:
                 continue
@@ -321,19 +357,19 @@ def candidates(state: ClownState, deck: dict, content_hooks: dict[str, dict], no
         if row.get("wants") is not None and not _holds(row["wants"], doc, state.hidden.events, turn):
             continue
         weight = int(row.get("weight", 2 if dealt_before else 1))     # a repeat customer rings again a little sooner
-        out.append((hid, weight))
+        out.append((hid, max(1, weight * int(state.deck.copies.get(hid, 1)))))
     return out
 
 
-def due(state: ClownState, deck: dict, now_abs: int) -> bool:
-    return (in_motion(state) < int(deck.get("min_live", 2))
-            and now_abs - state.deck.last_deal_abs >= int(deck.get("hours_between_deals", 24)) * 60)
+def due(state: ClownState, now_abs: int) -> bool:
+    """The hand is short and the refill clock has passed."""
+    return len(hand(state)) < int(state.house.hand_size) and now_abs >= state.deck.refill_at_abs
 
 
-def draw(state: ClownState, deck: dict, content_hooks: dict[str, dict], rng: Any, now_abs: int, turn: int) -> str | None:
-    if not due(state, deck, now_abs):
+def draw(state: ClownState, deck: dict, content_hooks: dict[str, dict], rng: Any, now_abs: int, turn: int, kind: str = "booking") -> str | None:
+    if kind == "booking" and not due(state, now_abs):
         return None
-    pool = candidates(state, deck, content_hooks, now_abs, turn)
+    pool = candidates(state, deck, content_hooks, now_abs, turn, kind)
     if not pool:
         return None
     total = sum(w for _, w in pool)
@@ -343,6 +379,83 @@ def draw(state: ClownState, deck: dict, content_hooks: dict[str, dict], rng: Any
             return hid
         r -= w
     return pool[-1][0]
+
+
+def ask_of(state: ClownState, hook: dict) -> int:
+    """What a booking asks of a girl, as a skill level: 30 + 20 x the client's difficulty (an easy room 30, a hard one 90)."""
+    cid = str(hook.get("client") or "")
+    q = state.person(cid)
+    info = (q.client if q is not None else None) or next((ClientInfo(**{k: v for k, v in (pr.get("client") or {}).items() if k in ClientInfo.model_fields})
+                                                           for pr in hook.get("people") or [] if pr.get("id") == cid and pr.get("client")), None)
+    return 30 + 20 * int(info.difficulty if info else 1)
+
+
+def gap_of(state: ClownState, hook: dict) -> int:
+    """How far the house is from what the card asks: its ask less the house's best at the skills it wants (the weakest of them)."""
+    cid = str(hook.get("client") or "")
+    q = state.person(cid)
+    wants = list(q.client.wants) if q is not None and q.client else [k for pr in hook.get("people") or [] if pr.get("id") == cid for k in (pr.get("client") or {}).get("wants") or []]
+    best = min((int(state.house.best.get(k, 0)) for k in wants), default=0)
+    return ask_of(state, hook) - best
+
+
+def lock_for(state: ClownState, hook: dict, rng: Any) -> bool:
+    """Locked in the hand: every once-only card; an ordinary card by chance, and only when the house is within the gap cap of
+    what it asks (a locked card is a stretch, never a wall)."""
+    if hook.get("kind") != "booking":
+        return False
+    if not hook.get("repeat"):
+        return True
+    if gap_of(state, hook) > dial(state, "lock_gap"):
+        return False
+    return rng.random() < dial(state, "lock_chance")
+
+
+def deal_hand(state: ClownState, deck: dict, content_hooks: dict[str, dict], rng: Any, now_abs: int, turn: int, name: str) -> list[str]:
+    """Deal until the hand is full or the deck has nothing to give. Returns the titles dealt."""
+    out: list[str] = []
+    while True:
+        hid = draw(state, deck, content_hooks, rng, now_abs, turn)
+        if hid is None:
+            return out
+        h = deal(state, content_hooks[hid], turn=turn, deal_abs=now_abs, name=name)
+        h.locked = lock_for(state, content_hooks[hid], rng)
+        out.append(h.title)
+
+
+def deal_trouble(state: ClownState, deck: dict, content_hooks: dict[str, dict], rng: Any, now_abs: int, turn: int, name: str) -> str | None:
+    """Troubles are not cards: one is dealt when its row's wants hold, at most one every `trouble_days`. Returns its title."""
+    if now_abs < state.deck.trouble_at_abs:
+        return None
+    hid = draw(state, deck, content_hooks, rng, now_abs, turn, kind="trouble")
+    if hid is None:
+        return None
+    h = deal(state, content_hooks[hid], turn=turn, deal_abs=now_abs, name=name)
+    state.deck.trouble_at_abs = now_abs + int(dial(state, "trouble_days") * DAY)
+    return h.title
+
+
+def refill_delay(state: ClownState) -> int:
+    """Minutes until the hand refills after a pick: the dial's days over the girls in the house, never under a day."""
+    n = max(1, len(state.in_house()))
+    return max(DAY, int(dial(state, "refill_days") * DAY / n))
+
+
+def pick(state: ClownState, h: HookState, now_abs: int, turn: int) -> list[str]:
+    """A card taken: the other unlocked cards in the hand are passed (back in the deck, no cooldown), the hook's copies go
+    back to one, and the refill clock is set. Returns the titles passed."""
+    passed: list[str] = []
+    for other in hand(state):
+        if other.id == h.id or other.locked:
+            continue
+        other.status, other.closed_turn = "passed", turn
+        passed.append(other.title)
+        t = next((t for t in state.threads if t.id == other.thread), None) if other.thread else None
+        if t is not None and t.status == "open":
+            t.status, t.closed_turn, t.note = "resolved", turn, "passed over"
+    state.deck.copies.pop(h.hook, None)
+    state.deck.refill_at_abs = now_abs + refill_delay(state)
+    return passed
 
 
 # ---- re-reading the script on load -----------------------------------------------------------------------------------

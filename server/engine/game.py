@@ -38,11 +38,15 @@ class Chip(BaseModel):
 
 class StatusStrip(BaseModel):
     type: Literal["status_strip"] = "status_strip"
+    place: Literal["side", "main"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    pinned: bool = False                       # stays at the top of its column while the rest scrolls (the girl in training)
     chips: list[Chip]
 
 
 class Meter(BaseModel):
     type: Literal["meter"] = "meter"
+    place: Literal["side", "main"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    pinned: bool = False                       # stays at the top of its column while the rest scrolls (the girl in training)
     label: str
     value: float
     min: float = 0
@@ -57,6 +61,8 @@ class Meter(BaseModel):
 class MeterGroup(BaseModel):
     """Small meters side by side in one panel (the fantasy's renown and heat)."""
     type: Literal["meter_group"] = "meter_group"
+    place: Literal["side", "main"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    pinned: bool = False                       # stays at the top of its column while the rest scrolls (the girl in training)
     title: str | None = None
     meters: list[Meter]
 
@@ -68,6 +74,8 @@ class TableCell(BaseModel):
 
 class Table(BaseModel):
     type: Literal["table"] = "table"
+    place: Literal["side", "main"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    pinned: bool = False                       # stays at the top of its column while the rest scrolls (the girl in training)
     title: str
     columns: list[str]
     rows: list[list[TableCell]]
@@ -84,12 +92,16 @@ class EntityCard(BaseModel):
 
 class EntityCards(BaseModel):
     type: Literal["entity_cards"] = "entity_cards"
+    place: Literal["side", "main"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    pinned: bool = False                       # stays at the top of its column while the rest scrolls (the girl in training)
     title: str
     cards: list[EntityCard]
 
 
 class ListPanel(BaseModel):
     type: Literal["list"] = "list"
+    place: Literal["side", "main"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    pinned: bool = False                       # stays at the top of its column while the rest scrolls (the girl in training)
     title: str
     items: list[Chip]
     layout: Literal["rows", "grid", "stack"] = "rows"   # rows: label left, value right; grid: tiles; stack: label over value
@@ -97,6 +109,8 @@ class ListPanel(BaseModel):
 
 class LogPanel(BaseModel):
     type: Literal["log"] = "log"
+    place: Literal["side", "main"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    pinned: bool = False                       # stays at the top of its column while the rest scrolls (the girl in training)
     title: str
     lines: list[str]
 
@@ -109,6 +123,8 @@ class Choice(BaseModel):
 
 class Choices(BaseModel):
     type: Literal["choices"] = "choices"
+    place: Literal["side", "main"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    pinned: bool = False                       # stays at the top of its column while the rest scrolls (the girl in training)
     title: str | None = None
     choices: list[Choice]
 
@@ -168,12 +184,16 @@ class QuestRow(BaseModel):
 
 class QuestPanel(BaseModel):
     type: Literal["quests"] = "quests"
+    place: Literal["side", "main"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    pinned: bool = False                       # stays at the top of its column while the rest scrolls (the girl in training)
     title: str
     rows: list[QuestRow]
 
 
 class Commands(BaseModel):
     type: Literal["commands"] = "commands"
+    place: Literal["side", "main"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    pinned: bool = False                       # stays at the top of its column while the rest scrolls (the girl in training)
     title: str | None = None
     items: list[CommandSpec]
 

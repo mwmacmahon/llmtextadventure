@@ -20,7 +20,10 @@ export type MeterWidget = {
   text?: string | null; tone?: Tone | null; chips?: Chip[];
 };
 
-export type Widget =
+// Where a panel is drawn and whether it stays put: `place` "side" (the default column) or "main" (the centre pane under the
+// story, the clown's hand); `pinned` keeps it at the top of its column while the rest scrolls (the girl in training).
+export type Placed = { place?: "side" | "main"; pinned?: boolean };
+export type Widget = Placed & (
   | { type: "status_strip"; chips: Chip[] }
   | MeterWidget
   | { type: "meter_group"; title?: string | null; meters: MeterWidget[] }
@@ -30,7 +33,7 @@ export type Widget =
   | { type: "log"; title: string; lines: string[] }
   | { type: "choices"; title?: string | null; choices: Choice[] }
   | { type: "commands"; title?: string | null; items: CommandSpec[] }
-  | { type: "quests"; title: string; rows: QuestRow[] };
+  | { type: "quests"; title: string; rows: QuestRow[] });
 
 export type UISchema = { phase: string; free_text: boolean; placeholder: string; panels: Widget[] };
 
