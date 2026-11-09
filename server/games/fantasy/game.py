@@ -69,6 +69,53 @@ HIDE = re.compile(r"\b(hide|hiding|hidden|sneak|slip (away|off|out|past|into|beh
 SURPRISE = re.compile(r"\b(surprise|unaware|from behind|unseen|from hiding|ambush|before (he|she|they|it) (sees|notices)|sleeping|asleep)", re.I)
 WOUND_KINDS: dict[str, set[str]] = {"everything": {"str", "dex", "con"}, "sight": {"wis", "dex"}, "legs": {"str", "dex"},
                                      "hands": {"str", "dex"}, "body": {"str", "con"}, "head": {"int", "wis"}}   # B200
+def whole_sentence(text: str, limit: int = 200) -> str | None:
+    """B224: a journal line as a whole sentence: the text as it is when it fits, else cut at the last sentence end inside
+    the limit; None when there is none worth keeping."""
+    t = " ".join(str(text or "").split())
+    if len(t) <= limit:
+        return t
+    cut = t[:limit]
+    ends = [m.end() for m in re.finditer(r"[.!?;](?=\s|$)", cut)]
+    if not ends or ends[-1] < 40:
+        return None
+    return cut[:ends[-1]].rstrip(";").rstrip() + ("." if cut[ends[-1] - 1] == ";" else "")
+
+
+CLOCK_TIME = re.compile(r"\b(the (clock|time|hour) (is|reads|shows|says|has crept|creeps|stands at|has reached)[^.]{0,20}?)?\b([01]?\d|2[0-3]):[0-5]\d\b", re.I)
+MONEY = re.compile(r"\b(coins?|gold pieces?|pieces of gold|gp|crowns?|purse|coppers?|pennies|money)\b|^\s*gold\s*$", re.I)
+NUMBER_WORDS = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+                "twelve": 12, "twenty": 20, "fifty": 50, "hundred": 100}
+
+
+def number_in(text: str) -> int | None:
+    """The first count in a thing's words ('five damp gold coins' -> 5)."""
+    m = re.search(r"\b(\d+|" + "|".join(NUMBER_WORDS) + r")\b", text, re.I)
+    if not m:
+        return None
+    w = m.group(1).lower()
+    return int(w) if w.isdigit() else NUMBER_WORDS.get(w)
+
+
+FINESSE = re.compile(r"\b(rapier|short ?sword|dagger|scimitar|whip|knife|stiletto)s?\b", re.I)
+HEAVY = re.compile(r"\b(great ?axe|axe|great ?sword|longsword|maul|hammer|mace|club|spear|halberd|pike|flail|morningstar)\b", re.I)
+WOUNDED = re.compile(r"\b(wound\w*|stabb\w*|cut|slash\w*|bleed\w*|bloodied|incapacitat\w*|dead|dying|killed|slain|beaten|unconscious|"
+                     r"broken|run through|shot)\b", re.I)
+STEAL = re.compile(r"\b(steal\w*|stole|snatch\w*|pickpocket\w*|lift (a|the|his|her|their)|swip\w+|pinch|filch\w*|rob\w*|"
+                   r"cut (a|the|his|her|their) purse|pocket (it|the))\b", re.I)
+TITLES = {"the", "a", "old", "young", "big", "little", "lord", "lady", "captain", "brother", "sister", "mother", "father", "master",
+          "mistress", "sergeant", "constable", "sir", "dame", "goodwife", "goodman", "uncle", "aunt", "granny", "grandfather"}
+
+
+def first_name(name: str) -> str:
+    """A name's first word past any title ('Old Hob' -> 'hob', 'Captain Isolde Marr' -> 'isolde'), lower case, no 's."""
+    words = [re.sub(r"['’]s$", "", w).strip(".,").lower() for w in name.split()]
+    words = [w for w in words if w]
+    while len(words) > 1 and words[0] in TITLES:
+        words = words[1:]
+    return "" if not words or words[0] in TITLES else words[0]
+
+
 SEXUAL_VIOLENCE = re.compile(r"\b(rap(e|ed|es|ing|ist|ists)|molest\w*|sexual(ly)? (assault|abus|violen|attack)\w*|"
                              r"forc(e|es|ed|ing) (himself|herself|themselves) (on|upon)|ravish\w*|have (his|her|their) way with)\b", re.I)
 SCENE_MINUTES = 60              # a scene ends when the player moves on, rests, or an hour passes (Rage, Uncanny Dodge)
@@ -284,8 +331,18 @@ class FantasyGame(GameBase):
                    hp=hp, hp_max=hp, location=pl.get("location", "The Drowned Lantern"))
         return p, inv
 
+    NAME_TAKEN = "That name belongs to someone in the city; pick another."
+
+    def cast_first_names(self, sc: dict) -> set[str]:
+        """B45: the first names of everyone the scenario can bring on: its own people and every hook's."""
+        people = list(sc.get("people") or []) + [q for h in self.hooks_content().values() for q in h.get("people") or []]
+        return {w for q in people if (w := first_name(str(q.get("name") or "")))}
+
     def new_instance(self, setup: dict[str, Any]) -> tuple[str, FantasyState]:
         sc0 = self.scenario(str(setup.get("scenario") or ""))
+        wanted = first_name(str(setup.get("name") or ""))
+        if wanted and wanted in self.cast_first_names(sc0):
+            raise ValueError(self.NAME_TAKEN)           # B45: the Rogue round's Wren took the ferryman's daughter's rows
         player, inv = self.build_player(setup, sc0)
         sc = dk.fill(sc0, player.name)
         start = sc.get("start") or {}
@@ -533,6 +590,22 @@ class FantasyGame(GameBase):
     @staticmethod
     def _secret_name(s: FantasyState, q: Person) -> bool:
         return any(t.lower() == q.name.lower() or t.lower() in q.name.lower().split() for t in s.hidden.terms)
+
+    def prose_faults(self, state: FantasyState, prose: str) -> list[dict]:
+        """B228: the narrator's own slips the engine can see, ruled as the § line is (a retell): the clock's time written in
+        the telling ('the clock has crept to 22:04'), and the player asked what they do ('What does Wren do?')."""
+        voice = "\n".join(ln for ln in (prose or "").splitlines() if not ln.lstrip().startswith("§"))
+        out: list[dict] = []
+        t = CLOCK_TIME.search(voice)
+        if t:
+            out.append({"rule": "clock_in_prose", "what": f"the telling writes the clock's time ('{t.group(0)}')",
+                        "fix": "Never write the clock's time in the telling; the player sees it on the strip. Say the hour as the "
+                               "city shows it (the bells, the light, the fog, the dark), or leave it out."})
+        q = re.search(r"\bwhat (do|does|will) (you|" + re.escape(state.player.name) + r")( now)? do\b[^.?!]*\?", voice, re.I)
+        if q:
+            out.append({"rule": "question_in_prose", "what": f"the telling asks the player what they do ('{q.group(0)}')",
+                        "fix": f"Never ask what {state.player.name} does; end the turn on the moment itself and leave the next move to the player."})
+        return out
 
     def too_far_words(self, prose: str) -> str:
         """The engine's own check on the telling after the fact (the owner, 11-08 night: "make sure the model doesn't go invent
@@ -861,7 +934,8 @@ class FantasyGame(GameBase):
             f"- add player.hp +n: healing the prose shows someone giving {p.name} (a priest's hands, a bandage done properly, a healer), up to {HEAL_STEP}, "
             "with how in the note. A potion drunk is add <the potion's id>.count -1 and nothing else; rests and the commands (a second wind) are the engine's.",
             "- What THIS TURN says a fall or a waking cost (gold, a thing left behind, a scar) the engine has already paid; write no row for it.",
-            "- add player.heat +n: the player was seen at a crime. A theft 5 to 10; an assault 10 to 20; a killing 25 to 40; a third of that when nobody "
+            "- add player.heat +n: the player was seen at a crime by anyone who could tell the Watch. Each crime its own row (a theft and a stabbing in "
+            "one turn are two). A theft 5 to 10; an assault 10 to 20; a killing 25 to 40; a third of that when nobody "
             "saw but it will be found. Nothing the Watch would not care about. add player.heat -n: a bribe paid to the Watch or a favour done for it, "
             "5 to 20. The days lower it by themselves; never count that. A failed check's cost that says the Watch will hear of it is add player.heat +5.",
             "- add gold.count -n: gold spent, paid or lost (never more than carried); add gold.count +n: gold taken, found or paid to the player in the prose. "
@@ -988,7 +1062,12 @@ class FantasyGame(GameBase):
     # ---- checks -------------------------------------------------------------------------------------------------------
     def render_mechanic(self, state: FantasyState, result: Any) -> str | None:
         line = default_mechanic_line(result, show_numbers=True)
-        return re.sub(r"^[A-Z][a-z]{2}\b", STAT_NAMES.get(result.stat, result.stat.upper()), line, count=1)
+        line = re.sub(r"^[A-Z][a-z]{2}\b", STAT_NAMES.get(result.stat, result.stat.upper()), line, count=1)
+        sneak = next((str(m.label) for m in getattr(result, "modifiers", None) or [] if str(getattr(m, "label", "")).startswith("Sneak Attack")), "")
+        if sneak:                                        # B222: worth nothing on the sum, so the line names it (it lands as a step)
+            why = re.search(r"\((.*?)\)", sneak)
+            line = line.rstrip() + f" Sneak Attack{' (' + why.group(1) + ')' if why else ''}."
+        return line
 
     def modifiers(self, state: FantasyState, req: CheckRequest, target_entity: str | None) -> list[Modifier]:
         p = state.player
@@ -1011,6 +1090,11 @@ class FantasyGame(GameBase):
             if c.mod and c.stat == req.stat and (not c.words or any(w in label for w in c.words)):
                 mods.append(Modifier(label=c.name, value=c.mod))
         mods += wd.wound_modifiers(p.wounds, req.stat, WOUND_KINDS)          # the wound ladder (B200): minor 0 to ruinous -5
+        if req.stat == "str" and ATTACK.search(req.label) and not HEAVY.search(req.label):   # B222: a finesse weapon, the better of STR and DEX
+            fw = next((it.name for it in state.inventory if FINESSE.search(it.name)), None)
+            gap = int(p.stats.get("dex", 0)) - int(p.stats.get("str", 0))
+            if fw and gap > 0:
+                mods.append(Modifier(label=f"finesse ({fw}): DEX in place of STR", value=gap))
         if req.stat == "cha":
             if stranger:
                 bonus = {"quiet": 0, "known": 1, "talked about": 2, "famous": 2}[p.renown_word]
@@ -1175,6 +1259,60 @@ class FantasyGame(GameBase):
                 s.log.append(f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}. {q.name} of the Watch turned "
                              f"against {p.name}: the Watch's interest, {was} → {p.heat_word}.")
 
+    def _names_shown(self, s: FantasyState, info: TurnInfo) -> None:
+        """B224: a person's name the telling (or the player) used becomes a name the player knows (names_heard), unless it
+        is a hidden name the telling had no right to (the leak guard's call)."""
+        text = f"{info.prose or ''}\n{info.player_text or ''}"
+        if not text.strip():
+            return
+        leaked = {t.lower() for t in self.leaked_terms(s, info.prose or "", info.player_text or "")}
+        for q in s.people:
+            for nm in {q.name, q.name.split()[0]} if q.name else set():
+                if len(nm) > 2 and nm.lower() not in leaked and nm not in s.player.names_heard \
+                        and re.search(r"\b" + re.escape(nm) + r"\b", text, re.I):
+                    s.player.names_heard.append(nm)
+
+    def name_shown(self, s: FantasyState, q: Person) -> bool:
+        """B224: the People panel names a person once the telling, the player, or the journal has (Gorm and Mirren were on the
+        panel by name turns before the prose named them); until then the card says what they are."""
+        heard = {n.lower() for n in s.player.names_heard}
+        names = {q.name.lower(), q.name.split()[0].lower()} if q.name else set()
+        if names & heard:
+            return True
+        notes = " ".join(n.text for n in s.journal).lower()
+        return any(re.search(r"\b" + re.escape(nm) + r"\b", notes) for nm in names if len(nm) > 2)
+
+    def _crime_seen(self, s: FantasyState, info: TurnInfo) -> str:
+        """B227: a crime in open view with no heat row. A verdict that records a wound on a named person the player struck
+        at, or a theft (the player's words steal and something came into the pockets), at a place where someone else is
+        present (not the victim, not the player's own company), raises heat one step. Returns what it saw, or ""."""
+        applied = list(info.applied or [])
+        if any(a.startswith("player.heat") for a in applied):
+            return ""
+        p = s.player
+        words = info.player_text or ""
+        what, victim = "", ""
+        for a in applied:
+            m = re.match(r"people\.([\w-]+)\.(condition|status): .* -> '(.+)'$", a)
+            if m and WOUNDED.search(m.group(3)) and (m.group(1) in p.fighting or ATTACK.search(words)):
+                what, victim = "a wounding", m.group(1)
+                break
+        if not what and STEAL.search(words) and any(a.startswith("inventory.") and "->" in a for a in applied):
+            what = "a theft"
+        if not what:
+            return ""
+        seen = [q for q in s.people if q.status == "alive" and q.id != victim and q.id not in p.with_them and not q.hidden_from_player
+                and q.location and self._same_spot(s, q.location, p.location)]
+        nxt = next((lo for lo, _ in HEAT_TIERS if lo > p.heat), None)
+        if not seen or nxt is None:
+            return ""
+        was = p.heat_word
+        p.heat = nxt
+        s.log.append(f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}. {p.name} was seen at {what} at "
+                     f"{p.location}: the Watch's interest, {was} → {p.heat_word}.")
+        p.shown_notes.append(f"Seen at {what}: Heat {was} → {p.heat_word}")
+        return what
+
     # ---- the referee's rows ------------------------------------------------------------------------------------------
     @staticmethod
     def _step(value: str) -> int | None:
@@ -1283,7 +1421,10 @@ class FantasyGame(GameBase):
         if kind == "set" and is_player and field == "location":
             return self._move_player(s, value, w)
         if kind == "learned" and is_player:
-            text = value[:200]
+            text = whole_sentence(value)                 # B224: a whole sentence, or nothing ("...where the lord" was a cut at 200)
+            if text is None:
+                w.reject("journal", "a journal line is a whole sentence; this one runs past 200 characters with no end inside them", value[:80])
+                return True
             if text and not any(n.text == text for n in s.journal):
                 s.journal.append(Note(kind="clue", text=text))
                 w.note(f"journal += {text[:120]!r}")
@@ -1563,7 +1704,9 @@ class FantasyGame(GameBase):
             if lying is not None:
                 return self._relocate(s, lying, False, "player", w)
             it = s.item(value)
-            count = self._step(note)
+            if it is not None and it.id in COINS and not MONEY.search(value):
+                it = None                                # B223: a gold amulet is a thing, not a gold piece
+            count = self._step(note) or (number_in(value) if it is not None and it.id in COINS else None)
             if it is not None and (it.count > 1 or it.id in COINS or (count or 1) > 1) and it.name.lower() != value.strip().lower():
                 return self._pocket_add(s, it, max(1, count or 1), "", w)
             if it is not None and it.name.lower() == value.strip().lower():
@@ -1866,6 +2009,7 @@ class FantasyGame(GameBase):
                 n, notes = wo.take(self, s, int(c["harm"]), str(c.get("label") or ""))
                 p.shown_notes.append(f"{c.get('label') or 'The attempt'} failed: {n} hit points" + (f" ({', '.join(notes)})" if notes else ""))
         self._hidden_after(s, info)
+        self._names_shown(s, info)
         for q in s.people:
             if q.met and q.location and q.location != "Unknown" and self._same_spot(s, q.location, p.location):
                 q.seen_at = q.location
@@ -1880,6 +2024,7 @@ class FantasyGame(GameBase):
                 dk.restand(h)
         # -- the Watch: a day lowers it; one of the Watch turned hostile raises it a step (B55); wanted is a flag
         self._watch_turned(s, info.applied)
+        self._crime_seen(s, info)
         if s.clock.day > p.heat_day:
             days = s.clock.day - p.heat_day
             p.heat = max(0, p.heat - HEAT_DAILY * days)
@@ -1967,11 +2112,14 @@ class FantasyGame(GameBase):
             kind = "long"
         elif (p.resting in ("short", "long") and info.elapsed_minutes >= SHORT_REST) or (safe and info.elapsed_minutes >= SHORT_REST and not hurt_now):
             kind = "short"
+        commanded = bool(p.resting)
         if p.resting and not kind:
             p.rest_cut = info.turn
         p.resting = ""
         if not kind:
             return
+        if kind == "long" or commanded:
+            self._rest_adds_no_money(s, info)
         for c in [c for c in p.conditions if c.source == "narrator" and c.duration in cn.RESTED[kind]]:
             p.conditions.remove(c)                       # B96: a rest dries and warms; a long one ends what lasts until rested
         if kind == "long":
@@ -1996,6 +2144,21 @@ class FantasyGame(GameBase):
         m = re.match(r"player\.hp: (-?\d+) -> (-?\d+)", line)
         return bool(m) and int(m.group(2)) < int(m.group(1))
 
+    def _rest_adds_no_money(self, s: FantasyState, info: TurnInfo) -> None:
+        """B223: a rest never adds money (the Barbarian's night's sleep put five coins Tam laid on the table into the purse as
+        one gold). Coins the referee's rows added on a resting turn come off again, logged."""
+        for coin in COINS:
+            it = s.item(coin)
+            gained = 0
+            for a in info.applied:
+                m = re.match(rf"inventory\.{coin}\.count: (-?\d+) -> (-?\d+)$", a)
+                if m and int(m.group(2)) > int(m.group(1)):
+                    gained += int(m.group(2)) - int(m.group(1))
+            if it is not None and gained > 0:
+                it.count = max(0, it.count - gained)
+                s.log.append(f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}. A rest adds no money: "
+                             f"{gained} {coin} the telling put in the purse are not counted.")
+
     @staticmethod
     def _gold_gained(applied: list[str]) -> int:
         """Gold the referee's rows added this turn (the delta's "inventory.gold.count: 14 -> 19" lines)."""
@@ -2017,7 +2180,8 @@ class FantasyGame(GameBase):
                 h.gold_credit = 0
                 continue
             giver = self._same_person(s, h.giver) if h.giver else None
-            if gold is None or pool["gold"] <= 0 or giver is None or giver.id not in s.player.with_them:
+            exact = pool["gold"] == h.gold_credit           # B223: the same sum again is the same pay, wherever the giver stands
+            if gold is None or pool["gold"] <= 0 or (not exact and (giver is None or giver.id not in s.player.with_them)):
                 continue
             take = min(pool["gold"], h.gold_credit, gold.count)
             if take <= 0:
@@ -2025,8 +2189,8 @@ class FantasyGame(GameBase):
             gold.count -= take
             pool["gold"] -= take
             h.gold_credit -= take
-            s.log.append(f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}. {h.title}: what {giver.name} paid "
-                         f"was the quest's reward, already counted ({take} gold).")
+            s.log.append(f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}. {h.title}: what "
+                         f"{giver.name if giver else 'the giver'} paid was the quest's reward, already counted ({take} gold).")
 
     def _pay(self, s: FantasyState, row: dict, why: str, pool: dict | None = None, turn: int = 0) -> None:
         """A reward row: XP, gold, renown, heat, a thing (an id the hook declared, or a thing written inline), attitudes,
@@ -2696,19 +2860,23 @@ class FantasyGame(GameBase):
         sheet += [Chip(label="Race", value=p.race), Chip(label="Class", value=p.klass), Chip(label="Level", value=str(p.level))]
         ac, ac_how = wo.armour_class(s)
         sheet.append(Chip(label="AC", value=str(ac)))
-        if p.peril is not None:
-            sheet.insert(0, Chip(label=p.peril.kind.capitalize(), value=f"{p.peril.turns_left} {'turn' if p.peril.turns_left == 1 else 'turns'} left", tone="bad"))
-        if p.hidden_from_others:
-            sheet.insert(0, Chip(label="", value="Hidden", tone="info"))
+        # B222: what is true of the player this moment goes on the strip, where the eye is (the Raging chip sat in the Character
+        # list, which the round's status line and a glance at the page never reach)
+        now: list[Chip] = []
         if "raging" in p.flags_on:
-            sheet.insert(0, Chip(label="", value="Raging", tone="bad"))
+            now.append(Chip(label="", value="Raging", tone="bad"))
+        if p.hidden_from_others:
+            now.append(Chip(label="", value="Hidden", tone="info"))
+        if p.peril is not None:
+            now.append(Chip(label=p.peril.kind.capitalize(), value=f"{p.peril.turns_left} {'turn' if p.peril.turns_left == 1 else 'turns'} left", tone="bad"))
         if p.gender:
             sheet.append(Chip(label="Gender", value=p.gender))
         sheet += [Chip(label="From your sheet", value=n) for n in p.sheet_notes]
         pockets = [Chip(label=it.name + (f" ×{it.count}" if it.count != 1 else ""), value=it.note or "") for it in s.inventory if it.id not in COINS]
         panels: list[Any] = [
-            StatusStrip(chips=[Chip(label="Time", value=s.clock.render()), Chip(label="Place", value=p.location or "unknown"),
-                               Chip(label="Level", value=str(p.level)), Chip(label="Gold", value=str(gold))]),
+            StatusStrip(chips=[Chip(label="Time", value=s.clock.render()), Chip(label="Place", value=p.location or "unknown"), *now,
+                               Chip(label="Level", value=str(p.level)),
+                               Chip(label="Gold", value=str(gold) + (f" ({cps} coppers)" if (cps := next((it.count for it in s.inventory if it.id == COPPERS), 0)) else ""))]),
             Meter(label="Hit points", value=p.hp, min=0, max=p.hp_max, tier=p.hp_tier, text=f"{p.hp} / {p.hp_max}",
                   tone=self.HP_TONES.get(p.hp_tier, "warn"), thresholds=[0.5 * p.hp_max, 0.75 * p.hp_max],
                   chips=[Chip(label=x.weight, value=x.words, tone=self.WOUND_TONES.get(x.weight)) for x in wounds]),
@@ -2732,12 +2900,13 @@ class FantasyGame(GameBase):
                                                                      *[Chip(label="owed", value=d) for d in p.debts]], layout="stack"))
         panels += [
             EntityCards(title="People", cards=[
-                EntityCard(id=q.id, title=q.name, subtitle=q.role or None,
+                EntityCard(id=q.id, title=q.name if self.name_shown(s, q) else (q.role or "someone, not yet named"),
+                           subtitle=(q.role or None) if self.name_shown(s, q) else "not yet named",
                            badges=[Chip(label="attitude", value=q.attitude_word, tone=self.ATTITUDE_TONES.get(q.attitude_word)),
                                    *([Chip(label="status", value=q.status, tone="bad")] if q.status != "alive" else [])],
                            details=[Chip(label="Last seen", value=q.seen_at or "unknown")], notes=q.facts)
                 for q in met] + [
-                EntityCard(id=q.id, title=q.name, subtitle="heard of, not met", notes=q.facts,
+                EntityCard(id=q.id, title=q.name if self.name_shown(s, q) else (q.role or "someone, not yet named"), subtitle="heard of, not met", notes=q.facts,
                            details=[Chip(label="Said to be at", value=q.location)] if q.location and q.location != "Unknown" else []) for q in heard]),
             ListPanel(title="Places", items=self._places_panel(s), layout="stack"),
             QuestPanel(title="Quests", rows=self.quest_rows(s)),

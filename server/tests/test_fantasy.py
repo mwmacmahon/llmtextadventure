@@ -28,7 +28,7 @@ from games.fantasy.game import FantasyGame  # noqa: E402
 
 CONTENT = Path(__file__).resolve().parents[2] / "notes" / "content" / "fantasy"
 pytestmark = pytest.mark.skipif(not (CONTENT / "scenarios" / "marrowgate.yml").exists(), reason="the fantasy content is not on this machine")
-SHEET = {"name": "Wren", "klass": "Fighter", "race": "Dwarf", "gender": "a woman", "about": "Raised by smugglers; carries her mother's silver dagger and owes a man in the south."}
+SHEET = {"name": "Brin", "klass": "Fighter", "race": "Dwarf", "gender": "a woman", "about": "Raised by smugglers; carries her mother's silver dagger and owes a man in the south."}
 C = Change
 
 
@@ -159,11 +159,11 @@ def test_the_players_row_says_a_rest_cut_short_and_a_new_debt(game: FantasyGame)
 def test_the_prefix_carries_the_about_text_verbatim_and_the_pronoun_line(game: FantasyGame):
     st = new(game)
     pre = game.frozen_prefix(st)
-    assert "Wren, a dwarf fighter. Wren is a dwarf: short and broad, braided hair or beard. Wren is a woman. The player wrote this about them, and it is true: \"" + SHEET["about"] + "\"" in pre
+    assert "Brin, a dwarf fighter. Brin is a dwarf: short and broad, braided hair or beard. Brin is a woman. The player wrote this about them, and it is true: \"" + SHEET["about"] + "\"" in pre
     assert "{name}" not in pre and "{about_line}" not in pre
     bare = new(game, gender="", about="", race="Elf", klass="Wizard")
     pre2 = game.frozen_prefix(bare)
-    assert "Wren, an elf wizard. Wren is an elf: pointed ears, a slight build. The player controls Wren completely." in pre2
+    assert "Brin, an elf wizard. Brin is an elf: pointed ears, a slight build. The player controls Brin completely." in pre2
     assert "The player wrote this" not in pre2
     assert SHEET["about"] in game.adjudication_rules(st) and "+2" in game.adjudication_rules(st)
 
@@ -199,7 +199,7 @@ def test_modifiers_abilities_about_companions_renown(game: FantasyGame):
     barb.player.flags_on.append("raging")
     assert [(m.label, m.value) for m in game.modifiers(barb, CheckRequest(id="n", label="fight the troll", stat="str"), None)] == [("Rage", 2)]
     mods = game.modifiers(st, CheckRequest(id="n", label="cut the rope with the silver dagger", stat="dex"), None)
-    assert any(m.value == 2 and m.label.startswith("what Wren brought") for m in mods)
+    assert any(m.value == 2 and m.label.startswith("what Brin brought") for m in mods)
     hazel = st.person("hazel")
     hazel.attitude = 2
     st.player.with_them = ["hazel"]
@@ -207,7 +207,7 @@ def test_modifiers_abilities_about_companions_renown(game: FantasyGame):
     assert any(m.label == "Hazel Oakhew helps" and m.value == 1 for m in mods)
     st.player.renown = 30
     mods = game.modifiers(st, CheckRequest(id="n", label="talk my way in", stat="cha"), "dace")
-    assert any(m.label == "Wren is known" and m.value == 1 for m in mods)
+    assert any(m.label == "Brin is known" and m.value == 1 for m in mods)
 
 
 # ---- hit points, damage, rests (§3e; acceptance 4) ---------------------------------------------------------------------
@@ -308,7 +308,7 @@ def test_zero_hp_alone_and_a_fatal_roll_ends_the_game(game: FantasyGame, monkeyp
     assert any(d.startswith("DEATH.") for d in game.turn_directives(s1))
     assert [c.id for c in game.commands(s1)] == ["journal"]
     s2 = game.after_turn(s1, info(turn=4))
-    assert game.ending(s2) and "Wren died" in game.ending(s2)
+    assert game.ending(s2) and "Brin died" in game.ending(s2)
     assert game.ui(s2).phase == "ended"
 
 
@@ -384,7 +384,7 @@ def test_dealing_rebases_a_hooks_times_to_the_deal(game: FantasyGame):
     assert all(ev[x].hook for x in ("cellar_rats_reach", "tam_rows_out", "collector_hears"))
     hooks = game.hooks_content()
     later = start + 2 * 1440 + 300                                     # dealt on day 3 at 23:00
-    dk.deal(st, hooks["body_on_lantern_row"], turn=9, deal_abs=later, name="Wren")
+    dk.deal(st, hooks["body_on_lantern_row"], turn=9, deal_abs=later, name="Brin")
     e = next(e for e in st.hidden.events if e.id == "body_on_lantern_row_reach")
     assert e.at == {"day": 4, "minute": 330}                           # first light, the next morning
     assert st.person("ferris") and "fish-knife" not in st.person("nan").wants and "She killed Ferris" in st.person("nan").secret
@@ -401,7 +401,7 @@ def test_load_state_rereads_dealt_hooks_and_keeps_what_was_told(game: FantasyGam
     st2 = game.load_state(st.model_dump(mode="json"))
     g2 = st2.person("gorm")
     assert g2.tells[0].told and g2.secret.startswith("He was driven out")
-    dk.deal(st2, game.hooks_content()["what_the_fog_keeps"], turn=2, deal_abs=3000, name="Wren")
+    dk.deal(st2, game.hooks_content()["what_the_fog_keeps"], turn=2, deal_abs=3000, name="Brin")
     st3 = game.load_state(st2.model_dump(mode="json"))
     assert "Old Marrow" in st3.city.locations and st3.city.gated["Old Marrow"] == "old_marrow_open"
     assert st3.city.aliases["the drowned city"] == "Old Marrow"
@@ -425,7 +425,7 @@ def test_a_hook_goes_live_on_its_reach_and_closes_with_its_first_matching_reward
 
 def test_also_rows_are_paid_beside_the_main_row(game: FantasyGame):
     st = new(game)
-    dk.deal(st, game.hooks_content()["body_on_lantern_row"], turn=1, deal_abs=2520, name="Wren")
+    dk.deal(st, game.hooks_content()["body_on_lantern_row"], turn=1, deal_abs=2520, name="Brin")
     st.flags.update(killer_named_nan=True, took_the_purse=True)
     s1 = game.after_turn(st, info(turn=2))
     assert s1.hook("body_on_lantern_row").status == "done" and s1.player.xp == 100 and s1.player.heat == 10 and s1.player.renown == 30
@@ -494,6 +494,7 @@ def test_an_id_that_is_also_the_players_name_is_that_person(game: FantasyGame):
     """B45 in f1L: the player is Wren; `move wren` and `learned wren` (Tam's girl, id wren) moved the player and wrote the
     player's journal, and the girl stayed on Reed Island all game."""
     st = new(game)
+    st.player.name = "Wren"                 # a save from before B45 refused the name at setup
     s2, rep, _ = apply(game, st, C(kind="move", target="wren", value="Ferry Landing"),
                        C(kind="learned", target="wren", value="She went into the water on purpose."),
                        C(kind="set", target="wren.mood", value="relieved"))
@@ -526,7 +527,7 @@ def test_a_quest_is_from_the_one_who_asks(game: FantasyGame):
 
 def test_milestones_pay_once_and_the_long_thread_never_closes(game: FantasyGame):
     st = new(game)
-    dk.deal(st, game.hooks_content()["what_the_fog_keeps"], turn=1, deal_abs=2520, name="Wren")
+    dk.deal(st, game.hooks_content()["what_the_fog_keeps"], turn=1, deal_abs=2520, name="Brin")
     st.flags["steps_descended"] = True
     s1 = game.after_turn(st, info(turn=2))
     assert s1.player.xp == 200 and s1.hook("what_the_fog_keeps").status == "dealt"
@@ -649,7 +650,7 @@ async def test_the_first_evening_plays_as_the_content_says(engine: Engine, fake:
     assert events[-1]["data"]["mechanics"]["events"] == ["cellar_rats_reach"]          # the opening is shown at turn 0 (B51, D167)
     bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
     assert "the next table" in engine.store.transcript(iid)[0].text                    # Hazel, in the turn-0 opening (D167)
-    assert "Maud comes to Wren's table" in bulletin and "Day 1, 18:05" in bulletin
+    assert "Maud comes to Brin's table" in bulletin and "Day 1, 18:05" in bulletin
     st = state_of(engine, iid)
     assert st.hook("cellar_rats").status == "live" and st.clock.minute == 1085
     fake.canned["AssistantReading"] = [reading("I sit by the fire and wait.", 60)]
@@ -725,7 +726,7 @@ async def test_death_by_the_pipeline(engine: Engine, fake: FakeProvider):
         fake.canned["AssistantReading"] = [reading("I try to stand.", 2)]
         events = await play(engine, iid, "I try to stand.")
         bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
-        assert "DEATH." in bulletin and events[-1]["data"]["ending"] and "Wren died" in events[-1]["data"]["ending"]
+        assert "DEATH." in bulletin and events[-1]["data"]["ending"] and "Brin died" in events[-1]["data"]["ending"]
         again = await play(engine, iid, "I get up.")
         assert again[-1]["event"] == "error" and "over" in again[-1]["data"]["message"]
 
@@ -748,3 +749,130 @@ async def test_the_engine_net_retells_a_turn_that_names_sexual_violence(engine: 
     events = [e async for e in engine.run_turn(iid, "I listen to the rumours at the bar.")]
     rows = [r for r in engine.store.ledger(iid) if r["kind"] in ("rewrite", "ruling")]
     assert any("does not go" in str(r["payload"]) for r in rows) or any("too_far" in str(e.get("data")) for e in events)
+
+
+def test_a_player_name_from_the_cast_is_refused(game):
+    """B45: the Rogue round's player was named Wren, like the ferryman's daughter; the ending read 'Wren died'."""
+    import pytest
+    for name in ("Wren", "wren", "Mirren", "Maud Tallow", "Old Hob"):
+        with pytest.raises(ValueError, match="That name belongs to someone in the city; pick another."):
+            game.new_instance({**SHEET, "name": name})
+    assert game.new_instance({**SHEET, "name": "Pell"})[1].player.name == "Pell"
+
+
+def test_a_crime_in_open_view_raises_heat(game):
+    """B227 (8c106d354426, the Rogue's turn 34): a stabbing at the Night Market in front of a crowd and heat stayed
+    'nobody'. The referee wrote +10 for the theft the turn before (still 'nobody') and nothing for the wounding; the
+    engine's net raises heat a step on a wound or a theft in view with no heat row."""
+    from engine.game import TurnInfo
+    from games.fantasy.state import Person
+    st = new(game)
+    here = st.player.location
+    st.people.append(Person(id="velvet_merchant", name="Velvet Merchant", location=here, condition="wounded in the chest", met=True))
+    st.people.append(Person(id="hooded_giant", name="Hooded Giant", location=here, met=True))
+    st.player.fighting, st.player.heat = ["velvet_merchant"], 10
+    info = TurnInfo(turn=21, elapsed_minutes=1, rng=random.Random(0), player_text="I laugh, hold the amulet up and go for the merchant again.",
+                    applied=["people.velvet_merchant.condition: 'wounded in the chest' -> 'incapacitated'"])
+    out = game.after_turn(st, info)
+    assert out.player.heat == 20 and out.player.heat_word == "asked about" and any("Seen at a wounding" in n for n in out.player.shown_notes)
+    # a heat row the referee wrote stands alone; nobody else present: nothing
+    import dataclasses
+    assert game.after_turn(st, dataclasses.replace(info, applied=info.applied + ["player.heat: 10 -> 25"])).player.heat == 10
+    alone = new(game)
+    alone.people.append(Person(id="velvet_merchant", name="Velvet Merchant", location=alone.player.location, met=True))
+    alone.player.fighting = ["velvet_merchant"]
+    for q in alone.people:
+        if q.id != "velvet_merchant" and q.location == alone.player.location:
+            q.location = "Lantern Row"
+    assert game.after_turn(alone, info).player.heat == 0
+
+
+def test_money_guards(game):
+    """B223. The duplicate: the cellar's reward paid 2 gold and the next turn the referee added Maud's 2 gold again
+    (8c106d354426 turns 8-9, Maud not beside the player): the same sum within the credit window is the same pay. A night's
+    rest adds no money (5528fb9033ac turn 13: five coins Tam laid on the table landed as one gold). A gold amulet is a thing,
+    not a gold piece (turn 20). A copper spent from an empty copper pocket breaks a gold, which is right; the strip now
+    shows the coppers beside it."""
+    import dataclasses
+    from engine.game import TurnInfo
+    st = new(game)
+    gold = st.item("gold")
+    h = st.hooks[0]
+    h.gold_credit, h.credit_until = 2, 9
+    start = gold.count
+    gold.count += 2
+    info = TurnInfo(turn=4, elapsed_minutes=5, rng=random.Random(0), applied=[f"inventory.gold.count: {start} -> {start + 2}"])
+    assert game.after_turn(st, info).item("gold").count == start
+    # a night's rest adds none
+    night = new(game)
+    g0 = night.item("gold").count
+    night.item("gold").count += 1
+    night.player.resting = "long"
+    out = game.after_turn(night, TurnInfo(turn=5, elapsed_minutes=480, rng=random.Random(0), applied=[f"inventory.gold.count: {g0} -> {g0 + 1}"]))
+    assert out.item("gold").count == g0 and any("A rest adds no money" in ln for ln in out.log)
+    # a gold amulet is a thing; five gold coins are five
+    s2, rep, _ = apply(game, new(game), C(kind="new", target="thing", field="player", value="gold amulet with a violet stone"))
+    assert s2.item("gold").count == new(game).item("gold").count and any("amulet" in it.name for it in s2.inventory)
+    s3, _, _ = apply(game, new(game), C(kind="new", target="thing", field="player", value="five damp gold coins"))
+    assert s3.item("gold").count == new(game).item("gold").count + 5
+    cp = st.item("coppers")
+    if cp is None:
+        st.inventory.append(type(gold)(id="coppers", name="coppers", count=99))
+    else:
+        cp.count = 99
+    strip = next(x for x in game.ui(st).panels if type(x).__name__ == "StatusStrip")
+    assert any(c.label == "Gold" and c.value.endswith("(99 coppers)") for c in strip.chips)
+
+
+def test_the_people_panel_names_a_person_once_the_prose_has(game):
+    """B224 (5528fb9033ac turns 5 and 13): Gorm and Mirren were on the People panel by name before the prose named them.
+    The card says what they are until the telling, the player or the journal names them."""
+    from engine.game import TurnInfo
+    st = new(game)
+    q = st.person("gorm")
+    q.met, q.heard_of, q.location = True, True, st.player.location
+    st.player.names_heard = [n for n in st.player.names_heard if n.lower() != "gorm"]
+    card = lambda s: next(c for x in game.ui(s).panels if getattr(x, "title", "") == "People" for c in x.cards if c.id == "gorm")
+    assert card(st).title != "Gorm" and card(st).subtitle == "not yet named"
+    shown = game.after_turn(st, TurnInfo(turn=6, elapsed_minutes=1, rng=random.Random(0),
+                                         prose="The troll lifts its head. \"Gorm,\" it says, touching its chest. \"Gorm.\""))
+    assert card(shown).title == "Gorm"
+
+
+def test_a_journal_line_is_a_whole_sentence_or_none(game):
+    """B224: a journal line cut mid-sentence ('...where the lord') at 200 characters."""
+    from games.fantasy.game import whole_sentence
+    long = ("The Hill's divers brought the bell up by rope; a boat carried it to the quay and up the long stair to a house. "
+            "There, thin men with ledgers weighed it and sent word to the Hill, where the lord of the lamps keeps what he buys.")
+    out = whole_sentence(long)
+    assert out and out.endswith("to a house.") and len(out) <= 200
+    assert whole_sentence("x" * 250) is None and whole_sentence("Short and whole.") == "Short and whole."
+    s2, rep, _ = apply(game, new(game), C(kind="learned", target="player", value="y" * 260))
+    assert not any("yyy" in n.text for n in s2.journal) and any(r.path == "journal" for r in rep.rejected)
+
+
+def test_the_clock_and_the_question_in_the_prose_are_ruled(game):
+    """B228 (8c106d354426): 'the clock has crept to 22:04' and 'What does Wren do?' were in the prose; the engine rules
+    both as it rules a § line, and the game's own lines no longer ask the narrator for that question."""
+    st = new(game)
+    prose = "The fog thickens; the clock has crept to 22:04.\n\n§ STR, low. 12 + 2 = 14 against 8. Success.\n\nWhat does Brin do?"
+    rules = {f["rule"] for f in game.prose_faults(st, prose)}
+    assert rules == {"clock_in_prose", "question_in_prose"}
+    assert not game.prose_faults(st, "The bells ring ten across the water. Brin waits.\n\n§ STR, low. 12 + 2 = 14 against 8.")
+    import inspect
+    from games.fantasy import world as w
+    assert "what does {p.name} do?" not in inspect.getsource(w)
+
+
+async def test_a_clicked_commands_turn_is_never_retold(engine, fake):
+    """B228 (Rogue turn 28): the guard asked to retell a narrated command (smoke pellets) and the retelling's refusal reached
+    the player as an error. A clicked command's turn is never retold; asked anyway, the line is plain."""
+    from engine.pipeline import rewrite_of_command
+    iid = engine.create_instance("fantasy", SHEET)
+    await play(engine, iid, "I look around the room.")
+    assert not rewrite_of_command(engine.store, iid)
+    engine.store.append_ledger(iid, 1, "command", {"id": "smoke_pellets", "args": {}, "mode": "narrated"})
+    assert rewrite_of_command(engine.store, iid)
+    events = [e async for e in engine.rewrite_turn(iid, "")]
+    msgs = [e["data"].get("message", "") for e in events if e["event"] == "error"]
+    assert msgs == ["That turn was a command, not words, so there is nothing to tell again."]

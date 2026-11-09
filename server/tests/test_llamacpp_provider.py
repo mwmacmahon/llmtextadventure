@@ -312,7 +312,7 @@ def test_local_schema_requires_part_sevens_fields():
                 yield from objects(v)
 
     found = {o.get("title"): set(o["required"]) for o in objects(inline_schema(AssistantReadingStaked.model_json_schema()))}
-    assert {"edge", "edge_why", "aim"} <= found["CheckStaked"]
+    assert {"edge", "edge_why"} <= found["CheckStaked"] and "aim" not in found["CheckStaked"]     # B217: aim advisory
     assert {"settled", "why"} <= found["FiatOutcome"]
     rows = [o for o in objects(inline_schema(ChangeReport.model_json_schema())) if "who" in o["properties"]]
     assert rows and not any({"who", "note", "minutes", "hidden"} & set(o["required"]) for o in rows)

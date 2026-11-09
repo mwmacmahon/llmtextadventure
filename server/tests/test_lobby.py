@@ -94,11 +94,11 @@ DEV = {"X-Dev": "1"}
 # ---- the save line, last played, the ending ------------------------------------------------------------------------------
 
 def test_each_game_says_which_save_it_is(engine: Engine):
-    f = engine.create_instance("fantasy", {"name": "Wren", "klass": "Rogue", "race": "Tiefling"})
+    f = engine.create_instance("fantasy", {"name": "Brin", "klass": "Rogue", "race": "Tiefling"})
     n = engine.create_instance("noir", {})
     s = engine.create_instance("station", {"start": "locked"})
     line = {x["game"]: [c["value"] for c in x["save_line"]] for x in engine.summaries()}
-    assert line["fantasy"] == ["Wren, tiefling rogue, level 1", "The Drowned Lantern", "Day 1"]
+    assert line["fantasy"] == ["Brin, tiefling rogue, level 1", "The Drowned Lantern", "Day 1"]
     assert line["noir"][1].startswith("Day 1, ") and len(line["noir"]) == 2           # health is fine: not shown
     assert line["station"][1:3] == ["quiet", "locked out"]
     doc = engine.store.load_state(n)
@@ -174,9 +174,9 @@ def test_last_played_is_filled_from_the_ledger_for_saves_that_predate_it(tmp_pat
 # ---- the card ------------------------------------------------------------------------------------------------------------
 
 def test_the_card_has_the_line_the_last_telling_and_the_panels(client, engine: Engine):
-    iid = engine.create_instance("fantasy", {"name": "Wren", "klass": "Rogue", "race": "Tiefling"})
+    iid = engine.create_instance("fantasy", {"name": "Brin", "klass": "Rogue", "race": "Tiefling"})
     card = client.get(f"/api/instances/{iid}/card").json()
-    assert card["id"] == iid and card["save_line"][0]["value"].startswith("Wren")
+    assert card["id"] == iid and card["save_line"][0]["value"].startswith("Brin")
     assert card["last"]["turn"] == 0 and card["last"]["clock"] == "Day 1, 18:00"
     assert 0 < len(card["last"]["text"]) <= 301 and card["last"]["text"].endswith("…")
     assert card["ui"]["panels"] and card["ui"]["panels"][0]["type"] == "status_strip"
@@ -261,7 +261,7 @@ def test_a_game_may_not_take_the_engine_s_field(engine: Engine, monkeypatch):
 
 @pytest.mark.parametrize("game,resolver,table,step", [("noir", "dice_2d6", TARGET_2D6, 1), ("fantasy", "dice_d20", TARGET, 2)])
 def test_the_three_settings_move_the_die_by_the_resolver_s_step(engine: Engine, game, resolver, table, step):
-    setup = {"name": "Wren", "klass": "Rogue", "race": "Tiefling"} if game == "fantasy" else {}
+    setup = {"name": "Brin", "klass": "Rogue", "race": "Tiefling"} if game == "fantasy" else {}
     assert engine.games[game].resolver == resolver
     for difficulty, sign in (("easy", -1), ("normal", 0), ("hard", 1)):
         iid = engine.create_instance(game, {**setup, "difficulty": difficulty})
@@ -314,7 +314,7 @@ async def test_the_stamp_and_the_lethal_roll_carry_the_difficulty(engine: Engine
     from engine.providers.factory import get_provider
     fake = get_provider(engine.cfg.role("narrator"))
     assert isinstance(fake, FakeProvider)
-    iid = engine.create_instance("fantasy", {"name": "Wren", "klass": "Rogue", "race": "Tiefling", "difficulty": "hard"})
+    iid = engine.create_instance("fantasy", {"name": "Brin", "klass": "Rogue", "race": "Tiefling", "difficulty": "hard"})
     game = engine.games["fantasy"]
     seen: list[int | None] = []
     real = type(game).after_turn

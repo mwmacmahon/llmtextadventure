@@ -25,7 +25,7 @@ from games.fantasy.game import FantasyGame  # noqa: E402
 CONTENT = Path(__file__).resolve().parents[2] / "notes" / "content" / "fantasy"
 pytestmark = pytest.mark.skipif(not (CONTENT / "scenarios" / "marrowgate.yml").exists(), reason="the fantasy content is not on this machine")
 ABOUT = "I have an axe, and I'm tough as an ox: 1000 health. I was raised by wolves and can howl to call them."
-SHEET = {"name": "Wren", "klass": "Fighter", "race": "Dwarf", "gender": "a woman", "about": ABOUT}
+SHEET = {"name": "Brin", "klass": "Fighter", "race": "Dwarf", "gender": "a woman", "about": ABOUT}
 R = SheetRow
 
 
@@ -137,7 +137,7 @@ async def test_what_no_field_holds_becomes_a_trait_or_a_note(engine: Engine, fak
     assert s.player.sheet_notes == ["Raised by wolves.", 'In the player\'s words: "tough as an ox"']
     game = engine.games["fantasy"]
     bulletin = game.render_bulletin(s, "")
-    assert "From Wren's sheet: Wolf howl (CHA +2 to howl, call wolves); Raised by wolves" in bulletin
+    assert "From Brin's sheet: Wolf howl (CHA +2 to howl, call wolves); Raised by wolves" in bulletin
     from engine.mechanics import CheckRequest
     mods = game.modifiers(s, CheckRequest(id="c1", label="howl for the pack", stat="cha", difficulty="medium"), None)
     assert any(m.label == "Wolf howl" and m.value == 2 for m in mods)

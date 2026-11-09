@@ -64,7 +64,11 @@ export function GamePage({ name }: { name: string }) {
       const v = await api.create(game!.name, shown);
       location.hash = `#/g/${v.id}`;
     } catch (e) {
-      setErr(String(e));
+      // a refusal (400) shows its own plain line, not the status and the JSON (B45: a name the city already has)
+      const m = String(e).match(/^Error: 400 ([\s\S]*)$/);
+      let msg = String(e);
+      if (m) { try { msg = JSON.parse(m[1]).detail ?? m[1]; } catch { msg = m[1]; } }
+      setErr(msg);
     }
   }
 

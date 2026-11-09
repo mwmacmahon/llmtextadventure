@@ -643,7 +643,10 @@ class Engine:
                 else:
                     yield ev
             serious = [r for r in ((done or {}).get("mechanics") or {}).get("rulings", []) if r.get("serious")] if done else []
-            if serious and mode != "log" and retells < max_retells and (done or {}).get("mechanics", {}).get("kind") != "command":
+            # B228: a clicked command's turn is never retold (the Rogue's smoke pellets, narrated, asked for a retell the
+            # retelling refused, and the refusal reached the player as an error); its rulings stand as on the last telling
+            if serious and mode != "log" and retells < max_retells and command is None and not rewrite_of_command(self.store, iid) \
+                    and (done or {}).get("mechanics", {}).get("kind") != "command":
                 retells += 1
                 fix = retell_note(serious)
                 yield {"event": "retell", "data": {"turn": done["turn"], "attempt": retells, "rulings": serious, "hint": fix}}
@@ -745,7 +748,10 @@ class Engine:
         if adj is None and not getattr(game, "skip_adjudication", False):
             try:
                 adj, meta = await self._adjudicate(game, state, iid, player_text)
+                hopeless = settle_hopeless(adj)                  # B225: very high and an edge of -3 or worse is a fail, no roll
                 ledger("adjudication", {**adj.model_dump(mode="json"), "_call": meta})
+                for h in hopeless:
+                    ledger("precheck", {"kind": "hopeless", **h})
                 for f in getattr(adj, "fiat", None) or []:     # B207 (D179): each attempt the words settled, with why
                     ledger("settled", {"settled": getattr(f, "settled", "works"), "attempt": f.attempt, "outcome": f.outcome, "why": getattr(f, "why", "")})
                 unchecked = [i.action for i in adj.intents if i.check is None]
@@ -1096,7 +1102,7 @@ class Engine:
                         calls=[dict((c.get("result") or {}), label=(c.get("result") or {}).get("label", "")) for c in calls_block.get("calls", [])],
                         rejected=[r.model_dump(mode="json") for r in report.rejected],
                         levers=[{"id": o.get("id") or lv.id, "status": o["status"]} for lv, o in zip(levers, lever_outcomes)],
-                        target_offset=self.target_offset(game, iid), player_text=player_text or "")
+                        target_offset=self.target_offset(game, iid), player_text=player_text or "", prose=narration_stored)
         drifted = _hook(game, "after_turn", state, info, default=state)
         drift_lines: list[str] = []
         if drifted is not state:
@@ -1191,6 +1197,10 @@ class Engine:
                                    "Call the check and wait for its result, or tell the attempt in plain prose with no roll."})
             log.info("engine.ruling " + logs.kv(iid=iid, turn=turn, rule="fake_check", serious=True, lines=own_lines))
 
+        for fault in _hook(game, "prose_faults", state, narration, default=[]) or []:     # B228: the narrator's own slips
+            if not any(r.get("rule") == fault["rule"] for r in rulings):
+                rulings.append({"serious": True, "by": "engine", **fault})
+                log.info("engine.ruling " + logs.kv(iid=iid, turn=turn, rule=fault["rule"], serious=True))
         crossed = _hook(game, "too_far_words", narration, default="") or ""
         if crossed and not any(r.get("rule") == "too_far" for r in rulings):     # the owner, 11-08 night: the engine's own net
             rulings.append({"rule": "too_far", "serious": True, "by": "engine", "what": "the telling went where this game does not go",
@@ -1275,7 +1285,7 @@ class Engine:
         rows = self.store.ledger(iid, turn)
         adj_row = next((r["payload"] for r in rows if r["kind"] == "adjudication"), None)
         if adj_row is None or any(r["kind"] == "command" and not r["payload"].get("typed") for r in rows):
-            yield {"event": "error", "data": {"message": "only a typed turn can be retold; this one was a clicked command", "step": "rewrite"}}
+            yield {"event": "error", "data": {"message": "That turn was a command, not words, so there is nothing to tell again.", "step": "rewrite"}}
             return
         game = self.games[inst.game]
         schema = getattr(game, "adjudication_schema", AssistantReading)
@@ -1576,6 +1586,7 @@ class Engine:
                 assessments.append(Assessment(stat=stat, difficulty=intent.check.difficulty, target=intent.check.target_entity or "",
                                               label=intent.check.label, edge=int(getattr(intent.check, "edge", 0) or 0),
                                               edge_why=str(getattr(intent.check, "edge_why", "") or ""), aim=str(getattr(intent.check, "aim", "other") or "other"),
+                                              prying=prying(intent, stat),
                                               about=intent.check.target_entity or next(iter(getattr(intent, "targets", None) or []), "")))
             for name in getattr(adj, "carried", []) or []:   # the input leans on something in the player's pockets: is it there?
                 missing = _hook(game, "not_carried", state, name, default=None)
@@ -2088,7 +2099,7 @@ def scrub_hidden(game: Game, state: BaseModel, adj: Any, player_text: str) -> di
 
     def mask(text: str) -> str:
         for term in _hook(game, "leaked_terms", state, text, player_text, default=[]) or []:
-            text = re.sub(r"\b" + re.escape(term) + r"(s|es)?\b", "what they keep back", text, flags=re.I)
+            text = mask_term(state, text, term)
         return text
     n: dict[str, int] = {}
     def hit(k: str) -> None:
@@ -2109,6 +2120,8 @@ def scrub_hidden(game: Game, state: BaseModel, adj: Any, player_text: str) -> di
                 v = getattr(c, f, "")
                 if v and leaks(v):
                     setattr(c, f, mask(v))
+                    if f == "success_gain":
+                        c._masked = True             # B217: the engine's witness that the attempt is at the secret
             if any(leaks(getattr(c, f, "")) for f in ("success_gain", "failure_outcome", "complication_what")):
                 for f, v in (("success_gain", ""), ("failure_outcome", ""), ("complication_what", ""), ("complication", "none")):
                     if hasattr(c, f):
@@ -2138,7 +2151,8 @@ def scrub_hidden(game: Game, state: BaseModel, adj: Any, player_text: str) -> di
 
 WORDS_DECIDE = """THE WORDS DECIDE FIRST. For each attempt, read the player's words against the situation before anything else, and land on one of three:
 - It works: the words plainly give what the situation asks for (the right key in the right lock; what the person asked for, offered; a plan the scene cannot resist; talking to a friend). No check: it goes under fiat, settled works, with why.
-- It fails: the words plainly miss (what the person has said is worthless to them, offered anyway; a joke to someone grieving; a bluff against someone who watched the player do the opposite). No check: fiat, settled fails, with why.
+- It fails: the words plainly miss (what the person has said is worthless to them, offered anyway; a joke to someone grieving; a bluff against someone who watched the player do the opposite; asking the innkeeper for her inn; asking a siren for her tower; fifty gold from someone with two). No check: fiat, settled fails, with why.
+A demand nobody in their place would grant is a fail, not a very high check.
 - It is open: only then a check, at its difficulty, with its edge.
 Difficulty is how hard the thing is for anyone. It never carries what this player brought; that is the edge.
 EDGE, on every check: what the player's own words and things bring, as a number in edge and their own terms in edge_why. {range}
@@ -2371,6 +2385,8 @@ RETELL_LEADS = {
     "repeated_beat": "This sentence tells again what an earlier turn already told: {what}. Tell that moment differently, or move past it. Keep the rest of the turn as it was.",
     "repetition": "{what}. {fix}",
     "fake_check": "{what}. {fix}",
+    "clock_in_prose": "{what}. {fix} Keep everything else as it was.",            # B228
+    "question_in_prose": "{what}. {fix} Keep everything else as it was.",
     # B63 (D168): a person gave up a tell before its condition was met; the referee's conflict, the leak guard's path
     "early_tell": "A telling gave away a secret too early: {what}. {fix} In this retelling they hold it back: they may stall, "
                   "deflect or lie, or let slip something small that is not part of it, and the scene goes on. Drop anything that "
@@ -2554,6 +2570,81 @@ def _unquiet(game: Game, state: BaseModel, adj: Any) -> str:
     return str(_hook(game, "unquiet", state, default="") or "")
 
 
+SHE = re.compile(r"\b(she|her|hers|woman|girl|wife|mother|daughter|sister|widow|lady|siren|queen|witch|maid|niece|aunt|grandmother)\b", re.I)
+HE = re.compile(r"\b(he|him|his|man|boy|husband|father|son|brother|widower|lord|king|priest|uncle|grandfather)\b", re.I)
+POSSESSIVE = {"she": "her", "he": "his", "the person": "the person's", "that place": "that place's"}
+
+
+def mask_word(state: Any, term: str) -> str:
+    """B220: what a leaked hidden term becomes in a stake. A person's name: 'she', 'he' or 'the person', by the person's
+    record (role and description); a place: 'that place'; a fact or a thing: 'what they keep back' (B210's phrase)."""
+    t = term.strip().lower()
+    for q in getattr(state, "people", None) or getattr(state, "crew", None) or []:
+        names = {str(getattr(q, "name", "")).lower(), str(getattr(q, "name", "")).lower().split(" ")[0]}
+        names |= {str(a).lower() for a in getattr(q, "aliases", None) or []}
+        if t in names:
+            record = f"{getattr(q, 'role', '')} {getattr(q, 'description', '')}"
+            she, he = len(SHE.findall(record)), len(HE.findall(record))
+            return "she" if she > he else "he" if he > she else "the person"
+    pl = getattr(state, "places", None)
+    places = list(pl() if callable(pl) else pl or []) + list(getattr(state, "locations", None) or [])
+    city = getattr(state, "city", None)
+    places += [str(getattr(c, "name", c)) for c in (getattr(city, "country", None) or [])] if city is not None else []
+    if any(t == str(pl).lower() for pl in places):
+        return "that place"
+    return "what they keep back"
+
+
+def mask_term(state: Any, text: str, term: str) -> str:
+    """The term masked in `text` by what it is (mask_word); a possessive becomes the pronoun's own ('Elowen's' -> 'her')."""
+    word = mask_word(state, term)
+    text = re.sub(r"\b" + re.escape(term) + r"['’]s\b", POSSESSIVE.get(word, word), text, flags=re.I)
+    return re.sub(r"\b" + re.escape(term) + r"(s|es)?\b", word, text, flags=re.I)
+
+
+def rewrite_of_command(store: Any, iid: str) -> bool:
+    """B228: the latest turn was a clicked command (a ledger command row not typed), so it cannot be retold."""
+    turn = store.latest_turn(iid)
+    return turn >= 1 and any(r["kind"] == "command" and not r["payload"].get("typed") for r in store.ledger(iid, turn))
+
+
+def settle_hopeless(adj: Any) -> list[dict]:
+    """B225: a check the assistant set at very_high with an edge of -3 or worse is settled as a fail before the narrator
+    calls anything: the check leaves the intent and a fiat 'fails' takes its place, why 'the words settled it: {edge_why}'.
+    Settled fails were 0 of 16 on Sonnet and 0 of 9 on Gemma; Maud's inn deed, Sael's tower and fifty gold all rolled."""
+    from .roles import FiatOutcome
+    out: list[dict] = []
+    if adj is None or not hasattr(adj, "fiat"):
+        return out
+    for i in getattr(adj, "intents", None) or []:
+        c = getattr(i, "check", None)
+        if c is None or c.difficulty != "very_high" or int(getattr(c, "edge", 0) or 0) > -3:
+            continue
+        why = f"the words settled it: {(getattr(c, 'edge_why', '') or 'nobody in their place would grant it').strip()}"
+        outcome = str(getattr(c, "failure_outcome", "") or "") or f"It does not come: {c.label}."
+        adj.fiat = list(adj.fiat or []) + [FiatOutcome(attempt=i.action or c.label, outcome=outcome, settled="fails", why=why)]
+        out.append({"attempt": i.action or c.label, "label": c.label, "edge": int(c.edge), "why": why})
+        i.check = None
+    return out
+
+
+PRY_GAIN = re.compile(r"\b(the piece comes|(she|he|they) says? more|says more|what they keep back)\b", re.I)
+
+
+def prying(intent: Any, stat: str) -> bool:
+    """B217: the secret-holder floor's engine witness. The attempt is no fight (no fight words in it; not str or dex aimed
+    at someone), and the assistant's own stake is about the secret: its gain was masked for a leak, or reads "the piece
+    comes" or "says more". The model's aim field is advisory and never read here."""
+    c = getattr(intent, "check", None)
+    if c is None:
+        return False
+    words = f"{getattr(intent, 'action', '')} {getattr(c, 'label', '')}"
+    aimed = bool(getattr(c, "target_entity", None) or getattr(intent, "targets", None))
+    if (stat in ("str", "dex") and aimed) or TASK_WORDS_FIGHT.search(words):
+        return False
+    return bool(getattr(c, "_masked", False)) or bool(PRY_GAIN.search(str(getattr(c, "success_gain", "") or "")))
+
+
 def is_fight(adj: Any) -> bool:
     """A fight beat: read as a fight, or as one fast beat (a blow, a shot, a lunge). Takes a reading or its ledger row."""
     if isinstance(adj, dict):
@@ -2576,6 +2667,7 @@ TASK_WORDS: list[tuple[str, re.Pattern]] = [       # D148: the longer kind wins 
                          r"wrestles?|struggles?|grapples?|dodges?|lunges?|flees?|runs? from|chases?|tackles?|kicks?|bites?|retreats?|"
                          r"scrambles?|backs? away|wrench(?:es)?)\b", re.I)),
 ]
+TASK_WORDS_FIGHT = dict(TASK_WORDS)["fight"]
 
 
 def task_of(adj: Any) -> str:

@@ -28,7 +28,7 @@ SERVER = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SERVER / "tools"))
 CONTENT = SERVER.parent / "notes" / "content" / "fantasy"
 fantasy = pytest.mark.skipif(not (CONTENT / "scenarios" / "marrowgate.yml").exists(), reason="the fantasy content is not on this machine")
-SHEET = {"name": "Wren", "klass": "Fighter", "race": "Dwarf", "gender": "a woman", "about": "Raised by smugglers."}
+SHEET = {"name": "Brin", "klass": "Fighter", "race": "Dwarf", "gender": "a woman", "about": "Raised by smugglers."}
 
 
 @pytest.fixture
@@ -88,8 +88,8 @@ async def test_a_death_lands_a_grave_with_its_cause_epitaph_state_and_score(engi
     iid = engine.create_instance("fantasy", SHEET)
     await die(engine, fake, iid)
     [g] = engine.graves.all()
-    assert g["character"] == "Wren" and g["game"] == "fantasy" and g["turn"] == 1 and not g["undone"]
-    assert g["line"][0]["value"] == "Wren, dwarf fighter, level 1"
+    assert g["character"] == "Brin" and g["game"] == "fantasy" and g["turn"] == 1 and not g["undone"]
+    assert g["line"][0]["value"] == "Brin, dwarf fighter, level 1"
     assert g["place"] == "The Drowned Lantern" and g["day"] == 1 and g["clock"].startswith("Day 1, ")
     assert g["cause"] == "death by the guard captain's axe"
     assert g["epitaph"] == "The blow lands hard number 2. Wren goes down on the wet stones."      # the death telling's opening
@@ -126,7 +126,7 @@ async def test_undo_delete_export_import_and_the_gallery(engine: Engine, fake: F
     engine.undo(iid, to_turn=0)                                               # undo from the death card, past the death
     assert engine.death_card(iid) is None
     await die(engine, fake, iid)                                              # she dies again: a second stone
-    other = engine.create_instance("fantasy", {**SHEET, "name": "wren "})    # the same name in a new game: a save of its own (11-08 night)
+    other = engine.create_instance("fantasy", {**SHEET, "name": "brin "})    # the same name in a new game: a save of its own (11-08 night)
     await die(engine, fake, other)
     tess = engine.create_instance("fantasy", {**SHEET, "name": "Tess"})
     graves = engine.graves.all()
@@ -185,12 +185,12 @@ def test_the_cause_is_composed_in_order():
 def test_the_lines_never_repeat_the_last_three(engine: Engine):
     lines = [{"text": f"line {i}"} for i in range(6)]
     rng = random.Random(7)
-    shown = [engine.graves.pick_line("fantasy", "Wren", lines, rng) for _ in range(60)]
+    shown = [engine.graves.pick_line("fantasy", "Brin", lines, rng) for _ in range(60)]
     for i in range(3, len(shown)):
         assert shown[i] not in shown[i - 3:i]
     other = engine.graves.pick_line("fantasy", "Tess", lines, rng)        # another character keeps her own memory
     assert other in {ln["text"] for ln in lines}
-    assert engine.graves.pick_line("fantasy", "Wren", [], rng) is None
+    assert engine.graves.pick_line("fantasy", "Brin", [], rng) is None
     two = [{"text": "a"}, {"text": "b"}]
     got = [engine.graves.pick_line("noir", "Frank", two, rng) for _ in range(6)]
     assert all(x != y for x, y in zip(got, got[1:]))                         # fewer than four: never the very last one

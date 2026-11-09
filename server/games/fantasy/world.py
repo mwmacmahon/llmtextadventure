@@ -187,6 +187,13 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
         _end(game, s, turn, "by their own choice", w=w, cause=f"chose to die at {p.location}")
         w.skip.append("hp")
         return s, w
+    # -- contact broken (B226): a move to another place, or words that break contact (smoke, a slip away, the boat), end
+    #    every hold on the player and its peril; the fight is left, and whoever follows does so by a narrator's call
+    if getattr(adj, "kind", "") == "action" and escape_check(adj) is None and breaks_contact(adj, text, p.location):
+        broken = _break_contact(s, w)
+        if broken:
+            w.directives.append(f"{p.name} breaks contact: {broken}. Nothing holds {p.name} now; play the getting away. Anyone who "
+                                f"comes after {p.name} does so in the prose, by an <<ENEMY>> call.")
     # -- a peril: the countdown (B102), and the chosen end inside one (B100 (a))
     if p.peril is not None:
         pr = p.peril
@@ -216,7 +223,7 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
         elif ok:
             w.directives.append(f"{p.name} has moments left, {PERILS.get(pr.kind, {}).get('what', pr.kind)}, and the engine rolled it: a success. "
                                 f"It buys one more moment, no more: {p.name} is still {PERILS.get(pr.kind, {}).get('what', pr.kind)}. Play it, and end "
-                                f"the turn on the question, in the city's voice: what does {p.name} do?")
+                                f"the turn on that moment; what {p.name} does next is the player's to say.")
         else:
             pr.turns_left -= 1
             if pr.turns_left <= 0:
@@ -226,9 +233,51 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
                 return s, w
             w.directives.append(f"{p.name} has moments left, {PERILS.get(pr.kind, {}).get('what', pr.kind)}, and the engine rolled it: a failure. "
                                 f"It is worse now ({'one moment' if pr.turns_left == 1 else 'a few moments'} left before it is over). Play it, and "
-                                f"end the turn on the question, in the city's voice: what does {p.name} do?")
+                                f"end the turn on that moment; what {p.name} does next is the player's to say.")
         w.rows.append({"kind": "peril", "peril": pr.kind, "outcome": res.outcome, "turns_left": pr.turns_left, "line": line})
     return _after_peril(game, s, adj, player_text, rng, turn, offset, w, text)
+
+
+BREAK = re.compile(r"\b(smoke( pellet| bomb)?|slip (away|off|out|free)|vanish|disappear|melt (away|into)|"
+                   r"(get|climb|jump|scramble|clamber|tumble) (back )?(in|into|aboard) the (boat|skiff)|push off|row (away|off|back|for))", re.I)
+HOLDING = ("grappled", "held", "restrained", "pinned")
+
+
+def breaks_contact(adj: Any, text: str, here: str) -> bool:
+    """B226: the turn takes the player out of reach: a move to another place (an intent's transition), or words that break
+    contact (smoke, a slip away, into the boat, rowing off), with no blow in them."""
+    from .game import ATTACK
+    if ATTACK.search(text):
+        return False
+    for i in getattr(adj, "intents", None) or []:
+        t = str(getattr(i, "transition", "") or "")
+        dest = t.split("move:", 1)[1].split(" via:", 1)[0].strip() if t.startswith("move:") else t.strip()
+        if dest and ":" not in dest and here and dest.lower() != here.lower() and not dest.lower().startswith("the boat"):
+            return True
+    return bool(BREAK.search(text))         # backing away or running in reach is an attempt the fight can answer, not a break
+
+
+def _break_contact(s: FantasyState, w: "WorldTurn") -> str:
+    p = s.player
+    said: list[str] = []
+    row: dict[str, Any] = {"kind": "contact_broken"}
+    if p.peril is not None and p.peril.kind in ("held", "drowning"):
+        row["peril"], row["by"] = p.peril.kind, p.peril.by
+        said.append(f"no longer {PERILS.get(p.peril.kind, {}).get('what', p.peril.kind)}")
+        p.peril = None
+    held = [c.name for c in p.conditions if c.name.lower().startswith(HOLDING)]
+    if held:
+        p.conditions = [c for c in p.conditions if c.name not in held]
+        row["conditions"] = held
+        said.append("out of the grip")
+    if p.fighting:
+        row["left"] = list(p.fighting)
+        said.append("out of reach of " + ", ".join((s.person(x).name if s.person(x) else x) for x in p.fighting))
+        p.fighting = []
+    if len(row) > 1:
+        w.rows.append(row)
+        w.mechanics.append(f"Out of reach: {'; '.join(said)}.")
+    return "; ".join(said)
 
 
 def escape_check(adj: Any) -> str | None:
@@ -262,7 +311,7 @@ def peril_by_check(s: FantasyState, data: dict, label: str) -> str:
     if pr.turns_left <= 1:
         data.update(kills=True, cause=f"{what}", death_cause=f"{PERIL_CAUSE.get(pr.kind, 'died')} at {s.player.location or 'Marrowgate'}")
         return f" That was the last moment: {s.player.name} dies of it, {what}. Write the death straight; this is the end of the story."
-    return f" Still {what}, and worse: one moment left. End the turn on the question: what does {s.player.name} do?"
+    return f" Still {what}, and worse: one moment left. End the turn on that moment; what {s.player.name} does next is the player's to say."
 
 
 def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: Any, turn: int, offset: int, w: "WorldTurn",
@@ -289,8 +338,8 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
                 w.blocked = True
                 w.directives.append(f"{p.name} fights {who}'s pull, and the engine rolled it: the pull wins. The attempt the player wrote "
                                     f"does not happen: {p.name} does not {'strike' if floor == 'strike' else 'go' if floor == 'leave' else 'hold out'}; "
-                                    f"they drift toward {who} instead. Call no check for it. Play that, and end on the question: what does "
-                                    f"{p.name} do?")
+                                    f"they drift toward {who} instead. Call no check for it. Play that, and end the turn on that moment; what "
+                                    f"{p.name} does next is the player's to say.")
     # -- who the player is fighting (B95): the turn's attack targets join; the gone, the dead and the far leave
     from engine.pipeline import is_fight
     if adj is not None and getattr(adj, "kind", "") == "action":       # B208: the player struck at them
@@ -388,7 +437,7 @@ def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tal
             data.update(peril=kind_p, by=q.name)
             spec = PERILS.get(kind_p, PERILS["held"])
             return {"text": f"{q.name} has {p.name} ({what}): {p.name} is {spec['what']} now, moments from the end unless they get {spec['way']}. "
-                            f"Play it, and end the turn on the question: what does {p.name} do?", "mechanic": line, "data": data}
+                            f"Play it, and end the turn on that moment; what {p.name} does next is the player's to say.", "mechanic": line, "data": data}
         if kind == "song":
             res = _check(game, s, "wis", move.get("difficulty", "medium"), f"resist {q.name}'s song", rng, [], offset)
             line = f"{q.name}'s song: " + game.render_mechanic(s, res)
@@ -426,7 +475,7 @@ def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tal
         if bad.get("peril"):
             spec = PERILS.get(bad["peril"], PERILS["held"])
             data.update(peril=bad["peril"], by=hz.get("when") or "")
-            told.append(f"{p.name} is {spec['what']}, moments from the end unless they get {spec['way']}; end the turn on the question: what does {p.name} do?")
+            told.append(f"{p.name} is {spec['what']}, moments from the end unless they get {spec['way']}; end the turn on that moment; what {p.name} does next is the player's to say.")
         return {"text": f"The danger reaches {p.name} ({hz.get('when', '')}): " + "; ".join(told or ["it costs them"]) + ". Play it.",
                 "mechanic": line, "data": data}
     return None

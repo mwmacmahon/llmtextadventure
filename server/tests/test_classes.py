@@ -40,7 +40,7 @@ def test_twelve_classes_two_full_and_ten_under_construction(game: FantasyGame):
 
 def test_the_kit_is_a_select_and_expertise_a_pick_of_two(game: FantasyGame):
     opts = game.setup_options()
-    setup = check_setup(opts, {"name": "Wren", "klass": "Rogue", "race": "Human", "kit_rogue_1": "rapier", "kit_rogue_2": "second_shortsword",
+    setup = check_setup(opts, {"name": "Brin", "klass": "Rogue", "race": "Human", "kit_rogue_1": "rapier", "kit_rogue_2": "second_shortsword",
                                "expertise_rogue": "stealth,persuasion", "kit_barbarian_1": "handaxes"})
     assert "kit_barbarian_1" not in setup                            # another class's field is dropped
     p, inv = game.build_player(setup, game.scenario())
@@ -82,7 +82,7 @@ def test_barbarian_rage_count_flag_modifiers_and_damage_step(game: FantasyGame):
     assert hit.player.hp == s1.player.hp - 5                          # a serious hit lands as a solid blow
     assert "Rage: the blow lands a step lighter" in hit.player.turn_notes
     assert step_down(9) == 5 and step_down(4) == 2 and step_down(2) == 1
-    assert "Wren is raging." in game.render_bulletin(s1, "")
+    assert "Brin is raging." in game.render_bulletin(s1, "")
     calm, res = game.run_command(s1, "end_rage", {})
     assert res.ok and "raging" not in calm.player.flags_on
     moved = s1.model_copy(deep=True)
@@ -102,8 +102,8 @@ def test_barbarian_rage_count_flag_modifiers_and_damage_step(game: FantasyGame):
 def test_the_hidden_flag_set_by_a_hide_cleared_by_an_attack_after_sneak_attack(game: FantasyGame):
     st = new(game, klass="Rogue", race="Human")
     out = game.after_turn(st, turn(st, calls=[{"label": "hide behind the stacks", "stat": "dex", "outcome": "success"}]))
-    assert out.player.hidden_from_others and "Wren is hidden." in game.render_bulletin(out, "")
-    assert any(c.value == "Hidden" for x in game.ui(out).panels if getattr(x, "title", "") == "Character" for c in x.items)
+    assert out.player.hidden_from_others and "Brin is hidden." in game.render_bulletin(out, "")
+    assert any(c.value == "Hidden" for x in game.ui(out).panels if type(x).__name__ == "StatusStrip" for c in x.chips)   # B222: on the strip
     assert "Hidden" in game.seen_changes(st, out)
     stab = game.modifiers(out, CheckRequest(id="n", label="stab the guard", stat="dex"), None)
     sa = [m for m in stab if m.label.startswith("Sneak Attack")]
@@ -144,7 +144,7 @@ def test_a_person_hidden_from_the_player(game: FantasyGame):
     q.hidden_from_player = True
     q.location = st.player.location
     narr = game.render_bulletin(st, "")
-    assert "Present, unseen by Wren" in narr and "Maud" in narr.split("Present, unseen by Wren")[1].splitlines()[0]
+    assert "Present, unseen by Brin" in narr and "Maud" in narr.split("Present, unseen by Brin")[1].splitlines()[0]
     people = next(x for x in game.ui(st).panels if getattr(x, "title", "") == "People")
     assert q.id not in [c.id for c in people.cards]
     late = game.late_conflicts(st, "Maud Tallow steps out from behind the bar.")
@@ -195,3 +195,28 @@ def test_a_stub_class_starts_and_plays(game: FantasyGame):
     assert s.player.level == 2
     wiz = new(game, klass="Wizard", race="Elf")
     assert wiz.player.spells and wiz.player.count("spell_slots").value == 2
+
+
+def test_sneak_attack_finesse_and_rage_reach_the_player(game):
+    """B222: the Rogue's attack from hiding was a plain STR check (her finesse sword never used DEX) and Sneak Attack, worth
+    nothing on the sum, never showed; the Barbarian's Raging chip sat in the Character list. Finesse uses the better of STR
+    and DEX; the § line names Sneak Attack; Raging and Hidden are on the strip."""
+    from engine.mechanics import CheckRequest, dice_d20
+    st = new(game, klass="Rogue", race="Halfling")
+    p = st.player
+    assert any(FINESSE_NAME in it.name.lower() for it in st.inventory for FINESSE_NAME in ("shortsword", "rapier", "dagger"))
+    p.hidden_from_others = True
+    req = CheckRequest(id="n1", label="Surprise strike with shortsword", stat="str", difficulty="low", base=p.stats["str"])
+    mods = game.modifiers(st, req, None)
+    gap = p.stats["dex"] - p.stats["str"]
+    assert gap > 0 and any(m.label.startswith("finesse (") and m.value == gap for m in mods)
+    assert any(m.label.startswith("Sneak Attack (from hiding)") for m in mods)
+    req.modifiers = mods
+    res = dice_d20(random.Random(1), req)
+    assert game.render_mechanic(st, res).endswith("Sneak Attack (from hiding).")
+    axe = CheckRequest(id="n2", label="swing the greataxe", stat="str", difficulty="low", base=p.stats["str"])
+    assert not any(m.label.startswith("finesse") for m in game.modifiers(st, axe, None))
+    barb = new(game, klass="Barbarian", race="Human")
+    barb.player.flags_on = ["raging"]
+    strip = next(x for x in game.ui(barb).panels if type(x).__name__ == "StatusStrip")
+    assert any(c.value == "Raging" for c in strip.chips)
