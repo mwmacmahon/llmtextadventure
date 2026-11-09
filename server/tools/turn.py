@@ -58,6 +58,21 @@ def new(a: argparse.Namespace) -> int:
     return 0
 
 
+def _levers_line(ui: dict) -> str:
+    """The player's levers, as the panels show them (the clown's round 1: the player could not find the command ids or the hand):
+    every command with its parameters and their option ids, and every quest panel's rows (the hand, the board)."""
+    out: list[str] = []
+    for p in ui.get("panels", []):
+        if p.get("type") == "commands":
+            for c in p.get("items", []):
+                params = "; ".join(f"{x['name']}=" + "|".join(o["id"] for o in x.get("options", [])[:24]) for x in c.get("params", []))
+                out.append(f"  {c['id']}" + (" (greyed)" if c.get("enabled") is False else "") + (f": {params}" if params else ""))
+        elif p.get("type") == "quests":
+            rows = "; ".join(f"{r['title']} [{r['standing']}]" + (f" {r['line']}" if r.get("line") else "") for r in p.get("rows", [])[:8])
+            out.append(f"  {p.get('title')}: {rows or 'nothing'}")
+    return ("\nLevers (play --command <id> key=value):\n" + "\n".join(out)) if out else ""
+
+
 def play(a: argparse.Namespace) -> int:
     side = _side(a.iid)
     if not side:
@@ -92,7 +107,7 @@ def play(a: argparse.Namespace) -> int:
         d = done["data"]
         prose = (d.get("text") or "").strip()
         m = d.get("mechanics") or {}
-        ui_line = _state_line(game, d.get("ui") or {})
+        ui_line = _state_line(game, d.get("ui") or {}) + _levers_line(d.get("ui") or {})
         lines += ([prose, ""] if prose else []) + ["```", *_mechanics_lines(m), "```", "", "```", ui_line, "```", ""]
         meter = next((p for p in (d.get("ui") or {}).get("panels", []) if p.get("type") == "meter"), None)
         side["rows"].append([str(n), m.get("kind") or "", str(m.get("elapsed")), str(meter["value"]) if meter else "",
@@ -134,7 +149,7 @@ def main(argv: list[str]) -> int:
     n = sub.add_parser("new"); n.add_argument("game"); n.add_argument("--tag", required=True); n.add_argument("--title"); n.add_argument("--setup", nargs="*", action="extend")
     p = sub.add_parser("play"); p.add_argument("iid"); p.add_argument("text", nargs="*"); p.add_argument("--command")
     f = sub.add_parser("finish"); f.add_argument("iid"); f.add_argument("--title")
-    a = ap.parse_args(argv)
+    a = ap.parse_intermixed_args(argv)      # `play <id> --command plan slot=mornings` and `play --command plan <id> slot=mornings` both work (the clown's round 1)
     return {"new": new, "play": play, "finish": finish}[a.cmd](a)
 
 

@@ -3058,7 +3058,9 @@ def quiet_why(game: Any, state: Any, adj: Any, doc: dict, turn: int, last: dict 
     here speaking (the referee's `present` and a quoted line). `last` is last turn as the ledger has it (Engine._last_turn)."""
     last = last or {}
     action = adj is not None and getattr(adj, "kind", "") == "action"
-    if action and is_fight(adj):
+    # a narrated command's reading carries tempo "fast" so its own minutes stand (minutes_fixed); that is not a fight, and the
+    # clown's round 1 (11-09) held a booking's caller through four Skips on "in a fight" until the player typed a scene
+    if action and is_fight(adj) and not getattr(adj, "minutes_fixed", False):
         return "in a fight", False
     why = str(_hook(game, "unquiet", state, default="") or "")
     if why:

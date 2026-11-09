@@ -113,6 +113,8 @@ class Girl(BaseModel):
     status: STATUS = "away"
     graduated: bool = False         # passed out as a finished clown; she may be put back in training (Switch) and her shows pay in full
     diligence: int = 0              # 0..100, not a clown skill: a job in town raises it; steady and diligent girls get more from every slot
+    job: str = ""                   # where she works when the plan says a job: one place, hers, from the first slot (the round of 11-09 moved it about)
+    slots_off: list[str] = Field(default_factory=list)   # "day:slot" the proprietor gave her off in the prose (the referee's row); the engine skips them
     credibility: int = 0            # -3..3, her own name in the trade, moved by her shows
     location: str = ""
     secrets: list[Secret] = Field(default_factory=list)

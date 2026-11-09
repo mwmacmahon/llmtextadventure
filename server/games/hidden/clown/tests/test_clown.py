@@ -477,6 +477,45 @@ def test_a_job_in_town_pays_a_little_and_raises_her_diligence_which_helps_every_
     assert any(c.label == "Diligence" for p in game.ui(st).panels if p.type == "list" for c in p.items)
 
 
+def test_round_one_fixes_the_journal_row_the_fee_row_the_slot_off_the_job_and_the_hooks_whole(game: ClownGame):
+    """The first Sonnet round (11-09): facts the referee wrote at the proprietor were lost; the referee added the fee the engine
+    had paid; an afternoon given off in the prose was worked; the job moved about; the booking leaked from the prefix."""
+    from games.hidden.clown.state import Show
+    st = new(game)
+    s, rep, _ = apply(game, st, C(kind="learned", target="player", value="Dot wants to be good at the wire; failing that, whatever pays."))
+    assert any("good at the wire" in n.text for n in s.journal) and any("good at the wire" in f for f in s.girl("dot").facts)
+    # the fee: a show being told this turn makes a money row the engine's
+    st2 = _offer(game, new(game))
+    st2, _ = game.run_command(st2, "book", {"booking": "rope_walk_birthday", "girl": "dot"})
+    x = st2.shows[0]
+    st2.player.location = "Rope Walk"
+    st2 = advance(game, st2, x.at_abs - st2.now_abs + 1, 5)
+    money = st2.house.money
+    s2, rep2, _ = apply(game, st2, C(kind="add", target="house", field="money", value="+15"))
+    assert s2.house.money == money and rep2.rejected
+    assert any("The house was paid $" in ln and "student's rate" in ln for ln in game.turn_directives(st2))
+    # a slot off by the proprietor's word
+    st3 = new(game)
+    st3, _ = game.run_command(st3, "plan", {"slot": "afternoons", "skill": "work"})
+    s3, _, _ = apply(game, st3, C(kind="set", target="dot", field="off", value="afternoons"))
+    assert s3.girl("dot").slots_off == [f"{s3.clock.day}:afternoons"]
+    money = s3.house.money
+    s3 = advance(game, s3, SLOTS["afternoons"][1] - s3.clock.minute + 1, 2)
+    assert s3.house.money == money and s3.girl("dot").slots_off == [] and any("had it off" in ln for ln in s3.house.week_lines)
+    # one job, hers
+    st4 = new(game)
+    st4, _ = game.run_command(st4, "plan", {"slot": "mornings", "skill": "work"})
+    st4, _ = game.run_command(st4, "plan", {"slot": "afternoons", "skill": "work"})
+    st4 = advance(game, st4, SLOTS["afternoons"][1] - st4.clock.minute + 1, 2)
+    jobs = {ln.split("worked at ")[1].split(";")[0] for ln in st4.log if "worked at " in ln}
+    assert len(jobs) == 1 and st4.girl("dot").job in jobs
+    # the hook's whole is not in the prefix before its reach, and is in the block once reached
+    st5 = new(game)
+    assert "The whole of it" not in game.frozen_prefix(st5) and "The whole of it" not in game.render_bulletin(st5, "")
+    st5 = _offer(game, st5)
+    assert "In motion: A birthday on Rope Walk." in game.render_bulletin(st5, "") and "The whole of it" in game.render_bulletin(st5, "")
+
+
 def test_a_reward_row_may_grow_the_hand(game: ClownGame):
     st = new(game)
     game._pay(st, {"hand": 1, "log": "The Guild's clerk sends two more names."}, "x")
