@@ -589,6 +589,7 @@ def test_the_draw_favours_a_hook_whose_reach_is_where_the_player_has_been(game: 
 
 def test_attitude_words_and_the_top_word(game: FantasyGame):
     st = new(game)
+    st.person("hazel").attitude = 1                                    # B251: she starts at 0 now; one step up, as she was
     s1, _, _ = apply(game, st, C(kind="set", target="hazel", field="attitude", value="devoted"))
     assert s1.person("hazel").attitude == 3 and s1.person("hazel").attitude_word == "devoted"
     s2, _, _ = apply(game, st, C(kind="set", target="maud", field="attitude", value="hostile"))

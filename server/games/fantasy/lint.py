@@ -98,6 +98,10 @@ def _narrator_text(doc: dict, *, hook: bool) -> str:
     return "\n".join(bits)
 
 
+# B251 (part eleven §1d): Hazel came on Lilith's turn 8 "plainly bored enough to follow anything", never met
+IDLE_CALLER = re.compile(r"\b(?:bored|boredom|idle|idly|eager|nothing better to do|at a loose end|has nothing to do)\b", re.I)
+
+
 def lint(content_dir: Path) -> list[str]:
     problems: list[str] = []
     say = problems.append
@@ -278,6 +282,14 @@ def lint(content_dir: Path) -> list[str]:
             check_tree(f"{where}.{x.get('id')}", hid, x.get("when"))
             for pid in x.get("who") or []:
                 check_person(f"{where}.{x.get('id')}", hid, pid)
+            if x.get("who"):                          # B251: a person comes because they want something from the file, never from boredom
+                m = IDLE_CALLER.search(str(x.get("directive") or ""))
+                if m:
+                    say(f"{where}.{x.get('id')}: the directive says the person is {m.group(0)!r}; they come for something they want, or they do not come")
+                for pid in x.get("who") or []:
+                    rec = next((q for q in (doc.get("people") or []) + (city.get("people") or []) if q.get("id") == pid), None)
+                    if rec is not None and not str(rec.get("wants") or "").strip():
+                        say(f"{where}.{x.get('id')}: {pid} comes to the player and wants nothing in the file")
         for pr in doc.get("people") or []:
             if pr.get("location"):
                 check_place(f"{where}.{pr.get('id')}", pr["location"])

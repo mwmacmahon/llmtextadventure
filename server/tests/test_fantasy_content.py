@@ -80,3 +80,17 @@ def test_the_death_lines_lint_catches_a_moved_rule(tmp_path: Path, monkeypatch):
     problems = "\n".join(lint_death_lines(copy))
     assert "has no check for" in problems and "listed twice" in problems and "not an hour and eight" in problems
     assert "dice remember" not in problems.lower()            # the seed rule (B85) still holds
+
+
+def test_the_lint_catches_a_caller_who_comes_from_boredom(tmp_path: Path):
+    """B251 (part eleven §1d): a happening that brings someone says what they want, never that they are bored."""
+    copy = tmp_path / "fantasy"
+    shutil.copytree(CONTENT, copy)
+    p = copy / "scenarios" / "marrowgate.yml"
+    city = yaml.safe_load(p.read_text())
+    row = next(x for x in city["spontaneous"] if x["id"] == "hazel_offers")
+    assert "bored" not in row["directive"] and {"eq": ["people.hazel.met", True]} in row["when"]["all"]
+    row["directive"] = "Hazel, plainly bored enough to follow anything, asks where they are off to."
+    p.write_text(yaml.safe_dump(city))
+    problems = "\n".join(lint(copy))
+    assert "hazel_offers: the directive says the person is 'bored'" in problems
