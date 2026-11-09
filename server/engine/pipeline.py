@@ -1988,6 +1988,22 @@ def _engine_state_text(game: Game, state: BaseModel, adj: AssistantReading | Non
     return state_text
 
 
+def without_repeats(adj: Any) -> Any:
+    """B234: the same intent or settling written twice (a model looping in its list, held to four by the grammar) kept once."""
+    upd = {}
+    for field in ("intents", "fiat"):
+        items = getattr(adj, field, None) or []
+        seen, kept = set(), []
+        for x in items:
+            key = x.model_dump_json()
+            if key not in seen:
+                seen.add(key)
+                kept.append(x)
+        if len(kept) < len(items):
+            upd[field] = kept
+    return adj.model_copy(update=upd) if upd else adj
+
+
 async def extract_adjudication(provider: Any, role: Any, system: str, msgs: list[Msg], schema: type, stats: dict) -> tuple[Any, Usage, str | None, list[str]]:
     """The adjudicator's call as the engine makes it, live and in the replay harness: the extract, one
     retry when an action comes back with no intents, and checks recovered from the wrong field."""
@@ -2000,6 +2016,7 @@ async def extract_adjudication(provider: Any, role: Any, system: str, msgs: list
         log.warning("adjudicate.retry_failed_parse " + logs.kv(why=str(e)[:200]))
         adj, usage = await provider.extract(role, system, msgs, schema)
         retry = "failed_parse"
+    adj = without_repeats(adj)
     if adj.kind == "action" and not adj.intents:
         # A command is not an intent: the rest of the input (a run on a bad leg, a shot, a search) still
         # needs its intent and its check, and the model dropped them (live, 2026-10-29, even with the rule
