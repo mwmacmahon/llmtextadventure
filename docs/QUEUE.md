@@ -51,12 +51,17 @@ Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a shor
 ## The queue, in order (the owner, 11-08 evening; part seven put first 11-08 night; part eight 11-09)
 
 0. **Her server** (B230, the owner 11-09): a dedicated server for her game, pinned and never restarted by the build;
-   then she plays on it. Part ten, later: the floor's witness and a fair trade (B229), B224's unplain rest, B221 when the
-   owner answers.
+   then she plays on it. Part ten, later: the floor's witness and a fair trade (B229), B224's unplain rest. B221 (XP) is on the docket
+   for after her first couple of games, the possibilities laid out on its line.
    *Landed 11-08 evening (the build chat's clock), all of part nine:* B217 3fffe54, B225 6062202, B219 96ef2d1, B220 08d6a23, B226
    1197b1c, B45 9a9d925, B227 c4d9ff8, B222 a2ee5ce, B223 76780f0, B224 ada23f6 (the plain three), B228 f3ef452; the §12
    round 6735ec72e948: edge on 9 of 10, settled rows with a why 2 of 2, floor raises 2 (one prying, one a fair trade: B229),
    no retells, no deaths, Sneak Attack and finesse seen.
+0b. **Super Grimdark Fantasy and the mods first cut** (B231, B79, B89; the owner 11-09; the paste written 11-09): the
+   hidden copy renamed and made a true derived game (the fantasy's code and content always, its own saves and mods,
+   dev mode only); the mods system's first cut as designed (YAML merge patch, the per-game mods directory, upload,
+   download, delete, the save keeping the mod's text, `rulings_off`); the R-rated mod as its first case, shown only on
+   the grimdark game's form; its words drafted by the side chat once the owner says how far.
 0a. *Part nine, written 11-09 about 01:15, built the same hour* (the side chat's read of §5 and the readiness report, 11-09):
    first and alone, the secret-holder floor on an engine witness, never on the model's `aim` (B217: Gemma marks every
    check secret, the floor is back on every parley and on fights); then the settled rows written once from the reading
@@ -74,7 +79,7 @@ Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a shor
    zero (B216); then one Gemma round with its report and three counts. The side chat reads it before she plays.
    *Landed 11-08 night:* part seven (B207 to B211, B63 narrowed; 2669a19, 5a82d9e), part six (B200 to B206; dd4be6c,
    748d653, 0638909, ca47f24, 9538397), B212 (634f5a9), too_far widened (fc89cad).
-1. **She plays, on her own server.** The side chat's read 11-09 after part nine: on Sonnet the design holds (edge on 15 of 21 checks,
+1. **She plays, on her own server** (started 11-09). The side chat's read after part nine: on Sonnet the design holds (edge on 15 of 21 checks,
    `aim` never misused, 14 attempts settled by the words, death is death); she can play now if the owner accepts what
    is still open there: XP moves only when a quest closes (B221), money drift (B223), the People panel ahead of the
    prose (B224), impossible demands rolled rather than refused (B225), heat not moving on an open crime (B227), no
@@ -84,8 +89,7 @@ Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a shor
    (`notes/DESIGN-player-ui-2026-11-08.md`), magic's placement and its four questions (B91,
    `notes/DESIGN-magic-2026-11-08.md`), the content questions (B40, B43, B44, B58, B61, B110 to B122, B136), the
    rescue from death (B143, later), whether noir takes "death is death", the too_far check on the forks (B209).
-3. **Mods** (B79, `notes/DESIGN-mods-2026-11-08.md`), the first being Super Dark Fantasy's Conan pass with `too_far`
-   off (B89). Next after the fantasy is considered ready.
+3. *(Pulled to 0b.)* Mods (B79) with Super Grimdark Fantasy's R-rated pass (B89).
 4. **Stage 3's leftovers and Stage 4** (the roadmap's areas 4 and 5): the model label from the profile (B73), one
    server for every game (B77); then the narrator's context modules, not started.
 5. **Magic as an engine system** (B91) when a caster is wanted; the feedback button (B10); the W1 sweep proper and its

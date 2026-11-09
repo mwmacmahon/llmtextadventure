@@ -45,7 +45,7 @@ it. *decided*: the owner has ruled, no design yet. *open with the owner*: a ques
 | 9 | Noir, Lowtown | built | notes/design/noir page; DESIGN.md | whether noir takes death is death, the nerves sitting, stray engine lines |
 | 10 | The station | built | DESIGN-time-and-attempts §4; station page | the locked-out text, what each project unlocks, the upgrades, the canister, the station's week |
 | 11 | The player UI | slice one built; slice two designed | DESIGN-lobby-and-saves; DESIGN-player-ui | the play page (four questions open), the feedback button, the ending word, dev mode's gaps |
-| 12 | Mods and variants | designed (mods); idea (variants) | DESIGN-mods | the mod files, Super Dark Fantasy's Conan pass, basic and advanced variants |
+| 12 | Mods and variants | mods now (B231); idea (variants) | DESIGN-mods | the mods first cut, Super Grimdark Fantasy as a derived game with the R-rated mod, basic and advanced variants |
 | 13 | Magic | designed, open with the owner | DESIGN-magic | placement and four questions; then the spell data, slots, the Cast lever, the level-up screen |
 | 14 | Models and the box | one model all roles, running | LOCAL_LLM.md; the trials reports | Qwen's return through profiles, hosted narrators, the box's faults |
 | 15 | The clown sim | designed, provisional | CLOWN_DESIGN | seven questions, the engine gaps, dev mode gating; nothing committed without discussion |
@@ -203,8 +203,8 @@ save yet; the Hard saves are the owner's Ungdall games (B99).
 - The sheet pass live: one call on Sonnet and one on Gemma read before her next game (B140); the lobby shows nothing
   while the sheet call runs and the re-read has no box of its own (B142).
 
-**Left, from the readiness report (11-09; B221 to B228, B45):** XP moves only when a quest closes (B221, the owner's
-call: kills, milestones, a found person, or closes only); Sneak Attack never reaches the strip and Rage is invisible
+**Left, from the readiness report (11-09; B221 to B228, B45):** XP moves only when a quest closes (B221, on the docket
+for after her first couple of games; the possibilities on its line); Sneak Attack never reaches the strip and Rage is invisible
 (B222); money drift (B223); the People panel and the Journal ahead of or behind the prose (B224); impossible demands
 rolled (B225, area 1); the siren's grab following the player off the island (B226); heat not moving on an open crime
 (B227); the clock and the question in the prose, an error string shown to the player (B228); no check on a player name
@@ -270,8 +270,10 @@ is Super Dark Fantasy's Conan pass with too_far off. Variants: a game's features
 strong backend, because they may overwhelm a local model (the owner, 10-30). Design: DESIGN-mods-2026-11-08 (the
 owner's five answers recorded); the variants idea has no design.
 
-**Mods designed; placement next after the fantasy is considered ready (B79).** Super Dark Fantasy exists as a copy
-(B88); the Conan pass is B89. **Variants: idea**, not started; the game-design pages are the inventory to tag from;
+**Mods now (the owner, 11-09; B79, B231).** The hidden copy is renamed Super Grimdark Fantasy and becomes a derived game:
+the fantasy's code and content always, its own saves and mods, dev mode only; what makes it grimdark is the R-rated mod
+(too_far off, a tone pass), the mods first cut's first case, shown only on that game's form (B89). The mod's words are
+the side chat's to draft once the owner says how far. **Variants: idea**, not started; the game-design pages are the inventory to tag from;
 do not build the split until the hard/easy eval slice shows where local models fail.
 
 ## 13. Magic
