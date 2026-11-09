@@ -544,7 +544,7 @@ def test_nothing_ends_the_game_the_catastrophes_are_reckonings_borne_or_paid_wit
     st.girl("dot").status, st.girl("dot").location, st.girl("dot").bonds = "passive", "The kitchen", {"pim_dace": 2}
     st.house.reckoning = "shot"
     s3, res = game.run_command(st, "give_up", {"girl": "pim_dace"})
-    assert res.ok and "signed over" in res.directive and f"girls.pim_dace.status" in res.referee_skip
+    assert res.ok and "signed over" in res.directive and not res.referee_skip
     assert s3.girl("pim_dace").status == "gone" and s3.active == "dot" and s3.girl("dot").status == "active"
     assert s3.girl("dot").love == -2 and s3.girl("dot").respect == -1 and s3.girl("dot").fear == 1 and s3.house.name == max(0, st.house.name - 5)
     assert s3.flags["gave_up_a_girl"] and s3.flags["gave_up_pim_dace"] and s3.flags["tallyman_settled"] and not s3.player.conditions
@@ -822,7 +822,7 @@ def test_the_contract_value_is_her_worth_as_a_performer_and_a_sale_pays_a_share_
     money, value = s.house.money, g.contract_value
     assert any(c.id == "sell" for c in game.commands(s))
     s2, res = game.run_command(s, "sell", {"girl": cid})
-    assert res.ok and res.directive and "contract is sold on" in res.directive and f"girls.{cid}.status" in res.referee_skip
+    assert res.ok and res.directive and "contract is sold on" in res.directive and res.referee_skip == ["money"]
     assert s2.house.money == money + int(round(value * 0.75)) and s2.girl(cid).status == "gone" and s2.girl(cid) not in s2.in_house()
     assert s2.girl("dot").love == s.girl("dot").love - 1              # she was close to her
     assert cid in s2.harbour.gone and cid not in s2.harbour.queue     # not back on the slip
@@ -884,3 +884,33 @@ def test_the_first_girl_is_a_harbour_girl_and_the_written_three_come_to_the_door
     # a setup that names nobody, or nonsense, gets the first starter
     assert game.new_instance({})[1].active == "ada_vosk" and game.new_instance({"first_girl": "nobody"})[1].active == "ada_vosk"
     assert any(e.id == "first_girl_arrives" for e in st.hidden.events)
+
+
+def test_round_three_fixes_the_double_charge_the_house_as_a_place_the_quest_note_and_the_attitude_row(game: ClownGame):
+    st = new(game, first_girl="pim_dace")
+    # the Take and the Sell skip the referee's money row (round 3 paid the clerk twice)
+    s, res = game.run_command(st, "take", {"girl": st.harbour.hand[0]})
+    assert res.referee_skip == ["money"]
+    s2, rep, _ = apply_changes(game, s, ChangeReport.of(C(kind="add", target="house", field="money", value="-30"), log_line="Paid."), present=[], causes=[], skip=["money"])
+    assert s2.house.money == s.house.money and not rep.rejected
+    s3, res = game.run_command(s, "sell", {"girl": st.harbour.hand[0]})
+    assert res.referee_skip == ["money"]
+    # "the house" is the office, and one word never matches a place by substring
+    assert game._place(st, "the house") == "The office" and game._place(st, "Tumbler House") == "The office" and game._place(st, "home") == "The office"
+    assert game._place(st, "house") == "The office" and game._place(st, "the Judge's house") == "The Judge's house" and game._place(st, "office") is None
+    assert game._place(st, "the yard, by the pump") == "The yard" and game._place(st, "Harbourmaster's office") == "The Harbourmaster's office"
+    # the narrator's note on a booking in hand lands
+    st2 = _offer(game, new(game))
+    s4, rep, _ = apply(game, st2, C(kind="set", target="rope_walk_birthday", field="note", value="Mrs Teague asks for Saturday at three"))
+    assert s4.hook("rope_walk_birthday").note.startswith("Mrs Teague") and not rep.rejected
+    # an attitude row on a girl is a step on love
+    s5, rep, _ = apply(game, st, C(kind="set", target="pim_dace", field="attitude", value="warm"))
+    assert s5.girl("pim_dace").love == 1 and not rep.rejected
+    s6, rep, _ = apply(game, st, C(kind="set", target="pim_dace", field="attitude", value="purple"))
+    assert s6.girl("pim_dace").love == 0 and rep.rejected
+
+
+def test_the_skip_directive_tells_the_narrator_the_clock_may_have_stopped_short(game: ClownGame):
+    st = new(game)
+    _, res = game.run_command(st, "skip", {"to": "tomorrow"})
+    assert "short of tomorrow morning" in res.directive and "name the day the clock names" in res.directive     # round 3, turn 9: Tuesday written at Monday 17:00

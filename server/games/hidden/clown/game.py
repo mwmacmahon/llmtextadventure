@@ -31,7 +31,7 @@ from .state import (AXES, AXIS_WORDS, DAY, SHOW_WORDS, SKILL_TIERS, SLOTS, STATS
 
 AUTHORITY = {
     "clock": "engine", "house": "engine", "house.money": "narrator", "house.heat": "narrator", "plan": "engine", "shows": "engine",
-    "deck": "engine", "hooks": "engine", "active": "engine", "harbour": "engine",
+    "deck": "engine", "hooks": "engine", "hooks.*.note": "narrator", "active": "engine", "harbour": "engine",
     "girls.*.tags": "engine", "girls.*.card": "script", "girls.*.voice": "script", "girls.*.price_paid": "engine", "girls.*.never": "script",
     "girls.*.skills": "engine", "girls.*.skills.*": "engine", "girls.*.fatigue": "engine", "girls.*.week_gains": "engine", "girls.*.diligence": "engine",
     "girls.*.love": "narrator", "girls.*.respect": "narrator", "girls.*.fear": "narrator", "girls.*.mood": "narrator",
@@ -326,7 +326,8 @@ class ClownGame(GameBase):
         for g in s.girls:
             b.append(f"- {g.name} ({g.id}; also {', '.join(g.aliases)}), {g.age}. {g.bio.strip()} Traits: {', '.join(g.traits)}."
                      + ((" Comes to the house later; the game state says when she is there. Until then she is about the town" + (f": she {g.before.rstrip('.')}" if g.before else "")
-                         + f"; {p.name} may meet her there, and she may be talked of, but she comes to the door only when THIS TURN brings her.") if g.status == "away" else ""))
+                         + f"; {p.name} may meet her there if the play takes them there, and she may be talked of, but she comes to the door only when THIS TURN brings "
+                         f"her, and she and {p.name} have met only if an earlier turn's prose showed it: never assume a meeting.") if g.status == "away" else ""))
             if g.routine:
                 b.append("    Her days: " + "; ".join(f"{hhmm(r.start)} to {hhmm(r.end)} {r.place.lower() if r.place[0].isupper() and r.place.startswith('The') else r.place}, {r.doing}" for r in g.routine) + ".")
             for sec in g.secrets:
@@ -365,7 +366,8 @@ class ClownGame(GameBase):
                  f"once it has reached {p.name} (\"In motion\"), and not before: nobody in the house knows of one until THIS TURN brings it.")
         b.append("")
         b.append(f"THE HARBOURMASTER'S SHED. The ships bring indentured people, and some would rather be clowns: a clerk at the shed on the quay keeps a slip "
-                 f"of contracts for sale, refreshed when a boat comes in (the first and third Sunday of the month). {p.name} may buy a contract and bring the "
+                 f"of contracts for sale, refreshed when a boat comes in (the first and third Sunday of the month; the new slip is up on the Monday, and only when THIS "
+                 f"TURN says WORD FROM THE SHED: until then the slip is the one the game state lists, boat or no boat). {p.name} may buy a contract and bring the "
                  f"woman home, or sell one on through the shed's book; the game state block carries the slip and, for every girl so bought, her file, written "
                  f"like the girls' above and kept the same way. A girl under eighteen in the house is a child in it and is written as one: a mascot, a kid "
                  f"sister, nothing else, ever.")
@@ -450,8 +452,10 @@ class ClownGame(GameBase):
                 return pl
         if low in s.scenario.aliases:
             return s.scenario.aliases[low]
+        if low in ("home", "the house", "house", "tumbler house", "the house on harbour street", "back home", "back to the house") or low.endswith(" house") and low.startswith(("tumbler", "the tumbler")):
+            return OFFICE          # round 3: "move player the house" found The Judge's house by substring
         for pl in s.scenario.locations:
-            if low in pl.lower() or pl.lower() in low:
+            if pl.lower() in low and len(pl.split()) > 1 or (low in pl.lower() and len(low.split()) > 1):
                 return pl
         return None
 
@@ -638,7 +642,7 @@ class ClownGame(GameBase):
         if slip:
             out.append("")
             out.append(f"On the clerk's slip at the Harbourmaster's shed (contracts for sale; {s.player.name} buys one with the Take command, in their own time; "
-                       f"a new boat on the first and third Sunday of the month):")
+                       f"a new boat on the first and third Sunday of the month, its slip up the Monday after; this is the slip as it stands, and it changes only when THIS TURN says so):")
             for c in slip:
                 out.append(f"- {hb.card_line(c, deck, self.skill_name)}. In her own words: \"{str(c.get('voice') or '').strip()}\"")
         bought = [g for g in s.girls if g.card and g.in_house()]
@@ -1149,6 +1153,17 @@ class ClownGame(GameBase):
                 if field == "fear" and n > 0:
                     g.fear_fed = True
                 g.history.append(stamp(s, f"{field} {cur:+d} to {new:+d}: {ch.note or value}"))
+            return True
+        if field == "attitude" and kind in ("set", "add"):      # round 3: Dot met about the town got a person's row
+            step = self._step(value)
+            if step is None:
+                step = {"hostile": -2, "cool": -1, "civil": 0, "warm": 1, "friendly": 1, "loyal": 2}.get(value.lower().strip())
+            if step is None:
+                w.reject(f"girls.{g.id}.attitude", "a girl has love, respect and fear, not an attitude", value)
+                return True
+            new = max(-5, min(5, g.love + max(-2, min(2, step))))
+            if new != g.love and w.set(f"girls.{g.id}.love", g.love, new):
+                g.love = new
             return True
         if field == "mood" and kind == "set":
             if value and value != g.mood and w.set(f"girls.{g.id}.mood", g.mood, value[:30]):
@@ -2236,11 +2251,13 @@ class ClownGame(GameBase):
             lb, t = targets[to]
             low = lb
             p = s.player
-            directive = (f"{p.name} lets the time run to {low}, keeping house: nothing is done that the player did not say. The clock in the game state is "
-                         f"where the days stopped: write them passing in a line or two, built from one thing of the house or the street that has not been told "
-                         f"before (never the tram bell, the gasworks or the plan on the wall again once they have been), and stop there. If THIS TURN brings "
-                         f"someone to the door or word from the town, the days pass in one line and then you play that. What the training did meanwhile is in "
-                         f"THIS TURN: say it once, in words, where it fits, or not at all.")
+            directive = (f"{p.name} meant to let the time run to {low}, keeping house: nothing is done that the player did not say. The days ran only as far as "
+                         f"the game state's clock says (its Time line: the day and the hour), and no further: if that is short of {low}, something stopped them, "
+                         f"and THIS TURN says what; write the time passing up to that day and hour in a line or two, built from one thing of the house or the "
+                         f"street that has not been told before (never the tram bell, the gasworks or the plan on the wall again once they have been), name the day "
+                         f"the clock names and never the one {p.name} meant, and stop there. If THIS TURN brings someone to the door or word from the town, the "
+                         f"days pass in one line and then you play that. What the training did meanwhile is in THIS TURN: say it once, in words, where it fits, "
+                         f"or not at all.")
             return s, CommandResult(label="Skip", player_line=f"I let the days run to {low}.", summary=f"{p.name} lets time run to {low}.",
                                     directive=directive, minutes=max(1, t - s.now_abs))
         if command_id == "graduate":
@@ -2293,7 +2310,7 @@ class ClownGame(GameBase):
                          f"straight: what {p.name} says to her, what she says back in her own voice, the paper, the door; and the other girls in the house, who saw "
                          f"it or will hear of it by morning, each in a line. {words}. Stop where {p.name} is alone with it.")
             return s, CommandResult(label="Give up a girl", player_line=f"I give {r['who']} {g.name}'s contract.", summary=f"{p.name} gives up {g.name} to {r['who']}.",
-                                    directive=directive, minutes=60, log_line=f"{g.name} was given up to {r['who']}.", entities=[g.id], referee_skip=[f"girls.{g.id}.status"])
+                                    directive=directive, minutes=60, log_line=f"{g.name} was given up to {r['who']}.", entities=[g.id])
         if command_id == "take":
             deck, cards = self.content.girls_deck(), self.content.girl_cards()
             cid = str(args.get("girl") or "").strip().lower()
@@ -2318,7 +2335,7 @@ class ClownGame(GameBase):
                          f"training unless the game state says so. Stop where {p.name} would next decide.")
             return s, CommandResult(label="Take", player_line=f"I go down to the shed and buy {g.name}'s contract, and bring her home.",
                                     summary=f"{p.name} buys {g.name}'s contract at the shed and brings her to the house.", directive=directive, minutes=90, log_line=line,
-                                    entities=[g.id])
+                                    entities=[g.id], referee_skip=["money"])
         if command_id == "customize":
             deck = self.content.girls_deck()
             cid, grp, tag = str(args.get("girl") or "").strip().lower(), str(args.get("group") or "").strip().lower(), str(args.get("tag") or "").strip().lower()
@@ -2352,7 +2369,7 @@ class ClownGame(GameBase):
                          f"book has it. She is gone from the house by the end of the turn. Stop where {p.name} would next decide.")
             return s, CommandResult(label="Sell contract", player_line=f"I tell {g.name} her contract is sold on, and she goes today.",
                                     summary=f"{p.name} sells {g.name}'s contract on; she leaves the house.", directive=directive, minutes=30, log_line=line, entities=[g.id],
-                                    referee_skip=[f"girls.{g.id}.status"])
+                                    referee_skip=["money"])
         if command_id == "journal":
             lines = [n.text for n in s.journal[-12:]] or ["Nothing written yet."]
             return state, CommandResult(label="Journal", text="\n".join(lines))
