@@ -144,6 +144,7 @@ class CombatState(BaseModel):
     last: dict[str, str] = Field(default_factory=dict)     # id -> their last action in a word (the Fight panel)
     plan: list[dict] = Field(default_factory=list)         # this round's listed actions (combat.plan_round), rolled by call or backstop
     free_turns: int = 0                                    # turns of free actions only in a row (no NPC acts beyond talking)
+    joined_at: dict[str, int] = Field(default_factory=dict)  # id -> their attitude when first counted in the fight (a rise ends theirs)
 
 
 class Person(BaseModel):

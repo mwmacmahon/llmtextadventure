@@ -645,6 +645,14 @@ def _one_blow(game: Any, s: FantasyState, rng: Any, tally: dict, who: str, bonus
             max(0, -left))
 
 
+def _names_rider(word: str, fid: str, f: dict) -> bool:
+    """A rider named in the reading ("smite", "divine smite", "Divine Smite!") is the feature when any of its riders, its words,
+    its name or its id is in it (the live round: "divine smite" was ignored as not Aldric's and never armed)."""
+    w = " ".join(str(word).lower().replace("_", " ").replace("!", " ").split())
+    names = [str(x).lower() for x in (f.get("riders") or [])] + [str(x).lower() for x in (f.get("words") or [])] + [str(f.get("name") or "").lower(), fid.replace("_", " ")]
+    return any(n and (n == w or n in w.split() or n in w) for n in names)
+
+
 def resolve_attack(game: Any, s: FantasyState, entry: dict, rng: Any, offset: int, tally: dict) -> dict:
     """The player's attack (or an ally's): one roll per target (a sweep names two or three, -2 on each after the first; Extra
     Attack at level 5 a second roll), the damage dice (a crit doubles them) with the riders (Smite, Sneak Attack), and
@@ -689,7 +697,7 @@ def resolve_attack(game: Any, s: FantasyState, entry: dict, rng: Any, offset: in
             for fid, f in ft.specs(game, p).items():                   # §10: a rider feature, armed by its chip or named in the words
                 if f.get("kind") != "rider":
                     continue
-                armed = (f.get("armed_flag") or f"{fid}_armed") in p.flags_on or any(r in (f.get("riders") or [fid]) for r in riders)
+                armed = (f.get("armed_flag") or f"{fid}_armed") in p.flags_on or any(_names_rider(r, fid, f) for r in riders)
                 if not armed:
                     continue
                 c = p.count(f["count"]) if f.get("count") else None
@@ -702,9 +710,9 @@ def resolve_attack(game: Any, s: FantasyState, entry: dict, rng: Any, offset: in
             why = _sneak_case(game, s, t)
             if why:
                 extra.append((f"Sneak Attack, {why}", "2d6" if p.level >= 3 else "1d6"))
-            known = {x for f in ft.specs(game, p).values() if f.get("kind") == "rider" for x in (f.get("riders") or [])} | {"sneak"}
+            mine = [(fid, f) for fid, f in ft.specs(game, p).items() if f.get("kind") == "rider"]
             for r in riders:
-                if r not in known and not any(r in n for n in notes):
+                if not any(_names_rider(r, fid, f) for fid, f in mine) and "sneak" not in r.lower() and not any(r in n for n in notes):
                     notes.append(f"{r}: not something {p.name} has; ignored")
         part, over = _one_blow(game, s, rng, tally, who, bonus, dice, t, body, spare=bool(entry.get("spare")), extra_dice=extra,
                                penalty=(-2 if len(targets) > 1 and k > 0 else 0))
@@ -773,6 +781,7 @@ def backstop(game: Any, s: FantasyState, rng: Any, offset: int, tally: dict) -> 
         if r["data"].get("none"):
             continue
         r["data"]["backstop"] = True
+        r["data"]["line"] = r.get("mechanic", "")                      # the dice, for the player's row (the live round saw none)
         verb = {"player": "ATTACK", "ally": "ALLY", "enemy": "ENEMY"}[e["side"]]
         ref = e["targets"][0] if e["side"] == "player" else e["who"]
         out.append({"call": {"verb": verb, "raw": f"{verb} {ref}", "ref": ref}, "result": r["data"], "mechanic": r.get("mechanic", ""),
@@ -793,6 +802,8 @@ def land(game: Any, s: FantasyState, calls: list[dict], turn: int, offset: int, 
     if c is None:
         return notes
     for call in calls:
+        if call.get("backstop") and call.get("line"):
+            notes.append(call["line"] + " (after the prose)")
         for h in call.get("hits") or []:
             q = s.person(h["pid"])
             if q is None:
@@ -833,6 +844,17 @@ def land(game: Any, s: FantasyState, calls: list[dict], turn: int, offset: int, 
         elif q.id in p.with_them and q.status == "alive" and (b.hp or 0) <= 0:
             q.status = "dead" if (b.hp or 0) <= -10 else "down"
             notes.append(f"{q.name}: {q.status}")
+    for x in list(p.fighting):                                         # the rows made them friendly: the prose ended their fight
+        q = s.person(x)                                                # (the live round: the freed keeper swung for three turns more)
+        if q is None:
+            continue
+        was = c.joined_at.setdefault(q.id, q.attitude or 0)
+        if q.status == "alive" and (q.attitude or 0) >= 1 and (q.attitude or 0) > was:
+            p.fighting.remove(x)
+            c.defeated.append(q.id)
+            b = ensure_block(q)
+            c.weight_won += float(b.weight or derived_weight(b))
+            notes.append(f"{q.name} stands down")
     p.fighting = [x for x in p.fighting if (q := s.person(x)) is not None and q.status == "alive"]
     for x in p.fighting:                                               # the fight goes where the player goes (a chase through the wall)
         q = s.person(x)

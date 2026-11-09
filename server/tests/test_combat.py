@@ -278,6 +278,41 @@ def test_an_armed_smite_is_on_the_round_line(game):
     assert "Divine Smite ready, on the blow if it lands" in line and "<<ATTACK dead>>" in line
 
 
+def test_divine_smite_named_in_words_arms_it_and_is_not_ignored(game):
+    st, q = _fight(game, 2)
+    r = cb.resolve_attack(game, st, {"key": "player", "side": "player", "targets": ["dead"], "riders": ["divine smite"]}, _Seq([15, 4, 3, 3, 3]), 2, {"hp": 0})
+    assert "Divine Smite" in r["mechanic"] and "not something" not in r["mechanic"]     # the live round: "divine smite ... ignored"
+
+
+def test_an_enemy_the_rows_make_friendly_stands_down_and_the_fight_ends(game):
+    st, q = _fight(game, 1)
+    keeper = Person(id="keeper", name="the keeper", role="gravedigger", location=st.player.location, met=True, attitude=-2)
+    st.people.append(keeper)
+    st.player.fighting.append("keeper")
+    q.status = "dead"
+    cb.land(game, st, [], 1, 2, random.Random(1))                     # counted in the fight at -2
+    assert "keeper" in st.player.fighting
+    keeper.attitude = 1                                                # the prose freed him; the referee wrote it
+    notes = cb.land(game, st, [], 2, 2, random.Random(1))
+    assert "the keeper stands down" in notes and st.combat is None and not st.player.fighting
+
+
+def test_a_friend_struck_first_does_not_stand_down_at_once(game):
+    st, q = _fight(game, 1)
+    st.people.append(Person(id="friend", name="Tam", role="ferryman", location=st.player.location, met=True, attitude=1))
+    st.player.fighting.append("friend")
+    cb.land(game, st, [], 1, 2, random.Random(1))
+    assert "friend" in st.player.fighting
+
+
+def test_a_backstop_blow_shows_its_dice_on_the_players_row(game):
+    st, q = _fight(game, 1)
+    st.combat.plan = [{"key": "enemy:dead:0", "side": "enemy", "who": "dead", "body": 0, "action": {"kind": "strike"}, "target": "player"}]
+    rest = cb.backstop(game, st, _Seq([18, 4]), 2, {"hp": 0})
+    notes = cb.land(game, st, [b["result"] for b in rest], 1, 2, random.Random(1))
+    assert any("against AC" in n and n.endswith("(after the prose)") for n in notes)
+
+
 def test_a_bow_spends_arrows(game):
     st, q = _fight(game, 1, klass="Rogue", kit_rogue_2="a shortbow and twenty arrows")
     arrows = next(it for it in st.inventory if "arrow" in it.name.lower())

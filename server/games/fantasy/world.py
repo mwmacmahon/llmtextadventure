@@ -607,7 +607,8 @@ def land(game: Any, s: FantasyState, calls: list[dict], turn: int) -> list[str]:
         if c.get("harm"):
             n = int(c["harm"])
             p.hp = max(0, p.hp - n)
-            notes.append(f"{c.get('label') or c.get('cause')}: {n} hit points" + (" (after the prose)" if c.get("backstop") else ""))
+            if not (c.get("backstop") and c.get("line")):              # a combat backstop's dice line is the row (combat.land)
+                notes.append(f"{c.get('label') or c.get('cause')}: {n} hit points" + (" (after the prose)" if c.get("backstop") else ""))
         if c.get("kills") or (c.get("harm") and p.hp <= 0):
             why = str(c.get("cause") or c.get("label") or "the blow")
             p.hp, p.peril = 0, None
