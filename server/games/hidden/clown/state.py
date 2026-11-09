@@ -280,7 +280,10 @@ class House(BaseModel):
     best: dict[str, int] = Field(default_factory=dict)       # the best of every girl in the house per skill (the spine's gates)
     red_weeks: int = 0
     last_tick_abs: int = 0
-    fate: str = ""                  # ruined | arrested | dead | bought
+    fate: str = ""                  # unused since D196C (nothing ends the game); kept for old saves
+    reckoning: str = ""             # a catastrophe waiting on the proprietor's answer: ruined | arrested | shot (D196C); the events set it
+    reckoning_until_abs: int = 0    # the engine lands the consequence itself at this clock if nobody answers
+    reckonings: list[str] = Field(default_factory=list)   # what has been borne or paid, in words
     closed_until_abs: int = 0
     closed_until_abs_add: int = 0   # an effect's request (the fire): added by after_turn
     rent: int = 60                  # due at every fourth week's end

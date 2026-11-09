@@ -240,6 +240,8 @@ DIALS: dict[str, float] = {
     "harbour_hand": 4,       # contracts on the clerk's slip at once (the harbour deck, D194C): four, refreshed on the first and third Sunday of the month
     "take_per_week": 1,      # the house buys at most this many contracts a week
     "sell_share": 0.75,      # a contract sold on pays this share of her contract value
+    "partner_cut": 0.25,     # Brascombe's share of every fee once he is the house's silent partner (D196C)
+    "reckoning_days": 2,     # a reckoning waits this long for the proprietor's answer before the engine lands the consequence
 }
 
 

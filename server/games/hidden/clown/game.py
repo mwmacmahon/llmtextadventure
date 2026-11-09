@@ -68,6 +68,15 @@ SHOW_LINES = {
     "good": "it went well: the room was hers for a stretch and the client said so",
     "triumph": "it could not have gone better: the client will talk about it, and so will she",
 }
+# Nothing ends the game (D196C): the three catastrophes are reckonings. Each says who waits on the proprietor's answer, what bearing it
+# costs (the engine lands it), and, where a contract would settle it, what handing over a girl buys instead. Haldane takes no girl.
+RECKONINGS: dict[str, dict[str, str]] = {
+    "ruined": {"who": "the bailiffs and the landlord's man", "bear": "the house stripped for the debt: the furniture, the mirror wall, the licence off its nail; shut a week; the debt wiped by what they took; the street knows",
+               "give": "a girl's contract signed over to the landlord's man in settlement, hers to be sold on; the debt wiped; nothing stripped", "fee": ""},
+    "arrested": {"who": "Inspector Haldane", "bear": "a night in the cells, a fine of 150 gold, the house shut a fortnight by order, the licence restored by the Judge's clerk for the fine", "give": "", "fee": ""},
+    "shot": {"who": "the Tallyman's man", "bear": "shot at the desk and not killed: a month wounded (every check and every slot the worse), Dr Lisle's 80 gold, the house shut a week, the street talking",
+             "give": "a girl's contract signed over to the Tallyman for the blood owed; nobody shot", "fee": ""},
+}
 GAIN_WORDS = ((7, "much better than they were"), (4, "better than they were"), (2, "a little better"), (1, "barely moved"), (0, "an hour that went nowhere"))
 TIER_WORDS = {"clumsy": "clumsy", "passable": "passable", "sound": "sound", "finished": "finished"}
 TIME_WORDS = {0: "the morning's work", 1: "the afternoon's work"}
@@ -508,6 +517,10 @@ class ClownGame(GameBase):
             lines.append("The house is closed for repairs; no bookings.")
         if s.flags.get("licence_revoked"):
             lines.append("The house's licence is suspended; no bookings may be taken.")
+        if h.reckoning in RECKONINGS:
+            lines.append(f"A reckoning is open: {RECKONINGS[h.reckoning]['who']} wait on {p.name}'s answer.")
+        if s.flags.get("brascombe_partner"):
+            lines.append("Brascombe is the house's silent partner: his name is on the licence and a quarter of every fee is his.")
         g = s.active_girl
         if g is not None and g.in_house():
             w = g.words()
@@ -682,6 +695,11 @@ class ClownGame(GameBase):
         if h.report and s.flags.get("_report_fresh"):
             out.append("The week was counted on Sunday night: " + " ".join(h.report) + f" Write a few sentences on how the week went for her and the house, "
                        f"in your own words, consistent with those facts; then go on to what the player just did. If a show is told this turn as well, the show first, in full, then the week in two sentences.")
+        if h.reckoning in RECKONINGS:
+            r = RECKONINGS[h.reckoning]
+            out.append(f"THE RECKONING, still open: {r['who']} wait on {p.name}'s answer. To bear it means {r['bear']}." + (f" The other way: {r['give']}." if r["give"] else "")
+                       + f" Nothing lands until {p.name} answers (the Bear it" + (" or Give up a girl levers" if r["give"] else " lever") + f"); if the days run on, it lands by itself. "
+                       f"Until then play the house under it: the men waiting or coming back, the girls knowing.")
         if s.harbour.announce and s.harbour.hand:
             deck, cards = self.content.girls_deck(), self.content.girl_cards()
             slip = "; ".join(hb.card_line(cards[c], deck, self.skill_name) for c in s.harbour.hand if c in cards)
@@ -727,7 +745,8 @@ class ClownGame(GameBase):
             "a booking is never turned down, only left in hand. Switch and Graduate take girl=<her id>; Skip takes to=tomorrow|saturday|sunday|show. "
             "Buying a contract off the clerk's slip at the Harbourmaster's shed (taking a girl on from the boats) is the Take command with girl=<the "
             "card's id as the game state lists it>; selling a girl's contract on (putting her out of the house for money) is the Sell command with "
-            "girl=<her id>, only for a girl bought off the boats. A command never replaces the rest of the input.",
+            "girl=<her id>, only for a girl bought off the boats. When a reckoning is open (the game state says so), taking what is coming is the Bear "
+            "command and signing a girl over to the men waiting is the Give up command with girl=<her id>. A command never replaces the rest of the input.",
             f"Paying more than the house has is impossible (the game state block says what money there is). Putting another girl into training is the "
             f"Switch command, any day, any girl in the house. Letting the days run to a named point (tomorrow morning, Saturday, Sunday night, the next "
             f"show) is the Skip command with to=tomorrow|saturday|sunday|show; a wait of an hour or an afternoon is a wait. Passing a girl out as a "
@@ -1578,6 +1597,11 @@ class ClownGame(GameBase):
         x.paid = int(round(x.fee * SHOW_PAY[word] * share))
         if share != 1.0 and x.fee:
             x.why_numbers.append(f"a student's share of the fee (x{share:g})")
+        if s.flags.get("brascombe_partner") and x.paid:
+            cut = int(round(x.paid * dk.dial(s, "partner_cut")))
+            x.paid -= cut
+            x.why_numbers.append(f"Brascombe's share x{1 - dk.dial(s, 'partner_cut'):g}")
+            self._tally(s, f"{x.title}: Brascombe's cut, {cut} gold.")
         s.house.money += x.paid
         g.credibility = max(-3, min(3, g.credibility + SHOW_STANDING[word]))
         s.house.name = max(0, min(100, s.house.name + SHOW_NAME[word]))
@@ -1798,10 +1822,10 @@ class ClownGame(GameBase):
             if x.result and x.resolved_turn is not None and x.resolved_turn < info.turn:
                 x.told = True
         h.week_lines = [ln.lstrip("* ") for ln in h.week_lines]
-        if h.fate and not s.flags.get("ending"):
-            s.flags["ending"] = (s.scenario.fate_lines.get(h.fate) or {}).get("line") or h.fate
-        if h.fate:
-            return s
+        if h.reckoning and not h.reckoning_until_abs:
+            h.reckoning_until_abs = now + int(dk.dial(s, "reckoning_days") * DAY)
+        if h.reckoning and now >= h.reckoning_until_abs:
+            self._bear(s, h.reckoning, chosen=False)
         # -- girls who arrived this turn; the referee's placements and the routines
         self._arrivals(s)
         if h.closed_until_abs_add:
@@ -1849,14 +1873,86 @@ class ClownGame(GameBase):
         h.last_tick_abs = now
         return s
 
-    # ---- endings and the stone ---------------------------------------------------------------------------------------
+    # ---- the reckonings (D196C): nothing ends the game ------------------------------------------------------------------
+    def _close_house(self, s: ClownState, days: int) -> None:
+        s.house.closed_until_abs = max(s.house.closed_until_abs, s.now_abs) + days * DAY
+
+    def _bear(self, s: ClownState, kind: str, chosen: bool = True) -> str:
+        """The catastrophe borne: its cost landed. Returns the words."""
+        h, p = s.house, s.player
+        if kind == "ruined":
+            h.money = max(h.money, 0)
+            h.name = max(0, h.name - 15)
+            h.red_weeks = 0
+            self._close_house(s, 7)
+            for g in s.in_house():
+                g.love = max(-5, g.love - 1)
+            s.flags["bailiffs_came"] = True
+            self._note(s, "The bailiffs stripped the house; the debt is gone with the furniture.", "The bailiffs: the house stripped, the debt wiped (money 0), Name -15, shut a week.")
+        elif kind == "arrested":
+            h.money -= 150
+            h.heat = min(h.heat, 30)
+            s.flags["licence_revoked"] = False
+            s.flags["licence_restored"] = True
+            self._close_house(s, 14)
+            for pend in by_tag(s.hidden.pending, "arrest"):
+                pend.resolved = True
+            self._note(s, "A night in the cells and a fine; the licence is back on the wall.", "The cells: a fine of 150 gold, shut a fortnight, the licence restored, heat to 30.")
+        elif kind == "shot":
+            spec = s.scenario.conditions.get("shot") or {}
+            p.conditions = [c for c in p.conditions if c.name != "shot"] + [Condition(name="shot", group=str(spec.get("group", "all")), mod=int(spec.get("mod", -2)), duration="",
+                                                                                          expires_at=s.now_abs + int((spec.get("duration") or {}).get("days", 28) if isinstance(spec.get("duration"), dict) else 28) * DAY)]
+            h.money -= 80
+            h.heat = min(100, h.heat + 10)
+            self._close_house(s, 7)
+            s.flags["tallyman_shot_you"] = True
+            self._note(s, f"{p.name} was shot at the desk and lived; Dr Lisle came.", "Shot: wounded a month (every check and slot -2), Dr Lisle 80 gold, shut a week, heat +10.")
+        words = RECKONINGS.get(kind, {}).get("bear", kind)
+        h.reckonings.append(f"{kind}: borne" + ("" if chosen else " (nobody answered)"))
+        h.reckoning, h.reckoning_until_abs = "", 0
+        return words
+
+    def _give_up(self, s: ClownState, kind: str, g: Girl) -> str:
+        """A girl's contract handed over instead: she is gone for good, the debt or the blood is settled, and the house turns on the proprietor."""
+        h, p = s.house, s.player
+        who = RECKONINGS.get(kind, {}).get("who", "them")
+        g.status, g.location = "gone", "Unknown"
+        g.history.append(stamp(s, f"her contract given up to {who}"))
+        for other in s.in_house():
+            other.love, other.respect, other.fear = max(-5, other.love - 2), max(-5, other.respect - 1), min(5, other.fear + 1)
+            other.fear_fed = True
+            other.history.append(stamp(s, f"saw {g.name} given up to {who}"))
+        h.name = max(0, h.name - 5)
+        s.flags["gave_up_a_girl"] = True
+        s.flags[f"gave_up_{g.id}"] = True
+        if kind == "ruined":
+            h.money = max(h.money, 0)
+            h.red_weeks = 0
+            s.flags["bailiffs_came"] = True
+        elif kind == "shot":
+            s.flags["tallyman_settled"] = True
+        for x in s.shows:
+            if x.girl == g.id and not x.result:
+                x.girl = ""
+        if s.active == g.id:
+            nxt = next((x for x in s.girls if x.status == "passive"), None)
+            s.active = nxt.id if nxt else ""
+            if nxt is not None:
+                nxt.status = "active"
+            s.plan = Plan(set_week=h.week)
+        h.reckonings.append(f"{kind}: {g.name} given up")
+        h.reckoning, h.reckoning_until_abs = "", 0
+        self._note(s, f"{g.name}'s contract was given up to {who}; the house saw it.", f"{g.name} given up to {who}: the other girls love -2, respect -1, fear +1; Name -5.")
+        return RECKONINGS.get(kind, {}).get("give", "")
+
+    # ---- endings (none since D196C; a mod may still set the flag) ---------------------------------------------------------
     def ending(self, state: ClownState) -> str | None:
         e = state.flags.get("ending")
         return str(e) if e else None
 
     def dead(self, state: ClownState) -> bool:
-        """Every ending is a stone (D181C): the proprietor shot, taken, ruined, or sold out."""
-        return bool(state.house.fate)
+        """Nothing ends the game (the owner, 11-09): the catastrophes are reckonings. Only a flag `ending` set by a mod's content ends it."""
+        return bool(state.flags.get("ending"))
 
     def cause_of_death(self, state: ClownState, info: dict[str, Any]) -> str | None:
         words = state.scenario.stone_words
@@ -1889,7 +1985,7 @@ class ClownGame(GameBase):
         for ga in a.girls:
             gb = b.girl(ga.id)
             if gb is None or not ga.in_house():
-                if gb is not None and gb.in_house() and not ga.in_house() and not (ga.history and "contract sold" in ga.history[-1]):
+                if gb is not None and gb.in_house() and not ga.in_house() and not (ga.history and ("contract sold" in ga.history[-1] or "given up" in ga.history[-1])):
                     out.append(f"{ga.name}: gone")
                 continue
             if ga.graduated and not gb.graduated:
@@ -1916,6 +2012,12 @@ class ClownGame(GameBase):
                 out.append(f"{ga.name}: her contract sold on")
         if a.harbour.ships != b.harbour.ships:
             out.append("A boat came in: the clerk's slip is new")
+        if a.house.reckoning and not b.house.reckoning:
+            out.append(f"A reckoning: {RECKONINGS.get(a.house.reckoning, {}).get('who', a.house.reckoning)}")
+        if len(a.house.reckonings) > len(b.house.reckonings):
+            out.append("Reckoned: " + a.house.reckonings[-1])
+        if a.flags.get("brascombe_partner") and not b.flags.get("brascombe_partner"):
+            out.append("Brascombe is the house's partner")
         for x in a.shows:
             xb = b.show(x.id)
             if xb is None:
@@ -1950,11 +2052,21 @@ class ClownGame(GameBase):
         s = state
         if self.ending(s):
             return [CommandSpec(id="journal", label="Journal", mode="engine", typed=False, hint="Read the journal, the bookings and the people.")]
-        out = [CommandSpec(id="plan", label="Plan", mode="engine",
+        out: list[CommandSpec] = []
+        if s.house.reckoning and s.house.reckoning in RECKONINGS:
+            r = RECKONINGS[s.house.reckoning]
+            out.append(CommandSpec(id="bear", label="Bear it", mode="narrated", hint=f"{r['who'][0].upper() + r['who'][1:]}: {r['bear']}.",
+                                   words=["bear it", "take it", "let them", "pay the fine", "i'll take", "we take it", "do your worst"]))
+            if r["give"] and s.in_house():
+                out.append(CommandSpec(id="give_up", label="Give up a girl", mode="narrated",
+                                       params=[Param(name="girl", label="whose contract", options=[Option(id=g.id, label=g.name) for g in s.in_house()], default=s.in_house()[0].id)],
+                                       hint=f"{r['give'][0].upper() + r['give'][1:]}. She is gone for good, and every girl in the house turns on you for it.",
+                                       words=["give up", "hand over", "take her", "sign her over", "her contract", "have her"]))
+        out.append(CommandSpec(id="plan", label="Plan", mode="engine",
                            params=[Param(name="slot", label="slot", options=[Option(id="mornings", label="Mornings"), Option(id="afternoons", label="Afternoons")], default="mornings"),
                                    Param(name="skill", label="trains", options=self._skill_options(s))],
                            hint="Set what the girl in training does in the mornings or the afternoons this week: one of the fifteen skills, Rest, or a job in town (a little money, and her diligence, which helps every slot after). The plan holds until changed.",
-                           words=["plan", "train", "put her on", "work on", "practise", "practice", "mornings", "afternoons", "rest", "drill"])]
+                           words=["plan", "train", "put her on", "work on", "practise", "practice", "mornings", "afternoons", "rest", "drill"]))
         offered = [h for h in dk.hand(s) if h.status == "live"]
         in_house = s.in_house()
         if offered and in_house:
@@ -2160,6 +2272,28 @@ class ClownGame(GameBase):
                          f"in a few lines; she stays in the house and works its bookings as a clown of the house from now. Stop where {p.name} would next decide.")
             return s, CommandResult(label="Graduate", player_line=f"I tell {g.name} she is finished: a clown, trained, and the house will book her on her own account.",
                                     summary=f"{p.name} passes {g.name} out as a finished clown.", directive=directive, minutes=20, log_line=line)
+        if command_id in ("bear", "give_up"):
+            kind = s.house.reckoning
+            if kind not in RECKONINGS:
+                return state, CommandResult(ok=False, label="Bear it", text="Nothing is waiting on an answer.")
+            r, p = RECKONINGS[kind], s.player
+            if command_id == "bear":
+                words = self._bear(s, kind)
+                directive = (f"{p.name} answers {r['who']}: they will bear it. What follows, played now where they are, in a few paragraphs: {words}. "
+                             f"The girls see what they see. Stop where {p.name} is free to act again; the game state has what it cost.")
+                return s, CommandResult(label="Bear it", player_line=f"I tell {r['who']} I'll take what's coming.", summary=f"{p.name} bears it: {kind}.", directive=directive, minutes=120,
+                                        log_line=f"{p.name} bore it: {words}.")
+            if not r["give"]:
+                return state, CommandResult(ok=False, label="Give up a girl", text=f"{r['who'][0].upper() + r['who'][1:]} will not take a girl for it.")
+            g = s.girl(str(args.get("girl") or ""))
+            if g is None or not g.in_house():
+                return state, CommandResult(ok=False, label="Give up a girl", text="Whose contract? " + ", ".join(x.name for x in s.in_house()))
+            words = self._give_up(s, kind, g)
+            directive = (f"{p.name} gives {g.name} up to {r['who']}: her contract signed over, and she goes with them tonight. Play it where it happens, short and "
+                         f"straight: what {p.name} says to her, what she says back in her own voice, the paper, the door; and the other girls in the house, who saw "
+                         f"it or will hear of it by morning, each in a line. {words}. Stop where {p.name} is alone with it.")
+            return s, CommandResult(label="Give up a girl", player_line=f"I give {r['who']} {g.name}'s contract.", summary=f"{p.name} gives up {g.name} to {r['who']}.",
+                                    directive=directive, minutes=60, log_line=f"{g.name} was given up to {r['who']}.", entities=[g.id], referee_skip=[f"girls.{g.id}.status"])
         if command_id == "take":
             deck, cards = self.content.girls_deck(), self.content.girl_cards()
             cid = str(args.get("girl") or "").strip().lower()
@@ -2237,6 +2371,8 @@ class ClownGame(GameBase):
                  Chip(label="Name", value=h.name_word)]
         if g is not None:
             strip.append(Chip(label="In training", value=g.name))
+        if h.reckoning in RECKONINGS:
+            strip.append(Chip(label="Reckoning", value=RECKONINGS[h.reckoning]["who"], tone="bad"))
         panels: list[Any] = [StatusStrip(chips=strip)]
         if g is not None:
             w = g.words()

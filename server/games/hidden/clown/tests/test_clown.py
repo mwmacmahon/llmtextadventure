@@ -525,13 +525,52 @@ def test_a_reward_row_may_grow_the_hand(game: ClownGame):
     assert st.house.hand_size == 3 and any("the hand holds 3" in ln for ln in st.tally)
 
 
-def test_every_ending_is_a_stone(game: ClownGame):
-    st = new(game)
-    assert not game.dead(st)
-    st.house.fate = "ruined"
-    st = advance(game, st, 5, 3)
-    assert game.dead(st) and st.flags["ending"].startswith("Ruined") and "ruined" in game.cause_of_death(st, {})
-    assert game.death_score(st)["weeks"] == 1 and game.ending(st)
+def test_nothing_ends_the_game_the_catastrophes_are_reckonings_borne_or_paid_with_a_girl(game: ClownGame):
+    from games.hidden.clown.state import Show
+    st = new(game, first_girl="pim_dace")
+    assert not game.dead(st) and not any(e.id.startswith("ending_") for e in st.hidden.events)
+    assert {e.id for e in st.hidden.events} >= {"reckoning_ruined", "reckoning_arrested", "reckoning_shot", "brascombe_partner"}
+    # the bailiffs: bear it
+    st.house.money, st.house.red_weeks, st.house.name = -600, 2, 30
+    st.house.reckoning = "ruined"
+    s = advance(game, st, 5, 3)
+    assert s.house.reckoning == "ruined" and s.house.reckoning_until_abs == s.now_abs + 2 * DAY and not game.dead(s)
+    assert [c.id for c in game.commands(s)][:2] == ["bear", "give_up"] and "A reckoning is open" in game.render_bulletin(s, "")
+    assert any(ln.startswith("THE RECKONING") for ln in game.turn_directives(s)) and any(c.label == "Reckoning" for c in game.ui(s).panels[0].chips)
+    s2, res = game.run_command(s, "bear", {})
+    assert res.ok and res.directive and s2.house.money == 0 and s2.house.name == 15 and s2.house.red_weeks == 0 and s2.house.closed_until_abs >= s2.now_abs + 7 * DAY
+    assert s2.house.reckoning == "" and s2.house.reckonings == ["ruined: borne"] and s2.flags["bailiffs_came"] and "Reckoned: ruined: borne" in game.seen_changes(s, s2)
+    # the Tallyman's man: a girl given up instead
+    st.girl("dot").status, st.girl("dot").location, st.girl("dot").bonds = "passive", "The kitchen", {"pim_dace": 2}
+    st.house.reckoning = "shot"
+    s3, res = game.run_command(st, "give_up", {"girl": "pim_dace"})
+    assert res.ok and "signed over" in res.directive and f"girls.pim_dace.status" in res.referee_skip
+    assert s3.girl("pim_dace").status == "gone" and s3.active == "dot" and s3.girl("dot").status == "active"
+    assert s3.girl("dot").love == -2 and s3.girl("dot").respect == -1 and s3.girl("dot").fear == 1 and s3.house.name == max(0, st.house.name - 5)
+    assert s3.flags["gave_up_a_girl"] and s3.flags["gave_up_pim_dace"] and s3.flags["tallyman_settled"] and not s3.player.conditions
+    assert "Pim Dace: gone" not in game.seen_changes(st, s3) and s3.house.reckonings == ["shot: Pim Dace given up"]
+    # Haldane takes no girl; shot and borne wounds; nobody answering lands it by itself
+    st.house.reckoning = "arrested"
+    assert [c.id for c in game.commands(st)][:2] == ["bear", "plan"]
+    _, res = game.run_command(st, "give_up", {"girl": "pim_dace"})
+    assert not res.ok
+    st.flags["licence_revoked"] = True
+    s4, _ = game.run_command(st, "bear", {})
+    assert s4.house.money == st.house.money - 150 and not s4.flags["licence_revoked"] and s4.flags["licence_restored"] and s4.house.heat <= 30
+    st.house.reckoning = "shot"
+    s5 = advance(game, st, 5, 3)
+    s5 = advance(game, s5, 2 * DAY, 4)
+    assert s5.house.reckoning == "" and s5.house.reckonings == ["shot: borne (nobody answered)"] and any(c.name == "shot" for c in s5.player.conditions)
+    # Brascombe as the silent partner: a quarter of every fee
+    s6 = new(game, first_girl="pim_dace")
+    s6.flags["brascombe_partner"] = True
+    s6.girl("pim_dace").graduated = True
+    s6.shows.append(Show(id="x", hook="rope_walk_birthday", title="A show", client="", venue="The office", at_abs=s6.now_abs + 60, wants=["pratfalls"], fee=40, difficulty=0, variance=0, girl="pim_dace"))
+    money = s6.house.money
+    s7 = advance(game, s6, 120, 2)
+    x = s7.show("x")
+    assert x.result and x.paid == int(round(40 * {"disaster": 0, "poor": 0.5, "fine": 1, "good": 1, "triumph": 1.5}[x.result])) - int(round(40 * {"disaster": 0, "poor": 0.5, "fine": 1, "good": 1, "triumph": 1.5}[x.result] * 0.25))
+    assert s7.house.money == money + x.paid and any("Brascombe's cut" in ln for ln in s7.tally) or x.result == "disaster"
 
 
 # ---- through the pipeline on the fake provider ---------------------------------------------------------------------------
