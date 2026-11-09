@@ -591,7 +591,7 @@ def test_skip_runs_the_clock_to_a_named_point_and_the_pipeline_may_stop_it_soone
     st = _offer(game, st)
     st, _ = game.run_command(st, "book", {"booking": "rope_walk_birthday"})
     ids = {k: t for k, _, t in game._skip_targets(st)}
-    assert ids["show"] == st.shows[0].at_abs
+    assert ids["show"] == st.shows[0].at_abs - 60      # an hour before it (round 2: landing on the hour had the party over)
     st.clock.day, st.clock.minute = st.clock.day + 5, 600
     ids = {k: t for k, _, t in game._skip_targets(st)}
     assert ids["saturday"] == (st.clock.day + 7) * DAY + 540

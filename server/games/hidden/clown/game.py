@@ -420,6 +420,26 @@ class ClownGame(GameBase):
         return ""
 
     # ---- the per-turn block ------------------------------------------------------------------------------------------
+    def _now_doing(self, s: ClownState, g: Girl) -> str:
+        """Where the plan has the girl in training at this hour, in words (round 2: the narrator put her at the chandler's in a
+        training morning and on the mats in a job afternoon)."""
+        m, wd = s.clock.minute, weekday(s.clock.day)
+        if wd not in TRAINING_DAYS:
+            return "no training on " + WEEKDAYS[wd] + "; she is about the house"
+        slot = next((name for name, (a, b) in SLOTS.items() if a <= m < b), None)
+        if slot is None:
+            return "between slots: she is about the house" if m < SLOTS["afternoons"][1] else "the day's work is done; she is about the house"
+        if f"{s.clock.day}:{slot}" in g.slots_off:
+            return "she has this slot off"
+        v = getattr(s.plan, slot)
+        if not v:
+            return f"nothing set for the {slot}; she does what she likes"
+        if v == "rest":
+            return "resting"
+        if v == "work":
+            return f"at her job in town ({g.job or 'in town'}), not in the house, until the slot ends"
+        return f"on the mats at {self.skill_name(v).lower()}" + (", with the proprietor" if s.player.location == PRACTICE else "")
+
     def _at_the_door(self, s: ClownState) -> Girl | None:
         """The girl whose arrival event has fired this turn and whose status has not caught up (after_turn sets it)."""
         order = [g for g in s.girls if g.status == "away"]
@@ -455,6 +475,7 @@ class ClownGame(GameBase):
                 v = getattr(s.plan, slot)
                 plan_bits.append(f"{slot}: {'nothing set' if not v else 'rest' if v == 'rest' else 'a job in town, for the money' if v == 'work' else self.skill_name(v)}")
             lines.append("    This week's plan: " + "; ".join(plan_bits) + ("; the plan carried over from last week, nobody changed it" if s.plan.carried else "") + ".")
+            lines.append("    This hour, by the plan: " + self._now_doing(s, g) + ".")
             if g.facts:
                 lines.append("    Learned about her: " + " ".join(g.facts[-4:]))
             opens = [sec for sec in g.secrets if not sec.known and self._needs_hold(s, sec.needs)]
@@ -621,7 +642,8 @@ class ClownGame(GameBase):
             "brought (a dinner that pleased the Judge, a favour owed by Krol, a secret known, the right girl beside them).",
             "The week's plan (what a girl trains in the mornings and the afternoons, rest, a job in town for a little money) is the Plan command, never an intent: "
             "list it under commands when the input sets it, with slot=mornings|afternoons and skill=<one of: " + ", ".join(self.skill_ids(s)) + ", rest, work>; "
-            "an input that names a skill and no slot is two Plan commands, one a slot. Taking a booking by name is the Book command with "
+            "an input that names a skill and no slot is two Plan commands, one a slot. Giving her this afternoon (or this morning, or today) off, once, is "
+            "not a Plan command: it is a scene, and the referee records the slot off; only a standing change (\"afternoons she rests from now\") is the Plan. Taking a booking by name is the Book command with "
             "booking=<its title as the game state lists it> and girl=<the id of the girl who goes; the one in training when the input names nobody>; "
             "a booking is never turned down, only left in hand. Switch and Graduate take girl=<her id>; Skip takes to=tomorrow|saturday|sunday|show. "
             "A command never replaces the rest of the input.",
@@ -660,7 +682,10 @@ class ClownGame(GameBase):
             "because of what the proprietor did or said, or what she saw. One or two steps a turn on an axis, never more; a talk that changed nothing is no row. "
             "The words, exactly as the game state prints them: love runs " + ", ".join(AXIS_WORDS["love"]) + "; respect runs " + ", ".join(AXIS_WORDS["respect"])
             + "; fear runs " + ", ".join(AXIS_WORDS["fear"]) + ". A threat or a blow raises fear; a kept promise or a kindness raises love; competence shown "
-            "raises respect; cruelty seen raises fear and lowers love.",
+            "raises respect; cruelty seen raises fear and lowers love. Write the row whenever the scene earned it, and these always do: she gave up "
+            "something of her past to the proprietor (love +1); the proprietor took her side against someone, or gave her something she did not ask for "
+            "(love +1); the proprietor worked with her on the mats and it went well, or showed they know the trade (respect +1); the proprietor shamed "
+            "her, broke a promise, or used what she told them (love -1, and fear +1 if there was a threat in it). Two weeks of scenes with no row is wrong.",
             "- set <girl id>.mood <a word>; set <girl id>.body <a few words for her body as the prose shows it>; set <girl id>.conditions +<name> / "
             "-<name>: a condition from this list only: " + ", ".join(s.scenario.conditions) + " (write the name alone; -<name> when the prose ends it, "
             "a doctor or a rest). An injury the prose shows is +bruised or +sprained; her skills are the engine's and never a row.",
@@ -1352,6 +1377,7 @@ class ClownGame(GameBase):
             g.fatigue = min(100, g.fatigue + FATIGUE_WORK)
             before_d = g.diligence_word
             g.diligence = min(100, g.diligence + up)
+            g.week_jobs += 1
             job = g.job or JOB_WORDS[sum(ord(c) for c in g.id) % len(JOB_WORDS)]
             g.job = job
             self._note(s, f"{label}: {g.name} worked at {job}; a little money came of it" + (f", and she is {g.diligence_word} at work now" if g.diligence_word != before_d else "") + ".",
@@ -1558,13 +1584,16 @@ class ClownGame(GameBase):
             lines.append(f"{g.name} trained {how_much}" + (f": {gains}" if gains else ", and nothing moved") + f"; she ends the week {g.fatigue_word}.")
             nums.append(f"{g.name} trained {g.week_slots} of ten slots: " + (", ".join(f"{self.skill_name(k)} {g.skills.get(k, 0) - v} to {g.skills.get(k, 0)}" for k, v in g.week_gains.items() if v) or "nothing moved")
                         + f"; fatigue {g.fatigue} ({g.fatigue_word}).")
+            if g.week_jobs:
+                lines.append(f"She worked her job in town ({g.job or 'in town'}) " + ("every afternoon she could" if g.week_jobs >= 5 else f"{g.week_jobs} slot{'s' if g.week_jobs != 1 else ''}") + "; it brought a little money in.")
+                nums.append(f"Her job: {g.week_jobs} slots, ${g.week_jobs * int(dk.dial(s, 'job_pay'))}.")
             if s.plan.carried:
                 lines.append("She trained what she trained last week; nobody told her otherwise.")
                 nums.append("The plan carried over.")
             for k, v in g.week_gains.items():
                 if v:
                     self._tally(s, f"The week: {g.name}'s {self.skill_name(k)} {g.skills.get(k, 0) - v} to {g.skills.get(k, 0)}.")
-            g.week_gains, g.week_slots = {}, 0
+            g.week_gains, g.week_slots, g.week_jobs = {}, 0, 0
         shows = [x for x in s.shows if x.resolved_turn is not None and x.at_abs // DAY > s.clock.day - 7]
         if shows:
             lines.append("Shows: " + "; ".join(f"{x.title}" + (f" ({s.girl(x.girl).name})" if s.girl(x.girl) else "") + f", {x.result}" + (", paid" if x.paid else ", nothing paid") for x in shows) + ".")
@@ -1692,7 +1721,7 @@ class ClownGame(GameBase):
             self._self_train(s, slot, day)
         # -- the shows the clock passed
         for x in s.shows:
-            if not x.result and x.at_abs <= now:
+            if not x.result and x.at_abs < now:
                 self._resolve_show(s, x, info.turn)
         # -- conditions that expire
         for who in [p] + s.girls:
@@ -1887,9 +1916,9 @@ class ClownGame(GameBase):
         if sun * DAY + WEEK_END_MINUTE <= now:
             sun += 7
         out.append(("sunday", "Sunday night, the week's end", sun * DAY + WEEK_END_MINUTE))
-        shows = sorted(x.at_abs for x in s.shows if not x.result and x.at_abs > now)
+        shows = sorted(x.at_abs for x in s.shows if not x.result and x.at_abs - 60 > now)
         if shows:
-            out.append(("show", "the next show", shows[0]))
+            out.append(("show", "an hour before the next show", shows[0] - 60))
         return out
 
     def run_command(self, state: ClownState, command_id: str, args: dict[str, Any]) -> tuple[ClownState, CommandResult]:

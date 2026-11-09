@@ -128,6 +128,7 @@ class Girl(BaseModel):
     arrived_day: int = 0
     week_gains: dict[str, int] = Field(default_factory=dict)   # this week's gains per skill, for the report
     week_slots: int = 0
+    week_jobs: int = 0              # this week's job slots, for the report (round 2: the account left the job out and the narrator invented one)
     fear_fed: bool = False          # something fed her fear this week (it does not decay)
 
     def tier(self, skill: str) -> str:

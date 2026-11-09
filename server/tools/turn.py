@@ -102,6 +102,8 @@ def play(a: argparse.Namespace) -> int:
         out.append("[ERROR] " + " | ".join(str(x) for x in err))
     if cmd:
         lines += [f"[command {'ok' if cmd.get('ok') else 'REFUSED'}] {cmd.get('label') or ''}: {cmd.get('text') or ''}".rstrip(), ""]
+        if not cmd.get("ok"):
+            out.append(f"[REFUSED] {cmd.get('label') or ''}: {cmd.get('text') or ''}".rstrip())   # round 2: a refused Book printed nothing
     ui_line = ""
     if done:
         d = done["data"]
