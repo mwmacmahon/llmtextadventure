@@ -95,7 +95,8 @@ and die." The fantasy's fights move from stat checks to attack rolls against an 
 check under another name); every person carries a combat block (AC, hit points, attack, damage, weight) with defaults by
 role; a fight is a mode with a round per player turn, rolled before the prose and told from a round sheet, enemies
 acting programmatically, allies too; down and dead; cleave-through and sweep; a Fight panel; the engine sizes a fight
-by a budget from level, party and band (§9b), numbers before bodies before inflation; a fight simulator tunes it. Six
+by a budget from level, party and band (§9b), every fight tough but winnable unless marked fixed (a boss, a set piece;
+the owner's ruling), numbers before bodies before inflation; a fight simulator tunes it. Six
 questions open with the owner. Noir and the station keep 2d6 and their own fights.
 
 ## 2. Time and pacing

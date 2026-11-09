@@ -26,7 +26,8 @@ you'll need to run your own trials. I think running a Gemma trial right now rega
    station, the five, and what you are. The grimdark game inherits; the mod may patch it.
 3. **Designed, 11-09 night: combat** (DESIGN-combat-2026-11-09; the owner: "it's fun to see enemies take damage and
    die"): hit points for everyone, attack rolls and saves, a combat mode with a round per turn rolled before the prose,
-   cleave, allies, a Fight panel, enemy scaling by an engine budget, a fight simulator. Six questions open; the
+   cleave, allies, a Fight panel, enemy scaling by an engine budget (the owner: tough but winnable unless marked a
+   boss), a fight simulator. Six questions open; the
    directive after the owner answers, with the Paladin's (one build: combat first, the paladin on it).
 3a. **Designed, 11-09 night: the Paladin first** (DESIGN-magic §8; the owner's son would play a knight): features as
    data with four kinds, the undead tagged and placed, a canned kit; the directive after the owner answers three
