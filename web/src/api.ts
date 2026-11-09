@@ -233,6 +233,7 @@ export const api = {
     req(`/api/instances/${id}/difficulty`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ difficulty }) }).then((r) => j<InstanceSummary>(r)),
   create: (game: string, setup: Record<string, unknown>, mods: string[] = []) =>
     req("/api/instances", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ game, setup, mods }) }).then((r) => j<InstanceView>(r)),
+  standing: (id: string) => req(`/api/instances/${id}/standing`).then((r) => j<{ setup: Record<string, unknown>; mods: { name: string; hash: string }[]; prefix_text: string }>(r)),
   mods: (game: string) => req(`/api/games/${encodeURIComponent(game)}/mods`).then((r) => j<ModInfo[]>(r)),
   modText: (game: string, file: string) => req(`/api/games/${encodeURIComponent(game)}/mods/${encodeURIComponent(file)}`).then(async (r) => {
     if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);

@@ -876,3 +876,14 @@ async def test_a_clicked_commands_turn_is_never_retold(engine, fake):
     events = [e async for e in engine.rewrite_turn(iid, "")]
     msgs = [e["data"].get("message", "") for e in events if e["event"] == "error"]
     assert msgs == ["That turn was a command, not words, so there is nothing to tell again."]
+
+
+def test_the_description_is_shown_to_the_player_and_the_gm(engine):
+    """The owner (11-09): Lilith's description was saved and read by the narrator every turn, but shown nowhere on the page.
+    The play page has an 'In your words' panel; GM debug has the setup as entered and the frozen prefix."""
+    iid = engine.create_instance("fantasy", SHEET)
+    view = engine.instance_view(iid)
+    panel = next(p for p in view["ui"]["panels"] if p.get("title") == "In your words")
+    assert panel["items"][0]["value"] == SHEET["about"]
+    st = engine.standing(iid)
+    assert st["setup"]["about"] == SHEET["about"] and SHEET["about"] in st["prefix_text"]

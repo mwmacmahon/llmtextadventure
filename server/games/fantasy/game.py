@@ -2924,6 +2924,7 @@ class FantasyGame(GameBase):
                                Meter(label="Heat", value=p.heat, tier=p.heat_word, tone=self.HEAT_TONES.get(p.heat_word, "warn"), thresholds=[20, 50, 80])]),
             Commands(title=None, items=self.commands(s)),
             ListPanel(title="Character", items=sheet, layout="grid"),
+            *([ListPanel(title="In your words", items=[Chip(label="", value=p.about.strip())], layout="stack")] if p.about.strip() else []),
             ListPanel(title="Abilities", items=[Chip(label=a.name, value=a.text + (" (now)" if a.while_flag and a.while_flag in p.flags_on else ""))
                                                 for a in p.abilities if a.name], layout="stack"),
             ListPanel(title="Pockets", items=[Chip(label=purse_text(s.inventory), value=""), *pockets], layout="stack"),

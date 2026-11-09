@@ -500,6 +500,15 @@ class Engine:
             "redo": self.redoable(iid),
         }
 
+    def standing(self, iid: str) -> dict[str, Any]:
+        """GM debug: what was fixed at the start, which every turn's narrator reads first: the setup as the player entered it
+        (the character's description among it) and the frozen prefix. A mod's text shows by name and hash only here."""
+        inst = self.store.get_instance(iid)
+        if not inst:
+            raise KeyError(iid)
+        setup = {k: v for k, v in (inst.setup or {}).items() if k != mods_mod.SETUP_KEY}
+        return {"setup": setup, "mods": mods_mod.summary((inst.setup or {}).get(mods_mod.SETUP_KEY)), "prefix_text": inst.prefix_text}
+
     def card(self, iid: str, chars: int = 300) -> dict[str, Any]:
         """A save's card in the lobby (B75): the summary, the last telling's opening with its turn and clock, and the game's
         panels as the player sees them (`ui(state)`; the page draws them read-only)."""

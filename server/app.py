@@ -207,6 +207,15 @@ def delete_game_mod(game: str, name: str, request: Request):
     return {"deleted": name}
 
 
+@app.get("/api/instances/{iid}/standing")
+def instance_standing(iid: str):
+    """GM debug: the setup as entered (the character's description) and the narrator's frozen prefix."""
+    try:
+        return engine.standing(iid)
+    except KeyError:
+        raise HTTPException(404, "no such instance")
+
+
 @app.get("/api/instances/{iid}/card")
 def instance_card(iid: str):
     """The save card (B75): the summary, the last telling's opening, the game's panels (`ui`) for a read-only view."""
