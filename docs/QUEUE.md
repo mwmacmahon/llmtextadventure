@@ -10,7 +10,7 @@ the evidence behind it is the state page, `docs/STATE-2026-11-08.md` (published:
 Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a short-term planning document and showed
 "basically nothing left"). Everything here was the roadmap's "Where we are", "Landed today" and Stage 5 queue.
 
-## Where we are (2026-11-09, night, at 7c77af6)
+## Where we are (2026-11-09, night, at bbbd735)
 
 - **Stage 1 is done** (D135 to D151, 2026-11-07 night to 11-08 dawn): 2d6 with caps, the dice and the player's row,
   the consequence roll with noir's table rewritten, the small faults, the six time rules, and the station's control
@@ -97,6 +97,15 @@ Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a shor
    zero (B216); then one Gemma round with its report and three counts. The side chat reads it before she plays.
    *Landed 11-08 night:* part seven (B207 to B211, B63 narrowed; 2669a19, 5a82d9e), part six (B200 to B206; dd4be6c,
    748d653, 0638909, ca47f24, 9538397), B212 (634f5a9), too_far widened (fc89cad).
+- **Three more off her save and the owner's grimdark turns** (11-09 night, 654cbbc to bbbd735): a move names one thing
+  and a reward does not take back what was given on (B258, half of §6); a quest the rows say is over is asked about by
+  name, the engine putting the question to the referee's model, and closes that turn (B259, §7 built ahead of the paste);
+  a timer for the player's own plan never runs (B260). :8016 moved again, 7c77af6 to bbbd735 at 05:39 UTC; her save took
+  two owner fixes (the cellar's troll_settled flag, the whistle to Tansy), a backup in backups/.
+1b. **Her second night's notes** (the owner, 11-09 night): the Journal and the day's log grow without limit and say the
+   same thing twice (B261: a Timeline button opening an in-page overlay, the Journal cut to the newest few with "See
+   more", the referee told the two apart, the Journal command gone); the cards never update (B243, asked again: not
+   fixed, it is §3). Nothing written for the build chat yet.
 1a. **Her first game's notes** (the owner, 11-09, after 28 turns of Lillian on :8016 at 6c9099a; the side chat read the save):
    a can-be-ally offering herself to a stranger mid-scene (B241, Hazel; content and a hold on happenings); everyone with
    her given a line every turn, and the beat-level repeat never ruled (B242: the party rule softened, K3 traced on her
@@ -104,8 +113,8 @@ Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a shor
    asides not canon (B244); the clock's floor in a tense scene (B245: Sonnet never writes a fast turn); a thing given
    away kept, because the engine held it twice (B246); a fallback quest reaching her on the island by boat (B247, B104
    reopened); the Rats job "offered" after the deed, no close flag written (B224.22 seen again, B58). Part eleven written 11-09 as two pastes: §1 the interrupting people, built the same night (B248 to B253; B241,
-   B247 and B104 closed) and on her server at 7c77af6; §2 to §7 the rest (B242 to B246, B224.22, B58), written and
-   not yet built, on her server at its next move.
+   B247 and B104 closed) and on her server at 7c77af6; §2 to §7 the rest (B242 to B246, B224.22, B58), written; §7 and half of §6 built
+   the same night off her save (B259, B258), §2 to §5 and the rest of §6 not yet.
 1. **She plays, on her own server** (started 11-09; 28 turns the first night, 25a51df64905, Normal, Sonnet; the server at 7c77af6 since 11-09 night). The side chat's read after part nine: on Sonnet the design holds (edge on 15 of 21 checks,
    `aim` never misused, 14 attempts settled by the words, death is death); she can play now if the owner accepts what
    is still open there: XP moves only when a quest closes (B221), money drift (B223), the People panel ahead of the

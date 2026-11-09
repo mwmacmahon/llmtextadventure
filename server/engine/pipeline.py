@@ -30,9 +30,9 @@ import re
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, create_model
 
 from . import events as ev
 from . import logs
@@ -56,7 +56,7 @@ from .providers import Msg, StreamDone, TextDelta, get_provider
 from .providers.base import Msg, Usage
 from .roles import (ADJUDICATOR_STAKES, AssistantReading, AssistantReadingStaked, AssistantReadingV2, adjudicator_messages, referee_messages,
                     summarizer_messages, NARRATOR_PROTOCOL)
-from .roles import NARRATOR_WORLD, REFEREE_PARTS, ChangeReport, referee_part_messages
+from .roles import NARRATOR_WORLD, REFEREE_PARTS, Change, ChangeReport, referee_part_messages
 from .assistant import FAILURES, choose_consequence, choose_cost, default_cost_options, paid_rows, recent_costs
 from .changes import apply_changes, merge_parts, quoted_in_prose, quotes_of, says_result_played, screen_unseen_clues
 from .store import Store, live
@@ -1135,6 +1135,19 @@ class Engine:
                                     scene_long=res.get("scene_long", 0))
                 issues = extras.issues
                 ledger("delta", report.model_dump(mode="json"))
+                # B259: a quest the rows say may be over, with no ending written: the referee is asked once, by name
+                for q in (_hook(game, "quests_maybe_settled", state, report.applied, delta.log_line, default=[]) or [])[:2]:
+                    try:
+                        ending, why, qmeta = await self._quest_check(game, iid, player_text or "", for_referee, q)
+                    except Exception as e:  # noqa: BLE001 - the check is a net; the turn stands without it
+                        ledger("quest_check", {"quest": q["id"], "error": repr(e)[:300]})
+                        continue
+                    ledger("quest_check", {"quest": q["id"], "ending": ending, "why": why, "_call": qmeta})
+                    if ending in q["endings"]:
+                        state, more, _ = apply_changes(game, state, ChangeReport.of(Change(kind="flag", target=ending, value="true"),
+                                                                                    log_line=delta.log_line), present=present, causes=causes)
+                        report.applied.extend(more.applied + [f"quest check: {q['title']} ends ({ending})"])   # the why stays in the ledger: it may know hidden things
+                        log.info("quest.check " + logs.kv(iid=iid, turn=turn, quest=q["id"], ending=ending))
                 log.info("step " + logs.kv(iid=iid, turn=turn, step="referee", model=meta["model"], seconds=meta["seconds"], rows=len(delta.changes),
                                            applied=len(report.applied), rejected=len(report.rejected), issues=len(issues),
                                            confidence=delta.confidence, **logs.usage_kv(meta["usage"])))
@@ -2043,6 +2056,18 @@ class Engine:
         return text, {"provider": provider.name, "model": done.model, "seconds": round(time.monotonic() - t0, 2),
                       "usage": asdict(done.usage), "note": done.note}
 
+    async def _quest_check(self, game: Game, iid: str, player_text: str, narration: str, q: dict) -> tuple[str, str, dict]:
+        """B259: one short question to the referee's model: did this telling settle the quest, and by which ending?"""
+        role = self.cfg.role("referee")
+        provider = self._provider(role, iid, "referee")
+        names = list(q["endings"]) + ["none"]
+        schema = create_model("QuestCheck", why=(str, ...), ending=(Literal[tuple(names)], ...))   # type: ignore[valid-type]  # the reason first
+        system, msgs = quest_check_messages(q, player_text, narration)
+        t0 = time.monotonic()
+        out, usage = await provider.extract(role, system, msgs, schema)
+        meta = {"provider": provider.name, "model": usage.extra.get("model") or role.model, "seconds": round(time.monotonic() - t0, 2), "usage": asdict(usage)}
+        return str(out.ending), str(out.why or "")[:300], meta
+
     async def _referee(self, game: Game, state: BaseModel, directives: list[str], player_text: str, narration: str,
                        adj: AssistantReading | None = None, levers: list[str] | None = None, iid: str | None = None) -> tuple[ChangeReport, dict]:
         role = self.cfg.role("referee")
@@ -2075,6 +2100,24 @@ def _engine_state_text(game: Game, state: BaseModel, adj: AssistantReading | Non
     if impending:
         state_text += "\n\n" + impending
     return state_text
+
+
+QUEST_CHECK_SYSTEM = ("You check one thing for a text adventure's engine: whether the turn below settled a quest. Answer only from what "
+                      "the telling and the quest's notes say has already happened. Who did it does not matter (the player, or someone "
+                      "they set to it); that it is done does. A plan, a promise or a search only begun has not settled it. If in doubt, "
+                      "answer none: a quest left open is easily put right, one closed early is not.")
+
+
+def quest_check_messages(q: dict, player_text: str, narration: str) -> tuple[str, list[Msg]]:
+    """B259: the referee's model asked, by name, whether this telling settled the quest (the words of the rows suggested it)."""
+    ends = "\n".join(f"- {f}: {line}" for f, line in q["endings"].items())
+    user = (f"THE QUEST: {q['title']}\n" + (f"WHAT THE JOB IS: {q['about']}\n" if q.get("about") else "")
+            + f"WHAT THE GAME HAS NOTED ON IT: {q.get('note') or '(nothing)'}\n\n"
+            f"ITS ENDINGS (each one closes it):\n{ends}\n\nTHE PLAYER WROTE: {player_text}\n\nTHE TELLING:\n{narration}\n\n"
+            "why: first, what the telling and the notes show of the quest's problem: over, and how, or still there. "
+            "ending: then the ending that what happened amounts to, by its name (the ways an ending lists in brackets are examples, "
+            "not a checklist; what matters is that the problem is over); none while the problem is still there.")
+    return QUEST_CHECK_SYSTEM, [Msg("user", user)]
 
 
 def without_repeats(adj: Any) -> Any:

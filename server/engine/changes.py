@@ -334,6 +334,10 @@ def apply_changes(game: Any, state: BaseModel, report: ChangeReport, *, present:
             continue
         if k == "soon":
             what = (ch.value or ch.note).strip()
+            who_ = (ch.who or ch.target).strip().lower()
+            if what and (who_ in ("player", "the player", "you") or (who_ and who_ in _player_name(game, s).lower().split()[:1] + [_player_name(game, s).lower()])):
+                w.reject("soon", "the player's own plan is theirs to play, not a timer (B260)", what)
+                continue
             if what:
                 ex.pending_new.append(PendingNew(what=what, who=ch.who or ch.target, in_minutes=ch.minutes, hidden=ch.hidden, unless=ch.note if ch.value else ""))
         elif k in ("unseen", "thread_open") and takes_itself_back(ch):

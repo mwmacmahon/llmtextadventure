@@ -194,3 +194,20 @@ def test_a_wait_meant_for_someone_else_is_not_asked(noir):
     assert until_when(noir, st, settled, "I wait with him")[1] == ""         # an attempt the words settled: not a bare wait
     for said in ("I wait.", "I'll wait", "I sit tight"):                     # the player's own wait is still asked
         assert until_when(noir, st, _wait(), said)[1].startswith("Until when?"), said
+
+
+def test_a_timer_for_the_players_own_plan_never_stops_the_clock(noir):
+    """B260 (the grimdark save f083ca6fc352): "Ungdall heads down to seek out Maud" at midnight, who=player, cut a night's
+    sleep at midnight long after Maud came up instead. The player plays their own acts: such a timer is never live, and
+    the referee's soon row for the player is refused."""
+    from engine import pending as pend
+    from engine.changes import apply_changes
+    from engine.roles import Change, ChangeReport
+    mine = pend.Pending(id="p2", what="Frank heads down to find Rosa", who="player", due_day=2, due_minute=0)
+    world = pend.Pending(id="p3", what="the creature attacks", who="the creature", due_day=2, due_minute=30)
+    assert not mine.live and world.live and pend.next_due([mine, world], 1440) is world
+    assert [p.id for p in pend.tick([mine, world], 2 * 1440 + 60, 1440, 5)] == ["p3"]
+    _, st = noir.new_instance({})
+    s2, rep, ex = apply_changes(noir, st, ChangeReport.of(Change(kind="soon", target="player", value="Frank goes to the docks at dawn", minutes=60)),
+                                present=[], causes=[])
+    assert not ex.pending_new and any("own plan" in r.reason for r in rep.rejected)

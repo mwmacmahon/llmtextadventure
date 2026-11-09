@@ -284,6 +284,10 @@ design (the strip's content per game, bottom sheet or tabs, skins now or later, 
 - "Until when" as buttons (B29; area 2).
 - The People cards (B243, flagged from her save): notes are the facts learned in play, newest first, seed facts only
   once told; the mood word beside the attitude word; a learned row may replace a fact.
+- The Journal and the day's log (B261, flagged by the owner 11-09 night): both grow without limit in the side column and
+  say the same thing twice. A Timeline button opening an in-page overlay (the log by day); the Journal cut to the newest
+  few with "See more"; the referee told what the log is for and what the journal is for, a duplicate dropped; the
+  Journal command gone. Every game with the two panels.
 
 ## 12. Mods and variants
 
