@@ -120,6 +120,7 @@ class Person(BaseModel):
     heard_of: bool = False
     wants: str = ""
     facts: list[str] = Field(default_factory=list)
+    shown: list[str] = Field(default_factory=list)   # B243: the content's own facts (by clause) a telling has shown since the meeting
     secret: str = ""
     tells: list[Tell] = Field(default_factory=list)
     hook: str = ""                  # the hook that brought them, empty for the city's own

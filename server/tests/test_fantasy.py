@@ -996,3 +996,55 @@ async def test_a_quest_the_referee_noted_as_over_is_asked_about_and_closes(engin
     row = next(r for r in engine.store.ledger(iid, 1) if r["kind"] == "quest_check")
     assert row["payload"]["ending"] == "troll_settled"
     assert any("quest check: Rats in the Cellar ends (troll_settled)" in a for a in events[-1]["data"]["mechanics"]["applied"])
+
+
+# ---- B243: the People cards show what was learned, and stay true -------------------------------------------------------
+
+def _card(game: FantasyGame, st, pid: str):
+    ui = game.ui(st)
+    people = next(p for p in ui.panels if getattr(p, "title", "") == "People")
+    return next(c for c in people.cards if c.id == pid)
+
+
+def test_a_content_fact_shows_on_the_card_only_once_a_telling_says_it(game: FantasyGame):
+    """Lilith's save: Hazel's card said "Sells pelts at the Market of Hooks; sleeps at the Lantern" from the first meeting,
+    though her prose only ever showed a wolf-pelt coat. A clause shows once one sentence has two of its words with Hazel named
+    in it or the sentence before; scattered words (turn 28: Mirren does not sleep; a boat's lantern) are not a telling."""
+    st = new(game)
+    st.person("hazel").met = True
+    assert game.seed_facts(st, st.person("hazel")) == ["Sells pelts at the Market of Hooks", "sleeps at the Lantern while she is in town"]
+    assert _card(game, st, "hazel").notes == []
+    i = info(turn=1)
+    i.prose = "Mirren does not sleep. The lantern shrinks to a smear. Hazel waits."
+    s1 = game.after_turn(st, i)
+    assert _card(game, s1, "hazel").notes == []
+    i = info(turn=2); i.prose = "Hazel shrugs. \"I sell my pelts at the Market of Hooks, when the Hill pays.\""
+    s2 = game.after_turn(s1, i)
+    assert _card(game, s2, "hazel").notes == ["Sells pelts at the Market of Hooks"]
+    assert any("Sells pelts" in f for f in s2.person("hazel").facts)           # the narrator's Known about them keeps everything
+
+
+def test_learned_facts_show_at_once_newest_first_and_the_mood_beside_the_attitude(game: FantasyGame):
+    st = new(game)
+    st.person("hazel").met = True
+    s1, _, _ = apply(game, st, C(kind="learned", target="hazel", value="Hazel's brother drowned in the Reedway."))
+    s2, _, _ = apply(game, s1, C(kind="learned", target="hazel", value="Hazel owes Kragga two gold."),
+                     C(kind="set", target="hazel", field="mood", value="grateful"))
+    card = _card(game, s2, "hazel")
+    assert card.notes == ["Hazel owes Kragga two gold.", "Hazel's brother drowned in the Reedway."]
+    assert [(b.label, b.value) for b in card.badges][:2] == [("attitude", s2.person("hazel").attitude_word), ("mood", "grateful")]
+
+
+def test_a_learned_row_may_replace_a_fact(game: FantasyGame):
+    """B243 (c): note=replaces <words of the old fact>, matched by two of its words; the card and the narrator's list say
+    what is so now."""
+    st = new(game)
+    st.person("hazel").met = True
+    st.person("hazel").shown = ["sleeps at the Lantern while she is in town"]
+    s1, rep, _ = apply(game, st, C(kind="learned", target="hazel", value="Hazel sleeps on Reed Island now, in Mirren's hut.",
+                                   note="replaces sleeps at the Lantern"))
+    q = s1.person("hazel")
+    assert "Hazel sleeps on Reed Island now, in Mirren's hut." in q.facts and not any("sleeps at the Lantern" in f for f in q.facts)
+    assert q.shown == [] and _card(game, s1, "hazel").notes == ["Hazel sleeps on Reed Island now, in Mirren's hut."]
+    s2, _, _ = apply(game, s1, C(kind="learned", target="hazel", value="Hazel likes the rain.", note="replaces nothing she ever said"))
+    assert "Hazel likes the rain." in s2.person("hazel").facts and len(s2.person("hazel").facts) == 2     # no match: added
