@@ -268,3 +268,22 @@ def test_nobody_walks_into_the_players_own_room(engine, no_happenings):
     sit = wait.model_copy(update={"summary": "Ungdall waits a while."})
     assert quiet_why(game, st, sit, doc, 18, {"readings": ["Ungdall drinks at the bar.", *readings]}) == ("", False)
     assert quiet_why(game, st, sit, doc, 18, {"readings": readings})[0] == "the player is in their own room"
+
+
+def test_the_assistant_can_close_the_scene_to_callers(engine):
+    """B256 (the owner, 11-09): the assistant reads the scene and says whether anyone could walk up now; false holds every
+    caller (a hard why). It is required in the local grammar, so Gemma cannot leave it at its default."""
+    from engine.pipeline import quiet_why
+    from engine.providers.llamacpp_provider import inline_schema
+    from engine.roles import ADJUDICATOR_INSTRUCTIONS, AssistantReadingStaked, AssistantReadingV2
+    game = engine.games["fantasy"]
+    iid = engine.create_instance("fantasy", SHEET)
+    st = state_of(engine, iid)
+    doc = st.model_dump(mode="json")
+    base = {"kind": "action", "risk": "none", "time_minutes": 30, "intents": [], "summary": "Brin sits in the crypt under the chapel."}
+    shut = AssistantReadingStaked.model_validate({**base, "open_to_callers": False})
+    assert quiet_why(game, st, shut, doc, 5) == ("the assistant: nobody could walk up here now", False)
+    assert quiet_why(game, st, AssistantReadingStaked.model_validate(base), doc, 5) == ("", False)
+    for cls in (AssistantReadingStaked, AssistantReadingV2):
+        assert "open_to_callers" in inline_schema(cls.model_json_schema())["required"]
+    assert "true by default" in ADJUDICATOR_INSTRUCTIONS and "a locked, secret or hard-to-reach spot" in ADJUDICATOR_INSTRUCTIONS

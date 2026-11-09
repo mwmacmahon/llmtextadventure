@@ -2808,6 +2808,8 @@ def quiet_why(game: Any, state: Any, adj: Any, doc: dict, turn: int, last: dict 
         words = " ".join([adj.summary or ""] + [i.action or "" for i in adj.intents])
         if any(str(getattr(i, "transition", "") or "").startswith("move:") for i in adj.intents) or ON_THE_MOVE.search(words):
             return "on the move", False
+    if action and getattr(adj, "open_to_callers", True) is False:      # B256: the assistant read the scene: nobody walks up here now
+        return "the assistant: nobody could walk up here now", False
     now_words = " ".join([adj.summary or ""] + [i.action or "" for i in adj.intents]) if adj is not None and hasattr(adj, "intents") else ""
     if in_private(now_words, last.get("readings") or []):
         return "the player is in their own room", False
