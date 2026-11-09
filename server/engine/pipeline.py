@@ -2573,6 +2573,18 @@ NIGHT_MINUTE = 19 * 60
 UNTIL_ASK = "Until when?"
 UNTIL_NIGHT = re.compile(r"\b(?:until|till|'til|til)\s+(?:the\s+)?(?:nightfall|night|dark|dusk|evening|sundown|sunset)\b", re.I)
 WAIT_SAID = re.compile(r"\b(?:wait|waits|waiting|sleep|sleeps|nap|doze|rest|lie low|hole up|stake ?out|keep watch|bide|kill time|sit tight)\b", re.I)
+# B233 (Lilith's save 25a51df64905, turn 27): 'I give a gesture that says "she'll go when she's ready, for now, wait"' was
+# asked "until when?": the wait was in quotes and meant for Tam. Quoted words are what someone says, not what the player's
+# character does; and a wait told, signalled or asked of someone is theirs to keep, not a wait of the player's own.
+QUOTED = re.compile(r"\"[^\"]*\"?|“[^”]*”?|(?<![A-Za-z])'[^']*'(?![A-Za-z])")
+TOLD_TO_WAIT = re.compile(r"\b(?:tell|tells|told|ask|asks|asked|signal|signals|gesture|gestures|motion|motions|sign|signs|beckon|beckons|"
+                          r"wave|waves|urge|urges|bid|bids|say|says|said|saying|whisper|whispers|mouth|mouths|warn|warns|order|orders|"
+                          r"let|lets|have|has|make|makes|get|gets)\b[^.;!?]*?\b(?:wait|stay|sleep|rest|sit tight|lie low)\b", re.I)
+
+
+def own_words(text: str) -> str:
+    """The player's words without what anyone is quoted saying (B233)."""
+    return QUOTED.sub(" ", text or "")
 
 
 def until_when(game: Any, state: BaseModel, adj: AssistantReading, text: str) -> tuple[AssistantReading, str]:
@@ -2585,6 +2597,9 @@ def until_when(game: Any, state: BaseModel, adj: AssistantReading, text: str) ->
     tasks = getattr(clock, "tasks", None) or {}
     if "wait" not in tasks or task not in ("wait", "sleep", "other"):
         return adj, ""
+    text = own_words(text)                          # B233: a wait in quotes is someone's line, not the player's wait
+    if TOLD_TO_WAIT.search(text):                   # B233: a wait asked of someone else; the assistant's minutes stand
+        return adj, ""
     if UNTIL_ANY.search(text):
         return adj.model_copy(update={"time_minutes": clock.cap_minutes}), ""
     clk = sp.lookup(state.model_dump(mode="json"), clock.path, None) or {}
@@ -2596,6 +2611,10 @@ def until_when(game: Any, state: BaseModel, adj: AssistantReading, text: str) ->
     # B60 (the fantasy's first round): asked on three long action inputs whose summaries held "watches" or "follows";
     # ask only when the player's own words are mostly the wait
     if task == "other" or LIMIT_WORDS.search(text) or WAIT_FOR.search(text) or not WAIT_SAID.search(text) or len(text.split()) > 15:
+        return adj, ""
+    # B233: the assistant read an attempt in it (a check, or a settling with an outcome): it is an action that does
+    # something, and a question would throw that away (the prose is told, the outcome never recorded)
+    if getattr(adj, "fiat", None) or any(i.check for i in adj.intents):
         return adj, ""
     if task == "sleep" and getattr(game, "sleep_by_command", False) and not any(c.id == "rest" for c in adj.commands):
         return adj, ""            # the fantasy: a sleep the Rest command did not pick is a move somewhere (no night, no question)
