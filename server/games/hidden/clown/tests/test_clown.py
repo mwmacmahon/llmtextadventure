@@ -493,7 +493,7 @@ def test_round_one_fixes_the_journal_row_the_fee_row_the_slot_off_the_job_and_th
     money = st2.house.money
     s2, rep2, _ = apply(game, st2, C(kind="add", target="house", field="money", value="+15"))
     assert s2.house.money == money and rep2.rejected
-    assert any("The house was paid $" in ln and "student's rate" in ln for ln in game.turn_directives(st2))
+    assert any("The house was paid " in ln and " gold" in ln and "student's rate" in ln for ln in game.turn_directives(st2))
     # a slot off by the proprietor's word
     st3 = new(game)
     st3, _ = game.run_command(st3, "plan", {"slot": "afternoons", "skill": "work"})
@@ -571,8 +571,8 @@ def test_the_narrators_log_is_words_and_the_arithmetic_keeps_the_numbers(game: C
     pend.fired, pend.fired_turn = True, 9
     st = game.after_turn(st, info(turn=9, minutes=600))
     assert st.house.report and not any(ch.isdigit() for ln in st.house.report for ch in ln)
-    assert st.house.report_numbers and any("$" in ln for ln in st.house.report_numbers)
-    assert any(ln.startswith("The week was counted") and "$" not in ln for ln in game.turn_directives(st))
+    assert st.house.report_numbers and any(" gold" in ln for ln in st.house.report_numbers)
+    assert any(ln.startswith("The week was counted") and " gold" not in ln for ln in game.turn_directives(st))
 
 
 def test_skip_runs_the_clock_to_a_named_point_and_the_pipeline_may_stop_it_sooner(game: ClownGame):

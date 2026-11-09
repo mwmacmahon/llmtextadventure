@@ -88,7 +88,7 @@ def run(weeks: int = 8, kind: str = "charmer", girl: str = "dot", plan: str = "p
     booked_week: list[str] = []
     log_mark = len(st.log)
     out(f"Clown Maker, dry run: {kind}, {girl} first, plan {plan!r}" + (f", rest at {rest_at}" if rest_at else "") + f", book {book}, attend {attend}, seed {seed}.")
-    out(f"Start: ${st.house.money}; {st.active_girl.name if st.active_girl else 'nobody'} on the mats; grid " + ", ".join(f"{k} {v}" for k, v in (st.active_girl.skills.items() if st.active_girl else [])))
+    out(f"Start: {st.house.money} gold; {st.active_girl.name if st.active_girl else 'nobody'} on the mats; grid " + ", ".join(f"{k} {v}" for k, v in (st.active_girl.skills.items() if st.active_girl else [])))
     while st.house.week <= weeks and not st.house.fate:
         g = st.active_girl
         if g is not None and g.status == "active" and ((weekday(st.clock.day) == 0 and st.clock.minute == 540) or not st.plan.mornings):
@@ -130,9 +130,9 @@ def run(weeks: int = 8, kind: str = "charmer", girl: str = "dot", plan: str = "p
             shows = [x for x in st.shows if x.resolved_turn is not None and x.at_abs // DAY > st.clock.day - 7]
             spent = [ln for ln in st.log[log_mark:] if "is spent" in ln]
             log_mark = len(st.log)
-            out(f"W{before_week:>2} ${h.money:>5} heat {h.heat:>2} ({h.heat_word}) name {h.name:>2} ({h.name_word}) | {g0.name if g0 else '-'} fatigue {g0.fatigue if g0 else 0} ({g0.fatigue_word if g0 else '-'})"
+            out(f"W{before_week:>2} {h.money:>5} gold heat {h.heat:>2} ({h.heat_word}) name {h.name:>2} ({h.name_word}) | {g0.name if g0 else '-'} fatigue {g0.fatigue if g0 else 0} ({g0.fatigue_word if g0 else '-'})"
                 + (f" | gains: {gains}" if gains else " | no gains")
-                + (" | shows: " + "; ".join(f"{x.title}: {x.result}" + (f" ${x.paid}" if x.paid else "") for x in shows) if shows else " | no show")
+                + (" | shows: " + "; ".join(f"{x.title}: {x.result}" + (f" {x.paid} gold" if x.paid else "") for x in shows) if shows else " | no show")
                 + (" | booked: " + "; ".join(booked_week) if booked_week else "")
                 + (" | fired: " + ", ".join(fired_week) if fired_week else "")
                 + (" | SPENT" if spent else ""))
@@ -142,7 +142,7 @@ def run(weeks: int = 8, kind: str = "charmer", girl: str = "dot", plan: str = "p
             week_start = dict(g.skills) if g else {}
     g = st.active_girl
     out("")
-    out(f"End: week {st.house.week}, day {st.clock.day}; ${st.house.money}; heat {st.house.heat} ({st.house.heat_word}); name {st.house.name} ({st.house.name_word})" + (f"; FATE {st.house.fate}" if st.house.fate else ""))
+    out(f"End: week {st.house.week}, day {st.clock.day}; {st.house.money} gold; heat {st.house.heat} ({st.house.heat_word}); name {st.house.name} ({st.house.name_word})" + (f"; FATE {st.house.fate}" if st.house.fate else ""))
     for x in st.girls:
         if x.in_house():
             out(f"  {x.name} ({x.status}): love {x.love} respect {x.respect} fear {x.fear}, fatigue {x.fatigue}; "

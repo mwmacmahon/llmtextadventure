@@ -346,7 +346,7 @@ class ClownGame(GameBase):
             out.append(f"    Wants: {q.wants}")
         if q.client:
             out.append(f"    As a client: wants {' and '.join(self.skill_name(x) for x in q.client.wants)}; taste: {q.client.taste}; pays about "
-                       f"{'nothing' if not q.client.pays else f'${q.client.pays}'}.")
+                       f"{'nothing' if not q.client.pays else f'{q.client.pays} gold'}.")
         if q.secret:
             out.append(f"    Hidden: {q.secret}")
         for t in q.tells:
@@ -453,7 +453,7 @@ class ClownGame(GameBase):
         s, p, h = state, state.player, state.house
         lines = [f"Time: {day_text(s.clock.day, s.clock.minute)} (day {s.clock.day})."]
         lines.append(f"{p.name}: at {p.location or 'unknown'}" + (f"; {', '.join(c.name for c in p.conditions)}" if p.conditions else "") + ".")
-        lines.append(f"The house: the authorities' attention is {h.heat_word}; the house's name is {h.name_word}" + (f"; money ${h.money}" if engine else
+        lines.append(f"The house: the authorities' attention is {h.heat_word}; the house's name is {h.name_word}" + (f"; money {h.money} gold" if engine else
                      f"; money {money_word(h.money)}") + ".")
         if h.closed_until_abs > s.now_abs:
             lines.append("The house is closed for repairs; no bookings.")
@@ -594,8 +594,8 @@ class ClownGame(GameBase):
                 words = SHOW_LINES[x.result]
                 why = "; ".join(x.why).rstrip(".") + "."
                 g = s.girl(x.girl)
-                paid = (f"The house was paid ${x.paid}" + ("" if g is None or g.graduated or not x.fee or x.paid >= x.fee else
-                        f": a student's rate, a quarter of the full fee of ${x.fee}, which a graduate's show would have earned whole") + ".") if x.fee else "Nothing was to be paid."
+                paid = (f"The house was paid {x.paid} gold" + ("" if g is None or g.graduated or not x.fee or x.paid >= x.fee else
+                        f": a student's rate, a quarter of the full fee of {x.fee} gold, which a graduate's show would have earned whole") + ".") if x.fee else "Nothing was to be paid."
                 if x.attended:
                     out.append(f"THE SHOW, as it went: {x.title} at {x.venue}: {words}. Why: {why} {paid} Write the show from the first routine to the "
                                f"client's face at the end, in the fiction's words, showing the why and never saying it, and stop where {p.name} would next decide. "
@@ -779,7 +779,7 @@ class ClownGame(GameBase):
         return rows
 
     def _board_line(self, s: ClownState, h: Any, hooks: dict[str, dict]) -> str:
-        """Day, hour, venue and fee up front on the bookings board ("Sat 20:30 · The Judge's house · $60 · ")."""
+        """Day, hour, venue and fee up front on the bookings board ("Sat 20:30 · The Judge's house · 60 gold · ")."""
         hk = hooks.get(h.hook) or {}
         if hk.get("kind") != "booking":
             return ""
@@ -791,7 +791,7 @@ class ClownGame(GameBase):
             when, venue = f"{WEEKDAYS[weekday(x.at_abs // DAY)][:3]} {hhmm(x.at_abs % DAY)}", x.venue
         else:
             when, venue = f"{WEEKDAYS[int(bk.get('weekday', 5))][:3]} {hhmm(int(bk.get('minute', 1200)))}", str(bk.get("venue") or "")
-        return f"{when} · {venue} · " + (f"${fee}" if fee else "nothing paid") + " · "
+        return f"{when} · {venue} · " + (f"{fee} gold" if fee else "nothing paid") + " · "
 
     # ---- checks -------------------------------------------------------------------------------------------------------
     def modifiers(self, state: ClownState, req: CheckRequest, target_entity: str | None) -> list[Modifier]:
@@ -931,10 +931,10 @@ class ClownGame(GameBase):
                 n = max(-MONEY_ROW, min(MONEY_ROW, n))
                 told_now = [x for x in s.shows if x.result and not x.told]
                 if n > 0 and told_now:
-                    w.reject("house.money", f"the show's fee is the engine's and was paid (${told_now[0].paid}); no row for it", value)
+                    w.reject("house.money", f"the show's fee is the engine's and was paid ({told_now[0].paid} gold); no row for it", value)
                     return True
                 if n < 0 and s.house.money + n < -50 and s.house.money <= 0:
-                    w.reject("house.money", f"the house has ${s.house.money}; it cannot pay more", value)
+                    w.reject("house.money", f"the house has {s.house.money} gold; it cannot pay more", value)
                     return True
                 if w.set("house.money", s.house.money, s.house.money + n):
                     s.house.money += n
@@ -1381,7 +1381,7 @@ class ClownGame(GameBase):
             job = g.job or JOB_WORDS[sum(ord(c) for c in g.id) % len(JOB_WORDS)]
             g.job = job
             self._note(s, f"{label}: {g.name} worked at {job}; a little money came of it" + (f", and she is {g.diligence_word} at work now" if g.diligence_word != before_d else "") + ".",
-                       f"{label}: {g.name} worked a job (+${pay}; diligence {g.diligence - up} to {g.diligence}).", at=clock_text(day, SLOTS[slot][1]))
+                       f"{label}: {g.name} worked a job (+{pay} gold; diligence {g.diligence - up} to {g.diligence}).", at=clock_text(day, SLOTS[slot][1]))
             s.house.week_lines.append(f"* {label}: she worked at {job}; a little money came of it" + (f"; she is {g.diligence_word} at work now" if g.diligence_word != before_d else "") + ".")
             return
         if what in g.untrainable and not s.flags.get(f"{g.id}_spoke"):
@@ -1519,7 +1519,7 @@ class ClownGame(GameBase):
         g.history.append(stamp(s, f"{x.title}: {word}"))
         s.house.last_show = f"{x.title} at {x.venue}, {g.name}: {SHOW_LINES[word]}" + ("; paid" if x.paid else "; nothing paid") + "."
         self._note(s, f"{x.title}: {word}. " + ("Paid." if x.paid else "Nothing paid."),
-                   f"{x.title}: {word} (quality {quality:+d}: {'; '.join(why_n)}). " + (f"Paid ${x.paid}." if x.paid else "Nothing paid."))
+                   f"{x.title}: {word} (quality {quality:+d}: {'; '.join(why_n)}). " + (f"Paid {x.paid} gold." if x.paid else "Nothing paid."))
         s.house.week_lines.append(f"The booking, {x.title}: {word}" + ("; paid" if x.paid else "; nothing paid") + ".")
 
     def _schedule_show(self, s: ClownState, h: Any, girl: Girl | None = None, turn: int = 0) -> tuple[bool, str]:
@@ -1581,12 +1581,15 @@ class ClownGame(GameBase):
         if g is not None and g.in_house():
             gains = ", ".join(f"{self.skill_name(k).lower()} {'much better' if v >= 20 else 'better' if v >= 8 else 'a little better'}" for k, v in g.week_gains.items() if v > 0)
             how_much = "every slot" if g.week_slots >= 10 else "most of the week" if g.week_slots >= 7 else "about half the week" if g.week_slots >= 4 else "a little" if g.week_slots else "not at all"
+            plan_words = {"": "nothing set", "rest": "rest", "work": "a job in town"}
+            lines.append("The plan was: mornings " + plan_words.get(s.plan.mornings, self.skill_name(s.plan.mornings).lower() if s.plan.mornings else "nothing set")
+                         + "; afternoons " + plan_words.get(s.plan.afternoons, self.skill_name(s.plan.afternoons).lower() if s.plan.afternoons else "nothing set") + ".")
             lines.append(f"{g.name} trained {how_much}" + (f": {gains}" if gains else ", and nothing moved") + f"; she ends the week {g.fatigue_word}.")
             nums.append(f"{g.name} trained {g.week_slots} of ten slots: " + (", ".join(f"{self.skill_name(k)} {g.skills.get(k, 0) - v} to {g.skills.get(k, 0)}" for k, v in g.week_gains.items() if v) or "nothing moved")
                         + f"; fatigue {g.fatigue} ({g.fatigue_word}).")
             if g.week_jobs:
                 lines.append(f"She worked her job in town ({g.job or 'in town'}) " + ("every afternoon she could" if g.week_jobs >= 5 else f"{g.week_jobs} slot{'s' if g.week_jobs != 1 else ''}") + "; it brought a little money in.")
-                nums.append(f"Her job: {g.week_jobs} slots, ${g.week_jobs * int(dk.dial(s, 'job_pay'))}.")
+                nums.append(f"Her job: {g.week_jobs} slots, {g.week_jobs * int(dk.dial(s, 'job_pay'))} gold.")
             if s.plan.carried:
                 lines.append("She trained what she trained last week; nobody told her otherwise.")
                 nums.append("The plan carried over.")
@@ -1597,7 +1600,7 @@ class ClownGame(GameBase):
         shows = [x for x in s.shows if x.resolved_turn is not None and x.at_abs // DAY > s.clock.day - 7]
         if shows:
             lines.append("Shows: " + "; ".join(f"{x.title}" + (f" ({s.girl(x.girl).name})" if s.girl(x.girl) else "") + f", {x.result}" + (", paid" if x.paid else ", nothing paid") for x in shows) + ".")
-            nums.append("Shows: " + "; ".join(f"{x.title}" + (f" ({s.girl(x.girl).name})" if s.girl(x.girl) else "") + f", {x.result}" + (f", ${x.paid}" if x.paid else "") for x in shows) + ".")
+            nums.append("Shows: " + "; ".join(f"{x.title}" + (f" ({s.girl(x.girl).name})" if s.girl(x.girl) else "") + f", {x.result}" + (f", {x.paid} gold" if x.paid else "") for x in shows) + ".")
         else:
             lines.append("No show this week.")
             nums.append("No show this week.")
@@ -1611,13 +1614,13 @@ class ClownGame(GameBase):
         if keep:
             h.money -= keep
             lines.append("The coal, the food and Mrs Pell's wages were paid.")        # never "keep": the reader heard the ledger's word in the prose
-            nums.append(f"The week's keep, ${keep}, was paid.")
+            nums.append(f"The week's keep, {keep} gold, was paid.")
         if h.week % 4 == 0:
             h.money -= h.rent
             lines.append("The rent was paid.")
-            nums.append(f"The rent, ${h.rent}, was paid.")
+            nums.append(f"The rent, {h.rent} gold, was paid.")
         lines.append(f"Money: {money_word(h.money)}. The authorities: {h.heat_word}. The house's name: {h.name_word}.")
-        nums.append(f"Money: ${h.money}. Heat {h.heat} ({h.heat_word}). Name {h.name} ({h.name_word}).")
+        nums.append(f"Money: {h.money} gold. Heat {h.heat} ({h.heat_word}). Name {h.name} ({h.name_word}).")
         for x in s.girls:
             if not x.in_house():
                 continue
@@ -1667,7 +1670,7 @@ class ClownGame(GameBase):
         bits = []
         if row.get("money"):
             s.house.money += int(row["money"])
-            bits.append(f"${int(row['money']):+d}")
+            bits.append(f"{int(row['money']):+d} gold")
         if row.get("name"):
             s.house.name = max(0, min(100, s.house.name + int(row["name"])))
         if row.get("heat"):
@@ -1782,12 +1785,12 @@ class ClownGame(GameBase):
         s = state
         g = s.active_girl
         return [Chip(label="girl", value=g.name if g else "nobody in training"), Chip(label="week", value=f"Week {s.house.week}, {WEEKDAYS[weekday(s.clock.day)]}"),
-                Chip(label="money", value=f"${s.house.money}"), Chip(label="heat", value=s.house.heat_word)]
+                Chip(label="money", value=f"{s.house.money} gold"), Chip(label="heat", value=s.house.heat_word)]
 
     def seen_changes(self, before: ClownState, after: ClownState) -> list[str]:
         b, a, out = before, after, []
         if a.house.money != b.house.money:
-            out.append(f"Money: ${b.house.money} → ${a.house.money}")
+            out.append(f"Money: {b.house.money} gold → {a.house.money} gold")
         if a.house.heat_word != b.house.heat_word:
             out.append(f"Heat: {b.house.heat_word} → {a.house.heat_word}")
         if a.house.name_word != b.house.name_word:
@@ -1819,7 +1822,7 @@ class ClownGame(GameBase):
             if xb is None:
                 out.append(f"Booked: {x.title}" + (f" ({a.girl(x.girl).name})" if a.girl(x.girl) else ""))
             elif x.result and not xb.result:
-                out.append(f"{x.title}: {x.result}" + (f", ${x.paid}" if x.paid else ""))
+                out.append(f"{x.title}: {x.result}" + (f", {x.paid} gold" if x.paid else ""))
         if a.house.week != b.house.week:
             out.append(f"Week {a.house.week}")
         if a.plan != b.plan and not (a.plan.carried and not b.plan.carried and a.plan.mornings == b.plan.mornings and a.plan.afternoons == b.plan.afternoons):
@@ -2035,7 +2038,7 @@ class ClownGame(GameBase):
         s, h, p = state, state.house, state.player
         g = s.active_girl if s.active_girl is not None and s.active_girl.in_house() else None
         strip = [Chip(label="Time", value=day_text(s.clock.day, s.clock.minute)), Chip(label="Place", value=p.location or "unknown"),
-                 Chip(label="Money", value=f"${h.money}", tone="bad" if h.money < 0 else None), Chip(label="Heat", value=h.heat_word, tone=self.HEAT_TONES.get(h.heat_word)),
+                 Chip(label="Money", value=f"{h.money} gold", tone="bad" if h.money < 0 else None), Chip(label="Heat", value=h.heat_word, tone=self.HEAT_TONES.get(h.heat_word)),
                  Chip(label="Name", value=h.name_word)]
         if g is not None:
             strip.append(Chip(label="In training", value=g.name))
