@@ -1774,18 +1774,26 @@ class Engine:
                 if missing:
                     directives.append("NOT CARRIED: " + missing)
                     notes.append(f"not carried: {name}")
+            # B245: in a tense scene (a fight, a peril, someone hostile here, a check at a person here this turn or last, a question
+            # to the player waiting, the assistant's "nobody could walk up now") the turn is as short as the assistant says, floor one
+            tense = tense_why(game, state, adj, self._last_turn(iid, turn)) if clock and adj.kind == "action" else ""
+            if tense and adj.time_minutes < getattr(clock, "fast_minutes", 1):
+                notes.append(f"tense turn ({tense}): {adj.time_minutes} minutes raised to the floor of {clock.fast_minutes}")
+                adj.time_minutes = clock.fast_minutes
+            elif tense and adj.time_minutes < clock.slow_minutes and getattr(adj, "tempo", "slow") != "fast":
+                notes.append(f"tense turn ({tense}): {adj.time_minutes} minutes kept, the slow floor stands down")
             # a slow action costs at least the game's floor (D93): fifty turns of two-minute actions never reached the spine's second day
-            if clock and adj.kind == "action" and getattr(adj, "tempo", "slow") != "fast" and adj.time_minutes < clock.slow_minutes:
+            if clock and not tense and adj.kind == "action" and getattr(adj, "tempo", "slow") != "fast" and adj.time_minutes < clock.slow_minutes:
                 notes.append(f"slow turn: {adj.time_minutes} minutes raised to the floor of {clock.slow_minutes}")
                 adj.time_minutes = clock.slow_minutes
             # ... and a fast one at least a minute (time doc §3, D146): a fight beat that takes no time is a free stall
-            if clock and adj.kind == "action" and getattr(adj, "tempo", "slow") == "fast" and adj.time_minutes < getattr(clock, "fast_minutes", 1):
+            if clock and not tense and adj.kind == "action" and getattr(adj, "tempo", "slow") == "fast" and adj.time_minutes < getattr(clock, "fast_minutes", 1):
                 notes.append(f"fast turn: {adj.time_minutes} minutes raised to the floor of {clock.fast_minutes}")
                 adj.time_minutes = clock.fast_minutes
             # (iv) the game's minutes by kind of turn (time doc §3, D148): a fight, a talk, a search or a walk keeps to its
             # row; waiting and sleeping run to the player's limit (the "until when" question), so their rows only floor
             if clock and adj.kind == "action" and not getattr(adj, "minutes_fixed", False):
-                kept, why = task_minutes(clock, adj)
+                kept, why = task_minutes(clock, adj, tense=bool(tense))
                 if why:
                     notes.append(why)
                     adj.time_minutes = kept
@@ -2969,6 +2977,35 @@ def in_private(now: str, before: list[str]) -> bool:
     return False
 
 
+def tense_why(game: Any, state: Any, adj: Any, last: dict | None = None) -> str:
+    """Why this turn is in a tense scene (B245), or "": the signs quiet_why reads that say the moment is pressing, not merely
+    busy: a fight this turn; the game's own (a peril, a compulsion, someone hostile here); the assistant's "nobody could walk up
+    here now"; a check this turn at a person here, or one rolled at a person here last turn; a question to the player waiting.
+    Not a move, the player's own room, or someone having spoken: those hold callers back without hurrying the clock."""
+    last = last or {}
+    action = adj is not None and getattr(adj, "kind", "") == "action"
+    if action and is_fight(adj):
+        return "in a fight"
+    why = str(_hook(game, "unquiet", state, default="") or "")
+    if why:
+        return why
+    if action and getattr(adj, "open_to_callers", True) is False:
+        return "the assistant: nobody could walk up here now"
+    here = _hook(game, "people_here", state, default=None)
+    here = set(here if here is not None else [x for x in last.get("present") or [] if x != "player"])
+    name = lambda pid: str(_hook(game, "person_name", state, pid, default=None) or pid)  # noqa: E731
+    if action:
+        for i in adj.intents:
+            if i.check and getattr(i.check, "target_entity", None) in here:
+                return f"a check at {name(i.check.target_entity)}"
+    about = set(last.get("about") or []) & here
+    if about:
+        return f"a check at {name(sorted(about)[0])} last turn"
+    if last.get("clarify"):
+        return "a question to the player is waiting"
+    return ""
+
+
 def quiet_why(game: Any, state: Any, adj: Any, doc: dict, turn: int, last: dict | None = None) -> tuple[str, bool]:
     """Why this turn is not quiet, and whether that why is soft (B248: one definition, for word from elsewhere (B104) and for
     anyone walking up (B235)), or ("", False). Hard: a fight this turn; the game's own (a peril, a compulsion, someone hostile
@@ -3134,15 +3171,17 @@ def task_of(adj: Any) -> str:
     return next((kind for kind, rx in TASK_WORDS if rx.search(text)), "other")
 
 
-def task_minutes(clock, adj) -> tuple[int, str]:
+def task_minutes(clock, adj, tense: bool = False) -> tuple[int, str]:
     """The game's row for the kind of turn (time doc §3 (iv), D148): the estimate kept within the row, and a note when it
-    moved. Waiting and sleeping run to the player's limit, so their rows only floor them."""
+    moved. Waiting and sleeping run to the player's limit, so their rows only floor them. In a tense scene (B245) a row's
+    floor stands down (the turn is as short as the assistant says); its ceiling still holds."""
     task = task_of(adj)
     row = (getattr(clock, "tasks", None) or {}).get(task)
     m = int(adj.time_minutes or 0)
     if row is None:
         return m, ""
-    kept = max(m, row.least) if task in ("wait", "sleep") else min(max(m, row.least), row.most)
+    least = min(row.least, max(m, 1)) if tense and task not in ("wait", "sleep") else row.least
+    kept = max(m, least) if task in ("wait", "sleep") else min(max(m, least), row.most)
     return kept, (f"{task} turn: {m} minutes kept to {kept} ({row.least} to {row.most})" if kept != m else "")
 
 

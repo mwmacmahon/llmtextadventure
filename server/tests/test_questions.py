@@ -377,3 +377,54 @@ async def test_an_aside_row_the_state_already_says_is_dropped(engine, fake):
     row = next(r for r in engine.store.ledger(iid) if r["kind"] == "aside_learned")
     assert row["payload"]["rows"] == [] and row["payload"]["stale"] == ["The Drowned Lantern is on Lantern Row."]
 
+
+# ---- B245: the clock in a tense scene ----------------------------------------------------------------------------------
+
+def test_tense_why_reads_the_pressing_signs_only(engine):
+    from engine.pipeline import tense_why, task_minutes
+    from engine.roles import CheckProposal
+    game = engine.games["fantasy"]
+    iid = engine.create_instance("fantasy", SHEET)
+    st = state_of(engine, iid)
+    calm = reading("I ask Maud about the room.", 2)
+    assert tense_why(game, st, calm, {}) == ""
+    at = reading("I tell Maud the price.", 2)
+    at.intents[0].check = CheckProposal(label="press Maud", stat="cha", difficulty="medium", target_entity="maud")
+    assert tense_why(game, st, at, {}) == "a check at Maud Tallow"
+    assert tense_why(game, st, calm, {"about": ["maud"]}) == "a check at Maud Tallow last turn"
+    assert tense_why(game, st, calm, {"clarify": True}) == "a question to the player is waiting"
+    assert tense_why(game, st, calm, {"present": ["maud"], "quoted": True}) == ""          # someone spoke: busy, not pressing
+    st.person("maud").attitude = -3
+    assert "hostile" in tense_why(game, st, calm, {})
+    row = game.clock.tasks["talk"]
+    assert task_minutes(game.clock, calm, tense=True)[0] == 2 and task_minutes(game.clock, calm)[0] == row.least
+
+
+def test_the_boats_party_is_here_though_filed_elsewhere(engine):
+    """Lilith's turns 15 to 23: in the skiff on the river Marrow with Tam and Hazel, both still filed at the Reedway, so
+    people_here (quiet_why's and tense_why's 'here') was empty."""
+    game = engine.games["fantasy"]
+    st = state_of(engine, engine.create_instance("fantasy", SHEET))
+    st.player.location, st.player.with_them = "The river Marrow", ["tam", "hazel"]
+    st.person("tam").location = st.person("hazel").location = "The Reedway"
+    assert {"tam", "hazel"} <= set(game.people_here(st))
+
+
+async def test_a_slow_turn_in_a_tense_scene_takes_what_the_assistant_said(engine, fake):
+    iid = engine.create_instance("fantasy", SHEET)
+    st = state_of(engine, iid)
+    st.person("maud").attitude = -3                                   # someone hostile here
+    engine.store.save_snapshot(iid, 0, st.model_dump(mode="json"))
+    m0 = st.clock.day * 1440 + st.clock.minute
+    fake.canned["AssistantReading"] = [reading("I say the price again, quietly, with Maud's knife out.", 2)]
+    ev1 = await play(engine, iid, "I say the price again, quietly.")
+    after = state_of(engine, iid)
+    assert after.clock.day * 1440 + after.clock.minute - m0 == 2
+    st2 = state_of(engine, iid)
+    st2.person("maud").attitude = 0
+    engine.store.save_snapshot(iid, 1, st2.model_dump(mode="json"))
+    fake.canned["AssistantReading"] = [reading("I ask Maud about supper.", 2)]
+    ev2 = await play(engine, iid, "I ask Maud about supper.")
+    issues = lambda evs: " ".join(str(e["data"].get("mechanics", {}).get("issues")) for e in evs if isinstance(e.get("data"), dict))  # noqa: E731
+    assert "tense turn (" in issues(ev1) and "the slow floor stands down" in issues(ev1)
+    assert "slow turn: 2 minutes raised to the floor of 5" in issues(ev2) and "tense turn" not in issues(ev2)    # calm: the floor stands

@@ -605,7 +605,8 @@ class FantasyGame(GameBase):
     def people_here(self, state: FantasyState) -> list[str]:
         """B248: the ids of the people the player can see where they are (with them or met there): for quiet_why."""
         s, p = state, state.player
-        return [q.id for q in s.people if q.status == "alive" and not q.hidden_from_player and q.location and self._same_spot(s, q.location, p.location)]
+        return [q.id for q in s.people if q.status == "alive" and not q.hidden_from_player
+                and (q.id in p.with_them or (q.location and self._same_spot(s, q.location, p.location)))]   # B245: the boat's party filed elsewhere
 
     def people_records(self, state: FantasyState) -> list[str]:
         """B244 (b): for the game master's asides, each person the player can see here with the record's description after the
