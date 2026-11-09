@@ -276,7 +276,7 @@ API player models are not used (D84: "players playing the game: Claude Code, not
 plays from a script of inputs. Use a round to see a mechanic work end to end, then turn the interesting turns into a
 test set so a model or prompt change can be measured on them.
 
-Run rounds against a server that does not reload (`api-sonnet-fixed` in `.claude/launch.json`, port 8012, the Sonnet
+Never run a round against a player's server (:8016 is Lilith's; `docs/SERVERS.md`). Run rounds against a server that does not reload (`api-sonnet-fixed` in `.claude/launch.json`, port 8012, the Sonnet
 roles, paid; `api-local-follow`, port 8013, the local roles, free, following the box's loaded profile), so code can
 change while a round runs; restart it to pick up the change. On the local box rounds run one at a time (D88: the three
 slots are one per role, and two games at once run half the structured calls cold). A scripted round goes off-script

@@ -90,6 +90,19 @@ cd ../server && .venv/bin/uvicorn app:app --host 0.0.0.0 --port 8010
 The server serves `web/dist` at `/` when it exists. Open `http://<host>:8010` from any machine
 on the LAN.
 
+## The servers (read before starting or restarting anything)
+
+The contract is [`docs/SERVERS.md`](docs/SERVERS.md). Three kinds of server, and the kind says who touches it:
+
+- **A player's server** runs from its own checkout pinned at a commit, with its own data folder, and nothing restarts
+  it but the owner, by `server/tools/lilith_update.sh <commit>`. **Lilith's game is :8016** (`api-lilith`, the worktree
+  `../llmtextadventure-lilith`, saves in `../llmtextadventure-lilith-data`). A build never restarts it, a round never
+  runs on it, and dev mode is off at the server (`TA_DEV_MODE=off`, B232).
+- **A rounds server** (:8013 Gemma, :8014 Sonnet) runs from this checkout and is restarted on every build.
+- **A dev server** (:8010, :8011, :8015, the web dev ports) runs with `--reload` or the fake provider, at will.
+
+A server never changes kind in place. Adding or moving one updates `docs/SERVERS.md` in the same commit.
+
 ## Models
 
 Branch `2.0` carries the structured-world engine (design in the gitignored `notes/DESIGN2.md`; summary in

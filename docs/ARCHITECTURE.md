@@ -386,7 +386,10 @@ meters side by side; a list's `layout` is `rows` (label left, value right), `gri
 label shows its value alone) or `stack` (the label over the value); a chip's `tone` colours it; a command's
 `enabled: false` greys it (the engine still refuses it); an empty table, list, log or card list says
 "Nothing yet." `TA_DATA_DIR` gives one server its own store and logs (a fake server for UI checks beside
-the live rounds' store, `.claude/launch.json` `api-fantasy-fake` on :8015). The GM debug
+the live rounds' store, `.claude/launch.json` `api-fantasy-fake` on :8015). **Deployment:** every server the project
+runs, by kind (a player's server pinned at a commit with its own store and `TA_DEV_MODE=off`, so no hidden game loads
+and Settings shows no dev switch, B232; the rounds servers the build restarts; the dev servers), is in `docs/SERVERS.md`;
+Lilith's game is :8016 and no build touches it. The GM debug
 drawer shows, per turn, the exact bulletin, the messages sent to the narrator, usage and the
 ledger, with branch-from-here and rewind-to-here.
 

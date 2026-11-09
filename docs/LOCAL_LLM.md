@@ -129,6 +129,10 @@ processes.
 
    The old :8010 (`--reload`, from 10-28) is stopped (B230).
 
+   The contract for every server, its kind, its flags and who restarts it is `docs/SERVERS.md` (keep it current in the
+   same commit as any server change). A player's server (:8016) runs with `TA_DEV_MODE=off` (B232) and is moved only by
+   the owner with `server/tools/lilith_update.sh`; never restart it from a build, never run a round on it.
+
 ## Checks: called, as on Sonnet (told retired, D63)
 
 `config.llamacpp.yml` sets the narrator's `checks: called`, the same as Sonnet. Told mode (the engine rolls
