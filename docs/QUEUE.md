@@ -14,8 +14,8 @@ her own pace. Let's go ahead and update her server and I'll make a little side g
 play some of the grimdark Gemma one potentially too. That's where I'd probably play more. If you need more Sonnet
 you'll need to run your own trials. I think running a Gemma trial right now regarding the X3 thing is a good idea."
 
-1. **Now: her server moves** to 83ac136, part twelve complete (§1 to §6 landed tonight, 49501d3 to 83ac136), on the
-   owner's word given 11-09 night: part thirteen §1. The owner smoke-tests with a side game; Lilith plays at her own
+1. *Done 11-09 17:10 UTC:* **her server moved** to 83ac136 (deploys.log: bbbd735 -> 83ac136), part twelve complete, on
+   the owner's word: part thirteen §1. The owner smoke-tests with a side game; Lilith plays at her own
    pace and the side chat reads her save when there is new play.
 2. **Now: the introductions** (part fourteen, written 11-09 night by the side chat at the owner's ask: "some kind of
    introductory paragraph... the world and your character's state within it"; Lilith: nothing told her who, where or
