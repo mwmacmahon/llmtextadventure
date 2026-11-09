@@ -667,11 +667,22 @@ class Engine:
         While it runs, the instance counts as streaming: a profile switch on this server waits for it (engine/picker.py)."""
         token = object()
         self.streaming[token] = (iid, time.time())
+        finished = False
         try:
             async for ev in self._play(iid, player_text, command, rewrite=rewrite, hint=hint):
                 yield ev
+            finished = True
         finally:
             self.streaming.pop(token, None)
+            if not finished:                          # B257: the stream was dropped mid-turn (a reload): no half turn stays
+                try:
+                    t = self.store.latest_turn(iid) + 1
+                    if any(r.turn == t for r in self.store.transcript(iid)):
+                        self.store.drop_transcript_turn(iid, t)
+                        self.store.append_ledger(iid, t, "turn_failed", {"step": "cut off", "error": "the stream was dropped before the turn finished"})
+                        log.warning("turn.cut_off " + logs.kv(iid=iid, turn=t))
+                except Exception:  # noqa: BLE001 - cleanup only; the next turn's start clears it anyway
+                    log.exception("turn.cut_off.cleanup_failed " + logs.kv(iid=iid))
             self.store.touch(iid)                     # last played (the save list sorts on it)
 
     def turns_streaming(self, stale_after: float = 900.0) -> list[str]:
@@ -740,6 +751,11 @@ class Engine:
             yield {"event": "error", "data": {"message": f"The story is over: {over} Undo or branch from an earlier turn to keep playing.", "step": "ended"}}
             return
         ledger = lambda kind, payload: self.store.append_ledger(iid, turn, kind, payload)  # noqa: E731
+        if any(r.turn == turn for r in self.store.transcript(iid)):
+            # B257: a turn cut off before it finished (the page reloaded mid-turn, the server stopped) left its player line and
+            # bulletin with no telling; they go, as a failed turn's do, so this turn does not hold two (ISSUES A2)
+            self.store.drop_transcript_turn(iid, turn)
+            ledger("turn_failed", {"step": "cut off", "error": "the turn before this input never finished (its stream was dropped)"})
         self._tapes[iid] = ledger
         t_turn = time.monotonic()
         stamp = self.profile_stamp(iid)               # the play's profile and difficulty, on the ledger and the mechanics row (Stage 3)
