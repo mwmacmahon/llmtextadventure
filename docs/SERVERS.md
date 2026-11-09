@@ -21,8 +21,7 @@ moves or stops a server.
 | :8013 | rounds | `gemma4-31b` in every role, `TA_STAKES=live`, `config.llamacpp.yml` against the box (`TA_LLAMA_URL` :8280, prepare :8281); `127.0.0.1` | the shared checkout | `data/` (shared store) | the build chat, on every build |
 | :8014 | rounds | `sonnet`; `0.0.0.0` | the shared checkout | `data/` (shared store) | the build chat, on every build |
 
-**:8016 today:** still 6c9099a, started before the flag existed, so its Settings page still shows the dev switch (it has no hidden
-games to show: the worktree has no `server/games/hidden/`). It takes `TA_DEV_MODE=off` at its next update, which waits for the owner's go.
+**:8016 today:** 7c77af6, moved 2026-11-09 05:13 UTC on the owner's word (deploys.log: 6c9099a -> 7c77af6), with dev mode off: the Settings page has no dev switch and only station, noir and the fantasy are listed. It brings parts eight to eleven and the fixes since (B213 to B257): among them the walk-up holds, word held far from the city, quest deadlines from when she hears of them, Hazel waiting to be spoken to, the "In your words" panel, and a cut-off turn cleaning itself up.
 
 Stopped: the old :8010 (`--reload`, from 10-28; B230). The preview entries in `.claude/launch.json` (`api`, `api-fake`,
 `api-local*`, `web-local`) are dev servers, started at will.
