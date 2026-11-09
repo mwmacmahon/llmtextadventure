@@ -7,14 +7,16 @@ from __future__ import annotations
 import hmac
 import json
 import re
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from engine import logs, picker
+from engine import mods as mods_mod
 from engine.config import load_config
 from engine.pipeline import Engine
 from engine.registry import load_games
@@ -34,6 +36,7 @@ app = FastAPI(title="textadventure")
 class NewInstance(BaseModel):
     game: str
     setup: dict[str, Any] = {}
+    mods: list[str] = []          # B79: the ticked mods, by file or name, in the form's order
 
 
 class TurnInput(BaseModel):
@@ -118,7 +121,7 @@ async def create_instance(body: NewInstance, request: Request):
     if not _visible(body.game, request):
         raise HTTPException(404, "unknown game")
     try:
-        iid = engine.create_instance(body.game, body.setup)
+        iid = engine.create_instance(body.game, body.setup, mods=body.mods)
     except ValueError as e:                     # a required field left empty, a choice not offered (B21, D154)
         raise HTTPException(400, str(e))
     log.info("instance.create " + logs.kv(iid=iid, game=body.game, setup=json.dumps(body.setup)))
@@ -148,6 +151,60 @@ def get_instance(iid: str):
         return engine.instance_view(iid)
     except KeyError:
         raise HTTPException(404, "no such instance")
+
+
+# ---- mods (B79): a game's mod files, read fresh each time; upload, download, delete -------------------------------------
+def _mods_game(game: str, request: Request):
+    if not _visible(game, request):
+        raise HTTPException(404, "unknown game")
+    return games[game]
+
+
+def _mod_path(game: str, name: str, request: Request) -> Path:
+    g = _mods_game(game, request)
+    if not mods_mod.NAME_OK.match(name) or name == mods_mod.EXAMPLE:
+        raise HTTPException(400, "a mod's file name is letters, digits, spaces, dots, dashes or underscores, ending .yml")
+    return mods_mod.mods_dir(cfg.resolve(cfg.server.content_root), g) / name
+
+
+@app.get("/api/games/{game}/mods")
+def list_game_mods(game: str, request: Request):
+    return mods_mod.list_mods(cfg.resolve(cfg.server.content_root), _mods_game(game, request))
+
+
+@app.get("/api/games/{game}/mods/{name}")
+def get_game_mod(game: str, name: str, request: Request):
+    p = _mod_path(game, name, request)
+    if not p.is_file():
+        raise HTTPException(404, "no such mod")
+    return PlainTextResponse(p.read_text(encoding="utf-8"), media_type="text/yaml",
+                             headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@app.put("/api/games/{game}/mods/{name}")
+async def put_game_mod(game: str, name: str, request: Request):
+    p = _mod_path(game, name, request)
+    text = (await request.body()).decode("utf-8")
+    try:
+        m = mods_mod.parse(text)
+    except Exception as e:  # noqa: BLE001 - a bad file is refused with its reason
+        raise HTTPException(400, f"not a mod: {e}")
+    if str(m.get("game") or "") != game:
+        raise HTTPException(400, f"this mod is for {m.get('game')!r}, not {game!r} (its game: line)")
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(text, encoding="utf-8")
+    log.info("mods.put " + logs.kv(game=game, name=name, hash=mods_mod.digest(text)))
+    return {"file": name, "hash": mods_mod.digest(text)}
+
+
+@app.delete("/api/games/{game}/mods/{name}")
+def delete_game_mod(game: str, name: str, request: Request):
+    p = _mod_path(game, name, request)
+    if not p.is_file():
+        raise HTTPException(404, "no such mod")
+    p.unlink()
+    log.info("mods.delete " + logs.kv(game=game, name=name))
+    return {"deleted": name}
 
 
 @app.get("/api/instances/{iid}/card")

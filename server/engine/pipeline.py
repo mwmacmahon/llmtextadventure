@@ -37,6 +37,7 @@ from pydantic import BaseModel
 from . import events as ev
 from . import logs
 from . import pending as pend
+from . import mods as mods_mod
 from . import prechecks
 from . import spontaneous as spon
 from . import statepath as sp
@@ -97,6 +98,7 @@ class Engine:
         self.store = store
         self.games = games
         self._tapes: dict[str, Any] = {}          # iid -> the running turn's ledger writer, for the tape (engine/tape.py)
+        self._mods_cache: dict[str, list[dict]] = {}   # iid -> the mods its save was made with (B79)
         self.graves = Graveyard(store)            # the player-only section (B81): written here, read by the gallery alone
         self.providers: dict[str, Any] = {}       # step -> a provider to use instead of the role's (the narrator replay's capture)
         # Runtime settings the UI can change (the guard mode, the progress estimate); persisted beside the store.
@@ -240,7 +242,24 @@ class Engine:
         return int(sum(lens) / len(lens)) if lens else int(self.settings["progress"]["default_chars"])
 
     # ---- instances --------------------------------------------------------
-    def create_instance(self, game_name: str, setup: dict[str, Any]) -> str:
+    def _mods(self, iid: str | None) -> list[dict]:
+        """The mods a save was made with (B79): [{name, file, hash, text}] from its setup, as the save keeps them."""
+        if not iid:
+            return []
+        if iid not in self._mods_cache:
+            inst = self.store.get_instance(iid)
+            self._mods_cache[iid] = list(((inst.setup if inst else {}) or {}).get(mods_mod.SETUP_KEY) or [])
+        return self._mods_cache[iid]
+
+    def _new_state(self, game: Game, setup: dict[str, Any]) -> tuple[str, BaseModel]:
+        """The game's new state with the mods' state patches on it (B79: scenario patch in the game, state patch here)."""
+        title, state = game.new_instance(setup)
+        for m in mods_mod.parsed(setup.get(mods_mod.SETUP_KEY)):
+            if m.get("state"):
+                state = game.load_state(mods_mod.merge_patch(state.model_dump(mode="json"), m["state"]))
+        return title, state
+
+    def create_instance(self, game_name: str, setup: dict[str, Any], mods: list[str] | None = None) -> str:
         game = self.games[game_name]
         setup = dict(setup or {})
         difficulty = str(setup.pop(DIFFICULTY_FIELD, None) or "normal")     # the engine's field: on the instance row, not the game's setup
@@ -248,9 +267,19 @@ class Engine:
             raise ValueError(f"Difficulty: no such choice {difficulty!r}")
         self.setup_options(game)                                  # a game's own field may not take the engine's id
         setup = check_setup(game.setup_options(), setup)          # required fields filled, defaults taken (B21, D154)
-        title, state = game.new_instance(setup)
+        applied = mods_mod.resolve(self.cfg.resolve(self.cfg.server.content_root), game, list(mods or []))   # B79: name, hash, text
+        if applied:
+            setup[mods_mod.SETUP_KEY] = applied
+        title, state = self._new_state(game, setup)
         prefix = game.frozen_prefix(state)
+        notes: list[str] = []
+        for m in mods_mod.parsed(applied):                        # the prefix by section (THE TONE replaced, ...)
+            prefix, n = mods_mod.patch_sections(prefix, m.get("prefix"), {"name": str(_hook(game, "player_name", state, default="") or "")})
+            notes += n
         iid = self.store.create_instance(game.name, game.version, title, setup, prefix, state.model_dump(mode="json"), difficulty=difficulty)
+        if applied:
+            self.store.append_ledger(iid, 0, "mods", {"mods": mods_mod.summary(applied), "prefix": notes,
+                                                      "rulings_off": sorted(mods_mod.rulings_off(applied))})
         opening = game.opening(state)
         if opening:
             self.store.append_transcript(iid, 0, "narrator", opening)
@@ -269,7 +298,7 @@ class Engine:
             if text:
                 return game.load_state(json.loads(text))
             inst = self.store.get_instance(iid)        # an imported save without its blob: build it again from the setup
-            return game.new_instance(dict(inst.setup) if inst else {})[1]
+            return self._new_state(game, dict(inst.setup) if inst else {})[1]
         state = game.load_state(self.store.load_state(iid, 0))
         self.store.append_ledger(iid, 0, "sheet_built", {"state": self.store.put_blob(json.dumps(state.model_dump(mode="json")))})
         return state
@@ -475,7 +504,9 @@ class Engine:
                 except KeyError:
                     at = None
             last = {"turn": r.turn, "text": text, "clock": _clock_now(at) if at is not None else ""}
-        return {**self._summary(inst, turn, state=state), "last": last, "ui": game.ui(state).model_dump(mode="json")}
+        applied = list((inst.setup or {}).get(mods_mod.SETUP_KEY) or [])          # B79: the mods that made it, with their text
+        return {**self._summary(inst, turn, state=state), "last": last, "ui": game.ui(state).model_dump(mode="json"),
+                "mods": [{"name": m.get("name"), "hash": m.get("hash"), "text": m.get("text", "")} for m in applied]}
 
     def usage(self, iid: str) -> dict[str, Any]:
         """Token and cost rollup per role from the ledger (game properties in the lobby)."""
@@ -1126,7 +1157,11 @@ class Engine:
         uncalled = [a.label for a in res["assessments"] if not a.called]
         rolled = bool(calls_block.get("calls"))
         rulings = []
+        off = mods_mod.rulings_off(self._mods(iid))                # B79: a ruling a mod switched off, both halves
         for r in (delta_json or {}).get("rulings", []):
+            if r.get("rule") in off:
+                log.info("referee.ruling.dismissed " + logs.kv(iid=iid, turn=turn, rule=r.get("rule"), why="switched off by a mod"))
+                continue
             if (r.get("rule") == "check_skipped" and not uncalled) or (r.get("rule") == "check_ignored" and not rolled):
                 if delta_json is not None:
                     delta_json.setdefault("issues", []).append(f"referee ruled {r['rule']} with {'no check rolled' if r['rule'] == 'check_ignored' else 'every assessed check rolled'}: {r.get('what', '')}")
@@ -1201,7 +1236,7 @@ class Engine:
             if not any(r.get("rule") == fault["rule"] for r in rulings):
                 rulings.append({"serious": True, "by": "engine", **fault})
                 log.info("engine.ruling " + logs.kv(iid=iid, turn=turn, rule=fault["rule"], serious=True))
-        crossed = _hook(game, "too_far_words", narration, default="") or ""
+        crossed = "" if "too_far" in off else (_hook(game, "too_far_words", narration, default="") or "")
         if crossed and not any(r.get("rule") == "too_far" for r in rulings):     # the owner, 11-08 night: the engine's own net
             rulings.append({"rule": "too_far", "serious": True, "by": "engine", "what": "the telling went where this game does not go",
                             "fix": str(getattr(game, "extra_rulings", {}).get("too_far", ""))})
@@ -1243,6 +1278,7 @@ class Engine:
             "seen": seen_lines(game, start, state, calls_block.get("calls", [])),
             **({"timing": timing} if timing else {}),
             "profile": stamp["name"],
+            **({"mods": mods_mod.summary(self._mods(iid))} if self._mods(iid) else {}),
         }
         if replay is not None:
             mechanics["rewritten"] = {"hint": replay.hint, "attempt": replay.attempt, "by": replay.by}
@@ -1429,6 +1465,8 @@ class Engine:
         hits = [h for h in [prechecks.question(player_text)] if h is not None]
         system, msgs, schema = adjudicator_inputs(game, state, recent, player_text, stakes=nrole.stakes != "off" and nrole.checks == "called",
                                                   notes=[h.line for h in hits])
+        for m in mods_mod.parsed(self._mods(iid)):              # B79: the assistant's rules text by section, per save
+            system = mods_mod.patch_sections(system, (m.get("rules") or {}).get("assistant"))[0]
         t0 = time.monotonic()
         adj, usage, retry, recovered = await extract_adjudication(provider, role, system, msgs, schema, _hook(game, "stats", state, default={}))
         if retry:
@@ -1893,6 +1931,11 @@ class Engine:
         provider = self._provider(role, iid, "referee")
         recent = _earlier_turns(self.store, iid, role.recent_turns) if iid else []
         system, msgs = referee_inputs(game, state, directives, player_text, narration, adj, levers, recent=recent)
+        applied = self._mods(iid)
+        if applied:                                               # B79: the referee's rules text by section; a ruling switched off
+            system = mods_mod.strip_rulings(system, mods_mod.rulings_off(applied))
+            for m in mods_mod.parsed(applied):
+                system = mods_mod.patch_sections(system, (m.get("rules") or {}).get("referee"))[0]
         t0 = time.monotonic()
         from .referee_passes import referee_ids
         delta, usage, parts = await extract_referee(provider, role, system, msgs, referee_ids(state, levers))

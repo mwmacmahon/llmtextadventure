@@ -47,6 +47,16 @@ export function SaveCard({ id, onClose, onChanged, onGone }: { id: string; onClo
             {originMark(card) && <ChipView c={{ label: "", value: originMark(card)! }} />}
           </div>
           {card.ending && <div className="ending">The End. {card.ending}</div>}
+          {card.mods && card.mods.length > 0 && (
+            <div className="save-mods">
+              {card.mods.map((m) => (
+                <details key={m.hash}>
+                  <summary>Mod: {m.name} <span className="muted small">({m.hash})</span></summary>
+                  <pre className="mod-text">{m.text}</pre>
+                </details>
+              ))}
+            </div>
+          )}
           {card.last && (
             <div className="last-telling">
               <div className="muted small">

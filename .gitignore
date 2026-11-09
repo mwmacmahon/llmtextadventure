@@ -18,8 +18,16 @@ data/
 *.sqlite3
 *.db
 
-# Private notes, living docs, creative/reference material
-notes/
+# Private notes, living docs, creative/reference material; one exception: each game's mods/example.yml (B79, the shape in
+# the repo; the mods themselves stay out)
+notes/*
+!notes/content/
+notes/content/*
+!notes/content/*/
+notes/content/*/*
+!notes/content/*/mods/
+notes/content/*/mods/*
+!notes/content/*/mods/example.yml
 
 # Hidden games (dev mode): every hidden game stays out of the repo for now (the owner, 2026-11-08); content under notes/
 server/games/hidden/

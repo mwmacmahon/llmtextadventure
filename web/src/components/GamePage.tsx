@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { api, type GameInfo, type InstanceSummary, type SetupField, type SetupOption } from "../api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, type GameInfo, type InstanceSummary, type ModInfo, type SetupField, type SetupOption } from "../api";
 import { ago, countsLine, endingShort, originMark } from "../saves";
 import { SaveCard } from "./SaveCard";
 
@@ -21,6 +21,23 @@ function fieldsOf(g: GameInfo): Field[] {
   });
 }
 
+// B79: the ticked mods are remembered per browser, per game (the owner, 11-08)
+const modsKey = (game: string) => `ta.mods.${game}`;
+function readTicked(game: string): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(modsKey(game)) ?? "[]");
+  } catch {
+    return [];
+  }
+}
+function writeTicked(game: string, files: string[]) {
+  try {
+    localStorage.setItem(modsKey(game), JSON.stringify(files));
+  } catch {
+    /* storage blocked: remembered for this page only */
+  }
+}
+
 /** A game's own page: New game first, then its saved games (most recently played first) (the owner, 11-08). */
 export function GamePage({ name }: { name: string }) {
   const [game, setGame] = useState<GameInfo | null>(null);
@@ -29,6 +46,11 @@ export function GamePage({ name }: { name: string }) {
   const [open, setOpen] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [missingGame, setMissingGame] = useState(false);
+  const [mods, setMods] = useState<ModInfo[]>([]);
+  const [ticked, setTicked] = useState<string[]>(() => readTicked(name));
+  const upRef = useRef<HTMLInputElement>(null);
+  const loadMods = useCallback(() => api.mods(name).then(setMods).catch(() => setMods([])), [name]);
+  useEffect(() => { loadMods(); }, [loadMods]);
 
   const refresh = useCallback(() => api.instances(name).then(setSaves).catch((e) => setErr(String(e))), [name]);
   useEffect(() => {
@@ -54,14 +76,57 @@ export function GamePage({ name }: { name: string }) {
   const valueOf = (f: Field) => values[f.key] ?? f.initial;
   // a field with show_if is for one class (its kit, its Expertise): shown and sent only when that class is picked (B92)
   const fields = all.filter((f) => Object.entries(f.showIf).every(([k, v]) => { const o = all.find((x) => x.key === k); return o ? valueOf(o) === v : false; }));
-  const ticked = (f: Field) => valueOf(f).split(",").filter(Boolean);
-  const missing = fields.filter((f) => (f.required && !valueOf(f).trim()) || (f.kind === "checks" && f.pick > 0 && ticked(f).length !== f.pick));
+  const tickedOf = (f: Field) => valueOf(f).split(",").filter(Boolean);
+  const missing = fields.filter((f) => (f.required && !valueOf(f).trim()) || (f.kind === "checks" && f.pick > 0 && tickedOf(f).length !== f.pick));
+  const usable = mods.filter((m) => !m.error);
+  const on = ticked.filter((f) => usable.some((m) => m.file === f));
+  const toggle = (file: string) => {
+    const next = on.includes(file) ? on.filter((x) => x !== file) : [...on, file];
+    setTicked(next);
+    writeTicked(name, next);
+  };
+
+  async function download(file: string) {
+    try {
+      const text = await api.modText(name, file);
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([text], { type: "text/yaml" }));
+      a.download = file;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e) {
+      setErr(String(e));
+    }
+  }
+  async function remove(file: string) {
+    if (!confirm(`Delete the mod ${file} from this server? Saves made with it keep its text.`)) return;
+    try {
+      await api.deleteMod(name, file);
+      loadMods();
+    } catch (e) {
+      setErr(String(e));
+    }
+  }
+  async function upload(f: File) {
+    setErr(null);
+    try {
+      await api.putMod(name, f.name, await f.text());
+      loadMods();
+    } catch (e) {
+      const m = String(e).match(/^Error: 400 ([\s\S]*)$/);
+      let msg = String(e);
+      if (m) { try { msg = JSON.parse(m[1]).detail ?? m[1]; } catch { msg = m[1]; } }
+      setErr(`Could not upload ${f.name}: ${msg}`);
+    } finally {
+      if (upRef.current) upRef.current.value = "";
+    }
+  }
 
   async function start() {
     setErr(null);
     try {
       const shown = Object.fromEntries(fields.map((f) => [f.key, valueOf(f)]));   // what the fields show, selects' defaults included
-      const v = await api.create(game!.name, shown);
+      const v = await api.create(game!.name, shown, on);
       location.hash = `#/g/${v.id}`;
     } catch (e) {
       // a refusal (400) shows its own plain line, not the status and the JSON (B45: a name the city already has)
@@ -88,11 +153,11 @@ export function GamePage({ name }: { name: string }) {
             ) : f.kind === "checks" ? (
               <span className="setup-checks">
                 {f.options.map((o) => {
-                  const on = ticked(f).includes(o.id);
-                  const full = !on && f.pick > 0 && ticked(f).length >= f.pick;
+                  const on = tickedOf(f).includes(o.id);
+                  const full = !on && f.pick > 0 && tickedOf(f).length >= f.pick;
                   return (
                     <button type="button" key={o.id} className={`check-chip${on ? " on" : ""}`} disabled={full} aria-pressed={on}
-                      onClick={() => setValues({ ...values, [f.key]: (on ? ticked(f).filter((x) => x !== o.id) : [...ticked(f), o.id]).join(",") })}>
+                      onClick={() => setValues({ ...values, [f.key]: (on ? tickedOf(f).filter((x) => x !== o.id) : [...tickedOf(f), o.id]).join(",") })}>
                       {o.name}
                     </button>
                   );
@@ -105,8 +170,19 @@ export function GamePage({ name }: { name: string }) {
             )}
           </Wrap>
         ); })}
-        {/* Reserved: the game's mods as checkboxes go here, under the setup fields (the mods design). Empty on purpose. */}
-        <div className="mods-slot" data-slot="mods" />
+        {usable.length > 0 && (
+          <div className="setup-field mods-slot">
+            <span>Mods</span>
+            <span className="mod-checks">
+              {usable.map((m) => (
+                <label key={m.file} className="mod-check" title={m.file}>
+                  <input type="checkbox" checked={on.includes(m.file)} onChange={() => toggle(m.file)} />
+                  <span><strong>{m.name}</strong>{m.about ? <span className="muted"> — {m.about}</span> : null}</span>
+                </label>
+              ))}
+            </span>
+          </div>
+        )}
         <button className="primary" onClick={start} disabled={missing.length > 0} title={missing.length ? `Fill in: ${missing.map((f) => f.label).join(", ")}` : undefined}>
           Start
         </button>
@@ -156,8 +232,27 @@ export function GamePage({ name }: { name: string }) {
       </p>
       {err && <div className="error">{err}</div>}
       {saves.length ? [newGame, saved] : [newGame]}
-      {/* Reserved: the game's Mods list (files with download, delete, upload) goes here (the mods design). Empty on purpose. */}
-      <section className="mods-list" data-slot="mods-list" />
+      <section className="mods-list">
+        <h2>Mods</h2>
+        <p className="muted small">YAML files that patch this game's content, prompts and starting state when a new game starts (the shape: notes/content/fantasy/mods/example.yml).</p>
+        {mods.length > 0 && (
+          <ul className="mod-files">
+            {mods.map((m) => (
+              <li key={m.file}>
+                <span className="mod-name">{m.name}</span> <span className="muted small">{m.file} · {m.size} bytes · {ago(new Date(m.modified * 1000).toISOString())}</span>
+                {m.error && <div className="error small">Not offered: {m.error}</div>}
+                {m.about && !m.error && <div className="muted small">{m.about}</div>}
+                <span className="mod-actions">
+                  <button onClick={() => download(m.file)}>download</button>
+                  <button onClick={() => remove(m.file)}>delete</button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <input ref={upRef} type="file" accept=".yml,.yaml" hidden onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+        <button onClick={() => upRef.current?.click()}>Upload a mod</button>
+      </section>
     </div>
   );
 }

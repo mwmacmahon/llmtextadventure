@@ -125,7 +125,10 @@ export type InstanceView = InstanceSummary & {
   ui: UISchema; transcript: TranscriptRow[];
   redo?: { mark: number; to_turn: number; from_turn: number } | null;   // the undo a Redo brings back, while nothing has diverged
 };
-export type SaveCard = InstanceSummary & { ui: UISchema; last: { turn: number; text: string; clock: string } | null };
+export type SaveCard = InstanceSummary & { ui: UISchema; last: { turn: number; text: string; clock: string } | null; mods?: SaveMod[] };
+// B79: a game's mod files (the new-game form's checkboxes; the Mods section's download, delete, upload)
+export type ModInfo = { file: string; name: string; about: string; size: number; modified: number; hash: string; error?: string };
+export type SaveMod = { name: string; hash: string; text: string };
 export type SetupOption = { id: string; name: string };
 // A setup key is the plain list (a select) or a field (ISSUES B21): the label is the whole hint unless the game gives one.
 export type SetupField = {
@@ -228,8 +231,17 @@ export const api = {
   card: (id: string) => req(`/api/instances/${id}/card`).then((r) => j<SaveCard>(r)),
   setDifficulty: (id: string, difficulty: string) =>
     req(`/api/instances/${id}/difficulty`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ difficulty }) }).then((r) => j<InstanceSummary>(r)),
-  create: (game: string, setup: Record<string, unknown>) =>
-    req("/api/instances", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ game, setup }) }).then((r) => j<InstanceView>(r)),
+  create: (game: string, setup: Record<string, unknown>, mods: string[] = []) =>
+    req("/api/instances", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ game, setup, mods }) }).then((r) => j<InstanceView>(r)),
+  mods: (game: string) => req(`/api/games/${encodeURIComponent(game)}/mods`).then((r) => j<ModInfo[]>(r)),
+  modText: (game: string, file: string) => req(`/api/games/${encodeURIComponent(game)}/mods/${encodeURIComponent(file)}`).then(async (r) => {
+    if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+    return r.text();
+  }),
+  putMod: (game: string, file: string, text: string) =>
+    req(`/api/games/${encodeURIComponent(game)}/mods/${encodeURIComponent(file)}`, { method: "PUT", headers: { "content-type": "text/yaml" }, body: text }).then((r) => j<{ file: string; hash: string }>(r)),
+  deleteMod: (game: string, file: string) =>
+    req(`/api/games/${encodeURIComponent(game)}/mods/${encodeURIComponent(file)}`, { method: "DELETE" }).then((r) => j<{ deleted: string }>(r)),
   // B105: a question to the game master out of the story; nothing moves
   ask: (id: string, text: string) =>
     req(`/api/instances/${id}/ask`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) })

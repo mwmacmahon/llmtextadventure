@@ -376,3 +376,17 @@ def test_dev_mode_off_at_the_server(client, engine: Engine, monkeypatch):
     cfg = load_config()
     out = reg.load_games(cfg.resolve(cfg.server.content_root), hidden=False)
     assert imported == [] and not any(getattr(g, "hidden", False) for g in out.values())
+
+
+def test_a_derived_games_content_root_is_another_games():
+    """B231: a derived game (Super Grimdark Fantasy, hidden and gitignored, so only where present) reads another game's
+    content root, which must exist; its own are its saves, title and mods."""
+    cfg = load_config()
+    root = cfg.resolve(cfg.server.content_root)
+    games = load_games(root)
+    for g in games.values():
+        base = getattr(g, "derived_from", "")
+        if not base:
+            continue
+        assert base != g.name and base in games, g.name
+        assert Path(g.content_dir).resolve() == (root / base).resolve() and Path(g.content_dir).is_dir(), g.name

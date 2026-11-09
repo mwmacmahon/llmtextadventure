@@ -18,6 +18,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from engine import threads as th
 from engine import wounds as wd
 from engine.changes import clip_words
@@ -331,6 +333,21 @@ class FantasyGame(GameBase):
                    hp=hp, hp_max=hp, location=pl.get("location", "The Drowned Lantern"))
         return p, inv
 
+    def lint_patched(self, scenario: dict) -> None:
+        """B79: the content lint on a mod's patched scenario. Only problems the base content does not already have refuse the
+        start (with the lint's own lines)."""
+        import shutil
+        import tempfile
+        from .lint import lint
+        sname = next((p.name for p in sorted((Path(self.content_dir) / "scenarios").glob("*.yml"))), "marrowgate.yml")
+        with tempfile.TemporaryDirectory() as tmp:
+            copy = Path(tmp) / "content"
+            shutil.copytree(self.content_dir, copy, ignore=shutil.ignore_patterns("mods"))
+            (copy / "scenarios" / sname).write_text(yaml.safe_dump(scenario, sort_keys=False, allow_unicode=True), encoding="utf-8")
+            new = [x for x in lint(copy) if x not in set(lint(Path(self.content_dir)))]
+        if new:
+            raise ValueError("Mods: the patched content fails the lint: " + "; ".join(new[:5]))
+
     NAME_TAKEN = "That name belongs to someone in the city; pick another."
 
     def cast_first_names(self, sc: dict) -> set[str]:
@@ -340,6 +357,14 @@ class FantasyGame(GameBase):
 
     def new_instance(self, setup: dict[str, Any]) -> tuple[str, FantasyState]:
         sc0 = self.scenario(str(setup.get("scenario") or ""))
+        from engine import mods as md
+        patches = [m["scenario"] for m in md.parsed(setup.get(md.SETUP_KEY)) if m.get("scenario")]
+        combined: dict = {}
+        for patch in patches:                                    # B79: the mods' scenario patches, before anything is built
+            sc0 = md.merge_patch(sc0, patch)
+            combined = md.merge_patch(combined, patch)
+        if patches:
+            self.lint_patched(sc0)
         wanted = first_name(str(setup.get("name") or ""))
         if wanted and wanted in self.cast_first_names(sc0):
             raise ValueError(self.NAME_TAKEN)           # B45: the Rogue round's Wren took the ferryman's daughter's rows
@@ -356,7 +381,8 @@ class FantasyGame(GameBase):
             log=[f"Day {clock.day} {clock.minute // 60:02d}:{clock.minute % 60:02d}. {player.name} takes a room at the Drowned Lantern."],
             hidden=Hidden(events=events, spontaneous=[Spontaneous.model_validate(x) for x in sc.get("spontaneous") or []],
                           pending=[Pending.model_validate(x) for x in sc.get("pending") or []],
-                          facts=list(sc.get("hidden_facts") or []), terms=list(sc.get("secret_terms") or [])),
+                          facts=list(sc.get("hidden_facts") or []), terms=list(sc.get("secret_terms") or []),
+                          scenario_patch=combined),
         )
         now = clock.day * DAY + clock.minute
         hooks = self.hooks_content()
@@ -379,6 +405,10 @@ class FantasyGame(GameBase):
         """A saved game with the script-owned parts read from the files again: the city, every person's script fields
         (what was told stays told), the dealt hooks' merges, places, flags, hidden facts and terms (D158)."""
         sc = self.content.scenarios().get((data.get("city") or {}).get("id", ""))
+        patch = ((data.get("hidden") or {}).get("scenario_patch") or {})
+        if sc and patch:                                         # B79: a modded save reads its files with its mods on them
+            from engine import mods as md
+            sc = md.merge_patch(sc, patch)
         if sc:
             name = (data.get("player") or {}).get("name", "")
             data = dk.reread(data, sc, self.hooks_content(), name)
