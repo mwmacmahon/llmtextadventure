@@ -149,8 +149,23 @@ def main(argv: list[str]) -> int:
     n = sub.add_parser("new"); n.add_argument("game"); n.add_argument("--tag", required=True); n.add_argument("--title"); n.add_argument("--setup", nargs="*", action="extend")
     p = sub.add_parser("play"); p.add_argument("iid"); p.add_argument("text", nargs="*"); p.add_argument("--command")
     f = sub.add_parser("finish"); f.add_argument("iid"); f.add_argument("--title")
-    a = ap.parse_intermixed_args(argv)      # `play <id> --command plan slot=mornings` and `play --command plan <id> slot=mornings` both work (the clown's round 1)
+    a = ap.parse_args(_reordered(argv))
     return {"new": new, "play": play, "finish": finish}[a.cmd](a)
+
+
+def _reordered(argv: list[str]) -> list[str]:
+    """`play <id> --command plan slot=mornings` and `play --command plan <id> slot=mornings` both work (the clown's round 1 lost its
+    commands to the first form): the `--command X` pair is moved to just after `play`, where argparse's subparser takes it
+    before the positionals. (parse_intermixed_args refuses subparsers, round 2.)"""
+    argv = list(argv)
+    if not argv or argv[0] != "play" or "--command" not in argv:
+        return argv
+    i = argv.index("--command")
+    if i + 1 >= len(argv):
+        return argv
+    pair = argv[i:i + 2]
+    rest = argv[:i] + argv[i + 2:]
+    return [rest[0], *pair, *rest[1:]]
 
 
 if __name__ == "__main__":
