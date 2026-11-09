@@ -5,11 +5,23 @@ type OnCommand = (command: string, args: Record<string, unknown>) => void;
 
 // B50 (D167): after the ending only the console commands (mode "engine": no story, no clock) still run, so a Journal can be read.
 // readOnly (the save card in the lobby, B75): the state as the player sees it, with nothing to run (no commands, no choices).
-export function Panels({ panels, onChoice, onCommand, busy, ended, readOnly }: { panels: Widget[]; onChoice?: OnCommand; onCommand?: OnCommand; busy?: boolean; ended?: boolean; readOnly?: boolean }) {
-  const shown = readOnly ? panels.filter((w) => w.type !== "commands" && w.type !== "choices") : panels;
+export function Panels({ panels, onChoice, onCommand, busy, ended, readOnly, place }: { panels: Widget[]; onChoice?: OnCommand; onCommand?: OnCommand; busy?: boolean; ended?: boolean; readOnly?: boolean; place?: "side" | "main" }) {
+  // `place` picks the column's panels (a widget with no place is the side's); the pinned ones come first, in a block that
+  // stays at the top of the column while the rest scrolls (the clown's girl in training).
+  const mine = place ? panels.filter((w) => (w.place || "side") === place) : panels;
+  const shown = readOnly ? mine.filter((w) => w.type !== "commands" && w.type !== "choices") : mine;
+  const pinned = shown.filter((w) => w.pinned);
+  const rest = shown.filter((w) => !w.pinned);
   return (
     <div className="panels">
-      {shown.map((w, i) => (
+      {pinned.length > 0 && (
+        <div className="pinned">
+          {pinned.map((w, i) => (
+            <Panel key={`p${i}`} w={w} onChoice={onChoice} onCommand={onCommand} busy={busy} ended={ended} />
+          ))}
+        </div>
+      )}
+      {rest.map((w, i) => (
         <Panel key={i} w={w} onChoice={onChoice} onCommand={onCommand} busy={busy} ended={ended} />
       ))}
     </div>

@@ -58,7 +58,7 @@ from .roles import (ADJUDICATOR_STAKES, AssistantReading, AssistantReadingStaked
                     summarizer_messages, NARRATOR_PROTOCOL)
 from .roles import NARRATOR_WORLD, REFEREE_PARTS, Change, ChangeReport, referee_part_messages
 from .assistant import FAILURES, choose_consequence, choose_cost, default_cost_options, paid_rows, recent_costs
-from .changes import apply_changes, merge_parts, quoted_in_prose, quotes_of, says_result_played, screen_unseen_clues
+from .changes import _content_words, apply_changes, merge_parts, quoted_in_prose, quotes_of, says_result_played, screen_unseen_clues
 from .store import Store, live
 from .graveyard import Graveyard, compose_cause, load_lines, sentences
 from .tape import PART, Taped, exchange_row
@@ -98,6 +98,7 @@ class Engine:
         self.store = store
         self.games = games
         self._tapes: dict[str, Any] = {}          # iid -> the running turn's ledger writer, for the tape (engine/tape.py)
+        self._asides: dict[str, Any] = {}         # iid -> an aside's learned pass still running (B244); a turn waits for it
         self._mods_cache: dict[str, list[dict]] = {}   # iid -> the mods its save was made with (B79)
         self._games_cache: dict[str, Any] = {}           # iid and mod hashes -> the game as that modded save sees it (B79)
         self.graves = Graveyard(store)            # the player-only section (B81): written here, read by the gallery alone
@@ -376,10 +377,22 @@ class Engine:
         return {"ok": True, "text": line or "The sheet matches the character as built.", "line": line}
 
     ASK_SYSTEM = ("You are the game master of a text adventure, answering a question the player asked you out of the story. The "
-                  "player's character is {name}. Answer from the game state and the last telling below, in one to three plain sentences, "
-                  "with only what {name} can see, hear, remember or plainly work out where they are now. When {name} could not know, "
-                  "say that {name} cannot tell from here. The answer is an aside: the story does not move, no time passes, nothing "
-                  "happens because of it.")
+                  "player's character is {name}. Answer in one to three plain sentences. "
+                  "Answer from the game state, the people's records and the last telling. What {name} could plainly see, hear or judge "
+                  "from where they stand, you decide now if the story has not said it: about how old someone looks (say it in years), what they wear and "
+                  "carry, what the room holds, where {name} is and how they got there. Keep it in keeping with the records and the world, "
+                  "say it as fact, and it is true from now on. Say that {name} cannot tell only for what is hidden from them: behind a "
+                  "door, in someone's head, too far or too dark to see, or something nobody has told them. "
+                  "The answer is an aside: the story does not move, no time passes, nothing happens because of it.")
+
+    # B244 (c): the referee's learned pass alone, on an aside's answer (the referee's own prompt, then this as the pass)
+    ASIDE_PART = ("THIS PASS: the narration above is not a turn. It is the game master's answer to a question the player asked out of the "
+                  "story (the player input is the question); nothing happened and no time passed. Report only learned rows for what the "
+                  "player now knows from the answer: learned player for something concrete (where a thing or a place is, what something is "
+                  "or looks like), learned <person id> for what the answer shows of a listed person (how old they look, what they wear or "
+                  "carry, their manner). No other rows: no moves, no timers, no flags, no threads, no rulings. Where the player is, how they "
+                  "got there, who is here and the time are in the state already and are never a row. An answer that tells nothing the state does not "
+                  "already say, or says the player cannot tell, needs no rows. Write present, log_line and confidence as usual.")
 
     async def ask(self, iid: str, question: str) -> dict[str, Any]:
         """The Ask mode (B105 (c), D177): a question to the game master out of the story. No clock, no events, no referee, no
@@ -400,7 +413,9 @@ class Engine:
         role = self.cfg.role("assistant")
         provider = self._provider(role, iid, "ask")
         system = self.ASK_SYSTEM.replace("{name}", name)
-        msgs = [Msg("user", f"[GAME STATE]\n{game.render_bulletin(state, q)}\n\n[THE LAST TELLING]\n{last}\n\n[THE PLAYER ASKS]\n{q}")]
+        records = _hook(game, "people_records", state, default=[]) or []
+        rec = ("[THE PEOPLE HERE, FROM THEIR RECORDS]\n" + "\n".join(records) + "\n\n") if records else ""
+        msgs = [Msg("user", f"[GAME STATE]\n{game.render_bulletin(state, q)}\n\n{rec}[THE LAST TELLING]\n{last}\n\n[THE PLAYER ASKS]\n{q}")]
         ledger = lambda kind, payload: self.store.append_ledger(iid, turn, kind, payload)  # noqa: E731
         t0 = time.monotonic()
         done: StreamDone | None = None
@@ -414,14 +429,65 @@ class Engine:
         raw = (done.text.strip() if done else "")
         answer = raw or f"{name} cannot tell from here."
         leaked = _hook(game, "leaked_terms", state, answer, q, default=[]) or []
-        if leaked:                                                             # an aside never teaches a word the story has not
-            answer = f"{name} cannot tell from here."
+        for term in leaked:                                     # an aside never teaches a word the story has not: masked (B220), not thrown away
+            answer = mask_term(state, answer, str(term))
         ledger("model_call", {"role": "assistant", "step": "ask", "provider": provider.name, "model": (done.model if done else role.model),
                               "seconds": round(time.monotonic() - t0, 2), "usage": asdict(done.usage) if done else {}, "question": q, "answer": answer,
                               **({"raw": raw, "leaked": leaked} if raw != answer else {})})
         self.store.append_transcript(iid, turn, "ask", q)
         self.store.append_transcript(iid, turn, "aside", answer)
+        if raw:                                                 # B244 (c): what the aside said is canon; the next turn waits for it
+            self._asides[iid] = asyncio.create_task(self._aside_learned(iid, turn, q, answer))
         return {"ok": True, "text": answer, "turn": turn}
+
+    async def aside_settled(self, iid: str) -> None:
+        """B244 (c): wait for an aside's learned pass (a turn starts only after it, so its rows are never lost)."""
+        task = self._asides.pop(iid, None)
+        if task is not None:
+            try:
+                await task
+            except Exception:  # noqa: BLE001 - logged in the task
+                pass
+
+    async def _aside_learned(self, iid: str, turn: int, question: str, answer: str) -> None:
+        """B244 (c): the referee's learned pass alone on an aside's answer: learned rows only, landed as any learned row is (the
+        journal, the cards, the state block, so the narrator knows it next turn), a ledger row `aside_learned`; nothing when
+        the answer teaches nothing. The two transcript rows stay out of every story context."""
+        ledger = lambda kind, payload: self.store.append_ledger(iid, turn, kind, payload)  # noqa: E731
+        try:
+            inst = self.store.get_instance(iid)
+            game = self.game_of(inst)
+            state = game.load_state(self.store.load_state(iid))
+            role = self.cfg.role("referee")
+            provider = self._provider(role, iid, "referee")
+            system, msgs = referee_inputs(game, state, [], question, answer)
+            msgs = [*msgs[:-1], Msg(msgs[-1].role, msgs[-1].content, cache=True), Msg("user", self.ASIDE_PART)]
+            t0 = time.monotonic()
+            report, usage = await provider.extract(role, system, msgs, ChangeReport)
+            meta = {"provider": provider.name, "model": usage.extra.get("model") or role.model, "seconds": round(time.monotonic() - t0, 2), "usage": asdict(usage)}
+            rows = [c for c in report.changes if c.kind == "learned" and (c.value or "").strip()]
+            # a row whose words the state and the recent tellings already have teaches nothing (Lilith's "where am I": Sonnet
+            # wrote the inn's place and view, all of it in the opening; the turn-15 shape had 'height', 'seated', 'shape' new)
+            known = _content_words(_engine_state_text(game, state, None) + "\n" + "\n".join(
+                r.text for r in self.store.transcript(iid, roles=["narrator"])[-3:]))
+            stale = [c for c in rows if _content_words(c.value) and len(_content_words(c.value) & known) >= 0.8 * len(_content_words(c.value))]
+            rows = [c for c in rows if c not in stale]
+            if not rows:
+                ledger("aside_learned", {"rows": [], "_call": meta, **({"stale": [c.value for c in stale]} if stale else {})})
+                return
+            if self.store.latest_turn(iid) != turn:                 # a turn landed meanwhile (it waits for this; belt and braces)
+                ledger("aside_learned", {"rows": [c.model_dump(mode="json") for c in rows], "skipped": "a turn landed first", "_call": meta})
+                return
+            pl = getattr(state, "player", None)                    # who is with the player stays as it is: an aside moves nobody
+            here = list(getattr(pl, "with_them", None) or getattr(pl, "with_him", None) or [])
+            state, rep, _ = apply_changes(game, state, ChangeReport.of(*rows, log_line="", present=here), present=here, causes=[])
+            self.store.save_snapshot(iid, turn, state.model_dump(mode="json"))
+            ledger("aside_learned", {"rows": [c.model_dump(mode="json") for c in rows], "applied": list(rep.applied), "stale": [c.value for c in stale],
+                                     "rejected": [r.model_dump(mode="json") for r in rep.rejected], "_call": meta})
+            log.info("aside.learned " + logs.kv(iid=iid, turn=turn, rows=len(rows), applied=len(rep.applied)))
+        except Exception as e:  # noqa: BLE001 - the aside stands without it
+            ledger("aside_learned", {"error": repr(e)[:300]})
+            log.exception("aside.learned.failed " + logs.kv(iid=iid, turn=turn))
 
     async def _reread(self, iid: str, correction: str) -> AsyncIterator[dict[str, Any]]:
         """`Re-read my sheet` (B90): an engine console action at turn 0, not a turn."""
@@ -665,6 +731,7 @@ class Engine:
         streams the first telling and then replaces it; `gate` holds the prose (and the § lines) back
         until the referee has passed it, sending `progress` events instead, and shows only the final one.
         While it runs, the instance counts as streaming: a profile switch on this server waits for it (engine/picker.py)."""
+        await self.aside_settled(iid)                       # B244: an aside's learned rows land before the turn reads the state
         token = object()
         self.streaming[token] = (iid, time.time())
         finished = False
@@ -1124,7 +1191,12 @@ class Engine:
                     if len(kept_rows) != len(delta.changes):
                         ledger("precheck", {"kind": "trivial_rows", "dropped": [c.model_dump(mode="json") for c in delta.changes if c.kind != "learned"]})
                         delta = delta.model_copy(update={"changes": kept_rows})
+                before_rows = state
                 state, report, extras = apply_changes(game, state, delta, present=present, causes=causes, skip=skip, force=force)
+                got = _hook(game, "after_rows", before_rows, state, player_text or "", narration, default=None)
+                if got is not None:                           # B246 (b): the game's own reading of the rows against the player's words
+                    state, more = got
+                    report.applied.extend(more)
                 if not force:                                 # a game's own check on the prose after the rows landed (B92: a hidden person named)
                     report.rejected.extend(_hook(game, "late_conflicts", state, narration, default=[]) or [])
                 for r in screened:
@@ -1707,18 +1779,26 @@ class Engine:
                 if missing:
                     directives.append("NOT CARRIED: " + missing)
                     notes.append(f"not carried: {name}")
+            # B245: in a tense scene (a fight, a peril, someone hostile here, a check at a person here this turn or last, a question
+            # to the player waiting, the assistant's "nobody could walk up now") the turn is as short as the assistant says, floor one
+            tense = tense_why(game, state, adj, self._last_turn(iid, turn)) if clock and adj.kind == "action" else ""
+            if tense and adj.time_minutes < getattr(clock, "fast_minutes", 1):
+                notes.append(f"tense turn ({tense}): {adj.time_minutes} minutes raised to the floor of {clock.fast_minutes}")
+                adj.time_minutes = clock.fast_minutes
+            elif tense and adj.time_minutes < clock.slow_minutes and getattr(adj, "tempo", "slow") != "fast":
+                notes.append(f"tense turn ({tense}): {adj.time_minutes} minutes kept, the slow floor stands down")
             # a slow action costs at least the game's floor (D93): fifty turns of two-minute actions never reached the spine's second day
-            if clock and adj.kind == "action" and getattr(adj, "tempo", "slow") != "fast" and adj.time_minutes < clock.slow_minutes:
+            if clock and not tense and adj.kind == "action" and getattr(adj, "tempo", "slow") != "fast" and adj.time_minutes < clock.slow_minutes:
                 notes.append(f"slow turn: {adj.time_minutes} minutes raised to the floor of {clock.slow_minutes}")
                 adj.time_minutes = clock.slow_minutes
             # ... and a fast one at least a minute (time doc §3, D146): a fight beat that takes no time is a free stall
-            if clock and adj.kind == "action" and getattr(adj, "tempo", "slow") == "fast" and adj.time_minutes < getattr(clock, "fast_minutes", 1):
+            if clock and not tense and adj.kind == "action" and getattr(adj, "tempo", "slow") == "fast" and adj.time_minutes < getattr(clock, "fast_minutes", 1):
                 notes.append(f"fast turn: {adj.time_minutes} minutes raised to the floor of {clock.fast_minutes}")
                 adj.time_minutes = clock.fast_minutes
             # (iv) the game's minutes by kind of turn (time doc §3, D148): a fight, a talk, a search or a walk keeps to its
             # row; waiting and sleeping run to the player's limit (the "until when" question), so their rows only floor
             if clock and adj.kind == "action" and not getattr(adj, "minutes_fixed", False):
-                kept, why = task_minutes(clock, adj)
+                kept, why = task_minutes(clock, adj, tense=bool(tense))
                 if why:
                     notes.append(why)
                     adj.time_minutes = kept
@@ -2146,7 +2226,7 @@ BEAT_CHECK_SYSTEM = ("You check one thing for a text adventure's engine: whether
 def beat_check_messages(c: dict, narration: str) -> tuple[str, list[Msg]]:
     """B242 (K3): the referee's model asked about one pair the engine found (repetition.beat_candidates)."""
     user = (f"EARLIER TURN (turn {c['of_turn']}) SAID:\n{c['that']}\n\nTHIS TURN SAYS:\n{c['this']}\n\nTHIS TURN'S WHOLE TELLING:\n{narration}\n\n"
-            "why: first, what each sentence shows of that person, and whether this turn's sentence adds anything to it. "
+            "why: first, what each sentence shows of the person in it, and whether this turn's sentence adds anything to it. "
             "repeated: then true when it plays the same moment again, false when it moves on.")
     return BEAT_CHECK_SYSTEM, [Msg("user", user)]
 
@@ -2902,6 +2982,35 @@ def in_private(now: str, before: list[str]) -> bool:
     return False
 
 
+def tense_why(game: Any, state: Any, adj: Any, last: dict | None = None) -> str:
+    """Why this turn is in a tense scene (B245), or "": the signs quiet_why reads that say the moment is pressing, not merely
+    busy: a fight this turn; the game's own (a peril, a compulsion, someone hostile here); the assistant's "nobody could walk up
+    here now"; a check this turn at a person here, or one rolled at a person here last turn; a question to the player waiting.
+    Not a move, the player's own room, or someone having spoken: those hold callers back without hurrying the clock."""
+    last = last or {}
+    action = adj is not None and getattr(adj, "kind", "") == "action"
+    if action and is_fight(adj):
+        return "in a fight"
+    why = str(_hook(game, "unquiet", state, default="") or "")
+    if why:
+        return why
+    if action and getattr(adj, "open_to_callers", True) is False:
+        return "the assistant: nobody could walk up here now"
+    here = _hook(game, "people_here", state, default=None)
+    here = set(here if here is not None else [x for x in last.get("present") or [] if x != "player"])
+    name = lambda pid: str(_hook(game, "person_name", state, pid, default=None) or pid)  # noqa: E731
+    if action:
+        for i in adj.intents:
+            if i.check and getattr(i.check, "target_entity", None) in here:
+                return f"a check at {name(i.check.target_entity)}"
+    about = set(last.get("about") or []) & here
+    if about:
+        return f"a check at {name(sorted(about)[0])} last turn"
+    if last.get("clarify"):
+        return "a question to the player is waiting"
+    return ""
+
+
 def quiet_why(game: Any, state: Any, adj: Any, doc: dict, turn: int, last: dict | None = None) -> tuple[str, bool]:
     """Why this turn is not quiet, and whether that why is soft (B248: one definition, for word from elsewhere (B104) and for
     anyone walking up (B235)), or ("", False). Hard: a fight this turn; the game's own (a peril, a compulsion, someone hostile
@@ -3067,15 +3176,17 @@ def task_of(adj: Any) -> str:
     return next((kind for kind, rx in TASK_WORDS if rx.search(text)), "other")
 
 
-def task_minutes(clock, adj) -> tuple[int, str]:
+def task_minutes(clock, adj, tense: bool = False) -> tuple[int, str]:
     """The game's row for the kind of turn (time doc §3 (iv), D148): the estimate kept within the row, and a note when it
-    moved. Waiting and sleeping run to the player's limit, so their rows only floor them."""
+    moved. Waiting and sleeping run to the player's limit, so their rows only floor them. In a tense scene (B245) a row's
+    floor stands down (the turn is as short as the assistant says); its ceiling still holds."""
     task = task_of(adj)
     row = (getattr(clock, "tasks", None) or {}).get(task)
     m = int(adj.time_minutes or 0)
     if row is None:
         return m, ""
-    kept = max(m, row.least) if task in ("wait", "sleep") else min(max(m, row.least), row.most)
+    least = min(row.least, max(m, 1)) if tense and task not in ("wait", "sleep") else row.least
+    kept = max(m, least) if task in ("wait", "sleep") else min(max(m, least), row.most)
     return kept, (f"{task} turn: {m} minutes kept to {kept} ({row.least} to {row.most})" if kept != m else "")
 
 

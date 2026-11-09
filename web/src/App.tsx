@@ -292,6 +292,7 @@ function Game({ id }: { id: string }) {
         <button onClick={() => setDebug(!debug)}>GM debug</button>
       </header>
       <main>
+        <div className="centre">
         <section className="narrative" ref={scrollRef}>
           {rows.map((r) => (
             <Row key={r.seq} r={r} first={firstOfUndo.has(r.seq)} onRedo={view.redo && r.undone === view.redo.mark && streaming === null ? () => redo() : undefined} onUndo={streaming === null && !r.undone && r.turn > 0 && (r.role === "player" || r.role === "command") ? () => goBack(r) : undefined} />
@@ -326,8 +327,14 @@ function Game({ id }: { id: string }) {
           )}
           {err && <div className="error">{err}</div>}
         </section>
+        {view.ui.panels.some((w) => w.place === "main") && (
+          <section className="main-panels">
+            <Panels panels={view.ui.panels} place="main" onChoice={(cmd) => send(cmd)} onCommand={sendCommand} busy={streaming !== null} ended={!!view.ending} />
+          </section>
+        )}
+        </div>
         <aside className="side">
-          <Panels panels={view.ui.panels} onChoice={(cmd) => send(cmd)} onCommand={sendCommand} busy={streaming !== null} ended={!!view.ending} />
+          <Panels panels={view.ui.panels} place="side" onChoice={(cmd) => send(cmd)} onCommand={sendCommand} busy={streaming !== null} ended={!!view.ending} />
         </aside>
       </main>
       <footer>

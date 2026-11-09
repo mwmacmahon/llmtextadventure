@@ -1,16 +1,75 @@
 # The queue
 
-What the build chat does next, in order, and what has just landed. The horizon is a week or two; the page is re-cut
-whenever the owner changes the order or a directive lands. The long view, every open piece of work by area, is
-`docs/ROADMAP.md` (published: [Roadmap](https://claude.ai/artifact/7n8jqWaQmb47y1SKRA7zRQ)). The dated position with
-the evidence behind it is the state page, `docs/STATE-2026-11-08.md` (published:
-[Where Things Stand, 11-08](https://claude.ai/artifact/MSX6c7ttSrFuxkvvdYxZBU)). Bugs one by one are the register,
-`docs/OPEN-ISSUES.md`. Kept by the design side chat; the owner carries each directive to the build chat by hand.
+What is next, in order, then what has just landed. The horizon is a week or two; the page is re-cut whenever the
+owner changes the order or a directive lands. The long view by area is `docs/ROADMAP.md` (published:
+[Roadmap](https://claude.ai/artifact/7n8jqWaQmb47y1SKRA7zRQ)); the dated position with its evidence is the state
+page, `docs/STATE-2026-11-08.md` ([Where Things Stand](https://claude.ai/artifact/MSX6c7ttSrFuxkvvdYxZBU)); bugs one by
+one are the register, `docs/OPEN-ISSUES.md`. Kept by the design side chat; the owner carries each directive to the
+build chat by hand. Re-cut 2026-11-09 night (the owner: "I don't know what is next").
 
-Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a short-term planning document and showed
-"basically nothing left"). Everything here was the roadmap's "Where we are", "Landed today" and Stage 5 queue.
+## Next (2026-11-09 night, at 05e2fef)
 
-## Where we are (2026-11-09, night, at bbbd735)
+*Now* is in the build chat's hands; *then* follows from it; *proposed* is the side chat's suggestion until the owner
+says, and he sets the order.
+
+1. **Now: part twelve §6**, the Timeline overlay and the Journal (B261: the day's log leaves the side column for a
+   Timeline button and an in-page overlay by day; the Journal cut to the newest six with "See more"; the referee told
+   what the log is for and what the journal is for, a line that restates the other dropped; the Journal command opens
+   the overlay). §1 to §5 landed tonight (49501d3, b73b99e, 4b4eeb2, 6df1e00, 05e2fef).
+2. **Then: her server moves** to the commit that carries part twelve (`lilith_update.sh`, dry-run first; the owner
+   says when), **and she plays game two.** Her games are the measure. The side chat reads the save after.
+3. **Proposed: the reading says where and what.** One schema change, no new call: the word lists over the player's
+   words that gate the holds, the floor and the gift path (on the move, in their room, a fight, waits until, gives what
+   to whom) become fields the adjudicator writes, computed once into one scene record a turn that the hold, the floor,
+   the deck and the gift path read; the regexes stay as backstops and lint tests; the replays the build chat has (her
+   save, the grimdark saves) must come out the same. Before more holds pile up on word lists.
+4. **Proposed: one Gemma round of the fantasy on the box**, with the call report counting the reading's fields left at
+   their default each turn. The local backend is the goal; the count says whether the one structured call is too big
+   for the local model, and gates X3 (the chain of small questions, roadmap area 18).
+5. **After her second game: XP** (B221), as ruled; the possibilities are on its register line.
+6. **Then the play page on the phone** (DESIGN-player-ui, its six commits; §6 is its item 7, landing first).
+
+## Waiting on the owner
+
+The answers bundled into a directive as they come: the play page's four questions (`notes/DESIGN-player-ui-2026-11-08.md`);
+magic's placement and its four questions (B91, `notes/DESIGN-magic-2026-11-08.md`); the content questions (B40, B43,
+B44, B58, B61, B110 to B122, B136); the rescue from death (B143, later); whether noir takes "death is death"; the
+too_far check on the forks (B209); the go for a long-round measure on Gemma (plan A).
+
+## Just landed (11-09, newest first)
+
+- **Part twelve §1 to §5** (11-09 night): the party line asks nothing of each person and a beat told again is caught
+  by the engine (B242); the cards show a content fact clause by clause as it is told, learned facts newest first, a
+  learned row may replace one (B243); the game master decides what can plainly be seen and the aside's learned pass
+  makes it canon, Gemma answering "about sixteen years old" (B244); the clock's floor stands down where the scene is
+  tense and the assistant is told when a turn is fast (B245); a thing is held once, a gift leaves the pockets, a hook
+  closes on its goal flag, a thread's giver is who gave it (B246, B224.23, B224.24). Also: the Clown Maker into the
+  repo under `server/games/hidden/` with bookings as a hand and panels that may sit under the story (5f952d3,
+  9588a39); the update script backs up her store before a move (36505ee).
+- **Off her save and the owner's grimdark turns** (11-09 night, 654cbbc to bbbd735): a move names one thing and a
+  reward does not take back what was given on (B258); a quest the rows say is over is asked about by name and closes
+  that turn (B259); a timer for the player's own plan never runs (B260). :8016 moved 7c77af6 to bbbd735 at 05:39 UTC;
+  her save took two owner fixes (the cellar's troll_settled flag, the whistle to Tansy), a backup in backups/.
+- **Part eleven §1 and the room** (11-09 night, fee1e3b to 7c77af6): one definition of quiet (B248), place before
+  people for word from elsewhere (B249), one newcomer a scene (B250), Hazel waits to be spoken to (B251), holds shown
+  (B252), the tests (B253); a quest's deadline from when the player hears of it (B254, D182); nobody walks into the
+  player's own room (B255); the reading says whether anyone could walk up, `open_to_callers` (B256, D183; the owner:
+  see how it goes); a cut-off turn leaves no half turn (B257). :8016 moved 6c9099a to 7c77af6 at 05:13 UTC.
+- **Part ten and her first game** (11-09): dev mode off at the server (B232), Super Grimdark Fantasy as a derived game
+  with the mods first cut (B231, B79, B89), the fair trade (B229), the description on the page, a wait meant for
+  someone else (B233). Her first 28 turns (25a51df64905, Normal, Sonnet) gave eight notes, logged B241 to B247 and
+  B224.22; all but B261's kin are now built.
+
+## Where we are, in four lines
+
+Stage 1 (the dice) is done and Stage 2 (parity) ran: the base won the blind pairs on the dice, since tuned (D168).
+The fantasy, MARROWGATE, is built and Lilith plays it on Sonnet on her own server (:8016, pinned, moved only by the
+owner). One model serves every role on the box; the local model's structured-call gap (B213, B217) is the frontier
+for her playing local. The play page is designed, not built; XP waits for her second game.
+
+## The record (as logged before the re-cut; the register and DECISIONS.md have the rest)
+
+### Where we were, bullet by bullet
 
 - **Stage 1 is done** (D135 to D151, 2026-11-07 night to 11-08 dawn): 2d6 with caps, the dice and the player's row,
   the consequence roll with noir's table rewritten, the small faults, the six time rules, and the station's control
@@ -61,99 +120,15 @@ Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a shor
   mid-stream leaves no half turn (B257). :8016 moved 6c9099a to 7c77af6 at 05:13 UTC on the owner's word, dev mode
   off, with everything from part eight on. §2 to §7 (B242 to B246, B224.22, B58) are written and not yet built.
 
-## Suggested next (the side chat, 11-09 night; the owner's order stands until he says)
+### The order as set 11-08 evening, all built or moved above
 
-1. Part twelve §4 to §6, then her server moves and she plays game two. Her games are the measure; nothing else is.
-2. **The reading says where and what** (a consolidation, one schema change, no new call): the player's-words regexes
-   that gate holds and floors (ON_THE_MOVE, PRIVATE_IN, the fight words, WAIT_SAID and the until lists, GIVE and
-   HERE_TAKE) become fields the adjudicator writes (on the move, private, a fight, waits until, gives what to whom),
-   computed once into one scene record per turn that quiet_why, the floor, the deck and the gift path all read; the
-   regexes stay as backstops and as lint tests. The replays the build chat already has (her save, the grimdark saves)
-   must come out the same. Before more holds pile up on word lists.
-3. One Gemma round of the fantasy on the box (she plays on Sonnet; the local backend is the goal), with the call
-   report's count of reading fields left at their default. That count gates X3 (the chain of small questions): run X3's
-   measure only if it says the one call is failing, since item 2 makes the schema bigger.
-4. XP (B221) after her second game, as ruled. 5. The play page's slice two on the phone, after §6's Timeline and Journal.
+Her server, then she plays (B230; built). The servers formal, dev mode off on hers (B232; built). Super Grimdark
+Fantasy and the mods first cut (B231, B79, B89; built). Part nine (B217 to B228; built 11-09 about 01:15). Part eight
+(B213 to B216; built 11-09 just after midnight). Parts six and seven (B200 to B212; built 11-08 night). Stage 3's
+leftovers (B73, B77) and Stage 4, the context modules: on the roadmap, areas 4 and 5. Magic (B91), the feedback
+button (B10), the W1 sweep proper, the clown sim: on the roadmap.
 
-## The queue, in order (the owner, 11-08 evening; part seven put first 11-08 night; part eight 11-09)
-
-0. *(Built: B230, aa380a8, ec93ec6; see 0c.)* Her server, then she plays on it. Part ten, later: the floor's witness and a fair trade (B229), B224's unplain rest. B221 (XP) is on the docket
-   for after her first couple of games, the possibilities laid out on its line.
-   *Landed 11-08 evening (the build chat's clock), all of part nine:* B217 3fffe54, B225 6062202, B219 96ef2d1, B220 08d6a23, B226
-   1197b1c, B45 9a9d925, B227 c4d9ff8, B222 a2ee5ce, B223 76780f0, B224 ada23f6 (the plain three), B228 f3ef452; the §12
-   round 6735ec72e948: edge on 9 of 10, settled rows with a why 2 of 2, floor raises 2 (one prying, one a fair trade: B229),
-   no retells, no deaths, Sneak Attack and finesse seen.
-0c. **The servers formal, dev mode off on hers** (B232, the owner 11-09; the paste written 11-09): `TA_DEV_MODE=off` on
-   :8016, hidden games unloaded, no switch in Settings; `docs/SERVERS.md` is the contract (written by the side chat),
-   `launch.json` the mechanism; her server moved to the commit that carries the flag by the update script.
-   *Landed 11-08 19:10 (the build chat's clock):* B230, her server on :8016 from `../llmtextadventure-lilith` pinned at
-   6c9099a with its own data folder (aa380a8), `lilith_update.sh` (ec93ec6), the stale :8010 stopped.
-0b. **Super Grimdark Fantasy and the mods first cut** (B231, B79, B89; the owner 11-09; the paste written 11-09): the
-   hidden copy renamed and made a true derived game (the fantasy's code and content always, its own saves and mods,
-   dev mode only); the mods system's first cut as designed (YAML merge patch, the per-game mods directory, upload,
-   download, delete, the save keeping the mod's text, `rulings_off`); the R-rated mod as its first case, shown only on
-   the grimdark game's form; its words drafted 11-09 at `notes/content/super_grimdark_fantasy/mods/grimdark.yml` (pulp level, no cuts: the owner 11-09, also
-   the test of what a local model will do before she plays on one).
-0a. *Part nine, written 11-09 about 01:15, built the same hour* (the side chat's read of §5 and the readiness report, 11-09):
-   first and alone, the secret-holder floor on an engine witness, never on the model's `aim` (B217: Gemma marks every
-   check secret, the floor is back on every parley and on fights); then the settled rows written once from the reading
-   (B219), a name masked as a pronoun (B220), the fail branch forced for impossible demands (B225), the grab that follows
-   off the island (B226), the player-name check (B45), heat on a crime in open view (B227), Sneak Attack and Rage on
-   the strip (B222), the money guards (B223), the panel and journal read (B224), the three small ones (B228); and the
-   owner's XP question (B221) when answered.
-   *Landed 11-09 just after midnight:* part eight §1 to §5 (B213 4d0d02e, B214 bd8a5c7, B215 b2aeaba, B216 ee8d022; the
-   §5 round 219a98e03aa9: edge on 8 of 9 checks, 2 settled rows with a why, 0 settled fails), one die for one way out in
-   a peril (48ee158), the readiness report (`notes/REPORT-2026-11-08-fantasy-readiness.md`).
-0a. *Part eight as sent* (B213 to B216, 11-09 just after midnight): the local schema
-   requires the check's edge, its why and its aim and fiat's settled and why (B213: on Gemma none of them is ever
-   written, so the edge is 0 and nothing can fail without a roll); the chosen-death net never fires on a surrender
-   (B214: "stop fighting the hands" killed Kragga); the narrator told of a death writes it (B215); the strip's word at
-   zero (B216); then one Gemma round with its report and three counts. The side chat reads it before she plays.
-   *Landed 11-08 night:* part seven (B207 to B211, B63 narrowed; 2669a19, 5a82d9e), part six (B200 to B206; dd4be6c,
-   748d653, 0638909, ca47f24, 9538397), B212 (634f5a9), too_far widened (fc89cad).
-- **Three more off her save and the owner's grimdark turns** (11-09 night, 654cbbc to bbbd735): a move names one thing
-  and a reward does not take back what was given on (B258, half of §6); a quest the rows say is over is asked about by
-  name, the engine putting the question to the referee's model, and closes that turn (B259, §7 built ahead of the paste);
-  a timer for the player's own plan never runs (B260). :8016 moved again, 7c77af6 to bbbd735 at 05:39 UTC; her save took
-  two owner fixes (the cellar's troll_settled flag, the whistle to Tansy), a backup in backups/.
-1b. **Her second night's notes** (the owner, 11-09 night): the Journal and the day's log grow without limit and say the
-   same thing twice (B261: a Timeline button opening an in-page overlay, the Journal cut to the newest few with "See
-   more", the referee told the two apart, the Journal command gone); the cards never update (B243, asked again: not
-   fixed, it is §3). **Part twelve written 11-09 night, one paste for all that is unfinished:** §1 the party rule and K3
-   (B242), §2 the People cards (B243), §3 asides as canon and the game master deciding what the character could plainly see, an age, clothes, the room (B244, widened
-   11-09 night from the owner's grimdark saves), §4 the clock in a tense scene (B245), §5 a thing held
-   once and a gift that leaves the pockets, with the Ferryman's Daughter closing on its goal flag and Hazel's thread's
-   giver (B246, B224.23, B224.24), §6 the Timeline overlay and the Journal (B261). The build chat's lines run from B262. §1 to §3 built within the hour (49501d3, b73b99e, 4b4eeb2: the party
-   line softened and a beat told again caught by the engine; the cards clause by clause as told; the game master decides
-   what can plainly be seen and the aside's learned pass, Gemma answering "about sixteen years old"); §4 to §6 to come.
-   Also 5f952d3: the Clown Maker into the repo under server/games/hidden/ with its tests; 36505ee: the update script
-   backs up her store before a move.
-1a. **Her first game's notes** (the owner, 11-09, after 28 turns of Lillian on :8016 at 6c9099a; the side chat read the save):
-   a can-be-ally offering herself to a stranger mid-scene (B241, Hazel; content and a hold on happenings); everyone with
-   her given a line every turn, and the beat-level repeat never ruled (B242: the party rule softened, K3 traced on her
-   save at last); the People cards showing seed facts she was never told and never updating (B243); the game master's
-   asides not canon (B244); the clock's floor in a tense scene (B245: Sonnet never writes a fast turn); a thing given
-   away kept, because the engine held it twice (B246); a fallback quest reaching her on the island by boat (B247, B104
-   reopened); the Rats job "offered" after the deed, no close flag written (B224.22 seen again, B58). Part eleven written 11-09 as two pastes: §1 the interrupting people, built the same night (B248 to B253; B241,
-   B247 and B104 closed) and on her server at 7c77af6; §2 to §7 the rest (B242 to B246, B224.22, B58), written; §7 and half of §6 built
-   the same night off her save (B259, B258), §2 to §5 and the rest of §6 not yet.
-1. **She plays, on her own server** (started 11-09; 28 turns the first night, 25a51df64905, Normal, Sonnet; the server at 7c77af6 since 11-09 night). The side chat's read after part nine: on Sonnet the design holds (edge on 15 of 21 checks,
-   `aim` never misused, 14 attempts settled by the words, death is death); she can play now if the owner accepts what
-   is still open there: XP moves only when a quest closes (B221), money drift (B223), the People panel ahead of the
-   prose (B224), impossible demands rolled rather than refused (B225), heat not moving on an open crime (B227), no
-   check on a player name that is a cast member's (B45). On Gemma she waits for B217. She has no save yet; the Hard
-   saves are the owner's Ungdall games (B99).
-2. **The owner's open answers**, bundled into the next directive as they come: the player UI's four questions
-   (`notes/DESIGN-player-ui-2026-11-08.md`), magic's placement and its four questions (B91,
-   `notes/DESIGN-magic-2026-11-08.md`), the content questions (B40, B43, B44, B58, B61, B110 to B122, B136), the
-   rescue from death (B143, later), whether noir takes "death is death", the too_far check on the forks (B209).
-3. *(Pulled to 0b.)* Mods (B79) with Super Grimdark Fantasy's R-rated pass (B89).
-4. **Stage 3's leftovers and Stage 4** (the roadmap's areas 4 and 5): the model label from the profile (B73), one
-   server for every game (B77); then the narrator's context modules, not started.
-5. **Magic as an engine system** (B91) when a caster is wanted; the feedback button (B10); the W1 sweep proper and its
-   rounds; the fantasy on local Gemma; the clown sim behind dev mode.
-
-## Landed this week (2026-11-07 night to 11-08 night)
+### Landed the week before (2026-11-07 night to 11-08 night)
 
 The fantasy (D152 to D167); W1's first pass (D166); the lobby with the bar, game pages, save lines and cards, one
 Settings page, dev mode and the difficulty select (D171, B74 to B77, B80); the guard `rewrite` everywhere (D170, B78);
@@ -166,7 +141,7 @@ engine's roll, enemies act every turn, failures cost hit points by tier; D176), 
 B212, B63 narrowed); too_far widened (B144); the graveyard per save (B81); the schema fix (f9ae8f4); the readiness
 rounds run once (B145).
 
-## Positions, by the roadmap's old stages (kept for the record)
+### Positions, by the roadmap's old stages
 
 - **Stage 1, the dice and the consequences:** done. 1a D135, 1b D143, 1c D144, 1d D145, 1e D146 and D148 to D151, with
   B38's split line fixed after the first parity round. The caps are off everywhere since 11-08 night (B200).

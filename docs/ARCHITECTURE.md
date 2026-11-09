@@ -385,7 +385,9 @@ the green-to-red gradient) and `chips` (shown under the bar: the fantasy's wound
 meters side by side; a list's `layout` is `rows` (label left, value right), `grid` (tiles; a tile with no
 label shows its value alone) or `stack` (the label over the value); a chip's `tone` colours it; a command's
 `enabled: false` greys it (the engine still refuses it); an empty table, list, log or card list says
-"Nothing yet." `TA_DATA_DIR` gives one server its own store and logs (a fake server for UI checks beside
+"Nothing yet." Every panel may say where it goes: `place` is `side` (the default column) or `main` (a strip under the
+story in the centre pane, which stays put while the story scrolls: the clown's hand of bookings), and `pinned: true`
+keeps it at the top of its column while the rest scrolls (the clown's girl in training). `TA_DATA_DIR` gives one server its own store and logs (a fake server for UI checks beside
 the live rounds' store, `.claude/launch.json` `api-fantasy-fake` on :8015). **Deployment:** every server the project
 runs, by kind (a player's server pinned at a commit with its own store and `TA_DEV_MODE=off`, so no hidden game loads
 and Settings shows no dev switch, B232; the rounds servers the build restarts; the dev servers), is in `docs/SERVERS.md`;

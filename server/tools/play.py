@@ -22,9 +22,14 @@ import urllib.request
 BASE = os.environ.get("TA_URL", "http://127.0.0.1:8010").rstrip("/")
 
 
+# The tools are the owner's: every request carries the dev header (B76), so a hidden game (the clown) can be created and
+# played by a round; a server with dev mode off ignores it quietly (B232). A pin, when the server has one: TA_DEV_PIN.
+DEV_HEADERS = {"x-dev": "1", **({"x-dev-pin": os.environ["TA_DEV_PIN"]} if os.environ.get("TA_DEV_PIN") else {})}
+
+
 def _req(method: str, path: str, body: dict | None = None) -> bytes:
     data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(BASE + path, data=data, method=method, headers={"content-type": "application/json"})
+    req = urllib.request.Request(BASE + path, data=data, method=method, headers={"content-type": "application/json", **DEV_HEADERS})
     with urllib.request.urlopen(req, timeout=600) as r:
         return r.read()
 
@@ -40,7 +45,7 @@ def _post(path: str, body: dict):
 def _stream(path: str, body: dict) -> list[dict]:
     """Collect SSE events from a streaming endpoint."""
     data = json.dumps(body).encode()
-    req = urllib.request.Request(BASE + path, data=data, method="POST", headers={"content-type": "application/json", "accept": "text/event-stream"})
+    req = urllib.request.Request(BASE + path, data=data, method="POST", headers={"content-type": "application/json", "accept": "text/event-stream", **DEV_HEADERS})
     events: list[dict] = []
     name, buf = None, []
     with urllib.request.urlopen(req, timeout=900) as r:

@@ -273,7 +273,9 @@ A round is played by a Claude Code subagent (the Agent tool, model opus) handed 
 through `tools/turn.py` (`new`, `play`, `finish`) and writes the same readable report as autoplay to
 `notes/playtests/<date>-<game>-<tag>.md` (every turn's prose, the engine's mechanics, the state after it, a run table).
 API player models are not used (D84: "players playing the game: Claude Code, not API calls"). `tools/autoplay.py` still
-plays from a script of inputs. Use a round to see a mechanic work end to end, then turn the interesting turns into a
+plays from a script of inputs. The tools send the dev header on every request (`X-Dev: 1`, with `X-Dev-Pin` from
+`TA_DEV_PIN` when the server has a pin), so a round can create and play a hidden game such as the clown; a server with
+dev mode off ignores the header. Use a round to see a mechanic work end to end, then turn the interesting turns into a
 test set so a model or prompt change can be measured on them.
 
 Never run a round against a player's server (:8016 is Lilith's; `docs/SERVERS.md`). Run rounds against a server that does not reload (`api-sonnet-fixed` in `.claude/launch.json`, port 8012, the Sonnet
