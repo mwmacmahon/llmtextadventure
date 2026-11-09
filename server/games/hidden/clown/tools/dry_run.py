@@ -23,6 +23,8 @@ from engine import events as ev
 from engine import pending as pend
 from engine.game import TurnInfo
 
+from .. import deck as dk
+from .. import harbour as hb
 from ..game import DAY, OFFICE, ClownGame, make_game
 from ..state import SKILL_TIERS, ClownState, hhmm, tier_of, weekday
 
@@ -77,7 +79,7 @@ def choose_plan(game: ClownGame, st: ClownState, plan: str, focus: list[str], re
 
 
 def run(weeks: int = 8, kind: str = "charmer", girl: str = "dot", plan: str = "pratfalls,children", focus: str = "", rest_at: int = 0,
-        book: str = "all", attend: bool = True, seed: int = 0, verbose: bool = False, content: Path = CONTENT, out=print, take: int = 0) -> ClownState:
+        book: str = "all", attend: bool = True, seed: int = 0, verbose: bool = False, content: Path = CONTENT, out=print, take: int = 0, recruit: bool = True) -> ClownState:
     game = make_game(content)
     _, st = game.new_instance({"name": "the proprietor", "kind": kind, "first_girl": girl})
     rng = random.Random(seed)
@@ -110,14 +112,21 @@ def run(weeks: int = 8, kind: str = "charmer", girl: str = "dot", plan: str = "p
                     booked_week.append(f"{h.title} ({free[0].name})")
                 if verbose:
                     out(f"  {hhmm(st.clock.minute)} book {h.title} for {free[0].name}: {r.text}")
+        # the door: a girl asking to be taken on is taken on when there is a room (the talk the referee would read as a yes)
+        if recruit:
+            for x in [x for x in st.girls if x.status == "available"]:
+                if not game._take_on(st, x, "the dry run"):
+                    booked_week.append(f"took on {x.name}")
         # the shed: the cheapest contract on the slip when the house can spare it
         if take and st.harbour.hand:
             cards = game.content.girl_cards()
-            slip = sorted((cards[c] for c in st.harbour.hand if c in cards), key=lambda c: int(c.get("price") or 0))
-            if slip and st.house.money >= int(slip[0].get("price") or 0) + take:
+            price = lambda c: hb.price_of(c, st, lambda k: dk.dial(st, k))  # noqa: E731
+            slip = sorted((cards[c] for c in st.harbour.hand if c in cards), key=price)
+            if slip and st.house.money >= price(slip[0]) + take:
+                paid = price(slip[0])
                 st, r = game.run_command(st, "take", {"girl": slip[0]["id"]})
                 if r.ok:
-                    booked_week.append(f"took {slip[0]['name']} ({int(slip[0].get('price') or 0)} gold)")
+                    booked_week.append(f"took {slip[0]['name']} ({paid} gold)")
                 if verbose:
                     out(f"  {hhmm(st.clock.minute)} take {slip[0]['name']}: {r.text or r.log_line}")
         to = next_stop(st)
@@ -178,8 +187,9 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--verbose", action="store_true")
     ap.add_argument("--take", type=int, default=0, help="buy the cheapest contract on the slip when the house has this much over its price")
+    ap.add_argument("--no-recruit", action="store_true", help="leave the girls who come to the door waiting (default: take them on when a room is free)")
     a = ap.parse_args()
-    run(a.weeks, a.kind, a.girl, a.plan, a.focus, a.rest_at, a.book, not a.no_attend, a.seed, a.verbose, take=a.take)
+    run(a.weeks, a.kind, a.girl, a.plan, a.focus, a.rest_at, a.book, not a.no_attend, a.seed, a.verbose, take=a.take, recruit=not a.no_recruit)
 
 
 if __name__ == "__main__":

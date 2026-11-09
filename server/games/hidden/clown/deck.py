@@ -225,6 +225,9 @@ STANDING_TONES = {"done": "ok", "failed": "bad", "passed over": "neutral", "book
 
 # the dials a house file may set (`dials:`) and a mod may turn; the defaults
 DIALS: dict[str, float] = {
+    "harbour_price_scale": 1.25,   # a contract's price is the card's price times this (the cards average 196: the slip opens near 250; D199C)
+    "harbour_lift": 1,             # skill points every girl off the boat has more for every week the house has run (her whole grid; D199C)
+    "harbour_price_cap": 1000,     # the dearest a contract can come; the price rises with the lift in proportion to her grid
     "hand_size": 2,          # cards in the hand at the start (house.hand_size; the upgrades `gives: {hand: 1}` and reward rows `hand: +1` raise it)
     "refill_days": 3,        # the hand refills this many days after a pick, divided by the girls in the house, never under a day
     "lock_chance": 0.25,     # an ordinary card locks in the hand with this chance, when within the gap cap

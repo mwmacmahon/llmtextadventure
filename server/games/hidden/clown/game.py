@@ -49,6 +49,8 @@ AUTHORITY = {
 }
 PRACTICE = "The practice room"
 OFFICE = "The office"
+AWAY_PLACE = "about the town"          # a girl who came to the door and waits on an answer (D199C)
+JOIN_WORDS = ("joined", "join", "taken on", "taken in", "hired", "recruited", "in the house", "house", "passive", "member")
 AXIS_STEP = 2                   # the referee's most in a turn on one axis
 MONEY_ROW = 100                 # the referee's most on money in one row
 HEAT_ROW = 15
@@ -571,7 +573,14 @@ class ClownGame(GameBase):
                                                                       + (f", {x.mood}" if x.mood else "") for x in others) + ".")
         door = self._at_the_door(s)
         if door is not None:
-            lines.append(f"At the door this turn: {door.name}, {door.age}: {door.bio.strip()} She has come to ask to be taken on.")
+            lines.append(f"At the door this turn: {door.name}, {door.age}: {door.bio.strip()} She has come to ask to be taken on; she is not in the house "
+                         f"unless {p.name} says yes this turn and she agrees." + ("" if self._rooms_free(s) > 0 else f" The house has no room for her: its {h.rooms} rooms are full."))
+        waiting = [x for x in s.girls if x.status == "available" and x is not door]
+        if waiting:
+            room = (f"there is room for {self._rooms_free(s)}" if self._rooms_free(s) > 0 else f"the house's {h.rooms} rooms are full, so a yes cannot be kept until a room is made up")
+            lines.append(f"Asking to be taken on, waiting on {p.name}'s answer (not in the house: no keep, no bookings, no training; {room}): "
+                         + "; ".join(f"{x.name}, " + (f"at {x.location}" if x.location != AWAY_PLACE else "about the town") + (f" (she {x.before.rstrip('.')})" if x.before else "") for x in waiting)
+                         + f". She joins only when the prose shows {p.name} taking her on and her agreeing.")
         lines.extend(self._harbour_lines(s))
         shows = [x for x in s.shows if not x.result and x.at_abs > s.now_abs]
         if shows:
@@ -660,7 +669,7 @@ class ClownGame(GameBase):
             out.append(f"On the clerk's slip at the Harbourmaster's shed (contracts for sale; {s.player.name} buys one with the Take command, in their own time; "
                        f"a new boat on the first and third Sunday of the month, its slip up the Monday after; this is the slip as it stands, and it changes only when THIS TURN says so):")
             for c in slip:
-                out.append(f"- {hb.card_line(c, deck, self.skill_name)}. In her own words: \"{str(c.get('voice') or '').strip()}\"")
+                out.append(f"- {hb.card_line(c, deck, self.skill_name, s, lambda k: dk.dial(s, k))}. In her own words: \"{str(c.get('voice') or '').strip()}\"")
         bought = [g for g in s.girls if g.card and g.in_house()]
         if bought:
             out.append("")
@@ -726,7 +735,7 @@ class ClownGame(GameBase):
                        f"Until then play the house under it: the men waiting or coming back, the girls knowing.")
         if s.harbour.announce and s.harbour.hand:
             deck, cards = self.content.girls_deck(), self.content.girl_cards()
-            slip = "; ".join(hb.card_line(cards[c], deck, self.skill_name) for c in s.harbour.hand if c in cards)
+            slip = "; ".join(hb.card_line(cards[c], deck, self.skill_name, s, lambda k: dk.dial(s, k)) for c in s.harbour.hand if c in cards)
             out.append(f"WORD FROM THE SHED: a boat came in over the weekend and the clerk's slip at the Harbourmaster's shed is new: {slip}. Let the word reach "
                        f"{p.name} in a line or two, where it fits (the clerk's boy with the slip, Mrs Pell back from the market, a note under the door): "
                        f"the names and what each is said to do, in words; {p.name} may go down and look them over, or not. Nothing is bought this turn unless "
@@ -782,7 +791,7 @@ class ClownGame(GameBase):
             "an evening; waiting is however long they wait, and the week ends on Sunday night whatever they do.",
             "",
             f"Where {p.name} is, who is with them, the money, the attention on the house: the game state block. Read it before ruling something impossible.",
-            "Entities (the girls and the people, by id): " + ", ".join(f"{g.id} ({g.name}" + (", not yet in the house; about the town)" if g.status == "away" else ")") for g in s.girls if g.status != "gone")
+            "Entities (the girls and the people, by id): " + ", ".join(f"{g.id} ({g.name}" + (", not yet in the house; about the town)" if g.status == "away" else ", asking to be taken on; not in the house)" if g.status == "available" else ")") for g in s.girls if g.status != "gone")
             + "; " + ", ".join(f"{q.id} ({q.name}, {q.role})" for q in s.people) + ".",
             "Places: " + ", ".join(s.places) + ".",
             "There are no systems in this game; leave `systems` empty.",
@@ -794,7 +803,7 @@ class ClownGame(GameBase):
         girls = [g for g in s.girls if g.status != "gone"]
         lines = [
             "GAME RULES FOR THE REFEREE",
-            f"Targets: player ({p.name}); the girls by id: " + ", ".join(f"{g.id} = {g.name} (also {', '.join(g.aliases[:3])})" + ("; not yet in the house, met about the town: learned rows only" if g.status == "away" else "") for g in girls)
+            f"Targets: player ({p.name}); the girls by id: " + ", ".join(f"{g.id} = {g.name} (also {', '.join(g.aliases[:3])})" + ("; not yet in the house, met about the town: learned rows only" if g.status == "away" else "; asking to be taken on, not in the house: status joined when the prose takes her on" if g.status == "available" else "") for g in girls)
             + "; people by id: " + ", ".join(f"{q.id} = {q.name}" + (f" (also {', '.join(q.aliases[:2])})" if q.aliases else "") for q in s.people)
             + "; things by id as the game state lists them; the house as house.",
             "Places: " + ", ".join(s.places) + ". A move or a location value is one of these. A spot inside a listed place (the desk, the mats, the "
@@ -816,6 +825,9 @@ class ClownGame(GameBase):
             "a doctor or a rest). An injury the prose shows is +bruised or +sprained; her skills are the engine's and never a row.",
             "- set <girl id>.status gone: she has left the house for good in the prose (ran, was taken, was put out). Never active, passive or graduated: "
             "the engine's.",
+            "- set <girl id>.status joined: a girl the game state lists as asking to be taken on (or at the door this turn) is taken on in the prose: the "
+            "proprietor says yes and she agrees, in words. A talk without a yes, a maybe, or a yes she has not answered is no row. The engine refuses it "
+            "when the house's rooms are full and says so.",
             "- set <girl id>.off mornings|afternoons|today: the proprietor gave her that slot off today in the prose (a rest, an errand, the afternoon "
             "to herself); the engine skips the plan's slot that day. Only today's slots, and only when the prose plainly gives it.",
             "- learned <girl id> value=fact: what the proprietor learned about her this turn, one sentence. set <girl id>.known value=<secret id>: she gave "
@@ -1212,6 +1224,18 @@ class ClownGame(GameBase):
             return True
         if field == "status" and kind == "set":
             v = value.lower().strip()
+            if v in JOIN_WORDS:
+                if g.in_house():
+                    return True
+                if g.status != "available" and g is not self._at_the_door(s):
+                    w.reject(f"girls.{g.id}.status", "only a girl who has come to the door asking to be taken on can join", value)
+                    return True
+                why = self._take_on(s, g, ch.note or "")
+                if why:
+                    w.reject(f"girls.{g.id}.status", why, value)
+                else:
+                    w.set(f"girls.{g.id}.status", "available", g.status)
+                return True
             if v in ("gone", "left", "ran", "run away", "taken", "dead"):
                 if g.status != "gone" and w.set(f"girls.{g.id}.status", g.status, "gone"):
                     g.status, g.location = "gone", "Unknown"
@@ -1220,7 +1244,7 @@ class ClownGame(GameBase):
                         nxt = next((x for x in s.girls if x.status == "passive"), None)
                         s.active = nxt.id if nxt else ""
                 return True
-            w.reject(f"girls.{g.id}.status", "active, passive and graduated are the engine's; the referee writes only gone", value)
+            w.reject(f"girls.{g.id}.status", "active, passive and graduated are the engine's; the referee writes only joined (a girl taken on) or gone", value)
             return True
         if field == "known" or (kind == "set" and field in {x.id for x in g.secrets}):
             sid = value if field == "known" else field
@@ -1833,13 +1857,38 @@ class ClownGame(GameBase):
     def _arrivals(self, s: ClownState) -> None:
         door = self._at_the_door(s)
         if door is not None:
-            door.status, door.location, door.arrived_day = "passive", OFFICE, s.clock.day
-            door.off_routine_until = self._next_slot_start(door, s.now_abs)
-            door.history.append(stamp(s, "came to the house"))
-            self._note(s, f"{door.name} came to the house and was taken in.")
-            if not s.active or s.active_girl is None or not s.active_girl.in_house():
-                s.active = door.id
-                door.status = "active"
+            door.status, door.location, door.arrived_day = "available", OFFICE, s.clock.day
+            door.off_routine_until = s.now_abs + 1
+            door.history.append(stamp(s, "came to the door asking to be taken on"))
+            self._note(s, f"{door.name} came to the door asking to be taken on; she waits on an answer. Talk to her to take her on.")
+            s.log.append(f"{door.name} came to the door asking to be taken on.")
+        for g in s.girls:            # after the door scene she goes back to the town until she is taken on
+            if g.status == "available" and g.location != AWAY_PLACE and s.now_abs >= g.off_routine_until and not self._with_player(s, g):
+                g.location = AWAY_PLACE
+
+    def _with_player(self, s: ClownState, g: Girl) -> bool:
+        return bool(g.location) and g.location == s.player.location and g.location != AWAY_PLACE
+
+    def _rooms_free(self, s: ClownState) -> int:
+        return s.house.rooms - len(s.in_house())
+
+    def _take_on(self, s: ClownState, g: Girl, why: str = "") -> str:
+        """A girl who came to the door is taken on (the referee's 'status joined' after a talk): refused when the rooms are full."""
+        if self._rooms_free(s) <= 0:
+            return f"the house has {s.house.rooms} rooms and they are full (an upgrade makes up another)"
+        g.status = "passive"
+        if not g.location or g.location == AWAY_PLACE:
+            g.location = s.player.location if s.player.location in s.places else OFFICE
+        g.off_routine_until = self._next_slot_start(g, s.now_abs)
+        g.arrived_day = s.clock.day
+        g.history.append(stamp(s, "taken on" + (f": {why}" if why else "")))
+        self._note(s, f"{g.name} was taken on and came into the house.")
+        self._tally(s, f"{g.name} taken on: the house keeps her from now ({int(dk.dial(s, 'keep_per_girl'))} gold a week); {len(s.in_house())} of {s.house.rooms} rooms.")
+        s.log.append(f"{g.name} was taken on.")
+        if not s.active or s.active_girl is None or not s.active_girl.in_house():
+            s.active = g.id
+            g.status = "active"
+        return ""
 
     def _pay(self, s: ClownState, row: dict, why: str) -> None:
         bits = []
@@ -2064,8 +2113,10 @@ class ClownGame(GameBase):
                 out.append(f"{ga.name}: {gb.diligence_word} → {ga.diligence_word} at work")
             had, has = [c.name for c in gb.conditions], [c.name for c in ga.conditions]
             out += [f"{ga.name}: + {n}" for n in has if n not in had] + [f"{ga.name}: − {n}" for n in had if n not in has]
-            if gb.status == "away" and ga.in_house():
-                out.append(f"{ga.name} came to the house")
+            if gb.status in ("away", "available") and ga.in_house():
+                out.append(f"{ga.name} taken on" if gb.status == "available" else f"{ga.name} came to the house")
+            if gb.status == "away" and ga.status == "available":
+                out.append(f"{ga.name} asks to be taken on")
         for ga in a.girls:
             gb = b.girl(ga.id)
             if gb is None and ga.card:
@@ -2207,11 +2258,12 @@ class ClownGame(GameBase):
         if slip:
             can = s.harbour.taken_week != s.house.week or not s.harbour.taken_week
             room = len(in_house) < s.house.rooms
-            afford = [c for c in slip if hb.price_of(c) <= s.house.money]
+            dl = lambda k: dk.dial(s, k)  # noqa: E731
+            afford = [c for c in slip if hb.price_of(c, s, dl) <= s.house.money]
             out.append(CommandSpec(id="take", label="Take" + ("" if can else " (one a week)") + ("" if room else " (the rooms are full)"), mode="narrated",
                                    enabled=bool(can and room and afford),
-                                   params=[Param(name="girl", label="contract", options=[Option(id=c["id"], label=f"{c['name']}, {c.get('age')}, {hb.tag_meaning(deck, str(c.get('origin') or ''))}; {hb.price_of(c)} gold"
-                                                                                                           + ("" if hb.price_of(c) <= s.house.money else " (too dear)")) for c in slip],
+                                   params=[Param(name="girl", label="contract", options=[Option(id=c["id"], label=f"{c['name']}, {c.get('age')}, {hb.tag_meaning(deck, str(c.get('origin') or ''))}; {hb.price_of(c, s, dl)} gold"
+                                                                                                           + ("" if hb.price_of(c, s, dl) <= s.house.money else " (too dear)")) for c in slip],
                                                  default=(afford or slip)[0]["id"])],
                                    hint="Buy a contract off the clerk's slip at the Harbourmaster's shed and bring her home: the price from the house's money, one a week, "
                                         f"and a room for her (the house has {s.house.rooms}; the Upgrade makes more). "
@@ -2574,6 +2626,14 @@ class ClownGame(GameBase):
             what = "in training" if x.id == s.active else "a graduate" if x.graduated else "not in training"
             booked_x = ("; " + "; ".join(f"booked: {y.title} ({WEEKDAYS[weekday(y.at_abs // DAY)][:3]} {hhmm(y.at_abs % DAY)})" for y in shows_x)) if shows_x else ""
             panels.append(ListPanel(title=f"{x.name} · {what} · {x.fatigue_word} · {x.credibility_word}{booked_x}", items=tiles, layout="grid", pinned=x.id == s.active))
+        waiting = [x for x in s.girls if x.status == "available"]
+        if waiting:
+            free = self._rooms_free(s)
+            panels.append(ListPanel(title=f"Asking to be taken on ({len(waiting)})", layout="stack", items=[
+                Chip(label=x.name, tone="info" if free > 0 else "warn",
+                     value=(f"{x.age}; " + (f"at {x.location}" if x.location != AWAY_PLACE else f"about the town: {x.before.rstrip('.')}" if x.before else "about the town") + ". "
+                            + ("Talk to her to take her on." if free > 0 else f"No room: the house's {h.rooms} rooms are full; make up a room first.")))
+                for x in waiting]))
         if g is not None:
             her = [Chip(label="Where", value=g.location or "unknown"), Chip(label="Mood", value=g.mood or ""), Chip(label="Condition", value=g.condition or "")]
             her += [Chip(label="", value=c.name, tone="warn") for c in g.conditions]
@@ -2590,6 +2650,12 @@ class ClownGame(GameBase):
                                     details=[Chip(label="Where", value=x.location or "unknown"), Chip(label="Respect", value=wd["respect"]),
                                              *[Chip(label="Bond", value=f"{s.girl(o).name if s.girl(o) else o} {b:+d}") for o, b in x.bonds.items() if s.girl(o) and s.girl(o).in_house()]],
                                     notes=x.facts[-4:]))
+        for x in s.girls:
+            if x.status == "available":
+                cards.append(EntityCard(id=x.id, title=x.name, subtitle=f"{x.age}, asking to be taken on",
+                                        badges=[Chip(label="", value="available: talk to her to take her on", tone="info")],
+                                        details=[Chip(label="Where", value="about the town" if x.location == AWAY_PLACE else x.location or "unknown")],
+                                        notes=x.facts[-4:]))
         panels.append(EntityCards(title="The girls", cards=cards))
         hand_rows = [r for r in self.quest_rows(s) if r.standing in ("in hand", "booked")]
         panels.append(QuestPanel(title=f"The hand ({len(dk.hand(s))} of {h.hand_size} cards)", rows=hand_rows, place="main"))
@@ -2602,9 +2668,9 @@ class ClownGame(GameBase):
                 card = cards.get(c)
                 if card is None:
                     continue
-                price = hb.price_of(card)
+                price = hb.price_of(card, s, lambda k: dk.dial(s, k))
                 rows.append(QuestRow(title=f"{card['name']}, {card.get('age')} · {hb.tag_meaning(deck, str(card.get('origin') or ''))}",
-                                     line=f"{price} gold · bound for {card.get('bound_for')} · {hb.seed_words(card, self.skill_name)} · " + ", ".join(card.get("traits") or []),
+                                     line=f"{price} gold · bound for {card.get('bound_for')} · {hb.seed_words(card, self.skill_name, hb.lift_of(s, lambda k: dk.dial(s, k)))} · " + ", ".join(card.get("traits") or []),
                                      standing="for sale" if price <= h.money else "too dear", giver="the clerk at the shed", tone="info" if price <= h.money else "neutral"))
             panels.append(QuestPanel(title=f"The clerk's slip ({len(rows)} contracts; the next boat Sunday of week {nxt}" + ("; one bought this week" if s.harbour.taken_week == h.week and h.week else "") + ")",
                                      rows=rows, place="main"))

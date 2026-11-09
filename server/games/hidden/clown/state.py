@@ -36,7 +36,7 @@ WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", 
 SLOTS: dict[str, tuple[int, int]] = {"mornings": (540, 720), "afternoons": (840, 1020)}   # 09:00-12:00, 14:00-17:00
 TRAINING_DAYS = (0, 1, 2, 3, 4)          # Monday to Friday
 WEEK_END_MINUTE = 1320                   # Sunday 22:00
-STATUS = Literal["active", "passive", "graduated", "gone", "away"]
+STATUS = Literal["active", "passive", "graduated", "gone", "away", "available"]   # available: came to the door, not taken on yet
 AGE_BUCKETS = ((0, "youth"), (18, "young"), (25, "grown"), (40, "older"))   # set by her age, never moved by a model; what each binds is the deck file's (D194C)
 
 

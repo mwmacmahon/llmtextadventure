@@ -419,7 +419,71 @@ def test_the_second_girl_arrives_when_her_flag_lands(game: ClownGame):
     assert game._at_the_door(st).id == "rosalind"
     assert "At the door this turn: Rosalind Vell" in game.render_bulletin(st, "")
     st = advance(game, st, 5, 2)
-    assert st.girl("rosalind").status == "passive" and st.girl("rosalind").location == "The office" and game._at_the_door(st) is None
+    r = st.girl("rosalind")
+    assert r.status == "available" and not r.in_house() and r.location == "The office" and game._at_the_door(st) is None
+    assert any("asking to be taken on" in ln for ln in st.log)
+
+
+def test_a_girl_at_the_door_waits_until_taken_on_by_a_talk_and_the_roster_says_so(game: ClownGame):
+    st = new(game)
+    st.flags["second_girl_come"] = True
+    st = advance(game, st, 5, 2)
+    st.player.location = "The kitchen"
+    st = advance(game, st, 30, 3)                                                  # the door scene over, she goes back to the town
+    r = st.girl("rosalind")
+    assert r.location == "about the town" and r not in st.in_house()
+    block = game.render_bulletin(st, "")
+    assert "Asking to be taken on" in block and "Rosalind Vell" in block and "joins only when the prose shows" in block
+    ui = game.ui(st)
+    waiting = next(p for p in ui.panels if getattr(p, "title", "") == "Asking to be taken on (1)")
+    assert "Talk to her to take her on" in waiting.items[0].value
+    cards = next(p for p in ui.panels if getattr(p, "title", "") == "The girls")
+    assert any(c.id == "rosalind" and "talk to her" in c.badges[0].value for c in cards.cards)
+    assert "status joined" in game.referee_rules(st)
+    _, rep_, _ = apply(game, st, C(kind="set", target="dot", field="status", value="joined"))
+    assert not rep_.rejected                                                      # in the house already: nothing to do
+    s, rep_, _ = apply(game, st, C(kind="set", target="rosalind", field="status", value="joined"))
+    assert not rep_.rejected and s.girl("rosalind").status == "passive" and s.girl("rosalind").location == "The kitchen"
+    assert "Rosalind Vell taken on" in game.seen_changes(st, s)
+    _, rep_, _ = apply(game, st, C(kind="set", target="billie", field="status", value="joined"))
+    assert rep_.rejected and st.girl("billie").status == "away"                  # never come to the door
+    st.house.rooms = 1                                                            # full: the yes cannot be kept
+    s, rep_, _ = apply(game, st, C(kind="set", target="rosalind", field="status", value="joined"))
+    assert rep_.rejected and "full" in rep_.rejected[0].reason and s.girl("rosalind").status == "available"
+    assert "rooms are full" in game.render_bulletin(st, "")
+
+
+def test_a_girl_at_the_door_may_be_taken_on_the_same_turn(game: ClownGame):
+    st = new(game)
+    st.flags["second_girl_come"] = True
+    s, rep_, _ = apply(game, st, C(kind="set", target="rosalind", field="status", value="joined"))
+    assert not rep_.rejected and s.girl("rosalind").in_house()
+    s = advance(game, s, 5, 2)
+    assert s.girl("rosalind").status == "passive" and game._at_the_door(s) is None
+
+
+def test_the_harbour_girls_get_better_and_dearer_as_the_weeks_go_to_a_cap(game: ClownGame):
+    from games.hidden.clown import harbour as hb
+    st = new(game)
+    cards = game.content.girl_cards()
+    dl = lambda k: dk.dial(st, k)  # noqa: E731
+    week1 = [hb.price_of(c, st, dl) for c in cards.values()]
+    assert 225 <= sum(week1) / len(week1) <= 275                                  # the slip opens near 250
+    card = next(iter(cards.values()))
+    assert hb.price_of(card, st, dl) == round(card["price"] * dk.dial(st, "harbour_price_scale"))
+    st.house.week = 27
+    assert hb.lift_of(st, dl) == 26 and hb.price_of(card, st, dl) > round(card["price"] * dk.dial(st, "harbour_price_scale"))
+    st.house.week = 400
+    assert max(hb.price_of(c, st, dl) for c in cards.values()) == int(dk.dial(st, "harbour_price_cap"))
+    st.house.week = 27
+    cid = st.harbour.hand[0]
+    st.house.money, st.house.rooms = 5000, 5
+    price = hb.price_of(cards[cid], st, dl)
+    s, res = game.run_command(st, "take", {"girl": cid})
+    g = s.girl(cid)
+    assert res.ok and s.house.money == 5000 - price and g.price_paid == price
+    assert all(v >= min(90, int(cards[cid]["seed"][k]) + 26) for k, v in g.skills.items() if k in (cards[cid].get("seed") or {}) and int(cards[cid]["seed"][k]) < 90)
+    assert min(g.skills.values()) >= 5 + 26 or any(k in ("acrobatics", "pratfalls") for k in g.skills)
 
 
 def test_a_switch_any_day_to_any_girl_in_the_house_and_the_one_put_aside_loses_a_little_love(game: ClownGame):
@@ -755,14 +819,15 @@ def test_take_pays_the_clerk_once_a_week_and_the_girl_comes_whole_with_her_tags_
     st = new(game)
     cid = st.harbour.hand[1]
     card = cards[cid]
-    st.house.money = card["price"] - 1
+    price = hb.price_of(card, st, lambda k: dk.dial(st, k))
+    st.house.money = price - 1
     _, res = game.run_command(st, "take", {"girl": cid})
     assert not res.ok and "gold" in res.text
-    st.house.money = card["price"] + 100
+    st.house.money = price + 100
     s, res = game.run_command(st, "take", {"girl": cid})
     assert res.ok and res.directive and "shed" in res.directive and res.minutes == 90
     g = s.girl(cid)
-    assert g is not None and g.status == "passive" and g.card == cid and g.location == "The office" and g.price_paid == card["price"]
+    assert g is not None and g.status == "passive" and g.card == cid and g.location == "The office" and g.price_paid == round(card["price"] * dk.dial(st, "harbour_price_scale"))
     assert s.house.money == 100 and cid in s.harbour.gone and cid not in s.harbour.queue and cid not in s.harbour.hand and len(s.harbour.hand) == 3
     assert all(g.skills.get(k) == v for k, v in card["seed"].items()) and all(5 <= v <= 15 for k, v in g.skills.items() if k not in card["seed"])
     assert set(card["tags"]) <= set(g.tags) and not set(g.tags) & set(hb.never_for(card, deck))
@@ -890,7 +955,7 @@ def test_the_first_girl_is_a_harbour_girl_and_the_written_three_come_to_the_door
     st.flags["first_girl_come"] = True                                   # day 8, by the event
     assert game._at_the_door(st).id == "dot"
     st = advance(game, st, 5, 2)
-    assert st.girl("dot").status == "passive" and st.active == "pim_dace" and game._at_the_door(st) is None
+    assert st.girl("dot").status == "available" and st.active == "pim_dace" and game._at_the_door(st) is None
     st.flags["second_girl_come"] = True
     assert game._at_the_door(st).id == "rosalind"
     # a setup that names nobody, or nonsense, gets the first starter
@@ -997,10 +1062,10 @@ def test_dear_contracts_and_the_rooms_the_take_refuses_when_full_and_a_written_g
     assert not res.ok and "the house has 2 rooms and they are full" in res.text.lower()
     take = next(c for c in game.commands(st) if c.id == "take")
     assert not take.enabled and "the rooms are full" in take.label
-    st.flags["second_girl_come"] = st.flags["third_girl_come"] = True           # the spine brings Billie to the door: never refused
+    st.flags["second_girl_come"] = st.flags["third_girl_come"] = True           # the spine brings Billie to the door: she waits, the rooms full
     assert game._at_the_door(st).id == "billie"
     st = advance(game, st, 5, 2)
-    assert st.girl("billie").in_house() and len(st.in_house()) == 3 > st.house.rooms
+    assert st.girl("billie").status == "available" and len(st.in_house()) == 2 == st.house.rooms
     # an old save gets the dial
     data = new(game).model_dump(mode="json")
     data["house"].pop("rooms")

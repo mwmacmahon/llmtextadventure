@@ -134,14 +134,39 @@ def lottery(card: dict, deck: dict, rng: random.Random, overrides: dict[str, str
     return tags
 
 
-def grid_from(card: dict, scenario: Scenario, rng: random.Random, bucket: str, deck: dict) -> dict[str, int]:
-    """Her grid: the seed's skills as written, every other five to fifteen; an older woman's body skills capped by the bucket."""
+LIFT_MAX = 90                   # no skill off the boat over this, however late
+
+
+def lift_of(state: ClownState | None, dial) -> int:
+    """The skill points a girl off the boat has over her card, by how long the house has run (D199C): the harbour's girls get better."""
+    if state is None or dial is None:
+        return 0
+    return int(round(float(dial("harbour_lift")) * max(0, state.house.week - 1)))
+
+
+def price_of(card: dict, state: ClownState | None = None, dial=None, n_skills: int = 15) -> int:
+    """The contract's price: the card's, scaled (harbour_price_scale), and grown with the lift in proportion to her grid's expected sum
+    (the seed as written, every other skill ten on average), capped (harbour_price_cap). Without a state, the card's own price."""
+    base = int(card.get("price") or 30)
+    if state is None or dial is None:
+        return base
+    seed = [int(v) for v in (card.get("seed") or {}).values()]
+    expect = sum(seed) + 10 * max(0, n_skills - len(seed))
+    lift = lift_of(state, dial)
+    grown = sum(min(LIFT_MAX, v + lift) for v in seed) + min(LIFT_MAX, 10 + lift) * max(0, n_skills - len(seed))
+    return int(min(float(dial("harbour_price_cap")), round(base * float(dial("harbour_price_scale")) * grown / max(1, expect))))
+
+
+def grid_from(card: dict, scenario: Scenario, rng: random.Random, bucket: str, deck: dict, lift: int = 0) -> dict[str, int]:
+    """Her grid: the seed's skills as written, every other five to fifteen; an older woman's body skills capped by the bucket; the lift
+    (how long the house has run) on every skill, never past LIFT_MAX."""
     seed = {k: int(v) for k, v in (card.get("seed") or {}).items()}
     cap = int(bucket_rules(deck, bucket).get("body_seed_cap") or 100)
     out: dict[str, int] = {}
     for grp, ids in scenario.skills.items():
         for k in ids:
             v = seed.get(k, rng.randint(5, 15))
+            v = min(LIFT_MAX, v + lift) if v < LIFT_MAX else v
             if grp == "body":
                 v = min(v, cap)
             out[k] = v
@@ -156,29 +181,27 @@ def routine_for(origin: str) -> list[Routine]:
     return [Routine(**r) for _, r in sorted(base.items())]
 
 
-def make_girl(card: dict, deck: dict, scenario: Scenario, rng: random.Random, day: int, price: int, overrides: dict[str, str] | None = None) -> Girl:
+def make_girl(card: dict, deck: dict, scenario: Scenario, rng: random.Random, day: int, price: int, overrides: dict[str, str] | None = None, lift: int = 0) -> Girl:
     bucket = bucket_of(int(card.get("age", 30)))
     return Girl(id=str(card["id"]), name=str(card["name"]), aliases=list(card.get("aliases") or []), age=int(card.get("age", 30)), bio=str(card.get("bio") or "").strip(),
-                traits=list(card.get("traits") or []), skills=grid_from(card, scenario, rng, bucket, deck), status="passive", location="The office",
+                traits=list(card.get("traits") or []), skills=grid_from(card, scenario, rng, bucket, deck, lift), status="passive", location="The office",
                 untrainable=list(card.get("untrainable") or []), card=str(card["id"]), tags=lottery(card, deck, rng, overrides), voice=str(card.get("voice") or "").strip(),
                 origin=str(card.get("origin") or ""), bound_for=str(card.get("bound_for") or ""), never=never_for(card, deck), price_paid=int(price),
                 routine=routine_for(str(card.get("origin") or "")), arrived_day=int(day), mood="new", fatigue=10)
 
 
-def price_of(card: dict) -> int:
-    return int(card.get("price") or 30)
 
 
-def seed_words(card: dict, skill_name) -> str:
-    seed = sorted(((k, int(v)) for k, v in (card.get("seed") or {}).items()), key=lambda kv: -kv[1])
+def seed_words(card: dict, skill_name, lift: int = 0) -> str:
+    seed = sorted(((k, min(LIFT_MAX, int(v) + lift) if int(v) < LIFT_MAX else int(v)) for k, v in (card.get("seed") or {}).items()), key=lambda kv: -kv[1])
     from .state import SKILL_TIERS
     return ", ".join(f"{skill_name(k).lower()} {tier_of(v, SKILL_TIERS)}" for k, v in seed) or "nothing the clerk could name"
 
 
-def card_line(card: dict, deck: dict, skill_name) -> str:
+def card_line(card: dict, deck: dict, skill_name, state: ClownState | None = None, dial=None) -> str:
     """One line of a card for the narrator and the slip: who, how old, from where, bound for what, what the slip says she can do, the price."""
     return (f"{card['name']}, {card.get('age')}, {tag_meaning(deck, str(card.get('origin') or ''))}, bound for {card.get('bound_for')}; the slip says "
-            f"{seed_words(card, skill_name)}; {price_of(card)} gold for the contract")
+            f"{seed_words(card, skill_name, lift_of(state, dial))}; {price_of(card, state, dial)} gold for the contract")
 
 
 def girl_file_lines(g: Girl, deck: dict) -> list[str]:
@@ -213,7 +236,7 @@ def take(state: ClownState, cid: str, deck: dict, cards: dict[str, dict], rng: r
         return None, "the house has bought a contract this week already; the clerk will hold the slip"
     if len(state.in_house()) >= state.house.rooms:
         return None, f"the house has {state.house.rooms} rooms and they are full"
-    price = price_of(card)
+    price = price_of(card, state, dial)
     if state.house.money < price:
         return None, f"the house has {state.house.money} gold and the contract is {price}"
     state.house.money -= price
@@ -221,7 +244,7 @@ def take(state: ClownState, cid: str, deck: dict, cards: dict[str, dict], rng: r
     hb.queue = [c for c in hb.queue if c != cid]
     hb.gone.append(cid)
     hb.taken_week = state.house.week
-    g = make_girl(card, deck, state.scenario, rng, state.clock.day, price, hb.overrides.get(cid))
+    g = make_girl(card, deck, state.scenario, rng, state.clock.day, price, hb.overrides.get(cid), lift_of(state, dial))
     state.girls.append(g)
     if not state.active or state.active_girl is None or not state.active_girl.in_house():
         state.active, g.status = g.id, "active"
