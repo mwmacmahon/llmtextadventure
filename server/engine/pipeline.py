@@ -847,7 +847,7 @@ class Engine:
             label = cmd_result.label or spec.label
             if cmd_result.log_line:
                 doc = state.model_dump(mode="json")
-                sp.append(doc, getattr(game, "log_path", "log"), f"{_clock_text(game, doc)}{cmd_result.log_line.strip()}")
+                sp.append(doc, getattr(game, "log_path", "log"), f"{_clock_text(game, doc)}{unstamped(cmd_result.log_line)}")
                 state = game.load_state(doc)
             ledger("profile", stamp)
             ledger("command", {"id": cid, "args": args, "mode": spec.mode, **cmd_result.model_dump(mode="json")})
@@ -1738,7 +1738,7 @@ class Engine:
             return state, {"id": lever.id, "status": "blocked", "text": f"{lever.label}: {res.text.strip()}"}
         if res.log_line:
             doc = new_state.model_dump(mode="json")
-            sp.append(doc, getattr(game, "log_path", "log"), f"{_clock_text(game, doc)}{res.log_line.strip()}")
+            sp.append(doc, getattr(game, "log_path", "log"), f"{_clock_text(game, doc)}{unstamped(res.log_line)}")
             new_state = game.load_state(doc)
         ledger("command", {"id": lever.id, "args": lever.args, "mode": lever.mode, "typed": True, **res.model_dump(mode="json")})
         log.info("command.typed " + logs.kv(iid=iid, turn=turn, id=lever.id, mode=lever.mode, args=json.dumps(lever.args)))
@@ -3005,6 +3005,9 @@ def in_private(now: str, before: list[str]) -> bool:
     return False
 
 
+LEARNING_LOG = re.compile(r"\b(learns?|learned|hears?|heard|is told|was told|finds? out|found out|discovers?|discovered|reads?|works? out|realises|realizes)\b", re.I)
+
+
 def journal_not_log(game: Any, before: Any, after: Any, log_line: str, report: Any) -> Any:
     """B261: a journal line the rows added this turn that is the turn's log line said again is dropped: at least two content
     words shared beyond the names, and at least half of the journal line's own (the directive's bare two-word test dropped 21
@@ -3023,6 +3026,8 @@ def journal_not_log(game: Any, before: Any, after: Any, log_line: str, report: A
             names |= {w.lower().rstrip("s") for w in re.findall(r"[A-Za-z]{3,}", str(q.get("name", "")))}
     pl = a.get("player") or {}
     names |= {w.lower().rstrip("s") for w in re.findall(r"[A-Za-z]{3,}", str(pl.get("name", "")))}
+    if LEARNING_LOG.search(log_line or ""):        # B283: the log line reports the learning itself ("learns from the carter that
+        return after                               # Oswin offers eight gold"): the fact is the journal's, kept (the owner's T29, T35)
     said = _content_words(log_line) - names
     keep, dropped = [], []
     for x in now:
@@ -3435,7 +3440,7 @@ def land_extras(game: Any, state: BaseModel, log_line: str, report: ApplyReport,
         if _same_line(last, log_line):    # a weak referee repeats last turn's line
             report.rejected.append(Rejection(path="log", reason="the same as the last log line", value=log_line.strip(), kind="duplicate"))
         else:
-            sp.append(doc, lpath, f"{_clock_text(game, doc)}{log_line.strip()}")
+            sp.append(doc, lpath, f"{_clock_text(game, doc)}{unstamped(log_line)}")
     for m in getattr(extras, "merges", []):          # B93: a thread opened for a quest already in motion landed as its note
         ledger("merge", m)
     tpath = getattr(game, "threads_path", None)
@@ -3464,6 +3469,15 @@ def _effect_paths(effects: list[dict]) -> list[str]:
 def _events_of(game: Any, doc: dict) -> list[ev.Event]:
     raw = sp.lookup(doc, getattr(game, "events_path", "hidden.events"), []) or []
     return [ev.Event.model_validate(e) for e in raw]
+
+
+STAMP = re.compile(r"^\s*(Day \d+,?\s+)?\d{1,2}:\d{2}\.?\s+(?=\S)")
+
+
+def unstamped(text: str) -> str:
+    """B284: a log line the model began with its own clock ("Day 2 06:00. Ungdall rests...", copied from the log it reads) loses
+    it; the engine stamps every line itself (the owner's Timeline read "06:00. Day 2 06:00. Ungdall rests by the fire")."""
+    return STAMP.sub("", (text or "").strip(), count=1)
 
 
 def _clock_text(game: Any, doc: dict) -> str:

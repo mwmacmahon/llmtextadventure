@@ -283,6 +283,12 @@ class Note(BaseModel):
     kind: Literal["clue", "contact"] = "clue"
     text: str
     turn: int = 0
+    day: int = 0                    # B284: when it was learned, for the Timeline (0: before the stamp; placed by the ledger)
+    minute: int = -1
+
+    def stamped(self, clock: Any) -> "Note":
+        self.day, self.minute = int(clock.day), int(clock.minute)
+        return self
 
 
 class FoundPlace(BaseModel):

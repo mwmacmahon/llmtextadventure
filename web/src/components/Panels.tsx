@@ -228,15 +228,37 @@ export function Timeline({ panels, tab, onTab, onClose }: { panels: Widget[]; ta
     addEventListener("keydown", esc);
     return () => removeEventListener("keydown", esc);
   }, [onClose]);
+  const [onlyLearned, setOnlyLearned] = useState(false);
+  type Entry = { text: string; learned: boolean };
   const lines = logs.flatMap((w) => w.lines);
-  const days: { day: string; lines: string[] }[] = [];
+  const days: { day: string; lines: Entry[] }[] = [];
   for (const l of lines) {
     const m = l.match(/^(Day \d+)\s+(.*)$/);
     const day = m ? m[1] : "Earlier";
     const text = m ? m[2] : l;
     if (!days.length || days[days.length - 1].day !== day) days.push({ day, lines: [] });
-    days[days.length - 1].lines.push(text);
+    days[days.length - 1].lines.push({ text, learned: false });
   }
+  // B284: what was learned rides in its day, after the last event at or before its time, marked (the Journal folded in)
+  const time = (t: string) => (t.match(/^(\d\d:\d\d)\./) || [])[1] ?? "";
+  const learned = logs.flatMap((w) => w.learned ?? []);
+  const undated: Entry[] = [];
+  for (const l of learned) {
+    const m = l.match(/^(Day \d+)\s+(.*)$/);
+    if (!m) { undated.push({ text: l, learned: true }); continue; }
+    let d = days.find((x) => x.day === m[1]);
+    if (!d) {
+      d = { day: m[1], lines: [] };
+      days.push(d);
+      days.sort((a, b) => Number(a.day.slice(4)) - Number(b.day.slice(4)));
+    }
+    const at = time(m[2]);
+    let i = d.lines.length;
+    while (i > 0 && at && time(d.lines[i - 1].text) > at) i--;
+    d.lines.splice(i, 0, { text: m[2], learned: true });
+  }
+  if (undated.length) days.unshift({ day: "Learned before the dates", lines: undated });
+  const shown = onlyLearned ? days.map((d) => ({ ...d, lines: d.lines.filter((x) => x.learned) })).filter((d) => d.lines.length) : days;
   return (
     <div className="overlay" onClick={onClose} role="presentation">
       <div className="overlay-sheet" role="dialog" aria-modal="true" aria-label="Timeline and journal" onClick={(e) => e.stopPropagation()}>
@@ -248,17 +270,22 @@ export function Timeline({ panels, tab, onTab, onClose }: { panels: Widget[]; ta
           <button className="link overlay-close" onClick={onClose} aria-label="Close">close</button>
         </div>
         <div className="overlay-body">
+          {tab === "timeline" && learned.length > 0 && (
+            <label className="learned-filter small">
+              <input type="checkbox" checked={onlyLearned} onChange={(e) => setOnlyLearned(e.target.checked)} /> Only what was learned
+            </label>
+          )}
           {tab === "journal" && journal ? (
             <FoldedList w={{ ...journal, fold: 0 }} />
-          ) : days.length === 0 ? (
-            <div className="muted small">Nothing has happened yet.</div>
+          ) : shown.length === 0 ? (
+            <div className="muted small">{onlyLearned ? "Nothing learned yet." : "Nothing has happened yet."}</div>
           ) : (
-            [...days].reverse().map((d, i) => (
-              <details key={d.day} className="day" open={i === 0}>
+            [...shown].reverse().map((d, i) => (
+              <details key={d.day} className="day" open={i === 0 || onlyLearned}>
                 <summary>{d.day} <span className="muted small">· {d.lines.length} {d.lines.length === 1 ? "entry" : "entries"}</span></summary>
                 <ul className="log">
                   {d.lines.map((l, k) => (
-                    <li key={k}>{l}</li>
+                    <li key={k} className={l.learned ? "learned" : undefined}>{l.text}</li>
                   ))}
                 </ul>
               </details>

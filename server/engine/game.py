@@ -116,6 +116,7 @@ class LogPanel(BaseModel):
     title: str
     lines: list[str]
     timeline: bool = False           # B261: the game's log (what happened): not in a column; the Timeline overlay, by day
+    learned: list[str] = Field(default_factory=list)   # B284: what was learned ("Day N HH:MM. text", or undated): marked in the Timeline
 
 
 class Choice(BaseModel):

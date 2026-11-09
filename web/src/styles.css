@@ -114,6 +114,10 @@ td { padding: 3px 6px 3px 0; border-top: 1px solid var(--border); }
 ul.kv { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
 ul.kv li { display: flex; justify-content: space-between; gap: 12px; }
 ul.log, ul.notes { margin: 0; padding-left: 18px; font-size: 13px; }
+/* B284: what was learned, in the Timeline: the key facts stand out */
+ul.log li.learned { font-weight: 700; color: var(--warn); }
+ul.log li.learned::marker { content: "★ "; }
+.learned-filter { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; color: var(--muted); cursor: pointer; }
 .cards { display: flex; flex-direction: column; gap: 6px; }
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; cursor: pointer; }
 .card.open { border-color: var(--accent); }

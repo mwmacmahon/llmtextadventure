@@ -1575,7 +1575,7 @@ class FantasyGame(GameBase):
                 w.reject("journal", "a journal line is a whole sentence; this one runs past 200 characters with no end inside them", value[:80])
                 return True
             if text and not any(n.text == text for n in s.journal):
-                s.journal.append(Note(kind="clue", text=text))
+                s.journal.append(Note(kind="clue", text=text).stamped(s.clock))
                 w.note(f"journal += {text[:120]!r}")
             self._mark_told(s, [q for q in s.people if self._same_spot(s, q.location, p.location)], text, w)
             return True
@@ -1734,7 +1734,7 @@ class FantasyGame(GameBase):
         if row is None:                                  # a sentence, or a name the table does not have: the journal keeps it
             text = f"{p.name}: {phrase}"
             if not any(n.text == text for n in s.journal):
-                s.journal.append(Note(kind="clue", text=text))
+                s.journal.append(Note(kind="clue", text=text).stamped(s.clock))
             w.note(f"player.conditions: {phrase!r} is not a condition name; journal += {text!r}")
             return True
         if p.has_condition(row.name):
@@ -2210,7 +2210,7 @@ class FantasyGame(GameBase):
             if nid not in p.fighting:
                 p.fighting.append(nid)
             w.note(f"people.{nid} fights: a {s.people[-1].combat.block} block, in the fight")
-        s.journal.append(Note(kind="contact", text=f"{name.strip()}: {role.strip()}" + (f" ({loc})" if loc else "")))
+        s.journal.append(Note(kind="contact", text=name.strip() + (f": {role.strip()}" if role.strip() else "") + (f" ({loc})" if loc else "")).stamped(s.clock))   # B283: no empty role
         w.note(f"people += {nid} ({name.strip()}, {role.strip()})")
 
     def _new_place(self, s: FantasyState, name: str, within: str, w: Writer) -> None:
@@ -2824,7 +2824,7 @@ class FantasyGame(GameBase):
             p.hp_max += gain
             p.hp += gain
             line = f"{p.name} is level {p.level}: {gain} more hit points" + (f"; {'; '.join(got)}" if got else "") + "."
-            s.journal.append(Note(kind="clue", text=line[:200]))
+            s.journal.append(Note(kind="clue", text=line[:200]).stamped(s.clock))
             return s, CommandResult(label="Level up", text=line, log_line=line)
         from . import features as ft                                       # part fifteen §10: a feature in the class file runs by its kind
         done = ft.run(self, state, command_id, args or {})
@@ -3222,8 +3222,9 @@ class FantasyGame(GameBase):
                            details=[Chip(label="Said to be at", value=q.location)] if q.location and q.location != "Unknown" else []) for q in heard]),
             ListPanel(title="Places", items=self._places_panel(s), layout="stack"),
             QuestPanel(title="Quests", rows=self.quest_rows(s)),
-            ListPanel(title="Journal", items=[Chip(label="contact" if n.kind == "contact" else "", value=n.text) for n in reversed(s.journal)],
-                      layout="stack", fold=6, journal=True),
-            LogPanel(title="Timeline", lines=list(s.log), timeline=True),
+            # B284 (the owner, 11-09: "journal right now is just a worse timeline ... maybe key facts on timeline are bold or red"):
+            # no Journal panel; what was learned rides in the Timeline at its day and time, marked; contacts are the People cards
+            LogPanel(title="Timeline", lines=list(s.log), timeline=True,
+                     learned=[(f"Day {n.day} {n.minute // 60:02d}:{n.minute % 60:02d}. " if n.day else "") + n.text for n in s.journal if n.kind == "clue"]),
         ]
         return UISchema(phase="ended" if self.ending(s) else "narrate", free_text=not self.ending(s), placeholder=f"What does {p.name} do?", panels=panels)
