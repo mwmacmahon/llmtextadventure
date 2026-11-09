@@ -9,7 +9,8 @@ is open by the house's Name. A card taken is gone from the deck for good. The pl
 - `ship_sunday`: whether the week that closed is one the boat comes in on.
 - `deal`: the slip refilled (in place); `take`: the contract bought, the girl made (her grid from the card's seed, every other
   skill low; her tags completed by the lottery within her bucket's `never`; her routine by her origin) and set in the house.
-- `contract_value` lives on the Girl (state.py): her commercial value as a performer; `sell` pays a share of it (a dial) and
+- `value_of` lives on the Girl (state.py; the dials value_per_point, value_credibility, value_graduate): her commercial value as a
+  performer; `sell` pays a share of it (a dial) and
   she is gone: the contract sold on through the shed's book. The narrator plays the telling; the engine never says to whom.
 - `lint_cards`: the deck file and every card against the grid, the traits table, the tag groups and the age buckets.
 """
@@ -200,7 +201,8 @@ def girl_file_lines(g: Girl, deck: dict) -> list[str]:
 
 
 def take(state: ClownState, cid: str, deck: dict, cards: dict[str, dict], rng: random.Random, dial) -> tuple[Girl | None, str]:
-    """The contract bought: the price paid (refused if the house cannot), one a week, the card gone for good, the girl in the house."""
+    """The contract bought: the price paid (refused if the house cannot), one a week, a room free (refused when the girls in the house
+    fill the house's rooms, D198C), the card gone for good, the girl in the house."""
     hb = state.harbour
     card = cards.get(cid)
     if card is None or cid not in hb.hand:
@@ -209,6 +211,8 @@ def take(state: ClownState, cid: str, deck: dict, cards: dict[str, dict], rng: r
         return None, "she is in the house already"
     if hb.taken_week == state.house.week and hb.taken_week:
         return None, "the house has bought a contract this week already; the clerk will hold the slip"
+    if len(state.in_house()) >= state.house.rooms:
+        return None, f"the house has {state.house.rooms} rooms and they are full"
     price = price_of(card)
     if state.house.money < price:
         return None, f"the house has {state.house.money} gold and the contract is {price}"
@@ -227,7 +231,7 @@ def take(state: ClownState, cid: str, deck: dict, cards: dict[str, dict], rng: r
 def sell(state: ClownState, g: Girl, dial) -> int:
     """Her contract sold on: the share of its value paid in, and she is gone. Her shows to come go to the girl in training when she is
     free that day, else stand with nobody to send; the girls who were close to her think less of the house."""
-    paid = int(round(g.contract_value * float(dial("sell_share"))))
+    paid = int(round(g.value_of(state.scenario.dials) * float(dial("sell_share"))))
     state.house.money += paid
     g.status, g.location = "gone", "Unknown"
     for x in state.shows:

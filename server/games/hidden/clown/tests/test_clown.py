@@ -672,7 +672,9 @@ def test_graduation_needs_the_record_and_a_sunday_and_a_graduate_earns_on_her_ow
     money = s2.house.money
     s3 = game.after_turn(s2, info(turn=3, minutes=60))
     assert s3.girl("dot").skills["acrobatics"] == 90 and s3.girl("rosalind").skills["children"] > 50
-    assert s3.house.money == money - 23 and not any("own bookings" in ln for ln in s3.house.report_numbers)   # the keep, two girls in the house
+    odd = 10 * int(dk.dial(s3, "bench_job_pay"))                                 # the graduate on the bench with no show worked odd jobs (D198C)
+    assert s3.house.money == money - 23 + odd and not any("own bookings" in ln for ln in s3.house.report_numbers)   # the keep, two girls in the house
+    assert any("Dorothea Vance, odd jobs: 10 slots" in ln for ln in s3.house.report_numbers)
     from games.hidden.clown.state import Show
     x = Show(id="s", hook="judge_dinner", title="The Judge's dinner", client="judge", venue="The Judge's house", at_abs=s3.now_abs, wants=["acrobatics"],
              stat="charm", difficulty=0, fee=60, variance=0, girl="dot")
@@ -756,12 +758,12 @@ def test_take_pays_the_clerk_once_a_week_and_the_girl_comes_whole_with_her_tags_
     st.house.money = card["price"] - 1
     _, res = game.run_command(st, "take", {"girl": cid})
     assert not res.ok and "gold" in res.text
-    st.house.money = 200
+    st.house.money = card["price"] + 100
     s, res = game.run_command(st, "take", {"girl": cid})
     assert res.ok and res.directive and "shed" in res.directive and res.minutes == 90
     g = s.girl(cid)
     assert g is not None and g.status == "passive" and g.card == cid and g.location == "The office" and g.price_paid == card["price"]
-    assert s.house.money == 200 - card["price"] and cid in s.harbour.gone and cid not in s.harbour.queue and cid not in s.harbour.hand and len(s.harbour.hand) == 3
+    assert s.house.money == 100 and cid in s.harbour.gone and cid not in s.harbour.queue and cid not in s.harbour.hand and len(s.harbour.hand) == 3
     assert all(g.skills.get(k) == v for k, v in card["seed"].items()) and all(5 <= v <= 15 for k, v in g.skills.items() if k not in card["seed"])
     assert set(card["tags"]) <= set(g.tags) and not set(g.tags) & set(hb.never_for(card, deck))
     for grp in ("bind", "wants", "bent", "arc", "quest"):
@@ -773,6 +775,10 @@ def test_take_pays_the_clerk_once_a_week_and_the_girl_comes_whole_with_her_tags_
     _, res = game.run_command(s, "take", {"girl": s.harbour.hand[0]})
     assert not res.ok and "this week" in res.text                     # one a week
     s2 = _close_week(game, s, 9)
+    s2.house.money = 1000
+    _, res = game.run_command(s2, "take", {"girl": s2.harbour.hand[0]})
+    assert not res.ok and "2 rooms and they are full" in res.text           # Dot and the new girl fill the two rooms (D198C)
+    s2.house.rooms = 3
     assert game.run_command(s2, "take", {"girl": s2.harbour.hand[0]})[1].ok
     # the girl may be booked and switched like any other, and her bent helps the gain
     s.flags["second_girl_come"] = True
@@ -808,18 +814,23 @@ def test_the_youth_bucket_never_draws_what_it_forbids_and_the_lint_catches_a_car
 def test_the_contract_value_is_her_worth_as_a_performer_and_a_sale_pays_a_share_and_she_is_gone(game: ClownGame):
     from games.hidden.clown.state import Girl
     g = Girl(id="x", name="X", skills={"a": 10, "b": 30, "c": 50})
-    assert g.contract_value == 30                                     # (0 + 20 + 40) / 2
+    assert g.contract_value == 150                                    # (0 + 20 + 40) x 2.5 (D198C, was a half)
     g.credibility, g.graduated = 2, True
-    assert g.contract_value == 75                                     # +20 for the name, +25 the graduate
-    assert Girl(id="y", name="Y", skills={}).contract_value == 5
+    assert g.contract_value == 375                                    # +100 for the name, +125 the graduate
+    assert Girl(id="y", name="Y", skills={}).contract_value == 25
+    assert g.value_of({"value_per_point": 1, "value_credibility": 0, "value_graduate": 0}) == 60       # the dials, read
     st = new(game)
+    st.scenario.dials["value_per_point"] = 1
+    assert game.contract_value_of(st, g) == 60 + 100 + 125
+    st = new(game)
+    st.house.money = 1000
     _, res = game.run_command(st, "sell", {"girl": "dot"})
     assert not res.ok                                                 # a written girl's contract is not for sale
     cid = st.harbour.hand[0]
     s, _ = game.run_command(st, "take", {"girl": cid})
     g = s.girl(cid)
     s.girl("dot").bonds[cid] = 2
-    money, value = s.house.money, g.contract_value
+    money, value = s.house.money, game.contract_value_of(s, g)
     assert any(c.id == "sell" for c in game.commands(s))
     s2, res = game.run_command(s, "sell", {"girl": cid})
     assert res.ok and res.directive and "contract is sold on" in res.directive and res.referee_skip == ["money"]
@@ -842,6 +853,7 @@ def test_customize_fixes_a_lottery_group_within_the_bucket(game: ClownGame):
     if youth:
         _, res = game.run_command(s, "customize", {"girl": youth, "group": "hidden", "tag": "hidden_child"})
         assert not res.ok and "forbidden" in res.text
+    s.house.money = 1000
     s2, _ = game.run_command(s, "take", {"girl": cid})
     assert "spy" in s2.girl(cid).tags and sum(1 for t in s2.girl(cid).tags if hb.group_of(game.content.girls_deck(), t) == "arc") == 1
 
@@ -867,7 +879,7 @@ def test_a_save_from_before_the_harbour_gets_its_first_boat_on_load(game: ClownG
 def test_the_first_girl_is_a_harbour_girl_and_the_written_three_come_to_the_door_later(game: ClownGame):
     st = new(game, first_girl="pim_dace")
     g = st.active_girl
-    assert g.id == "pim_dace" and g.card == "pim_dace" and g.status == "active" and g.location == "The practice room" and g.price_paid == 30
+    assert g.id == "pim_dace" and g.card == "pim_dace" and g.status == "active" and g.location == "The practice room" and g.price_paid == 150
     assert st.house.money == 200 and "pim_dace" in st.harbour.gone and "pim_dace" not in st.harbour.queue and "pim_dace" not in st.harbour.hand
     assert {x.id: x.status for x in st.girls if not x.card} == {"dot": "away", "rosalind": "away", "billie": "away"}
     assert st.house.best["pratfalls"] == 30 and game._at_the_door(st) is None
@@ -888,6 +900,7 @@ def test_the_first_girl_is_a_harbour_girl_and_the_written_three_come_to_the_door
 
 def test_round_three_fixes_the_double_charge_the_house_as_a_place_the_quest_note_and_the_attitude_row(game: ClownGame):
     st = new(game, first_girl="pim_dace")
+    st.house.money = 1000
     # the Take and the Sell skip the referee's money row (round 3 paid the clerk twice)
     s, res = game.run_command(st, "take", {"girl": st.harbour.hand[0]})
     assert res.referee_skip == ["money"]
@@ -914,3 +927,136 @@ def test_the_skip_directive_tells_the_narrator_the_clock_may_have_stopped_short(
     st = new(game)
     _, res = game.run_command(st, "skip", {"to": "tomorrow"})
     assert "short of tomorrow morning" in res.directive and "name the day the clock names" in res.directive     # round 3, turn 9: Tuesday written at Monday 17:00
+
+
+# ---- the bench at odd jobs, dear contracts, the house bought room by room (D198C) -------------------------------------------
+
+def test_a_bench_girl_without_a_show_works_odd_jobs_and_one_with_a_show_trains_for_it(game: ClownGame):
+    from games.hidden.clown.state import Show
+    st = new(game)
+    st.girl("rosalind").status, st.girl("rosalind").location = "passive", "The kitchen"
+    st.girl("billie").status, st.girl("billie").location = "passive", "The yard"
+    st.shows.append(Show(id="s_r", hook="rope_walk_birthday", title="A birthday", client="rope_walk_mother", venue="Rope Walk", at_abs=st.now_abs + 10 * DAY,
+                         wants=["children", "balloons"], girl="rosalind"))
+    pay, step = int(dk.dial(st, "bench_job_pay")), int(dk.dial(st, "self_train"))
+    assert pay == 1 and step == 1
+    b0 = st.girl("billie")
+    money, dil, fat, r_fat = st.house.money, b0.diligence, b0.fatigue, st.girl("rosalind").fatigue
+    st.player.location = "The office"
+    st = advance(game, st, SLOTS["mornings"][1] - st.clock.minute + 1, 2)         # the morning slot ends; Dot has no plan
+    b, r = st.girl("billie"), st.girl("rosalind")
+    assert st.house.money == money + pay and b.diligence == dil + step and b.week_jobs == 1 and b.fatigue == fat     # no tiredness
+    assert r.week_jobs == 0 and sum(r.week_gains.values()) == step and r.fatigue == r_fat                            # her booking, not the jobs
+    assert any(f"Monday morning: {b.name} at odd jobs, +{pay} gold, diligence {dil} to {dil + step}." in ln for ln in st.tally)
+    assert not any("odd jobs" in ln for ln in st.log)                             # a tally line a slot, no log line
+    block = game.render_bulletin(st, "")
+    assert f"{b.name} (not in training) at {b.location or 'unknown'}, at odd jobs" in block and f"{r.name} (not in training) at {r.location or 'unknown'}, working at her booking" in block
+    # the week's account: the words and the numbers, beside the booking's own lines
+    st = _close_week(game, st, 3)
+    assert any(f"{b.name} worked odd jobs about the town every day of the week and brought a little in." == ln for ln in st.house.report)
+    assert any(ln.startswith(f"{b.name}, odd jobs: 10 slots, {10 * pay} gold; diligence {dil + 10 * step} (") for ln in st.house.report_numbers)
+    assert any("on her own for her booking" in ln for ln in st.house.report_numbers) and not any(f"{r.name}, odd jobs" in ln for ln in st.house.report_numbers)
+    assert st.girl("billie").week_jobs == 0
+    assert not any(ch.isdigit() for ln in st.house.report if "odd jobs" in ln for ch in ln)
+
+
+def test_the_first_booking_of_a_bench_girl_warns_once(game: ClownGame):
+    st = _offer(game, new(game))
+    st.girl("rosalind").status, st.girl("rosalind").location = "passive", "The kitchen"
+    assert "comes off her odd jobs" in next(c for c in game.commands(st) if c.id == "book").hint
+    s, res = game.run_command(st, "book", {"booking": "rope_walk_birthday", "girl": "rosalind"})
+    keep = int(dk.dial(st, "keep_per_girl"))
+    warning = f"She comes off the odd jobs to work at it: the house keeps her while she trains ({keep} gold a week) and she earns nothing until the show."
+    assert res.ok and res.text.endswith(warning) and s.flags["_bench_booked_warned"]
+    assert any(n.kind == "house" and n.text == warning for n in s.journal)
+    assert "_bench_booked_warned" not in game.render_bulletin(s, "", engine=True)                     # hidden from Established
+    st.flags["_bench_booked_warned"] = True                                                              # once: never again
+    _, res = game.run_command(st, "book", {"booking": "rope_walk_birthday", "girl": "rosalind"})
+    assert res.ok and "odd jobs" not in res.text
+    st.flags.pop("_bench_booked_warned")
+    _, res = game.run_command(st, "book", {"booking": "rope_walk_birthday", "girl": "dot"})          # the girl in training: no warning
+    assert res.ok and "odd jobs" not in res.text
+    # the referee's taken row books through the same door and warns the same way
+    s2, rep, _ = apply(game, st, C(kind="set", target="hook-rope_walk_birthday", field="taken", value="rosalind"))
+    assert s2.shows[0].girl == "rosalind" and s2.flags["_bench_booked_warned"] and any(warning in ln for ln in s2.log)
+
+
+def test_dear_contracts_and_the_rooms_the_take_refuses_when_full_and_a_written_girl_arrives_regardless(game: ClownGame):
+    st = new(game)
+    assert st.house.rooms == int(dk.dial(st, "rooms")) == 2 and st.house.upgrades == []
+    cards = game.content.girl_cards()
+    assert all(100 <= c["price"] <= 300 for c in cards.values())
+    assert "The house: 2 rooms for girls, 1 kept; the hand holds 2 cards." in game.render_bulletin(st, "")
+    cid = st.harbour.hand[0]
+    st.house.money = cards[cid]["price"] - 1
+    _, res = game.run_command(st, "take", {"girl": cid})
+    assert not res.ok and "gold" in res.text                                    # short of the price
+    st.girl("rosalind").status, st.girl("rosalind").location = "passive", "The kitchen"
+    st.house.money = 5000
+    _, res = game.run_command(st, "take", {"girl": cid})
+    assert not res.ok and "the house has 2 rooms and they are full" in res.text.lower()
+    take = next(c for c in game.commands(st) if c.id == "take")
+    assert not take.enabled and "the rooms are full" in take.label
+    st.flags["second_girl_come"] = st.flags["third_girl_come"] = True           # the spine brings Billie to the door: never refused
+    assert game._at_the_door(st).id == "billie"
+    st = advance(game, st, 5, 2)
+    assert st.girl("billie").in_house() and len(st.in_house()) == 3 > st.house.rooms
+    # an old save gets the dial
+    data = new(game).model_dump(mode="json")
+    data["house"].pop("rooms")
+    assert game.load_state(data).house.rooms == int(dk.dial(st, "rooms"))
+
+
+def test_the_house_is_the_upgrade_tree_rooms_and_cards_in_the_hand(game: ClownGame):
+    st = new(game)
+    ups = {u["id"]: u for u in st.scenario.upgrades}
+    assert set(ups) >= {"box_room", "attic", "third_storey", "guild_book", "hill_cards"}
+    assert ups["attic"].get("needs") == "box_room" and ups["hill_cards"].get("needs") == "guild_book"
+    assert "Upgrade command" in game.adjudication_rules(st) and "box_room (" in game.render_bulletin(st, "", engine=True)
+    st.house.money = 5000
+    _, res = game.run_command(st, "upgrade", {"upgrade": "attic"})
+    assert not res.ok and "first" in res.text                                    # needs the box room
+    _, res = game.run_command(st, "upgrade", {"upgrade": "no_such"})
+    assert not res.ok
+    st.house.money = ups["box_room"]["cost"] - 1
+    _, res = game.run_command(st, "upgrade", {"upgrade": "box_room"})
+    assert not res.ok and "costs" in res.text
+    lever = next(c for c in game.commands(st) if c.id == "upgrade")
+    assert lever.mode == "engine" and lever.typed and "the guild's book" in lever.words
+    assert any("(too dear)" in o.label for o in lever.params[0].options) and not any(o.id == "attic" for o in lever.params[0].options)
+    st.house.money = 5000
+    s1, res = game.run_command(st, "upgrade", {"upgrade": "box_room"})
+    assert res.ok and res.text == str(ups["box_room"]["text"]).strip()
+    assert s1.house.rooms == 3 and s1.house.upgrades == ["box_room"] and s1.house.money == 5000 - ups["box_room"]["cost"]
+    assert f"The house: {ups['box_room']['name']}" in game.seen_changes(st, s1) and "Rooms: 2 → 3" in game.seen_changes(st, s1)
+    assert any(ln.startswith("THE HOUSE CHANGED: ") and ln.endswith("Show it once, in a line, where it fits.") for ln in game.turn_directives(s1))
+    assert any(f"{ups['box_room']['name']}: {ups['box_room']['cost']} gold" in ln for ln in s1.tally) and any(ups["box_room"]["name"] in ln for ln in s1.log)
+    _, res = game.run_command(s1, "upgrade", {"upgrade": "box_room"})
+    assert not res.ok and "already" in res.text
+    s2, _ = game.run_command(s1, "upgrade", {"upgrade": "attic"})
+    s2, _ = game.run_command(s2, "upgrade", {"upgrade": "guild_book"})
+    s2, res = game.run_command(s2, "upgrade", {"upgrade": "hill_cards"})
+    assert res.ok and s2.house.rooms == 4 and s2.house.hand_size == 4
+    assert "The house: 4 rooms for girls, 1 kept; the hand holds 4 cards." in game.render_bulletin(s2, "")
+    table = next(p for p in game.ui(s2).panels if p.type == "table" and p.title == "The house")
+    cells = [c.text for row in table.rows for c in row]
+    assert "1 kept of 4" in cells and "4 cards" in cells and ups["hill_cards"]["name"] in cells
+    s3 = advance(game, s2, 5, 3)
+    assert "_upgrade_fresh" not in s3.flags and not any(ln.startswith("THE HOUSE CHANGED") for ln in game.turn_directives(s3))
+    # the spine's hand row still grows the hand, to six at most
+    game._pay(s3, {"hand": 5}, "x")
+    assert s3.house.hand_size == 6
+
+
+def test_the_lint_catches_a_bad_upgrade(game: ClownGame):
+    import copy
+    import yaml
+    sc = yaml.safe_load((CONTENT / "clown" / "scenarios" / "tumbler_house.yml").read_text())
+    bad = copy.deepcopy(sc)
+    ups = bad["upgrades"] if "upgrades" in bad else bad["house"]["upgrades"]
+    ups[0]["gives"] = {"rent": 1}
+    ups[1]["needs"] = "no_such_room"
+    ups.append(dict(ups[2]))
+    problems = lint(CONTENT / "clown", scenario=bad, state=new(game).model_dump(mode="json"))
+    assert any("gives 'rent'" in p for p in problems) and any("needs 'no_such_room'" in p for p in problems)
+    assert any("duplicate upgrade id" in p for p in problems)

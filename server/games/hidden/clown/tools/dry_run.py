@@ -160,7 +160,7 @@ def run(weeks: int = 8, kind: str = "charmer", girl: str = "dot", plan: str = "p
                 + ", ".join(f"{k} {v} {tier_of(v, SKILL_TIERS)[0]}" for k, v in x.skills.items()))
     out("  hooks: " + "; ".join(f"{h.id} {h.status}" for h in st.hooks))
     out(f"  the shed: {st.harbour.ships} boats; on the slip " + ", ".join(st.harbour.hand) + f"; taken " + (", ".join(st.harbour.gone) or "nobody")
-        + "; contract values " + ", ".join(f"{x.name} {x.contract_value}" for x in st.girls if x.in_house()))
+        + "; contract values " + ", ".join(f"{x.name} {game.contract_value_of(st, x)}" for x in st.girls if x.in_house()))
     out("  shows: " + "; ".join(f"{x.title} {x.result} q{x.quality}" for x in st.shows if x.result))
     return st
 

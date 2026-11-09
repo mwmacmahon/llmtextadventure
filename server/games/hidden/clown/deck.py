@@ -225,11 +225,11 @@ STANDING_TONES = {"done": "ok", "failed": "bad", "passed over": "neutral", "book
 
 # the dials a house file may set (`dials:`) and a mod may turn; the defaults
 DIALS: dict[str, float] = {
-    "hand_size": 2,          # cards in the hand at the start (house.hand_size; reward rows `hand: +1` raise it)
+    "hand_size": 2,          # cards in the hand at the start (house.hand_size; the upgrades `gives: {hand: 1}` and reward rows `hand: +1` raise it)
     "refill_days": 3,        # the hand refills this many days after a pick, divided by the girls in the house, never under a day
     "lock_chance": 0.25,     # an ordinary card locks in the hand with this chance, when within the gap cap
     "lock_slack": 0,         # a card may lock when the best girl, trained nonstop at what it wants until its show day, would reach its ask, less this
-    "self_train": 1,         # a girl on the bench with a booking of her own gains this a slot at the booking's skills (nothing past finished)
+    "self_train": 1,         # a girl on the bench with a booking of her own gains this a slot at the booking's skills (nothing past finished); on odd jobs, this diligence
     "booking_boost": 1.5,    # the girl in training gains this much more at a skill her own booking wants
     "student_pay": 0.25,     # a student's show pays this share of the fee; a graduate's pays the whole
     "trouble_days": 5,       # troubles are dealt one at a time, at least this many days apart, when one is eligible
@@ -242,6 +242,11 @@ DIALS: dict[str, float] = {
     "sell_share": 0.75,      # a contract sold on pays this share of her contract value
     "partner_cut": 0.25,     # Brascombe's share of every fee once he is the house's silent partner (D196C)
     "reckoning_days": 2,     # a reckoning waits this long for the proprietor's answer before the engine lands the consequence
+    "rooms": 2,              # rooms for girls at the start (house.rooms; the Upgrade command adds them); the Take refuses when they are full (D198C)
+    "bench_job_pay": 1,      # a girl on the bench with no show of her own works odd jobs about the town: this much gold a slot (D198C)
+    "value_per_point": 2.5,  # the contract value: gold a skill point above ten (D198C, was 0.5)
+    "value_credibility": 50, # and a point of her name in the trade (was 10)
+    "value_graduate": 125,   # and a graduate (was 25)
 }
 
 

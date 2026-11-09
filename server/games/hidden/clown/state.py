@@ -161,11 +161,24 @@ class Girl(BaseModel):
     def age_bucket(self) -> str:
         return tier_of(self.age, AGE_BUCKETS)
 
+    def value_of(self, dials: dict | None = None) -> int:
+        """What her contract is worth sold on: her commercial value as a performer, nothing of how she stands to anyone (the owner,
+        11-09; dear since D198C): `value_per_point` gold a skill point above ten, `value_credibility` a point of her name in the trade,
+        `value_graduate` for a graduate, never under 25. The dials are the house file's (`dials`), else deck.DIALS's defaults."""
+        from .deck import DIALS
+        d = dials or {}
+
+        def dial(k: str) -> float:
+            v = d.get(k)
+            return float(v) if v is not None else float(DIALS[k])
+
+        return max(25, int(dial("value_per_point") * sum(max(0, v - 10) for v in self.skills.values()) + dial("value_credibility") * self.credibility
+                           + (dial("value_graduate") if self.graduated else 0)))
+
     @property
     def contract_value(self) -> int:
-        """What her contract is worth sold on: her commercial value as a performer, nothing of how she stands to anyone (the owner,
-        11-09): half a point of gold a skill point above ten, ten a point of her name in the trade, twenty-five for a graduate."""
-        return max(5, int(0.5 * sum(max(0, v - 10) for v in self.skills.values()) + 10 * self.credibility + (25 if self.graduated else 0)))
+        """The contract value at the default dials (the game's `contract_value_of` reads the house file's)."""
+        return self.value_of()
 
     @property
     def credibility_word(self) -> str:
@@ -287,7 +300,9 @@ class House(BaseModel):
     closed_until_abs: int = 0
     closed_until_abs_add: int = 0   # an effect's request (the fire): added by after_turn
     rent: int = 60                  # due at every fourth week's end
-    hand_size: int = 2              # how many booking cards the hand holds: two at the start, raised by reward rows (hand +1)
+    hand_size: int = 2              # how many booking cards the hand holds: two at the start, raised by the upgrades (and a reward row's hand +1)
+    rooms: int = 2                  # rooms for girls (the dial `rooms` at the start; old saves get the dial on load); the Take refuses when full (D198C)
+    upgrades: list[str] = Field(default_factory=list)        # the house's upgrades bought (the house file's `upgrades:` ids, D198C)
     report: list[str] = Field(default_factory=list)          # last Sunday's facts in words (the narrator's)
     report_numbers: list[str] = Field(default_factory=list)  # the same with the numbers (the player's Last week panel)
     week_lines: list[str] = Field(default_factory=list)      # this week's facts so far
@@ -384,6 +399,7 @@ class Scenario(BaseModel):
     stone_words: dict[str, str] = Field(default_factory=dict)
     fate_lines: dict[str, dict[str, str]] = Field(default_factory=dict)   # fate -> {line, cause}: the ending's words, the stone's cause
     dials: dict[str, Any] = Field(default_factory=dict)      # the house file's numbers a mod may turn (DIALS in game.py has the defaults)
+    upgrades: list[dict] = Field(default_factory=list)       # the house file's upgrade tree (id, name, cost, needs, gives, text; D198C)
 
     def skill_names(self) -> dict[str, str]:
         return {k: v for g in self.skills.values() for k, v in g.items()}

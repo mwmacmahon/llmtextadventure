@@ -48,7 +48,7 @@ it. *decided*: the owner has ruled, no design yet. *open with the owner*: a ques
 | 12 | Mods and variants | designed (mods); idea (variants) | DESIGN-mods | the mod files, Super Dark Fantasy's Conan pass, basic and advanced variants |
 | 13 | Magic | designed, open with the owner | DESIGN-magic | placement and four questions; then the spell data, slots, the Cast lever, the level-up screen |
 | 14 | Models and the box | one model all roles, running | LOCAL_LLM.md; the trials reports | Qwen's return through profiles, hosted narrators, the box's faults |
-| 15 | The clown sim (Clown Maker) | built hidden, in the repo; the hand of bookings (D186C), two Sonnet rounds read (D190C, D191C), gold, the harbour deck of girls built without its model pass (D194C), nothing ends the game (D196C) | CLOWN_DESIGN, CLOWN_ROADMAP, the design page | round 3 with a bought girl, the pass at the Take, what feeds a full house (C46) |
+| 15 | The clown sim (Clown Maker) | built hidden, in the repo; the hand of bookings (D186C), two Sonnet rounds read (D190C, D191C), gold, the harbour deck of girls built without its model pass (D194C), nothing ends the game (D196C), round 3 read (D197C); the bench at odd jobs, contracts dear, the house bought room by room (D198C) | CLOWN_DESIGN, CLOWN_ROADMAP, the design page | a round on the dear prices and the rooms, the pass at the Take |
 | 16 | Writing for models | running; the sweep proper not run | WRITING_FOR_MODELS.md | the full sweep and its rounds |
 | 17 | Tooling, tests and docs | running | INDEX.md §7 | tests on gitignored content, the docs marked behind, the register's statuses, the phone's pages |
 | 18 | Ideas not yet weighed | idea | the register | the referee review pass, the preference corpus, the station's self-upgrade |
