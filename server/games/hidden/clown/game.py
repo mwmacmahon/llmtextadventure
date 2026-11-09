@@ -1986,9 +1986,10 @@ class ClownGame(GameBase):
             low = lb
             p = s.player
             directive = (f"{p.name} lets the time run to {low}, keeping house: nothing is done that the player did not say. The clock in the game state is "
-                         f"where the days stopped: write them passing in a line or two (the sound of the mats through the wall, the weather off the harbour, "
-                         f"the tram bell) and stop there. If THIS TURN brings someone to the door or word from the town, the days pass in one line and then "
-                         f"you play that. What the training did meanwhile is in THIS TURN: say it once, in words, where it fits, or not at all.")
+                         f"where the days stopped: write them passing in a line or two, built from one thing of the house or the street that has not been told "
+                         f"before (never the tram bell, the gasworks or the plan on the wall again once they have been), and stop there. If THIS TURN brings "
+                         f"someone to the door or word from the town, the days pass in one line and then you play that. What the training did meanwhile is in "
+                         f"THIS TURN: say it once, in words, where it fits, or not at all.")
             return s, CommandResult(label="Skip", player_line=f"I let the days run to {low}.", summary=f"{p.name} lets time run to {low}.",
                                     directive=directive, minutes=max(1, t - s.now_abs))
         if command_id == "graduate":
