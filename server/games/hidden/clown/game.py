@@ -304,7 +304,8 @@ class ClownGame(GameBase):
         spine = [e for e in s.hidden.events if e.reveal == "always" and e.description and not e.hook]
         if spine:
             b.append("")
-            b.append("Scheduled spine (the engine fires these when their conditions are met; the game state says which comes next):")
+            b.append("Scheduled spine (the engine fires these when their conditions are met; the game state says which comes next; nobody in the story "
+                     "foresees, mentions or prepares for one before THIS TURN brings it: a clerk at the licensing office has no plans the player can hear of):")
             b += [f"- {e.id} ({e.when_text}): {e.description}" for e in spine]
         b.append("")
         b.append(f"PACING. A scene is a few exchanges and then it is done: the girl goes back to the mats, the client's door shuts, the "
@@ -769,7 +770,7 @@ class ClownGame(GameBase):
 
     def quest_rows(self, s: ClownState) -> list[QuestRow]:
         hooks = self.hooks_content()
-        rows = [QuestRow(title=h.title + (" · stays in hand" if h.locked and not h.show else ""), line=self._board_line(s, h, hooks) + quest_line(dk.fill(str((hooks.get(h.hook) or {}).get("standing") or ""), s.player.name), h.note),
+        rows = [QuestRow(title=h.title + (" · stays in hand" if h.locked and not h.show else "") + (" · no girl free that day" if h.kind == "booking" and not h.show and h.status == "live" and self._day_full(s, h) else ""), line=self._board_line(s, h, hooks) + quest_line(dk.fill(str((hooks.get(h.hook) or {}).get("standing") or ""), s.player.name), h.note),
                          standing=dk.standing_of(h), giver=h.giver, tone=dk.STANDING_TONES.get(dk.standing_of(h), "info"))  # type: ignore[arg-type]
                 for h in s.hooks if h.status not in ("dealt", "passed")]
         names = self.entity_names(s)
@@ -1861,7 +1862,7 @@ class ClownGame(GameBase):
         if offered and in_house:
             first = s.active_girl if s.active_girl is not None and s.active_girl.in_house() else in_house[0]
             out.append(CommandSpec(id="book", label="Book", mode="engine",
-                                   params=[Param(name="booking", label="booking", options=[Option(id=h.id, label=h.title + (" (stays in hand)" if h.locked else "")) for h in offered], default=offered[0].id),
+                                   params=[Param(name="booking", label="booking", options=[Option(id=h.id, label=h.title + (" (stays in hand)" if h.locked else "") + (" (no girl free that day)" if self._day_full(s, h) else "")) for h in offered], default=offered[0].id),
                                            Param(name="girl", label="who goes", options=[Option(id=g.id, label=g.name + (" (in training)" if g.id == s.active else " (graduate)" if g.graduated else "")) for g in in_house], default=first.id)],
                                    hint="Take a card from the hand: the show is set for its day and the girl named goes. The other cards in the hand are passed over, "
                                         "but a card marked 'stays in hand' keeps asking. Nothing is ever turned down.",
@@ -1892,6 +1893,17 @@ class ClownGame(GameBase):
                                words=["skip", "let the week run", "let the days", "until saturday", "until sunday", "to saturday", "to sunday", "the rest of the week"]))
         out.append(CommandSpec(id="journal", label="Journal", mode="engine", typed=False, hint="Read the journal, the bookings and the people."))
         return out
+
+    def _day_full(self, s: ClownState, h: Any) -> bool:
+        """Every girl in the house already has a show on the day this card would be booked for (round 2: the Judge's Saturday clashed
+        with the Widow's and the lever said nothing)."""
+        bk = (self.hooks_content().get(h.hook) or {}).get("booking") or {}
+        wd, minute = int(bk.get("weekday", 5)), int(bk.get("minute", 1200))
+        day = s.clock.day
+        while weekday(day) != wd or day * DAY + minute <= s.now_abs + 120:
+            day += 1
+        girls = s.in_house()
+        return bool(girls) and all(any(x.at_abs // DAY == day and not x.result and x.girl == g.id for x in s.shows) for g in girls)
 
     def _graduate_why(self, s: ClownState, g: Girl) -> str:
         """Empty when she may graduate: three skills sound and one finished, or a triumph at a tier-2 client's house."""
