@@ -190,7 +190,7 @@ class Engine:
             "guard": {**self.settings["guard"], "mode": self.guard_mode()}, "modes": GUARD_MODES, "progress": dict(self.settings["progress"]),
             "guard_from": self.guard_source(), "shared_guard": self.settings["guard"]["mode"],
             "profile": self.cfg.profile_label, "profile_guard": self.profile_guard(),
-            "dev_pin": bool(self.cfg.server.dev_pin), "difficulties": [{"id": k, "name": v} for k, v in DIFFICULTIES.items()],
+            "dev_pin": bool(self.cfg.server.dev_pin), "dev_mode": bool(self.cfg.server.dev_mode), "difficulties": [{"id": k, "name": v} for k, v in DIFFICULTIES.items()],
             "roles": {name: {"provider": r.provider, "model": r.model, "effort": r.effort}
                       for name, r in ((n, self.cfg.role(n)) for n in self.cfg.roles)},
         }

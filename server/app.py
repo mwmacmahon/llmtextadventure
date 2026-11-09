@@ -23,7 +23,7 @@ from engine.store import Store
 cfg = load_config()
 log = logs.setup_logging(cfg.resolve(cfg.server.log_dir), cfg.server.log_level)
 store = Store(cfg.resolve(cfg.server.data_dir) / "textadventure.sqlite3")
-games = load_games(cfg.resolve(cfg.server.content_root))
+games = load_games(cfg.resolve(cfg.server.content_root), hidden=cfg.server.dev_mode)
 engine = Engine(cfg, store, games)
 log.info("startup " + logs.kv(db=store.path, content=cfg.resolve(cfg.server.content_root), games=",".join(games), profile=cfg.profile_label,
                                **{f"role.{k}": f"{v.provider}:{v.model}/{v.effort}" for k, v in cfg.roles.items()}))
@@ -79,6 +79,8 @@ def _exists(iid: str) -> None:
 def dev_mode(request: Request) -> bool:
     """Dev mode (B76): the request carries `X-Dev: 1`. With a pin configured (`server.dev_pin`, TA_DEV_PIN), it must carry
     the right `X-Dev-Pin` too, or it is refused with 403; without one, the header is enough."""
+    if not engine.cfg.server.dev_mode:              # B232: off at the server: the header is ignored, quietly
+        return False
     if request.headers.get("x-dev", "").strip() != "1":
         return False
     pin = engine.cfg.server.dev_pin

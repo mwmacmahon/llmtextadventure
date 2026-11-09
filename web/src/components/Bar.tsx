@@ -22,7 +22,10 @@ export function Bar({ settingsHref }: { settingsHref: string }) {
   }, []);
 
   useEffect(() => {
-    const load = () => api.settings().then((s) => setProfile(s.profile)).catch(() => setProfile(null));
+    const load = () => api.settings().then((s) => {
+      setProfile(s.profile);
+      if (s.dev_mode === false && devMode.on()) devMode.set(false);    // B232: a server with no dev mode clears this browser's switch
+    }).catch(() => setProfile(null));
     load();
     const onDev = () => setDev(devMode.on());
     addEventListener("ta-settings", load);

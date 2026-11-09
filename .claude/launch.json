@@ -354,6 +354,7 @@
       "runtimeArgs": [
         "TA_PROFILE=sonnet",
         "TA_DATA_DIR=/Users/dadbook/source/old/llmtextadventure-lilith-data",
+        "TA_DEV_MODE=off",
         "/Users/dadbook/source/old/llmtextadventure/server/.venv/bin/uvicorn",
         "app:app",
         "--app-dir",

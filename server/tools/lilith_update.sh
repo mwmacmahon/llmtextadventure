@@ -9,7 +9,7 @@
 #   3. the worktree ../llmtextadventure-lilith is checked out (detached) at the commit
 #   4. notes/content is copied again from the main checkout (the content she plays is the content at the update)
 #   5. the web is built inside the worktree (its own web/dist)
-#   6. the :8016 server is stopped and started again: same TA_DATA_DIR (her saves stay put), Sonnet, no reload
+#   6. the :8016 server is stopped and started again: same TA_DATA_DIR (her saves stay put), Sonnet, no reload, dev mode off (B232)
 #   7. /api/build answers; a line goes to the data folder's deploys.log (when, from, to) for a rollback by the same script
 #
 # Her saves never move: they live in ../llmtextadventure-lilith-data. Rolling back is this script with the old commit.
@@ -54,7 +54,7 @@ run "npm --prefix '$WT/web' run build >/dev/null"
 # 6. restart on the same data
 PIDS=$(lsof -nP -tiTCP:$PORT -sTCP:LISTEN || true)
 run "[[ -z '$PIDS' ]] || kill $PIDS; sleep 2"
-run "cd '$WT/server' && TA_PROFILE=sonnet TA_DATA_DIR='$DATA' nohup '$ROOT/server/.venv/bin/uvicorn' app:app --app-dir . --host 0.0.0.0 --port $PORT >> '$DATA/server.log' 2>&1 &"
+run "cd '$WT/server' && TA_PROFILE=sonnet TA_DEV_MODE=off TA_DATA_DIR='$DATA' nohup '$ROOT/server/.venv/bin/uvicorn' app:app --app-dir . --host 0.0.0.0 --port $PORT >> '$DATA/server.log' 2>&1 &"
 run "sleep 6; curl -sf http://127.0.0.1:$PORT/api/build"
 run "print -- \"\$(date -u +%Y-%m-%dT%H:%M:%SZ) $FROM -> $TO\" >> '$DATA/deploys.log'"
 (( DRY )) && say "dry run: nothing changed" || say "done: :$PORT on $TO"

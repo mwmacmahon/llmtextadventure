@@ -16,13 +16,14 @@ log = logging.getLogger("ta.registry")
 HIDDEN_DIR = Path(__file__).resolve().parent.parent / "games" / "hidden"
 
 
-def load_games(content_root: Path) -> dict[str, Game]:
+def load_games(content_root: Path, hidden: bool = True) -> dict[str, Game]:
+    """The games; `hidden=False` (a server with dev mode off, B232) never imports anything under games/hidden/."""
     from games.fantasy.game import FantasyGame
     from games.noir.game import NoirGame
     from games.station.game import StationGame
 
     games: list[Game] = [StationGame(content_root / "station"), NoirGame(content_root / "noir"), FantasyGame(content_root / "fantasy")]
-    if HIDDEN_DIR.is_dir():
+    if hidden and HIDDEN_DIR.is_dir():
         for pkg in sorted(p for p in HIDDEN_DIR.iterdir() if (p / "game.py").exists()):
             try:
                 mod = importlib.import_module(f"games.hidden.{pkg.name}.game")

@@ -74,6 +74,7 @@ export type Settings = {
   profile_guard: string | null;
   roles: Record<string, { provider: string; model: string; effort: string | null }>;
   dev_pin: boolean;                                  // dev mode asks for a pin on this server
+  dev_mode?: boolean;                                // false: this server has no dev mode (a player's server, B232)
   difficulties: { id: string; name: string }[];
 };
 
