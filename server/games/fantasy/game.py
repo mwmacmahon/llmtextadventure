@@ -18,6 +18,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from engine import threads as th
 from engine import wounds as wd
 from engine.changes import clip_words
@@ -225,7 +227,8 @@ class FantasyGame(GameBase):
     })
     resolver = "dice_d20"
     words_examples = [                 # B207 (D179): the words decide first (the assistant's rules)
-        "A true story offered to Mirren, who asked for one: it works, no roll.",
+        "Mirren asks for a song, a story or a memory. Offering her one of those, a sad one too, plainly gives her what she asked "
+        "for: it works. No check: put it under fiat, settled works, with why.",
         "Gold offered to a siren who has said gold is nothing to her: it fails, no roll.",
         "A crude joke to a grieving siren: it fails, no roll; a story half true, from someone she has reason to doubt: open, a check with a -2 edge.",
     ]
@@ -330,6 +333,25 @@ class FantasyGame(GameBase):
                    cantrips=list(cd.cantrips), spells=list(cd.spells), kit=kit, expertise=expertise,
                    hp=hp, hp_max=hp, location=pl.get("location", "The Drowned Lantern"))
         return p, inv
+
+    def lint_mod(self) -> None:
+        """B79: the content lint on a modded save's scenario (this game object as the engine hands it to that save, its
+        content loader patched). Only problems the base content does not already have refuse the start."""
+        self.lint_patched(self.scenario(""))
+
+    def lint_patched(self, scenario: dict) -> None:
+        """The content lint on a patched scenario; only problems the base content does not have refuse (the lint's lines)."""
+        import shutil
+        import tempfile
+        from .lint import lint
+        sname = next((p.name for p in sorted((Path(self.content_dir) / "scenarios").glob("*.yml"))), "marrowgate.yml")
+        with tempfile.TemporaryDirectory() as tmp:
+            copy = Path(tmp) / "content"
+            shutil.copytree(self.content_dir, copy, ignore=shutil.ignore_patterns("mods"))
+            (copy / "scenarios" / sname).write_text(yaml.safe_dump(scenario, sort_keys=False, allow_unicode=True), encoding="utf-8")
+            new = [x for x in lint(copy) if x not in set(lint(Path(self.content_dir)))]
+        if new:
+            raise ValueError("Mods: the patched content fails the lint: " + "; ".join(new[:5]))
 
     NAME_TAKEN = "That name belongs to someone in the city; pick another."
 
@@ -765,6 +787,22 @@ class FantasyGame(GameBase):
         if q is None or q.status == "dead":
             return None
         return q.name if any(not t.told and not self.tell_open(s, t) for t in q.tells) else None
+
+    def meets_tell(self, s: FantasyState, target: str, words: str) -> str | None:
+        """B229: the attempt is a fair trade, not prying: it meets the condition of one of the person's untold, open tells
+        (Mirren's 'offers something (a song, a story, a memory)' met by a true story offered). Two content words of the
+        tell's condition in the attempt's words, matched on their first five letters. Returns the tell's id, or None."""
+        q = s.person(target) if target else None
+        if q is None:
+            return None
+        said = {w[:5] for w in _words(words)}
+        for t in q.tells:
+            if t.told or not self.tell_open(s, t) or not t.when:
+                continue
+            need = {w[:5] for w in _words(t.when.replace("{name}", "")) if len(w) > 3}
+            if len(need & said) >= 2:
+                return t.id
+        return None
 
     def _tells_here(self, s: FantasyState, engine: bool = False) -> list[str]:
         """The pieces the people here could give up. The referee's and the assistant's copy has the ids and the locked pieces;
@@ -2886,6 +2924,7 @@ class FantasyGame(GameBase):
                                Meter(label="Heat", value=p.heat, tier=p.heat_word, tone=self.HEAT_TONES.get(p.heat_word, "warn"), thresholds=[20, 50, 80])]),
             Commands(title=None, items=self.commands(s)),
             ListPanel(title="Character", items=sheet, layout="grid"),
+            *([ListPanel(title="In your words", items=[Chip(label="", value=p.about.strip())], layout="stack")] if p.about.strip() else []),
             ListPanel(title="Abilities", items=[Chip(label=a.name, value=a.text + (" (now)" if a.while_flag and a.while_flag in p.flags_on else ""))
                                                 for a in p.abilities if a.name], layout="stack"),
             ListPanel(title="Pockets", items=[Chip(label=purse_text(s.inventory), value=""), *pockets], layout="stack"),

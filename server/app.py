@@ -7,14 +7,16 @@ from __future__ import annotations
 import hmac
 import json
 import re
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from engine import logs, picker
+from engine import mods as mods_mod
 from engine.config import load_config
 from engine.pipeline import Engine
 from engine.registry import load_games
@@ -23,7 +25,7 @@ from engine.store import Store
 cfg = load_config()
 log = logs.setup_logging(cfg.resolve(cfg.server.log_dir), cfg.server.log_level)
 store = Store(cfg.resolve(cfg.server.data_dir) / "textadventure.sqlite3")
-games = load_games(cfg.resolve(cfg.server.content_root))
+games = load_games(cfg.resolve(cfg.server.content_root), hidden=cfg.server.dev_mode)
 engine = Engine(cfg, store, games)
 log.info("startup " + logs.kv(db=store.path, content=cfg.resolve(cfg.server.content_root), games=",".join(games), profile=cfg.profile_label,
                                **{f"role.{k}": f"{v.provider}:{v.model}/{v.effort}" for k, v in cfg.roles.items()}))
@@ -34,6 +36,7 @@ app = FastAPI(title="textadventure")
 class NewInstance(BaseModel):
     game: str
     setup: dict[str, Any] = {}
+    mods: list[str] = []          # B79: the ticked mods, by file or name, in the form's order
 
 
 class TurnInput(BaseModel):
@@ -79,6 +82,8 @@ def _exists(iid: str) -> None:
 def dev_mode(request: Request) -> bool:
     """Dev mode (B76): the request carries `X-Dev: 1`. With a pin configured (`server.dev_pin`, TA_DEV_PIN), it must carry
     the right `X-Dev-Pin` too, or it is refused with 403; without one, the header is enough."""
+    if not engine.cfg.server.dev_mode:              # B232: off at the server: the header is ignored, quietly
+        return False
     if request.headers.get("x-dev", "").strip() != "1":
         return False
     pin = engine.cfg.server.dev_pin
@@ -116,11 +121,11 @@ async def create_instance(body: NewInstance, request: Request):
     if not _visible(body.game, request):
         raise HTTPException(404, "unknown game")
     try:
-        iid = engine.create_instance(body.game, body.setup)
+        iid = engine.create_instance(body.game, body.setup, mods=body.mods)
     except ValueError as e:                     # a required field left empty, a choice not offered (B21, D154)
         raise HTTPException(400, str(e))
     log.info("instance.create " + logs.kv(iid=iid, game=body.game, setup=json.dumps(body.setup)))
-    game = engine.games[body.game]
+    game = engine.game_of(store.get_instance(iid))
     if engine.sheet_on(game, game.load_state(store.load_state(iid))):
         await engine.read_sheet(iid)            # the sheet pass (B90): the state made to match what the player wrote
     return engine.instance_view(iid)
@@ -144,6 +149,69 @@ def import_instance(doc: dict[str, Any], request: Request):
 def get_instance(iid: str):
     try:
         return engine.instance_view(iid)
+    except KeyError:
+        raise HTTPException(404, "no such instance")
+
+
+# ---- mods (B79): a game's mod files, read fresh each time; upload, download, delete -------------------------------------
+def _mods_game(game: str, request: Request):
+    if not _visible(game, request):
+        raise HTTPException(404, "unknown game")
+    return games[game]
+
+
+def _mod_path(game: str, name: str, request: Request) -> Path:
+    g = _mods_game(game, request)
+    if not mods_mod.NAME_OK.match(name) or name == mods_mod.EXAMPLE:
+        raise HTTPException(400, "a mod's file name is letters, digits, spaces, dots, dashes or underscores, ending .yml")
+    return mods_mod.mods_dir(cfg.resolve(cfg.server.content_root), g) / name
+
+
+@app.get("/api/games/{game}/mods")
+def list_game_mods(game: str, request: Request):
+    return mods_mod.list_mods(cfg.resolve(cfg.server.content_root), _mods_game(game, request))
+
+
+@app.get("/api/games/{game}/mods/{name}")
+def get_game_mod(game: str, name: str, request: Request):
+    p = _mod_path(game, name, request)
+    if not p.is_file():
+        raise HTTPException(404, "no such mod")
+    return PlainTextResponse(p.read_text(encoding="utf-8"), media_type="text/yaml",
+                             headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@app.put("/api/games/{game}/mods/{name}")
+async def put_game_mod(game: str, name: str, request: Request):
+    p = _mod_path(game, name, request)
+    text = (await request.body()).decode("utf-8")
+    try:
+        m = mods_mod.parse(text)
+    except Exception as e:  # noqa: BLE001 - a bad file is refused with its reason
+        raise HTTPException(400, f"not a mod: {e}")
+    if str(m.get("game") or "") != game:
+        raise HTTPException(400, f"this mod is for {m.get('game')!r}, not {game!r} (its game: line)")
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(text, encoding="utf-8")
+    log.info("mods.put " + logs.kv(game=game, name=name, hash=mods_mod.digest(text)))
+    return {"file": name, "hash": mods_mod.digest(text)}
+
+
+@app.delete("/api/games/{game}/mods/{name}")
+def delete_game_mod(game: str, name: str, request: Request):
+    p = _mod_path(game, name, request)
+    if not p.is_file():
+        raise HTTPException(404, "no such mod")
+    p.unlink()
+    log.info("mods.delete " + logs.kv(game=game, name=name))
+    return {"deleted": name}
+
+
+@app.get("/api/instances/{iid}/standing")
+def instance_standing(iid: str):
+    """GM debug: the setup as entered (the character's description) and the narrator's frozen prefix."""
+    try:
+        return engine.standing(iid)
     except KeyError:
         raise HTTPException(404, "no such instance")
 

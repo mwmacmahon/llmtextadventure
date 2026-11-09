@@ -119,15 +119,8 @@ processes.
    loaded, which the long rounds use), and `web-local` (the UI on :5174 proxied to it), so a local game can
    run beside the Anthropic one on :8010/:5173.
 
-   **The servers running now (2026-11-09):**
-
-   | Port | What | Restarted by |
-   |---|---|---|
-   | :8013 | the rounds' Gemma server (all-Gemma, stakes live), the shared checkout | the build chat, on every build |
-   | :8014 | the rounds' Sonnet server, the shared checkout | the build chat, on every build |
-   | :8016 | **Lilith's game** (B230): `api-lilith`; Sonnet (`TA_PROFILE=sonnet`), no reload, `0.0.0.0` for the LAN; code from the pinned worktree `../llmtextadventure-lilith` (detached at a commit, its own `web/dist` and its own copy of `notes/content`); saves only in `TA_DATA_DIR=../llmtextadventure-lilith-data` (its log there too) | **deliberately, on the owner's word**: it is updated now and then, never as a side effect of a build. `server/tools/lilith_update.sh <commit>` (try `--dry-run` first) checks she is not mid-game (no write to her store in 10 minutes), moves the worktree to the commit, copies the content again, builds the web, restarts on the same `TA_DATA_DIR` and logs the move in `deploys.log` beside her saves; a rollback is the same script with the old commit |
-
-   The old :8010 (`--reload`, from 10-28) is stopped (B230).
+   **The servers running now, their kinds and who restarts each: `docs/SERVERS.md`** (the contract, B232; Lilith's :8016 is a
+   player's server, moved only by the owner).
 
    The contract for every server, its kind, its flags and who restarts it is `docs/SERVERS.md` (keep it current in the
    same commit as any server change). A player's server (:8016) runs with `TA_DEV_MODE=off` (B232) and is moved only by

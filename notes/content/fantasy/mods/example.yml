@@ -1,0 +1,49 @@
+# The shape of a mod (B79; notes/DESIGN-mods-2026-11-08.md). This file is the one committed to the repo and is never
+# offered on a form. A mod is a YAML file in notes/content/<game>/mods/ (gitignored); the new-game form of the game named
+# in `game:` shows it as a checkbox with its `about` line. Applied when a new game is made, never after; the save keeps
+# the mod's name, hash and full text. Upload, download and delete: the game page's Mods section (or the API,
+# /api/games/<game>/mods).
+
+name: Example                       # what the form and the save card show
+about: "One line on what it changes."
+game: fantasy                       # the game whose form shows it; a mod for another game never appears here
+order: 10                           # optional: the order mods apply in when several are ticked (then by file name)
+
+# The scenario file, as a JSON merge patch (RFC 7386): only the keys named change; null deletes a key. A list of
+# objects with ids (people, places, events; a station's crew) is patched by id: an id there is merged, null removes it, a
+# new id adds one. Any game: the patch holds wherever the game reads its scenario, at the start and all through play.
+scenario:
+  people:
+    maud:
+      wants: "Her cellar cleared and her prices paid."
+      attitude: 1
+
+# The narrator's prefix by section heading (the ALL-CAPS lines: THE TONE, HOW YOU NARRATE, WHAT YOU DO NOT DO):
+# replace a section's text, or append to it. {name} is the player's character's name.
+prefix:
+  replace:
+    "THE TONE": |
+      A lighter evening in Marrowgate, for {name}.
+  append:
+    "HOW YOU NARRATE": |
+      - One more line of voice.
+
+# The assistant's and the referee's rules text, by section heading the same way (the assistant's: THE WORDS DECIDE
+# FIRST., EDGE, STAKES.; the referee's: GAME RULES FOR THE REFEREE).
+rules:
+  assistant:
+    append:
+      "THE WORDS DECIDE FIRST.": "One more line for the assistant."
+  referee:
+    append:
+      "GAME RULES FOR THE REFEREE": "One more line for the referee."
+
+# The starting state the game built from the setup, as a merge patch (the inventory by id).
+state:
+  inventory:
+    gold: {count: 20}
+  player:
+    renown: 5
+
+# The game's own rulings switched off, both halves: the referee's rule text and the engine's net (the fantasy: too_far).
+rulings_off: []

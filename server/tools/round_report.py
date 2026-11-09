@@ -456,6 +456,8 @@ def build(inst: dict, ledger: list[dict], blobs: dict[str, str], transcript: lis
         sections_html.append(f"<section class='turn' id='t{t}'>{''.join(body)}</section>")
 
     opening = said.get(0, {}).get("narrator", "")
+    mods_applied = list(((inst.get("setup") or {}) if isinstance(inst.get("setup"), dict) else {}).get("_mods") or [])
+    mods_line = ", ".join(f"{m.get('name')} ({m.get('hash')})" for m in mods_applied)
     who = "".join(f"<div class='stat'>{E(ROLE_LABEL.get(r, r or '?'))} <b>{E(m or '?')}</b> ×{n}</div>" for (r, m), n in sorted(models.items(), key=lambda x: str(x[0])))
     rn, rrules, rturns = retell_counts(ledger)
     retold_text = (f"{rn} time{'s' if rn != 1 else ''}: " + ", ".join(f"{k} ×{v}" for k, v in rrules.most_common())
@@ -466,8 +468,12 @@ def build(inst: dict, ledger: list[dict], blobs: dict[str, str], transcript: lis
             f"<dl class='meta'><dt>game</dt><dd>{E(inst['game'])} (version {E(inst.get('game_version') or '')})</dd><dt>instance</dt><dd>{E(inst['id'])}</dd>"
             f"<dt>started</dt><dd>{E(inst.get('created', '')[:16].replace('T', ' '))} UTC</dd><dt>turns</dt><dd>{len(turns)}</dd><dt>model calls kept</dt><dd>{calls_n}</dd>"
             f"<dt>profile</dt><dd>{E(profile_runs(runs))}</dd>"
-            f"<dt>retold by the guard</dt><dd>{E(retold_text)}</dd></dl>"
+            f"<dt>retold by the guard</dt><dd>{E(retold_text)}</dd>"
+            + (f"<dt>mods</dt><dd>{E(mods_line)}</dd>" if mods_applied else "")
+            + "</dl>"
             f"<div class='stats'>{who}</div>")
+    for m in mods_applied:                                     # B79: each mod's full text, as the save keeps it
+        head += f"<details><summary>Mod: {E(str(m.get('name')))}</summary><pre>{E(str(m.get('text') or ''))}</pre></details>"
     if opening:
         head += f"<details><summary>The opening</summary><div class='prose'>{E(opening)}</div></details>"
     head += "".join(render_undo(u, every_ledger, every_transcript) for u in undos.get(0, []))       # back to the opening

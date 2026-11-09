@@ -178,3 +178,19 @@ def test_until_when_only_for_a_plain_wait_and_by_the_hour(noir):
     assert "until nightfall" in q and "morning" not in q
     adj, _ = until_when(noir, st, _wait(), "I wait until dark")
     assert adj.time_minutes == min(19 * 60 - (7 * 60 + 40), noir.clock.cap_minutes)
+
+
+def test_a_wait_meant_for_someone_else_is_not_asked(noir):
+    """B233: Lilith's turn 27, a gesture to Tam that says wait, was asked "until when?" and lost its outcome."""
+    from engine.pipeline import until_when
+    from engine.roles import FiatOutcome
+    _, st = noir.new_instance({})
+    for said in ('I give a gesture that says "she\'ll go when she\'s ready, for now, wait"',
+                 "I tell Rosa to wait", "I signal Marlowe to stay put", "I let her sleep",
+                 "I say 'wait' and step forward", "“Wait,” I say"):
+        adj, q = until_when(noir, st, _wait(), said)
+        assert q == "" and adj.kind == "action" and adj.time_minutes == 30, said
+    settled = _wait().model_copy(update={"fiat": [FiatOutcome(attempt="calm him", outcome="he calms", settled="works", why="he wants to")]})
+    assert until_when(noir, st, settled, "I wait with him")[1] == ""         # an attempt the words settled: not a bare wait
+    for said in ("I wait.", "I'll wait", "I sit tight"):                     # the player's own wait is still asked
+        assert until_when(noir, st, _wait(), said)[1].startswith("Until when?"), said

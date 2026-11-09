@@ -30,7 +30,10 @@ A server never changes kind in place: a new kind is a new entry and a new port.
 | 8011 | `api-local` | dev | the box's model with `--reload` | llama.cpp on gumbo | the shared checkout | `data/` | 0.0.0.0 | the build chat |
 | 5173 / 5174 / 5175 | `web`, `web-local`, `web-fantasy-fake` | dev | the web client in development, proxying `/api` to 8010 / 8011 / 8015 | | `web/` | | | the build chat |
 
-Running on 2026-11-09 about 19:10: 8013, 8014, 8016. The box (gumbo, 192.168.0.215) serves one model for every role on
+Running on 2026-11-09 evening: 8013, 8014, 8016. **:8016 today:** still 6c9099a (http://192.168.0.84:8016 on the LAN),
+started before the flag existed, so its Settings page still shows the dev switch (it has no hidden game to show: the
+worktree has no `server/games/hidden/`); `server.log` and `deploys.log` sit beside her saves. It takes `TA_DEV_MODE=off`
+and everything since (B229, B231 to B233, the description on the page) at its next update, which waits for the owner's go. The box (gumbo, 192.168.0.215) serves one model for every role on
 :8280 behind the cache proxy; `TA_LLAMA_URL` and `TA_LLAMA_PREPARE_URL` point every local server at it.
 
 ## The flags a server takes
@@ -49,7 +52,8 @@ Running on 2026-11-09 about 19:10: 8013, 8014, 8016. The box (gumbo, 192.168.0.2
 ## Moving a player's server
 
 Her server moves to a new commit only when the owner says, by `server/tools/lilith_update.sh <commit>` after the suite
-passes on that commit. The script checks the commit is on 2.0, that nothing was written to her store in the last ten
+passes on that commit: `--dry-run` first and read it, then without; never `--force` while she may be playing; this page's
+table updated in the same commit as anything that changed it. The script checks the commit is on 2.0, that nothing was written to her store in the last ten
 minutes, checks the worktree out at the commit, copies `notes/content` again, builds the web inside the worktree,
 restarts :8016 with the same data folder, confirms `/api/build`, and logs the move. Her saves never move. A second
 player's server is the same shape under another name, port and data folder.

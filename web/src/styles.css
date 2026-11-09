@@ -322,3 +322,14 @@ dl.score dd { margin: 0; font-family: var(--pixel-font); font-size: 15px; }
 .send-stack > button[type="submit"] { flex: 3; }
 .send-stack > .ask-toggle { flex: 1; padding: 1px 8px; font-size: .78em; line-height: 1.2; }
 .ask-toggle.on { background: var(--accent); color: #111; border-color: transparent; }
+
+/* B79: mods on the new-game form, the Mods section, the save card */
+.mod-checks { display: flex; flex-direction: column; gap: 6px; }
+.mod-check { display: flex; gap: 8px; align-items: flex-start; font-weight: normal; }
+.mod-check input { margin-top: 3px; }
+.mod-files { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.mod-files li { border-bottom: 1px solid var(--line, #ddd); padding-bottom: 8px; }
+.mod-name { font-weight: 600; }
+.mod-actions { display: inline-flex; gap: 6px; margin-left: 8px; }
+.save-mods { margin: 8px 0; }
+.mod-text { white-space: pre-wrap; max-height: 320px; overflow: auto; font-size: 12px; }

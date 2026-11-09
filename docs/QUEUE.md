@@ -10,7 +10,7 @@ the evidence behind it is the state page, `docs/STATE-2026-11-08.md` (published:
 Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a short-term planning document and showed
 "basically nothing left"). Everything here was the roadmap's "Where we are", "Landed today" and Stage 5 queue.
 
-## Where we are (2026-11-09, about 01:30, at ae5befb)
+## Where we are (2026-11-09, evening, at 53bce67)
 
 - **Stage 1 is done** (D135 to D151, 2026-11-07 night to 11-08 dawn): 2d6 with caps, the dice and the player's row,
   the consequence roll with noir's table rewritten, the small faults, the six time rules, and the station's control
@@ -48,6 +48,12 @@ Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a shor
   floor is back on Gemma (B217); the readiness report's open list is B221 to B228.
 - The register is `docs/OPEN-ISSUES.md` (B25).
 
+- **Part ten landed and she played** (11-09): dev mode off at the server (B232, 4666dd6), Super Grimdark Fantasy as a
+  derived game, the mods first cut and the grimdark mod loading on it alone (B231, B79, B89, 935e3a2), the fair trade
+  (B229, b6244bb), the character's description on the page (e8e632c), a wait meant for someone else not asked "until
+  when" (B233, from her turn 27). Her server stays at 6c9099a until the owner says; none of this is there yet. Her first
+  28 turns gave the eight notes in 1a.
+
 ## The queue, in order (the owner, 11-08 evening; part seven put first 11-08 night; part eight 11-09)
 
 0. *(Built: B230, aa380a8, ec93ec6; see 0c.)* Her server, then she plays on it. Part ten, later: the floor's witness and a fair trade (B229), B224's unplain rest. B221 (XP) is on the docket
@@ -84,7 +90,15 @@ Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a shor
    zero (B216); then one Gemma round with its report and three counts. The side chat reads it before she plays.
    *Landed 11-08 night:* part seven (B207 to B211, B63 narrowed; 2669a19, 5a82d9e), part six (B200 to B206; dd4be6c,
    748d653, 0638909, ca47f24, 9538397), B212 (634f5a9), too_far widened (fc89cad).
-1. **She plays, on her own server** (started 11-09). The side chat's read after part nine: on Sonnet the design holds (edge on 15 of 21 checks,
+1a. **Her first game's notes** (the owner, 11-09, after 28 turns of Lillian on :8016 at 6c9099a; the side chat read the save):
+   a can-be-ally offering herself to a stranger mid-scene (B234, Hazel; content and a hold on happenings); everyone with
+   her given a line every turn, and the beat-level repeat never ruled (B235: the party rule softened, K3 traced on her
+   save at last); the People cards showing seed facts she was never told and never updating (B236); the game master's
+   asides not canon (B237); the clock's floor in a tense scene (B238: Sonnet never writes a fast turn); a thing given
+   away kept, because the engine held it twice (B239); a fallback quest reaching her on the island by boat (B240, B104
+   reopened); the Rats job "offered" after the deed, no close flag written (B224.22 seen again, B58). The directive for
+   these is written when the owner says; her server moves after it, on his word.
+1. **She plays, on her own server** (started 11-09; 28 turns the first night, 25a51df64905, Normal, Sonnet). The side chat's read after part nine: on Sonnet the design holds (edge on 15 of 21 checks,
    `aim` never misused, 14 attempts settled by the words, death is death); she can play now if the owner accepts what
    is still open there: XP moves only when a quest closes (B221), money drift (B223), the People panel ahead of the
    prose (B224), impossible demands rolled rather than refused (B225), heat not moving on an open crime (B227), no

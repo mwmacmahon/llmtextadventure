@@ -27,7 +27,7 @@ from engine.store import Store  # noqa: E402
 @pytest.fixture(autouse=True)
 def _env(monkeypatch, tmp_path: Path):
     profiles.forget()
-    for var in ("TA_PROFILE", "TA_CONFIG", "TA_STAKES", "TA_DEV_PIN"):
+    for var in ("TA_PROFILE", "TA_CONFIG", "TA_STAKES", "TA_DEV_PIN", "TA_DEV_MODE"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("TA_PROVIDER", "fake")
     monkeypatch.setenv("TA_DATA_DIR", str(tmp_path / "data"))     # the app module's own store, if it is imported here first
@@ -358,3 +358,35 @@ def test_a_branch_and_an_export_keep_the_difficulty(engine: Engine):
     assert doc["instance"]["difficulty"] == "hard"
     assert engine.store.get_instance(engine.fork(iid)).difficulty == "hard"
     assert engine.store.get_instance(engine.import_(json.loads(json.dumps(doc)))).difficulty == "hard"
+
+
+def test_dev_mode_off_at_the_server(client, engine: Engine, monkeypatch):
+    """B232: a player's server (TA_DEV_MODE=off) has no dev mode: the header is ignored quietly (no 403), hidden games are
+    never listed, the settings answer says so, and the registry does not import them at all."""
+    import engine.registry as reg
+    monkeypatch.setenv("TA_DEV_MODE", "off")
+    assert load_config().server.dev_mode is False
+    assert any(g["hidden"] for g in client.get("/api/games", headers=DEV).json())       # the test engine has a hidden game
+    engine.cfg.server.dev_mode = False
+    listed = client.get("/api/games", headers={**DEV, "X-Dev-Pin": "wrong"})
+    assert listed.status_code == 200 and not any(g["hidden"] for g in listed.json())
+    assert client.get("/api/settings").json()["dev_mode"] is False
+    imported: list[str] = []
+    monkeypatch.setattr(reg.importlib, "import_module", lambda name, *a: imported.append(name))
+    cfg = load_config()
+    out = reg.load_games(cfg.resolve(cfg.server.content_root), hidden=False)
+    assert imported == [] and not any(getattr(g, "hidden", False) for g in out.values())
+
+
+def test_a_derived_games_content_root_is_another_games():
+    """B231: a derived game (Super Grimdark Fantasy, hidden and gitignored, so only where present) reads another game's
+    content root, which must exist; its own are its saves, title and mods."""
+    cfg = load_config()
+    root = cfg.resolve(cfg.server.content_root)
+    games = load_games(root)
+    for g in games.values():
+        base = getattr(g, "derived_from", "")
+        if not base:
+            continue
+        assert base != g.name and base in games, g.name
+        assert Path(g.content_dir).resolve() == (root / base).resolve() and Path(g.content_dir).is_dir(), g.name

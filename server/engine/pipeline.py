@@ -37,6 +37,7 @@ from pydantic import BaseModel
 from . import events as ev
 from . import logs
 from . import pending as pend
+from . import mods as mods_mod
 from . import prechecks
 from . import spontaneous as spon
 from . import statepath as sp
@@ -97,6 +98,8 @@ class Engine:
         self.store = store
         self.games = games
         self._tapes: dict[str, Any] = {}          # iid -> the running turn's ledger writer, for the tape (engine/tape.py)
+        self._mods_cache: dict[str, list[dict]] = {}   # iid -> the mods its save was made with (B79)
+        self._games_cache: dict[str, Any] = {}           # iid and mod hashes -> the game as that modded save sees it (B79)
         self.graves = Graveyard(store)            # the player-only section (B81): written here, read by the gallery alone
         self.providers: dict[str, Any] = {}       # step -> a provider to use instead of the role's (the narrator replay's capture)
         # Runtime settings the UI can change (the guard mode, the progress estimate); persisted beside the store.
@@ -190,7 +193,7 @@ class Engine:
             "guard": {**self.settings["guard"], "mode": self.guard_mode()}, "modes": GUARD_MODES, "progress": dict(self.settings["progress"]),
             "guard_from": self.guard_source(), "shared_guard": self.settings["guard"]["mode"],
             "profile": self.cfg.profile_label, "profile_guard": self.profile_guard(),
-            "dev_pin": bool(self.cfg.server.dev_pin), "difficulties": [{"id": k, "name": v} for k, v in DIFFICULTIES.items()],
+            "dev_pin": bool(self.cfg.server.dev_pin), "dev_mode": bool(self.cfg.server.dev_mode), "difficulties": [{"id": k, "name": v} for k, v in DIFFICULTIES.items()],
             "roles": {name: {"provider": r.provider, "model": r.model, "effort": r.effort}
                       for name, r in ((n, self.cfg.role(n)) for n in self.cfg.roles)},
         }
@@ -240,7 +243,38 @@ class Engine:
         return int(sum(lens) / len(lens)) if lens else int(self.settings["progress"]["default_chars"])
 
     # ---- instances --------------------------------------------------------
-    def create_instance(self, game_name: str, setup: dict[str, Any]) -> str:
+    def _mods(self, iid: str | None) -> list[dict]:
+        """The mods a save was made with (B79): [{name, file, hash, text}] from its setup, as the save keeps them."""
+        if not iid:
+            return []
+        if iid not in self._mods_cache:
+            inst = self.store.get_instance(iid)
+            self._mods_cache[iid] = list(((inst.setup if inst else {}) or {}).get(mods_mod.SETUP_KEY) or [])
+        return self._mods_cache[iid]
+
+    def game_of(self, inst: Any) -> Game:
+        """The game as this save plays it (B79): with its mods' scenario patch on the game's content loader, for every game
+        alike; the registered game itself for a save with no scenario patch. Cached per save."""
+        game = self.games[inst.game]
+        applied = list(((inst.setup or {}) if inst is not None else {}).get(mods_mod.SETUP_KEY) or [])
+        if not applied:
+            return game
+        key = f"{inst.id}:{','.join(str(m.get('hash')) for m in applied)}"
+        if key not in self._games_cache:
+            self._games_cache[key] = mods_mod.game_with(game, applied)
+        return self._games_cache[key]
+
+    def _new_state(self, game: Game, setup: dict[str, Any]) -> tuple[str, BaseModel]:
+        """The game's new state as the mods make it (B79): built by the game seeing the patched scenario, then the mods'
+        state patches on it. The same for every game."""
+        game = mods_mod.game_with(game, setup.get(mods_mod.SETUP_KEY))
+        title, state = game.new_instance(setup)
+        for m in mods_mod.parsed(setup.get(mods_mod.SETUP_KEY)):
+            if m.get("state"):
+                state = game.load_state(mods_mod.merge_patch(state.model_dump(mode="json"), m["state"]))
+        return title, state
+
+    def create_instance(self, game_name: str, setup: dict[str, Any], mods: list[str] | None = None) -> str:
         game = self.games[game_name]
         setup = dict(setup or {})
         difficulty = str(setup.pop(DIFFICULTY_FIELD, None) or "normal")     # the engine's field: on the instance row, not the game's setup
@@ -248,9 +282,22 @@ class Engine:
             raise ValueError(f"Difficulty: no such choice {difficulty!r}")
         self.setup_options(game)                                  # a game's own field may not take the engine's id
         setup = check_setup(game.setup_options(), setup)          # required fields filled, defaults taken (B21, D154)
-        title, state = game.new_instance(setup)
+        applied = mods_mod.resolve(self.cfg.resolve(self.cfg.server.content_root), game, list(mods or []))   # B79: name, hash, text
+        if applied:
+            setup[mods_mod.SETUP_KEY] = applied
+        if mods_mod.scenario_patch(applied):                     # the game's own content lint on the patched content, where it has one
+            _hook(mods_mod.game_with(game, applied), "lint_mod", default=None)
+        title, state = self._new_state(game, setup)
+        game = mods_mod.game_with(game, applied)
         prefix = game.frozen_prefix(state)
+        notes: list[str] = []
+        for m in mods_mod.parsed(applied):                        # the prefix by section (THE TONE replaced, ...)
+            prefix, n = mods_mod.patch_sections(prefix, m.get("prefix"), {"name": str(_hook(game, "player_name", state, default="") or "")})
+            notes += n
         iid = self.store.create_instance(game.name, game.version, title, setup, prefix, state.model_dump(mode="json"), difficulty=difficulty)
+        if applied:
+            self.store.append_ledger(iid, 0, "mods", {"mods": mods_mod.summary(applied), "prefix": notes,
+                                                      "rulings_off": sorted(mods_mod.rulings_off(applied))})
         opening = game.opening(state)
         if opening:
             self.store.append_transcript(iid, 0, "narrator", opening)
@@ -269,7 +316,7 @@ class Engine:
             if text:
                 return game.load_state(json.loads(text))
             inst = self.store.get_instance(iid)        # an imported save without its blob: build it again from the setup
-            return game.new_instance(dict(inst.setup) if inst else {})[1]
+            return self._new_state(game, dict(inst.setup) if inst else {})[1]
         state = game.load_state(self.store.load_state(iid, 0))
         self.store.append_ledger(iid, 0, "sheet_built", {"state": self.store.put_blob(json.dumps(state.model_dump(mode="json")))})
         return state
@@ -281,7 +328,7 @@ class Engine:
         inst = self.store.get_instance(iid)
         if not inst:
             raise KeyError(iid)
-        game = self.games[inst.game]
+        game = self.game_of(inst)
         if self.store.latest_turn(iid) != 0:
             return {"ok": False, "text": "Your sheet is read before the first turn only. The story has begun: say it in play, or undo to the start and re-read it there."}
         current = game.load_state(self.store.load_state(iid, 0))
@@ -341,7 +388,7 @@ class Engine:
         inst = self.store.get_instance(iid)
         if not inst:
             raise KeyError(iid)
-        game = self.games[inst.game]
+        game = self.game_of(inst)
         turn = self.store.latest_turn(iid)
         state = game.load_state(self.store.load_state(iid))
         name = str(_hook(game, "player_name", state, default="the player") or "the player")
@@ -385,7 +432,7 @@ class Engine:
             return
         yield {"event": "command", "data": {"ok": True, "text": res["text"], "mode": "engine", "label": label, "turn": 0}}
         inst = self.store.get_instance(iid)
-        game = self.games[inst.game]
+        game = self.game_of(inst)
         state = game.load_state(self.store.load_state(iid))
         yield {"event": "done", "data": {"turn": 0, "text": res["text"], "note": None, "model": None, "usage": {}, "seconds": 0,
                                          "mechanics": {"kind": "command", "applied": [f"command {sheet_mod.COMMAND}"]}, "ending": None,
@@ -419,7 +466,7 @@ class Engine:
         return [self._summary(i, *latest.get(i.id, (0, None))) for i in rows]
 
     def _summary(self, inst: Any, turn: int, doc: dict | None = None, state: BaseModel | None = None) -> dict[str, Any]:
-        game = self.games.get(inst.game)
+        game = self.game_of(inst) if inst.game in self.games else None
         line: list[dict[str, Any]] = []
         ending = None
         if game is not None:
@@ -443,7 +490,7 @@ class Engine:
         inst = self.store.get_instance(iid)
         if not inst:
             raise KeyError(iid)
-        game = self.games[inst.game]
+        game = self.game_of(inst)
         state = game.load_state(self.store.load_state(iid))
         rows = self.store.transcript(iid, undone=True)       # the undone turns too, each marked: the log strikes them through (B82)
         return {
@@ -453,13 +500,22 @@ class Engine:
             "redo": self.redoable(iid),
         }
 
+    def standing(self, iid: str) -> dict[str, Any]:
+        """GM debug: what was fixed at the start, which every turn's narrator reads first: the setup as the player entered it
+        (the character's description among it) and the frozen prefix. A mod's text shows by name and hash only here."""
+        inst = self.store.get_instance(iid)
+        if not inst:
+            raise KeyError(iid)
+        setup = {k: v for k, v in (inst.setup or {}).items() if k != mods_mod.SETUP_KEY}
+        return {"setup": setup, "mods": mods_mod.summary((inst.setup or {}).get(mods_mod.SETUP_KEY)), "prefix_text": inst.prefix_text}
+
     def card(self, iid: str, chars: int = 300) -> dict[str, Any]:
         """A save's card in the lobby (B75): the summary, the last telling's opening with its turn and clock, and the game's
         panels as the player sees them (`ui(state)`; the page draws them read-only)."""
         inst = self.store.get_instance(iid)
         if not inst:
             raise KeyError(iid)
-        game = self.games[inst.game]
+        game = self.game_of(inst)
         turn = self.store.latest_turn(iid)
         state = game.load_state(self.store.load_state(iid, turn))
         last = None
@@ -475,7 +531,9 @@ class Engine:
                 except KeyError:
                     at = None
             last = {"turn": r.turn, "text": text, "clock": _clock_now(at) if at is not None else ""}
-        return {**self._summary(inst, turn, state=state), "last": last, "ui": game.ui(state).model_dump(mode="json")}
+        applied = list((inst.setup or {}).get(mods_mod.SETUP_KEY) or [])          # B79: the mods that made it, with their text
+        return {**self._summary(inst, turn, state=state), "last": last, "ui": game.ui(state).model_dump(mode="json"),
+                "mods": [{"name": m.get("name"), "hash": m.get("hash"), "text": m.get("text", "")} for m in applied]}
 
     def usage(self, iid: str) -> dict[str, Any]:
         """Token and cost rollup per role from the ledger (game properties in the lobby)."""
@@ -587,7 +645,7 @@ class Engine:
             raise ValueError(f"unknown game {game!r}")
         iid = self.store.import_instance(doc, origin={"imported": True, "original_id": doc["instance"].get("id"),
                                                       "exported": doc.get("exported")})
-        self.games[game].load_state(self.store.load_state(iid))
+        self.game_of(self.store.get_instance(iid)).load_state(self.store.load_state(iid))
         self.graves.import_(doc.get("graveyard") or [], iid)
         return iid
 
@@ -672,7 +730,7 @@ class Engine:
         if not inst:
             yield {"event": "error", "data": {"message": "no such instance"}}
             return
-        game = self.games[inst.game]
+        game = self.game_of(inst)
         state: BaseModel = game.load_state(self.store.load_state(iid))
         start = state.model_copy(deep=True)            # the turn's opening state, for what the player sees change (B18)
         turn = self.store.latest_turn(iid) + 1
@@ -1126,7 +1184,11 @@ class Engine:
         uncalled = [a.label for a in res["assessments"] if not a.called]
         rolled = bool(calls_block.get("calls"))
         rulings = []
+        off = mods_mod.rulings_off(self._mods(iid))                # B79: a ruling a mod switched off, both halves
         for r in (delta_json or {}).get("rulings", []):
+            if r.get("rule") in off:
+                log.info("referee.ruling.dismissed " + logs.kv(iid=iid, turn=turn, rule=r.get("rule"), why="switched off by a mod"))
+                continue
             if (r.get("rule") == "check_skipped" and not uncalled) or (r.get("rule") == "check_ignored" and not rolled):
                 if delta_json is not None:
                     delta_json.setdefault("issues", []).append(f"referee ruled {r['rule']} with {'no check rolled' if r['rule'] == 'check_ignored' else 'every assessed check rolled'}: {r.get('what', '')}")
@@ -1201,7 +1263,7 @@ class Engine:
             if not any(r.get("rule") == fault["rule"] for r in rulings):
                 rulings.append({"serious": True, "by": "engine", **fault})
                 log.info("engine.ruling " + logs.kv(iid=iid, turn=turn, rule=fault["rule"], serious=True))
-        crossed = _hook(game, "too_far_words", narration, default="") or ""
+        crossed = "" if "too_far" in off else (_hook(game, "too_far_words", narration, default="") or "")
         if crossed and not any(r.get("rule") == "too_far" for r in rulings):     # the owner, 11-08 night: the engine's own net
             rulings.append({"rule": "too_far", "serious": True, "by": "engine", "what": "the telling went where this game does not go",
                             "fix": str(getattr(game, "extra_rulings", {}).get("too_far", ""))})
@@ -1236,13 +1298,15 @@ class Engine:
             "calls": [{"call": c["call"].get("raw"), "mechanic": c.get("mechanic"), "outcome": (c.get("result") or {}).get("outcome"),
                        **({"cost": (c.get("result") or {})["cost"]} if (c.get("result") or {}).get("cost") else {}),
                        **({"stake": (c.get("result") or {})["stake"]} if (c.get("result") or {}).get("stake") else {}),
-                       **({"consequence": (c.get("result") or {})["consequence"]} if (c.get("result") or {}).get("consequence") else {})}
+                       **({"consequence": (c.get("result") or {})["consequence"]} if (c.get("result") or {}).get("consequence") else {}),
+                       **({"floor": (c.get("result") or {})["floor"]} if (c.get("result") or {}).get("floor") else {})}
                       for c in calls_block.get("calls", [])],
             "declarations": [d.get("raw") for d in calls_block.get("declarations", [])],
             "notes": calls_block.get("notes", []),
             "seen": seen_lines(game, start, state, calls_block.get("calls", [])),
             **({"timing": timing} if timing else {}),
             "profile": stamp["name"],
+            **({"mods": mods_mod.summary(self._mods(iid))} if self._mods(iid) else {}),
         }
         if replay is not None:
             mechanics["rewritten"] = {"hint": replay.hint, "attempt": replay.attempt, "by": replay.by}
@@ -1287,7 +1351,7 @@ class Engine:
         if adj_row is None or any(r["kind"] == "command" and not r["payload"].get("typed") for r in rows):
             yield {"event": "error", "data": {"message": "That turn was a command, not words, so there is nothing to tell again.", "step": "rewrite"}}
             return
-        game = self.games[inst.game]
+        game = self.game_of(inst)
         schema = getattr(game, "adjudication_schema", AssistantReading)
         if issubclass(schema, AssistantReadingV2) and "pivotal" in adj_row:       # a stored adjudication with its stakes (D115)
             schema = AssistantReadingStaked
@@ -1429,6 +1493,8 @@ class Engine:
         hits = [h for h in [prechecks.question(player_text)] if h is not None]
         system, msgs, schema = adjudicator_inputs(game, state, recent, player_text, stakes=nrole.stakes != "off" and nrole.checks == "called",
                                                   notes=[h.line for h in hits])
+        for m in mods_mod.parsed(self._mods(iid)):              # B79: the assistant's rules text by section, per save
+            system = mods_mod.patch_sections(system, (m.get("rules") or {}).get("assistant"))[0]
         t0 = time.monotonic()
         adj, usage, retry, recovered = await extract_adjudication(provider, role, system, msgs, schema, _hook(game, "stats", state, default={}))
         if retry:
@@ -1586,7 +1652,7 @@ class Engine:
                 assessments.append(Assessment(stat=stat, difficulty=intent.check.difficulty, target=intent.check.target_entity or "",
                                               label=intent.check.label, edge=int(getattr(intent.check, "edge", 0) or 0),
                                               edge_why=str(getattr(intent.check, "edge_why", "") or ""), aim=str(getattr(intent.check, "aim", "other") or "other"),
-                                              prying=prying(intent, stat),
+                                              prying=prying(intent, stat), words=str(intent.action or ""),
                                               about=intent.check.target_entity or next(iter(getattr(intent, "targets", None) or []), "")))
             for name in getattr(adj, "carried", []) or []:   # the input leans on something in the player's pockets: is it there?
                 missing = _hook(game, "not_carried", state, name, default=None)
@@ -1846,7 +1912,8 @@ class Engine:
                                  offset=offset,
                                  holds_back=lambda target: _hook(game, "holds_back", state, target, default=None),
                                  note_for=lambda d, label: _hook(game, "check_note", state, d, label, default="") or "",
-                                 caps=getattr(game, "caps", False))
+                                 caps=getattr(game, "caps", False),
+                                 meets=lambda target, words: _hook(game, "meets_tell", state, target, words, default=None))
             if call.verb in ("ENEMY", "HAZARD"):            # B206 (D178): the world's move, rolled when the prose reaches it
                 out = _hook(game, "world_call", state, call, rng_for(iid, turn, f"world:{call.verb}:{call.ref}:{n}"), offset, tally, default=None)
                 if out is None:
@@ -1893,6 +1960,11 @@ class Engine:
         provider = self._provider(role, iid, "referee")
         recent = _earlier_turns(self.store, iid, role.recent_turns) if iid else []
         system, msgs = referee_inputs(game, state, directives, player_text, narration, adj, levers, recent=recent)
+        applied = self._mods(iid)
+        if applied:                                               # B79: the referee's rules text by section; a ruling switched off
+            system = mods_mod.strip_rulings(system, mods_mod.rulings_off(applied))
+            for m in mods_mod.parsed(applied):
+                system = mods_mod.patch_sections(system, (m.get("rules") or {}).get("referee"))[0]
         t0 = time.monotonic()
         from .referee_passes import referee_ids
         delta, usage, parts = await extract_referee(provider, role, system, msgs, referee_ids(state, levers))
@@ -2501,6 +2573,18 @@ NIGHT_MINUTE = 19 * 60
 UNTIL_ASK = "Until when?"
 UNTIL_NIGHT = re.compile(r"\b(?:until|till|'til|til)\s+(?:the\s+)?(?:nightfall|night|dark|dusk|evening|sundown|sunset)\b", re.I)
 WAIT_SAID = re.compile(r"\b(?:wait|waits|waiting|sleep|sleeps|nap|doze|rest|lie low|hole up|stake ?out|keep watch|bide|kill time|sit tight)\b", re.I)
+# B233 (Lilith's save 25a51df64905, turn 27): 'I give a gesture that says "she'll go when she's ready, for now, wait"' was
+# asked "until when?": the wait was in quotes and meant for Tam. Quoted words are what someone says, not what the player's
+# character does; and a wait told, signalled or asked of someone is theirs to keep, not a wait of the player's own.
+QUOTED = re.compile(r"\"[^\"]*\"?|“[^”]*”?|(?<![A-Za-z])'[^']*'(?![A-Za-z])")
+TOLD_TO_WAIT = re.compile(r"\b(?:tell|tells|told|ask|asks|asked|signal|signals|gesture|gestures|motion|motions|sign|signs|beckon|beckons|"
+                          r"wave|waves|urge|urges|bid|bids|say|says|said|saying|whisper|whispers|mouth|mouths|warn|warns|order|orders|"
+                          r"let|lets|have|has|make|makes|get|gets)\b[^.;!?]*?\b(?:wait|stay|sleep|rest|sit tight|lie low)\b", re.I)
+
+
+def own_words(text: str) -> str:
+    """The player's words without what anyone is quoted saying (B233)."""
+    return QUOTED.sub(" ", text or "")
 
 
 def until_when(game: Any, state: BaseModel, adj: AssistantReading, text: str) -> tuple[AssistantReading, str]:
@@ -2513,6 +2597,9 @@ def until_when(game: Any, state: BaseModel, adj: AssistantReading, text: str) ->
     tasks = getattr(clock, "tasks", None) or {}
     if "wait" not in tasks or task not in ("wait", "sleep", "other"):
         return adj, ""
+    text = own_words(text)                          # B233: a wait in quotes is someone's line, not the player's wait
+    if TOLD_TO_WAIT.search(text):                   # B233: a wait asked of someone else; the assistant's minutes stand
+        return adj, ""
     if UNTIL_ANY.search(text):
         return adj.model_copy(update={"time_minutes": clock.cap_minutes}), ""
     clk = sp.lookup(state.model_dump(mode="json"), clock.path, None) or {}
@@ -2524,6 +2611,10 @@ def until_when(game: Any, state: BaseModel, adj: AssistantReading, text: str) ->
     # B60 (the fantasy's first round): asked on three long action inputs whose summaries held "watches" or "follows";
     # ask only when the player's own words are mostly the wait
     if task == "other" or LIMIT_WORDS.search(text) or WAIT_FOR.search(text) or not WAIT_SAID.search(text) or len(text.split()) > 15:
+        return adj, ""
+    # B233: the assistant read an attempt in it (a check, or a settling with an outcome): it is an action that does
+    # something, and a question would throw that away (the prose is told, the outcome never recorded)
+    if getattr(adj, "fiat", None) or any(i.check for i in adj.intents):
         return adj, ""
     if task == "sleep" and getattr(game, "sleep_by_command", False) and not any(c.id == "rest" for c in adj.commands):
         return adj, ""            # the fantasy: a sleep the Rest command did not pick is a move somewhere (no night, no question)

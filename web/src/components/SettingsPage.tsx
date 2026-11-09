@@ -57,7 +57,7 @@ export function SettingsPage({ iid }: { iid: string | null }) {
 
       <StoryLog />
 
-      <DevMode needsPin={s.dev_pin} />
+      {s.dev_mode !== false && <DevMode needsPin={s.dev_pin} />}
 
       <section className="settings">
         <h2>Roles</h2>

@@ -106,6 +106,7 @@ class ServerConfig(BaseModel):
     # Dev mode (B76): a request with `X-Dev: 1` sees the hidden games. With a pin set (here or TA_DEV_PIN), it must also
     # carry `X-Dev-Pin: <pin>` or it is refused (403); without one, the header is enough (a checkbox is not a lock).
     dev_pin: str | None = None
+    dev_mode: bool = True           # B232: off on a player's server (TA_DEV_MODE=off): no dev switch, hidden games never loaded
 
 
 class ContextConfig(BaseModel):
@@ -260,6 +261,9 @@ def read_config(path: Path) -> Config:
         cfg.server.data_dir = Path(data_dir).resolve()
         cfg.server.log_dir = cfg.server.data_dir / "logs"
     # TA_DEV_PIN sets the dev-mode pin (B76) without writing it into the shared config
+    dm = os.environ.get("TA_DEV_MODE", "").strip().lower()
+    if dm:
+        cfg.server.dev_mode = dm not in ("off", "0", "false", "no")
     dev_pin = os.environ.get("TA_DEV_PIN", "").strip()
     if dev_pin:
         cfg.server.dev_pin = dev_pin

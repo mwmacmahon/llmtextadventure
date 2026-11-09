@@ -21,6 +21,11 @@ export function DebugDrawer({
 }) {
   const [sel, setSel] = useState(turn);
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
+  const [standing, setStanding] = useState<{ setup: Record<string, unknown>; mods: { name: string; hash: string }[]; prefix_text: string } | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    api.standing(instanceId).then(setStanding).catch(() => setStanding(null));
+  }, [open, instanceId]);
 
   useEffect(() => setSel(turn), [turn]);
   useEffect(() => {
@@ -79,6 +84,16 @@ export function DebugDrawer({
           {call.payload.error && <span className="warn">{call.payload.error}</span>}
         </div>
       )}
+      <h4>Fixed at the start</h4>
+      <details>
+        <summary>The setup as entered (the character's description is "about")</summary>
+        <pre>{standing ? JSON.stringify(standing.setup, null, 1) : "—"}</pre>
+        {standing && standing.mods.length > 0 && <p className="small">Mods: {standing.mods.map((m) => `${m.name} (${m.hash})`).join(", ")}</p>}
+      </details>
+      <details>
+        <summary>The narrator's standing prompt, frozen at the start{standing ? ` · ${standing.prefix_text.length} chars` : ""}</summary>
+        <pre>{standing?.prefix_text ?? "—"}</pre>
+      </details>
       <h4>Bulletin (injected before the player's message)</h4>
       <pre>{bulletin?.text ?? "—"}</pre>
       <h4>Messages sent to the narrator</h4>
