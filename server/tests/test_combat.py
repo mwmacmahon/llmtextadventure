@@ -398,7 +398,7 @@ def test_flee_ends_the_fight_with_a_free_blow_from_each_and_yield_is_taken_by_pe
     st2.people.append(Person(id="snag", name="Snag", role="dock thug", location=st2.player.location, met=True))
     st2.player.fighting.append("snag")
     s2, res2 = cb.run_fight_command(game, st2, "yield")
-    assert s2.player.fighting == ["dead"] and "Snag take it" in res2.directive and "the catacomb dead do not" in res2.directive
+    assert s2.player.fighting == ["dead"] and "Snag takes it" in res2.directive and "the catacomb dead does not" in res2.directive
 
 
 # ---- §10 features as data, §11 the Paladin ------------------------------------------------------------------------------------
@@ -505,3 +505,58 @@ def test_every_person_in_the_content_has_a_called_label():
                     walk(v)
         walk(yaml.safe_load(f.read_text(encoding="utf-8")))
     assert missing == []
+
+
+# ---- B288 (Gemma, 11-09, 2cfb46d7187d turn 6): one swing, one roll; a sword by its plain word; an ally dies only in the told ----
+def test_an_attack_intent_loses_its_str_check_and_keeps_its_attack():
+    from engine.pipeline import settle_attack
+    from engine.roles import CheckStaked as CheckSpec
+    adj = AssistantReadingCombat(kind="action", summary="Brin swings at the troll.", time_minutes=1, tempo="slow", risk="medium",
+                                 intents=[IntentCombat(action="attack", targets=["gorm"], attack_at=["gorm"], weapon="EVILSLAYER",
+                                                       check=CheckSpec(label="Attack with EVILSLAYER", stat="str", difficulty="medium"))])
+    out = settle_attack(adj)
+    assert out and adj.intents[0].check is None and adj.intents[0].attack_at == ["gorm"]
+    talk = AssistantReadingCombat(kind="action", summary="Brin talks the troll down.", time_minutes=1, risk="low",
+                                  intents=[IntentCombat(action="talk", targets=["gorm"], check=CheckSpec(label="Calm the troll", stat="cha", difficulty="medium"))])
+    assert settle_attack(talk) == [] and talk.intents[0].check is not None
+
+
+def test_a_weapon_the_player_named_reads_by_its_plain_word(game):
+    from games.fantasy.state import Item
+    st = new(game)
+    st.inventory = [i for i in st.inventory if cb.weapons_carried(type("S", (), {"inventory": [i]})())[0][0] == "fist"]
+    st.inventory += [Item(id="evil", name="EVILSLAYER, a sword", note="super cool"), Item(id="jav", name="javelins", count=5)]
+    assert cb.player_weapon(st, "EVILSLAYER")[0] == "longsword"
+
+
+def test_an_ally_felled_by_a_blow_the_prose_did_not_tell_is_down_not_dead(game):
+    st, q = _fight(game, 1)
+    h = st.person("hazel")
+    st.player.with_them = ["hazel"]
+    cb.ensure_block(h)
+    h.location = st.player.location
+    h.combat.hp, h.combat.hp_max = 11, 11                    # a critical for 21: -10, not massive damage, and unseen
+    cb.land(game, st, [{"verb": "ENEMY", "who": q.id, "backstop": True, "hits": [{"pid": "hazel", "body": 0, "dmg": 21}]}], 6, 2, random.Random(1))
+    assert st.person("hazel").status == "down"
+
+
+# ---- B289 (Gemma, 11-09, ab893d6ad541 turn 8): a typed Flee is the turn ------------------------------------------------------
+def test_a_typed_flee_plans_no_round_and_its_blows_hold_from_preview_to_commit(game):
+    from engine.roles import CommandPick
+    st, q = _fight(game, 2)
+    st.player.location = st.person("dead").location
+    run = AssistantReadingCombat(kind="action", summary="Brin bolts for the stairs.", time_minutes=1, tempo="fast", risk="high",
+                                 intents=[IntentCombat(action="flee up the stairs", targets=["dead"])], commands=[CommandPick(id="flee")])
+    s, w = game.world_turn(st, run, "I bolt for the stairs", random.Random(1), 6, 2)
+    assert s.combat is not None and s.combat.plan == [] and not any("A FIGHT, round" in d for d in w.directives)
+    spec = next(c for c in game.commands(st) if c.id == "flee")
+    assert spec.decides and spec.typed
+    a, ra = cb.run_fight_command(game, st, "flee")
+    later = st.model_copy(deep=True)
+    later.clock.minute += 3                                  # the turn's minutes pass between the preview and the commit
+    b, rb = cb.run_fight_command(game, later, "flee")
+    assert ra.directive == rb.directive and a.player.hp == b.player.hp
+    _troll(st)                                               # B286: the lever's words call the unnamed what the player does
+    st.player.fighting = ["gorm"]
+    _, rt = game.run_command(st, "flee", {})
+    assert "Gorm" not in rt.directive and "Troll" in rt.directive

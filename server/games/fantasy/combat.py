@@ -25,6 +25,9 @@ WEAPONS: dict[str, tuple[str, str]] = {
     "longbow": ("1d8", "ranged"), "light crossbow": ("1d8", "ranged"), "crossbow": ("1d8", "ranged"), "sling": ("1d4", "ranged"),
 }
 FIST = ("1", "melee")
+# B288: a weapon the player named for themselves ("EVILSLAYER, a sword"): the plain word reads as the SRD's weapon
+WEAPON_WORDS = {"sword": "longsword", "blade": "shortsword", "axe": "battleaxe", "hammer": "warhammer", "knife": "dagger",
+                "bow": "shortbow", "staff": "quarterstaff", "cudgel": "club", "cleaver": "handaxe"}
 # a weapon's make, read from its name: +1 to the attack and the damage (the owner, 11-09: the Rogue's better weapon)
 QUALITY = {"fine": 1, "masterwork": 1, "dwarf-forged": 1, "elven": 1}
 # the class's two proficient saves (SRD 5.1)
@@ -165,6 +168,8 @@ def weapons_carried(s: FantasyState) -> list[tuple[str, str, str]]:
     for it in s.inventory:
         n = it.name.lower()
         hit = next((w for w in sorted(WEAPONS, key=len, reverse=True) if w in n or w + "s" in n or w.rstrip("e") + "es" in n), None)
+        if hit is None:
+            hit = next((WEAPON_WORDS[w] for w in WEAPON_WORDS if re.search(rf"\b{w}s?\b", n)), None)
         if hit and not (it.count == 0):
             out.append((hit, *WEAPONS[hit]))
     out.sort(key=lambda w: -dice_avg(w[1]))
@@ -860,7 +865,10 @@ def land(game: Any, s: FantasyState, calls: list[dict], turn: int, offset: int, 
                     q.mood = "yielded"
                     notes.append(f"{q.name} yields ({save_line('wis', 'their nerve', res)})")
         elif q.id in p.with_them and q.status == "alive" and (b.hp or 0) <= 0:
-            q.status = "dead" if (b.hp or 0) <= -10 else "down"
+            # B288: the SRD's massive damage (what is left over reaches their full hit points), and never by a blow the prose
+            # did not tell (a backstop): Hazel died after the prose on a backstopped critical, 11 hit points to -10
+            unseen = q.id in {h.get("pid") for call in calls if call.get("backstop") for h in (call.get("hits") or [])}
+            q.status = "dead" if -(b.hp or 0) >= (b.hp_max or 1) and not unseen else "down"
             notes.append(f"{q.name}: {q.status}")
     for x in list(p.fighting):                                         # the rows made them friendly: the prose ended their fight
         q = s.person(x)                                                # (the live round: the freed keeper swung for three turns more)
@@ -953,7 +961,7 @@ def run_fight_command(game: Any, state: FantasyState, command_id: str) -> tuple[
     if s.combat is None or not p.fighting:
         return state, CommandResult(ok=False, label=command_id.capitalize(), text="There is no fight to leave.")
     if command_id == "flee":
-        rng = _r.Random(f"{p.name}:{s.clock.day}:{s.clock.minute}:flee")
+        rng = _r.Random(f"{p.name}:{s.combat.since_turn}:{s.combat.round}:flee")    # B289: the preview's blows are the commit's (the clock moves between)
         tally: dict = {"hp": 0}
         lines, told = [], []
         for q in living_enemies(game, s):
@@ -988,8 +996,11 @@ def run_fight_command(game: Any, state: FantasyState, command_id: str) -> tuple[
         directive = (f"{p.name} yields, and {', '.join(q.name for q in takers)} take it: the fight is over on their terms. Play what they "
                      f"want of {p.name} now (weapons down, what they demand), and stop where {p.name} answers.")
     else:
-        directive = (f"{p.name} offers to yield. " + (f"{', '.join(q.name for q in takers)} take it and stand back; " if takers else "")
-                     + f"{', '.join(q.name for q in refusers)} do not: they come on. Play it.")
+        one = lambda qs: len(qs) == 1 and ensure_block(qs[0]).count <= 1    # noqa: E731  (a band is many)
+        directive = (f"{p.name} offers to yield. " + (f"{', '.join(q.name for q in takers)} {'takes' if one(takers) else 'take'} it and stand"
+                                                      f"{'s' if one(takers) else ''} back; " if takers else "")
+                     + (f"{refusers[0].name} does not: it comes on. Play it." if one(refusers) else
+                        f"{', '.join(q.name for q in refusers)} do not: they come on. Play it."))
     return s, CommandResult(label="Yield", player_line="I yield.", summary=f"{p.name} offers to yield.", directive=directive, minutes=1)
 
 

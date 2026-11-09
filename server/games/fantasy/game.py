@@ -2770,12 +2770,12 @@ class FantasyGame(GameBase):
             return [CommandSpec(id="journal", label="Journal", mode="engine", typed=False, hint="Read the journal, the quests and the people.")]
         out = []
         if state.combat is not None and state.player.fighting:              # part fifteen §7; B287 (the owner, 11-09): typed, no buttons
-            out += [CommandSpec(id="flee", label="Flee", mode="narrated", typed=True,
+            out += [CommandSpec(id="flee", label="Flee", mode="narrated", typed=True, decides=True,
                                 hint="Run from the fight: the player turns their back on it and goes (out of reach, out of the place). Every enemy "
                                      "within reach gets one free blow as they go. Not a step back, a dodge, or a move to better ground inside the fight.",
                                 words=["run", "flee", "bolt", "escape", "get away", "get out", "retreat", "make a break", "dash", "sprint", "leg it",
                                        "scramble", "back away", "back off", "withdraw", "out of here", "for the door", "for the stairs"]),
-                    CommandSpec(id="yield", label="Yield", mode="narrated", typed=True,
+                    CommandSpec(id="yield", label="Yield", mode="narrated", typed=True, decides=True,
                                 hint="Give up the fight: the player surrenders, begs for mercy, or throws down their weapon. People may take it "
                                      "(the fight ends); the dead, beasts and fanatics do not. Not a parley offered mid-swing or a bluff.",
                                 words=["yield", "surrender", "give up", "i give", "mercy", "quarter", "throw down", "drop my", "lay down", "enough",
@@ -2947,7 +2947,12 @@ class FantasyGame(GameBase):
                                     minutes=2, referee_skip=["smoke_pellets"])
         if command_id in ("flee", "yield"):                               # part fifteen §7
             from . import combat as cb
-            return cb.run_fight_command(self, state, command_id)
+            s2, res = cb.run_fight_command(self, state, command_id)
+            if getattr(res, "directive", None):                         # B286: the names as the player knows them
+                res = res.model_copy(update={"directive": self.unnamed(s2, res.directive), "summary": self.unnamed(s2, res.summary or "")})
+            if s2 is not state:
+                s2.player.turn_notes = [self.unnamed(s2, n) for n in s2.player.turn_notes]
+            return s2, res
         if command_id == "breath":
             c = p.count("breath")
             if c is None or c.value <= 0:

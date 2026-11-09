@@ -881,11 +881,14 @@ class Engine:
             log.info("turn.rewrite " + logs.kv(iid=iid, turn=turn, attempt=replay.attempt, by=replay.by, hint_chars=len(replay.hint)))
             yield {"event": "rewrite", "data": {"turn": turn, "hint": replay.hint, "attempt": replay.attempt, "by": replay.by}}
             adj = replay.adjudication                            # None on the player's rewrite: the assistant reads the turn again (B280)
+            struck = settle_attack(adj) if adj is not None else []     # B288: the attack is the roll
             trivial = settle_trivial(adj) if adj is not None else []   # B279: a reading stored before the rule settles too
             if adj is not None:
                 ledger("adjudication", {**adj.model_dump(mode="json"), "_call": {
                     "provider": replay.call.get("provider"), "model": replay.call.get("model"), "seconds": 0, "usage": asdict(Usage()),
                     "replayed": True, "attempt": replay.attempt}})
+            for h in struck:
+                ledger("precheck", {"kind": "attack", **h})
             for h in trivial:
                 ledger("precheck", {"kind": "trivial", **h})
                 ledger("settled", {"settled": "works", "attempt": h["attempt"], "outcome": next((f.outcome for f in adj.fiat if f.attempt == h["attempt"]), ""), "why": h["why"]})
@@ -895,9 +898,12 @@ class Engine:
             try:
                 adj, meta = await self._adjudicate(game, state, iid, player_text,
                                                    retell=replay.hint if replay is not None and replay.by == "player" else None)
+                struck = settle_attack(adj)                      # B288: a blow with a weapon is the attack roll, not a check too
                 hopeless = settle_hopeless(adj)                  # B225: very high and an edge of -3 or worse is a fail, no roll
                 trivial = settle_trivial(adj)                    # B279: very low with nothing at stake simply happens
                 ledger("adjudication", {**adj.model_dump(mode="json"), "_call": meta})
+                for h in struck:
+                    ledger("precheck", {"kind": "attack", **h})
                 for h in hopeless:
                     ledger("precheck", {"kind": "hopeless", **h})
                 for h in trivial:
@@ -1679,6 +1685,8 @@ class Engine:
                                               "intents": [i.model_copy(update={"check": None}) for i in adj.intents],
                                               "commands": []}), []
             kept.append(pick)
+            if spec.decides:                                         # B289: the lever is the roll (Gemma set a DEX escape check beside Flee)
+                adj = adj.model_copy(update={"intents": [i.model_copy(update={"check": None}) for i in adj.intents]})
             after, res = game.run_command(working, spec.id, args)
             label = res.label or spec.label
             if not res.ok:
@@ -3187,6 +3195,24 @@ def settle_hopeless(adj: Any) -> list[dict]:
         outcome = str(getattr(c, "failure_outcome", "") or "") or f"It does not come: {c.label}."
         adj.fiat = list(adj.fiat or []) + [FiatOutcome(attempt=i.action or c.label, outcome=outcome, settled="fails", why=why)]
         out.append({"attempt": i.action or c.label, "label": c.label, "edge": int(c.edge), "why": why})
+        i.check = None
+    return out
+
+
+def settle_attack(adj: Any) -> list[dict]:
+    """B288 (Gemma, 11-09, 2cfb46d7187d turn 6): an intent with `attack_at` is a blow, and the engine's attack roll (against
+    the target's armour) decides it. A STR or DEX check the reading also set on that intent is dropped, so one swing is one
+    roll: the narrator called 'CHECK str medium' and the backstop rolled the attack again after the prose."""
+    out: list[dict] = []
+    if adj is None:
+        return out
+    for i in getattr(adj, "intents", None) or []:
+        c = getattr(i, "check", None)
+        if c is None or not (getattr(i, "attack_at", None) or []) or getattr(c, "stat", "") not in ("str", "dex"):
+            continue
+        out.append({"attempt": i.action or c.label, "label": c.label, "stat": c.stat, "why": "the attack roll decides a blow"})
+        if getattr(adj, "pivotal", "") == c.label:
+            adj.pivotal = ""
         i.check = None
     return out
 
