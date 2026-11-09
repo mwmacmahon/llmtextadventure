@@ -105,6 +105,8 @@ class ListPanel(BaseModel):
     title: str
     items: list[Chip]
     layout: Literal["rows", "grid", "stack"] = "rows"   # rows: label left, value right; grid: tiles; stack: label over value
+    fold: int = 0                    # B261: show the first this many, the rest behind "See more" (0: all)
+    journal: bool = False            # B261: the game's journal (what was learned): also the Timeline overlay's Journal tab
 
 
 class LogPanel(BaseModel):
@@ -113,6 +115,7 @@ class LogPanel(BaseModel):
     pinned: bool = False                       # stays at the top of its column while the rest scrolls (the girl in training)
     title: str
     lines: list[str]
+    timeline: bool = False           # B261: the game's log (what happened): not in a column; the Timeline overlay, by day
 
 
 class Choice(BaseModel):

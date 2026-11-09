@@ -200,6 +200,7 @@ class NoirGame(GameBase):
     recent_path = "hidden.recent"
     threads_path = "threads"
     log_path = "log"
+    journal_path = "notebook"            # B261: what was learned (a journal line that says the turn's log line again is dropped)
     mechanic_numbers = True                 # the § line shows the dice: "Hands, low. 9 + 2 = 11 against 5. Huge success."
     adjudication_schema = AssistantReadingV2    # targets and proposals; transitions stay empty until noir has a world
     fallback_stat = "nerve"
@@ -734,7 +735,7 @@ class NoirGame(GameBase):
             "- add <person id>.attitude ±n (-3 to 3): only when Frank did something to that person this turn that changes how they treat him: paid, helped, respected, threatened, insulted, lied and was caught. A tense conversation is 0. Being offered a bribe changes nothing.",
             "- set <character id>.status alive|dead|missing|unknown, only if changed. set <character id>.condition <a few words>: their body's state when the prose changes it (wounded, limping, unconscious, crawling, bleeding from the shoulder); a creature's injuries go here, never as a new thing.",
             "- learned <person id> value=fact: what they told Frank or what he learned about them, one short sentence; a witness's statement is a fact about the witness first, and also about the listed person it concerns when there is one.",
-            "- learned player value=clue: concrete evidence Frank learned: a name, an address, a time, an object, a fact about the creatures or the Congregation. One short sentence, only when new. Never something Frank could not perceive.",
+            "- learned player value=clue: concrete evidence Frank learned: a name, an address, a time, an object, a fact about the creatures or the Congregation. One short sentence, only when new, and something he may need again, not what happened this turn (that is the log line). Never something Frank could not perceive.",
             "- new person value=name, field=<place>, note=role: anyone the prose gives a name (a surname is enough) who is not a listed person, even if they appear once; at most two per turn. A nameless stranger who only passes (a clerk, a driver) is nobody. One who will matter again (he follows Frank, calls him, is seen twice, Frank goes looking for him) is new person value=<how Frank would describe him: the man in the grey hat>, note=role. Never put a nameless figure on a listed id because you guess who he is. A new name that is plainly a listed person (an alias) is that person: use their id.",
             "- set <id>.identity <character id>: the prose shows Frank who a recorded figure or voice really is (the man in the grey hat is Marlowe). Only when Frank learns it in the prose, never on a guess; the engine checks it against the case. The two records become one.",
             "present: listed people in the scene with Frank, identified by name or role; someone only talked about (a witness's word about Szabo) is not present, and never a nameless stranger.",
@@ -1759,9 +1760,9 @@ class NoirGame(GameBase):
                         for q in s.cast if q.heard_of and not q.met
                     ],
                 ),
-                ListPanel(title="Notebook", items=[Chip(label=n.kind, value=n.text) for n in s.notebook[-20:]]),
+                ListPanel(title="Notebook", items=[Chip(label=n.kind, value=n.text) for n in reversed(s.notebook)], fold=6, journal=True),
                 threads_panel(s.threads, names=self.entity_names(s)),
                 ListPanel(title="Stats", items=[Chip(label=k, value=f"{v:+d}") for k, v in p.stats.items()]),
-                LogPanel(title="Case log", lines=s.log[-20:]),
+                LogPanel(title="Case log", lines=list(s.log), timeline=True),
             ],
         )

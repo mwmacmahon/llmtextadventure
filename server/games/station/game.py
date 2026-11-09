@@ -165,6 +165,7 @@ class StationGame(GameBase):
     recent_path = "hidden.recent"
     threads_path = "threads"
     log_path = "log"
+    journal_path = "findings"            # B261: what was learned (a journal line that says the turn's log line again is dropped)
     static_paths = ["scenario", "stats", "resources.*.note", "crew.*.baseline_mood", "crew.*.baseline_stress", "crew.*.interests",
                     "crew.*.relationships", "crew.*.bio", "crew.*.traits", "crew.*.routine", "crew.*.secrets.*.what", "crew.*.secrets.*.how",
                     "crew.*.secrets.*.needs", "crew.*.secrets.*.leverage", "crew.*.secrets.*.reveals", "hidden.terms",
@@ -745,7 +746,7 @@ class StationGame(GameBase):
             "- add <crew id>.trust ±1: only when the station or its assistant did something to that person this turn that changes how they hold it: helped, kept a confidence, told a truth that mattered, lied and was caught, frightened them, threatened them, sealed them in. A coerced person loses trust even when they comply. A plain exchange, or a kind word, is 0; trust is earned over days.",
             "- set <crew id>.suspicion <word> when the prose shows where they stand, not a nudge: someone who orders or carries out a measure against the station (a manual override, a diagnostic of it, isolating the core, telling the others it acts on its own) is suspicious or certain, whatever the number was.",
             "- add <crew id>.<other crew id> ±1: their bond to that person warmed or cooled because of what happened between them this turn (a quarrel, a rescue, a lie found out).",
-            "- learned <crew id> value=fact: something this person now knows or believes that they did not before, one short sentence. learned player value=fact: something the station itself worked out, read or was told that it did not have, one short sentence, only when new.",
+            "- learned <crew id> value=fact: something this person now knows or believes that they did not before, one short sentence. learned player value=fact: something the station itself worked out, read or was told that it did not have and may need again, one short sentence, only when new; not what happened this turn (that is the log line).",
             "- set <crew id>.known value=<secret id>: the station learned that piece about them this turn (the game state lists the open pieces with their ids); one row per piece.",
             "- set <system>.control full|limited|none|manual_override only if a crew member changed the station's control over it (manual override, locked out). set <system>.status " + "|".join(SYSTEM_STATUSES) + " only when the prose shows the work finished: a repair completed, damage done, a manual shutdown. Walking to a panel, opening it, or starting a repair changes nothing. Power the station cut or restored itself is already in the state; do not report it again.",
             "- set <resource>.level OK|Low|Critical|Depleted only when the prose plainly changed it (atmosphere vented, a tank holed or sealed, a resupply), one step per turn.",
@@ -1844,10 +1845,10 @@ class StationGame(GameBase):
                     ],
                 ),
                 Commands(title="Station controls", items=self.commands(s)),
-                *([ListPanel(title="Findings", items=[Chip(label="found", value=f) for f in s.findings[-12:]])] if s.findings else []),
+                *([ListPanel(title="Findings", items=[Chip(label="found", value=f) for f in reversed(s.findings)], fold=6, journal=True)] if s.findings else []),
                 threads_panel(s.threads, names=self.entity_names(s)),
                 ListPanel(title="Capabilities", items=[Chip(label=k, value=f"{v:+d}") for k, v in s.stats.items()]),
-                LogPanel(title="Logfile", lines=s.log[-20:]),
+                LogPanel(title="Logfile", lines=list(s.log), timeline=True),
             ],
         )
 

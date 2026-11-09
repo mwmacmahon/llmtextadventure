@@ -1094,3 +1094,40 @@ def test_a_threads_giver_is_who_gave_it(game: FantasyGame):
     st.threads.append(Thread(id="t13-oswin", title="Oswin's shadow", about="find it", who="oswin"))
     rows = {r.title: r for r in game.quest_rows(st)}
     assert rows["Hazel hired for the lake"].giver == "" and rows["Oswin's shadow"].giver
+
+
+# ---- B261: the Timeline and the Journal ----------------------------------------------------------------------------------
+
+def test_the_log_goes_to_the_timeline_and_the_journal_folds(engine: Engine, game: FantasyGame):
+    st = new(game)
+    from games.fantasy.state import Note
+    st.journal = [Note(kind="clue", text=f"clue {i}") for i in range(9)]
+    panels = game.ui(st).panels
+    j = next(p for p in panels if getattr(p, "title", "") == "Journal")
+    assert j.journal and j.fold == 6 and [c.value for c in j.items][:2] == ["clue 8", "clue 7"] and len(j.items) == 9
+    log = next(p for p in panels if p.type == "log")
+    assert log.timeline and log.lines == list(st.log)
+    for name, jt, lt in (("noir", "Notebook", "Case log"), ("station", "Findings", "Logfile")):
+        g = engine.games[name]
+        s = g.new_instance({})[1]
+        if name == "station":
+            s.findings = ["a"]
+        ps = g.ui(s).panels
+        assert next(p for p in ps if getattr(p, "title", "") == jt).journal
+        assert next(p for p in ps if getattr(p, "title", "") == lt).timeline
+
+
+def test_a_journal_line_that_says_the_log_line_again_is_dropped(game: FantasyGame):
+    """B261, Lilith's turn 3: the clue 'Maud wants the cellar cleared tonight; Hill men drink at the Lantern from nine' and the
+    log line 'Lillian asked when to start; Maud wants the cellar cleared tonight, before the Hill men drink from nine' are one
+    thing twice; turn 1's offer of two gold shares words with its log line and is kept (the bare two-word test dropped it)."""
+    from engine.pipeline import journal_not_log
+    from engine.game import ApplyReport
+    st = new(game)
+    s1, _, _ = apply(game, st, C(kind="learned", target="player", value="Maud wants the cellar cleared tonight; Hill men drink at the Lantern from nine."))
+    rep = ApplyReport()
+    s2 = journal_not_log(game, st, s1, "Lillian asked when to start; Maud wants the cellar cleared tonight, before the Hill men drink from nine.", rep)
+    assert not any("cleared tonight" in n.text for n in s2.journal) and rep.rejected[0].kind == "duplicate"
+    s3, _, _ = apply(game, st, C(kind="learned", target="player", value="Maud's cellar has rats that grow in number each night; she offers two gold and free meals to clear them."))
+    s4 = journal_not_log(game, st, s3, "Maud Tallow sat down with Lillian and asked her to clear the rats from the cellar.", ApplyReport())
+    assert any("two gold" in n.text for n in s4.journal)

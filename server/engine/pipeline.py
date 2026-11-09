@@ -1193,6 +1193,7 @@ class Engine:
                         delta = delta.model_copy(update={"changes": kept_rows})
                 before_rows = state
                 state, report, extras = apply_changes(game, state, delta, present=present, causes=causes, skip=skip, force=force)
+                state = journal_not_log(game, before_rows, state, delta.log_line, report)       # B261
                 got = _hook(game, "after_rows", before_rows, state, player_text or "", narration, default=None)
                 if got is not None:                           # B246 (b): the game's own reading of the rows against the player's words
                     state, more = got
@@ -2980,6 +2981,43 @@ def in_private(now: str, before: list[str]) -> bool:
         if ON_THE_MOVE.search(words):
             return False
     return False
+
+
+def journal_not_log(game: Any, before: Any, after: Any, log_line: str, report: Any) -> Any:
+    """B261: a journal line the rows added this turn that is the turn's log line said again is dropped: at least two content
+    words shared beyond the names, and at least half of the journal line's own (the directive's bare two-word test dropped 21
+    of Lilith's 26 lines, the Temple that raises the dead and the lamplighters' shadows among them; with the half, 3, each
+    the log line again). The log is what happened, the journal what was learned and may be needed again."""
+    path = getattr(game, "journal_path", None)
+    if not path or not (log_line or "").strip():
+        return after
+    a, b = after.model_dump(mode="json"), before.model_dump(mode="json")
+    now, was = list(sp.lookup(a, path, []) or []), list(sp.lookup(b, path, []) or [])
+    text = lambda x: str(x.get("text", "") if isinstance(x, dict) else x)  # noqa: E731
+    old = {text(x) for x in was}
+    names = set()
+    for key in ("people", "crew"):
+        for q in a.get(key) or []:
+            names |= {w.lower().rstrip("s") for w in re.findall(r"[A-Za-z]{3,}", str(q.get("name", "")))}
+    pl = a.get("player") or {}
+    names |= {w.lower().rstrip("s") for w in re.findall(r"[A-Za-z]{3,}", str(pl.get("name", "")))}
+    said = _content_words(log_line) - names
+    keep, dropped = [], []
+    for x in now:
+        t = text(x)
+        mine = _content_words(t) - names
+        shared = mine & said
+        if t not in old and len(shared) >= 2 and len(shared) >= 0.5 * len(mine):
+            dropped.append(t)
+            continue
+        keep.append(x)
+    if not dropped:
+        return after
+    sp.assign(a, path, keep)
+    from .game import Rejection
+    for t in dropped:
+        report.rejected.append(Rejection(path=path, reason="the turn's log line said again; the journal keeps what was learned", value=t[:120], kind="duplicate"))
+    return game.load_state(a)
 
 
 def tense_why(game: Any, state: Any, adj: Any, last: dict | None = None) -> str:
