@@ -31,7 +31,7 @@ from .state import (AXES, AXIS_WORDS, DAY, SHOW_WORDS, SKILL_TIERS, SLOTS, STATS
 AUTHORITY = {
     "clock": "engine", "house": "engine", "house.money": "narrator", "house.heat": "narrator", "plan": "engine", "shows": "engine",
     "deck": "engine", "hooks": "engine", "active": "engine",
-    "girls.*.skills": "engine", "girls.*.skills.*": "engine", "girls.*.fatigue": "engine", "girls.*.week_gains": "engine",
+    "girls.*.skills": "engine", "girls.*.skills.*": "engine", "girls.*.fatigue": "engine", "girls.*.week_gains": "engine", "girls.*.diligence": "engine",
     "girls.*.love": "narrator", "girls.*.respect": "narrator", "girls.*.fear": "narrator", "girls.*.mood": "narrator",
     "girls.*.condition": "narrator", "girls.*.conditions": "narrator", "girls.*.location": "narrator", "girls.*.facts": "narrator",
     "girls.*.status": "narrator", "girls.*.secrets.*.known": "narrator", "girls.*.bonds": "narrator", "girls.*.bonds.*": "narrator",
@@ -50,7 +50,8 @@ AXIS_STEP = 2                   # the referee's most in a turn on one axis
 MONEY_ROW = 100                 # the referee's most on money in one row
 HEAT_ROW = 15
 GAIN_BASE = 4                   # a slot's base; traits ±2, the axes, the proprietor on the mats; half past sound (the dry run, 11-09)
-FATIGUE_SLOT, FATIGUE_REST, FATIGUE_SUNDAY, FATIGUE_SHOW, FATIGUE_WORK, WORK_PAY = 6, -25, -30, 20, 4, 8   # a full week wears her; one rest slot a week holds (the dry run, 11-09)
+FATIGUE_SLOT, FATIGUE_REST, FATIGUE_SUNDAY, FATIGUE_SHOW, FATIGUE_WORK = 6, -25, -30, 20, 4   # a full week wears her; one rest slot a week holds (the dry run, 11-09); a job's pay is the dial job_pay
+JOB_WORDS = ["the laundry on Harbour Street", "the kiosk at the tram stop", "the chandler's yard", "a scullery on the Hill Road", "the Guild office's copying"]
 RED_LINE = -500
 GRADUATE_SOUND, GRADUATE_FINISHED = 3, 1                                    # the record that makes her: three skills sound, one finished
 DIFFICULTY_WORDS = {0: "an easy room", 1: "an ordinary room", 2: "a demanding room", 3: "a hard room"}
@@ -430,7 +431,7 @@ class ClownGame(GameBase):
         g = s.active_girl
         if g is not None and g.in_house():
             w = g.words()
-            lines.append(f"{g.name} (the girl in training{', a graduate' if g.graduated else ''}): at {g.location or 'unknown'}; {g.fatigue_word}; {w['love']}, {w['respect']}, {w['fear']}"
+            lines.append(f"{g.name} (the girl in training{', a graduate' if g.graduated else ''}): at {g.location or 'unknown'}; {g.fatigue_word}; {g.diligence_word} at work; {w['love']}, {w['respect']}, {w['fear']}"
                          + (f"; mood {g.mood}" if g.mood else "") + (f"; {g.condition}" if g.condition else "")
                          + (f"; {', '.join(c.name for c in g.conditions)}" if g.conditions else "") + ".")
             if engine:
@@ -441,7 +442,7 @@ class ClownGame(GameBase):
             plan_bits = []
             for slot in ("mornings", "afternoons"):
                 v = getattr(s.plan, slot)
-                plan_bits.append(f"{slot}: {'nothing set' if not v else 'rest' if v == 'rest' else 'work about the house' if v == 'work' else self.skill_name(v)}")
+                plan_bits.append(f"{slot}: {'nothing set' if not v else 'rest' if v == 'rest' else 'a job in town, for the money' if v == 'work' else self.skill_name(v)}")
             lines.append("    This week's plan: " + "; ".join(plan_bits) + ("; the plan carried over from last week, nobody changed it" if s.plan.carried else "") + ".")
             if g.facts:
                 lines.append("    Learned about her: " + " ".join(g.facts[-4:]))
@@ -602,7 +603,7 @@ class ClownGame(GameBase):
             "Checks are settled by the stat alone, no die: very_low = anyone could; low = a fair proprietor could; medium = it takes the right stat; "
             "high = it takes a strong stat and an edge; very_high = next to impossible. Say the difficulty for anyone; the edge is what this proprietor "
             "brought (a dinner that pleased the Judge, a favour owed by Krol, a secret known, the right girl beside them).",
-            "The week's plan (what a girl trains in the mornings and the afternoons, rest, work about the house) is the Plan command, never an intent: "
+            "The week's plan (what a girl trains in the mornings and the afternoons, rest, a job in town for a little money) is the Plan command, never an intent: "
             "list it under commands when the input sets it, with slot=mornings|afternoons and skill=<one of: " + ", ".join(self.skill_ids(s)) + ", rest, work>; "
             "an input that names a skill and no slot is two Plan commands, one a slot. Taking a booking by name is the Book command with "
             "booking=<its title as the game state lists it> and girl=<the id of the girl who goes; the one in training when the input names nobody>; "
@@ -1206,6 +1207,12 @@ class ClownGame(GameBase):
             v = 1 + max(0, c) // 2
             gain += v
             why.append(f"you worked with her {v:+d}")
+        if g.diligence >= 75:
+            gain += 2
+            why.append("diligent +2")
+        elif g.diligence >= 50:
+            gain += 1
+            why.append("steady at work +1")
         for c in g.conditions:
             if c.mod and c.group in ("all", group):
                 gain += c.mod
@@ -1285,11 +1292,15 @@ class ClownGame(GameBase):
             s.house.week_lines.append(f"* {label}: nothing was set; {g.name} did what she liked.")
             return
         if what == "work":
-            s.house.money += WORK_PAY
+            pay, up = int(dk.dial(s, "job_pay")), int(dk.dial(s, "job_diligence"))
+            s.house.money += pay
             g.fatigue = min(100, g.fatigue + FATIGUE_WORK)
-            self._note(s, f"{label}: {g.name} worked about the house; a few dollars came of it.", f"{label}: {g.name} worked the house (+${WORK_PAY}).",
-                       at=clock_text(day, SLOTS[slot][1]))
-            s.house.week_lines.append(f"* {label}: she worked about the house; a few dollars came of it.")
+            before_d = g.diligence_word
+            g.diligence = min(100, g.diligence + up)
+            job = JOB_WORDS[(day + (0 if slot == "mornings" else 1)) % len(JOB_WORDS)]
+            self._note(s, f"{label}: {g.name} worked at {job}; a little money came of it" + (f", and she is {g.diligence_word} at work now" if g.diligence_word != before_d else "") + ".",
+                       f"{label}: {g.name} worked a job (+${pay}; diligence {g.diligence - up} to {g.diligence}).", at=clock_text(day, SLOTS[slot][1]))
+            s.house.week_lines.append(f"* {label}: she worked at {job}; a little money came of it" + (f"; she is {g.diligence_word} at work now" if g.diligence_word != before_d else "") + ".")
             return
         if what in g.untrainable and not s.flags.get(f"{g.id}_spoke"):
             s.house.week_lines.append(f"* {label}: {self.skill_name(what)}: nothing came of it; she cannot, yet.")
@@ -1707,6 +1718,8 @@ class ClownGame(GameBase):
                     out.append(f"{ga.name}: {axis_word(ax, getattr(gb, ax))} → {axis_word(ax, getattr(ga, ax))}")
             if ga.fatigue_word != gb.fatigue_word:
                 out.append(f"{ga.name}: {gb.fatigue_word} → {ga.fatigue_word}")
+            if ga.diligence_word != gb.diligence_word:
+                out.append(f"{ga.name}: {gb.diligence_word} → {ga.diligence_word} at work")
             had, has = [c.name for c in gb.conditions], [c.name for c in ga.conditions]
             out += [f"{ga.name}: + {n}" for n in has if n not in had] + [f"{ga.name}: − {n}" for n in had if n not in has]
             if gb.status == "away" and ga.in_house():
@@ -1739,7 +1752,7 @@ class ClownGame(GameBase):
 
     # ---- commands ----------------------------------------------------------------------------------------------------
     def _skill_options(self, s: ClownState) -> list[Option]:
-        return [Option(id=k, label=v) for g in s.scenario.skills.values() for k, v in g.items()] + [Option(id="rest", label="Rest"), Option(id="work", label="Work the house")]
+        return [Option(id=k, label=v) for g in s.scenario.skills.values() for k, v in g.items()] + [Option(id="rest", label="Rest"), Option(id="work", label="Work a job in town")]
 
     def commands(self, state: ClownState) -> list[CommandSpec]:
         s = state
@@ -1748,7 +1761,7 @@ class ClownGame(GameBase):
         out = [CommandSpec(id="plan", label="Plan", mode="engine",
                            params=[Param(name="slot", label="slot", options=[Option(id="mornings", label="Mornings"), Option(id="afternoons", label="Afternoons")], default="mornings"),
                                    Param(name="skill", label="trains", options=self._skill_options(s))],
-                           hint="Set what the girl in training does in the mornings or the afternoons this week: one of the fifteen skills, Rest, or Work the house. The plan holds until changed.",
+                           hint="Set what the girl in training does in the mornings or the afternoons this week: one of the fifteen skills, Rest, or a job in town (a little money, and her diligence, which helps every slot after). The plan holds until changed.",
                            words=["plan", "train", "put her on", "work on", "practise", "practice", "mornings", "afternoons", "rest", "drill"])]
         offered = [h for h in dk.hand(s) if h.status == "live"]
         in_house = s.in_house()
@@ -1838,8 +1851,8 @@ class ClownGame(GameBase):
                 return state, CommandResult(ok=False, label="Plan", text=f"{g.name} cannot work on {self.skill_name(skill).lower()}, not yet.")
             setattr(s.plan, slot, skill)
             s.plan.set_week, s.plan.carried = s.house.week, False
-            what = "rest" if skill == "rest" else "work the house" if skill == "work" else self.skill_name(skill)
-            line = f"{slot.capitalize()}: {g.name} will {what if skill in ('rest',) else ('work the house' if skill == 'work' else 'work on ' + what.lower())}."
+            what = "rest" if skill == "rest" else "work a job in town" if skill == "work" else self.skill_name(skill)
+            line = f"{slot.capitalize()}: {g.name} will {what if skill in ('rest',) else ('work a job in town' if skill == 'work' else 'work on ' + what.lower())}."
             return s, CommandResult(label="Plan", text=line, log_line=line)
         if command_id == "turn_down":
             return state, CommandResult(ok=False, label="Book", text="Nothing is turned down in this house: a card stays in hand until another is taken.")
@@ -1946,7 +1959,7 @@ class ClownGame(GameBase):
         plan_rows = []
         for slot in ("mornings", "afternoons"):
             v = getattr(s.plan, slot)
-            plan_rows.append([TableCell(text=slot.capitalize()), TableCell(text="nothing set" if not v else "Rest" if v == "rest" else "Work the house" if v == "work" else self.skill_name(v),
+            plan_rows.append([TableCell(text=slot.capitalize()), TableCell(text="nothing set" if not v else "Rest" if v == "rest" else "A job in town" if v == "work" else self.skill_name(v),
                                                                             tone="warn" if not v else "neutral")])
         shows = [x for x in s.shows if not x.result]
         plan_rows.append([TableCell(text="Show"), TableCell(text="; ".join(f"{x.title} ({WEEKDAYS[weekday(x.at_abs // DAY)][:3]} {hhmm(x.at_abs % DAY)})" for x in shows) or "none booked",
@@ -1963,6 +1976,7 @@ class ClownGame(GameBase):
                 for k, nm in ids.items():
                     v, gain = x.skills.get(k, 0), x.week_gains.get(k, 0)
                     tiles.append(Chip(label=nm, value=f"{v}" + (f" (+{gain})" if gain else "") + f" {x.tier(k)}", tone=self.SKILL_TONES.get(x.tier(k))))
+            tiles.append(Chip(label="Diligence", value=f"{x.diligence} {x.diligence_word}", tone="ok" if x.diligence >= 50 else "neutral"))
             shows_x = [y for y in s.shows if y.girl == x.id and not y.result]
             what = "in training" if x.id == s.active else "a graduate" if x.graduated else "not in training"
             booked_x = ("; " + "; ".join(f"booked: {y.title} ({WEEKDAYS[weekday(y.at_abs // DAY)][:3]} {hhmm(y.at_abs % DAY)})" for y in shows_x)) if shows_x else ""

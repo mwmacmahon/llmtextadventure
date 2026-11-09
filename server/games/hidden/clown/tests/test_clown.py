@@ -232,10 +232,19 @@ def test_a_once_only_card_always_locks_and_an_ordinary_one_only_within_reach(gam
 
     assert dk.lock_for(st, hooks["rope_walk_birthday"], R(0.99))                   # no repeat block: locked whatever the roll
     judge = hooks["judge_dinner"]                                                  # wants mime and poise at a hard room: ask 90
-    assert dk.gap_of(st, judge) > 25 and not dk.lock_for(st, judge, R(0.0))       # Dot's mime is 15: too far to lock
-    st.active_girl.skills["mime"], st.active_girl.skills["poise"] = 70, 70
-    game._best(st)
-    assert dk.gap_of(st, judge) <= 25 and dk.lock_for(st, judge, R(0.1)) and not dk.lock_for(st, judge, R(0.9))
+    assert dk.ask_of(st, judge) == 90
+    slots = dk.slots_until_show(st, judge, st.now_abs)                           # Monday 09:00 to Saturday 20:30: ten slots, five a skill
+    assert slots == 10 and dk.reach_of(st, judge, st.now_abs) == 15 + 5 * 6      # Dot's mime 15 trained nonstop: 45, not 90
+    assert not dk.lock_for(st, judge, R(0.0))                                     # too far to lock whatever the roll
+    st.active_girl.skills["mime"], st.active_girl.skills["poise"] = 70, 70       # 70 + 5 slots at 3 (past sound) = 85 < 90
+    assert dk.reach_of(st, judge, st.now_abs) == 85 and not dk.lock_for(st, judge, R(0.0))
+    st.active_girl.skills["mime"], st.active_girl.skills["poise"] = 75, 80       # 75 + 15 = 90: she could get there
+    assert dk.reach_of(st, judge, st.now_abs) == 90 and dk.lock_for(st, judge, R(0.1)) and not dk.lock_for(st, judge, R(0.9))
+    widow = hooks["sorrel_party"]                                                  # children and balloons at an ordinary room: ask 50
+    assert dk.ask_of(st, widow) == 50 and dk.reach_of(st, widow, st.now_abs) == 5 + 5 * 6     # Dot's balloons 5, the weaker, trained: 35
+    assert not dk.lock_for(st, widow, R(0.0))
+    st.active_girl.skills["children"], st.active_girl.skills["balloons"] = 25, 25
+    assert dk.reach_of(st, widow, st.now_abs) >= 50 and dk.lock_for(st, widow, R(0.1))
 
 
 def test_the_referees_yes_books_it_for_the_girl_named_and_nothing_is_declined(game: ClownGame):
@@ -449,6 +458,23 @@ def test_the_bench_trains_a_little_at_her_own_booking_and_the_student_gets_a_boo
     s3 = game.after_turn(st, info(turn=3, minutes=60))
     assert any("Rosalind Vell worked at her own booking" in ln for ln in s3.house.report)
     assert any("on her own for her booking" in ln for ln in s3.house.report_numbers)
+
+
+def test_a_job_in_town_pays_a_little_and_raises_her_diligence_which_helps_every_slot(game: ClownGame):
+    st = new(game)
+    st, _ = game.run_command(st, "plan", {"slot": "mornings", "skill": "work"})
+    assert "job in town" in next(c for c in game.commands(st) if c.id == "plan").hint
+    money, g = st.house.money, st.active_girl
+    st = advance(game, st, SLOTS["mornings"][1] - st.clock.minute + 1, 2)
+    g = st.active_girl
+    assert st.house.money == money + 6 and g.diligence == 3 and g.fatigue == 10 + 4
+    assert any("worked at" in ln and "money came of it" in ln for ln in st.log) and any("diligence 0 to 3" in ln for ln in st.tally)
+    assert "a job in town" in game.render_bulletin(st, "") and "idle at work" in game.render_bulletin(st, "")
+    plain, _ = game._gain(st, g, "mime", False, "x")
+    g.diligence = 50
+    steady, why = game._gain(st, g, "mime", False, "x")
+    assert steady == plain + 1 and "steady at work +1" in why
+    assert any(c.label == "Diligence" for p in game.ui(st).panels if p.type == "list" for c in p.items)
 
 
 def test_a_reward_row_may_grow_the_hand(game: ClownGame):

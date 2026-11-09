@@ -28,6 +28,7 @@ AXIS_WORDS: dict[str, list[str]] = {
 SKILL_TIERS = ((0, "clumsy"), (30, "passable"), (60, "sound"), (85, "finished"))
 TIER_POINTS = {"clumsy": -2, "passable": 0, "sound": 2, "finished": 4}   # clumsy was -3: every early show a disaster (the dry run, 11-09)
 FATIGUE_TIERS = ((0, "fresh"), (30, "tired"), (60, "worn"), (80, "spent"))
+DILIGENCE_TIERS = ((0, "idle"), (25, "willing"), (50, "steady"), (75, "diligent"))   # not a clown skill: raised by a job in town, it helps every slot
 HEAT_TIERS = ((0, "quiet"), (25, "noticed"), (50, "watched"), (75, "hunted"))
 NAME_TIERS = ((0, "unknown"), (25, "talked of"), (50, "known"), (75, "famous"))
 SHOW_WORDS = ("disaster", "poor", "fine", "good", "triumph")
@@ -111,6 +112,7 @@ class Girl(BaseModel):
     conditions: list[Condition] = Field(default_factory=list)
     status: STATUS = "away"
     graduated: bool = False         # passed out as a finished clown; she may be put back in training (Switch) and her shows pay in full
+    diligence: int = 0              # 0..100, not a clown skill: a job in town raises it; steady and diligent girls get more from every slot
     credibility: int = 0            # -3..3, her own name in the trade, moved by her shows
     location: str = ""
     secrets: list[Secret] = Field(default_factory=list)
@@ -132,6 +134,10 @@ class Girl(BaseModel):
     @property
     def fatigue_word(self) -> str:
         return tier_of(self.fatigue, FATIGUE_TIERS)
+
+    @property
+    def diligence_word(self) -> str:
+        return tier_of(self.diligence, DILIGENCE_TIERS)
 
     def words(self) -> dict[str, str]:
         return {a: axis_word(a, getattr(self, a)) for a in AXES}
