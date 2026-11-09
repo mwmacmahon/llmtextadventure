@@ -657,6 +657,8 @@ async def test_the_first_evening_plays_as_the_content_says(engine: Engine, fake:
     fake.canned["AssistantReading"] = [reading("I sit by the fire and wait.", 60)]
     events = await play(engine, iid, "I sit by the fire and wait until something happens.")
     assert "ferrymans_daughter_reach" in events[-1]["data"]["mechanics"]["events"]
+    from engine.pipeline import is_fight                               # "sit by the fire" was a fight (B253)
+    assert not is_fight({"summary": "I sit by the fire with a cup of tea."}) and is_fight({"summary": "Brin fires at the creature"})
     assert state_of(engine, iid).clock.minute == 1140
     fake.canned["AssistantReading"] = [reading("I keep waiting.", 60)]
     events = await play(engine, iid, "I keep waiting until something happens.")
@@ -888,3 +890,22 @@ def test_the_description_is_shown_to_the_player_and_the_gm(engine):
     assert panel["items"][0]["value"] == SHEET["about"]
     st = engine.standing(iid)
     assert st["setup"]["about"] == SHEET["about"] and SHEET["about"] in st["prefix_text"]
+
+
+async def test_a_hooks_arrival_waits_out_a_walk_and_comes_on_the_next_quiet_turn(engine: Engine, fake: FakeProvider):
+    """B253 (part eleven §1f), the grimdark turn 10 through the pipeline: Tam's arrival falls due while the player crosses the
+    room; it is held, the mechanics row says so, and he comes in on the next quiet turn."""
+    iid = engine.create_instance("fantasy", SHEET)
+    fake.canned["AssistantReading"] = [reading("I look around the common room.", 5)]
+    await play(engine, iid, "I look around the common room.")
+    fake.canned["AssistantReading"] = [reading("I walk across the common room and head upstairs to my room.", 60)]
+    events = await play(engine, iid, "I walk across the room and up the stairs.")
+    m = events[-1]["data"]["mechanics"]
+    assert "ferrymans_daughter_reach" not in m["events"]
+    assert "held: ferrymans_daughter_reach, on the move" in m["holds"]
+    assert any(r["kind"] == "hold" and r["payload"]["why"] == "on the move" for r in engine.store.ledger(iid, 2))
+    fake.canned["AssistantReading"] = [reading("I sit by the fire with a cup of tea.", 5)]
+    events = await play(engine, iid, "I sit by the fire.")
+    assert "ferrymans_daughter_reach" in events[-1]["data"]["mechanics"]["events"]
+    from engine.pipeline import is_fight                               # "sit by the fire" was a fight (B253)
+    assert not is_fight({"summary": "I sit by the fire with a cup of tea."}) and is_fight({"summary": "Brin fires at the creature"})

@@ -2902,7 +2902,7 @@ TASK_WORDS: list[tuple[str, re.Pattern]] = [       # D148: the longer kind wins 
                           r"moves? to|climbs?|rows?|sails?)\b", re.I)),
     ("talk", re.compile(r"\b(?:asks?|talks?|tells?|questions?|speaks?|chats?|persuades?|bribes?|buys? .{0,20}drink|negotiates?|haggles?|"
                         r"interrogates?|presses?|confronts?|calls?|phones?|lies? to|bluffs?|charms?|threatens?)\b", re.I)),
-    ("fight", re.compile(r"\b(?:fights?|shoots?|fires?(?! ladder| escape| exit|place|light)|punch(?:es)?|attacks?|stabs?|swings? at|strikes?|"
+    ("fight", re.compile(r"\b(?:fights?|shoots?|(?<!the )(?<!a )(?<!by )(?<!his )(?<!her )(?<!my )(?<!their )(?<!our )(?<!your )fires?(?! ladder| escape| exit|place|light| burns| crackles)|punch(?:es)?|attacks?|stabs?|swings? at|strikes?|"
                          r"wrestles?|struggles?|grapples?|dodges?|lunges?|flees?|runs? from|chases?|tackles?|kicks?|bites?|retreats?|"
                          r"scrambles?|backs? away|wrench(?:es)?)\b", re.I)),
 ]
