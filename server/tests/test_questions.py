@@ -242,3 +242,29 @@ def test_a_hold_is_shown_on_the_mechanics_row_and_in_the_call_report():
     from round_report import ENGINE_KINDS, render_engine
     assert "hold" in ENGINE_KINDS
     assert "far from word: Reed Island" in render_engine({"kind": "hold", "payload": hold})
+
+
+def test_nobody_walks_into_the_players_own_room(engine, no_happenings):
+    """B255 (the owner, the grimdark save 2beb52d49390 turn 18: "pip just showed up in my damn room"): the game knows only
+    the inn; the readings say the room. From "enters his room and closes the door" until a reading takes the player out,
+    a hook's arrival and a happening with someone in it wait. "Waits for someone to come up the stairs" is no move."""
+    from engine.pipeline import in_private, quiet_why, ON_THE_MOVE
+    from engine.roles import AssistantReadingStaked
+    game = engine.games["fantasy"]
+    iid = engine.create_instance("fantasy", SHEET)
+    st = state_of(engine, iid)
+    doc = st.model_dump(mode="json")
+    readings = ["Ungdall waits in his room for someone to come up the stairs.",          # turn 17
+                "Ungdall tells the kitchen girl to return to work.",
+                "Ungdall enters his room with the kitchen girl and closes the door to observe her reaction."]   # turn 12
+    wait = AssistantReadingStaked.model_validate({"kind": "action", "risk": "none", "time_minutes": 230, "intents": [],
+                                                  "summary": "Ungdall settles in for the night and waits until midnight."})
+    assert not ON_THE_MOVE.search(readings[0])
+    assert quiet_why(game, st, wait, doc, 18, {"readings": readings}) == ("the player is in their own room", False)
+    assert in_private("Ungdall naps.", readings[1:])
+    assert not in_private("Ungdall goes down to the common room for a drink.", readings)
+    assert not in_private("Ungdall naps.", ["Ungdall leaves his room and heads for the market.", *readings])
+    assert not in_private("Ungdall looks around the common room.", [])
+    sit = wait.model_copy(update={"summary": "Ungdall waits a while."})
+    assert quiet_why(game, st, sit, doc, 18, {"readings": ["Ungdall drinks at the bar.", *readings]}) == ("", False)
+    assert quiet_why(game, st, sit, doc, 18, {"readings": readings})[0] == "the player is in their own room"

@@ -1837,6 +1837,12 @@ class Engine:
                 out["clarify"] = p.get("kind") == "clarify"
             elif r["kind"] == "model_call" and p.get("role") == "narrator":
                 out["about"] += [str((c.get("result") or {}).get("about") or "") for c in p.get("calls") or [] if (c.get("result") or {}).get("about")]
+        readings: dict[int, str] = {}                    # B255: the readings of the last ten turns, newest first
+        for r in self.store.ledger(iid):
+            if r["kind"] == "adjudication" and t - 10 < r["turn"] <= t:
+                p = r["payload"]
+                readings[r["turn"]] = " ".join([str(p.get("summary") or "")] + [str((i or {}).get("action") or "") for i in p.get("intents") or []])
+        out["readings"] = [readings[k] for k in sorted(readings, reverse=True)]
         told = [x.text for x in self.store.transcript(iid, roles=["narrator"]) if x.turn == t]
         out["quoted"] = any(ch in (told[-1] if told else "") for ch in ('"', "\u201c"))
         return out
@@ -2743,7 +2749,16 @@ WORLD_PROTOCOL = ("\n  <<ENEMY id move>> and <<HAZARD name>>  when THIS TURN lis
 # while the player is on the move, and for two turns after someone else did.
 ON_THE_MOVE = re.compile(r"\b(?:walks?|walking|strides?|striding|struts?|strutting|march(?:es|ing)?|heads?|heading|goes|going|go (?:to|up|down|out|back|home)|"
                          r"leaves?|leaving|exits?|climbs?|climbing|ascen(?:t|ds?)|descen(?:t|ds?)|crosses|crossing|steps? out|"
-                         r"up ?stairs|down ?stairs|up the stairs|down the stairs|to (?:my|his|her|their|the) room|on (?:my|his|her|their) way)\b", re.I)
+                         r"(?<!come )(?<!comes )(?<!coming )(?:up ?stairs|down ?stairs|up the stairs|down the stairs)|to (?:my|his|her|their|the) room|"
+                         r"on (?:my|his|her|their) way)\b", re.I)
+# B255 (the owner, 11-09, the grimdark save 2beb52d49390 turn 18: "pip just showed up in my damn room"): waiting till midnight
+# in his room, door closed since turn 12, Pip's "at the player's elbow" came; the game knows only "the Drowned Lantern".
+# The readings say where: the player's own room, a closed door, bed. Nobody walks up there until a reading takes them out.
+PRIVATE_IN = re.compile(r"\b(?:(?:my|his|her|their|own) (?:room|bedroom|chamber|garret|quarters|bed)|(?:closes?|shuts?|bars?|locks?|bolts?) the door|"
+                        r"in bed|to bed|turns? in for the night|settles? (?:in|down) for the night|beds? down)\b", re.I)
+PUBLIC_AGAIN = re.compile(r"\b(?:common room|taproom|downstairs|down the stairs|the bar\b|the street|outside|out of (?:the|my|his|her|their) room|"
+                          r"leaves? (?:the|my|his|her|their) room|opens? the door to)", re.I)
+PRIVATE_LOOKBACK = 10
 SPACING_TURNS = 2
 SPACING_MINUTES = 20            # and within this much game time: a long wait after someone came is room enough
 
@@ -2757,6 +2772,22 @@ def hold_lines(holds: list[dict]) -> list[str]:
         out.append(f"held: {h.get('event')}" + (" (fallback)" if h.get("variant") == "fallback" else "") + f", {h.get('why')}"
                    + (f" (waiting {waited // 60} h {waited % 60:02d} min)" if waited >= 60 else ""))
     return out
+
+
+def in_private(now: str, before: list[str]) -> bool:
+    """B255: is the player in their own room, by the readings (this turn's first, then the last ten, newest first)? The
+    first reading that says so decides: their room, a closed door or bed is private; the common room, the stairs down,
+    the street or leaving the room is not; a move anywhere else is not either."""
+    for words in [now, *before[:PRIVATE_LOOKBACK]]:
+        if not words:
+            continue
+        if PUBLIC_AGAIN.search(words):
+            return False
+        if PRIVATE_IN.search(words):
+            return True
+        if ON_THE_MOVE.search(words):
+            return False
+    return False
 
 
 def quiet_why(game: Any, state: Any, adj: Any, doc: dict, turn: int, last: dict | None = None) -> tuple[str, bool]:
@@ -2777,6 +2808,9 @@ def quiet_why(game: Any, state: Any, adj: Any, doc: dict, turn: int, last: dict 
         words = " ".join([adj.summary or ""] + [i.action or "" for i in adj.intents])
         if any(str(getattr(i, "transition", "") or "").startswith("move:") for i in adj.intents) or ON_THE_MOVE.search(words):
             return "on the move", False
+    now_words = " ".join([adj.summary or ""] + [i.action or "" for i in adj.intents]) if adj is not None and hasattr(adj, "intents") else ""
+    if in_private(now_words, last.get("readings") or []):
+        return "the player is in their own room", False
     recent = range(turn - SPACING_TURNS, turn)
     clock = getattr(game, "clock", None)
     clk = (sp.lookup(doc, clock.path, None) or {}) if clock else {}
