@@ -99,6 +99,7 @@ class Engine:
         self.games = games
         self._tapes: dict[str, Any] = {}          # iid -> the running turn's ledger writer, for the tape (engine/tape.py)
         self._mods_cache: dict[str, list[dict]] = {}   # iid -> the mods its save was made with (B79)
+        self._games_cache: dict[str, Any] = {}           # iid and mod hashes -> the game as that modded save sees it (B79)
         self.graves = Graveyard(store)            # the player-only section (B81): written here, read by the gallery alone
         self.providers: dict[str, Any] = {}       # step -> a provider to use instead of the role's (the narrator replay's capture)
         # Runtime settings the UI can change (the guard mode, the progress estimate); persisted beside the store.
@@ -251,8 +252,22 @@ class Engine:
             self._mods_cache[iid] = list(((inst.setup if inst else {}) or {}).get(mods_mod.SETUP_KEY) or [])
         return self._mods_cache[iid]
 
+    def game_of(self, inst: Any) -> Game:
+        """The game as this save plays it (B79): with its mods' scenario patch on the game's content loader, for every game
+        alike; the registered game itself for a save with no scenario patch. Cached per save."""
+        game = self.games[inst.game]
+        applied = list(((inst.setup or {}) if inst is not None else {}).get(mods_mod.SETUP_KEY) or [])
+        if not applied:
+            return game
+        key = f"{inst.id}:{','.join(str(m.get('hash')) for m in applied)}"
+        if key not in self._games_cache:
+            self._games_cache[key] = mods_mod.game_with(game, applied)
+        return self._games_cache[key]
+
     def _new_state(self, game: Game, setup: dict[str, Any]) -> tuple[str, BaseModel]:
-        """The game's new state with the mods' state patches on it (B79: scenario patch in the game, state patch here)."""
+        """The game's new state as the mods make it (B79): built by the game seeing the patched scenario, then the mods'
+        state patches on it. The same for every game."""
+        game = mods_mod.game_with(game, setup.get(mods_mod.SETUP_KEY))
         title, state = game.new_instance(setup)
         for m in mods_mod.parsed(setup.get(mods_mod.SETUP_KEY)):
             if m.get("state"):
@@ -270,7 +285,10 @@ class Engine:
         applied = mods_mod.resolve(self.cfg.resolve(self.cfg.server.content_root), game, list(mods or []))   # B79: name, hash, text
         if applied:
             setup[mods_mod.SETUP_KEY] = applied
+        if mods_mod.scenario_patch(applied):                     # the game's own content lint on the patched content, where it has one
+            _hook(mods_mod.game_with(game, applied), "lint_mod", default=None)
         title, state = self._new_state(game, setup)
+        game = mods_mod.game_with(game, applied)
         prefix = game.frozen_prefix(state)
         notes: list[str] = []
         for m in mods_mod.parsed(applied):                        # the prefix by section (THE TONE replaced, ...)
@@ -310,7 +328,7 @@ class Engine:
         inst = self.store.get_instance(iid)
         if not inst:
             raise KeyError(iid)
-        game = self.games[inst.game]
+        game = self.game_of(inst)
         if self.store.latest_turn(iid) != 0:
             return {"ok": False, "text": "Your sheet is read before the first turn only. The story has begun: say it in play, or undo to the start and re-read it there."}
         current = game.load_state(self.store.load_state(iid, 0))
@@ -370,7 +388,7 @@ class Engine:
         inst = self.store.get_instance(iid)
         if not inst:
             raise KeyError(iid)
-        game = self.games[inst.game]
+        game = self.game_of(inst)
         turn = self.store.latest_turn(iid)
         state = game.load_state(self.store.load_state(iid))
         name = str(_hook(game, "player_name", state, default="the player") or "the player")
@@ -414,7 +432,7 @@ class Engine:
             return
         yield {"event": "command", "data": {"ok": True, "text": res["text"], "mode": "engine", "label": label, "turn": 0}}
         inst = self.store.get_instance(iid)
-        game = self.games[inst.game]
+        game = self.game_of(inst)
         state = game.load_state(self.store.load_state(iid))
         yield {"event": "done", "data": {"turn": 0, "text": res["text"], "note": None, "model": None, "usage": {}, "seconds": 0,
                                          "mechanics": {"kind": "command", "applied": [f"command {sheet_mod.COMMAND}"]}, "ending": None,
@@ -448,7 +466,7 @@ class Engine:
         return [self._summary(i, *latest.get(i.id, (0, None))) for i in rows]
 
     def _summary(self, inst: Any, turn: int, doc: dict | None = None, state: BaseModel | None = None) -> dict[str, Any]:
-        game = self.games.get(inst.game)
+        game = self.game_of(inst) if inst.game in self.games else None
         line: list[dict[str, Any]] = []
         ending = None
         if game is not None:
@@ -472,7 +490,7 @@ class Engine:
         inst = self.store.get_instance(iid)
         if not inst:
             raise KeyError(iid)
-        game = self.games[inst.game]
+        game = self.game_of(inst)
         state = game.load_state(self.store.load_state(iid))
         rows = self.store.transcript(iid, undone=True)       # the undone turns too, each marked: the log strikes them through (B82)
         return {
@@ -488,7 +506,7 @@ class Engine:
         inst = self.store.get_instance(iid)
         if not inst:
             raise KeyError(iid)
-        game = self.games[inst.game]
+        game = self.game_of(inst)
         turn = self.store.latest_turn(iid)
         state = game.load_state(self.store.load_state(iid, turn))
         last = None
@@ -618,7 +636,7 @@ class Engine:
             raise ValueError(f"unknown game {game!r}")
         iid = self.store.import_instance(doc, origin={"imported": True, "original_id": doc["instance"].get("id"),
                                                       "exported": doc.get("exported")})
-        self.games[game].load_state(self.store.load_state(iid))
+        self.game_of(self.store.get_instance(iid)).load_state(self.store.load_state(iid))
         self.graves.import_(doc.get("graveyard") or [], iid)
         return iid
 
@@ -703,7 +721,7 @@ class Engine:
         if not inst:
             yield {"event": "error", "data": {"message": "no such instance"}}
             return
-        game = self.games[inst.game]
+        game = self.game_of(inst)
         state: BaseModel = game.load_state(self.store.load_state(iid))
         start = state.model_copy(deep=True)            # the turn's opening state, for what the player sees change (B18)
         turn = self.store.latest_turn(iid) + 1
@@ -1324,7 +1342,7 @@ class Engine:
         if adj_row is None or any(r["kind"] == "command" and not r["payload"].get("typed") for r in rows):
             yield {"event": "error", "data": {"message": "That turn was a command, not words, so there is nothing to tell again.", "step": "rewrite"}}
             return
-        game = self.games[inst.game]
+        game = self.game_of(inst)
         schema = getattr(game, "adjudication_schema", AssistantReading)
         if issubclass(schema, AssistantReadingV2) and "pivotal" in adj_row:       # a stored adjudication with its stakes (D115)
             schema = AssistantReadingStaked

@@ -70,7 +70,7 @@ async def test_a_mod_applies_at_creation_and_the_save_keeps_it(modded, fake):
     inst = modded.store.get_instance(iid)
     kept = inst.setup[md.SETUP_KEY]
     assert kept[0]["name"] == "Hard Maud" and kept[0]["text"] == MOD and kept[0]["hash"] == md.digest(MOD)
-    st = state_of(modded, iid)
+    st = modded.game_of(inst).load_state(modded.store.load_state(iid))     # the save's game: the files read with its mods on
     assert st.item("gold").count == 6 and st.player.heat == 10
     assert st.person("maud").attitude == -1 and st.person("maud").wants == "Coin up front, always."
     assert "A crueller evening for Brin." in inst.prefix_text and "- Iron and tallow." in inst.prefix_text
@@ -113,7 +113,7 @@ async def test_the_grimdark_mod_loads_on_its_game_only(engine, fake):
     assert [m["name"] for m in md.list_mods(root, g)] == ["Grimdark"]
     assert md.list_mods(root, engine.games["fantasy"]) == [] or all(m["name"] != "Grimdark" for m in md.list_mods(root, engine.games["fantasy"]))
     iid = engine.create_instance("super_grimdark_fantasy", SHEET, mods=["grimdark.yml"])
-    st = engine.games["super_grimdark_fantasy"].load_state(engine.store.load_state(iid))
+    st = engine.game_of(engine.store.get_instance(iid)).load_state(engine.store.load_state(iid))
     assert st.item("gold").count == 6 and st.player.heat == 10 and st.player.renown == 1 and st.person("rook").attitude == -2
     inst = engine.store.get_instance(iid)
     assert "This is a pulp table" in inst.prefix_text and "Do not soften." in inst.prefix_text
@@ -126,3 +126,31 @@ async def test_the_grimdark_mod_loads_on_its_game_only(engine, fake):
     events = [e async for e in engine.run_turn(iid, "I listen to the rumours at the bar.")]
     done = next(e for e in events if e["event"] == "done")["data"]
     assert not any(r.get("rule") == "too_far" for r in done["mechanics"]["rulings"]) and done["mechanics"]["mods"][0]["name"] == "Grimdark"
+
+
+@pytest.mark.parametrize("game_name,key,pid,field,value", [("noir", "people", "brandt", "attitude", -2),
+                                                           ("station", "crew", "okafor", "trust", 2),
+                                                           ("fantasy", "people", "maud", "attitude", -1)])
+async def test_mods_are_generic_every_game_alike(engine, fake, tmp_path, game_name, key, pid, field, value):
+    """The owner (11-09): mods are the engine's, not the fantasy's. A scenario patch reaches the game wherever it reads its
+    scenario (at creation and on every load, through its content loader), the state patch and the prefix too, for noir,
+    the station and the fantasy alike."""
+    root = tmp_path / "content"
+    (root / game_name / "mods").mkdir(parents=True)
+    text = (f"name: Test\nabout: x\ngame: {game_name}\nscenario:\n  {key}:\n    {pid}: {{{field}: {value}}}\n"
+            "prefix:\n  append:\n    \"MOD NOTES\": \"A line the mod added.\"\n")
+    (root / game_name / "mods" / "t.yml").write_text(text)
+    engine.cfg.server.content_root = root
+    iid = engine.create_instance(game_name, SHEET if game_name == "fantasy" else {}, mods=["t.yml"])
+    inst = engine.store.get_instance(iid)
+    game = engine.game_of(inst)
+    assert game is not engine.games[game_name]
+    sc = next(iter(game.content.scenarios().values()))
+    assert next(x for x in sc[key] if x["id"] == pid)[field] == value                  # what the game reads all through play
+    assert next(iter(engine.games[game_name].content.scenarios().values())) != sc       # the registered game is untouched
+    st = game.load_state(engine.store.load_state(iid))                                   # a load re-reads the files: still patched
+    person = next(x for x in getattr(st, key) if x.id == pid)
+    assert getattr(person, field) == value
+    assert "A line the mod added." in inst.prefix_text
+    plain = engine.create_instance(game_name, SHEET if game_name == "fantasy" else {})
+    assert engine.game_of(engine.store.get_instance(plain)) is engine.games[game_name]

@@ -170,6 +170,42 @@ def patch_sections(text: str, patch: dict | None, fill: dict[str, str] | None = 
     return "\n".join(lines), notes
 
 
+def scenario_patch(applied: list[dict] | None) -> dict:
+    """The applied mods' scenario patches as one (later mods over earlier ones)."""
+    out: dict = {}
+    for m in parsed(applied):
+        if m.get("scenario"):
+            out = merge_patch(out, m["scenario"])
+    return out
+
+
+class PatchedContent:
+    """A game's content loader with a save's scenario patch on every scenario it returns (B79, generic): every game reads
+    its scenario through `content.scenarios()`, at creation and all through play (gates, aliases, the cast, projects), so
+    the patch holds wherever the game looks. Everything else is the game's own loader's."""
+
+    def __init__(self, base: Any, patch: dict):
+        self._base, self._patch = base, patch
+
+    def scenarios(self) -> dict[str, dict]:
+        return {k: merge_patch(v, self._patch) for k, v in self._base.scenarios().items()}
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._base, name)
+
+
+def game_with(game: Any, applied: list[dict] | None) -> Any:
+    """The game as a modded save sees it: a shallow copy whose content loader carries the mods' scenario patch; the game
+    itself when no mod patches the scenario. Generic: any game whose content is a `Content` (gamekit) or like it."""
+    patch = scenario_patch(applied)
+    if not patch or getattr(game, "content", None) is None or isinstance(game.content, PatchedContent):
+        return game
+    import copy
+    g = copy.copy(game)
+    g.content = PatchedContent(game.content, patch)
+    return g
+
+
 def rulings_off(applied: list[dict] | None) -> set[str]:
     return {str(r) for m in parsed(applied) for r in (m.get("rulings_off") or [])}
 

@@ -291,7 +291,6 @@ class Hidden(BaseModel):
     recent: list[str] = Field(default_factory=list)
     facts: list[str] = Field(default_factory=list)
     terms: list[str] = Field(default_factory=list)
-    scenario_patch: dict = Field(default_factory=dict)   # B79: the mods' scenario patch, re-applied whenever the files are read again
 
 
 class Deck(BaseModel):

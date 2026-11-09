@@ -10,7 +10,8 @@ game: fantasy                       # the game whose form shows it; a mod for an
 order: 10                           # optional: the order mods apply in when several are ticked (then by file name)
 
 # The scenario file, as a JSON merge patch (RFC 7386): only the keys named change; null deletes a key. A list of
-# objects with ids (people, places, events) is patched by id: an id there is merged, null removes it, a new id adds one.
+# objects with ids (people, places, events; a station's crew) is patched by id: an id there is merged, null removes it, a
+# new id adds one. Any game: the patch holds wherever the game reads its scenario, at the start and all through play.
 scenario:
   people:
     maud:

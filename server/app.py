@@ -125,7 +125,7 @@ async def create_instance(body: NewInstance, request: Request):
     except ValueError as e:                     # a required field left empty, a choice not offered (B21, D154)
         raise HTTPException(400, str(e))
     log.info("instance.create " + logs.kv(iid=iid, game=body.game, setup=json.dumps(body.setup)))
-    game = engine.games[body.game]
+    game = engine.game_of(store.get_instance(iid))
     if engine.sheet_on(game, game.load_state(store.load_state(iid))):
         await engine.read_sheet(iid)            # the sheet pass (B90): the state made to match what the player wrote
     return engine.instance_view(iid)
