@@ -197,3 +197,34 @@ def test_word_from_the_city_waits_for_the_city_whoever_is_on_the_island(engine):
         info = TurnInfo(turn=5, elapsed_minutes=5, rng=random.Random(3), player_text="I look around.")
         after = game.after_turn(s2, info)
         assert (len(after.hooks) > before) == deals, place
+
+
+def test_one_newcomer_a_scene(engine, no_happenings):
+    """B250 (part eleven §1c), the grimdark turns 10-11: Tam walked up (unmet), then Pip. While Tam (met at the walk-up) is
+    still here within six turns, another unmet person does not walk up: not a hook's arrival naming them, not a happening
+    with them in it. A met person (Tam back for his answer) is no newcomer and still comes; after six turns the next may."""
+    import random
+    from engine import events as ev, spontaneous as spon
+    game = engine.games["fantasy"]
+    iid = engine.create_instance("fantasy", SHEET)
+    st = state_of(engine, iid)
+    st.player.location = "The Drowned Lantern"
+    tam, pip = st.person("tam"), st.person("pip")
+    tam.location, tam.met = "The Drowned Lantern", True
+    pip.location, pip.met = "The Drowned Lantern", False
+    engine.store.append_ledger(iid, 10, "event_fired", {"event_id": "ferrymans_daughter_reach", "variant": "trigger",
+                                                        "directive": "Tam Reedy the ferryman comes in wet and stands by the table."})
+    engine.store.append_ledger(iid, 10, "delta", {"applied": ["people.tam.met: False -> True"], "rejected": []})
+    why, names, ids = engine._newcomer(iid, 11, game, st)
+    assert why == "Tam Reedy came in lately and is still here" and "pip" in ids and "pip" in names
+    doc = st.model_dump(mode="json")
+    pip_comes = spon.Spontaneous(id="pip_tags_along", chance_per_hour=1.0, who=["pip"], directive="Pip is at the player's elbow.")
+    assert not no_happenings([pip_comes], doc, random.Random(1), 30, 11, 2000, newcomer=why, unmet=ids)[0]
+    reach = ev.Event.model_validate({"id": "pip_reach", "hook": "y", "trigger": True, "directive": "Pip Tallow comes up with a question."})
+    ctx = ev.EffectContext(newcomer=why, unmet=names)
+    assert not ev.tick([reach], doc, 11, ctx=ctx)[0] and ctx.holds[0]["why"] == why
+    back = ev.Event.model_validate({"id": "tam_back", "hook": "z", "trigger": True, "directive": "Tam Reedy comes back for his answer."})
+    assert [f.event_id for f in ev.tick([back], doc, 11, ctx=ev.EffectContext(newcomer=why, unmet=names))[0]] == ["tam_back"]
+    assert engine._newcomer(iid, 17, game, st)[0] == ""                       # six turns on: room for the next
+    tam.location = "Lantern Row"
+    assert engine._newcomer(iid, 11, game, st)[0] == ""                       # he has gone: room for the next

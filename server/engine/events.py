@@ -48,6 +48,8 @@ form after a deadline) or an `expires` clause, per §8.2.
 """
 from __future__ import annotations
 
+import re
+
 import copy
 
 from typing import Any, Literal
@@ -72,6 +74,8 @@ class EffectContext(BaseModel):
     soft: bool = False                          # B248: the why is only a scene in progress or a recent caller: a hook held this long gives way
     patience: int = 120                         # game minutes a hook waits out a soft why before it comes anyway
     far: str = ""                               # B249: why word from elsewhere cannot reach the player here ("far from word: Reed Island")
+    newcomer: str = ""                          # B250: a newcomer of the last six turns is still here ("Tam Reedy came in lately and is here")
+    unmet: list[str] = Field(default_factory=list)   # B250: the names (lower case, full and first) of the people the player has not met
     holds: list[dict] = Field(default_factory=list)   # what waited this turn for a quiet one, and why (the ledger's)
 
 Strictness = Literal["scripted", "guided", "advisory"]
@@ -333,6 +337,12 @@ def apply_effects(effects: list[dict], doc: dict, directives: list[str], log_pat
 
 # ---- tick -----------------------------------------------------------------
 
+def names_any(text: str | None, names: list[str]) -> bool:
+    """B250: does the text name any of these people (lower-case names, whole words)?"""
+    low = (text or "").lower()
+    return any(re.search(r"\b" + re.escape(n) + r"\b", low) for n in names if n)
+
+
 def where_holds(e: Event, doc: dict, location_path: str = "player.location") -> bool:
     """An event's `where`: the player is in one of its places (none named: anywhere)."""
     if not e.where:
@@ -412,16 +422,20 @@ def tick(events: list[Event], doc: dict, turn: int, clock_path: str = "clock", l
             ctx.holds.append({"event": e.id, "hook": e.hook, "variant": variant, "why": ctx.far,
                               "waited": _clock_abs(doc, clock_path, mpd) - e.held_since})
             continue
-        if e.hook and says and ctx is not None and ctx.unquiet:
+        why_now = ctx.unquiet if ctx is not None else ""
+        soft_now = ctx.soft if ctx is not None else False
+        if not why_now and ctx is not None and ctx.newcomer and variant == "trigger" and names_any(says, ctx.unmet):
+            why_now, soft_now = ctx.newcomer, True       # B250: one newcomer a scene; met people (Tam back for his answer) still come
+        if e.hook and says and why_now:
             # B104, B235, B248: a hook's caller (in its own scene too) and word from elsewhere wait for a quiet turn; a hook
             # that has waited `patience` game minutes gives way to a soft why (a scene in progress, a recent caller)
             now_abs = _clock_abs(doc, clock_path, mpd)
             waited = now_abs - e.held_since if e.held_since is not None else 0
-            if not (ctx.soft and waited >= ctx.patience):
+            if not (soft_now and waited >= ctx.patience):
                 if e.held_since is None:
                     e.held_since = now_abs
                 held.add(e.id)
-                ctx.holds.append({"event": e.id, "hook": e.hook, "variant": variant, "why": ctx.unquiet, "waited": waited})
+                ctx.holds.append({"event": e.id, "hook": e.hook, "variant": variant, "why": why_now, "waited": waited})
                 continue
         e.held_since = None
         e.fired, e.fired_turn, e.variant = True, turn, variant

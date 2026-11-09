@@ -1726,10 +1726,12 @@ class Engine:
                                           "if the player would notice the change, let it show, lightly.")
         # events tick (also on clarify turns: time has not moved, so usually nothing fires)
         events = _events_of(game, doc)
+        nc = self._newcomer(iid, turn, game, state)          # B250: one newcomer a scene
         ectx = ev.EffectContext(pending_path=ppath or "hidden.pending", clock_path=clock_path, minutes_per_day=clock.minutes_per_day if clock else 1440, turn=turn,
                                 location_path=getattr(game, "location_path", "player.location"),
                                 **dict(zip(("unquiet", "soft"), quiet_why(game, state, adj, doc, turn, self._last_turn(iid, turn)))),
-                                far=str(_hook(game, "far_from_word", state, default="") or ""))
+                                far=str(_hook(game, "far_from_word", state, default="") or ""),
+                                newcomer=nc[0], unmet=nc[1])
         # B105 (D177): a question about the scene (kind trivial) moves nothing: no event, pending or hazard ticks on it
         quiet = adj is not None and adj.kind == "trivial"
         fired, expired, ev_directives = ([], [], []) if quiet else ev.tick(events, doc, turn, clock_path, log_path, ectx, since_abs=since_abs)
@@ -1754,7 +1756,7 @@ class Engine:
                 now_abs = int(clk.get("day", 1)) * (clock.minutes_per_day if clock else 1440) + int(clk.get("minute", 0))
                 busy = ectx.unquiet or ("someone came to the player this turn" if any(e.hook and e.fired and e.fired_turn == turn and e.directive for e in events) else "")
                 happened, h_directives = spon.roll(items, doc, rng_for(iid, turn, "spontaneous"), elapsed, turn, now_abs, clock_path, log_path,
-                                                   ctx=ectx, busy=busy)
+                                                   ctx=ectx, busy=busy, newcomer=ectx.newcomer, unmet=nc[2])
                 sp.assign(doc, spath, [i.model_dump(mode="json") for i in items])
                 directives.extend(h_directives)
                 rpath = getattr(game, "recent_path", None)
@@ -1776,6 +1778,44 @@ class Engine:
                 "notes": notes, "pending_fired": pending_fired, "pending_lapsed": pending_lapsed, "holds": list(ectx.holds),
                 "fail_streak": self._fail_streak(iid, turn) if assessments else 0,
                 "player_name": _hook(game, "player_name", state, default="the player")}
+
+    def _newcomer(self, iid: str, turn: int, game: Any, state: Any, window: int = 6) -> tuple[str, list[str], set[str]]:
+        """B250 (part eleven §1c): at most one newcomer a scene. Returns (why, the unmet people's names, their ids): why is
+        set when someone the player had not met walked up in the last six turns (a happening's who, or a hook's arrival that
+        names them) and is still here."""
+        people = list(getattr(state, "people", None) or getattr(state, "crew", None) or [])
+        unmet = [q for q in people if not getattr(q, "met", True)]
+        names = sorted({n for q in unmet for n in (str(q.name).lower(), str(q.name).lower().split(" ")[0]) if len(n) >= 3})
+        ids = {q.id for q in unmet}
+        here = set(_hook(game, "people_here", state, default=None) or [])
+        if not here:
+            return "", names, ids
+        by_name = {n: q.id for q in people for n in (str(q.name).lower(), str(q.name).lower().split(" ")[0]) if len(n) >= 3}
+        came: set[str] = set()
+        met_lately: set[str] = set()
+        try:
+            rows = [r for r in self.store.ledger(iid) if turn - window <= r["turn"] < turn]
+        except Exception:  # noqa: BLE001 - a scratch store without the instance
+            return "", names, ids
+        for r in rows:
+            p = r["payload"]
+            if r["kind"] == "happening":
+                came |= set(p.get("who") or [])
+            elif r["kind"] == "event_fired" and p.get("variant") == "trigger":
+                text = str(p.get("directive") or "").lower()
+                came |= {pid for n, pid in by_name.items() if re.search(r"\b" + re.escape(n) + r"\b", text)}
+            elif r["kind"] in ("delta", "drift"):
+                for ln in (p.get("applied") or []) + (p.get("changes") or []):
+                    m = re.match(r"people\.([\w-]+)\.met: False -> True", str(ln))
+                    if m:
+                        met_lately.add(m.group(1))
+        new = sorted(pid for pid in came & here if pid in ids or pid in met_lately)
+        if not new:
+            return "", names, ids
+        who = next((q.name for q in people if q.id == new[0]), new[0])
+        others = [q for q in unmet if q.id not in new]           # the newcomer is never held back by being one
+        names = sorted({n for q in others for n in (str(q.name).lower(), str(q.name).lower().split(" ")[0]) if len(n) >= 3})
+        return f"{who} came in lately and is still here", names, {q.id for q in others}
 
     def _last_turn(self, iid: str, turn: int) -> dict:
         """Last turn as quiet_why reads it (B248): the people the referee had present, the people checks were rolled at,
