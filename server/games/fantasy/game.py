@@ -206,6 +206,11 @@ def _words(text: str) -> set[str]:
     return {x.rstrip("s") for x in re.findall(r"[a-z]+", (text or "").lower()) if len(x) >= 4 and x not in STOP}
 
 
+def fact_clauses(fact: str) -> list[str]:
+    """A fact as the clauses a card shows one by one ("Sells pelts at the Market of Hooks; sleeps at the Lantern" is two)."""
+    return [c.strip().rstrip(".").strip() for c in re.split(r";|\.\s+", fact or "") if c.strip().rstrip(".").strip()]
+
+
 def city_from(sc: dict) -> City:
     city = sc.get("city") or {}
     return City(id=sc["id"], name=sc.get("name", sc["id"]), premise=sc.get("premise", ""), city_name=city.get("name", ""),
@@ -1020,7 +1025,8 @@ class FantasyGame(GameBase):
             "- set <person id>.told value=<tell id>: the person gave that piece of what they know this turn. The game state lists the open pieces, with "
             "their ids, for the people with the player; one row per piece told.",
             "- set <person id>.status alive|dead|missing|gone; set <person id>.condition <a few words>; set <person id>.mood <a word>.",
-            "- learned <person id> value=fact: what they told the player or what the player learned about them, one sentence. learned player value=clue: "
+            "- learned <person id> value=fact: what they told the player or what the player learned about them, one sentence; when it makes something "
+            "already known about them no longer so (they moved, changed sides, were lying), note=replaces <a few words of the old fact>. learned player value=clue: "
             "a fact the player learned (a name, a place, a time, what a thing is), only when new.",
             "- new person value=name, field=<place>, note=role: anyone the prose names who is not listed (at most two a turn). An alias of a listed "
             "person is that person: use their id.",
@@ -1918,7 +1924,12 @@ class FantasyGame(GameBase):
             return True
         if kind == "learned":
             f = value.strip()
-            if f and f not in q.facts:
+            old = self._replaced_fact(s, q, ch)
+            if f and old is not None and f not in q.facts:          # B243 (c): what is so now takes the old fact's place
+                q.facts[q.facts.index(old)] = f
+                q.shown = [x for x in q.shown if x not in fact_clauses(old)]
+                w.note(f"people.{q.id}.facts: {old!r} -> {f!r}")
+            elif f and f not in q.facts:
                 q.facts.append(f)
                 w.note(f"people.{q.id}.facts += {f!r}")
             self._mark_told(s, [q], f, w)
@@ -1957,6 +1968,64 @@ class FantasyGame(GameBase):
             return True
         w.reject(f"people.{q.id}.{field or kind}", "not a field the referee may write", value)
         return True
+
+    @staticmethod
+    def _replaced_fact(s: FantasyState, q: Person, ch: Change) -> str | None:
+        """B243 (c): `learned <id> value=<fact>, note=replaces <words of the old one>`: the old fact the words name (two of its
+        content words, the tells' test), or None."""
+        m = re.match(r"\s*replaces?\b[:=]?\s*(.+)", ch.note or "", re.I)
+        if not m:
+            return None
+        words = _words(m.group(1))
+        best = max(q.facts, key=lambda f: len(words & _words(f)), default=None)
+        return best if best is not None and len(words & _words(best)) >= min(2, len(words) or 1) else None
+
+    def seed_facts(self, s: FantasyState, q: Person) -> list[str]:
+        """B243: the facts the content gave this person (the scenario's cast, their hook's cast), as clauses."""
+        raw: list[str] = []
+        try:
+            rows = list((self.scenario(s.city.id) or {}).get("people") or [])
+            if q.hook:
+                rows += list((self.hooks_content().get(q.hook) or {}).get("people") or [])
+        except Exception:  # noqa: BLE001 - a save whose content moved: every fact counts as learned
+            rows = []
+        for r in rows:
+            if isinstance(r, dict) and r.get("id") == q.id:
+                raw += [str(f) for f in r.get("facts") or []]
+        return [c for f in raw for c in fact_clauses(f)]
+
+    def card_notes(self, s: FantasyState, q: Person) -> list[str]:
+        """B243 (a): a card shows what the player learned: facts learned in play at once, newest first; the content's own
+        facts only once a telling has shown them (clause by clause, after them, newest first)."""
+        seeds = self.seed_facts(s, q)
+        raw = {c for f in q.facts for c in fact_clauses(f)}
+        learned = [f for f in q.facts if not set(fact_clauses(f)) <= set(seeds)]
+        told = [c for c in q.shown if c in seeds and c in raw]
+        return learned[::-1] + told[::-1]
+
+    def _seeds_shown(self, s: FantasyState, prose: str) -> None:
+        """B243 (a): a content fact's clause shows on the card once a telling since the meeting says it: two of its content
+        words in one sentence, the person named in that sentence or the one before (scattered words are not a telling:
+        Lilith's turn 28 had "sleep" for Mirren and "lantern" for a boat light, which is not Hazel sleeping at the Lantern)."""
+        sents = [x for x in re.split(r"(?<=[.!?])\s+|\n+", prose or "") if x.strip()]
+        if not sents:
+            return
+        low = [x.lower() for x in sents]
+        sw = [_words(x) for x in sents]
+        for q in s.people:
+            if not q.met:
+                continue
+            raw = {c for f in q.facts for c in fact_clauses(f)}
+            todo = [c for c in self.seed_facts(s, q) if c in raw and c not in q.shown]
+            if not todo:
+                continue
+            called = {w.lower() for n in [q.name, *q.aliases] for w in re.findall(r"[A-Za-z]{3,}", n or "") if w.lower() not in PERSON_TITLES}
+            named = [bool(called & set(re.findall(r"[a-z]+", x))) for x in low]
+            for c in todo:
+                cw = _words(c)
+                need = min(2, len(cw))
+                if cw and any(len(cw & sw[i]) >= need and (named[i] or (i > 0 and named[i - 1])) for i in range(len(sents))):
+                    q.shown.append(c)
 
     def _mark_told(self, s: FantasyState, people: list[Person], text: str, w: Writer, tell_id: str = "") -> bool:
         words = _words(text)
@@ -2088,6 +2157,7 @@ class FantasyGame(GameBase):
                 return s
             p.fate, p.fate_note = "", ""
         p.shown_notes, p.turn_notes, p.notes_turn = list(p.turn_notes), [], info.turn
+        self._seeds_shown(s, info.prose)                                 # B243: the cards follow the telling
         p.carry_lines = []
         p.shown_notes += wo.land(self, s, info.calls, info.turn)          # the world's calls and the backstop (B206)
         if p.fate == "dead" and p.fate_turn < info.turn:                  # a death the narrator was told inline: it ends this turn
@@ -2699,11 +2769,11 @@ class FantasyGame(GameBase):
             met = [q for q in s.people if q.met]
             if met:
                 lines.append("PEOPLE")
-                lines += [f"  - {q.name}, {q.role}; {q.attitude_word}; last seen {q.seen_at or 'unknown'}." + (f" {q.facts[-1]}" if q.facts else "") for q in met]
+                lines += [f"  - {q.name}, {q.role}; {q.attitude_word}; last seen {q.seen_at or 'unknown'}." + "".join(f" {f}" for f in self.card_notes(s, q)[:1]) for q in met]
             heard = [q for q in s.people if q.heard_of and not q.met]
             if heard:
                 lines.append("HEARD OF")
-                lines += [f"  - {q.name}." + (f" {q.facts[-1]}" if q.facts else "") for q in heard]
+                lines += [f"  - {q.name}." + "".join(f" {f}" for f in self.card_notes(s, q)[:1]) for q in heard]
             if p.debts:
                 lines.append("OWED")
                 lines += [f"  - {d}" for d in p.debts]
@@ -3012,10 +3082,12 @@ class FantasyGame(GameBase):
                 EntityCard(id=q.id, title=q.name if self.name_shown(s, q) else (q.role or "someone, not yet named"),
                            subtitle=(q.role or None) if self.name_shown(s, q) else "not yet named",
                            badges=[Chip(label="attitude", value=q.attitude_word, tone=self.ATTITUDE_TONES.get(q.attitude_word)),
+                                   *([Chip(label="mood", value=q.mood)] if q.mood else []),
                                    *([Chip(label="status", value=q.status, tone="bad")] if q.status != "alive" else [])],
-                           details=[Chip(label="Last seen", value=q.seen_at or "unknown")], notes=q.facts)
+                           details=[Chip(label="Last seen", value=q.seen_at or "unknown")], notes=self.card_notes(s, q))
                 for q in met] + [
-                EntityCard(id=q.id, title=q.name if self.name_shown(s, q) else (q.role or "someone, not yet named"), subtitle="heard of, not met", notes=q.facts,
+                EntityCard(id=q.id, title=q.name if self.name_shown(s, q) else (q.role or "someone, not yet named"), subtitle="heard of, not met",
+                           notes=self.card_notes(s, q),
                            details=[Chip(label="Said to be at", value=q.location)] if q.location and q.location != "Unknown" else []) for q in heard]),
             ListPanel(title="Places", items=self._places_panel(s), layout="stack"),
             QuestPanel(title="Quests", rows=self.quest_rows(s)),
