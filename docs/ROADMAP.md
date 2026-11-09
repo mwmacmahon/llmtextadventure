@@ -333,6 +333,8 @@ log. Design: INDEX.md; the memory rules.
   this page is re-cut.
 - A save's cost counts only live calls (B131); a "spent including undone" figure if wanted.
 - Long rounds on the phone: the light page is the answer (B15).
+- The game servers as a contract (`docs/SERVERS.md`, B232): a player's server pinned and moved only by the owner with
+  dev mode off at the server, the rounds servers the build chat's, the dev servers at will; Lilith's :8016 is the first.
 
 ## 18. Ideas not yet weighed
 

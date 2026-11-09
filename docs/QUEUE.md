@@ -50,13 +50,17 @@ Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a shor
 
 ## The queue, in order (the owner, 11-08 evening; part seven put first 11-08 night; part eight 11-09)
 
-0. **Her server** (B230, the owner 11-09): a dedicated server for her game, pinned and never restarted by the build;
-   then she plays on it. Part ten, later: the floor's witness and a fair trade (B229), B224's unplain rest. B221 (XP) is on the docket
+0. *(Built: B230, aa380a8, ec93ec6; see 0c.)* Her server, then she plays on it. Part ten, later: the floor's witness and a fair trade (B229), B224's unplain rest. B221 (XP) is on the docket
    for after her first couple of games, the possibilities laid out on its line.
    *Landed 11-08 evening (the build chat's clock), all of part nine:* B217 3fffe54, B225 6062202, B219 96ef2d1, B220 08d6a23, B226
    1197b1c, B45 9a9d925, B227 c4d9ff8, B222 a2ee5ce, B223 76780f0, B224 ada23f6 (the plain three), B228 f3ef452; the §12
    round 6735ec72e948: edge on 9 of 10, settled rows with a why 2 of 2, floor raises 2 (one prying, one a fair trade: B229),
    no retells, no deaths, Sneak Attack and finesse seen.
+0c. **The servers formal, dev mode off on hers** (B232, the owner 11-09; the paste written 11-09): `TA_DEV_MODE=off` on
+   :8016, hidden games unloaded, no switch in Settings; `docs/SERVERS.md` is the contract (written by the side chat),
+   `launch.json` the mechanism; her server moved to the commit that carries the flag by the update script.
+   *Landed 11-08 19:10 (the build chat's clock):* B230, her server on :8016 from `../llmtextadventure-lilith` pinned at
+   6c9099a with its own data folder (aa380a8), `lilith_update.sh` (ec93ec6), the stale :8010 stopped.
 0b. **Super Grimdark Fantasy and the mods first cut** (B231, B79, B89; the owner 11-09; the paste written 11-09): the
    hidden copy renamed and made a true derived game (the fantasy's code and content always, its own saves and mods,
    dev mode only); the mods system's first cut as designed (YAML merge patch, the per-game mods directory, upload,
