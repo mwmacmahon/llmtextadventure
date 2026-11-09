@@ -145,7 +145,7 @@ def lift_of(state: ClownState | None, dial) -> int:
 
 
 def price_of(card: dict, state: ClownState | None = None, dial=None, n_skills: int = 15) -> int:
-    """The contract's price: the card's, scaled (harbour_price_scale), and grown with the lift in proportion to her grid's expected sum
+    """The contract's price: the card's, scaled (harbour_price_scale), never under harbour_price_floor, and grown with the lift in proportion to her grid's expected sum
     (the seed as written, every other skill ten on average), capped (harbour_price_cap). Without a state, the card's own price."""
     base = int(card.get("price") or 30)
     if state is None or dial is None:
@@ -154,7 +154,8 @@ def price_of(card: dict, state: ClownState | None = None, dial=None, n_skills: i
     expect = sum(seed) + 10 * max(0, n_skills - len(seed))
     lift = lift_of(state, dial)
     grown = sum(min(LIFT_MAX, v + lift) for v in seed) + min(LIFT_MAX, 10 + lift) * max(0, n_skills - len(seed))
-    return int(min(float(dial("harbour_price_cap")), round(base * float(dial("harbour_price_scale")) * grown / max(1, expect))))
+    opening = max(float(dial("harbour_price_floor")), base * float(dial("harbour_price_scale")))
+    return int(min(float(dial("harbour_price_cap")), round(opening * grown / max(1, expect))))
 
 
 def grid_from(card: dict, scenario: Scenario, rng: random.Random, bucket: str, deck: dict, lift: int = 0) -> dict[str, int]:

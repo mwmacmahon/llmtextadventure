@@ -468,11 +468,11 @@ def test_the_harbour_girls_get_better_and_dearer_as_the_weeks_go_to_a_cap(game: 
     cards = game.content.girl_cards()
     dl = lambda k: dk.dial(st, k)  # noqa: E731
     week1 = [hb.price_of(c, st, dl) for c in cards.values()]
-    assert 225 <= sum(week1) / len(week1) <= 275                                  # the slip opens near 250
+    assert min(week1) == 250 and sum(week1) / len(week1) <= 300                  # the floor; the dearer cards above it
     card = next(iter(cards.values()))
-    assert hb.price_of(card, st, dl) == round(card["price"] * dk.dial(st, "harbour_price_scale"))
+    assert hb.price_of(card, st, dl) == max(250, round(card["price"] * dk.dial(st, "harbour_price_scale")))
     st.house.week = 27
-    assert hb.lift_of(st, dl) == 26 and hb.price_of(card, st, dl) > round(card["price"] * dk.dial(st, "harbour_price_scale"))
+    assert hb.lift_of(st, dl) == 26 and hb.price_of(card, st, dl) > max(250, round(card["price"] * dk.dial(st, "harbour_price_scale")))
     st.house.week = 400
     assert max(hb.price_of(c, st, dl) for c in cards.values()) == int(dk.dial(st, "harbour_price_cap"))
     st.house.week = 27
@@ -827,7 +827,7 @@ def test_take_pays_the_clerk_once_a_week_and_the_girl_comes_whole_with_her_tags_
     s, res = game.run_command(st, "take", {"girl": cid})
     assert res.ok and res.directive and "shed" in res.directive and res.minutes == 90
     g = s.girl(cid)
-    assert g is not None and g.status == "passive" and g.card == cid and g.location == "The office" and g.price_paid == round(card["price"] * dk.dial(st, "harbour_price_scale"))
+    assert g is not None and g.status == "passive" and g.card == cid and g.location == "The office" and g.price_paid == max(250, round(card["price"] * dk.dial(st, "harbour_price_scale")))
     assert s.house.money == 100 and cid in s.harbour.gone and cid not in s.harbour.queue and cid not in s.harbour.hand and len(s.harbour.hand) == 3
     assert all(g.skills.get(k) == v for k, v in card["seed"].items()) and all(5 <= v <= 15 for k, v in g.skills.items() if k not in card["seed"])
     assert set(card["tags"]) <= set(g.tags) and not set(g.tags) & set(hb.never_for(card, deck))
