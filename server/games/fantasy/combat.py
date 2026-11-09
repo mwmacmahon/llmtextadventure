@@ -588,13 +588,18 @@ def resolve(game: Any, s: FantasyState, entry: dict, rng: Any, offset: int, tall
 
 
 def _sneak_case(game: Any, s: FantasyState, t: Person) -> str:
-    """Sneak Attack's case (SRD, the rogue §7a): from hiding, or at someone an ally is fighting; "" otherwise."""
+    """Sneak Attack's case (SRD, the rogue §7a): from hiding; at an enemy who goes for one of the player's allies this round
+    (the owner, 11-09); or at an enemy an ally is fighting this round (the SRD's ally beside the target); "" otherwise."""
     p = s.player
     if not p.effect("sneak_attack"):
         return ""
     if p.hidden_from_others:
         return "from hiding"
-    if any(q.status == "alive" for q in party(s)):
+    allies = {q.id for q in party(s) if q.status == "alive"}            # the owner, 11-09: the round decides it, not company alone
+    plan = s.combat.plan if s.combat is not None else []
+    if any(e.get("side") == "enemy" and e.get("who") == t.id and e.get("target") in allies for e in plan):
+        return "while they go for an ally"
+    if any(e.get("side") == "ally" and e.get("who") in allies and e.get("target") == t.id for e in plan):
         return "while an ally fights them"
     return ""
 

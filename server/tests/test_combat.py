@@ -313,6 +313,24 @@ def test_a_backstop_blow_shows_its_dice_on_the_players_row(game):
     assert any("against AC" in n and n.endswith("(after the prose)") for n in notes)
 
 
+def test_sneak_attack_is_the_rounds_an_enemy_on_an_ally_or_an_ally_on_them(game):
+    st, q = _fight(game, 1, klass="Rogue")
+    other = Person(id="thug", name="Snag", role="dock thug", location=st.player.location, met=True)
+    st.people.append(other)
+    st.player.fighting.append("thug")
+    hazel = st.person("hazel")
+    hazel.location = st.player.location
+    st.player.with_them.append("hazel")
+    st.combat.plan = [{"key": "ally:hazel", "side": "ally", "who": "hazel", "target": "thug"},
+                      {"key": "enemy:dead:0", "side": "enemy", "who": "dead", "body": 0, "action": {"kind": "strike"}, "target": "player"}]
+    assert cb._sneak_case(game, st, q) == ""                                  # an ally along, but not on this one
+    assert cb._sneak_case(game, st, other) == "while an ally fights them"
+    st.combat.plan[1]["target"] = "hazel"
+    assert cb._sneak_case(game, st, q) == "while they go for an ally"         # the owner, 11-09
+    hazel.status = "down"
+    assert cb._sneak_case(game, st, q) == ""
+
+
 def test_a_bow_spends_arrows(game):
     st, q = _fight(game, 1, klass="Rogue", kit_rogue_2="a shortbow and twenty arrows")
     arrows = next(it for it in st.inventory if "arrow" in it.name.lower())

@@ -9,6 +9,11 @@ plan_round, resolve, land), so the numbers here are the game's.
     .venv/bin/python tools/fight_sim.py --class Paladin --vs skeleton:3 --n 5000
     .venv/bin/python tools/fight_sim.py --class Rogue --vs watchman:6 --fixed
     .venv/bin/python tools/fight_sim.py --class Paladin --band hard --block skeleton      # the scaled band at level 1
+    .venv/bin/python tools/fight_sim.py --class Rogue --vs watchman --band fair --ally hazel  # with an NPC ally (Hazel, Tam: city people with a block)
+
+An ally fights beside the character (the engine's own ally turns: at the character's target, or their order) and counts in
+the budget (each ally who fights adds 0.6 to the party), so a band grows with her. The enemies go for an ally now and then;
+a Rogue's Sneak Attack lands on an enemy who goes for an ally, or one an ally is fighting, that round.
 
 Targets (the owner, 11-09 night): fair about 90% won at little cost, hard about 70% at a steep cost in hit points and
 resources, deadly about 50%.
@@ -126,34 +131,41 @@ def fight(game, st, rng: random.Random, offset: int, rounds_cap: int = 20) -> di
             "spent": spent}
 
 
+def with_allies(st, allies):
+    for a in allies or []:
+        q = st.person(a)
+        if q is not None:
+            q.location = st.player.location
+            st.player.with_them.append(a)
+    return st
+
+
 def run_case(game, klass: str, level: int, spec, band: str, fixed: bool, difficulty: str, n: int, seed: int = 0, allies: list[str] | None = None) -> dict:
     out = []
     rng = random.Random(seed)
     for i in range(n):
-        st = character(game, klass, level)
-        for a in allies or []:
-            q = st.person(a)
-            if q is not None:
-                q.location = st.player.location
-                st.player.with_them.append(a)
+        st = with_allies(character(game, klass, level), allies)
         enemies(st, spec, band, fixed)
-        out.append(fight(game, st, rng, OFFSETS[difficulty]))
+        r = fight(game, st, rng, OFFSETS[difficulty])
+        r["allies_down"] = sum(1 for a in allies or [] if st.person(a) is not None and st.person(a).status != "alive")
+        out.append(r)
     wins = [r for r in out if r["won"]]
     spent: dict[str, float] = {}
     for r in wins:
         for k, v in r["spent"].items():
             spent[k] = spent.get(k, 0) + v
     sized = ""
-    st = character(game, klass, level)
+    st = with_allies(character(game, klass, level), allies)
     enemies(st, spec, band, fixed)
     for x in st.player.fighting:
         notes = cb.scale(st, st.person(x), cb.diff_shift(OFFSETS[difficulty]))
         sized = "; ".join(notes) or sized
-    return {"class": klass, "level": level, "vs": " + ".join(f"{b} x{c}" for b, c in spec) if not band else f"{spec[0][0]} band",
+    return {"class": klass + (" + " + ", ".join(a.capitalize() for a in allies) if allies else ""), "level": level, "vs": " + ".join(f"{b} x{c}" for b, c in spec) if not band else f"{spec[0][0]} band",
             "band": band or ("fixed" if fixed else "as written"), "sized": sized, "difficulty": difficulty, "n": n,
             "win": round(100 * len(wins) / n, 1), "rounds": round(statistics.mean(r["rounds"] for r in out), 1),
             "hp_left_pct_won": round(100 * statistics.mean(r["hp_left"] / r["hp_max"] for r in wins), 0) if wins else 0,
-            "spent_per_win": {k: round(v / max(1, len(wins)), 2) for k, v in spent.items()}}
+            "spent_per_win": {k: round(v / max(1, len(wins)), 2) for k, v in spent.items()},
+            "ally_down_pct": round(100 * sum(1 for r in out if r.get("allies_down")) / n, 1) if allies else None}
 
 
 STANDARD = [  # (class, level, vs, band, fixed, allies)
@@ -170,6 +182,11 @@ STANDARD = [  # (class, level, vs, band, fixed, allies)
     ("Barbarian", 1, [("skeleton", 1)], "hard", False, []),
     ("Paladin", 1, [("troll", 1)], "", True, []),
     ("Rogue", 1, [("troll", 1)], "", True, []),
+    ("Rogue", 1, [("watchman", 1)], "fair", False, ["hazel"]),
+    ("Rogue", 1, [("watchman", 1)], "hard", False, ["hazel"]),
+    ("Rogue", 1, [("watchman", 1)], "deadly", False, ["hazel"]),
+    ("Paladin", 1, [("skeleton", 1)], "fair", False, ["hazel"]),
+    ("Paladin", 1, [("skeleton", 1)], "hard", False, ["hazel"]),
 ]
 
 
@@ -183,18 +200,20 @@ def main() -> None:
     ap.add_argument("--n", type=int, default=2000)
     ap.add_argument("--difficulty", default="")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--ally", action="append", default=[], help="a city person with a combat block who fights beside them (hazel, tam)")
     a = ap.parse_args()
     cfg = load_config()
     game = load_games(cfg.resolve(cfg.server.content_root))["fantasy"]
     diffs = [a.difficulty] if a.difficulty else ["easy", "normal", "hard"]
-    cases = STANDARD if not a.klass else [(a.klass, a.level, [(x.split(":")[0], int(x.split(":")[1]) if ":" in x else 1) for x in a.vs.split(",")], a.band, a.fixed, [])]
+    cases = STANDARD if not a.klass else [(a.klass, a.level, [(x.split(":")[0], int(x.split(":")[1]) if ":" in x else 1) for x in a.vs.split(",")], a.band, a.fixed, a.ally)]
     rows = [run_case(game, k, lv, vs, band, fx, d, a.n, allies=al) for (k, lv, vs, band, fx, al) in cases for d in diffs]
     if a.json:
         print(json.dumps(rows, indent=1))
         return
-    print(f"{'class':9} {'vs':16} {'band':10} {'diff':7} {'win%':>6} {'rounds':>6} {'hp left':>8}  spent per win   sized")
+    print(f"{'class':17} {'vs':16} {'band':10} {'diff':7} {'win%':>6} {'rounds':>6} {'hp left':>8} {'ally down':>9}  spent per win   sized")
     for r in rows:
-        print(f"{r['class']:9} {r['vs']:16} {r['band']:10} {r['difficulty']:7} {r['win']:6} {r['rounds']:6} {str(r['hp_left_pct_won']) + '%':>8}  "
+        down = "" if r.get("ally_down_pct") is None else f"{r['ally_down_pct']}%"
+        print(f"{r['class']:17} {r['vs']:16} {r['band']:10} {r['difficulty']:7} {r['win']:6} {r['rounds']:6} {str(r['hp_left_pct_won']) + '%':>8} {down:>9}  "
               f"{json.dumps(r['spent_per_win'])[:40]:40} {r['sized']}")
 
 
