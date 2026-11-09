@@ -1728,7 +1728,7 @@ class Engine:
         events = _events_of(game, doc)
         ectx = ev.EffectContext(pending_path=ppath or "hidden.pending", clock_path=clock_path, minutes_per_day=clock.minutes_per_day if clock else 1440, turn=turn,
                                 location_path=getattr(game, "location_path", "player.location"),
-                                unquiet=_unquiet(game, state, adj))
+                                unquiet=_unquiet(game, state, adj), busy=busy_for_callers(adj, doc, game, turn))
         # B105 (D177): a question about the scene (kind trivial) moves nothing: no event, pending or hazard ticks on it
         quiet = adj is not None and adj.kind == "trivial"
         fired, expired, ev_directives = ([], [], []) if quiet else ev.tick(events, doc, turn, clock_path, log_path, ectx, since_abs=since_abs)
@@ -1751,7 +1751,9 @@ class Engine:
             if items:
                 clk = sp.lookup(doc, clock_path, {}) or {}
                 now_abs = int(clk.get("day", 1)) * (clock.minutes_per_day if clock else 1440) + int(clk.get("minute", 0))
-                happened, h_directives = spon.roll(items, doc, rng_for(iid, turn, "spontaneous"), elapsed, turn, now_abs, clock_path, log_path, ctx=ectx)
+                busy = ectx.busy or ("someone came to the player this turn" if any(e.hook and e.fired and e.fired_turn == turn and e.directive for e in events) else "")
+                happened, h_directives = spon.roll(items, doc, rng_for(iid, turn, "spontaneous"), elapsed, turn, now_abs, clock_path, log_path,
+                                                   ctx=ectx, busy=busy)
                 sp.assign(doc, spath, [i.model_dump(mode="json") for i in items])
                 directives.extend(h_directives)
                 rpath = getattr(game, "recent_path", None)
@@ -2668,6 +2670,34 @@ WORLD_PROTOCOL = ("\n  <<ENEMY id move>> and <<HAZARD name>>  when THIS TURN lis
                   "of them acts or reaches the player, write the call on its own line and stop, as for a check, such as <<ENEMY mirren hold>> or "
                   "<<HAZARD cold_water>>. The engine rolls it and tells you what happened; play that and go on. Every one THIS TURN lists as "
                   "fighting acts once a turn.")
+
+
+# B235 (the owner, 11-09, the grimdark save 3acb923619a3: "I'm just trying to walk across the room and I've been interrupted by
+# Tam Reedy and then by Pip"): turn 10, walking out of the bath to the stairs, Tam's arrival (a hook's reach in the inn) and
+# Hazel's "where are you off to" came in the same turn; turn 11, on the stairs, Pip's. Someone walking up to the player waits
+# while the player is on the move, and for two turns after someone else did.
+ON_THE_MOVE = re.compile(r"\b(?:walks?|walking|strides?|striding|struts?|strutting|march(?:es|ing)?|heads?|heading|goes|going|go (?:to|up|down|out|back|home)|"
+                         r"leaves?|leaving|exits?|climbs?|climbing|ascen(?:t|ds?)|descen(?:t|ds?)|crosses|crossing|steps? out|"
+                         r"up ?stairs|down ?stairs|up the stairs|down the stairs|to (?:my|his|her|their|the) room|on (?:my|his|her|their) way)\b", re.I)
+SPACING_TURNS = 2
+
+
+def busy_for_callers(adj: Any, doc: dict, game: Any, turn: int) -> str:
+    """Why nobody should walk up to the player this turn (B235), or "": the turn is a move (the reading's summary, its
+    intents' actions, or a move: transition), or a hook's person or a happening's person came in the last two turns."""
+    if adj is not None and getattr(adj, "kind", "") == "action":
+        words = " ".join([adj.summary or ""] + [i.action or "" for i in adj.intents])
+        if ON_THE_MOVE.search(words) or any(str(getattr(i, "transition", "") or "").startswith("move:") for i in adj.intents):
+            return "on the move"
+    recent = range(turn - SPACING_TURNS, turn)
+    for e in sp.lookup(doc, getattr(game, "events_path", "hidden.events"), []) or []:
+        if e.get("hook") and e.get("fired") and e.get("fired_turn") in recent:
+            return "someone came to the player a turn or two ago"
+    spath = getattr(game, "spontaneous_path", None)
+    for h in (sp.lookup(doc, spath, []) or []) if spath else []:
+        if h.get("who") and h.get("last_fired_turn") in recent:
+            return "someone came to the player a turn or two ago"
+    return ""
 
 
 def _unquiet(game: Game, state: BaseModel, adj: Any) -> str:

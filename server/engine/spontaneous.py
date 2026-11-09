@@ -67,8 +67,10 @@ def per_turn_chance(chance_per_hour: float, elapsed_minutes: int) -> float:
 
 def roll(items: list[Spontaneous], doc: dict, rng: random.Random, elapsed_minutes: int, turn: int,
          now_minutes: int, clock_path: str = "clock", log_path: str = "log", max_per_turn: int = 2,
-         ctx: EffectContext | None = None) -> tuple[list[Happened], list[str]]:
-    """Mutates `doc` (effects) and the items' status. Returns (happened, directives)."""
+         ctx: EffectContext | None = None, busy: str = "") -> tuple[list[Happened], list[str]]:
+    """Mutates `doc` (effects) and the items' status. Returns (happened, directives).
+    B235: a happening that brings someone to the player (it has `who`) does not happen while `busy` says why not (on the
+    move, just interrupted), and at most one such happens in a turn; the others (bells, fog, a hand that shakes) still roll."""
     happened: list[Happened] = []
     directives: list[str] = []
     if elapsed_minutes <= 0:
@@ -79,6 +81,8 @@ def roll(items: list[Spontaneous], doc: dict, rng: random.Random, elapsed_minute
         if len(happened) >= max_per_turn:
             break
         if it.once and it.count:
+            continue
+        if it.who and (busy or any(h.who for h in happened)):
             continue
         if it.last_fired_at is not None and now_minutes - it.last_fired_at < it.cooldown_minutes:
             continue

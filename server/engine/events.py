@@ -69,6 +69,7 @@ class EffectContext(BaseModel):
     location_path: str = "player.location"      # what an event's `where` reads
     unquiet: str = ""                           # B104 (D177): why this turn is not quiet ("in a fight on the lake"); empty when it is
     holds: list[dict] = Field(default_factory=list)   # what waited this turn for a quiet one, and why (the ledger's)
+    busy: str = ""                              # B235: why nobody walks up to the player this turn ("on the move"), even in their own scene
 
 Strictness = Literal["scripted", "guided", "advisory"]
 
@@ -401,6 +402,10 @@ def tick(events: list[Event], doc: dict, turn: int, clock_path: str = "clock", l
             held.add(e.id)                          # another hook spoke this turn: this one waits for the next
             continue
         own_scene = variant == "trigger" and bool(e.where)
+        if e.hook and says and ctx is not None and ctx.busy:
+            held.add(e.id)                          # B235: a hook's person waits until the player is not crossing the room or just interrupted
+            ctx.holds.append({"event": e.id, "hook": e.hook, "variant": variant, "why": ctx.busy})
+            continue
         if e.hook and says and not own_scene and ctx is not None and ctx.unquiet:
             held.add(e.id)                          # B104 (D177): word from elsewhere waits for a quiet turn and a carrier
             ctx.holds.append({"event": e.id, "hook": e.hook, "variant": variant, "why": ctx.unquiet})

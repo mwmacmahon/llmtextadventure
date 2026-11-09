@@ -79,3 +79,44 @@ async def test_word_from_elsewhere_waits_for_a_quiet_turn(engine, fake):
     ctx2 = ev.EffectContext(unquiet=game.unquiet(st))
     fired, _, said = ev.tick([e], doc, 6, ctx=ctx2)
     assert [f.event_id for f in fired] == ["word"] and not ctx2.holds
+
+
+def test_nobody_walks_up_while_the_player_crosses_the_room(engine, no_happenings):
+    """B235 (the owner, the grimdark save 3acb923619a3 turns 10-11): Tam's arrival and Hazel's question came as the player
+    walked from the bath to the stairs, and Pip's on the stairs. Someone coming to the player waits while they are on the
+    move, and for two turns after someone else came; a happening with nobody in it (bells) still happens."""
+    import random
+    from engine import events as ev, spontaneous as spon
+    from engine.pipeline import busy_for_callers
+    from engine.roles import AssistantReadingStaked
+    roll = no_happenings                                                   # the real roll (conftest stubs it out)
+    game = engine.games["fantasy"]
+    iid = engine.create_instance("fantasy", SHEET)
+    doc = state_of(engine, iid).model_dump(mode="json")
+    walk = AssistantReadingStaked.model_validate({"kind": "action", "risk": "low", "time_minutes": 2,
+        "summary": "Ungdall struts through the common room completely nude to get upstairs.",
+        "intents": [{"action": "strut nude through the common room", "targets": [], "check": None}]})
+    sit = walk.model_copy(update={"summary": "Ungdall orders an ale at the bar.", "intents": []})
+    assert busy_for_callers(walk, doc, game, 10) == "on the move"
+    assert busy_for_callers(sit, doc, game, 10) == ""
+    tam = ev.Event.model_validate({"id": "tam_reach", "hook": "ferrymans_daughter", "trigger": True, "where": ["The Drowned Lantern"],
+                                   "directive": "Tam Reedy comes in wet and stands by the table."})
+    doc["player"]["location"] = "The Drowned Lantern"
+    ctx = ev.EffectContext(busy=busy_for_callers(walk, doc, game, 10))
+    fired, _, _ = ev.tick([tam], doc, 10, ctx=ctx)
+    assert not fired and ctx.holds[0]["why"] == "on the move"              # even in his own scene, the inn
+    fired, _, _ = ev.tick([tam], doc, 11, ctx=ev.EffectContext())
+    assert [f.event_id for f in fired] == ["tam_reach"]
+    doc["hidden"]["events"] = [tam.model_dump(mode="json")]
+    assert busy_for_callers(sit, doc, game, 12).startswith("someone came")  # two turns of room after he came
+    assert busy_for_callers(sit, doc, game, 13).startswith("someone came")
+    assert busy_for_callers(sit, doc, game, 14) == ""
+    pip = spon.Spontaneous(id="pip", chance_per_hour=1.0, who=["pip"], directive="Pip asks where they are going.")
+    bells = spon.Spontaneous(id="bells", chance_per_hour=1.0, directive="The bells ring.")
+    from engine.events import evaluate
+    happened, _ = roll([pip, bells], doc, random.Random(1), 60, 12, 2000, busy="on the move")
+    assert [h.id for h in happened] == ["bells"]
+    hazel = spon.Spontaneous(id="hazel", chance_per_hour=1.0, who=["hazel"], directive="Hazel asks where they are off to.")
+    pip2 = spon.Spontaneous(id="pip2", chance_per_hour=1.0, who=["pip"], directive="Pip asks.")
+    happened, _ = roll([hazel, pip2], doc, random.Random(1), 60, 14, 3000)
+    assert len(happened) == 1                                              # one person at a time
