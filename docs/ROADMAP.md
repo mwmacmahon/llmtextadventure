@@ -96,8 +96,10 @@ check under another name); every person carries a combat block (AC, hit points, 
 role; a fight is a mode with a round per player turn, each blow rolled where the narrator's call reaches it (the
 owner: more exciting, keeps the narrator on its toes), the engine backstopping every action the prose left out; down and dead; cleave-through and sweep; a Fight panel; the engine sizes a fight
 by a budget from level, party and band (§9b), every fight tough but winnable unless marked fixed (a boss, a set piece;
-the owner's ruling), numbers before bodies before inflation; a fight simulator tunes it. Six
+the owner's ruling), numbers before bodies before inflation; a fight simulator tunes it. Enemies die at 0, allies go down
+and are revived after (dead at -10 or by a lethal hazard), the player is dead (the owner, 11-09 night). Five
 questions open with the owner. Noir and the station keep 2d6 and their own fights.
+- Later: the player downed rather than dead at 0 (the owner, 11-09 night: "a future roadmap item"); death is death until then.
 
 ## 2. Time and pacing
 
