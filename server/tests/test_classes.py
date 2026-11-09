@@ -44,7 +44,7 @@ def test_the_kit_is_a_select_and_expertise_a_pick_of_two(game: FantasyGame):
                                "expertise_rogue": "stealth,persuasion", "kit_barbarian_1": "handaxes"})
     assert "kit_barbarian_1" not in setup                            # another class's field is dropped
     p, inv = game.build_player(setup, game.scenario())
-    assert p.kit == ["a rapier", "a second shortsword"] and {"rapier", "second_shortsword", "thieves_tools"} <= {i.id for i in inv}
+    assert p.kit == ["a fine rapier", "a second shortsword"] and {"rapier", "second_shortsword", "thieves_tools"} <= {i.id for i in inv}
     assert p.expertise == ["stealth", "persuasion"]
     with pytest.raises(ValueError):
         check_setup(opts, {"name": "W", "klass": "Rogue", "race": "Human", "expertise_rogue": "stealth"})
@@ -61,11 +61,11 @@ def test_rogue_features_land_level_by_level(game: FantasyGame):
     hide = game.modifiers(st, CheckRequest(id="n", label="hide behind the barrels", stat="dex"), None)
     assert sorted(m.value for m in hide) == [2, 2]                  # Sneak and Expertise: Stealth
     st = level_to(game, st, 2)
-    assert st.player.effect("auto_hide") and st.player.hp_max == 8 + 1 + 5 + 1
+    assert st.player.effect("auto_hide") and st.player.hp_max == 10 + 2 + 6 + 2           # B278: the Paladin's 10 and 6, CON 2
     st = level_to(game, st, 3)
     assert st.player.effect("sneak_attack") == 2
     st = level_to(game, st, 4, stats=("dex", "cha"))
-    assert st.player.score("dex") == 17 and st.player.stats["dex"] == 3 and st.player.score_bonus["dex"] == 1
+    assert st.player.score("dex") == 19 and st.player.stats["dex"] == 4 and st.player.score_bonus["dex"] == 1
     st = level_to(game, st, 5)
     assert st.player.effect("uncanny_dodge") and st.player.level == 5
 

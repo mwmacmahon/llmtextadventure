@@ -223,9 +223,9 @@ def test_damage_is_bounded_and_the_shield_takes_a_step(game: FantasyGame):
     st = new(game)                                                   # 13 hp: half is 6, the shield lowers it to 5
     s2, rep, _ = apply(game, st, C(kind="add", target="player", field="hp", value="-20", note="a troll's fist"))
     assert s2.player.hp == 8
-    no_shield = new(game, klass="Rogue")                             # 8 + 2 = 10 hp: half is 5
+    no_shield = new(game, klass="Rogue")                             # 10 + 3 = 13 hp (a Dwarf; B278): half is 6
     s3, _, _ = apply(game, no_shield, C(kind="add", target="player", field="hp", value="-9"))
-    assert s3.player.hp == 5
+    assert s3.player.hp == 7
     big = new(game, klass="Rogue")
     big.player.hp = big.player.hp_max = 40
     s4, _, _ = apply(game, big, C(kind="add", target="player", field="hp", value="-30"))

@@ -25,6 +25,8 @@ WEAPONS: dict[str, tuple[str, str]] = {
     "longbow": ("1d8", "ranged"), "light crossbow": ("1d8", "ranged"), "crossbow": ("1d8", "ranged"), "sling": ("1d4", "ranged"),
 }
 FIST = ("1", "melee")
+# a weapon's make, read from its name: +1 to the attack and the damage (the owner, 11-09: the Rogue's better weapon)
+QUALITY = {"fine": 1, "masterwork": 1, "dwarf-forged": 1, "elven": 1}
 # the class's two proficient saves (SRD 5.1)
 CLASS_SAVES: dict[str, tuple[str, str]] = {
     "barbarian": ("str", "con"), "bard": ("dex", "cha"), "cleric": ("wis", "cha"), "druid": ("int", "wis"), "fighter": ("str", "con"),
@@ -169,6 +171,16 @@ def weapons_carried(s: FantasyState) -> list[tuple[str, str, str]]:
     return out or [("fist", *FIST)]
 
 
+def weapon_bonus(s: FantasyState, weapon: str) -> int:
+    """The make of the carried weapon of that kind (a fine rapier: +1), from its name; 0 for plain steel or a fist."""
+    best = 0
+    for it in s.inventory:
+        n = it.name.lower()
+        if weapon and weapon in n and it.count != 0:
+            best = max(best, max((v for w, v in QUALITY.items() if re.search(rf"\b{re.escape(w)}\b", n)), default=0))
+    return best
+
+
 def player_weapon(s: FantasyState, named: str = "") -> tuple[str, str, str]:
     """The weapon the reading names (by word), else the best melee one carried, else the best of any."""
     ws = weapons_carried(s)
@@ -199,10 +211,11 @@ def player_block(s: FantasyState, weapon: str = "") -> dict[str, Any]:
     stat = attack_stat(p, how)
     prof = proficiency(p.level)
     mod = p.stats.get(stat, 0)
+    fine = weapon_bonus(s, name)
     two = CLASS_SAVES.get((p.klass or "").lower(), ())
     saves = {k: p.stats.get(k, 0) + (prof if k in two else 0) for k in ("str", "dex", "con", "int", "wis", "cha")}
-    return {"ac": ac, "ac_how": ac_how, "weapon": name, "how": how, "stat": stat, "attack": mod + prof,
-            "damage": dice + (f"{mod:+d}" if mod else ""), "saves": saves, "prof": prof, "hp": p.hp, "hp_max": p.hp_max}
+    return {"ac": ac, "ac_how": ac_how, "weapon": name, "how": how, "stat": stat, "attack": mod + prof + fine, "fine": fine,
+            "damage": dice + (f"{mod + fine:+d}" if mod + fine else ""), "saves": saves, "prof": prof, "hp": p.hp, "hp_max": p.hp_max}
 
 
 # ---- hit point words, for everyone -------------------------------------------------------------------------------------

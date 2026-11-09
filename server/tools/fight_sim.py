@@ -35,7 +35,7 @@ from engine.roles import AssistantReadingCombat, AttackSpec, IntentCombat  # noq
 from games.fantasy import combat as cb  # noqa: E402
 from games.fantasy.state import CombatBlock, CombatState, Person  # noqa: E402
 
-KITS = {"Paladin": {}, "Rogue": {"kit_rogue_1": "a rapier"}, "Barbarian": {"kit_barbarian_1": "a greataxe"}, "Fighter": {}}
+KITS = {"Paladin": {}, "Rogue": {"kit_rogue_1": "rapier"}, "Barbarian": {"kit_barbarian_1": "a greataxe"}, "Fighter": {}}
 OFFSETS = {"easy": 0, "normal": 2, "hard": 4}
 
 

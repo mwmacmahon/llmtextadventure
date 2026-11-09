@@ -47,9 +47,9 @@ def test_the_players_block_from_the_sheet(game):
     b = cb.player_block(pal)
     assert b["weapon"] == "longsword" and b["damage"] == "1d8+3" and b["attack"] == 5 and b["ac"] == 16      # 10 + mail 4 + shield 2
     assert b["saves"]["wis"] == 2 and b["saves"]["cha"] == 5 and b["saves"]["str"] == 3
-    rog = new(game, klass="Rogue", kit_rogue_1="a rapier")
+    rog = new(game, klass="Rogue", kit_rogue_1="rapier")
     r = cb.player_block(rog)
-    assert r["weapon"] == "rapier" and r["stat"] == "dex" and r["attack"] == 3 + 2
+    assert r["weapon"] == "rapier" and r["stat"] == "dex" and r["attack"] == 4 + 2 + 1 and r["damage"] == "1d8+5"   # B278: DEX 4, a fine rapier
 
 
 def test_hit_point_words_for_everyone_and_a_band():
@@ -329,6 +329,17 @@ def test_sneak_attack_is_the_rounds_an_enemy_on_an_ally_or_an_ally_on_them(game)
     assert cb._sneak_case(game, st, q) == "while they go for an ally"         # the owner, 11-09
     hazel.status = "down"
     assert cb._sneak_case(game, st, q) == ""
+
+
+def test_a_fine_weapon_is_plus_one_to_hit_and_damage(game):
+    st, q = _fight(game, 1)
+    plain = cb.player_block(st)
+    for it in st.inventory:
+        if it.name.lower() == "longsword":
+            it.name = "fine longsword"
+    fine = cb.player_block(st)
+    assert fine["attack"] == plain["attack"] + 1 and fine["fine"] == 1
+    assert fine["damage"] == "1d8+4" and plain["damage"] == "1d8+3"
 
 
 def test_a_bow_spends_arrows(game):

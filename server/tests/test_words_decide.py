@@ -103,3 +103,46 @@ def test_a_hidden_name_masks_to_a_pronoun(game):
     assert mask_term(st, "Quill lets go", "Quill") == "the person lets go"
     assert mask_term(st, "the way to Reed Island", "Reed Island") == "the way to that place"
     assert mask_term(st, "the drowned bell is under the lake", "drowned bell") == "the what they keep back is under the lake"
+
+
+def test_a_very_low_check_with_nothing_at_stake_simply_happens():
+    """B279 (the owner, 11-09, Ungdall T38 on Gemma: "this does not need to be a skill check. I'm just seeing if anyone's
+    around"): very_low, no danger, no complication, nobody to win over, no edge against: a settled works, no roll."""
+    from engine.pipeline import settle_trivial
+    from engine.roles import CheckStaked
+    look = IntentStaked(action="look for the kitchen girl in the back", targets=["kitchen_girl"],
+                        check=CheckStaked(label="notice who is in the kitchen", stat="wis", difficulty="very_low", edge=0,
+                                          edge_why="Routine observation in a familiar place.", success_gain="He sees who is working in the back."))
+    adj = AssistantReadingStaked(kind="action", summary="looks in the kitchen", time_minutes=2, risk="low", intents=[look],
+                                 pivotal="notice who is in the kitchen")
+    out = settle_trivial(adj)
+    assert out and look.check is None and adj.pivotal == ""
+    assert adj.fiat[0].settled == "works" and adj.fiat[0].outcome == "He sees who is working in the back."
+    stakes = [CheckStaked(label="x", stat="dex", difficulty="very_low", danger="scrape"),          # a fall if it fails
+              CheckStaked(label="x", stat="cha", difficulty="very_low", target_entity="maud"),     # someone to win over
+              CheckStaked(label="x", stat="dex", difficulty="very_low", edge=-2),                  # something against them
+              CheckStaked(label="x", stat="wis", difficulty="low")]                                # routine is still a roll
+    for c in stakes:
+        i = IntentStaked(action="x", check=c)
+        assert not settle_trivial(AssistantReadingStaked(kind="action", summary="x", time_minutes=1, risk="low", intents=[i])) and i.check
+
+
+async def test_a_retold_turn_settles_a_trivial_check_its_stored_reading_kept(engine, fake, monkeypatch):
+    """B279: the owner's reroll of T38 still rolled 'WIS, very low. 3 against 5': a retell replays the stored reading, made
+    before the rule. The replay settles it too, once."""
+    import engine.pipeline as pl
+    from engine.roles import CheckStaked
+    look = IntentStaked(action="look for the kitchen girl in the back",
+                        check=CheckStaked(label="notice who is in the kitchen", stat="wis", difficulty="very_low", edge=0,
+                                          edge_why="routine", success_gain="He sees who is working in the back."))
+    iid = engine.create_instance("fantasy", SHEET)
+    fake.canned["AssistantReading"] = [AssistantReadingStaked(kind="action", summary="looks in the kitchen", time_minutes=2, risk="low", intents=[look])]
+    monkeypatch.setattr(pl, "settle_trivial", lambda adj: [])          # the reading as stored before the rule
+    await play(engine, iid, "I head into the back to see if anyone is there.")
+    monkeypatch.undo()
+    async for _ in engine.rewrite_turn(iid, "Shorter.", by="referee"):      # the referee's retell keeps the stored reading (B280)
+        pass
+    rows = [r["payload"] for r in engine.store.ledger(iid) if r["kind"] == "settled"]
+    assert [r["settled"] for r in rows] == ["works"] and rows[0]["outcome"] == "He sees who is working in the back."
+    last = [r["payload"] for r in engine.store.ledger(iid) if r["kind"] == "adjudication"][-1]
+    assert last["intents"][0]["check"] is None

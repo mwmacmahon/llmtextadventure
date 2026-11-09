@@ -880,19 +880,28 @@ class Engine:
             ledger("rewrite", {"hint": replay.hint, "attempt": replay.attempt, "by": replay.by, "history": replay.history})
             log.info("turn.rewrite " + logs.kv(iid=iid, turn=turn, attempt=replay.attempt, by=replay.by, hint_chars=len(replay.hint)))
             yield {"event": "rewrite", "data": {"turn": turn, "hint": replay.hint, "attempt": replay.attempt, "by": replay.by}}
-            adj = replay.adjudication
-            ledger("adjudication", {**adj.model_dump(mode="json"), "_call": {
-                "provider": replay.call.get("provider"), "model": replay.call.get("model"), "seconds": 0, "usage": asdict(Usage()),
-                "replayed": True, "attempt": replay.attempt}})
+            adj = replay.adjudication                            # None on the player's rewrite: the assistant reads the turn again (B280)
+            trivial = settle_trivial(adj) if adj is not None else []   # B279: a reading stored before the rule settles too
+            if adj is not None:
+                ledger("adjudication", {**adj.model_dump(mode="json"), "_call": {
+                    "provider": replay.call.get("provider"), "model": replay.call.get("model"), "seconds": 0, "usage": asdict(Usage()),
+                    "replayed": True, "attempt": replay.attempt}})
+            for h in trivial:
+                ledger("precheck", {"kind": "trivial", **h})
+                ledger("settled", {"settled": "works", "attempt": h["attempt"], "outcome": next((f.outcome for f in adj.fiat if f.attempt == h["attempt"]), ""), "why": h["why"]})
 
         # ---- 1. adjudicate --------------------------------------------------
         if adj is None and not getattr(game, "skip_adjudication", False):
             try:
-                adj, meta = await self._adjudicate(game, state, iid, player_text)
+                adj, meta = await self._adjudicate(game, state, iid, player_text,
+                                                   retell=replay.hint if replay is not None and replay.by == "player" else None)
                 hopeless = settle_hopeless(adj)                  # B225: very high and an edge of -3 or worse is a fail, no roll
+                trivial = settle_trivial(adj)                    # B279: very low with nothing at stake simply happens
                 ledger("adjudication", {**adj.model_dump(mode="json"), "_call": meta})
                 for h in hopeless:
                     ledger("precheck", {"kind": "hopeless", **h})
+                for h in trivial:
+                    ledger("precheck", {"kind": "trivial", **h})
                 for f in getattr(adj, "fiat", None) or []:     # B207 (D179): each attempt the words settled, with why
                     ledger("settled", {"settled": getattr(f, "settled", "works"), "attempt": f.attempt, "outcome": f.outcome, "why": getattr(f, "why", "")})
                 unchecked = [i.action for i in adj.intents if i.check is None]
@@ -1455,7 +1464,7 @@ class Engine:
 
     async def rewrite_turn(self, iid: str, hint: str, by: str = "player") -> AsyncIterator[dict[str, Any]]:
         """"You're out of line": tell the last turn again. The turn is rewound and replayed with its stored
-        adjudication, the same levers and the same dice seed, with the player's ruling as a directive; the
+        adjudication (the referee's retell) or a fresh one with the player's words about it (the player's, B280), the same levers and the same dice seed, with the player's ruling as a directive; the
         narrator and the referee run again and this telling replaces the last one. The earlier tellings stay
         in the turn's `rewrite` ledger row. Only a typed turn can be retold: a clicked command is not prose."""
         inst = self.store.get_instance(iid)
@@ -1500,7 +1509,10 @@ class Engine:
         if not call.get("model"):                 # the row came from an earlier rewrite that kept no call meta
             role = self.cfg.role("assistant")
             call = {"provider": role.provider, "model": role.model}
-        async for ev in self.run_turn(iid, player_text, replay=Replay(adjudication=adj, hint=hint, attempt=attempt, history=history, call=call, by=by)):
+        # B280 (the owner, 11-09: "rewrite should also redo the assistant turn"): the player's rewrite asks the assistant again,
+        # with their words about it; the referee's retell (a prose fault) keeps the reading, its checks and its settlings
+        again = None if by == "player" else adj
+        async for ev in self.run_turn(iid, player_text, replay=Replay(adjudication=again, hint=hint, attempt=attempt, history=history, call=call, by=by)):
             yield ev
 
     # ---- the graveyard (B81, B84): player-only; nothing here reaches a model --------------------------------------
@@ -1606,14 +1618,17 @@ class Engine:
             return provider
         return Taped(provider, lambda label, ex: tape("exchange", exchange_row(self.store.put_blob, label, ex)), step)
 
-    async def _adjudicate(self, game: Game, state: BaseModel, iid: str, player_text: str) -> tuple[AssistantReading, dict]:
+    async def _adjudicate(self, game: Game, state: BaseModel, iid: str, player_text: str, retell: str | None = None) -> tuple[AssistantReading, dict]:
         role = self.cfg.role("assistant")
         provider = self._provider(role, iid, "assistant")
         recent = _recent_prose(self.store, iid, turns=2)
         nrole = self.cfg.role("narrator")
         hits = [h for h in [prechecks.question(player_text)] if h is not None]
+        notes = [h.line for h in hits]
+        if retell is not None:                                  # B280: the player's rewrite reads the turn again, with what they said of it
+            notes.append(f"The player asked for this turn again, and said: \"{retell.strip()}\"" if retell.strip() else "The player asked for this turn again.")
         system, msgs, schema = adjudicator_inputs(game, state, recent, player_text, stakes=nrole.stakes != "off" and nrole.checks == "called",
-                                                  notes=[h.line for h in hits])
+                                                  notes=notes)
         for m in mods_mod.parsed(self._mods(iid)):              # B79: the assistant's rules text by section, per save
             system = mods_mod.patch_sections(system, (m.get("rules") or {}).get("assistant"))[0]
         t0 = time.monotonic()
@@ -2787,7 +2802,7 @@ class Replay:
     adjudicator call), the levers are previewed again on the same state, the dice come from the same seed
     (`rng_for(iid, turn)`), and the player's ruling joins THIS TURN as a directive. Only the words change,
     then the referee reads them again (DESIGN2 §8, the manual half)."""
-    adjudication: AssistantReading
+    adjudication: AssistantReading | None   # None: the assistant reads the turn again (the player's rewrite, B280)
     hint: str
     attempt: int                      # 1 for the first rewrite of a turn
     history: list[dict[str, Any]]     # every earlier telling of this turn: {attempt, hint, narration, mechanics, ledger}
@@ -3167,6 +3182,34 @@ def settle_hopeless(adj: Any) -> list[dict]:
         outcome = str(getattr(c, "failure_outcome", "") or "") or f"It does not come: {c.label}."
         adj.fiat = list(adj.fiat or []) + [FiatOutcome(attempt=i.action or c.label, outcome=outcome, settled="fails", why=why)]
         out.append({"attempt": i.action or c.label, "label": c.label, "edge": int(c.edge), "why": why})
+        i.check = None
+    return out
+
+
+def settle_trivial(adj: Any) -> list[dict]:
+    """B279 (the owner, 11-09: "another case of 'this does not need to be a skill check'. I'm just seeing if anyone's around.
+    nobody is hiding"): B225's mirror. A check the assistant set at very_low, with no danger and no complication on failure,
+    aimed at nobody (no target_entity) and no edge against the player, outside a fight, is settled as works before the
+    narrator calls anything: its success becomes a fiat 'works'. Gemma's 'notice who is in the kitchen' (WIS, very low, edge
+    0, 'routine observation in a familiar place') failed on a 3 and the narrator wrote a kitchen nobody could see into."""
+    from .roles import FiatOutcome
+    out: list[dict] = []
+    if adj is None or not hasattr(adj, "fiat"):
+        return out
+    intents = getattr(adj, "intents", None) or []
+    if any(getattr(i, "attack_at", None) for i in intents):
+        return out                                                    # a fight: every roll stands
+    for i in intents:
+        c = getattr(i, "check", None)
+        if (c is None or c.difficulty != "very_low" or int(getattr(c, "edge", 0) or 0) < 0 or getattr(c, "target_entity", None)
+                or getattr(c, "danger", None) != "none" or getattr(c, "complication", None) != "none"):
+            continue
+        why = f"nothing in the way: {(getattr(c, 'edge_why', '') or 'anyone could').strip()}"
+        outcome = str(getattr(c, "success_gain", "") or "") or f"It works: {c.label}."
+        adj.fiat = list(adj.fiat or []) + [FiatOutcome(attempt=i.action or c.label, outcome=outcome, settled="works", why=why)]
+        out.append({"attempt": i.action or c.label, "label": c.label, "stat": c.stat, "why": why})
+        if getattr(adj, "pivotal", "") == c.label:
+            adj.pivotal = ""
         i.check = None
     return out
 
