@@ -24,6 +24,9 @@ from pydantic import BaseModel, Field
 from . import statepath as sp
 
 
+PLAYER_WORDS = {"player", "the player", "you", "pc", "the pc"}
+
+
 class Pending(BaseModel):
     id: str
     what: str
@@ -47,8 +50,15 @@ class Pending(BaseModel):
         return self.due_day * minutes_per_day + self.due_minute
 
     @property
+    def players_own(self) -> bool:
+        """B260: a timer for the player's own plan ("Ungdall heads down to seek out Maud" at midnight, who=player): the player
+        plays their own acts, so it never stops the clock or fires (the grimdark save f083ca6fc352: it cut a night's sleep at
+        midnight, long after Maud came up instead)."""
+        return self.source in ("referee", "narrator") and self.who.strip().lower() in PLAYER_WORDS
+
+    @property
     def live(self) -> bool:
-        return not self.fired and not self.resolved
+        return not self.fired and not self.resolved and not self.players_own
 
     @property
     def happened(self) -> bool:
