@@ -10,7 +10,7 @@ the evidence behind it is the state page, `docs/STATE-2026-11-08.md` (published:
 Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a short-term planning document and showed
 "basically nothing left"). Everything here was the roadmap's "Where we are", "Landed today" and Stage 5 queue.
 
-## Where we are (2026-11-09, about 01:00, at bb3234a)
+## Where we are (2026-11-09, about 01:30, at ae5befb)
 
 - **Stage 1 is done** (D135 to D151, 2026-11-07 night to 11-08 dawn): 2d6 with caps, the dice and the player's row,
   the consequence roll with noir's table rewritten, the small faults, the six time rules, and the station's control
@@ -50,7 +50,14 @@ Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a shor
 
 ## The queue, in order (the owner, 11-08 evening; part seven put first 11-08 night; part eight 11-09)
 
-0. **Part nine, written 11-09 about 01:15, carried to the build chat by the owner** (the side chat's read of §5 and the readiness report, 11-09):
+0. **Her server** (B230, the owner 11-09): a dedicated server for her game, pinned and never restarted by the build;
+   then she plays on it. Part ten, later: the floor's witness and a fair trade (B229), B224's unplain rest, B221 when the
+   owner answers.
+   *Landed 11-08 evening (the build chat's clock), all of part nine:* B217 3fffe54, B225 6062202, B219 96ef2d1, B220 08d6a23, B226
+   1197b1c, B45 9a9d925, B227 c4d9ff8, B222 a2ee5ce, B223 76780f0, B224 ada23f6 (the plain three), B228 f3ef452; the §12
+   round 6735ec72e948: edge on 9 of 10, settled rows with a why 2 of 2, floor raises 2 (one prying, one a fair trade: B229),
+   no retells, no deaths, Sneak Attack and finesse seen.
+0a. *Part nine, written 11-09 about 01:15, built the same hour* (the side chat's read of §5 and the readiness report, 11-09):
    first and alone, the secret-holder floor on an engine witness, never on the model's `aim` (B217: Gemma marks every
    check secret, the floor is back on every parley and on fights); then the settled rows written once from the reading
    (B219), a name masked as a pronoun (B220), the fail branch forced for impossible demands (B225), the grab that follows
@@ -67,7 +74,7 @@ Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a shor
    zero (B216); then one Gemma round with its report and three counts. The side chat reads it before she plays.
    *Landed 11-08 night:* part seven (B207 to B211, B63 narrowed; 2669a19, 5a82d9e), part six (B200 to B206; dd4be6c,
    748d653, 0638909, ca47f24, 9538397), B212 (634f5a9), too_far widened (fc89cad).
-1. **She plays, on Sonnet (:8014).** The side chat's read 11-09: on Sonnet the design holds (edge on 15 of 21 checks,
+1. **She plays, on her own server.** The side chat's read 11-09 after part nine: on Sonnet the design holds (edge on 15 of 21 checks,
    `aim` never misused, 14 attempts settled by the words, death is death); she can play now if the owner accepts what
    is still open there: XP moves only when a quest closes (B221), money drift (B223), the People panel ahead of the
    prose (B224), impossible demands rolled rather than refused (B225), heat not moving on an open crime (B227), no
