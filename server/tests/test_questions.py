@@ -63,7 +63,7 @@ async def test_word_from_elsewhere_waits_for_a_quiet_turn(engine, fake):
     st.player.location = "Lake Ambercold"
     st.player.with_them = ["tam"]
     st.person("tam").location = "Lake Ambercold"
-    assert "nobody near" in game.unquiet(st)
+    assert game.far_from_word(st) == "far from word: Lake Ambercold" and game.unquiet(st) == ""     # B249: place, not people
     hostile = st.person("maud")
     hostile.location, hostile.attitude = "Lake Ambercold", -3
     assert "hostile" in game.unquiet(st)
@@ -160,3 +160,40 @@ def test_a_scene_in_progress_holds_callers_and_a_long_hold_gives_way(engine, no_
     assert not ev.tick([reach], doc, 9, ctx=ev.EffectContext(unquiet="on the move", soft=False))[0]     # hard: still waits
     assert [f.event_id for f in ev.tick([reach], doc, 10, ctx=ev.EffectContext(unquiet=why, soft=True))[0]] == ["x_reach"]
     assert reach.held_since is None
+
+
+def test_word_from_the_city_waits_for_the_city_whoever_is_on_the_island(engine):
+    """B249 (part eleven §1b), Lilith's turn 28: the lamplighters' fallback at Reed Island at dawn, told as a reed-cutter
+    poling past, because Sael (a siren, attitude -1) counted as a carrier. Now it waits at any water, wood or south place,
+    whoever is there, and fires at the Lantern on the next quiet turn; the deck does not deal far from word."""
+    from engine import events as ev
+    from engine.game import TurnInfo
+    import random
+    game = engine.games["fantasy"]
+    iid = engine.create_instance("fantasy", SHEET)
+    st = state_of(engine, iid)
+    st.player.location = "Reed Island"
+    sael = st.people[0].model_copy(update={"id": "sael", "name": "Sael", "location": "Reed Island", "attitude": -1, "met": True, "hidden_from_player": False})
+    st.people.append(sael)
+    assert game.unquiet(st) == "" and game.far_from_word(st) == "far from word: Reed Island"
+    e = ev.Event.model_validate({"id": "lamplighters_shadow_reach", "hook": "lamplighters_shadow", "trigger": {"flag": "never_set"},
+                                 "fallback": {"after": {"flag": "due"}, "directive": "Word reaches Brin by whoever is nearest."}})
+    doc = st.model_dump(mode="json")
+    doc["flags"]["due"] = True
+    ctx = ev.EffectContext(far=game.far_from_word(st))
+    assert not ev.tick([e], doc, 28, ctx=ctx)[0] and ctx.holds[0]["why"] == "far from word: Reed Island"
+    st.player.location = "The Drowned Lantern"
+    assert game.far_from_word(st) == ""
+    fired, _, _ = ev.tick([e], doc, 29, ctx=ev.EffectContext(far=game.far_from_word(st)))
+    assert [f.event_id for f in fired] == ["lamplighters_shadow_reach"]
+    # the deck: due and open, it deals at the Lantern and not on the island
+    for place, deals in (("Reed Island", False), ("The Drowned Lantern", True)):
+        s2 = state_of(engine, iid)
+        s2.player.location = place
+        for h in s2.hooks:
+            h.status = "done"
+        s2.deck.last_deal_abs = -10_000
+        before = len(s2.hooks)
+        info = TurnInfo(turn=5, elapsed_minutes=5, rng=random.Random(3), player_text="I look around.")
+        after = game.after_turn(s2, info)
+        assert (len(after.hooks) > before) == deals, place

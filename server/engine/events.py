@@ -71,6 +71,7 @@ class EffectContext(BaseModel):
                                                 # Gorm"); empty when it is. One definition (pipeline.quiet_why); every hook's caller waits on it
     soft: bool = False                          # B248: the why is only a scene in progress or a recent caller: a hook held this long gives way
     patience: int = 120                         # game minutes a hook waits out a soft why before it comes anyway
+    far: str = ""                               # B249: why word from elsewhere cannot reach the player here ("far from word: Reed Island")
     holds: list[dict] = Field(default_factory=list)   # what waited this turn for a quiet one, and why (the ledger's)
 
 Strictness = Literal["scripted", "guided", "advisory"]
@@ -403,6 +404,13 @@ def tick(events: list[Event], doc: dict, turn: int, clock_path: str = "clock", l
         if e.hook and says and any(o is not e and o.hook and o.hook != e.hook and o.fired and o.fired_turn == turn
                                    and _said(o) for o in events):
             held.add(e.id)                          # another hook spoke this turn: this one waits for the next
+            continue
+        if variant == "fallback" and says and ctx is not None and ctx.far:
+            held.add(e.id)                          # B249: word from elsewhere waits for a city place, whoever is present
+            if e.held_since is None:
+                e.held_since = _clock_abs(doc, clock_path, mpd)
+            ctx.holds.append({"event": e.id, "hook": e.hook, "variant": variant, "why": ctx.far,
+                              "waited": _clock_abs(doc, clock_path, mpd) - e.held_since})
             continue
         if e.hook and says and ctx is not None and ctx.unquiet:
             # B104, B235, B248: a hook's caller (in its own scene too) and word from elsewhere wait for a quiet turn; a hook

@@ -603,8 +603,8 @@ class FantasyGame(GameBase):
         return q.name if q is not None else None
 
     def unquiet(self, state: FantasyState) -> str:
-        """Why word from elsewhere cannot reach the player now (B104, D177), or "": someone hostile here, a compulsion or a
-        peril, or open water or the wild with nobody here to carry it (Tam beside them is not a carrier of the city's news)."""
+        """Why nothing should come to the player now (B104, D177; B248), or "": someone hostile here, a compulsion or a
+        peril. Where word can reach them is far_from_word's (B249)."""
         s, p = state, state.player
         here = [q for q in s.people if q.status == "alive" and not q.hidden_from_player and q.location and self._same_spot(s, q.location, p.location)]
         hostile = next((q for q in here if q.attitude <= -2), None)
@@ -614,9 +614,18 @@ class FantasyGame(GameBase):
             return "under a compulsion"
         if getattr(p, "peril", None):
             return "in a peril"
-        if p.location in WATER | WOOD | SOUTH and not [q for q in here if q.id not in p.with_them]:
-            return f"at {p.location} with nobody near to carry word"
         return ""
+
+    def far_from_word(self, state: FantasyState) -> str:
+        """B249 (part eleven §1b): place before people. On the water, in the wood or the south, word from the city does not
+        reach the player, whoever is there (a siren on Reed Island is no carrier; B247): it waits for a city place. The deck
+        does not deal there either. "" in the city."""
+        p = state.player
+        within = {f.name: f.within for f in state.found_places}
+        at = p.location
+        while at in within and at not in WATER | WOOD | SOUTH:
+            at = within[at]
+        return f"far from word: {p.location}" if at in WATER | WOOD | SOUTH else ""
 
     @staticmethod
     def _secret_name(s: FantasyState, q: Person) -> bool:
@@ -2117,7 +2126,7 @@ class FantasyGame(GameBase):
             self._fall(s, info)
         # -- the deck
         deck = dk.deck_of(self.scenario(s.city.id))
-        if not p.fate and deck:
+        if not p.fate and deck and not self.far_from_word(s):          # B249: no deal far from word; the first city turn deals
             hid = dk.draw(s, deck, hooks, info.rng, now, info.turn)
             if hid is not None:
                 dk.deal(s, hooks[hid], turn=info.turn, deal_abs=now, name=p.name)

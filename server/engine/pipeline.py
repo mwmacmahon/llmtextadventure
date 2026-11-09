@@ -1728,7 +1728,8 @@ class Engine:
         events = _events_of(game, doc)
         ectx = ev.EffectContext(pending_path=ppath or "hidden.pending", clock_path=clock_path, minutes_per_day=clock.minutes_per_day if clock else 1440, turn=turn,
                                 location_path=getattr(game, "location_path", "player.location"),
-                                **dict(zip(("unquiet", "soft"), quiet_why(game, state, adj, doc, turn, self._last_turn(iid, turn)))))
+                                **dict(zip(("unquiet", "soft"), quiet_why(game, state, adj, doc, turn, self._last_turn(iid, turn)))),
+                                far=str(_hook(game, "far_from_word", state, default="") or ""))
         # B105 (D177): a question about the scene (kind trivial) moves nothing: no event, pending or hazard ticks on it
         quiet = adj is not None and adj.kind == "trivial"
         fired, expired, ev_directives = ([], [], []) if quiet else ev.tick(events, doc, turn, clock_path, log_path, ectx, since_abs=since_abs)
