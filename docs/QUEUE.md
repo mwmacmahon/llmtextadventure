@@ -10,7 +10,7 @@ the evidence behind it is the state page, `docs/STATE-2026-11-08.md` (published:
 Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a short-term planning document and showed
 "basically nothing left"). Everything here was the roadmap's "Where we are", "Landed today" and Stage 5 queue.
 
-## Where we are (2026-11-09, evening, at 53bce67)
+## Where we are (2026-11-09, night, at 7c77af6)
 
 - **Stage 1 is done** (D135 to D151, 2026-11-07 night to 11-08 dawn): 2d6 with caps, the dice and the player's row,
   the consequence roll with noir's table rewritten, the small faults, the six time rules, and the station's control
@@ -51,8 +51,15 @@ Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a shor
 - **Part ten landed and she played** (11-09): dev mode off at the server (B232, 4666dd6), Super Grimdark Fantasy as a
   derived game, the mods first cut and the grimdark mod loading on it alone (B231, B79, B89, 935e3a2), the fair trade
   (B229, b6244bb), the character's description on the page (e8e632c), a wait meant for someone else not asked "until
-  when" (B233, from her turn 27). Her server stays at 6c9099a until the owner says; none of this is there yet. Her first
-  28 turns gave the eight notes in 1a.
+  when" (B233, from her turn 27). Her first 28 turns gave the eight notes in 1a.
+- **Part eleven §1 landed and her server moved** (11-09 night, fee1e3b to 7c77af6): one definition of quiet (B248),
+  place before people for word from elsewhere (B249; closes B247 and B104), one newcomer a scene (B250), Hazel waits to
+  be spoken to (B251; closes B241), holds shown in the mechanics row (B252), the tests (B253). Then from the owner's own
+  grimdark turns: a quest's deadline runs from when the player hears of it (B254, D182), nobody walks into the player's
+  own room (B255), and the assistant's reading says whether anyone could walk up at all, `open_to_callers`, a hard hold
+  when false (B256, D183; the owner, on a model gate: "probably fine to just see how things go for now"); a turn cut off
+  mid-stream leaves no half turn (B257). :8016 moved 6c9099a to 7c77af6 at 05:13 UTC on the owner's word, dev mode
+  off, with everything from part eight on. §2 to §7 (B242 to B246, B224.22, B58) are written and not yet built.
 
 ## The queue, in order (the owner, 11-08 evening; part seven put first 11-08 night; part eight 11-09)
 
@@ -96,10 +103,10 @@ Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a shor
    save at last); the People cards showing seed facts she was never told and never updating (B243); the game master's
    asides not canon (B244); the clock's floor in a tense scene (B245: Sonnet never writes a fast turn); a thing given
    away kept, because the engine held it twice (B246); a fallback quest reaching her on the island by boat (B247, B104
-   reopened); the Rats job "offered" after the deed, no close flag written (B224.22 seen again, B58). Part eleven written 11-09
-   as two pastes: §1 the interrupting people (B241, B247, B104; on top of the build chat's own B235 walk-up hold), §2 to
-   §7 the rest (B242 to B246, B224.22, B58); her server moves after it, on the owner's word.
-1. **She plays, on her own server** (started 11-09; 28 turns the first night, 25a51df64905, Normal, Sonnet). The side chat's read after part nine: on Sonnet the design holds (edge on 15 of 21 checks,
+   reopened); the Rats job "offered" after the deed, no close flag written (B224.22 seen again, B58). Part eleven written 11-09 as two pastes: §1 the interrupting people, built the same night (B248 to B253; B241,
+   B247 and B104 closed) and on her server at 7c77af6; §2 to §7 the rest (B242 to B246, B224.22, B58), written and
+   not yet built, on her server at its next move.
+1. **She plays, on her own server** (started 11-09; 28 turns the first night, 25a51df64905, Normal, Sonnet; the server at 7c77af6 since 11-09 night). The side chat's read after part nine: on Sonnet the design holds (edge on 15 of 21 checks,
    `aim` never misused, 14 attempts settled by the words, death is death); she can play now if the owner accepts what
    is still open there: XP moves only when a quest closes (B221), money drift (B223), the People panel ahead of the
    prose (B224), impossible demands rolled rather than refused (B225), heat not moving on an open crime (B227), no

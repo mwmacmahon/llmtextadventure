@@ -111,7 +111,8 @@ one roll a block). Design: DESIGN-time-and-attempts §3 and §4; D146 to D151.
 - Text with a time in it goes stale (T4); windows fixed in code (T5); no test crosses midnight with a timer in flight
   (T6).
 - Questions move no time and an Ask mode answers out of the story (B105): built (D177); reaches wait for a quiet turn
-  (B104): built, its content half (a fallback names its carrier) is the fantasy's.
+  (B104): built, reopened from her save and closed again 11-09 (B249: a fallback waits for a quiet turn at a city
+  place, whoever is present); its content half (a fallback names its carrier) is the fantasy's.
 - The slow floor of five in a tense scene (B245, flagged from her save): Sonnet never writes a fast turn, so the
   one-minute floor is unreachable; the floor to stand down where the engine can see the scene is tense.
 
@@ -176,6 +177,11 @@ edge. Stakes live by default on every game. Design: ASSISTANT-DESIGN-2026-11-05;
   returns only if beats return.
 - The assistant sees more than the narrator and is probed as the whole role (DESIGN2 §17; the standing plan).
 
+**The reading says whether anyone could walk up** (`open_to_callers`, B256, D183; built 11-09 from the owner's question
+"is there not just like a way that the assistant can reject a newcomer"): true by default, false in a shut room, hiding, a fight
+or a tense talk; a hard hold on every arrival. Watched in play before anything more (the owner); the one risk is a hook
+held with no patience behind a long false.
+
 ## 7. The world's records
 
 The structured state the referee writes from the prose: people, places, things, threads, timers, secrets and tells,
@@ -220,9 +226,9 @@ rolled (B225, area 1); the siren's grab following the player off the island (B22
 (B227); the clock and the question in the prose, an error string shown to the player (B228); no check on a player name
 that is a cast member's (B45).
 
-**Left, from her first game (11-09; B241 to B247, flagged):** Hazel offers herself to a stranger mid-scene (B241:
-content, and happenings held while the player is mid-attempt); a fallback quest reaching her on the island by boat
-(B247, B104 reopened: the hold needs a place); the rest are the engine's (areas 2, 5, 7, 11).
+**From her first game (11-09).** Part eleven §1 closed the interrupting people (B241 by B251, Hazel waits to be spoken
+to; B247 and B104 by B249, place before people), on her server at 7c77af6. Left, flagged and written as §2 to §7: the rest
+(B242 to B246, B224.22, B58), the engine's (areas 2, 5, 7, 11).
 
 **Open with the owner (content).** The Watch raid the build added (B40); the Temple's price as a hook (B43); a quest
 settled a way no flag names (B58); the thirteen hooks whose endings the lint found one-sided (B110 to B122, each with

@@ -270,6 +270,9 @@ class HookState(BaseModel):
     status: Literal["dealt", "live", "done", "failed"] = "dealt"
     dealt_turn: int = 0
     dealt_abs: int = 0
+    reached_abs: int | None = None  # B254 (the owner, 11-09: "deadlines should be relative to being introduced"): when its reach
+                                    # fired; its deadline, its own timed events and its steps run from here. None: not yet (or
+                                    # an older save, whose clock stays the deal's)
     closed_turn: int | None = None
     giver: str = ""                 # from whom (the quest log's column)
     standing: str = ""              # where it stands, one word from STANDING (the quest log's column; deck.restand keeps it)

@@ -63,7 +63,9 @@ LIST_CAP: dict[str, int] = {"intents": 4, "fiat": 4}
 # own title, so each is named)
 _CHECK_FIELDS = ("edge", "edge_why")          # B217: aim is advisory, no longer required
 REQUIRED_BY_NAME: dict[str, tuple[str, ...]] = {"CheckProposal": _CHECK_FIELDS, "CheckStaked": _CHECK_FIELDS,
-                                                "FiatOutcome": ("settled", "why")}
+                                                "FiatOutcome": ("settled", "why"),
+                                                # B256: a default true the grammar would let Gemma skip, and then never say no
+                                                "AssistantReadingV2": ("open_to_callers",), "AssistantReadingStaked": ("open_to_callers",)}
 
 
 def inline_schema(js: dict) -> dict:

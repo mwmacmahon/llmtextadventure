@@ -667,11 +667,22 @@ class Engine:
         While it runs, the instance counts as streaming: a profile switch on this server waits for it (engine/picker.py)."""
         token = object()
         self.streaming[token] = (iid, time.time())
+        finished = False
         try:
             async for ev in self._play(iid, player_text, command, rewrite=rewrite, hint=hint):
                 yield ev
+            finished = True
         finally:
             self.streaming.pop(token, None)
+            if not finished:                          # B257: the stream was dropped mid-turn (a reload): no half turn stays
+                try:
+                    t = self.store.latest_turn(iid) + 1
+                    if any(r.turn == t for r in self.store.transcript(iid)):
+                        self.store.drop_transcript_turn(iid, t)
+                        self.store.append_ledger(iid, t, "turn_failed", {"step": "cut off", "error": "the stream was dropped before the turn finished"})
+                        log.warning("turn.cut_off " + logs.kv(iid=iid, turn=t))
+                except Exception:  # noqa: BLE001 - cleanup only; the next turn's start clears it anyway
+                    log.exception("turn.cut_off.cleanup_failed " + logs.kv(iid=iid))
             self.store.touch(iid)                     # last played (the save list sorts on it)
 
     def turns_streaming(self, stale_after: float = 900.0) -> list[str]:
@@ -740,6 +751,11 @@ class Engine:
             yield {"event": "error", "data": {"message": f"The story is over: {over} Undo or branch from an earlier turn to keep playing.", "step": "ended"}}
             return
         ledger = lambda kind, payload: self.store.append_ledger(iid, turn, kind, payload)  # noqa: E731
+        if any(r.turn == turn for r in self.store.transcript(iid)):
+            # B257: a turn cut off before it finished (the page reloaded mid-turn, the server stopped) left its player line and
+            # bulletin with no telling; they go, as a failed turn's do, so this turn does not hold two (ISSUES A2)
+            self.store.drop_transcript_turn(iid, turn)
+            ledger("turn_failed", {"step": "cut off", "error": "the turn before this input never finished (its stream was dropped)"})
         self._tapes[iid] = ledger
         t_turn = time.monotonic()
         stamp = self.profile_stamp(iid)               # the play's profile and difficulty, on the ledger and the mechanics row (Stage 3)
@@ -1284,6 +1300,7 @@ class Engine:
                         "resolved": [a.split(": ", 1)[1] for a in report.applied if a.startswith("settled: ")],
                         "lapsed": [p.id for p in res.get("pending_lapsed", [])]},
             "expired": [x.event_id for x in res["expired"]],
+            "holds": hold_lines(res.get("holds") or []),        # B252: a quest waiting is shown, not wondered about
             "happenings": [{"id": h.id, "who": h.who, "reason": h.reason if h.visible else None} for h in res["happened"]],
             "applied": [f"command {o['id']}" for o in lever_outcomes if o["status"] == "applied"] + report.applied,
             "rejected": [r.model_dump() for r in report.rejected],
@@ -1726,9 +1743,12 @@ class Engine:
                                           "if the player would notice the change, let it show, lightly.")
         # events tick (also on clarify turns: time has not moved, so usually nothing fires)
         events = _events_of(game, doc)
+        nc = self._newcomer(iid, turn, game, state)          # B250: one newcomer a scene
         ectx = ev.EffectContext(pending_path=ppath or "hidden.pending", clock_path=clock_path, minutes_per_day=clock.minutes_per_day if clock else 1440, turn=turn,
                                 location_path=getattr(game, "location_path", "player.location"),
-                                unquiet=_unquiet(game, state, adj))
+                                **dict(zip(("unquiet", "soft"), quiet_why(game, state, adj, doc, turn, self._last_turn(iid, turn)))),
+                                far=str(_hook(game, "far_from_word", state, default="") or ""),
+                                newcomer=nc[0], unmet=nc[1])
         # B105 (D177): a question about the scene (kind trivial) moves nothing: no event, pending or hazard ticks on it
         quiet = adj is not None and adj.kind == "trivial"
         fired, expired, ev_directives = ([], [], []) if quiet else ev.tick(events, doc, turn, clock_path, log_path, ectx, since_abs=since_abs)
@@ -1751,7 +1771,9 @@ class Engine:
             if items:
                 clk = sp.lookup(doc, clock_path, {}) or {}
                 now_abs = int(clk.get("day", 1)) * (clock.minutes_per_day if clock else 1440) + int(clk.get("minute", 0))
-                happened, h_directives = spon.roll(items, doc, rng_for(iid, turn, "spontaneous"), elapsed, turn, now_abs, clock_path, log_path, ctx=ectx)
+                busy = ectx.unquiet or ("someone came to the player this turn" if any(e.hook and e.fired and e.fired_turn == turn and e.directive for e in events) else "")
+                happened, h_directives = spon.roll(items, doc, rng_for(iid, turn, "spontaneous"), elapsed, turn, now_abs, clock_path, log_path,
+                                                   ctx=ectx, busy=busy, newcomer=ectx.newcomer, unmet=nc[2])
                 sp.assign(doc, spath, [i.model_dump(mode="json") for i in items])
                 directives.extend(h_directives)
                 rpath = getattr(game, "recent_path", None)
@@ -1773,6 +1795,73 @@ class Engine:
                 "notes": notes, "pending_fired": pending_fired, "pending_lapsed": pending_lapsed, "holds": list(ectx.holds),
                 "fail_streak": self._fail_streak(iid, turn) if assessments else 0,
                 "player_name": _hook(game, "player_name", state, default="the player")}
+
+    def _newcomer(self, iid: str, turn: int, game: Any, state: Any, window: int = 6) -> tuple[str, list[str], set[str]]:
+        """B250 (part eleven §1c): at most one newcomer a scene. Returns (why, the unmet people's names, their ids): why is
+        set when someone the player had not met walked up in the last six turns (a happening's who, or a hook's arrival that
+        names them) and is still here."""
+        people = list(getattr(state, "people", None) or getattr(state, "crew", None) or [])
+        unmet = [q for q in people if not getattr(q, "met", True)]
+        names = sorted({n for q in unmet for n in (str(q.name).lower(), str(q.name).lower().split(" ")[0]) if len(n) >= 3})
+        ids = {q.id for q in unmet}
+        here = set(_hook(game, "people_here", state, default=None) or [])
+        if not here:
+            return "", names, ids
+        by_name = {n: q.id for q in people for n in (str(q.name).lower(), str(q.name).lower().split(" ")[0]) if len(n) >= 3}
+        came: set[str] = set()
+        met_lately: set[str] = set()
+        try:
+            rows = [r for r in self.store.ledger(iid) if turn - window <= r["turn"] < turn]
+        except Exception:  # noqa: BLE001 - a scratch store without the instance
+            return "", names, ids
+        for r in rows:
+            p = r["payload"]
+            if r["kind"] == "happening":
+                came |= set(p.get("who") or [])
+            elif r["kind"] == "event_fired" and p.get("variant") == "trigger":
+                text = str(p.get("directive") or "").lower()
+                came |= {pid for n, pid in by_name.items() if re.search(r"\b" + re.escape(n) + r"\b", text)}
+            elif r["kind"] in ("delta", "drift"):
+                for ln in (p.get("applied") or []) + (p.get("changes") or []):
+                    m = re.match(r"people\.([\w-]+)\.met: False -> True", str(ln))
+                    if m:
+                        met_lately.add(m.group(1))
+        new = sorted(pid for pid in came & here if pid in ids or pid in met_lately)
+        if not new:
+            return "", names, ids
+        who = next((q.name for q in people if q.id == new[0]), new[0])
+        others = [q for q in unmet if q.id not in new]           # the newcomer is never held back by being one
+        names = sorted({n for q in others for n in (str(q.name).lower(), str(q.name).lower().split(" ")[0]) if len(n) >= 3})
+        return f"{who} came in lately and is still here", names, {q.id for q in others}
+
+    def _last_turn(self, iid: str, turn: int) -> dict:
+        """Last turn as quiet_why reads it (B248): the people the referee had present, the people checks were rolled at,
+        whether the telling quoted anyone, and whether the turn was a question to the player."""
+        t = turn - 1
+        if t < 0:
+            return {}
+        out: dict = {"present": [], "about": [], "quoted": False, "clarify": False}
+        try:
+            rows = self.store.ledger(iid, t)
+        except Exception:  # noqa: BLE001 - a store without the instance (a replay's scratch): nothing known
+            return {}
+        for r in rows:
+            p = r["payload"]
+            if r["kind"] == "verdict":
+                out["present"] = [x for x in p.get("present") or [] if x != "player"]
+            elif r["kind"] == "adjudication":
+                out["clarify"] = p.get("kind") == "clarify"
+            elif r["kind"] == "model_call" and p.get("role") == "narrator":
+                out["about"] += [str((c.get("result") or {}).get("about") or "") for c in p.get("calls") or [] if (c.get("result") or {}).get("about")]
+        readings: dict[int, str] = {}                    # B255: the readings of the last ten turns, newest first
+        for r in self.store.ledger(iid):
+            if r["kind"] == "adjudication" and t - 10 < r["turn"] <= t:
+                p = r["payload"]
+                readings[r["turn"]] = " ".join([str(p.get("summary") or "")] + [str((i or {}).get("action") or "") for i in p.get("intents") or []])
+        out["readings"] = [readings[k] for k in sorted(readings, reverse=True)]
+        told = [x.text for x in self.store.transcript(iid, roles=["narrator"]) if x.turn == t]
+        out["quoted"] = any(ch in (told[-1] if told else "") for ch in ('"', "\u201c"))
+        return out
 
     def _scene_run(self, iid: str, turn: int, adj: AssistantReading | None, clock: Any) -> int:
         """The scene-length mark (time doc §3 (vi), D150): when this turn is a fight beat and the turns running before it
@@ -2670,12 +2759,106 @@ WORLD_PROTOCOL = ("\n  <<ENEMY id move>> and <<HAZARD name>>  when THIS TURN lis
                   "fighting acts once a turn.")
 
 
-def _unquiet(game: Game, state: BaseModel, adj: Any) -> str:
-    """Why this turn is not quiet, or "" (B104, D177): a fight this turn, or the game's own reason (a hostile present, a
-    peril, a compulsion, open water or the wild with nobody near). Word from elsewhere waits while it is not quiet."""
-    if adj is not None and getattr(adj, "kind", "") == "action" and is_fight(adj):
-        return "in a fight"
-    return str(_hook(game, "unquiet", state, default="") or "")
+# B235 (the owner, 11-09, the grimdark save 3acb923619a3: "I'm just trying to walk across the room and I've been interrupted by
+# Tam Reedy and then by Pip"): turn 10, walking out of the bath to the stairs, Tam's arrival (a hook's reach in the inn) and
+# Hazel's "where are you off to" came in the same turn; turn 11, on the stairs, Pip's. Someone walking up to the player waits
+# while the player is on the move, and for two turns after someone else did.
+ON_THE_MOVE = re.compile(r"\b(?:walks?|walking|strides?|striding|struts?|strutting|march(?:es|ing)?|heads?|heading|goes|going|go (?:to|up|down|out|back|home)|"
+                         r"leaves?|leaving|exits?|climbs?|climbing|ascen(?:t|ds?)|descen(?:t|ds?)|crosses|crossing|steps? out|"
+                         r"(?<!come )(?<!comes )(?<!coming )(?:up ?stairs|down ?stairs|up the stairs|down the stairs)|to (?:my|his|her|their|the) room|"
+                         r"on (?:my|his|her|their) way)\b", re.I)
+# B255 (the owner, 11-09, the grimdark save 2beb52d49390 turn 18: "pip just showed up in my damn room"): waiting till midnight
+# in his room, door closed since turn 12, Pip's "at the player's elbow" came; the game knows only "the Drowned Lantern".
+# The readings say where: the player's own room, a closed door, bed. Nobody walks up there until a reading takes them out.
+PRIVATE_IN = re.compile(r"\b(?:(?:my|his|her|their|own) (?:room|bedroom|chamber|garret|quarters|bed)|(?:closes?|shuts?|bars?|locks?|bolts?) the door|"
+                        r"in bed|to bed|turns? in for the night|settles? (?:in|down) for the night|beds? down)\b", re.I)
+PUBLIC_AGAIN = re.compile(r"\b(?:common room|taproom|downstairs|down the stairs|the bar\b|the street|outside|out of (?:the|my|his|her|their) room|"
+                          r"leaves? (?:the|my|his|her|their) room|opens? the door to)", re.I)
+PRIVATE_LOOKBACK = 10
+SPACING_TURNS = 2
+SPACING_MINUTES = 20            # and within this much game time: a long wait after someone came is room enough
+
+
+def hold_lines(holds: list[dict]) -> list[str]:
+    """B252 (part eleven §1e): each hold as the ledger has it, for the mechanics row and the call report:
+    "held: lamplighters_shadow_reach (fallback), far from word: Reed Island"."""
+    out = []
+    for h in holds:
+        waited = int(h.get("waited") or 0)
+        out.append(f"held: {h.get('event')}" + (" (fallback)" if h.get("variant") == "fallback" else "") + f", {h.get('why')}"
+                   + (f" (waiting {waited // 60} h {waited % 60:02d} min)" if waited >= 60 else ""))
+    return out
+
+
+def in_private(now: str, before: list[str]) -> bool:
+    """B255: is the player in their own room, by the readings (this turn's first, then the last ten, newest first)? The
+    first reading that says so decides: their room, a closed door or bed is private; the common room, the stairs down,
+    the street or leaving the room is not; a move anywhere else is not either."""
+    for words in [now, *before[:PRIVATE_LOOKBACK]]:
+        if not words:
+            continue
+        if PUBLIC_AGAIN.search(words):
+            return False
+        if PRIVATE_IN.search(words):
+            return True
+        if ON_THE_MOVE.search(words):
+            return False
+    return False
+
+
+def quiet_why(game: Any, state: Any, adj: Any, doc: dict, turn: int, last: dict | None = None) -> tuple[str, bool]:
+    """Why this turn is not quiet, and whether that why is soft (B248: one definition, for word from elsewhere (B104) and for
+    anyone walking up (B235)), or ("", False). Hard: a fight this turn; the game's own (a peril, a compulsion, someone hostile
+    here); the turn is a move. Soft (a hook that has waited two game hours comes anyway): someone came to the player in the
+    last two turns and twenty minutes; the player is mid-scene with someone here: this turn's attempt is at a person here,
+    a check was rolled at a person here last turn, a question to the player is waiting, or last turn's telling had a person
+    here speaking (the referee's `present` and a quoted line). `last` is last turn as the ledger has it (Engine._last_turn)."""
+    last = last or {}
+    action = adj is not None and getattr(adj, "kind", "") == "action"
+    if action and is_fight(adj):
+        return "in a fight", False
+    why = str(_hook(game, "unquiet", state, default="") or "")
+    if why:
+        return why, False
+    if action:
+        words = " ".join([adj.summary or ""] + [i.action or "" for i in adj.intents])
+        if any(str(getattr(i, "transition", "") or "").startswith("move:") for i in adj.intents) or ON_THE_MOVE.search(words):
+            return "on the move", False
+    if action and getattr(adj, "open_to_callers", True) is False:      # B256: the assistant read the scene: nobody walks up here now
+        return "the assistant: nobody could walk up here now", False
+    now_words = " ".join([adj.summary or ""] + [i.action or "" for i in adj.intents]) if adj is not None and hasattr(adj, "intents") else ""
+    if in_private(now_words, last.get("readings") or []):
+        return "the player is in their own room", False
+    recent = range(turn - SPACING_TURNS, turn)
+    clock = getattr(game, "clock", None)
+    clk = (sp.lookup(doc, clock.path, None) or {}) if clock else {}
+    now = int(clk.get("day", 1)) * clock.minutes_per_day + int(clk.get("minute", 0)) if clock else None
+
+    def lately(t, at) -> bool:
+        return t in recent and (now is None or at is None or now - int(at) < SPACING_MINUTES)
+
+    for e in sp.lookup(doc, getattr(game, "events_path", "hidden.events"), []) or []:
+        if e.get("hook") and e.get("fired") and e.get("directive") and lately(e.get("fired_turn"), e.get("fired_at")):
+            return "someone came to the player a moment ago", True
+    spath = getattr(game, "spontaneous_path", None)
+    for h in (sp.lookup(doc, spath, []) or []) if spath else []:
+        if h.get("who") and lately(h.get("last_fired_turn"), h.get("last_fired_at")):
+            return "someone came to the player a moment ago", True
+    here = _hook(game, "people_here", state, default=None)
+    here = set(here if here is not None else [x for x in last.get("present") or [] if x != "player"])
+    name = lambda pid: str(_hook(game, "person_name", state, pid, default=None) or pid)  # noqa: E731
+    if action:
+        for i in adj.intents:
+            at = set(getattr(i, "targets", None) or []) | ({i.check.target_entity} if i.check and getattr(i.check, "target_entity", None) else set())
+            if at & here:
+                return f"in a scene with {name(sorted(at & here)[0])}", True
+    if last.get("clarify"):
+        return "a question to the player is waiting", True
+    if set(last.get("about") or []) & here:
+        return f"in a scene with {name(sorted(set(last['about']) & here)[0])} (a check last turn)", True
+    if last.get("quoted") and set(last.get("present") or []) & here:
+        return f"{name(sorted(set(last['present']) & here)[0])} was talking with the player", True
+    return "", False
 
 
 SHE = re.compile(r"\b(she|her|hers|woman|girl|wife|mother|daughter|sister|widow|lady|siren|queen|witch|maid|niece|aunt|grandmother)\b", re.I)
@@ -2771,7 +2954,7 @@ TASK_WORDS: list[tuple[str, re.Pattern]] = [       # D148: the longer kind wins 
                           r"moves? to|climbs?|rows?|sails?)\b", re.I)),
     ("talk", re.compile(r"\b(?:asks?|talks?|tells?|questions?|speaks?|chats?|persuades?|bribes?|buys? .{0,20}drink|negotiates?|haggles?|"
                         r"interrogates?|presses?|confronts?|calls?|phones?|lies? to|bluffs?|charms?|threatens?)\b", re.I)),
-    ("fight", re.compile(r"\b(?:fights?|shoots?|fires?(?! ladder| escape| exit|place|light)|punch(?:es)?|attacks?|stabs?|swings? at|strikes?|"
+    ("fight", re.compile(r"\b(?:fights?|shoots?|(?<!the )(?<!a )(?<!by )(?<!his )(?<!her )(?<!my )(?<!their )(?<!our )(?<!your )fires?(?! ladder| escape| exit|place|light| burns| crackles)|punch(?:es)?|attacks?|stabs?|swings? at|strikes?|"
                          r"wrestles?|struggles?|grapples?|dodges?|lunges?|flees?|runs? from|chases?|tackles?|kicks?|bites?|retreats?|"
                          r"scrambles?|backs? away|wrench(?:es)?)\b", re.I)),
 ]

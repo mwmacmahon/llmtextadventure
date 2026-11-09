@@ -30,10 +30,7 @@ A server never changes kind in place: a new kind is a new entry and a new port.
 | 8011 | `api-local` | dev | the box's model with `--reload` | llama.cpp on gumbo | the shared checkout | `data/` | 0.0.0.0 | the build chat |
 | 5173 / 5174 / 5175 | `web`, `web-local`, `web-fantasy-fake` | dev | the web client in development, proxying `/api` to 8010 / 8011 / 8015 | | `web/` | | | the build chat |
 
-Running on 2026-11-09 evening: 8013, 8014, 8016. **:8016 today:** still 6c9099a (http://192.168.0.84:8016 on the LAN),
-started before the flag existed, so its Settings page still shows the dev switch (it has no hidden game to show: the
-worktree has no `server/games/hidden/`); `server.log` and `deploys.log` sit beside her saves. It takes `TA_DEV_MODE=off`
-and everything since (B229, B231 to B233, the description on the page) at its next update, which waits for the owner's go. The box (gumbo, 192.168.0.215) serves one model for every role on
+Running on 2026-11-09 night: 8013, 8014, 8016 (http://192.168.0.84:8016 on the LAN). **:8016 today:** 7c77af6, moved 2026-11-09 05:13 UTC on the owner's word (deploys.log: 6c9099a -> 7c77af6), with dev mode off: the Settings page has no dev switch and only station, noir and the fantasy are listed. It brings parts eight to eleven and the fixes since (B213 to B257): among them the walk-up holds, word held far from the city, quest deadlines from when she hears of them, Hazel waiting to be spoken to, the "In your words" panel, and a cut-off turn cleaning itself up. `server.log` and `deploys.log` sit beside her saves. The box (gumbo, 192.168.0.215) serves one model for every role on
 :8280 behind the cache proxy; `TA_LLAMA_URL` and `TA_LLAMA_PREPARE_URL` point every local server at it.
 
 ## The flags a server takes

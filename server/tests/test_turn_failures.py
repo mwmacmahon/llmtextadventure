@@ -50,3 +50,23 @@ async def test_a_failed_turn_leaves_no_transcript_and_the_next_takes_its_number(
     await events_of(engine.play(iid, "I look again."))
     players = [r for r in engine.store.transcript(iid) if r.role == "player"]
     assert [(r.turn, r.text) for r in players] == [(1, "I look again.")]
+
+
+async def test_a_turn_cut_off_mid_stream_leaves_no_half_turn(engine: Engine, fake: FakeProvider):
+    """B257 (the grimdark save 2beb52d49390, 11-09): a page reload dropped a reroll's stream after its player line and bulletin
+    were written; nothing cleared them, so the next input would have held two player lines. Now the dropped stream clears
+    them, and a turn that starts over leftovers (a server stopped mid-turn) clears them first."""
+    iid = engine.create_instance("noir", {})
+    fake.canned["AssistantReading"] = [LOOK, LOOK]
+    fake.script = lambda system, messages: "The shack is empty and the rain keeps on."
+    gen = engine.play(iid, "I look around.")
+    async for ev in gen:
+        if any(r.turn == 1 for r in engine.store.transcript(iid)):
+            break                                     # the player line is down; the page goes away
+    await gen.aclose()
+    assert [r for r in engine.store.transcript(iid) if r.turn == 1] == []
+    assert any(r["kind"] == "turn_failed" and r["payload"]["step"] == "cut off" for r in engine.store.ledger(iid, 1))
+    engine.store.append_transcript(iid, 1, "player", "a leftover from a server stopped mid-turn")
+    await events_of(engine.play(iid, "I look again."))
+    players = [r.text for r in engine.store.transcript(iid) if r.turn == 1 and r.role == "player"]
+    assert players == ["I look again."] and engine.store.latest_turn(iid) == 1

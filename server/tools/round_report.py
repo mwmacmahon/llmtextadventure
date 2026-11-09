@@ -40,7 +40,7 @@ OUT = ROOT / "notes" / "playtests"
 E = html.escape
 
 ROLE_LABEL = {"assistant": "Assistant", "adjudicator": "Assistant", "narrator": "Narrator", "referee": "Referee", "summarizer": "Summarizer"}
-ENGINE_KINDS = {"clock", "event_fired", "event_expired", "happening", "pending", "unseen", "check", "command", "command_preview", "drift", "forced"}
+ENGINE_KINDS = {"hold", "clock", "event_fired", "event_expired", "happening", "pending", "unseen", "check", "command", "command_preview", "drift", "forced"}
 
 CSS = BASE_CSS + """
 .call{border:1px solid var(--rule);border-radius:7px;padding:10px 12px;display:grid;gap:8px;min-width:0;background:var(--sheet)}
@@ -225,6 +225,9 @@ def render_engine(r: dict) -> str:
         return f"<div class='eng'><b>clock</b> +{p.get('elapsed')} min{(' · ' + E(p['note'])) if p.get('note') else ''}</div>"
     if k == "event_fired":
         return f"<div class='eng'><b>event fired</b> {E(p.get('id', ''))}: {E(_short(p.get('directive') or p.get('description') or ''))}</div>"
+    if k == "hold":                                       # B252: a quest waiting for a quiet turn, and why
+        from engine.pipeline import hold_lines
+        return f"<div class='eng'><b>held</b> {E(hold_lines([p])[0].removeprefix('held: '))}</div>"
     if k == "event_expired":
         return f"<div class='eng'><b>event expired</b> {E(p.get('id', ''))}</div>"
     if k == "happening":

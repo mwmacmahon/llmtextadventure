@@ -50,6 +50,7 @@ export type Mechanics = {
   calls: { call: string | null; mechanic: string | null; outcome: string | null;
            consequence?: { roll: number; tier: string; source: string; complication?: { kind: string; fact: string }; mark?: { kind: string; fact: string }; way_closed?: { fact: string } } }[];
   events: string[];
+  holds?: string[];             // B252: "held: <event> (fallback), <why>"
   expired: string[];
   happenings: { id: string; who: string[]; reason: string | null }[];
   applied: string[];

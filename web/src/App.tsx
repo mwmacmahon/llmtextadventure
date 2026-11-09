@@ -486,6 +486,7 @@ function MechanicsRow({ text }: { text: string }) {
     ...(m.timing ? [`clock after the prose: +${m.timing.added} min (results ${m.timing.result_minutes}, time lost ${m.timing.lost} of ${m.timing.lost_asked} asked${m.timing.stopped_at ? `, stopped at ${m.timing.stopped_at}` : ""})`] : []),
     ...m.events.map((e) => `event ${e}`),
     ...m.expired.map((e) => `expired ${e}`),
+    ...(m.holds ?? []),
     ...(m.happenings ?? []).map((h) => `unscripted: ${h.id.replace(/_/g, " ")}${h.reason ? ` (${h.reason})` : ""}`),
     ...(m.rewritten ? [`retold${m.rewritten.by === "referee" ? " by the referee" : ""}${m.rewritten.attempt > 1 ? ` (${m.rewritten.attempt}×)` : ""}: ${m.rewritten.hint || "(tell it again)"}`] : []),
     ...(m.rulings ?? []).map((r) => `${r.serious ? "ruling" : "note"} ${r.rule.replace(/_/g, " ")}: ${r.what}${r.fix && r.fix !== r.what ? ` → ${r.fix}` : ""}`),

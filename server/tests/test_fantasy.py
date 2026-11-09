@@ -538,7 +538,9 @@ def test_milestones_pay_once_and_the_long_thread_never_closes(game: FantasyGame)
 
 def test_failed_closes_with_nothing_paid(game: FantasyGame):
     st = new(game)
-    st.clock.day += 5                                                # cellar_rats fails four days after its deal
+    reach = next(e for e in st.hidden.events if e.id == "cellar_rats_reach")   # B254: heard of, as the opening tells it
+    reach.fired, reach.fired_turn, reach.variant, reach.fired_at = True, 0, "trigger", st.hook("cellar_rats").dealt_abs
+    st.clock.day += 5                                                # cellar_rats fails four days after the player hears of it
     s1 = game.after_turn(st, info(turn=2))
     assert s1.hook("cellar_rats").status == "failed" and s1.player.xp == 0
 
@@ -589,6 +591,7 @@ def test_the_draw_favours_a_hook_whose_reach_is_where_the_player_has_been(game: 
 
 def test_attitude_words_and_the_top_word(game: FantasyGame):
     st = new(game)
+    st.person("hazel").attitude = 1                                    # B251: she starts at 0 now; one step up, as she was
     s1, _, _ = apply(game, st, C(kind="set", target="hazel", field="attitude", value="devoted"))
     assert s1.person("hazel").attitude == 3 and s1.person("hazel").attitude_word == "devoted"
     s2, _, _ = apply(game, st, C(kind="set", target="maud", field="attitude", value="hostile"))
@@ -656,6 +659,8 @@ async def test_the_first_evening_plays_as_the_content_says(engine: Engine, fake:
     fake.canned["AssistantReading"] = [reading("I sit by the fire and wait.", 60)]
     events = await play(engine, iid, "I sit by the fire and wait until something happens.")
     assert "ferrymans_daughter_reach" in events[-1]["data"]["mechanics"]["events"]
+    from engine.pipeline import is_fight                               # "sit by the fire" was a fight (B253)
+    assert not is_fight({"summary": "I sit by the fire with a cup of tea."}) and is_fight({"summary": "Brin fires at the creature"})
     assert state_of(engine, iid).clock.minute == 1140
     fake.canned["AssistantReading"] = [reading("I keep waiting.", 60)]
     events = await play(engine, iid, "I keep waiting until something happens.")
@@ -887,3 +892,48 @@ def test_the_description_is_shown_to_the_player_and_the_gm(engine):
     assert panel["items"][0]["value"] == SHEET["about"]
     st = engine.standing(iid)
     assert st["setup"]["about"] == SHEET["about"] and SHEET["about"] in st["prefix_text"]
+
+
+async def test_a_hooks_arrival_waits_out_a_walk_and_comes_on_the_next_quiet_turn(engine: Engine, fake: FakeProvider):
+    """B253 (part eleven §1f), the grimdark turn 10 through the pipeline: Tam's arrival falls due while the player crosses the
+    room; it is held, the mechanics row says so, and he comes in on the next quiet turn."""
+    iid = engine.create_instance("fantasy", SHEET)
+    fake.canned["AssistantReading"] = [reading("I look around the common room.", 5)]
+    await play(engine, iid, "I look around the common room.")
+    fake.canned["AssistantReading"] = [reading("I walk across the common room and head upstairs to my room.", 60)]
+    events = await play(engine, iid, "I walk across the room and up the stairs.")
+    m = events[-1]["data"]["mechanics"]
+    assert "ferrymans_daughter_reach" not in m["events"]
+    assert "held: ferrymans_daughter_reach, on the move" in m["holds"]
+    assert any(r["kind"] == "hold" and r["payload"]["why"] == "on the move" for r in engine.store.ledger(iid, 2))
+    fake.canned["AssistantReading"] = [reading("I sit by the fire with a cup of tea.", 5)]
+    events = await play(engine, iid, "I sit by the fire.")
+    assert "ferrymans_daughter_reach" in events[-1]["data"]["mechanics"]["events"]
+    from engine.pipeline import is_fight                               # "sit by the fire" was a fight (B253)
+    assert not is_fight({"summary": "I sit by the fire with a cup of tea."}) and is_fight({"summary": "Brin fires at the creature"})
+
+
+def test_a_hooks_deadline_runs_from_when_the_player_hears_of_it(game: FantasyGame):
+    """B254 (the owner, 11-09: "deadlines should be relative to being introduced"). The ferryman's job is dealt; the player
+    is away six days, past the job's five-day deadline counted from the deal, and has not heard of it. Unheard, its time
+    cannot fail it; when word reaches them, Tam rowing out alone and the deadline both run from that moment."""
+    st = new(game)
+    hooks = game.hooks_content()
+    h = st.hook("ferrymans_daughter")
+    deal = h.dealt_abs
+    reach = next(e for e in st.hidden.events if e.id == "ferrymans_daughter_reach")
+    rows = next(e for e in st.hidden.events if e.id == "tam_rows_out")
+    st.clock.day, st.clock.minute = divmod(deal + 6 * 1440, 1440)          # six days on, past deal + 7200 minutes, never heard
+    dk.settle(st, hooks, 30, lambda row, why: None)
+    assert h.status == "dealt" and h.reached_abs is None
+    reach.fired, reach.fired_turn, reach.variant, reach.fired_at = True, 31, "trigger", deal + 6 * 1440
+    dk.settle(st, hooks, 31, lambda row, why: None)
+    assert h.status == "live" and h.reached_abs == deal + 6 * 1440
+    moved = next(e for e in st.hidden.events if e.id == "tam_rows_out")
+    assert moved is not rows and moved.model_dump() != rows.model_dump()   # Tam's two days are counted from the hearing
+    st.clock.day, st.clock.minute = divmod(deal + 6 * 1440 + 4 * 1440, 1440)
+    dk.settle(st, hooks, 32, lambda row, why: None)
+    assert h.status == "live"                                              # four days after hearing: not yet failed
+    st.clock.day, st.clock.minute = divmod(deal + 6 * 1440 + 7300, 1440)
+    dk.settle(st, hooks, 33, lambda row, why: None)
+    assert h.status == "failed"                                            # five days and a bit after hearing: it went by
