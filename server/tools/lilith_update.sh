@@ -6,6 +6,7 @@
 # What it does, in order (and refuses before touching anything if a check fails):
 #   1. the commit exists and is on 2.0; the suite is the caller's job (run it first)
 #   2. she is not mid-turn: nothing written to her store in the last 10 minutes (--force skips this)
+#   2b. her store is backed up (sqlite's online backup) to the data folder's backups/, named for the move, before anything changes
 #   3. the worktree ../llmtextadventure-lilith is checked out (detached) at the commit
 #   4. notes/content is copied again from the main checkout (the content she plays is the content at the update)
 #   5. the web is built inside the worktree (its own web/dist)
@@ -44,6 +45,10 @@ if [[ -n "$LAST" ]]; then
   say "last write to her store: $LAST ($AGE min ago)"
   if (( AGE < 10 && ! FORCE )); then say "she may be mid-game; wait, or pass --force"; exit 1; fi
 fi
+
+# 2b. back up her store before anything changes (the owner, 11-09: "make sure she's not using save before changing anything and back up old one")
+BK="$DATA/backups/textadventure.before-$FROM-to-$TO.$(date -u +%Y%m%dT%H%M%SZ).sqlite3"
+run "mkdir -p '$DATA/backups' && sqlite3 '$DATA/textadventure.sqlite3' \".backup '$BK'\" && say \"backed up her store: $BK\""
 
 # 3-5. code, content, web
 run "git -C '$WT' checkout -q --detach '$FULL'"
