@@ -114,7 +114,7 @@ from engine.roles import AssistantReadingCombat, AttackSpec, IntentCombat  # noq
 
 def _attack_reading(*targets, text="I hack at the skeletons with my longsword."):
     return AssistantReadingCombat(kind="action", summary=text, time_minutes=1, tempo="fast", risk="high",
-                                  intents=[IntentCombat(action=text, targets=list(targets), attack=AttackSpec(targets=list(targets), weapon="longsword"))])
+                                  intents=[IntentCombat(action=text, targets=list(targets), attack_at=list(targets), weapon="longsword")])
 
 
 def _skeletons(st, n=2):
@@ -279,7 +279,6 @@ def test_a_bow_spends_arrows(game):
 
 # ---- §5 allies ---------------------------------------------------------------------------------------------------------------
 def test_an_ally_strikes_the_players_target_and_an_order_holds_from_the_next_turn(game):
-    from engine.roles import AllyOrder
     st, q = _fight(game, 2)
     st.people.append(Person(id="snag", name="Snag", role="dock thug", location=st.player.location, met=True))
     st.player.fighting.append("snag")
@@ -287,8 +286,7 @@ def test_an_ally_strikes_the_players_target_and_an_order_holds_from_the_next_tur
     hz.location = st.player.location
     st.player.with_them = ["hazel"]
     adj = _attack_reading("dead")
-    adj.intents[0].attack.ally_orders = [AllyOrder(ally="hazel", target="snag")]
-    plan = cb.plan_round(game, st, adj, "", 1, random.Random(1))
+    plan = cb.plan_round(game, st, adj, "I swing at the dead. Hazel, put an arrow in Snag!", 1, random.Random(1))
     ally = next(e for e in plan if e["side"] == "ally")
     assert ally["who"] == "hazel" and ally["target"] == "dead"                    # this turn: the player's target
     plan2 = cb.plan_round(game, st, _attack_reading("dead"), "", 2, random.Random(1))

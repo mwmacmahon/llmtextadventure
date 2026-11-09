@@ -147,7 +147,7 @@ class AttackSpec(BaseModel):
     targets: list[str] = Field(description="Who the blow is at, by id; two or three only when the words name them all (a sweep).")
     weapon: str = Field(default="", description="The weapon the player strikes with, in a word or two as they carry it; empty for their best.")
     riders: list[str] = Field(default_factory=list, description="Only what the player named that rides on the blow: smite, sneak. Empty otherwise.")
-    ally_orders: list[AllyOrder] = Field(default_factory=list, description="Orders the player's words give an ally (\"Hazel, the one on the left\"); empty otherwise.")
+    ally_orders: list[str] = Field(default_factory=list, description="Orders the player's words give an ally, each as 'ally id: target id' (\"Hazel, the one on the left\" -> \"hazel: skeleton\"); empty otherwise.")
 
 
 _COMBAT_CHECK = ("The check that decides this attempt when its outcome is uncertain and matters: stat, difficulty, label. An escape under "
@@ -157,9 +157,29 @@ _COMBAT_CHECK = ("The check that decides this attempt when its outcome is uncert
 _COMBAT_ATTACK = "In a fight, a blow at someone with a weapon: who, the weapon, any rider named. No check and no difficulty for it; null for anything else."
 
 
-class IntentCombatV2(IntentV2):
+class _Blow:
+    """The attack as flat fields (Sonnet's strict grammar refused a nested attack object: "the compiled grammar is too large"):
+    `attack_at` names whom a blow with a weapon is at (empty: no blow), `weapon` and `riders` beside it; `attack` reads them
+    back as one AttackSpec for the engine."""
+    @property
+    def attack(self) -> "AttackSpec | None":
+        at = [t for t in (getattr(self, "attack_at", None) or []) if t]
+        if not at:
+            return None
+        parts = [x.strip() for x in str(getattr(self, "weapon", "") or "").split(",")]
+        return AttackSpec(targets=at, weapon=parts[0] if parts else "", riders=[x.lower() for x in parts[1:] if x])
+
+
+_ATTACK_AT = ("In a fight, a blow at someone with a weapon: whom it is at, by id (two or three only when the words name them all); "
+              "no check and no difficulty for it. Empty for anything that is not a blow with a weapon.")
+_WEAPON = ("With attack_at: the weapon, in a word or two as they carry it, then after a comma anything the player named that rides on the "
+           "blow (\"longsword, smite\"); empty for their best weapon and nothing riding.")
+
+
+class IntentCombatV2(_Blow, IntentV2):
     check: CheckProposal | None = Field(default=None, description=_COMBAT_CHECK)
-    attack: AttackSpec | None = Field(default=None, description=_COMBAT_ATTACK)
+    attack_at: list[str] = Field(default_factory=list, description=_ATTACK_AT)
+    weapon: str = Field(default="", description=_WEAPON)
 
 
 class AssistantReadingCombatV2(AssistantReadingV2):
@@ -171,9 +191,10 @@ class AssistantReadingCombatV2(AssistantReadingV2):
         return cls(kind="action", summary=f"The player attempts: {player_text[:80]}", time_minutes=5, intents=[IntentCombatV2(action=player_text[:80])], risk="low")
 
 
-class IntentCombat(IntentStaked):
+class IntentCombat(_Blow, IntentStaked):
     check: CheckStaked | None = Field(default=None, description="The check that decides this attempt when its outcome is uncertain and matters: stat, difficulty, label, then both futures (STAKES). An escape under threat, a forced or hurried physical feat, a lock, a hidden search, an attempt to get something out of someone who may refuse, and anything in a fight that is not a blow with a weapon has one; a blow with a weapon is an attack instead, with no check. Null for anything routine with nothing in the scene pressing on the player, hurt or not.")
-    attack: AttackSpec | None = Field(default=None, description="In a fight, a blow at someone with a weapon: who, the weapon, any rider named. No check and no difficulty for it; null for anything else.")
+    attack_at: list[str] = Field(default_factory=list, description=_ATTACK_AT)
+    weapon: str = Field(default="", description=_WEAPON)
 
 
 class AssistantReadingCombat(AssistantReadingStaked):

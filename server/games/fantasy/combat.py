@@ -396,11 +396,12 @@ def plan_round(game: Any, s: FantasyState, adj: Any, player_text: str, turn: int
         if tgt:
             plan.append({"key": f"ally:{q.id}", "side": "ally", "who": q.id, "target": tgt})
     allies = [q for q in party(s) if bodies(q)]
-    for i in getattr(adj, "intents", None) or []:                     # the order is the player's free action: it holds from the next turn
-        a = getattr(i, "attack", None)
-        for o in (getattr(a, "ally_orders", None) or []) if a is not None else []:
-            if o.ally and o.target:
-                c.orders[str(o.ally).lower()] = str(o.target).lower()
+    orders = ally_orders_in(s, player_text, foes)                     # the order is the player's free action: it holds from the next turn
+    for o in orders:
+        if True:
+            ally, _, target = str(o).partition(":")                         # "hazel: skeleton" (a flat string keeps the grammar small)
+            if ally.strip() and target.strip():
+                c.orders[ally.strip().lower()] = target.strip().lower()
     for q in foes:
         b = ensure_block(q)
         for body in bodies(q):
@@ -412,6 +413,25 @@ def plan_round(game: Any, s: FantasyState, adj: Any, player_text: str, turn: int
                 tgt = rng.choice(allies).id
             plan.append({"key": f"enemy:{q.id}:{body}", "side": "enemy", "who": q.id, "body": body, "action": action, "target": tgt})
     return plan
+
+
+def ally_orders_in(s: FantasyState, text: str, foes: list[Person]) -> list[str]:
+    """Orders in the player's own words ("Hazel, take the one on the left": an ally's name, then an enemy's in the same sentence),
+    as 'ally: target'. Read by the engine, not the reading (Sonnet's strict grammar has no room for another list)."""
+    out = []
+    for sent in re.split(r"(?<=[.!?;])\s+", text or ""):
+        low = sent.lower()
+        for q in party(s):
+            names = {q.name.lower(), q.name.split()[0].lower(), *[a.lower() for a in q.aliases]}
+            at = min((low.find(n) for n in names if len(n) > 2 and n in low), default=-1)
+            if at < 0:
+                continue
+            for f in foes:
+                fn = {f.name.lower(), f.name.split()[0].lower() if not f.name.lower().startswith("the ") else f.name.lower(), *[a.lower() for a in f.aliases]}
+                if any(len(n) > 2 and n in low[at:] for n in fn):
+                    out.append(f"{q.id}: {f.id}")
+                    break
+    return out
 
 
 def player_attack(adj: Any) -> dict | None:

@@ -100,7 +100,7 @@ def fight(game, st, rng: random.Random, offset: int, rounds_cap: int = 20) -> di
         target = cb.living_enemies(game, st)[0].id
         riders = ["smite"] if any((p.count(c) or None) and p.count(c).value > 0 for c in ("smite", "divine_smite", "holy_power")) else []
         adj = AssistantReadingCombat(kind="action", summary="attack", time_minutes=1, risk="high",
-                                     intents=[IntentCombat(action="attack", targets=[target], attack=AttackSpec(targets=[target], riders=riders))] if not heal else
+                                     intents=[IntentCombat(action="attack", targets=[target], attack_at=[target], weapon=", ".join(["", *riders]) if riders else "")] if not heal else
                                      [IntentCombat(action="heal")])
         st.combat.plan = cb.plan_round(game, st, adj, "", rounds, rng)
         tally: dict = {"hp": 0}
