@@ -1284,6 +1284,7 @@ class Engine:
                         "resolved": [a.split(": ", 1)[1] for a in report.applied if a.startswith("settled: ")],
                         "lapsed": [p.id for p in res.get("pending_lapsed", [])]},
             "expired": [x.event_id for x in res["expired"]],
+            "holds": hold_lines(res.get("holds") or []),        # B252: a quest waiting is shown, not wondered about
             "happenings": [{"id": h.id, "who": h.who, "reason": h.reason if h.visible else None} for h in res["happened"]],
             "applied": [f"command {o['id']}" for o in lever_outcomes if o["status"] == "applied"] + report.applied,
             "rejected": [r.model_dump() for r in report.rejected],
@@ -2745,6 +2746,17 @@ ON_THE_MOVE = re.compile(r"\b(?:walks?|walking|strides?|striding|struts?|strutti
                          r"up ?stairs|down ?stairs|up the stairs|down the stairs|to (?:my|his|her|their|the) room|on (?:my|his|her|their) way)\b", re.I)
 SPACING_TURNS = 2
 SPACING_MINUTES = 20            # and within this much game time: a long wait after someone came is room enough
+
+
+def hold_lines(holds: list[dict]) -> list[str]:
+    """B252 (part eleven §1e): each hold as the ledger has it, for the mechanics row and the call report:
+    "held: lamplighters_shadow_reach (fallback), far from word: Reed Island"."""
+    out = []
+    for h in holds:
+        waited = int(h.get("waited") or 0)
+        out.append(f"held: {h.get('event')}" + (" (fallback)" if h.get("variant") == "fallback" else "") + f", {h.get('why')}"
+                   + (f" (waiting {waited // 60} h {waited % 60:02d} min)" if waited >= 60 else ""))
+    return out
 
 
 def quiet_why(game: Any, state: Any, adj: Any, doc: dict, turn: int, last: dict | None = None) -> tuple[str, bool]:

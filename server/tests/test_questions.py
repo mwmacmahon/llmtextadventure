@@ -228,3 +228,17 @@ def test_one_newcomer_a_scene(engine, no_happenings):
     assert engine._newcomer(iid, 17, game, st)[0] == ""                       # six turns on: room for the next
     tam.location = "Lantern Row"
     assert engine._newcomer(iid, 11, game, st)[0] == ""                       # he has gone: room for the next
+
+
+def test_a_hold_is_shown_on_the_mechanics_row_and_in_the_call_report():
+    """B252 (part eleven §1e): the owner sees a quest waiting instead of wondering where it went."""
+    import sys
+    from pathlib import Path
+    from engine.pipeline import hold_lines
+    hold = {"event": "lamplighters_shadow_reach", "hook": "lamplighters_shadow", "variant": "fallback", "why": "far from word: Reed Island", "waited": 95}
+    assert hold_lines([hold]) == ["held: lamplighters_shadow_reach (fallback), far from word: Reed Island (waiting 1 h 35 min)"]
+    assert hold_lines([{**hold, "variant": "trigger", "waited": 0, "why": "on the move"}]) == ["held: lamplighters_shadow_reach, on the move"]
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+    from round_report import ENGINE_KINDS, render_engine
+    assert "hold" in ENGINE_KINDS
+    assert "far from word: Reed Island" in render_engine({"kind": "hold", "payload": hold})
