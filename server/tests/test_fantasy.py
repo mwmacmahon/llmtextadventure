@@ -937,3 +937,62 @@ def test_a_hooks_deadline_runs_from_when_the_player_hears_of_it(game: FantasyGam
     st.clock.day, st.clock.minute = divmod(deal + 6 * 1440 + 7300, 1440)
     dk.settle(st, hooks, 33, lambda row, why: None)
     assert h.status == "failed"                                            # five days and a bit after hearing: it went by
+
+
+def test_a_move_names_one_thing_and_a_reward_does_not_take_back_what_was_given_on(game: FantasyGame):
+    """B258 (Lilith's save 25a51df64905): turn 28's "move wooden whistle to wren" moved the brass whistle still in her
+    pockets (matched on "whistle"); and the cellar's reward would take Gorm's brass whistle from whoever it was given to."""
+    from games.fantasy.state import Item
+    st = new(game)
+    st.inventory.append(Item(id="brass_whistle", name="brass whistle", count=0))
+    st.things.append(Item(id="wren_s_wooden_whistle", name="Wren's wooden whistle", held_by="tam"))
+    st.person("tam").location = st.player.location
+    s1, rep, _ = apply(game, st, C(kind="move", target="wooden whistle", value="wren"))
+    wooden = s1.thing("wren_s_wooden_whistle")
+    assert wooden is not None and wooden.held_by == "wren" and s1.item("brass_whistle") is not None
+    s2 = new(game)
+    w = s2.thing("brass_whistle")
+    if w is None:                                                     # the cellar's things land at its deal
+        s2.things.append(Item(id="brass_whistle", name="a brass whistle", held_by="gorm"))
+        w = s2.thing("brass_whistle")
+    w.held_by = "tansy"
+    game._pay(s2, {"xp": 0, "thing": "brass_whistle"}, "Rats in the Cellar", {"gold": 0}, 3)
+    assert s2.item("brass_whistle") is None and s2.thing("brass_whistle").held_by == "tansy"
+
+
+def test_words_that_sound_like_an_ending_pick_out_the_quest(game: FantasyGame):
+    """B259: the finder only says whom to ask about; the words alone settle nothing."""
+    st = new(game)
+    st.hook("cellar_rats").status = "live"
+    over = ["hooks.cellar_rats.note: 'x' -> \"Tansy's whistle drew the rats away along the passage; cellar quiet, Maud following\""]
+    found = game.quests_maybe_settled(st, over, "Something happened.")
+    assert [q["id"] for q in found] == ["cellar_rats"] and {"troll_settled", "cellar_quiet", "troll_dead"} <= set(found[0]["endings"])
+    assert "rats have stopped" in found[0]["endings"]["troll_settled"]
+    assert game.quests_maybe_settled(st, ["hooks.cellar_rats.note: 'x' -> 'Lillian asks Gorm where his nest is'"], "") == []
+    assert game.quests_maybe_settled(st, ["journal += 'the cellar is quiet'"], "") == []        # not the quest's own note
+    st.flags["troll_settled"] = True
+    assert game.quests_maybe_settled(st, over, "") == []                                         # an ending is already written
+
+
+async def test_a_quest_the_referee_noted_as_over_is_asked_about_and_closes(engine: Engine, fake: FakeProvider):
+    """B259 through the pipeline, Lilith's turn 11 shape: the referee writes "cellar quiet" in the quest's note and no ending;
+    the engine asks it by name; it answers troll_settled; the quest closes and pays this turn."""
+    iid = engine.create_instance("fantasy", SHEET)
+    fake.canned["AssistantReading"] = [reading("I let Tansy lead the rats off with Gorm's whistle.", 10)]
+    fake.canned["ChangeReport"] = [ChangeReport.of(C(kind="set", target="hook-cellar_rats", field="note",
+                                                     value="Tansy's whistle drew the rats away along the passage; cellar quiet; Gorm grateful"),
+                                                   log_line="The rats are gone from the cellar.")]
+    asked: list[str] = []
+
+    def hook(schema, last):
+        if schema.__name__ == "QuestCheck":
+            asked.append(last)
+            return schema.model_validate({"ending": "troll_settled", "why": "the rats were led off and Gorm has his quiet"})
+        return None
+    fake.hook = hook
+    events = await play(engine, iid, "I let Tansy lead the rats off with the whistle.")
+    st = state_of(engine, iid)
+    assert asked and st.flags.get("troll_settled") and st.hook("cellar_rats").status == "done"
+    row = next(r for r in engine.store.ledger(iid, 1) if r["kind"] == "quest_check")
+    assert row["payload"]["ending"] == "troll_settled"
+    assert any("quest check: Rats in the Cellar ends (troll_settled)" in a for a in events[-1]["data"]["mechanics"]["applied"])

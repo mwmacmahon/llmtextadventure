@@ -47,10 +47,14 @@ from . import deck as dk
 from . import sheet as sh
 from .state import (
     ATTITUDE_WORDS, COINS, COPPERS, COPPERS_TO_GOLD, HUNTED_AT, STAT_NAMES, STATS, WANTED_AT, Ability, City, Condition, Count,
-    FantasyState, FoundPlace, Hidden, Item, Note, Person, Player, purse_text, tier_of, RENOWN_TIERS, RENOWN_SCALE, HEAT_TIERS,
+    FantasyState, FoundPlace, Hidden, Item, Note, Person, Player, find_item, purse_text, tier_of, RENOWN_TIERS, RENOWN_SCALE, HEAT_TIERS,
 )
 
 DAY = 1440
+# B259: words that make a quest's note sound finished (the engine then asks the referee; the words alone settle nothing)
+DONE_WORDS = re.compile(r"\b(?:done|finished|settled|solved|sorted|over with|quiet|gone|dead|killed|slain|stopped|ended|sold|paid|"
+                        r"returned|brought (?:back|home)|rescued|saved|freed|led (?:\w+ )?(?:away|off|out)|drove|driven (?:off|out)|"
+                        r"called off|cleared|dealt with|handed (?:over|back))\b", re.I)
 TREATED = re.compile(r"\b(treat|bandag|patch|stitch|dress(ed|es|ing)|splint|sutur|heal|tend(ed|s)?\b|potion|salve|poultice|"
                      r"priest|cleric|temple|prayer|spell|surgeon|leech|physician|herb)", re.I)
 EXECUTION = re.compile(r"\b(execut\w*|behead\w*|hang(s|ed)? (him|her|them)|hanged|throat (is )?(cut|slit)|cut (his|her|their) throat|"
@@ -1091,6 +1095,49 @@ class FantasyGame(GameBase):
                  for t in s.threads if not t.id.startswith("hook-")]
         return rows
 
+    def quests_maybe_settled(self, s: FantasyState, applied: list[str], log_line: str) -> list[dict]:
+        """B259 (Lilith's save: the rats led off with Gorm's whistle, the referee's note "cellar quiet", no ending flag set;
+        D165's f1L the same): the open quests this turn's rows say may be over, for the engine to ask the referee about. A
+        quest qualifies when the referee wrote its note this turn (or the log line names it) and those words sound like an
+        ending: a done word, or two words of one of its endings' own lines. Each comes with its endings (flag: line)."""
+        hooks = self.hooks_content()
+        out: list[dict] = []
+        reached = {e.hook for e in s.hidden.events if e.hook and e.id == f"{e.hook}_reach" and e.fired}
+        for h in s.hooks:
+            if h.id not in hooks or not (h.status == "live" or (h.status == "dealt" and h.id in reached)):
+                continue                                  # live, or reached this turn and made live at its end
+            ends = self._endings(hooks[h.id], s)
+            if not ends or any(s.flags.get(f) for f in ends):
+                continue
+            noted = [a for a in applied if a.startswith(f"hooks.{h.id}.note:")]
+            words = " ".join([a.split("->", 1)[-1] for a in noted] + ([log_line] if h.title.lower() in (log_line or "").lower() else []))
+            if not words.strip():
+                continue
+            mine = {w[:5] for w in re.findall(r"[a-z]{4,}", words.lower())}
+            if DONE_WORDS.search(words) or any(len(mine & {w[:5] for w in re.findall(r"[a-z]{4,}", line.lower())}) >= 2 for line in ends.values()):
+                about = str(hooks[h.id].get("summary") or "").replace("{name}", s.player.name)
+                out.append({"id": h.id, "title": h.title, "note": h.note, "endings": ends, "about": about})
+        return out
+
+    def _endings(self, hook: dict, s: FantasyState) -> dict[str, str]:
+        """A hook's ending flags (in its done and failed conditions) with their lines from narrator_flags."""
+        names: list[str] = []
+
+        def walk(pred: Any) -> None:
+            if isinstance(pred, dict):
+                for key, val in pred.items():
+                    if key == "flag" and isinstance(val, str) and val not in names:
+                        names.append(val)
+                    elif key != "not_flag":
+                        walk(val)
+            elif isinstance(pred, list):
+                for x in pred:
+                    walk(x)
+        walk(hook.get("done"))
+        walk(hook.get("failed"))
+        lines = s.city.narrator_flags
+        return {f: str(lines.get(f) or f.replace("_", " ")) for f in names}
+
     def _quest_flags(self, s: FantasyState) -> dict[str, str]:
         """flag -> the title of the quest in motion whose done or failed condition names it (f1L, D165: the troll moved to
         the bridge, Maud paid, and nobody wrote troll_settled, so the quest never closed or paid)."""
@@ -1510,7 +1557,9 @@ class FantasyGame(GameBase):
                 return True
             return self._new_thing(s, target, ch.field, ch.note or ch.value, w)
         if (kind == "move" or (kind == "set" and field == "location")) and target and not is_player and s.person(target) is None and not self._same_person(s, target):
-            t = s.item(target) or s.thing(target)
+            # B258 (Lilith's save, turn 28): "move wooden whistle to wren" moved the brass whistle in her pockets: the pockets
+            # were matched loosely on "whistle". A move names one thing: every word of the shorter name must match
+            t = find_item(s.inventory, target, strict=True) or s.thing(target)
             if t is not None:
                 return self._relocate(s, t, t in s.inventory, ch.value, w)
         if kind == "gone" and target and s.thing(target) is not None and s.person(target) is None:
@@ -2280,6 +2329,9 @@ class FantasyGame(GameBase):
         th_ = row.get("thing")
         if isinstance(th_, str):
             t = next((x for x in s.things if x.id == th_), None)
+            first = next((x.get("held_by") for hk in self.hooks_content().values() for x in hk.get("things") or [] if x.get("id") == th_), None)
+            if t is not None and t.held_by and first and t.held_by != first:
+                t = None                                  # B258: given on to someone else in the story: the reward does not take it back
             if t is not None:
                 s.things.remove(t)
                 t.place, t.held_by = "", ""
