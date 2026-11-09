@@ -59,6 +59,7 @@ class Feature(BaseModel):
     effects: list[str] = Field(default_factory=list)
     choice: dict[str, Any] | None = None      # {pick: 2, from: skills}
     points: int = 0                           # the stat raise: score points to spend (2: +2 to one, or +1 to two)
+    feature: dict[str, Any] | None = None     # part fifteen §10: the grammar (heal | rider | turn | buff), games/fantasy/features.py
 
 
 class KitOption(BaseModel):

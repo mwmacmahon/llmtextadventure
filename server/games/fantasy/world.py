@@ -350,6 +350,13 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
             words = " ".join([i.action or "", getattr(c, "label", "") or ""])
             if ATTACK.search(words) and (c is None or getattr(c, "stat", "") in ("str", "dex", "")):
                 struck += [x for x in [getattr(c, "target_entity", None), *(getattr(i, "targets", None) or [])] if x]
+            a = getattr(i, "attack", None)                                  # part fifteen §6: the reading's attack is the door in
+            if a is not None:
+                for t in getattr(a, "targets", None) or []:
+                    q = s.person(t) or game._same_person(s, t)
+                    if q is not None and q.status == "alive" and q.location and not game._same_spot(s, q.location, p.location):
+                        q.location = p.location                             # a blow at them says they are here (a stale place, B262)
+                struck += list(getattr(a, "targets", None) or [])
         if not struck and is_fight(adj):
             struck = list(getattr(adj, "entities", None) or [])
         for e in struck:
@@ -357,6 +364,7 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
             if q is not None and q.status == "alive" and q.id not in p.with_them and q.id not in p.fighting:
                 p.fighting.append(q.id)
     p.fighting = [x for x in p.fighting if (q := s.person(x)) is not None and q.status == "alive" and game._same_spot(s, q.location, p.location)]
+    plan_fight(game, s, adj, player_text, rng, turn, w, offset)
     # (B206, D178) the enemies and the hazards act through the narrator's own calls, <<ENEMY>> and <<HAZARD>>, where they fall
     # in the prose (world_call); a hostile the prose left out is rolled after it (backstop). Nothing is rolled here.
     return s, w
@@ -395,10 +403,59 @@ def _blow(game: Any, s: FantasyState, step: str, rng: Any, tally: dict) -> tuple
     return n, notes, kills
 
 
+def plan_fight(game: Any, s: FantasyState, adj: Any, player_text: str, rng: Any, turn: int, w: "WorldTurn", offset: int = 2) -> None:
+    """Part fifteen §3: in a fight, the round's list (combat.plan_round), or a free turn (a word, a thing drawn or dropped: no
+    roll, no time, nobody acts beyond talking); out of one, nothing."""
+    from . import combat as cb
+    from .state import CombatState
+    p = s.player
+    if not p.fighting or p.fate:
+        if s.combat is not None and not p.fighting:
+            s.combat = None
+        return
+    for x in p.fighting:
+        q = s.person(x)
+        if q is not None:
+            w.mechanics += cb.scale(s, q, cb.diff_shift(offset))          # §8: a band sized to the player at its first fight
+            cb.size_band(q)
+    if s.combat is None:
+        s.combat = CombatState(round=0, since_turn=turn, surprise="player" if p.hidden_from_others and cb.player_attack(adj) else "")
+    intents = getattr(adj, "intents", None) or []
+    free = (getattr(adj, "kind", "") == "action" and intents and not cb.player_attack(adj) and not any(getattr(i, "check", None) for i in intents)
+            and int(getattr(adj, "time_minutes", 0) or 0) == 0)            # a free action is no check and no time (the assistant's rule)
+    if free and s.combat.free_turns < 2:
+        s.combat.free_turns += 1
+        s.combat.plan = []
+        w.mechanics.append("A free action: nobody acts this turn beyond talking.")
+        w.directives.append(f"A FIGHT, held a moment: {p.name} does something that takes no time (a word, a thing drawn or dropped). Nobody strikes "
+                            f"this turn, enemies included; they may talk. Play it, and stop where {p.name} chooses next.")
+        return
+    s.combat.free_turns = 0
+    s.combat.plan = cb.plan_round(game, s, adj, player_text, turn, rng)
+
+
 def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tally: dict) -> dict | None:
     """<<ENEMY who move>> or <<HAZARD name>> (B206): the engine rolls it now and answers inline, as a called check's result;
-    `data` carries what lands after the prose (harm, a peril, a condition, death)."""
+    `data` carries what lands after the prose (harm, a peril, a condition, death). In a fight (part fifteen §3) <<ATTACK>>,
+    <<ALLY>> and <<ENEMY>> roll the round's listed actions; an <<ENEMY>> for someone not yet in the fight joins them (B208)."""
     p = s.player
+    if call.verb in ("ATTACK", "ALLY") or (call.verb == "ENEMY" and s.combat is not None):
+        from . import combat as cb
+        out = cb.world_call(game, s, call, rng, offset, tally)
+        if out is not None:
+            return out
+        if call.verb == "ENEMY":
+            q = s.person(call.ref) or game._same_person(s, call.ref)
+            if q is not None and q.status == "alive" and s.combat is not None:
+                cb.size_band(q)
+                if q.id not in p.fighting:
+                    p.fighting.append(q.id)
+                e = {"key": f"enemy:{q.id}:join{len(s.combat.plan)}", "side": "enemy", "who": q.id, "body": (cb.bodies(q) or [0])[0],
+                     "action": cb.pick_action(cb.ensure_block(q), p), "target": "player"}
+                s.combat.plan.append(e)
+                return cb.resolve(game, s, e, rng, offset, tally)
+        if call.verb in ("ATTACK", "ALLY"):
+            return {"text": "No fight is listed for that this turn. Play it without a roll.", "data": {"verb": call.verb, "none": True}}
     if call.verb == "ENEMY":
         q = s.person(call.ref) or game._same_person(s, call.ref)
         if q is None or q.status != "alive":
@@ -504,7 +561,10 @@ def backstop(game: Any, s: FantasyState, acted: list[str], rng: Any, offset: int
     from engine.brackets import Call
     if s.player.fate or s.player.hp <= 0 or tally.get("dead") or _hp_after(s, tally) <= 0:   # B215: nobody rolls on the dead
         return out
-    for q in present_enemies(game, s)[:3]:
+    if s.combat is not None:                                       # part fifteen §3: the round's every listed action
+        from . import combat as cb
+        out += cb.backstop(game, s, rng, offset, tally)
+    for q in ([] if s.combat is not None else present_enemies(game, s)[:3]):
         if q.id in acted:
             continue
         r = world_call(game, s, Call(verb="ENEMY", raw=f"ENEMY {q.id}", ref=q.id), rng, offset, tally)
@@ -539,8 +599,10 @@ def land(game: Any, s: FantasyState, calls: list[dict], turn: int) -> list[str]:
     for c in calls:
         if c.get("verb") not in ("ENEMY", "HAZARD") or c.get("none") or p.fate:
             continue
-        if c.get("join") and c["join"] not in p.fighting:          # B208: a narrator's <<ENEMY>> call joins them to the fight
-            p.fighting.append(c["join"])
+        if c.get("ally_hit") and not c.get("harm"):              # part fifteen: a blow on an ally lands in combat.land
+            continue
+        if c.get("join") and c["join"] not in p.fighting and not (s.person(c["join"]) and s.person(c["join"]).status != "alive"):
+            p.fighting.append(c["join"])                            # B208: a narrator's <<ENEMY>> call joins them to the fight
         if c.get("harm"):
             n = int(c["harm"])
             p.hp = max(0, p.hp - n)

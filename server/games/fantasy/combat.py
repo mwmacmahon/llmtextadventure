@@ -102,8 +102,13 @@ def moves_as_actions(moves: list[dict]) -> list[dict]:
     """The old `moves` (strike, hold, grab, song; bonus, difficulty, peril, harm) read as actions until the content is
     rewritten (the lint names the records that still use them)."""
     out = []
+    steps = {"scrape": "1d2", "solid": "1d3+2", "serious": "1d5+5", "lethal": "100"}     # the old damage steps as dice
     for m in moves or []:
         a = dict(m)
+        if str(a.get("damage", "")) in steps:
+            a["damage"] = steps[str(a["damage"])]
+        if "bonus" in a and "attack" not in a:
+            a["attack"] = int(a["bonus"])
         if a.get("kind") in ("hold", "grab", "song") and "dc" not in a:
             a["dc"] = {"very_low": 8, "low": 10, "medium": 12, "high": 14, "very_high": 16}.get(str(a.get("difficulty") or "medium"), 12)
         out.append(a)
@@ -298,3 +303,688 @@ def save_line(stat: str, against: str, res: Any) -> str:
     """'Wisdom save against the siren's song: 14 against 13, holds.'"""
     return f"{STAT_NAMES.get(stat, stat.capitalize())} save against {against}: {res.total} against {res.dc}, {'holds' if res.holds else 'fails'}."
 
+
+# ---- §3: combat mode -------------------------------------------------------------------------------------------------------
+# state.combat holds the fight; player.fighting is who is in it on the other side (B208). A round is a player turn: THIS TURN
+# lists it (the player's attack, each ally's, each enemy's action), the narrator calls each where the fiction reaches it
+# (<<ATTACK id>>, <<ALLY id>>, <<ENEMY id action>>) and the engine rolls it then; what the prose left out the backstop rolls
+# at the end of the turn; `land` puts it all on the state after the prose.
+SPARE = re.compile(r"\b(knock (him|her|them|it) (out|cold|down)|take (him|her|them|it) alive|spare (him|her|them|it)|non-?lethal|"
+                   r"subdue|the flat of|pommel|stun (him|her|them|it))", re.I)
+DIFF_BASE = 2                     # the fantasy's own target offset (D171); the player's Easy / Normal / Hard moves it by -2 / 0 / +2
+
+
+def diff_shift(offset: int) -> int:
+    """§8: Easy / Normal / Hard as -2 / 0 / +2 on enemy attack bonuses and DCs, the player's rolls the other way."""
+    return max(-2, min(2, int(offset) - DIFF_BASE))
+
+
+def size_band(q: Person) -> None:
+    """A band's bodies' hit points, filled at its first fight."""
+    b = ensure_block(q)
+    if b.count > 1 and len(b.hps) != b.count:
+        b.hps = [b.hp_max or b.hp or 1] * b.count
+
+
+def bodies(q: Person) -> list[int]:
+    """The living bodies' indexes (a single person is body 0)."""
+    b = ensure_block(q)
+    if b.count > 1:
+        return [i for i, h in enumerate(b.hps) if h > 0]
+    return [0] if (b.hp or 0) > 0 and q.status == "alive" else []
+
+
+def hp_now(q: Person, body: int, tally: dict) -> int:
+    b = ensure_block(q)
+    base = (b.hps[body] if b.count > 1 and body < len(b.hps) else b.hp) or 0
+    return base - sum(h["dmg"] for h in tally.get("hits", []) if h["pid"] == q.id and h.get("body", 0) == body)
+
+
+def name_of(q: Person, body: int) -> str:
+    b = q.combat
+    if b is not None and b.count > 1:
+        return f"{q.name} ({_ORD[body] if body < len(_ORD) else body + 1})"
+    return q.name
+
+
+_ORD = ("the first", "the second", "the third", "the fourth", "the fifth", "the sixth")
+
+
+def fallen_word(q: Person, spare: bool = False) -> str:
+    b = ensure_block(q)
+    if spare and b.kind != "undead":
+        return "down"
+    return "destroyed" if b.kind == "undead" else "dead"
+
+
+def living_enemies(game: Any, s: FantasyState) -> list[Person]:
+    from .world import present_enemies
+    return [q for q in present_enemies(game, s) if bodies(q)]
+
+
+def party(s: FantasyState) -> list[Person]:
+    """The allies who fight (§5): with the player, alive, and either carrying a block of their own in the content (Hazel, Tam)
+    or loyal (attitude 2 or more). Anyone else present is a bystander and takes no part until struck or joined."""
+    return [q for x in s.player.with_them if (q := s.person(x)) is not None and q.status == "alive" and not q.hidden_from_player
+            and x not in s.player.fighting and (q.combat is not None or q.attitude >= 2)]
+
+
+def plan_round(game: Any, s: FantasyState, adj: Any, player_text: str, turn: int, rng: Any) -> list[dict]:
+    """The round's list: the player's attack (the reading's), each ally's, each living enemy's (each body of a band). Enemies
+    strike the player, or now and then an ally who fights."""
+    from .state import CombatState
+    p = s.player
+    if s.combat is None:
+        s.combat = CombatState(round=0, since_turn=turn)
+    c = s.combat
+    plan: list[dict] = []
+    att = player_attack(adj)
+    if att:
+        att["targets"] = list(dict.fromkeys(att["targets"]))           # one target named twice is one target
+        targets = [t for t in att["targets"] if (q := s.person(t)) is not None and q.id in p.fighting] or ([c.target] if c.target in p.fighting else [])
+        if not targets and p.fighting:
+            targets = [p.fighting[0]]
+        if targets:
+            c.target = targets[0]
+            plan.append({"key": "player", "side": "player", "who": "player", "targets": targets[:3], "weapon": att.get("weapon") or "",
+                         "riders": list(att.get("riders") or []), "spare": bool(SPARE.search(player_text or ""))})
+    foes = living_enemies(game, s)
+    for q in party(s):
+        if not bodies(q):
+            continue
+        tgt = c.orders.get(q.id) if c.orders.get(q.id) in p.fighting else (c.target if c.target in p.fighting else (foes[0].id if foes else ""))
+        if tgt:
+            plan.append({"key": f"ally:{q.id}", "side": "ally", "who": q.id, "target": tgt})
+    allies = [q for q in party(s) if bodies(q)]
+    for i in getattr(adj, "intents", None) or []:                     # the order is the player's free action: it holds from the next turn
+        a = getattr(i, "attack", None)
+        for o in (getattr(a, "ally_orders", None) or []) if a is not None else []:
+            if o.ally and o.target:
+                c.orders[str(o.ally).lower()] = str(o.target).lower()
+    for q in foes:
+        b = ensure_block(q)
+        for body in bodies(q):
+            if s.combat.surprise == "player" and q.id == c.target and c.round == 0:
+                continue                                              # struck from hiding: the target loses its first action
+            action = pick_action(b, p)
+            tgt = "player"
+            if allies and rng.random() < 0.3:
+                tgt = rng.choice(allies).id
+            plan.append({"key": f"enemy:{q.id}:{body}", "side": "enemy", "who": q.id, "body": body, "action": action, "target": tgt})
+    return plan
+
+
+def player_attack(adj: Any) -> dict | None:
+    """The reading's attack (§6: an intent's `attack`), as a dict, or None."""
+    for i in getattr(adj, "intents", None) or []:
+        a = getattr(i, "attack", None)
+        if a is not None and (getattr(a, "targets", None) or []):
+            return a.model_dump() if hasattr(a, "model_dump") else dict(a)
+    return None
+
+
+def pick_action(b: CombatBlock, p: Any) -> dict:
+    """An enemy's action this round: a hold or grab when the player is free of one, a song when not yet sung, else a strike."""
+    acts = b.actions or [{"kind": "strike"}]
+    return next((a for a in acts if a.get("kind") in ("hold", "grab") and p.peril is None), None) \
+        or next((a for a in acts if a.get("kind") == "song" and not any(x.name == "enthralled" for x in p.conditions)), None) \
+        or next((a for a in acts if a.get("kind") in ("strike", "drain")), None) or acts[0]
+
+
+def round_lines(game: Any, s: FantasyState) -> list[str]:
+    """THIS TURN's round list (§6): 'A FIGHT, round N.', each listed action with the call to write, everyone's state in words."""
+    p = s.player
+    c = s.combat
+    if c is None or not getattr(c, "plan", None):
+        return []
+    rows = []
+    for e in c.plan:
+        if e["side"] == "player":
+            names = ", ".join(s.person(t).name if s.person(t) else t for t in e["targets"])
+            rows.append(f"{p.name}'s attack at {names}" + (f" with the {e['weapon']}" if e.get("weapon") else "") +
+                        (f" ({', '.join(e['riders'])})" if e.get("riders") else "") + f": <<ATTACK {e['targets'][0]}>>")
+        elif e["side"] == "ally":
+            q, t = s.person(e["who"]), s.person(e["target"])
+            rows.append(f"{q.name if q else e['who']} at {t.name if t else e['target']}: <<ALLY {e['who']}>>")
+        else:
+            q = s.person(e["who"])
+            tn = p.name if e["target"] == "player" else (s.person(e["target"]).name if s.person(e["target"]) else e["target"])
+            kind = e["action"].get("kind", "strike")
+            rows.append(f"{name_of(q, e['body']) if q else e['who']}: {kind} at {tn}: <<ENEMY {e['who']} {kind}>>")
+    states = [f"{p.name}: {hp_word(p.hp, p.hp_max) if p.hp < p.hp_max else 'unhurt'}"]
+    for q in party(s) + living_enemies(game, s):
+        w = person_hp_word(q)
+        states.append(f"{q.name}: {w or 'unhurt'}")
+    return [f"A FIGHT, round {c.round + 1}. Every one of these acts once this turn, rolled by the engine when you reach it: "
+            + "; ".join(rows) + ". As they stand: " + "; ".join(states) + "."]
+
+
+def _player_take(game: Any, s: FantasyState, n: int, tally: dict) -> tuple[int, list[str], bool]:
+    """Hit points an enemy's roll takes from the player, through the steps (the shield, Rage, Uncanny Dodge, Defence, Shield
+    of Faith) as flat reductions (STEP_DICE). On the running count; the state lands after the prose."""
+    p = s.player
+    notes: list[str] = []
+    if s.item("shield") is not None and n >= 6 and not p.effect("damage_taken_step"):
+        n, notes = step_lighter(n), notes + ["the shield takes the worst of it"]
+    defence = p.effect("defence") and any(w in it.name.lower() for it in s.inventory for w in ("chain mail", "mail", "plate"))
+    if ("raging" in p.flags_on and p.effect("damage_taken_step")) or defence:
+        m = step_lighter(n)
+        if m != n:
+            n, notes = m, notes + ["Rage: a step lighter" if "raging" in p.flags_on else "Defence: a step lighter"]
+    if p.effect("uncanny_dodge") and p.dodge_scene != p.scene_start and not tally.get("dodged"):
+        tally["dodged"] = True
+        m = step_lighter(n)
+        if m != n:
+            n, notes = m, notes + ["Uncanny Dodge: a step lighter"]
+    if p.has_condition("shielded"):
+        m = step_lighter(n)
+        if m != n:
+            n, notes = m, notes + ["Shield of Faith: a step lighter"]
+    left = p.hp - int(tally.get("hp", 0))
+    return n, notes, n >= left
+
+
+def resolve(game: Any, s: FantasyState, entry: dict, rng: Any, offset: int, tally: dict, backstop: bool = False) -> dict:
+    """One listed action, rolled now. Returns {text (to the narrator), mechanic (the dice line), data (what lands)}."""
+    from engine.mechanics import Modifier, attack_roll, roll_dice, save_roll
+    p = s.player
+    shift = diff_shift(offset)
+    tally.setdefault("acted_keys", []).append(entry["key"])
+    if entry["side"] in ("player", "ally"):
+        return resolve_attack(game, s, entry, rng, offset, tally)
+    q = s.person(entry["who"])
+    if q is None or hp_now(q, entry.get("body", 0), tally) <= 0:
+        return {"text": "They are down and do nothing more. Go on.", "mechanic": "", "data": {"verb": "ENEMY", "who": entry["who"], "none": True}}
+    b = ensure_block(q)
+    a = entry["action"]
+    kind = a.get("kind", "strike")
+    whose = f"{name_of(q, entry.get('body', 0))}'s {a.get('harm') or ('blow' if kind == 'strike' else kind)}"
+    data: dict[str, Any] = {"verb": "ENEMY", "who": q.id, "move": kind, "label": whose, "join": q.id, "key": entry["key"]}
+    tally.setdefault("acted", []).append(q.id)
+    tgt_ally = s.person(entry["target"]) if entry["target"] != "player" else None
+    if tgt_ally is not None and not bodies(tgt_ally):
+        tgt_ally = None
+    if kind in ("strike", "drain") and tgt_ally is not None:
+        tb = ensure_block(tgt_ally)
+        res = attack_roll(rng, int(a.get("attack", b.attack or 2)) + shift, tb.ac or 10)
+        if not res.hit:
+            return {"text": f"{whose} at {tgt_ally.name}: it misses. Play the miss, and go on.", "mechanic": enemy_line(f"{whose} at {tgt_ally.name}", res), "data": data}
+        n, _ = roll_dice(rng, b.damage or "1d4", res.crit)
+        tally.setdefault("hits", []).append({"pid": tgt_ally.id, "body": 0, "dmg": n})
+        left = hp_now(tgt_ally, 0, tally)
+        word = "down" if left <= 0 else hp_word(left, tb.hp_max or 1)
+        data.update(ally_hit=tgt_ally.id, dmg=n)
+        return {"text": f"{whose} at {tgt_ally.name}: it lands, {n} damage; {tgt_ally.name} is {word}. Play it landing, and go on.",
+                "mechanic": enemy_line(f"{whose} at {tgt_ally.name}", res, n, f"{tgt_ally.name} is {word}"), "data": data}
+    if kind in ("strike",) or (kind == "drain" and not a.get("stat")):
+        from .world import armour_class
+        ac, _ = armour_class(s)
+        res = attack_roll(rng, int(a.get("attack", b.attack or 2)) + shift, ac)
+        data.update(roll=res.roll, bonus=int(a.get("attack", b.attack or 2)), ac=ac, hit=res.hit)
+        if not res.hit:
+            return {"text": f"{whose}: it misses {p.name}. Play the miss, and go on.", "mechanic": enemy_line(whose, res), "data": data}
+        raw, _ = roll_dice(rng, a.get("damage") or b.damage or "1d4", res.crit)
+        n, notes, kills = _player_take(game, s, raw, tally)
+        tally["hp"] = int(tally.get("hp", 0)) + n
+        left = p.hp - int(tally["hp"])
+        word = "dead" if kills else hp_word(left, p.hp_max)
+        data.update(harm=n, stepped=True, kills=kills, cause=whose)
+        told = (f"it kills {p.name}. Write the death straight; this is the end of the story" if kills
+                else f"it lands, {n} damage" + (f" ({'; '.join(notes)})" if notes else "") + f"; {p.name} is {word}. Play it landing")
+        return {"text": f"{whose}: {told}, and go on.", "mechanic": enemy_line(whose, res, n, f"{p.name} is {word}"), "data": data}
+    # a save: grab and hold (a peril), song (a compulsion), drain (a condition and damage), breath (half on a save)
+    stat = a.get("stat") or {"hold": "str", "grab": "str", "song": "wis", "drain": "con", "breath": "dex"}.get(kind, "con")
+    dc = int(a.get("dc") or b.dc or 12) + shift
+    pb = player_block(s)
+    res = save_roll(rng, pb["saves"].get(stat, 0), dc)
+    line = save_line(stat, whose, res)
+    data.update(save=stat, dc=dc, holds=res.holds)
+    if res.holds and kind != "breath":
+        return {"text": f"{whose}: {p.name} holds against it. Play it, and go on.", "mechanic": line, "data": data}
+    if kind in ("hold", "grab"):
+        from .world import PERILS
+        kind_p = a.get("peril") or "held"
+        data.update(peril=kind_p, by=q.name)
+        spec = PERILS.get(kind_p, PERILS["held"])
+        return {"text": f"{whose}: it has {p.name}; {p.name} is {spec['what']} now, moments from the end unless they get {spec['way']}. Play it, and end "
+                        f"the turn on that moment; what {p.name} does next is the player's to say.", "mechanic": line, "data": data}
+    if kind == "song":
+        data.update(condition=a.get("condition") or "enthralled", by=q.id)
+        return {"text": f"{whose}: it has {p.name}; they want to go to {q.name} more than anything. Play it, and go on.", "mechanic": line, "data": data}
+    raw, _ = roll_dice(rng, a.get("damage") or b.damage or "1d6")
+    if kind == "breath" and res.holds:
+        raw //= 2
+    n, notes, kills = _player_take(game, s, raw, tally)
+    tally["hp"] = int(tally.get("hp", 0)) + n
+    data.update(harm=n, stepped=True, kills=kills, cause=whose)
+    if a.get("condition") and not res.holds:
+        data["condition"] = a["condition"]
+    return {"text": f"{whose}: " + (f"it kills {p.name}. Write the death straight" if kills else f"{n} damage" + (f", and {p.name} is {a['condition']}" if a.get('condition') and not res.holds else "")) + ". Play it, and go on.",
+            "mechanic": line[:-1] + f"; {n} damage.", "data": data}
+
+
+def _sneak_case(game: Any, s: FantasyState, t: Person) -> str:
+    """Sneak Attack's case (SRD, the rogue §7a): from hiding, or at someone an ally is fighting; "" otherwise."""
+    p = s.player
+    if not p.effect("sneak_attack"):
+        return ""
+    if p.hidden_from_others:
+        return "from hiding"
+    if any(q.status == "alive" for q in party(s)):
+        return "while an ally fights them"
+    return ""
+
+
+def _spend_ammo(s: FantasyState, how: str, weapon: str, notes: list[str]) -> bool:
+    """A bow spends an arrow (none left: no shot); a thrown weapon leaves the pockets and lies where it fell."""
+    from .state import Item
+    if how == "ranged":
+        ammo = next((it for it in s.inventory if re.search(r"arrow|bolt|shot|stone", it.name, re.I) and it.count > 0), None)
+        if ammo is None:
+            notes.append("no arrows left: no shot")
+            return False
+        ammo.count -= 1
+        notes.append(f"{ammo.name}: {ammo.count} left")
+    elif how == "thrown":
+        it = next((x for x in s.inventory if weapon in x.name.lower() and x.count > 0), None)
+        if it is not None:
+            it.count -= 1
+            s.things.append(Item(id=f"{weapon}_{len(s.things)}", name=f"a thrown {weapon}", place=s.player.location))
+            notes.append(f"the {weapon} lies where it fell")
+    return True
+
+
+def _one_blow(game: Any, s: FantasyState, rng: Any, tally: dict, who: str, bonus: int, dice: str, t: Person, body: int, *, spare: bool,
+              extra_dice: list[tuple[str, str]], penalty: int = 0, carry: int | None = None) -> tuple[dict, int]:
+    """One attack roll at one body: (the part of the answer, the damage left over past 0 for a cleave)."""
+    from engine.mechanics import Modifier, attack_roll, roll_dice
+    tb = ensure_block(t)
+    mods = [Modifier(label="a second target", value=penalty)] if penalty else []
+    res = attack_roll(rng, bonus, tb.ac or 10, mods)
+    tname = name_of(t, body)
+    if not res.hit:
+        return {"text": f"{who} at {tname}: a miss", "line": attack_line(who, tname, res), "dmg": 0}, 0
+    if carry is not None:
+        n = carry
+    else:
+        n, _ = roll_dice(rng, dice, res.crit)
+        for label, d in extra_dice:
+            k, _ = roll_dice(rng, d, res.crit)
+            n += k
+    before = hp_now(t, body, tally)
+    tally.setdefault("hits", []).append({"pid": t.id, "body": body, "dmg": n, "spare": spare})
+    left = before - n
+    word = fallen_word(t, spare) if left <= 0 else hp_word(left, tb.hp_max or 1)
+    riders = "".join(f" ({label})" for label, _ in extra_dice)
+    return ({"text": f"{who} at {tname}: a hit, {n} damage{riders}; {tname} is {word}",
+             "line": attack_line(who, tname, res, n, f"{tname} is {word}" + riders), "dmg": n, "hit": {"pid": t.id, "body": body, "dmg": n}},
+            max(0, -left))
+
+
+def resolve_attack(game: Any, s: FantasyState, entry: dict, rng: Any, offset: int, tally: dict) -> dict:
+    """The player's attack (or an ally's): one roll per target (a sweep names two or three, -2 on each after the first; Extra
+    Attack at level 5 a second roll), the damage dice (a crit doubles them) with the riders (Smite, Sneak Attack), and
+    cleave-through: a melee blow that drops its target carries the damage left over to another enemy within reach, with its
+    own attack roll. Bows spend arrows; a thrown weapon lies where it fell."""
+    p = s.player
+    shift = diff_shift(offset)
+    notes: list[str] = []
+    if entry["side"] == "player":
+        pb = player_block(s, entry.get("weapon", ""))
+        who, bonus, dice, how = f"{p.name}'s {pb['weapon']}", pb["attack"] - shift, pb["damage"], pb["how"]
+        targets = list(entry["targets"])
+        tally.setdefault("acted", []).append("player")
+        if not _spend_ammo(s, how, pb["weapon"], notes):
+            return {"text": f"{p.name} has nothing left to shoot. Play it, and go on.", "mechanic": "; ".join(notes), "data": {"verb": "ATTACK", "who": "player", "key": entry["key"], "hits": []}}
+        rolls = 2 if p.level >= 5 and len(targets) < 2 and (p.klass or "").lower() in ("paladin", "fighter", "ranger", "barbarian", "monk") else 1   # Extra Attack
+        if p.has_condition("blessed"):
+            bonus += 1
+    else:
+        q = s.person(entry["who"])
+        if q is None or not bodies(q):
+            return {"text": "They are down and do nothing more. Go on.", "mechanic": "", "data": {"verb": "ALLY", "who": entry["who"], "none": True}}
+        ab = ensure_block(q)
+        who, bonus, dice, how = f"{q.name}'s blow", ab.attack or 2, ab.damage or "1d4", "melee"
+        targets, rolls = [entry["target"]], 1
+        tally.setdefault("acted", []).append(q.id)
+    data: dict[str, Any] = {"verb": "ATTACK" if entry["side"] == "player" else "ALLY", "who": entry.get("who"), "key": entry["key"], "hits": []}
+    parts: list[dict] = []
+    riders = [r.lower() for r in entry.get("riders") or []]
+    used_rider = False
+    for k, tid in enumerate((targets[:3] if len(targets) > 1 else targets * rolls)):
+        t = s.person(tid)
+        if t is None or not bodies_now(t, tally):
+            t = next((x for x in living_enemies(game, s) if bodies_now(x, tally)), None)
+        if t is None:
+            break
+        body = bodies_now(t, tally)[0]
+        extra: list[tuple[str, str]] = []
+        rider_spent: list[tuple[str, str]] = []
+        if entry["side"] == "player" and not used_rider:
+            from . import features as ft
+            for fid, f in ft.specs(game, p).items():                   # §10: a rider feature, armed by its chip or named in the words
+                if f.get("kind") != "rider":
+                    continue
+                armed = (f.get("armed_flag") or f"{fid}_armed") in p.flags_on or any(r in (f.get("riders") or [fid]) for r in riders)
+                if not armed:
+                    continue
+                c = p.count(f["count"]) if f.get("count") else None
+                slot = p.count("spell_slots") if f.get("slots") else None
+                if (c is not None and c.value > 0) or (slot is not None and slot.value > 0):
+                    extra.append((f["name"], f.get("undead_dice", f.get("dice", "2d8")) if ensure_block(t).kind == "undead" else f.get("dice", "2d8")))
+                    rider_spent.append((fid, "count" if c is not None and c.value > 0 else "slot"))
+                elif not any(f["name"] in n for n in notes):
+                    notes.append(f"no {f['name']} left: the blow without it")
+            why = _sneak_case(game, s, t)
+            if why:
+                extra.append((f"Sneak Attack, {why}", "2d6" if p.level >= 3 else "1d6"))
+            known = {x for f in ft.specs(game, p).values() if f.get("kind") == "rider" for x in (f.get("riders") or [])} | {"sneak"}
+            for r in riders:
+                if r not in known and not any(r in n for n in notes):
+                    notes.append(f"{r}: not something {p.name} has; ignored")
+        part, over = _one_blow(game, s, rng, tally, who, bonus, dice, t, body, spare=bool(entry.get("spare")), extra_dice=extra,
+                               penalty=(-2 if len(targets) > 1 and k > 0 else 0))
+        if part.get("hit") and extra:
+            used_rider = True
+            from . import features as ft
+            for fid, how in rider_spent:                               # spent only on a hit; a miss costs nothing
+                f = ft.specs(game, p)[fid]
+                (p.count(f["count"]) if how == "count" else p.count("spell_slots")).value -= 1
+                p.flags_on = [x for x in p.flags_on if x != (f.get("armed_flag") or f"{fid}_armed")]
+                data["rider_spent"] = fid
+        parts.append(part)
+        if part.get("hit"):
+            data["hits"].append(part["hit"])
+        if over > 0 and how in ("melee", "finesse"):                                 # cleave-through
+            nxt = next(((x, b) for x in living_enemies(game, s) for b in bodies_now(x, tally) if not (x.id == t.id and b == body)), None)
+            if nxt is not None:
+                cp, _ = _one_blow(game, s, rng, tally, f"{who}, carrying through", bonus, dice, nxt[0], nxt[1], spare=bool(entry.get("spare")),
+                                  extra_dice=[], carry=over)
+                parts.append(cp)
+                if cp.get("hit"):
+                    data["hits"].append(cp["hit"])
+    if not parts:
+        return {"text": "Nobody is left standing to strike. Go on.", "mechanic": "", "data": {**data, "none": True}}
+    text = "; then ".join(x["text"] for x in parts)
+    line = " ".join(x["line"] for x in parts) + (f" ({'; '.join(notes)})" if notes else "")
+    return {"text": f"{text}. Play it landing where it lands, and go on.", "mechanic": line, "data": data}
+
+
+def bodies_now(q: Person, tally: dict) -> list[int]:
+    return [i for i in bodies(q) if hp_now(q, i, tally) > 0]
+
+
+def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tally: dict) -> dict | None:
+    """<<ATTACK id>>, <<ALLY id>>, <<ENEMY id action>> in a fight: the first listed action of that one not yet rolled."""
+    c = s.combat
+    if c is None or not c.plan:
+        return None
+    done = set(tally.get("acted_keys", []))
+    side = {"ATTACK": "player", "ALLY": "ally", "ENEMY": "enemy"}[call.verb]
+    ref = (call.ref or "").lower()
+    pick = next((e for e in c.plan if e["side"] == side and e["key"] not in done and (side == "player" or e["who"] == ref)), None)
+    if pick is None and side == "player":
+        pick = next((e for e in c.plan if e["side"] == "player"), None)
+        if pick is not None and pick["key"] in done:
+            return {"text": "That blow was already rolled this turn. Go on.", "data": {"verb": "ATTACK", "none": True}}
+    if pick is None:
+        return None
+    if side == "player" and ref and ref != pick["targets"][0] and s.person(ref) is not None:
+        pick = {**pick, "targets": [ref] + [t for t in pick["targets"] if t != ref]}
+    return resolve(game, s, pick, rng, offset, tally)
+
+
+def backstop(game: Any, s: FantasyState, rng: Any, offset: int, tally: dict) -> list[dict]:
+    """Every listed action the prose did not call, rolled at the end of the turn (the player's own attack included), so each
+    player turn is one full round whatever the narrator did."""
+    out: list[dict] = []
+    c = s.combat
+    if c is None or not c.plan:
+        return out
+    done = set(tally.get("acted_keys", []))
+    for e in c.plan:
+        if e["key"] in done or s.player.fate or s.player.hp - int(tally.get("hp", 0)) <= 0:
+            continue
+        r = resolve(game, s, e, rng, offset, tally)
+        if r["data"].get("none"):
+            continue
+        r["data"]["backstop"] = True
+        verb = {"player": "ATTACK", "ally": "ALLY", "enemy": "ENEMY"}[e["side"]]
+        ref = e["targets"][0] if e["side"] == "player" else e["who"]
+        out.append({"call": {"verb": verb, "raw": f"{verb} {ref}", "ref": ref}, "result": r["data"], "mechanic": r.get("mechanic", ""),
+                    "backstop": True, "told": r["text"]})
+        if r["data"].get("kills"):
+            break
+    return out
+
+
+def land(game: Any, s: FantasyState, calls: list[dict], turn: int, offset: int, rng: Any) -> list[str]:
+    """After the prose: the round's hits on everyone's hit points (the player's own land through world.land), the fallen
+    (enemies dead or destroyed, down if spared; allies down, dead at -10), morale, the round counter, and the fight's end
+    with its XP (the weights x 25)."""
+    from engine.mechanics import save_roll
+    p = s.player
+    c = s.combat
+    notes: list[str] = []
+    if c is None:
+        return notes
+    for call in calls:
+        for h in call.get("hits") or []:
+            q = s.person(h["pid"])
+            if q is None:
+                continue
+            b = ensure_block(q)
+            if b.count > 1:
+                b.hps[h["body"]] = b.hps[h["body"]] - h["dmg"]
+            else:
+                b.hp = (b.hp or 0) - h["dmg"]
+            c.last[q.id] = "hit"
+        if call.get("ally_hit"):
+            q = s.person(call["ally_hit"])
+            if q is not None:
+                b = ensure_block(q)
+                b.hp = (b.hp or 0) - int(call.get("dmg") or 0)
+        if call.get("who") and call.get("move"):
+            c.last[call["who"]] = call["move"]
+    spared = {h["pid"] for call in calls for h in (call.get("hits") or []) if h.get("spare")}
+    for q in list(s.people):
+        b = q.combat
+        if b is None or b.hp is None:
+            continue
+        if q.id in p.fighting:
+            if (b.count > 1 and b.hps and all(h <= 0 for h in b.hps)) or (b.count <= 1 and b.hp <= 0 and q.status == "alive"):
+                word = fallen_word(q, q.id in spared)
+                q.status = "down" if word == "down" else "dead"
+                c.defeated.append(q.id)
+                c.weight_won += float(b.weight or derived_weight(b)) * max(1, b.count)
+                notes.append(f"{q.name}: {word}")
+            elif b.count <= 1 and q.status == "alive" and not b.fanatic and b.kind == "person" and 0 < b.hp * 4 <= (b.hp_max or 1):
+                res = save_roll(rng, b.saves.get("wis", 0), 10 + p.level)          # morale: a quarter left
+                if not res.holds:
+                    p.fighting = [x for x in p.fighting if x != q.id]
+                    c.defeated.append(q.id)
+                    c.weight_won += float(b.weight or derived_weight(b))
+                    q.mood = "yielded"
+                    notes.append(f"{q.name} yields ({save_line('wis', 'their nerve', res)})")
+        elif q.id in p.with_them and q.status == "alive" and (b.hp or 0) <= 0:
+            q.status = "dead" if (b.hp or 0) <= -10 else "down"
+            notes.append(f"{q.name}: {q.status}")
+    p.fighting = [x for x in p.fighting if (q := s.person(x)) is not None and q.status == "alive"]
+    for x in p.fighting:                                               # regeneration (a troll's), unless burned this fight
+        q = s.person(x)
+        b = q.combat if q is not None else None
+        if b is not None and b.regen and b.count <= 1 and 0 < (b.hp or 0) < (b.hp_max or 0) and "burned" not in (q.condition or ""):
+            b.hp = min(b.hp_max or 0, b.hp + b.regen)
+    if c.plan:
+        c.round += 1
+    c.plan = []
+    if not living_enemies(game, s) and not p.fate:
+        xp = int(round(c.weight_won * 25))
+        if xp:
+            p.xp += xp
+            notes.append(f"The fight is over: {xp} XP")
+        else:
+            notes.append("The fight is over")
+        s.combat = None
+        p.fighting = []
+    return notes
+
+
+# ---- §7: the Fight panel, Flee and Yield ---------------------------------------------------------------------------------
+AILMENTS = ("bleeding", "held", "grappled", "enthralled", "chilled", "drained", "blessed", "shielded", "turned", "raging", "prone", "blinded",
+            "poisoned", "frightened", "stunned", "burning", "drowning")
+
+
+def _ailments_of_player(s: FantasyState) -> list[str]:
+    p = s.player
+    out = [c.name for c in p.conditions if any(a in c.name.lower() for a in AILMENTS)]
+    if p.peril is not None:
+        out.append(p.peril.kind)
+    if "raging" in p.flags_on:
+        out.append("raging")
+    return out
+
+
+def _ailments_of(q: Person) -> list[str]:
+    words = f"{q.condition} {q.mood}".lower()
+    return [a for a in AILMENTS if a in words]
+
+
+def fight_panel(game: Any, s: FantasyState) -> list:
+    """The Fight panel while in a fight (the record §8): the round; everyone with a meter and the number (the player, allies,
+    enemies alike); beside each, their combat ailments and buffs and their last action in a word; Flee and Yield."""
+    from engine.game import Chip, Commands, Meter, MeterGroup
+    if s.combat is None or not s.player.fighting:
+        return []
+    p, c = s.player, s.combat
+    meters = [Meter(label=p.name, value=p.hp, min=0, max=max(1, p.hp_max), text=f"{p.hp} / {p.hp_max}", tier=hp_word(p.hp, p.hp_max),
+                    tone="bad" if p.hp * 2 < p.hp_max else None, chips=[Chip(label="", value=a) for a in _ailments_of_player(s)])]
+    for q in party(s) + [x for x in (s.person(i) for i in p.fighting) if x is not None]:
+        b = ensure_block(q)
+        hps = list(b.hps) if b.count > 1 and b.hps else [b.hp or 0]
+        for n, h in enumerate(hps):
+            label = name_of(q, n) if b.count > 1 else q.name
+            chips = [Chip(label="", value=a) for a in _ailments_of(q)]
+            if c.last.get(q.id):
+                chips.append(Chip(label="last", value=c.last[q.id]))
+            if q.id in p.with_them:
+                chips.insert(0, Chip(label="", value="ally", tone="ok"))
+            meters.append(Meter(label=label, value=max(0, h), min=0, max=max(1, b.hp_max or 1), text=f"{max(0, h)} / {b.hp_max}",
+                                tier=hp_word(h, b.hp_max or 1, fallen_word(q)), tone="bad" if h * 2 < (b.hp_max or 1) else None, chips=chips))
+    title = f"Fight, round {c.round + 1}"
+    chips = [cs for cs in game.commands(s) if cs.id in ("flee", "yield")]
+    return [MeterGroup(title=title, meters=meters, place="main", pinned=True),
+            Commands(title=None, items=chips, place="main", pinned=True)]
+
+
+def run_fight_command(game: Any, state: FantasyState, command_id: str) -> tuple[FantasyState, Any]:
+    """Flee: breaking contact, and one free blow from each enemy within reach as the player goes (rolled now, landed now).
+    Yield: people may take it (the fight ends, no XP); the dead, beasts and fanatics do not (the round goes on)."""
+    import random as _r
+    from engine.game import CommandResult
+    s = state.model_copy(deep=True)
+    p = s.player
+    if s.combat is None or not p.fighting:
+        return state, CommandResult(ok=False, label=command_id.capitalize(), text="There is no fight to leave.")
+    if command_id == "flee":
+        rng = _r.Random(f"{p.name}:{s.clock.day}:{s.clock.minute}:flee")
+        tally: dict = {"hp": 0}
+        lines, told = [], []
+        for q in living_enemies(game, s):
+            for body in bodies(q)[:2]:
+                b = ensure_block(q)
+                a = next((x for x in b.actions if x.get("kind") in ("strike", "drain")), {"kind": "strike"})
+                r = resolve(game, s, {"key": f"flee:{q.id}:{body}", "side": "enemy", "who": q.id, "body": body, "action": {**a, "kind": "strike"},
+                                      "target": "player"}, rng, getattr(game, "target_offset", 2), tally)
+                if r.get("mechanic"):
+                    lines.append(r["mechanic"])
+                    told.append(r["text"].split(". Play")[0])
+        took = int(tally.get("hp", 0))
+        p.hp = max(0, p.hp - took)
+        names = ", ".join(q.name for q in (s.person(x) for x in p.fighting) if q is not None)
+        p.fighting, s.combat = [], None
+        dead = p.hp <= 0
+        if dead:
+            p.fate, p.fate_turn, p.fate_roll = "dead", 0, "cut down running"
+        directive = (f"{p.name} runs for it, out of reach of {names}. As {p.name} goes, each of them gets one blow: "
+                     + ("; ".join(told) or "none lands") + ". " + (f"It kills {p.name}: write the death straight." if dead else
+                     f"Play the getting away and where {p.name} ends up, and stop."))
+        p.turn_notes += lines
+        return s, CommandResult(label="Flee", player_line="I run for it.", summary=f"{p.name} flees the fight.", directive=directive, minutes=1,
+                                referee_skip=["hp"])
+    takers = [q for q in living_enemies(game, s) if ensure_block(q).kind == "person" and not ensure_block(q).fanatic]
+    refusers = [q for q in living_enemies(game, s) if q not in takers]
+    for q in takers:
+        q.mood = "accepted a yield"
+    p.fighting = [q.id for q in refusers]
+    if not p.fighting:
+        s.combat = None
+        directive = (f"{p.name} yields, and {', '.join(q.name for q in takers)} take it: the fight is over on their terms. Play what they "
+                     f"want of {p.name} now (weapons down, what they demand), and stop where {p.name} answers.")
+    else:
+        directive = (f"{p.name} offers to yield. " + (f"{', '.join(q.name for q in takers)} take it and stand back; " if takers else "")
+                     + f"{', '.join(q.name for q in refusers)} do not: they come on. Play it.")
+    return s, CommandResult(label="Yield", player_line="I yield.", summary=f"{p.name} offers to yield.", directive=directive, minutes=1)
+
+
+# ---- §8: scaling, by a budget (the record §9b) -----------------------------------------------------------------------------
+# tuned by the simulator (part fifteen §9; tools/fight_sim.py): the record's 0.5 / 1 / 1.5 / 2.5 made fair and hard the same one
+# skeleton at level 1 (won 100%); doubled, a level-1 paladin alone wins fair (two skeletons) about 96% at little cost, hard (three) about
+# 72% at a steep one, deadly (three, the remainder spent as +1 and +25%) about half
+BANDS = {"easy": 1.0, "fair": 2.0, "hard": 3.0, "deadly": 3.75}
+DIFFICULTY = {-2: 0.75, 0: 1.0, 2: 1.25}
+MAX_BODIES = 6
+
+
+def budget(level: int, fighters: int, band: str = "hard", shift: int = 0) -> float:
+    """(level + 1) x (1 + party members who fight x 0.6) x the band x the difficulty."""
+    return (level + 1) * (1 + fighters * 0.6) * BANDS.get(band or "hard", 1.5) * DIFFICULTY.get(shift, 1.0)
+
+
+def scale(s: FantasyState, q: Person, shift: int = 0) -> list[str]:
+    """A band's size at its first fight: the count that fits the budget (one to six), then, past six bodies, attack and DCs +1,
+    then hit points +25% (never more); under one body, fewer hit points. A fixed block keeps its numbers; a named person's
+    block is theirs (only an unnamed band is sized). Returns the steps, for the mechanics line."""
+    b = ensure_block(q)
+    if b.sized or b.fixed:
+        return []
+    b.sized = True
+    if b.count <= 1 and not b.band:
+        return []                                                      # a person, not a band: their own numbers
+    fighters = len([x for x in party(s) if (x.combat is None or not x.combat.fixed)])
+    band = b.band or "hard"
+    money = budget(s.player.level, fighters, band, shift)
+    w = float(b.weight or derived_weight(b))
+    n = int(money // w)
+    steps: list[str] = []
+    if n < 1:
+        n = 1
+        cut = max(1, int(round((b.hp_max or 1) * money / w)))
+        steps.append(f"hit points {b.hp_max} -> {cut}")
+        b.hp_max = b.hp = cut
+    elif n <= MAX_BODIES and money / w - n >= 0.5:                   # a remainder of half a body or more: the numbers, never more bodies
+        rem = money / w - n
+        b.attack = (b.attack or 0) + 1
+        b.dc = (b.dc or 12) + 1
+        steps.append("attack and DCs +1")
+        if rem >= 0.75:
+            b.hp_max = int(round((b.hp_max or 1) * 1.25))
+            b.hp = b.hp_max
+            steps.append("hit points +25%")
+    elif n > MAX_BODIES:
+        over = money / (MAX_BODIES * w)
+        n = MAX_BODIES
+        if over >= 1.25:
+            b.attack = (b.attack or 0) + 1
+            b.dc = (b.dc or 12) + 1
+            steps.append("attack and DCs +1")
+        if over >= 1.5:
+            b.hp_max = int(round((b.hp_max or 1) * 1.25))
+            b.hp = b.hp_max
+            steps.append("hit points +25%")
+    b.count = n
+    b.hps = [b.hp_max or 1] * n
+    word = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}[n]
+    note = f"{word} {b.block}{'s' if n > 1 else ''}, {band} for level {s.player.level}" + (f" ({'; '.join(steps)})" if steps else "")
+    b.notes = [note]
+    return [note]

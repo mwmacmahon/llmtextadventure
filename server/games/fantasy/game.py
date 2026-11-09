@@ -36,7 +36,7 @@ from engine.mechanics import CheckRequest, Modifier
 from engine.narration import default_mechanic_line
 from engine.pending import Pending
 from engine.resolve import Quest, same_person
-from engine.roles import AssistantReadingV2, Change
+from engine.roles import AssistantReadingCombat, AssistantReadingCombatV2, AssistantReadingV2, Change
 from engine.spontaneous import Spontaneous
 from engine.statepath import Actor
 
@@ -252,7 +252,8 @@ class FantasyGame(GameBase):
     log_path = "log"
     journal_path = "journal"            # B261: what was learned (a journal line that says the turn's log line again is dropped)
     mechanic_numbers = True
-    adjudication_schema = AssistantReadingV2
+    adjudication_schema = AssistantReadingCombatV2             # part fifteen §6: an intent's attack, the stakes on or off
+    adjudication_schema_staked = AssistantReadingCombat
     fallback_stat = "wis"
     static_paths = ["player.name", "player.race", "player.klass", "player.gender", "player.about", "player.sheet_notes"]
     extra_rulings = {"too_far": "Cut it where it turned (at the door, before the advance, at the first blow) and pick up after it; a job or "
@@ -914,7 +915,12 @@ class FantasyGame(GameBase):
         if p.carry_lines and not p.fate:                 # the backstop's blows (B206): the turn opens on them
             out.append("Since the last telling: " + " ".join(p.carry_lines) + " Open on it.")
         foes = wo.present_enemies(self, s)
-        if foes and not p.fate:                          # B206 (D178): every hostile acts once a turn in a fight; the narrator calls it
+        from . import combat as cb
+        rnd = cb.round_lines(self, s) if not p.fate else []
+        if rnd:                                          # part fifteen §3: the round, every blow rolled where the telling reaches it
+            out += rnd
+            foes = []
+        if foes and not p.fate and (s.combat is None or s.combat.plan):   # B206 (D178): every hostile acts once a turn; a free turn holds them
             out.append("In a fight with " + p.name + ": " + "; ".join(
                 q.name + " (" + ", ".join(str(m.get("kind")) for m in (q.moves or [wo.DEFAULT_STRIKE])) + ")" for q in foes)
                 + ". Every one of them acts once this turn, where it falls in the telling: write <<ENEMY <their id> <move>>> at that moment "
@@ -961,8 +967,12 @@ class FantasyGame(GameBase):
             "",
             "Difficulty: very_low = easy; low = routine; medium = a real chance to fail; high = hard; very_high = nearly impossible without an edge.",
             "Checks: one per real risk. Talking to a friend needs none; getting something out of a stranger, a wary or a hostile person is a cha check "
-            "against them (name them in target_entity). Searching for something hidden is wis; knowing a thing is int; a lock is dex; a fight is str "
-            "(dex for a bow, a thrown knife or a quick blade). A cantrip in a calm moment needs no check; a spell under pressure is an int check "
+            "against them (name them in target_entity). Searching for something hidden is wis; knowing a thing is int; a lock is dex. "
+            "In a fight, a blow at someone with a weapon is an attack: name the target or targets and the weapon, and any rider the player named; "
+            "no difficulty. Something the player tries in a fight that is not a blow with a weapon (sand in the eyes, the trapdoor, a shove off the "
+            "ledge, a feint, a word to the leader) is a check as always, staked with what it does to them if it works; a free action (a word, a "
+            "thing dropped or drawn) is no check and no time. The player's words still earn an edge (a plan, the ground, a feint named), as a "
+            "modifier with a why. A cantrip in a calm moment needs no check; a spell under pressure is an int check "
             "with the spell named in the label.",
         ]
         if p.about.strip():
@@ -1051,7 +1061,9 @@ class FantasyGame(GameBase):
                f"quote it in the note."] if any(q.hidden_from_player for q in s.people) else []),
             "- set <person id>.told value=<tell id>: the person gave that piece of what they know this turn. The game state lists the open pieces, with "
             "their ids, for the people with the player; one row per piece told.",
-            "- set <person id>.status alive|dead|missing|gone; set <person id>.condition <a few words>; set <person id>.mood <a word>.",
+            "- set <person id>.status alive|dead|missing|gone; set <person id>.condition <a few words>; set <person id>.mood <a word>. "
+            "In A FIGHT (THIS TURN lists a round), write no hit point or status rows for anyone the round touched: the engine counted every "
+            "blow and told the narrator what happened; conditions, places and heat as always.",
             "- learned <person id> value=fact: what they told the player or what the player learned about them, one sentence; when it makes something "
             "already known about them false now (they moved, changed sides, were lying), note=replaces followed by a few words copied exactly from the "
             "old fact as listed; not when the new fact only adds to the old. learned player value=clue: "
@@ -1226,7 +1238,7 @@ class FantasyGame(GameBase):
             if not a.words or any(w in label for w in a.words):
                 mods.append(Modifier(label=a.name, value=a.mod))
         for c in p.conditions:
-            if c.mod and c.stat == req.stat and (not c.words or any(w in label for w in c.words)):
+            if c.mod and c.stat in (req.stat, "all") and (not c.words or any(w in label for w in c.words)):
                 mods.append(Modifier(label=c.name, value=c.mod))
         mods += wd.wound_modifiers(p.wounds, req.stat, WOUND_KINDS)          # the wound ladder (B200): minor 0 to ruinous -5
         if req.stat == "str" and ATTACK.search(req.label) and not HEAVY.search(req.label):   # B222: a finesse weapon, the better of STR and DEX
@@ -2023,6 +2035,10 @@ class FantasyGame(GameBase):
                 w.note(f"people.{q.id}.facts += {f!r}")
             self._mark_told(s, [q], f, w)
             return True
+        if kind == "set" and field == "status" and s.combat is not None and any(e.get("who") == q.id or q.id in (e.get("targets") or [])
+                                                                                 or e.get("target") == q.id for e in s.combat.plan):
+            w.reject(f"people.{q.id}.status", "in a fight the engine counts the blows (part fifteen): no status rows for anyone the round touched", value)
+            return True
         if kind == "set" and field == "status":
             v = value.strip().lower()
             if v in ("alive", "dead", "missing", "gone", "unknown"):
@@ -2257,6 +2273,8 @@ class FantasyGame(GameBase):
         self._seeds_shown(s, info.prose)                                 # B243: the cards follow the telling
         p.carry_lines = []
         p.shown_notes += wo.land(self, s, info.calls, info.turn)          # the world's calls and the backstop (B206)
+        from . import combat as cb                                         # part fifteen §3: the round on everyone's hit points
+        p.shown_notes += cb.land(self, s, info.calls, info.turn, int(getattr(info, "target_offset", 0) or 0), info.rng)
         if p.fate == "dead" and p.fate_turn < info.turn:                  # a death the narrator was told inline: it ends this turn
             s.flags["ending"] = f"{p.name} died at {p.location or 'Marrowgate'} on day {s.clock.day}. The fog keeps the rest."
             return s
@@ -2689,7 +2707,11 @@ class FantasyGame(GameBase):
         p = state.player
         if self.ending(state) or p.fate in ("dead", "carried"):
             return [CommandSpec(id="journal", label="Journal", mode="engine", typed=False, hint="Read the journal, the quests and the people.")]
-        out = [CommandSpec(id="rest", label="Rest", mode="narrated", params=[Param(name="kind", label="Rest", options=[Option(id="short", label="Short (an hour)"), Option(id="long", label="Long (the night)")], default="short")],
+        out = []
+        if state.combat is not None and state.player.fighting:              # part fifteen §7: the Fight panel's chips
+            out += [CommandSpec(id="flee", label="Flee", mode="narrated", typed=False, hint="Run for it: every enemy within reach gets one free blow as you go."),
+                    CommandSpec(id="yield", label="Yield", mode="narrated", typed=False, hint="Offer to yield: people may take it; the dead, beasts and fanatics do not.")]
+        out += [CommandSpec(id="rest", label="Rest", mode="narrated", params=[Param(name="kind", label="Rest", options=[Option(id="short", label="Short (an hour)"), Option(id="long", label="Long (the night)")], default="short")],
                            hint="Rest: an hour (some hit points back) or the night (all of them, and what a night refills), here or close by with nothing "
                                 "in the way. Not when the player names a place farther off to sleep: that is a move there, not a rest.",
                            words=["rest", "sleep", "catch my breath", "lie down", "turn in", "bed down", "nap"])]
@@ -2698,21 +2720,25 @@ class FantasyGame(GameBase):
                                panel=self._level_panel(p) if p.xp >= nxt else None, typed=False,
                                hint="Open the level-up screen when the XP is there: what is new, the hit points, a stat raise at levels 4, 8 and 12.",
                                words=["level up", "level-up"]))
-        rage = p.count("rage")
-        if "raging" in p.flags_on:
+        from . import features as ft                                       # part fifteen §10: the class file's features as chips
+        feat = ft.chips(self, state)
+        covered = {c.id for c in feat} | {c.id[4:] for c in feat if c.id.startswith("end_")} | set(ft.specs(self, p))
+        out += feat
+        rage = p.count("rage") if "rage" not in covered else None
+        if "raging" in p.flags_on and "rage" not in covered:
             out.append(CommandSpec(id="end_rage", label="End rage", mode="engine", hint="Let the rage go before the scene ends.",
                                    words=["calm down", "end the rage", "stop raging", "let the rage go"]))
         elif rage is not None:
             out.append(CommandSpec(id="rage", label=f"Rage ({rage.value} left)", mode="narrated", enabled=rage.value > 0,
                                    hint="Fly into a rage until the scene ends: STR +2 to fight, force, lift and break; blows land a step lighter; CHA -2 to talk.",
                                    words=["rage", "raging", "fly into a rage", "berserk"]))
-        if p.count("lay_on_hands"):
+        if p.count("lay_on_hands") and "lay_on_hands" not in covered:
             out.append(CommandSpec(id="lay_on_hands", label="Lay on Hands", mode="narrated", hint="A healing touch: 5 hit points back, once between long rests.",
                                    words=["lay on hands", "lay hands"]))
-        if p.count("second_wind"):
+        if p.count("second_wind") and "second_wind" not in covered:
             out.append(CommandSpec(id="second_wind", label="Second wind", mode="narrated", hint="Catch a second wind: 5 hit points back, once between long rests.",
                                    words=["second wind"]))
-        if p.count("smoke_pellets"):
+        if p.count("smoke_pellets") and "smoke_pellets" not in covered:
             out.append(CommandSpec(id="smoke_pellets", label="Smoke pellets", mode="narrated", hint="Crack a smoke pellet and vanish from the scene.",
                                    words=["smoke pellet", "smoke bomb", "pellet"]))
         if p.count("breath"):
@@ -2802,6 +2828,10 @@ class FantasyGame(GameBase):
             line = f"{p.name} is level {p.level}: {gain} more hit points" + (f"; {'; '.join(got)}" if got else "") + "."
             s.journal.append(Note(kind="clue", text=line[:200]))
             return s, CommandResult(label="Level up", text=line, log_line=line)
+        from . import features as ft                                       # part fifteen §10: a feature in the class file runs by its kind
+        done = ft.run(self, state, command_id, args or {})
+        if done is not None:
+            return done
         if command_id == "rage":
             c = p.count("rage")
             if c is None or c.value <= 0 or "raging" in p.flags_on:
@@ -2846,6 +2876,9 @@ class FantasyGame(GameBase):
                                     directive=f"{p.name} cracks a smoke pellet: grey smoke fills the place in a breath, and when it thins {p.name} is gone from the scene, "
                                               f"a few streets or a few rooms away and unseen. Say where they come out, and stop.",
                                     minutes=2, referee_skip=["smoke_pellets"])
+        if command_id in ("flee", "yield"):                               # part fifteen §7
+            from . import combat as cb
+            return cb.run_fight_command(self, state, command_id)
         if command_id == "breath":
             c = p.count("breath")
             if c is None or c.value <= 0:
@@ -3125,6 +3158,7 @@ class FantasyGame(GameBase):
         return rows
 
     def ui(self, state: FantasyState) -> UISchema:
+        from . import combat as cb
         s, p = state, state.player
         nxt, floor = sh.xp_for(p.level), sh.xp_floor(p.level)
         gold = s.item("gold").count if s.item("gold") else 0
@@ -3159,7 +3193,8 @@ class FantasyGame(GameBase):
                   tier="ready to level up" if p.xp >= nxt else f"to level {p.level + 1}"),
             MeterGroup(meters=[Meter(label="Renown", value=p.renown, tier=p.renown_word, tone="info", thresholds=[25, 50, 75]),
                                Meter(label="Heat", value=p.heat, tier=p.heat_word, tone=self.HEAT_TONES.get(p.heat_word, "warn"), thresholds=[20, 50, 80])]),
-            Commands(title=None, items=self.commands(s)),
+            *cb.fight_panel(self, s),                       # part fifteen §7: the Fight panel, main column, pinned
+            Commands(title=None, items=[c for c in self.commands(s) if c.id not in ("flee", "yield")]),
             ListPanel(title="Character", items=sheet, layout="grid"),
             *([ListPanel(title="In your words", items=[Chip(label="", value=p.about.strip())], layout="stack")] if p.about.strip() else []),
             ListPanel(title="Abilities", items=[Chip(label=a.name, value=a.text + (" (now)" if a.while_flag and a.while_flag in p.flags_on else ""))

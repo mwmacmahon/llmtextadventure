@@ -72,8 +72,9 @@ class FakeProvider:
         queue = next((self.canned[c.__name__] for c in schema.__mro__ if self.canned.get(c.__name__)), None)
         if queue:
             obj = queue.pop(0)
-            if not isinstance(obj, schema):                       # a canned base-class object serves a subclass schema
+            if not isinstance(obj, schema) and issubclass(schema, type(obj)):    # a canned base-class object serves a subclass schema
                 obj = schema.model_validate(obj.model_dump())
+            # a sibling (a canned staked reading where the fantasy asks its combat reading) stands as the test wrote it
             return obj, usage  # type: ignore[return-value]
         if self.hook:
             obj = self.hook(schema, last)

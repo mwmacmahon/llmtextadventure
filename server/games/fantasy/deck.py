@@ -430,6 +430,9 @@ def draw(state: FantasyState, deck: dict, content_hooks: dict[str, dict], rng: A
     pool = candidates(state, deck, content_hooks, now_abs, turn)
     if not pool:
         return None
+    first = [hid for hid, _ in pool if hid in (deck.get("draw_first") or [])]   # part fifteen §12: the_quiet_dead, early
+    if first:
+        return first[0]
     total = sum(w for _, w in pool)
     r = rng.randrange(total)
     for hid, w in pool:

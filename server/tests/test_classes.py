@@ -28,11 +28,11 @@ def level_to(game: FantasyGame, st, lv: int, stats=("str", "str"), cards=""):
     return st
 
 
-def test_twelve_classes_two_full_and_ten_under_construction(game: FantasyGame):
+def test_twelve_classes_three_full_and_nine_under_construction(game: FantasyGame):
     cs = game.classes()
     assert list(cs) == list(cl.ORDER)
-    assert [c.name for c in cs.values() if c.status == "full"] == ["Barbarian", "Rogue"]
-    assert cs["Paladin"].label == "Paladin (under construction)" and cs["Rogue"].label == "Rogue"
+    assert [c.name for c in cs.values() if c.status == "full"] == ["Barbarian", "Paladin", "Rogue"]     # part fifteen §11: the Paladin
+    assert cs["Paladin"].label == "Paladin" and cs["Rogue"].label == "Rogue" and cs["Cleric"].label == "Cleric (under construction)"
     assert all(set(c.levels) == {1} for c in cs.values() if c.status == "stub")
     names = {a.name for c in cs.values() for f in c.levels.get(1, []) for a in cl.abilities_of(f)}
     assert not names & {"Strong arm", "Backstab"}                    # §7c: the SRD's features and nothing homebrewed beside them

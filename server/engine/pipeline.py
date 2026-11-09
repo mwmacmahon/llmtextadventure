@@ -1475,7 +1475,7 @@ class Engine:
         game = self.game_of(inst)
         schema = getattr(game, "adjudication_schema", AssistantReading)
         if issubclass(schema, AssistantReadingV2) and "pivotal" in adj_row:       # a stored adjudication with its stakes (D115)
-            schema = AssistantReadingStaked
+            schema = getattr(game, "adjudication_schema_staked", AssistantReadingStaked)
         adj = schema.model_validate({k: v for k, v in adj_row.items() if k != "_call"})
         transcript = [r for r in self.store.transcript(iid) if r.turn == turn]
         player_text = next((r.text for r in transcript if r.role == "player"), None)
@@ -1914,12 +1914,13 @@ class Engine:
         names them) and is still here."""
         people = list(getattr(state, "people", None) or getattr(state, "crew", None) or [])
         unmet = [q for q in people if not getattr(q, "met", True)]
-        names = sorted({n for q in unmet for n in (str(q.name).lower(), str(q.name).lower().split(" ")[0]) if len(n) >= 3})
+        skip = {"the", "old", "young", "lord", "lady", "brother", "sister", "captain", "sergeant", "master", "mother", "father"}   # a name's first word that is no name
+        names = sorted({n for q in unmet for n in (str(q.name).lower(), str(q.name).lower().split(" ")[0]) if len(n) >= 3 and n not in skip})
         ids = {q.id for q in unmet}
         here = set(_hook(game, "people_here", state, default=None) or [])
         if not here:
             return "", names, ids
-        by_name = {n: q.id for q in people for n in (str(q.name).lower(), str(q.name).lower().split(" ")[0]) if len(n) >= 3}
+        by_name = {n: q.id for q in people for n in (str(q.name).lower(), str(q.name).lower().split(" ")[0]) if len(n) >= 3 and n not in skip}
         came: set[str] = set()
         met_lately: set[str] = set()
         try:
@@ -1943,7 +1944,7 @@ class Engine:
             return "", names, ids
         who = next((q.name for q in people if q.id == new[0]), new[0])
         others = [q for q in unmet if q.id not in new]           # the newcomer is never held back by being one
-        names = sorted({n for q in others for n in (str(q.name).lower(), str(q.name).lower().split(" ")[0]) if len(n) >= 3})
+        names = sorted({n for q in others for n in (str(q.name).lower(), str(q.name).lower().split(" ")[0]) if len(n) >= 3 and n not in skip})
         return f"{who} came in lately and is still here", names, {q.id for q in others}
 
     def _last_turn(self, iid: str, turn: int) -> dict:
@@ -2115,7 +2116,7 @@ class Engine:
                                  note_for=lambda d, label: _hook(game, "check_note", state, d, label, default="") or "",
                                  caps=getattr(game, "caps", False),
                                  meets=lambda target, words: _hook(game, "meets_tell", state, target, words, default=None))
-            if call.verb in ("ENEMY", "HAZARD"):            # B206 (D178): the world's move, rolled when the prose reaches it
+            if call.verb in ("ENEMY", "HAZARD", "ATTACK", "ALLY"):   # B206 (D178), part fifteen §3: rolled when the prose reaches it
                 out = _hook(game, "world_call", state, call, rng_for(iid, turn, f"world:{call.verb}:{call.ref}:{n}"), offset, tally, default=None)
                 if out is None:
                     return CallResult(text=f"[ENGINE] Nothing in this game answers {call.raw!r}. Play it without a roll.")
@@ -2545,7 +2546,7 @@ def adjudicator_inputs(game: Game, state: BaseModel, recent: list[Msg], player_t
     schema = getattr(game, "adjudication_schema", AssistantReading)
     extra = ""
     if stakes and issubclass(schema, AssistantReadingV2):
-        schema = AssistantReadingStaked
+        schema = getattr(game, "adjudication_schema_staked", AssistantReadingStaked)      # the fantasy's carries the attack (part fifteen)
         _, fresh = game.new_instance({})
         extra = stakes_blocks(game, state, fresh)
     system, msgs = adjudicator_messages(rules, state_text, recent, player_text, _commands_text(_hook(game, "commands", state, default=[])), extra=extra)
@@ -2934,7 +2935,9 @@ def rearmed(pitems: list, new: Any, turn: int, within: int = 3) -> Any:
 
 
 # B206 (D178): the games whose enemies and dangers act through the narrator's calls (the fantasy) add this to the protocol
-WORLD_PROTOCOL = ("\n  <<ENEMY id move>> and <<HAZARD name>>  when THIS TURN lists people fighting the player or dangers here: at the moment one "
+WORLD_PROTOCOL = ("\n  <<ATTACK id>> and <<ALLY id>>  in A FIGHT, the player's blow and an ally's, as THIS TURN lists them: write the call on its own "
+                  "line at the moment the blow comes and stop; the engine rolls it and says what it did."
+                  "\n  <<ENEMY id move>> and <<HAZARD name>>  when THIS TURN lists people fighting the player or dangers here: at the moment one "
                   "of them acts or reaches the player, write the call on its own line and stop, as for a check, such as <<ENEMY mirren hold>> or "
                   "<<HAZARD cold_water>>. The engine rolls it and tells you what happened; play that and go on. Every one THIS TURN lists as "
                   "fighting acts once a turn.")

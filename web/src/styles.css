@@ -357,3 +357,6 @@ dl.score dd { margin: 0; font-family: var(--pixel-font); font-size: 15px; }
 .overlay-body details.day { border-bottom: 1px solid var(--border, rgba(127, 127, 127, 0.2)); padding: 6px 0; }
 .overlay-body details.day > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
 .overlay-body ul.log { margin: 4px 0 6px; }
+
+/* part fifteen §7: an attack, damage or save line in the prose as a dice card */
+.mechanic-line.dice-card { border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 8px; padding: 6px 10px; background: var(--panel); }

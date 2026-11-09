@@ -451,7 +451,7 @@ function Prose({ text }: { text: string }) {
     <>
       {blocks.map((b, i) =>
         b.startsWith("§ ") ? (
-          <div key={i} className="mechanic-line">
+          <div key={i} className={"mechanic-line" + (/ against AC \d+| save against /.test(b) ? " dice-card" : "")}>
             {b.slice(2).split(/([\u2680-\u2685])/).map((part, k) => (/^[\u2680-\u2685]$/.test(part) ? <span key={k} className="die">{part}</span> : part))}
           </div>
         ) : (

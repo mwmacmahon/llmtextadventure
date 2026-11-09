@@ -96,6 +96,8 @@ def test_acceptance_5_rerun_on_the_file_as_written(game):
     now = st.clock.day * dk.DAY + st.clock.minute
     st.player.visited["Lake Ambercold"] = now + 100
     st.hooks = st.hooks[:1]                                                   # one in motion: a draw is due
+    from games.fantasy.state import HookState                                 # part fifteen §12: the deck's first draw, out of the way
+    st.hooks.append(HookState(id="the_quiet_dead", title="The Quiet Dead", tier=1, status="done"))
     lake = {h for h, hk in hooks.items() if dk.hook_places(hk) & set(deck["water"])}
     picks = [dk.draw(st, deck, hooks, random.Random(seed), now + 360, 1) for seed in range(10)]
     print("acceptance 5:", sum(1 for x in picks if x in lake), "of 10 lake hooks;", picks)

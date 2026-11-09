@@ -137,6 +137,54 @@ class AssistantReadingStaked(AssistantReadingV2):
         return cls(kind="action", summary=f"The player attempts: {player_text[:80]}", time_minutes=5, intents=[IntentStaked(action=player_text[:80])], risk="low")
 
 
+# ---- part fifteen §6: the fantasy's attack (the combat record §7); the fantasy's reading only, noir and the station unchanged ----
+class AllyOrder(BaseModel):
+    ally: str = Field(description="The ally's id, as listed.")
+    target: str = Field(description="Who the player tells them to go for, by id.")
+
+
+class AttackSpec(BaseModel):
+    targets: list[str] = Field(description="Who the blow is at, by id; two or three only when the words name them all (a sweep).")
+    weapon: str = Field(default="", description="The weapon the player strikes with, in a word or two as they carry it; empty for their best.")
+    riders: list[str] = Field(default_factory=list, description="Only what the player named that rides on the blow: smite, sneak. Empty otherwise.")
+    ally_orders: list[AllyOrder] = Field(default_factory=list, description="Orders the player's words give an ally (\"Hazel, the one on the left\"); empty otherwise.")
+
+
+_COMBAT_CHECK = ("The check that decides this attempt when its outcome is uncertain and matters: stat, difficulty, label. An escape under "
+                 "threat, a forced or hurried physical feat, a lock, a hidden search, an attempt to get something out of someone who may refuse, and "
+                 "anything in a fight that is not a blow with a weapon has one; a blow with a weapon is an attack instead, with no check. Null for "
+                 "anything routine with nothing in the scene pressing on the player, hurt or not.")
+_COMBAT_ATTACK = "In a fight, a blow at someone with a weapon: who, the weapon, any rider named. No check and no difficulty for it; null for anything else."
+
+
+class IntentCombatV2(IntentV2):
+    check: CheckProposal | None = Field(default=None, description=_COMBAT_CHECK)
+    attack: AttackSpec | None = Field(default=None, description=_COMBAT_ATTACK)
+
+
+class AssistantReadingCombatV2(AssistantReadingV2):
+    """The fantasy's reading with the attack, the stakes off (part fifteen §6)."""
+    intents: list[IntentCombatV2] = Field(default_factory=list, description="The concrete attempts, usually one, at most three. A blow with a weapon in a fight is an attack, with no check; for each other uncertain one, assess the check (stat, difficulty, target).")  # type: ignore[assignment]
+
+    @classmethod
+    def example(cls, player_text: str) -> "AssistantReadingCombatV2":
+        return cls(kind="action", summary=f"The player attempts: {player_text[:80]}", time_minutes=5, intents=[IntentCombatV2(action=player_text[:80])], risk="low")
+
+
+class IntentCombat(IntentStaked):
+    check: CheckStaked | None = Field(default=None, description="The check that decides this attempt when its outcome is uncertain and matters: stat, difficulty, label, then both futures (STAKES). An escape under threat, a forced or hurried physical feat, a lock, a hidden search, an attempt to get something out of someone who may refuse, and anything in a fight that is not a blow with a weapon has one; a blow with a weapon is an attack instead, with no check. Null for anything routine with nothing in the scene pressing on the player, hurt or not.")
+    attack: AttackSpec | None = Field(default=None, description="In a fight, a blow at someone with a weapon: who, the weapon, any rider named. No check and no difficulty for it; null for anything else.")
+
+
+class AssistantReadingCombat(AssistantReadingStaked):
+    """The fantasy's staked reading with the attack (part fifteen §6)."""
+    intents: list[IntentCombat] = Field(default_factory=list, description="The concrete attempts, usually one, at most three. A blow with a weapon in a fight is an attack, with no check; for each other uncertain one, assess the check and write both futures.")  # type: ignore[assignment]
+
+    @classmethod
+    def example(cls, player_text: str) -> "AssistantReadingCombat":
+        return cls(kind="action", summary=f"The player attempts: {player_text[:80]}", time_minutes=5, intents=[IntentCombat(action=player_text[:80])], risk="low")
+
+
 ADJUDICATOR_STAKES = """STAKES. While this section is here you also write what each result of a check means; the dice still decide which result comes. For each check you assess, write both of its futures in the check itself, after its label, stat and difficulty. You do not know how the dice will fall; the narrator calls the check when the story reaches it, the engine rolls, and whichever way it goes the engine plays the future you wrote. time_minutes stays the input's time if it goes as the player means it.
 - success_gain and success_minutes: what success gains, a fact about how things stand, not a scene. success_minutes is how long the attempt itself lasts when it works, start to finish: at least 1, and all checks together no more than time_minutes. A success gains what was sought; of a person's Hidden line or secret (WHAT THE CAST HIDE), only what its Tells (on the station, its How) allow.
 - failure_outcome and failure_minutes: what failure leaves standing, as a fact about the attempt only (he does not buy it; the lock holds; he does not get through). Never harm or loss to the player's side, and never the player's own condition: an injury, fear or exhaustion may make the attempt harder, but the outcome is only that the attempt does not come off. What a failure costs the player the engine decides separately; never write a cost. failure_minutes is how long the attempt lasts when it fails, counted the same way, at least 1; a failure may run longer.

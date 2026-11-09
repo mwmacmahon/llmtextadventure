@@ -58,6 +58,13 @@ def game(engine: Engine) -> FantasyGame:
     return g
 
 
+def _quiet_dead_drawn(game, st):
+    """The deck draws the_quiet_dead first (part fifteen §12); a test of the other draws deals it out of the way."""
+    if st.hook("the_quiet_dead") is None and "the_quiet_dead" in game.hooks_content():
+        from games.fantasy.state import HookState
+        st.hooks.append(HookState(id="the_quiet_dead", title="The Quiet Dead", tier=1, status="done"))
+
+
 def new(game: FantasyGame, **over):
     return game.new_instance({**SHEET, **over})[1]
 
@@ -547,6 +554,7 @@ def test_failed_closes_with_nothing_paid(game: FantasyGame):
 
 def test_the_deck_draws_by_the_rule(game: FantasyGame):
     st = new(game)
+    _quiet_dead_drawn(game, st)                                    # part fifteen §12: the deck's first draw, out of the way
     deck = dk.deck_of(game.scenario())
     hooks = game.hooks_content()
     now = st.clock.day * 1440 + st.clock.minute
@@ -567,6 +575,7 @@ def test_the_draw_favours_a_hook_whose_reach_is_where_the_player_has_been(game: 
     in the last day. The content's lake hooks reach the player on the quay (B39), so the rule is shown on the real deck with
     a lake hook's reach moved onto the water, seeded, over ten tries."""
     st = new(game)
+    _quiet_dead_drawn(game, st)                                    # part fifteen §12: the deck's first draw, out of the way
     deck = dk.deck_of(game.scenario())
     hooks = dict(game.hooks_content())
     singing = dict(hooks["singing_on_the_lake"])
@@ -682,6 +691,7 @@ async def test_tam_rows_out_alone_and_is_lost(engine: Engine, fake: FakeProvider
         doc = engine.store.load_state(iid)
         st = engine.games["fantasy"].load_state(doc)
         st.clock.day, st.clock.minute = 4, 355
+        _quiet_dead_drawn(engine.games["fantasy"], st)                  # part fifteen §12: the deck's first draw, out of the way
         st.player.location = "Lantern Row"
         st.person("tam").location = "Lantern Row"
         for e in st.hidden.events:                                     # everything else has played: the one-hook-a-turn rule holds nothing back
@@ -708,7 +718,7 @@ async def test_tam_rows_out_alone_and_is_lost(engine: Engine, fake: FakeProvider
         if aboard:
             assert "tam_lost" not in fired and not st.flags.get("tam_gone_out")
         else:
-            assert "tam_lost" in fired and st.flags.get("tam_gone_out") and st.person("tam").location == "Unknown"
+            assert "tam_lost" in fired and st.flags.get("tam_gone_out") and st.person("tam").location == "Unknown", (fired, events[-1]["data"]["mechanics"].get("holds"), events[-1]["data"]["mechanics"].get("happenings"))
 
 
 async def test_death_by_the_pipeline(engine: Engine, fake: FakeProvider):

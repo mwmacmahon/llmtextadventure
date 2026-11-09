@@ -41,7 +41,7 @@ def test_the_system_splits_at_the_words_and_the_stakes(setup):
     game, state, role, _ = setup
     system, msgs, schema = adjudicator_inputs(game, state, [], "I punch Maud.", stakes=True)
     base, checks, stakes = split_system(system)
-    assert schema is AssistantReadingStaked
+    assert issubclass(schema, AssistantReadingStaked)
     assert checks.startswith("THE WORDS DECIDE FIRST.") and stakes.startswith("STAKES.")
     assert "THE WORDS DECIDE" not in base and "STAKES. While" not in base and base + "\n\n" + checks + "\n\n" + stakes == system
 
@@ -52,7 +52,7 @@ async def test_off_is_the_one_call(setup):
     p.hook = lambda schema, last: seen.append(schema.__name__) or None
     system, msgs, schema = adjudicator_inputs(game, state, [], "I look around.", stakes=True)
     await extract_adjudication(p, role, system, msgs, schema, {})
-    assert seen[0] == "AssistantReadingStaked" and not any(n.startswith("Chain") for n in seen)
+    assert seen[0] in ("AssistantReadingStaked", "AssistantReadingCombat") and not any(n.startswith("Chain") for n in seen)
 
 
 async def test_on_is_three_messages_merged_into_one_reading(setup):

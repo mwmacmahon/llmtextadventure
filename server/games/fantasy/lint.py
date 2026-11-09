@@ -557,8 +557,8 @@ def _carry_rule(game: Any, city: dict) -> str | None:
 
 def _talk_rule(game: Any, city: dict) -> str | None:
     rules = game.adjudication_rules(_fresh(game))
-    if "a fight is str" not in rules:
-        return "a fight is no longer a check"
+    if "a blow at someone with a weapon is an attack" not in rules:          # part fifteen: a blow is an attack roll, still a roll
+        return "a blow is no longer rolled"
     if re.search(r"is a cha check", rules):
         return ("the rules make getting something out of a stranger, a wary or a hostile person a cha check (only talking to a "
                 "friend needs none), so 'never' overstates it")
@@ -570,8 +570,8 @@ def _friend_talk_rule(game: Any, city: dict) -> str | None:
     rules = game.adjudication_rules(_fresh(game))
     if "Talking to a friend needs none" not in rules:
         return "talking to a friend may need a check now"
-    if "a fight is str" not in rules:
-        return "a fight is no longer a check"
+    if "a blow at someone with a weapon is an attack" not in rules:          # part fifteen: a blow is an attack roll, still a roll
+        return "a blow is no longer rolled"
     return None
 
 
@@ -694,6 +694,9 @@ def lint_combat(content_dir: Path) -> list[str]:
             fights = (pr.get("attitude") or 0) <= -2 or pr.get("moves") or any(p.search(words) for p, b in ROLE_BLOCKS if b != "commoner")
             if fights and not pr.get("combat"):
                 out.append(f"{where}: {pr.get('id')} fights with no combat block (the default by role words)")
-            if (pr.get("combat") or {}).get("kind") == "undead" and not ((pr.get("combat") or {}).get("actions") or pr.get("moves")):
+            from games.fantasy.combat import BLOCKS
+            cbk = pr.get("combat") or {}
+            if (cbk.get("kind") or BLOCKS.get(cbk.get("block", ""), {}).get("kind")) == "undead" and not (
+                    cbk.get("actions") or pr.get("moves") or BLOCKS.get(cbk.get("block", ""), {}).get("actions") or cbk.get("block") in BLOCKS):
                 out.append(f"{where}: {pr.get('id')} is undead with no actions")
     return out
