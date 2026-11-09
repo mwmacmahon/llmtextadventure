@@ -607,6 +607,20 @@ class FantasyGame(GameBase):
         s, p = state, state.player
         return [q.id for q in s.people if q.status == "alive" and not q.hidden_from_player and q.location and self._same_spot(s, q.location, p.location)]
 
+    def people_records(self, state: FantasyState) -> list[str]:
+        """B244 (b): for the game master's asides, each person the player can see here with the record's description after the
+        role, so an age or a coat the content already has is the answer. Named only once the player knows the name."""
+        s = state
+        out = []
+        for pid in self.people_here(s):
+            q = s.person(pid)
+            if q is None:
+                continue
+            who = q.name if self.name_shown(s, q) else (q.role or "someone, not yet named")
+            bits = [b for b in (q.role if who != q.role else "", q.description.strip()) if b]
+            out.append(f"- {who}" + (": " + "; ".join(bits) if bits else ""))
+        return out
+
     def person_name(self, state: FantasyState, pid: str) -> str | None:
         q = next((q for q in state.people if q.id == pid), None)
         return q.name if q is not None else None
@@ -1026,7 +1040,8 @@ class FantasyGame(GameBase):
             "their ids, for the people with the player; one row per piece told.",
             "- set <person id>.status alive|dead|missing|gone; set <person id>.condition <a few words>; set <person id>.mood <a word>.",
             "- learned <person id> value=fact: what they told the player or what the player learned about them, one sentence; when it makes something "
-            "already known about them no longer so (they moved, changed sides, were lying), note=replaces <a few words of the old fact>. learned player value=clue: "
+            "already known about them false now (they moved, changed sides, were lying), note=replaces followed by a few words copied exactly from the "
+            "old fact as listed; not when the new fact only adds to the old. learned player value=clue: "
             "a fact the player learned (a name, a place, a time, what a thing is), only when new.",
             "- new person value=name, field=<place>, note=role: anyone the prose names who is not listed (at most two a turn). An alias of a listed "
             "person is that person: use their id.",

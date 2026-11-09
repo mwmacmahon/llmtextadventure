@@ -45,6 +45,7 @@ async def test_the_ask_mode_is_an_aside_that_moves_nothing(engine, fake):
     before = state_of(engine, iid)
     res = await engine.ask(iid, "?what time is it")
     assert res["ok"] and res["text"]
+    await engine.aside_settled(iid)
     after = state_of(engine, iid)
     assert after.clock == before.clock and engine.store.latest_turn(iid) == 0
     roles = [r.role for r in engine.store.transcript(iid, undone=True)]
@@ -287,3 +288,92 @@ def test_the_assistant_can_close_the_scene_to_callers(engine):
     for cls in (AssistantReadingStaked, AssistantReadingV2):
         assert "open_to_callers" in inline_schema(cls.model_json_schema())["required"]
     assert "true by default" in ADJUDICATOR_INSTRUCTIONS and "a locked, secret or hard-to-reach spot" in ADJUDICATOR_INSTRUCTIONS
+
+
+# ---- B244: what the game master says in an aside is canon, and the game master answers ---------------------------------
+
+async def test_the_game_master_decides_what_can_plainly_be_seen_from_the_records(engine, fake):
+    """The grimdark saves' turn 9 ("how old is the kitchen girl" -> "cannot tell the kitchen girl's age from here"): the prompt
+    now has the game master decide what can plainly be seen, and the state block carries each person's record."""
+    iid = engine.create_instance("fantasy", SHEET)
+    seen = []
+
+    def script(system, messages):
+        seen.append((system, messages[-1].content))
+        return "She looks nineteen, in a wolf-pelt coat."
+    fake.script = script
+    res = await engine.ask(iid, "how old is the girl with the bow?")
+    await engine.aside_settled(iid)
+    system, user = seen[0]
+    assert "you decide now if the story has not said it" in system and "cannot tell from here" not in system
+    assert "[THE PEOPLE HERE, FROM THEIR RECORDS]" in user and "Nineteen, Berta Oakhew's daughter" in user
+    assert res["text"] == "She looks nineteen, in a wolf-pelt coat."
+
+
+async def test_a_hidden_word_in_an_aside_is_masked_not_refused(engine, fake, monkeypatch):
+    iid = engine.create_instance("fantasy", SHEET)
+    game = engine.games["fantasy"]
+    monkeypatch.setattr(type(game), "leaked_terms", lambda self, st, prose, q: ["Hazel"] if "Hazel" in prose else [])
+    fake.script = lambda system, messages: "Hazel sits by the door with her bow; Hazel's coat is wolf-pelt."
+    res = await engine.ask(iid, "who is by the door?")
+    await engine.aside_settled(iid)
+    assert res["text"] == "she sits by the door with her bow; her coat is wolf-pelt."
+    row = next(r for r in engine.store.ledger(iid) if r["kind"] == "model_call" and r["payload"].get("step") == "ask")
+    assert row["payload"]["leaked"] == ["Hazel"]
+
+
+async def test_an_aside_that_teaches_lands_learned_rows_only(engine, fake):
+    """B244 (c), Lilith's turn 15 shape: the answer describes a thing; the referee's learned pass writes learned rows, which
+    land in the journal and on the cards; anything else it writes is dropped; the next turn waits for it."""
+    from engine.roles import Change, ChangeReport
+    iid = engine.create_instance("fantasy", SHEET)
+    fake.script = lambda system, messages: "It is pale, a head and shoulders high, and it rose without a ripple."
+    asked = []
+
+    def hook(schema, last):
+        if schema is ChangeReport:
+            asked.append(last)
+            return ChangeReport.of(Change(kind="learned", target="player", value="The thing in the water is pale, a head and shoulders high."),
+                                   Change(kind="learned", target="hazel", value="Hazel keeps her bow strung indoors."),
+                                   Change(kind="move", target="player", value="The Quay"))
+        return None
+    fake.hook = hook
+    await engine.ask(iid, "what does it look like?")
+    await engine.aside_settled(iid)
+    assert "THIS PASS: the narration above is not a turn" in str(asked[0])
+    st = state_of(engine, iid)
+    assert any("pale, a head and shoulders high" in n.text for n in st.journal)
+    assert "Hazel keeps her bow strung indoors." in st.person("hazel").facts
+    assert st.player.location == "The Drowned Lantern"                                   # the move was not a learned row
+    row = next(r for r in engine.store.ledger(iid) if r["kind"] == "aside_learned")
+    assert [r["kind"] for r in row["payload"]["rows"]] == ["learned", "learned"] and row["payload"]["applied"]
+
+
+async def test_an_aside_that_teaches_nothing_writes_nothing(engine, fake):
+    from engine.roles import ChangeReport
+    iid = engine.create_instance("fantasy", SHEET)
+    before = state_of(engine, iid).model_dump(mode="json")
+    fake.script = lambda system, messages: "You are in the common room of the Drowned Lantern."
+    fake.hook = lambda schema, last: ChangeReport.of() if schema is ChangeReport else None
+    await engine.ask(iid, "where am I?")
+    await engine.aside_settled(iid)
+    assert state_of(engine, iid).model_dump(mode="json") == before
+    row = next(r for r in engine.store.ledger(iid) if r["kind"] == "aside_learned")
+    assert row["payload"]["rows"] == []
+
+
+async def test_an_aside_row_the_state_already_says_is_dropped(engine, fake):
+    """Lilith's "where am I currently" at turn 0 (Sonnet, replayed): the pass wrote the inn's place and view, every word of
+    it in the state and the opening; a row with four in five of its words already there teaches nothing."""
+    from engine.roles import Change, ChangeReport
+    iid = engine.create_instance("fantasy", SHEET)
+    before = state_of(engine, iid).model_dump(mode="json")
+    fake.script = lambda system, messages: "You are in the common room of the Drowned Lantern."
+    fake.hook = lambda schema, last: ChangeReport.of(Change(kind="learned", target="player", value="The Drowned Lantern is on Lantern Row.")) \
+        if schema is ChangeReport else None
+    await engine.ask(iid, "where am I?")
+    await engine.aside_settled(iid)
+    assert state_of(engine, iid).model_dump(mode="json") == before
+    row = next(r for r in engine.store.ledger(iid) if r["kind"] == "aside_learned")
+    assert row["payload"]["rows"] == [] and row["payload"]["stale"] == ["The Drowned Lantern is on Lantern Row."]
+
