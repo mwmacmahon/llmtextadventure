@@ -41,7 +41,7 @@ def test_turn_zero_is_one_narrator_row_introduction_then_opening(engine: Engine,
     assert text.startswith(first)
     assert text.rstrip().endswith(sc["opening_text"].strip()[-60:])
     assert "\n\n" + sc["opening_text"].strip()[:40] in text
-    assert "{" not in text
+    assert "{" not in text and text.count("\n\n") == 2                    # the introduction's two paragraphs, then the opening
 
 
 def test_the_fantasys_placeholders_are_filled(engine: Engine):

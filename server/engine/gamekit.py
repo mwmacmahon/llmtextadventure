@@ -143,7 +143,7 @@ def threads_panel(threads: list[th.Thread], title: str = "Threads", recent_close
 def with_introduction(scenario: dict, opening: str | None, fill=None) -> str | None:
     """Part fourteen: the turn-0 telling is the scenario's `introduction` (the world and the player's place in it), a blank
     line, then its `opening_text`, as one narrator row. `fill` fills the placeholders as the prefix's are."""
-    intro = str(scenario.get("introduction") or "").strip()
+    intro = "\n\n".join(x.strip() for x in str(scenario.get("introduction") or "").strip().split("\n") if x.strip())   # YAML's folded blank line is one newline
     if fill is not None and intro:
         intro = fill(intro)
     parts = [x for x in (intro, (opening or "").strip()) if x]
