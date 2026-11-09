@@ -1522,6 +1522,11 @@ class ClownGame(GameBase):
                 lines.append(f"{x.name} worked at her own booking's turn on her own: {gains}.")
                 nums.append(f"{x.name}, on her own for her booking: " + ", ".join(f"{self.skill_name(k)} {x.skills.get(k, 0) - v} to {x.skills.get(k, 0)}" for k, v in x.week_gains.items() if v) + ".")
                 x.week_gains = {}
+        keep = int(dk.dial(s, "keep"))
+        if keep:
+            h.money -= keep
+            lines.append("The week's keep (coal, food, Mrs Pell) was paid.")
+            nums.append(f"The week's keep, ${keep}, was paid.")
         if h.week % 4 == 0:
             h.money -= h.rent
             lines.append("The rent was paid.")

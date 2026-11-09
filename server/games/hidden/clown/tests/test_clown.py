@@ -467,7 +467,7 @@ def test_a_job_in_town_pays_a_little_and_raises_her_diligence_which_helps_every_
     money, g = st.house.money, st.active_girl
     st = advance(game, st, SLOTS["mornings"][1] - st.clock.minute + 1, 2)
     g = st.active_girl
-    assert st.house.money == money + 6 and g.diligence == 3 and g.fatigue == 10 + 4
+    assert st.house.money == money + 8 and g.diligence == 3 and g.fatigue == 10 + 4
     assert any("worked at" in ln and "money came of it" in ln for ln in st.log) and any("diligence 0 to 3" in ln for ln in st.tally)
     assert "a job in town" in game.render_bulletin(st, "") and "idle at work" in game.render_bulletin(st, "")
     plain, _ = game._gain(st, g, "mime", False, "x")
@@ -591,7 +591,7 @@ def test_graduation_needs_the_record_and_a_sunday_and_a_graduate_earns_on_her_ow
     money = s2.house.money
     s3 = game.after_turn(s2, info(turn=3, minutes=60))
     assert s3.girl("dot").skills["acrobatics"] == 90 and s3.girl("rosalind").skills["children"] > 50
-    assert s3.house.money == money and not any("own bookings" in ln for ln in s3.house.report_numbers)
+    assert s3.house.money == money - 20 and not any("own bookings" in ln for ln in s3.house.report_numbers)   # the keep
     from games.hidden.clown.state import Show
     x = Show(id="s", hook="judge_dinner", title="The Judge's dinner", client="judge", venue="The Judge's house", at_abs=s3.now_abs, wants=["acrobatics"],
              stat="charm", difficulty=0, fee=60, variance=0, girl="dot")

@@ -215,8 +215,9 @@ DIALS: dict[str, float] = {
     "booking_boost": 1.5,    # the girl in training gains this much more at a skill her own booking wants
     "student_pay": 0.25,     # a student's show pays this share of the fee; a graduate's pays the whole
     "trouble_days": 5,       # troubles are dealt one at a time, at least this many days apart, when one is eligible
-    "job_pay": 6,            # a slot at a job in town pays the house this much
+    "job_pay": 8,            # a slot at a job in town pays the house this much: five slots a week cover the rent and the keep with a little over (the owner, 11-09)
     "job_diligence": 3,      # and raises her diligence by this
+    "keep": 20,              # the house's keep a week (coal, food, Mrs Pell), paid on Sunday night beside the rent every fourth week
 }
 
 

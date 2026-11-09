@@ -68,7 +68,10 @@ def choose_plan(game: ClownGame, st: ClownState, plan: str, focus: list[str], re
         parts = [p.strip() for p in plan.split(",") if p.strip()]
         a, b = parts[0], (parts[1] if len(parts) > 1 else parts[0])
     if rest_at and g.fatigue >= rest_at:
-        b = "rest"
+        if b == "work":             # a job slot keeps earning; the rest takes the training slot
+            a = "rest"
+        else:
+            b = "rest"
     return a, b
 
 
