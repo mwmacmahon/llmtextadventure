@@ -48,7 +48,7 @@ it. *decided*: the owner has ruled, no design yet. *open with the owner*: a ques
 | 12 | Mods and variants | designed (mods); idea (variants) | DESIGN-mods | the mod files, Super Dark Fantasy's Conan pass, basic and advanced variants |
 | 13 | Magic | designed, open with the owner | DESIGN-magic | placement and four questions; then the spell data, slots, the Cast lever, the level-up screen |
 | 14 | Models and the box | one model all roles, running | LOCAL_LLM.md; the trials reports | Qwen's return through profiles, hosted narrators, the box's faults |
-| 15 | The clown sim | designed, provisional | CLOWN_DESIGN | seven questions, the engine gaps, dev mode gating; nothing committed without discussion |
+| 15 | The clown sim (Clown Maker) | built hidden, in the repo; stage A done; no model round | CLOWN_DESIGN, CLOWN_ROADMAP, the design page | the first Sonnet round (the round tool's dev header), the hand-of-bookings redesign (D184C), the content pass |
 | 16 | Writing for models | running; the sweep proper not run | WRITING_FOR_MODELS.md | the full sweep and its rounds |
 | 17 | Tooling, tests and docs | running | INDEX.md §7 | tests on gitignored content, the docs marked behind, the register's statuses, the phone's pages |
 | 18 | Ideas not yet weighed | idea | the register | the referee review pass, the preference corpus, the station's self-upgrade |
@@ -302,13 +302,15 @@ D98, D101.
 
 ## 15. The clown sim
 
-A clown-training raising sim, black comedy played straight: a stable of girls, meters, private clients, the week as a
-plan of training slots ending on a scripted Sunday. Design: CLOWN_DESIGN (provisional first pass, D132 turn
-structure, D133 the player unconstrained); nothing in the repo.
+Clown Maker, a clown-training raising sim, black comedy played straight: Tumbler House in Kettlebridge, a stable of
+girls, a fifteen-skill grid, private clients, the week as a plan of training slots ending on a scripted Sunday, a show
+as a formula. Design: CLOWN_DESIGN and CLOWN_ROADMAP (both gitignored), the design page (INDEX §1).
 
-**Designed, provisional.** Seven questions for the owner stand in the record. The engine gaps it found (no recurring
-event, one `cap_minutes` per game: B17) and dev mode's gap (B134) come first. Nothing about it is committed without
-discussion; it lands behind dev mode, after the fantasy and mods.
+**Built hidden, in the repo (the owner, 11-09).** `server/games/hidden/clown/` with its dry-run tool and tests (run by
+`pytest` with the rest); dev mode only, never loaded with `TA_DEV_MODE=off`; its content and mods stay under notes/.
+Stage A done (the cold read, the dry run, Skip, Graduate). **Left:** the round tool's dev header and the first Sonnet
+round; the bookings redesign as a hand (D184C: a hand of two to four cards, every girl bookable, no deadlines, the
+activities, Switch at will); the content pass; the C-lines in its own roadmap.
 
 ## 16. Writing for models
 

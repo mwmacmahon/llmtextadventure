@@ -29,8 +29,11 @@ notes/content/*/*
 notes/content/*/mods/*
 !notes/content/*/mods/example.yml
 
-# Hidden games (dev mode): every hidden game stays out of the repo for now (the owner, 2026-11-08); content under notes/
-server/games/hidden/
+# Hidden games (dev mode): hidden games stay out of the repo but the clown, which is in with its tools and tests (the
+# owner, 2026-11-09) and still hidden (dev mode only; never loaded with TA_DEV_MODE=off); its content and mods under notes/
+server/games/hidden/*
+!server/games/hidden/__init__.py
+!server/games/hidden/clown/
 
 # Legacy on-disk leftovers from the 2023 codebase (kept out of main)
 /chat_histories/
