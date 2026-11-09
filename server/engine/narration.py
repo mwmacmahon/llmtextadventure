@@ -230,6 +230,7 @@ class Assessment:
     edge_why: str = ""
     aim: str = "other"         # the assistant's aim, advisory and logged (B217: never read for the floor)
     prying: bool = False       # B217: the engine's witness that the attempt is at a kept secret (no fight; the stake about the secret)
+    words: str = ""            # B229: the attempt's own words (the intent's action and the label), read against a tell's condition
 
 
 EDGE_RANGE: dict[str, tuple[int, int]] = {"dice_d20": (-4, 4), "dice_2d6": (-1, 2)}   # B211: the edge by die
@@ -266,7 +267,8 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
               consequence_for: Callable[[dict, str, str, dict | None], dict | None] | None = None,
               lethal_for: Callable[[dict, str], bool] | None = None, offset: int = 0,
               holds_back: Callable[[str], str | None] | None = None,
-              note_for: Callable[[dict, str], str] | None = None, caps: bool = False) -> CallResult:
+              note_for: Callable[[dict, str], str] | None = None, caps: bool = False,
+              meets: Callable[[str, str], str | None] | None = None) -> CallResult:
     stat = call.stat
     if stat not in stats:
         if fallback_stat and fallback_stat in stats:
@@ -284,6 +286,9 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
     aimed = target or (a.about if a is not None else "")              # the assistant names the person in `about` (the smoke, D168)
     # B63 narrowed (B210, D179), B217: the floor only on the engine's witness (no fight, the stake about the secret)
     who = holds_back(aimed) if (holds_back and aimed and a is not None and a.prying) else None
+    fair = meets(aimed, f"{a.words} {a.label}") if (who and meets and a is not None) else None
+    if fair:                                         # B229: the attempt meets the condition of a tell they keep: a fair trade, no floor
+        who = None
     if who and TIER_ORDER.index(difficulty) < TIER_ORDER.index("high"):    # B63 (D168): a person keeping a tell back is a high check
         raised, difficulty = difficulty, "high"
     label = (a.label if a and a.label else f"{stat} check" + (f" against {target}" if target else ""))
@@ -298,6 +303,8 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
     mods = res.total - (res.roll or 0)
     sign = f"{mods:+d}" if mods else ""
     data = res.model_dump(mode="json")
+    if fair:
+        data["floor"] = {"skipped": "the attempt meets a tell's condition (a fair trade, not prying)", "tell": fair}
     data["about"] = (a.about if a and a.about else target) or ""       # D122: what the attempt was aimed at, for telling a retry
     if lethal_for is not None and lethal_for(data, label):                 # H5 (D157): the game staked this check lethal
         data["lethal"] = True

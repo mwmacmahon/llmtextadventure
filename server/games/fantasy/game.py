@@ -227,7 +227,8 @@ class FantasyGame(GameBase):
     })
     resolver = "dice_d20"
     words_examples = [                 # B207 (D179): the words decide first (the assistant's rules)
-        "A true story offered to Mirren, who asked for one: it works, no roll.",
+        "Mirren asks for a song, a story or a memory. Offering her one of those, a sad one too, plainly gives her what she asked "
+        "for: it works. No check: put it under fiat, settled works, with why.",
         "Gold offered to a siren who has said gold is nothing to her: it fails, no roll.",
         "A crude joke to a grieving siren: it fails, no roll; a story half true, from someone she has reason to doubt: open, a check with a -2 edge.",
     ]
@@ -795,6 +796,22 @@ class FantasyGame(GameBase):
         if q is None or q.status == "dead":
             return None
         return q.name if any(not t.told and not self.tell_open(s, t) for t in q.tells) else None
+
+    def meets_tell(self, s: FantasyState, target: str, words: str) -> str | None:
+        """B229: the attempt is a fair trade, not prying: it meets the condition of one of the person's untold, open tells
+        (Mirren's 'offers something (a song, a story, a memory)' met by a true story offered). Two content words of the
+        tell's condition in the attempt's words, matched on their first five letters. Returns the tell's id, or None."""
+        q = s.person(target) if target else None
+        if q is None:
+            return None
+        said = {w[:5] for w in _words(words)}
+        for t in q.tells:
+            if t.told or not self.tell_open(s, t) or not t.when:
+                continue
+            need = {w[:5] for w in _words(t.when.replace("{name}", "")) if len(w) > 3}
+            if len(need & said) >= 2:
+                return t.id
+        return None
 
     def _tells_here(self, s: FantasyState, engine: bool = False) -> list[str]:
         """The pieces the people here could give up. The referee's and the assistant's copy has the ids and the locked pieces;

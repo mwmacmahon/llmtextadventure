@@ -1271,7 +1271,8 @@ class Engine:
             "calls": [{"call": c["call"].get("raw"), "mechanic": c.get("mechanic"), "outcome": (c.get("result") or {}).get("outcome"),
                        **({"cost": (c.get("result") or {})["cost"]} if (c.get("result") or {}).get("cost") else {}),
                        **({"stake": (c.get("result") or {})["stake"]} if (c.get("result") or {}).get("stake") else {}),
-                       **({"consequence": (c.get("result") or {})["consequence"]} if (c.get("result") or {}).get("consequence") else {})}
+                       **({"consequence": (c.get("result") or {})["consequence"]} if (c.get("result") or {}).get("consequence") else {}),
+                       **({"floor": (c.get("result") or {})["floor"]} if (c.get("result") or {}).get("floor") else {})}
                       for c in calls_block.get("calls", [])],
             "declarations": [d.get("raw") for d in calls_block.get("declarations", [])],
             "notes": calls_block.get("notes", []),
@@ -1624,7 +1625,7 @@ class Engine:
                 assessments.append(Assessment(stat=stat, difficulty=intent.check.difficulty, target=intent.check.target_entity or "",
                                               label=intent.check.label, edge=int(getattr(intent.check, "edge", 0) or 0),
                                               edge_why=str(getattr(intent.check, "edge_why", "") or ""), aim=str(getattr(intent.check, "aim", "other") or "other"),
-                                              prying=prying(intent, stat),
+                                              prying=prying(intent, stat), words=str(intent.action or ""),
                                               about=intent.check.target_entity or next(iter(getattr(intent, "targets", None) or []), "")))
             for name in getattr(adj, "carried", []) or []:   # the input leans on something in the player's pockets: is it there?
                 missing = _hook(game, "not_carried", state, name, default=None)
@@ -1884,7 +1885,8 @@ class Engine:
                                  offset=offset,
                                  holds_back=lambda target: _hook(game, "holds_back", state, target, default=None),
                                  note_for=lambda d, label: _hook(game, "check_note", state, d, label, default="") or "",
-                                 caps=getattr(game, "caps", False))
+                                 caps=getattr(game, "caps", False),
+                                 meets=lambda target, words: _hook(game, "meets_tell", state, target, words, default=None))
             if call.verb in ("ENEMY", "HAZARD"):            # B206 (D178): the world's move, rolled when the prose reaches it
                 out = _hook(game, "world_call", state, call, rng_for(iid, turn, f"world:{call.verb}:{call.ref}:{n}"), offset, tally, default=None)
                 if out is None:

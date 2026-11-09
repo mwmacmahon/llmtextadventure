@@ -205,3 +205,41 @@ def test_the_floor_needs_the_engines_witness_not_the_models_aim():
                   check=CheckProposal(label="stab Mirren", stat="str", difficulty="medium", target_entity="mirren", aim="secret",
                                       success_gain="the piece comes"))
     assert floor(stab, "str", "medium") == "medium"
+
+
+def test_a_fair_trade_is_no_prying(game_f=None):
+    """B229 (6735ec72e948 turn 2): a true story offered to Mirren, who asks for 'a song, a story, a memory', was staked 'the
+    piece comes' and raised low to high because she keeps another, locked tell (the comb). An attempt that meets one of the
+    person's open tells' conditions is a fair trade: no floor, and the check says why."""
+    from engine.config import load_config
+    from engine.pipeline import prying
+    from engine.registry import load_games
+    from engine.roles import CheckStaked, IntentStaked
+    import sys
+    sys.path.insert(0, str(__import__("pathlib").Path(__file__).parent))
+    from test_fantasy import SHEET
+    cfg = load_config()
+    g = load_games(cfg.resolve(cfg.server.content_root))["fantasy"]
+    st = g.new_instance(SHEET)[1]
+    from games.fantasy import deck as dk
+    dk.deal(st, g.hooks_content()["ferrymans_daughter"], turn=0, deal_abs=2520, name=st.player.name)
+    st = g.load_state(st.model_dump(mode="json"))
+    mirren = st.person("mirren")
+    assert g.holds_back(st, "mirren") == mirren.name                       # the comb's tell is locked
+    story = IntentStaked(action="offer a true story to Mirren", targets=["mirren"],
+                         check=CheckStaked(label="Offer a true story of loss", stat="cha", difficulty="low", target_entity="mirren",
+                                           edge=2, success_gain="the piece comes"))
+    a = Assessment(stat="cha", difficulty="low", target="mirren", label=story.check.label, prying=prying(story, "cha"), words=story.action)
+    assert a.prying
+    call = Call(verb="CHECK", stat="cha", difficulty="low", raw="<<CHECK cha low>>")
+    out = run_check(call, 1, {"cha": 1}, lambda rng, req: dice_2d6(_Fixed(6, 5), req), random.Random(0), [a], lambda req, t: [],
+                    lambda res: "", holds_back=lambda t: g.holds_back(st, t), meets=lambda t, w: g.meets_tell(st, t, w))
+    assert out.data["difficulty"] == "low" and not any("keeps something back" in m["label"] for m in out.data["modifiers"])
+    assert out.data["floor"]["tell"] == "mirren_old_marrow"
+    # prying at the same person still takes the floor
+    pry = Assessment(stat="cha", difficulty="medium", target="mirren", label="press her about the old city", prying=True,
+                     words="ask what she keeps back about the old city")
+    hard = run_check(Call(verb="CHECK", stat="cha", difficulty="medium", raw="<<CHECK cha medium>>"), 2, {"cha": 1},
+                     lambda rng, req: dice_2d6(_Fixed(6, 5), req), random.Random(0), [pry], lambda req, t: [], lambda res: "",
+                     holds_back=lambda t: g.holds_back(st, t), meets=lambda t, w: g.meets_tell(st, t, w))
+    assert hard.data["difficulty"] == "high"
