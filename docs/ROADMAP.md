@@ -182,6 +182,8 @@ edge. Stakes live by default on every game. Design: ASSISTANT-DESIGN-2026-11-05;
 or a tense talk; a hard hold on every arrival. Watched in play before anything more (the owner); the one risk is a hook
 held with no patience behind a long false.
 
+- Later, when the schema shows strain: the adjudicator as a chain of small questions on one cached prefix (X3, area 18).
+
 ## 7. The world's records
 
 The structured state the referee writes from the prose: people, places, things, threads, timers, secrets and tells,
@@ -369,6 +371,19 @@ log. Design: INDEX.md; the memory rules.
 A referee review pass, a second call over the referee's own report (X1). A preference corpus across games from the
 blind-pair judgements (X2). The station AI upgrading and downgrading itself (B19). Basic and advanced variants (area
 12). Per-campaign pacing numbers (B13). Each needs a measured run before it is kept.
+
+**The adjudicator as a chain of small questions (X3; the owner, 11-09 night; not for now).** The structured call keeps
+growing (intents, checks, stakes, tempo, open_to_callers, and more to come), and weak models fill big schemas badly
+(B213). The idea: one conversation, several messages in turn, each with its own small schema and, before it, only the
+state and the examples that question needs ("the reading" first; then, only if there is an attempt, the check; then
+the stakes), later questions skipped when an earlier answer makes them moot. It is not §8's "one call, not two" case:
+that second call ran on its own settings and slot and lost the cache (D114, A4, about ten seconds a turn); a chain on
+one slot grows one prefix, so each message prefills only its own increment, and the decode is the same tokens cut into
+pieces plus a round trip each. The owner tried a version once, early, to no benefit; the game was far simpler. An
+empirical question for a module of its own, measured on Gemma on the box against the one call, same turns, same seed:
+seconds a turn, fields left at their default, wrong rows, and the blind pairs (D99) for the telling that follows. Worth
+trying when the schema's defaults-left count on a Gemma round says the one call is failing, or when a question needs
+an example set the one prompt cannot carry.
 
 ## For the record: analysed and parked
 
