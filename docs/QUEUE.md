@@ -61,7 +61,8 @@ Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a shor
    hidden copy renamed and made a true derived game (the fantasy's code and content always, its own saves and mods,
    dev mode only); the mods system's first cut as designed (YAML merge patch, the per-game mods directory, upload,
    download, delete, the save keeping the mod's text, `rulings_off`); the R-rated mod as its first case, shown only on
-   the grimdark game's form; its words drafted by the side chat once the owner says how far.
+   the grimdark game's form; its words drafted 11-09 at `notes/content/super_grimdark_fantasy/mods/grimdark.yml` (pulp level, the owner's call;
+   one line for the owner to keep or strike).
 0a. *Part nine, written 11-09 about 01:15, built the same hour* (the side chat's read of §5 and the readiness report, 11-09):
    first and alone, the secret-holder floor on an engine witness, never on the model's `aim` (B217: Gemma marks every
    check secret, the floor is back on every parley and on fights); then the settled rows written once from the reading
