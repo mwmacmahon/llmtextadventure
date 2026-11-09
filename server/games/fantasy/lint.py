@@ -362,6 +362,9 @@ def lint(content_dir: Path) -> list[str]:
             say(f"{hid}: another_way {flag!r} has no reward row")
 
     # ---- B65 (D175): the turn-0 opening names nobody the player has not met (a stranger in the room would not know them)
+    from engine.gamekit import introduction_secrets      # part fourteen: an introduction is read before anything is learned
+    for t in introduction_secrets(city, [t for ts in [city.get("secret_terms") or []] + [h.get("secret_terms") or [] for h in hooks.values()] for t in ts]):
+        say(f"city: the introduction names the secret term {t!r}")
     opening = str(city.get("opening_text") or "")
     if opening:
         cast = list(city.get("people") or []) + [pr for hid in deck.get("deal_at_start") or [] for pr in (hooks.get(hid) or {}).get("people") or []]
@@ -423,9 +426,10 @@ def lint(content_dir: Path) -> list[str]:
             for s in (e.get("directive"), (e.get("fallback") or {}).get("directive") if isinstance(e.get("fallback"), dict) else None):
                 if s and FORBIDDEN.search(s):
                     say(f"{where}.{e.get('id', 'reach')}: a directive says {FORBIDDEN.search(s).group(0)!r}")
+        intro = str(doc.get("introduction") or "")             # part fourteen: the introduction fills {race} and {klass} too
         for s in _strings(doc):
             for m in re.findall(r"\{([a-z_]+)\}", s):
-                if m != "name":
+                if m != "name" and not (s == intro and m in ("race", "klass")):
                     say(f"{where}: placeholder {{{m}}} the game does not fill")
     for hid, h in hooks.items():
         try:

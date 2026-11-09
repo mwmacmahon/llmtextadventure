@@ -29,7 +29,7 @@ from engine.game import (
     ApplyReport, Chip, ClockSpec, TaskRow, CommandResult, Commands, CommandSpec, EntityCard, EntityCards, GameBase, ListPanel,
     LogPanel, Meter, StatusStrip, TurnInfo, UISchema,
 )
-from engine.gamekit import Clock, Content, Writer, threads_panel
+from engine.gamekit import Clock, Content, Writer, threads_panel, with_introduction
 from engine.mechanics import CheckRequest, Modifier
 from engine.pending import Pending
 from engine.resolve import same_person
@@ -291,7 +291,8 @@ class NoirGame(GameBase):
         return st
 
     def opening(self, state: NoirState) -> str | None:
-        return self.content.scenarios().get(state.case.id, {}).get("opening_text")
+        sc = self.content.scenarios().get(state.case.id, {})              # part fourteen: the introduction first
+        return with_introduction(sc, sc.get("opening_text"))
 
     # ---- frozen prefix (rules + case file) -----------------------------------
     def frozen_prefix(self, state: NoirState) -> str:

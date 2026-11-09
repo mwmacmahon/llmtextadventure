@@ -138,3 +138,21 @@ def threads_panel(threads: list[th.Thread], title: str = "Threads", recent_close
     """The open threads, then the most recently closed few, in the one quest shape."""
     closed = sorted((t for t in threads if t.status != "open"), key=lambda t: t.closed_turn or 0)[-recent_closed:]
     return QuestPanel(title=title, rows=[thread_row(t, names) for t in [*(t for t in threads if t.status == "open"), *closed]])
+
+
+def with_introduction(scenario: dict, opening: str | None, fill=None) -> str | None:
+    """Part fourteen: the turn-0 telling is the scenario's `introduction` (the world and the player's place in it), a blank
+    line, then its `opening_text`, as one narrator row. `fill` fills the placeholders as the prefix's are."""
+    intro = str(scenario.get("introduction") or "").strip()
+    if fill is not None and intro:
+        intro = fill(intro)
+    parts = [x for x in (intro, (opening or "").strip()) if x]
+    return "\n\n".join(parts) or None
+
+
+def introduction_secrets(scenario: dict, terms: list[str]) -> list[str]:
+    """Part fourteen: the secret terms an introduction names (the content lint fails it; an introduction is read before
+    anything has been learned, so the leaked_terms test reduces to the term appearing at all)."""
+    import re as _re
+    intro = str(scenario.get("introduction") or "")
+    return [t for t in terms if _re.search(r"\b" + _re.escape(str(t).lower()) + r"(s|es)?\b", intro.lower())]

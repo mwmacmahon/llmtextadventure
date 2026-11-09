@@ -31,7 +31,7 @@ from engine.game import (
     UISchema,
 )
 from engine.game import Rejection
-from engine.gamekit import Clock, Writer, quest_line
+from engine.gamekit import Clock, Writer, quest_line, with_introduction
 from engine.mechanics import CheckRequest, Modifier
 from engine.narration import default_mechanic_line
 from engine.pending import Pending
@@ -425,7 +425,15 @@ class FantasyGame(GameBase):
         return s
 
     def opening(self, state: FantasyState) -> str | None:
-        return self.scenario(state.city.id).get("opening_text")          # B51 (D167): as written, at turn 0
+        sc = self.scenario(state.city.id)                                  # B51 (D167): as written, at turn 0; part fourteen: the introduction first
+        p = state.player
+        race = p.race.lower()
+
+        def fill(t: str) -> str:
+            if race[:1] in "aeiou":
+                t = t.replace("a {race}", "an {race}")
+            return t.replace("{race}", race).replace("{klass}", p.klass.lower()).replace("{name}", p.name)
+        return with_introduction(sc, sc.get("opening_text"), fill)
 
     # ---- the frozen prefix -------------------------------------------------------------------------------------------
     def fill_prefix(self, p: Player) -> str:

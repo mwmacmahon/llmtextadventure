@@ -23,7 +23,8 @@ def info(turn=1, minutes=5, applied=None, levers=None):
 def test_the_opening_is_shown_at_turn_zero_and_its_event_is_played(engine, game):
     iid = engine.create_instance("fantasy", SHEET)
     rows = engine.store.transcript(iid)
-    assert rows[0].turn == 0 and rows[0].role == "narrator" and rows[0].text.startswith("The common room of the Drowned Lantern at dusk")
+    assert rows[0].turn == 0 and rows[0].role == "narrator" and rows[0].text.startswith("Marrowgate is a river city under a fog")   # part fourteen: the introduction first
+    assert "\n\nThe common room of the Drowned Lantern at dusk" in rows[0].text
     st = state_of(engine, iid)
     op = next(e for e in st.hidden.events if e.id == "opening")
     assert op.fired and op.fired_turn == 0

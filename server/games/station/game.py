@@ -35,7 +35,7 @@ from engine.game import (
     ApplyReport, Chip, ClockSpec, CommandResult, Commands, CommandSpec, EntityCard, EntityCards, GameBase, ListPanel,
     LogPanel, Meter, Option, Param, StatusStrip, Table, TableCell, TurnInfo, UISchema, Rejection,
 )
-from engine.gamekit import Content, Writer, hhmm, threads_panel
+from engine.gamekit import Content, Writer, hhmm, threads_panel, with_introduction
 from engine.mechanics import CheckRequest, Modifier
 from engine.roles import AssistantReadingV2, Change
 from engine.spontaneous import Spontaneous
@@ -465,7 +465,7 @@ class StationGame(GameBase):
 
     def opening(self, state: StationState) -> str | None:
         sc = self._scenarios().get(state.scenario.id, {})
-        return sc.get("opening_text")
+        return with_introduction(sc, sc.get("opening_text"))              # part fourteen: the introduction first
 
     # ---- frozen prefix (rules + scenario briefing) ---------------------------
     def frozen_prefix(self, state: StationState) -> str:
