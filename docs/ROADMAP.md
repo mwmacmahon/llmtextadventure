@@ -93,8 +93,8 @@ Gemma turn an edge of +2 arrived with its why. The chosen-death net fires only o
 **Combat (the owner, 11-09 night; DESIGN-combat-2026-11-09, designed, not built).** "It's fun to see enemies take damage
 and die." The fantasy's fights move from stat checks to attack rolls against an armour number, damage dice, and saves (a
 check under another name); every person carries a combat block (AC, hit points, attack, damage, weight) with defaults by
-role; a fight is a mode with a round per player turn, rolled before the prose and told from a round sheet, enemies
-acting programmatically, allies too; down and dead; cleave-through and sweep; a Fight panel; the engine sizes a fight
+role; a fight is a mode with a round per player turn, each blow rolled where the narrator's call reaches it (the
+owner: more exciting, keeps the narrator on its toes), the engine backstopping every action the prose left out; down and dead; cleave-through and sweep; a Fight panel; the engine sizes a fight
 by a budget from level, party and band (§9b), every fight tough but winnable unless marked fixed (a boss, a set piece;
 the owner's ruling), numbers before bodies before inflation; a fight simulator tunes it. Six
 questions open with the owner. Noir and the station keep 2d6 and their own fights.

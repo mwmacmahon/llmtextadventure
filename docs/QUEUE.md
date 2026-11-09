@@ -25,7 +25,7 @@ you'll need to run your own trials. I think running a Gemma trial right now rega
    fantasy's the city and "you came in on the evening barge" with the sheet's name, race and class; the station's the
    station, the five, and what you are. The grimdark game inherits; the mod may patch it.
 3. **Designed, 11-09 night: combat** (DESIGN-combat-2026-11-09; the owner: "it's fun to see enemies take damage and
-   die"): hit points for everyone, attack rolls and saves, a combat mode with a round per turn rolled before the prose,
+   die"): hit points for everyone, attack rolls and saves, a combat mode with a round per turn, blows rolled at the narrator's call and backstopped,
    cleave, allies, a Fight panel, enemy scaling by an engine budget (the owner: tough but winnable unless marked a
    boss), a fight simulator. Six questions open; the
    directive after the owner answers, with the Paladin's (one build: combat first, the paladin on it).
