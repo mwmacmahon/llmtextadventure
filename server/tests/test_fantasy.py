@@ -538,7 +538,9 @@ def test_milestones_pay_once_and_the_long_thread_never_closes(game: FantasyGame)
 
 def test_failed_closes_with_nothing_paid(game: FantasyGame):
     st = new(game)
-    st.clock.day += 5                                                # cellar_rats fails four days after its deal
+    reach = next(e for e in st.hidden.events if e.id == "cellar_rats_reach")   # B254: heard of, as the opening tells it
+    reach.fired, reach.fired_turn, reach.variant, reach.fired_at = True, 0, "trigger", st.hook("cellar_rats").dealt_abs
+    st.clock.day += 5                                                # cellar_rats fails four days after the player hears of it
     s1 = game.after_turn(st, info(turn=2))
     assert s1.hook("cellar_rats").status == "failed" and s1.player.xp == 0
 
@@ -909,3 +911,29 @@ async def test_a_hooks_arrival_waits_out_a_walk_and_comes_on_the_next_quiet_turn
     assert "ferrymans_daughter_reach" in events[-1]["data"]["mechanics"]["events"]
     from engine.pipeline import is_fight                               # "sit by the fire" was a fight (B253)
     assert not is_fight({"summary": "I sit by the fire with a cup of tea."}) and is_fight({"summary": "Brin fires at the creature"})
+
+
+def test_a_hooks_deadline_runs_from_when_the_player_hears_of_it(game: FantasyGame):
+    """B254 (the owner, 11-09: "deadlines should be relative to being introduced"). The ferryman's job is dealt; the player
+    is away six days, past the job's five-day deadline counted from the deal, and has not heard of it. Unheard, its time
+    cannot fail it; when word reaches them, Tam rowing out alone and the deadline both run from that moment."""
+    st = new(game)
+    hooks = game.hooks_content()
+    h = st.hook("ferrymans_daughter")
+    deal = h.dealt_abs
+    reach = next(e for e in st.hidden.events if e.id == "ferrymans_daughter_reach")
+    rows = next(e for e in st.hidden.events if e.id == "tam_rows_out")
+    st.clock.day, st.clock.minute = divmod(deal + 6 * 1440, 1440)          # six days on, past deal + 7200 minutes, never heard
+    dk.settle(st, hooks, 30, lambda row, why: None)
+    assert h.status == "dealt" and h.reached_abs is None
+    reach.fired, reach.fired_turn, reach.variant, reach.fired_at = True, 31, "trigger", deal + 6 * 1440
+    dk.settle(st, hooks, 31, lambda row, why: None)
+    assert h.status == "live" and h.reached_abs == deal + 6 * 1440
+    moved = next(e for e in st.hidden.events if e.id == "tam_rows_out")
+    assert moved is not rows and moved.model_dump() != rows.model_dump()   # Tam's two days are counted from the hearing
+    st.clock.day, st.clock.minute = divmod(deal + 6 * 1440 + 4 * 1440, 1440)
+    dk.settle(st, hooks, 32, lambda row, why: None)
+    assert h.status == "live"                                              # four days after hearing: not yet failed
+    st.clock.day, st.clock.minute = divmod(deal + 6 * 1440 + 7300, 1440)
+    dk.settle(st, hooks, 33, lambda row, why: None)
+    assert h.status == "failed"                                            # five days and a bit after hearing: it went by

@@ -260,6 +260,29 @@ def first_match(rows: list[dict], doc: dict, events: list[Event], turn: int) -> 
     return None
 
 
+NOT_YET = 10 ** 9                  # B254: a clock base no game reaches: an unheard hook's timed deadline never falls due
+
+
+def clock_base(h: HookState) -> int:
+    """Where a hook's own times run from (B254): when it reached the player; the deal for an older save that reached the
+    player before reached_abs was kept; never, while it has not reached them (only its story, a flag, can close it then)."""
+    if h.reached_abs is not None:
+        return h.reached_abs
+    return h.dealt_abs if h.status != "dealt" else NOT_YET
+
+
+def restart_clock(state: FantasyState, hook: dict, h: HookState) -> None:
+    """B254: when a hook reaches the player, its own events that have not fired yet are set again from the content with
+    their times counted from now (Tam rows out alone two days after the player hears of Wren, not two days after the deal).
+    Its reach and anything that has fired stay as they are."""
+    if h.reached_abs is None or h.reached_abs == h.dealt_abs:
+        return
+    fresh = {e["id"]: e for e in hook_events(hook, h.reached_abs, state.player.name)}
+    for i, e in enumerate(state.hidden.events):
+        if e.hook == h.id and e.id != f"{h.id}_reach" and not e.fired and e.id in fresh:
+            state.hidden.events[i] = Event.model_validate(fresh[e.id])
+
+
 def settle(state: FantasyState, content_hooks: dict[str, dict], turn: int, pay) -> list[str]:
     """Live, done, failed and milestones for every dealt hook (in place). `pay(row, why)` pays a reward row. Returns
     log lines."""
@@ -273,6 +296,8 @@ def settle(state: FantasyState, content_hooks: dict[str, dict], turn: int, pay) 
         reach = next((e for e in events if e.id == f"{h.id}_reach"), None)
         if h.status == "dealt" and reach is not None and reach.fired:
             h.status = "live"
+            h.reached_abs = reach.fired_at if reach.fired_at is not None else state.clock.day * DAY + state.clock.minute
+            restart_clock(state, hook, h)                    # B254: the hook's own times run from now, not from the deal
             tid = f"hook-{h.id}"
             if not any(t.id == tid for t in state.threads):
                 state.threads.append(th.Thread(id=tid, title=h.title, opened_turn=turn))
@@ -284,14 +309,15 @@ def settle(state: FantasyState, content_hooks: dict[str, dict], turn: int, pay) 
         if h.status not in ("dealt", "live"):
             continue
         rows, also, milestones = reward_rows(hook)
+        base = clock_base(h)
         for i, m in enumerate(milestones):
-            if i not in h.paid and _holds(rebase_predicate(m.get("when"), h.dealt_abs), doc, events, turn):
+            if i not in h.paid and _holds(rebase_predicate(m.get("when"), base), doc, events, turn):
                 h.paid.append(i)
                 h.taken = True
                 pay(m, f"{h.title}: a step further")
                 out.append(f"{h.title}: a step further.")
-        done = _holds(rebase_predicate(hook.get("done"), h.dealt_abs), doc, events, turn)
-        failed = not done and _holds(rebase_predicate(hook.get("failed"), h.dealt_abs), doc, events, turn)
+        done = _holds(rebase_predicate(hook.get("done"), base), doc, events, turn)
+        failed = not done and _holds(rebase_predicate(hook.get("failed"), base), doc, events, turn)
         if not (done or failed):
             continue
         if done:
