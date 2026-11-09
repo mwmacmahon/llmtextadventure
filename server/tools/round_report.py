@@ -5,6 +5,12 @@ clock, the events, the dice, the rows applied and refused, the rulings that sent
 
     .venv/bin/python tools/round_report.py <iid> [--out PATH] [--title "…"]
     .venv/bin/python tools/round_report.py --export game.json             # an exported game (it carries its blobs)
+    .venv/bin/python tools/round_report.py <iid> --key ../notes/eval/runs/<run>.json   # defaults left against a strong run
+    .venv/bin/python tools/round_report.py <iid> --defaults [--key …]                  # the defaults-left table only, printed
+
+Each turn shows the defaults-left count (engine/defaults_left.py), and the page head its totals by field: with --key,
+the fields the round's assistant left at default where the key's strong reading of the same (iid, turn) did not;
+without, the fields left at default with nothing to compare.
 
 The page is built from the ledger alone: the tape's `exchange` rows (engine/tape.py) and the rows the turn
 already wrote. A retold turn shows each earlier telling first, from its `rewrite` history, then the one that
@@ -399,7 +405,79 @@ def render_undo(u: dict, ledger: list[dict], transcript: list[dict]) -> str:
             + (f"<details><summary>The undone turns, as played</summary>{''.join(items)}</details>" if items else "") + "</div>")
 
 
-def build(inst: dict, ledger: list[dict], blobs: dict[str, str], transcript: list[dict], title: str | None = None, standalone: bool = True) -> str:
+# ---- the defaults-left count (engine/defaults_left.py) -----------------------------------------------
+def key_readings(path: Path) -> dict[tuple[str, int], dict]:
+    """The strong readings of an eval run (tools/eval_replay.py, format 2), by (iid, turn): each result's replayed
+    adjudicator reading."""
+    d = json.loads(Path(path).read_text())
+    return {(r["iid"], int(r["turn"])): r["adjudicator"]["got"] for r in d.get("turns", []) if "got" in (r.get("adjudicator") or {})}
+
+
+def round_readings(ledger: list[dict]) -> dict[int, dict]:
+    """The assistant's reading that stood on each turn: the turn's last `adjudication` row, its engine keys (_…) dropped."""
+    out: dict[int, dict] = {}
+    for r in sorted(ledger, key=lambda r: r.get("seq", 0)):
+        if r["kind"] == "adjudication" and not r.get("undone"):
+            out[r["turn"]] = {k: v for k, v in (r.get("payload") or {}).items() if not k.startswith("_")}
+    return out
+
+
+def defaults_count(iid: str, ledger: list[dict], key: dict[tuple[str, int], dict] | None = None) -> dict:
+    """Per turn, the fields the round's reading left at default: against the key's strong reading of the same turn
+    (`left`) when a key is given, else on its own (`at_default`). {"compared", "turns": {turn: [names] or None when the
+    key has no reading for it}, "totals": {field: n}, "counted", "total"}."""
+    from engine.defaults_left import at_default, left, tally
+    turns: dict[int, list[str] | None] = {}
+    for t, reading in sorted(round_readings(ledger).items()):
+        if key is None:
+            turns[t] = at_default(reading)
+        else:
+            strong = key.get((iid, t))
+            turns[t] = None if strong is None else left(reading, strong)
+    rows = [x for x in turns.values() if x is not None]
+    return {"compared": key is not None, "turns": turns, "totals": tally(rows), "counted": len(rows), "total": sum(len(x) for x in rows)}
+
+
+def defaults_label(c: dict) -> str:
+    return ("left at default where the strong reading was not" if c["compared"]
+            else "left at default (no strong reading to compare)")
+
+
+def defaults_table(c: dict) -> str:
+    """The count as plain text: one line a turn, then the totals by field."""
+    lines = [f"Defaults left: {defaults_label(c)}; {c['counted']} turns counted, {c['total']} in all"]
+    for t, x in c["turns"].items():
+        lines.append(f"  turn {t:>3}  " + ("(no strong reading for this turn)" if x is None else ", ".join(x) or "-"))
+    w = max(len(n) for n in c["totals"])
+    lines += ["  by field:"] + [f"    {n:<{w}}  {v}" for n, v in c["totals"].items()]
+    return "\n".join(lines)
+
+
+def defaults_for(iid: str | None = None, key: Path | None = None, export: Path | None = None) -> dict:
+    """The count for a stored round (or an export), for a script: print(defaults_table(defaults_for(iid, key)))."""
+    inst, ledger, *_ = load(iid, export)
+    return defaults_count(inst["id"], ledger, key_readings(key) if key else None)
+
+
+def render_defaults_totals(c: dict, key_name: str | None) -> str:
+    if not c["turns"]:
+        return ""
+    rows = "".join(f"<tr><td>{E(n)}</td><td class='num'>{v}</td></tr>" for n, v in c["totals"].items())
+    src = f" against {E(key_name)}" if key_name else ""
+    return (f"<details><summary>Defaults left: {E(defaults_label(c))}{src} · {c['total']} over {c['counted']} turns</summary>"
+            f"<div class='scroll'><table class='idx'><thead><tr><th>field</th><th>turns</th></tr></thead><tbody>{rows}</tbody></table></div></details>")
+
+
+def render_defaults_turn(c: dict | None, t: int) -> str:
+    if not c or t not in c["turns"]:
+        return ""
+    x = c["turns"][t]
+    what = "no strong reading for this turn" if x is None else (", ".join(x) or "none")
+    return f"<div class='eng'><b>defaults left</b> {E(what)}{'' if c['compared'] else ' (no strong reading to compare)'}</div>"
+
+
+def build(inst: dict, ledger: list[dict], blobs: dict[str, str], transcript: list[dict], title: str | None = None, standalone: bool = True,
+          key: dict[tuple[str, int], dict] | None = None, key_name: str | None = None) -> str:
     every_ledger, every_transcript = ledger, transcript
     ledger = [r for r in ledger if not r.get("undone")]                 # the turns as they stand; the undone ones show at their undo
     transcript = [r for r in transcript if not r.get("undone")]
@@ -415,6 +493,7 @@ def build(inst: dict, ledger: list[dict], blobs: dict[str, str], transcript: lis
     for r in transcript:
         said[r["turn"]].setdefault(r["role"], r["text"])
     turns = sorted(t for t in set(by_turn) | {r["turn"] for r in transcript} if t >= 1)
+    dcount = defaults_count(inst["id"], ledger, key)
 
     models: Counter = Counter()
     calls_n = 0
@@ -449,6 +528,7 @@ def build(inst: dict, ledger: list[dict], blobs: dict[str, str], transcript: lis
                 f"{' · told ' + str(len(tl)) + ' times' if len(tl) > 1 else ''}{' · profile ' + E(prof) if changed else ''}</span></header>"]
         if player:
             body.append(f"<div class='player'>{E(player)}</div>")
+        body.append(render_defaults_turn(dcount, t))
         for i, x in enumerate(tl):
             prose = x.get("narration", "") if x["old"] else said[t].get("narrator", "")
             body.append(render_telling(x, blobs, prose))
@@ -475,6 +555,7 @@ def build(inst: dict, ledger: list[dict], blobs: dict[str, str], transcript: lis
             + (f"<dt>mods</dt><dd>{E(mods_line)}</dd>" if mods_applied else "")
             + "</dl>"
             f"<div class='stats'>{who}</div>")
+    head += render_defaults_totals(dcount, key_name)
     for m in mods_applied:                                     # B79: each mod's full text, as the save keeps it
         head += f"<details><summary>Mod: {E(str(m.get('name')))}</summary><pre>{E(str(m.get('text') or ''))}</pre></details>"
     if opening:
@@ -487,11 +568,12 @@ def build(inst: dict, ledger: list[dict], blobs: dict[str, str], transcript: lis
     return page(title or f"Round {inst['id']}", body, standalone=standalone)
 
 
-def write_report(iid: str, out: Path | None = None, title: str | None = None, export: Path | None = None, standalone: bool = True) -> Path:
+def write_report(iid: str, out: Path | None = None, title: str | None = None, export: Path | None = None, standalone: bool = True,
+                 key: Path | None = None) -> Path:
     inst, ledger, blobs, transcript, _ = load(iid, export, undone=True)
     path = out or OUT / f"{dt.date.today():%Y-%m-%d}-{inst['game']}-{inst['id']}.html"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(build(inst, ledger, blobs, transcript, title, standalone))
+    path.write_text(build(inst, ledger, blobs, transcript, title, standalone, key=key_readings(key) if key else None, key_name=key.stem if key else None))
     return path
 
 
@@ -502,10 +584,15 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--out", type=Path)
     ap.add_argument("--title")
     ap.add_argument("--artifact", action="store_true", help="no document wrapper: the form an Artifact publish wants")
+    ap.add_argument("--key", type=Path, help="an eval run (tools/eval_replay.py) whose replayed readings are the strong ones the defaults-left count compares against")
+    ap.add_argument("--defaults", action="store_true", help="print the defaults-left table and write no page")
     a = ap.parse_args(argv)
     if not a.iid and not a.export:
         ap.error("an instance id, or --export game.json")
-    print(write_report(a.iid, a.out, a.title, a.export, standalone=not a.artifact))
+    if a.defaults:
+        print(defaults_table(defaults_for(a.iid, a.key, a.export)))
+        return 0
+    print(write_report(a.iid, a.out, a.title, a.export, standalone=not a.artifact, key=a.key))
     return 0
 
 

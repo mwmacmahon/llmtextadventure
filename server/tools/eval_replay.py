@@ -17,7 +17,8 @@ format shims and the engine's rejections are exercised too), and compares.
 The pieces (test set, answer key, run, report), their names and how to write and read them: docs/TESTING.md.
 
 Scores (per role, over the corpus):
-  adjudicator  kind, time (within 2 minutes or half), checks as (stat, difficulty) pairs, commands, carried
+  adjudicator  kind, time (within 2 minutes or half), checks as (stat, difficulty) pairs, commands, carried;
+               defaults left (engine/defaults_left.py): fields the replay left at default where the expected did not
   referee      rows by (kind, target, field, value) with word-overlap for the text kinds; the applied
                list after apply_changes by path and by exact line; rejections and their reasons
 Runs are written to ../notes/eval/runs/<run id>.json with every turn's diff and every model call (prompts by blob id
@@ -49,6 +50,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from engine.changes import apply_changes, screen_unseen_clues  # noqa: E402
 from engine.config import load_config  # noqa: E402
+from engine.defaults_left import left as defaults_left, tally as defaults_tally  # noqa: E402
 from engine.referee_passes import EXAMPLE_NAMES, referee_ids  # noqa: E402
 from engine.pipeline import _hook, _named_present, adjudicator_inputs, extract_adjudication, extract_referee, land_extras, referee_inputs  # noqa: E402
 from engine.providers import RECORDER, Exchange, Msg, get_provider  # noqa: E402
@@ -338,6 +340,7 @@ def score_adjudication(expected: dict, got: dict) -> dict:
         "checks": {"hits": sum((ec & gc).values()), "missed": list((ec - gc).elements()), "extra": list((gc - ec).elements()), "expected": sum(ec.values())},
         "commands_ok": cmds(expected) == cmds(got),
         "carried": {"hits": len(carried(expected) & carried(got)), "missed": sorted(carried(expected) - carried(got)), "extra": sorted(carried(got) - carried(expected))},
+        "defaults_left": defaults_left(got, expected),     # fields the replay left at default where the expected reading did not
     }
 
 
@@ -634,6 +637,22 @@ def reapply(d: dict, games: dict) -> None:
         ref.update({"applied": score_applied(rec["expected"]["applied"], applied), "rejected": rejected, "applied_lines": applied})
 
 
+def fill_defaults_left(d: dict) -> int:
+    """Add the defaults-left count to a stored run's scored adjudicator turns that lack it (runs from before the
+    count), from its corpus's expected readings; no model calls. Returns how many turns it filled."""
+    try:
+        recs = {(r["iid"], r["turn"]): r for r in (json.loads(l) for l in Path(d["corpus"]).open())}
+    except (KeyError, OSError, ValueError):
+        return 0
+    n = 0
+    for res in d["turns"]:
+        a, rec = res.get("adjudicator") or {}, recs.get((res.get("iid"), res.get("turn")))
+        if "score" in a and "got" in a and "defaults_left" not in a["score"] and rec is not None:
+            a["score"]["defaults_left"] = defaults_left(a["got"], rec["expected"]["adjudication"])
+            n += 1
+    return n
+
+
 def summarize(results: list[dict]) -> dict:
     s: dict[str, Any] = {"turns": len(results)}
     adj = [r["adjudicator"] for r in results if "adjudicator" in r]
@@ -648,6 +667,9 @@ def summarize(results: list[dict]) -> dict:
                             "checks_recall": f"{ch_hits}/{ch_exp}", "checks_extra": ch_extra,
                             "carried_missed": sum(len(a["score"]["carried"]["missed"]) for a in ok), "carried_extra": sum(len(a["score"]["carried"]["extra"]) for a in ok),
                             "seconds_avg": round(sum(a["seconds"] for a in adj) / len(adj), 1)}
+        dl = [a["score"]["defaults_left"] for a in ok if "defaults_left" in a["score"]]     # runs before the count lack it
+        if dl:
+            s["adjudicator"]["defaults_left"] = {"turns": len(dl), "total": sum(len(x) for x in dl), "by_field": defaults_tally(dl)}
     ref = [r["referee"] for r in results if "referee" in r]
     if ref:
         ok = [a for a in ref if "rows" in a]
@@ -738,7 +760,8 @@ def _print_turn(r: dict) -> None:
             flags = ("kind " if not sc["kind_ok"] else "") + ("time " if not sc["time_ok"] else "") + ("commands " if not sc["commands_ok"] else "")
             print(f"{head} adjudicator {a['seconds']}s  checks {sc['checks']['hits']}/{sc['checks']['expected']}"
                   + (f" missed {sc['checks']['missed']}" if sc["checks"]["missed"] else "") + (f" extra {sc['checks']['extra']}" if sc["checks"]["extra"] else "")
-                  + (f"  carried missed {sc['carried']['missed']}" if sc["carried"]["missed"] else "") + (f"  WRONG: {flags.strip()}" if flags else ""))
+                  + (f"  carried missed {sc['carried']['missed']}" if sc["carried"]["missed"] else "") + (f"  WRONG: {flags.strip()}" if flags else "")
+                  + (f"  defaults left {sc['defaults_left']}" if sc.get("defaults_left") else ""))
     if "referee" in r:
         a = r["referee"]
         if "error" in a:
@@ -996,10 +1019,12 @@ def main() -> None:
                 print(json.dumps({"run": Path(path).stem, "graded": "no key for its test set"}))
                 continue
             grade_results(d["turns"], load_gold(key))
+            fill_defaults_left(d)                               # the defaults-left count, for runs from before it
             if args.verbose:
                 for r in d["turns"]:
                     _print_gold(r)
-            print(json.dumps({"run": Path(path).stem, **summarize_gold(d["turns"])}, ensure_ascii=False))
+            dl = summarize(d["turns"]).get("adjudicator", {}).get("defaults_left")
+            print(json.dumps({"run": Path(path).stem, **summarize_gold(d["turns"]), **({"defaults_left": dl} if dl else {})}, ensure_ascii=False))
     elif args.cmd == "reapply":
         cfg = load_config(ROOT / "server" / "config.yml")
         games = load_games(cfg.resolve(cfg.server.content_root))
