@@ -288,6 +288,10 @@ B144 covers the plain words).
   turn scratch instead of turn-local flags in saved state, one `turn_limits` hook for the call cap, the minutes and the
   hit points, a check `aim` of escape and attack read before the label's words (after a Sonnet extract test), the DEBUG
   and perils split out of game.py and world.py, `way_by` counted each round. *open*
+- From the ordinary-play rounds 11 to 13 (B339 to B341), for the owner: the § line nets every modifier into one number
+  (three rounds flagged CHA +2 to +4, DEX +7 to +11 with no reason shown: list them?); a hook offered in the prose before
+  the deck deals it never registers its acceptance (the deck should know its giver); 1 of 12 hit points reads 'bloodied'
+  like 6 (a near-death word?); cold water's armour penalty, -2 a step, makes chain mail -8 against the cold. *open with the owner*
 - The narrator's invented gear losses never reach the sheet (a burning pack, armour off; B338), a dead foe still listed
   hostile, the § line netting the modifiers into one number (B338). *open*
 
