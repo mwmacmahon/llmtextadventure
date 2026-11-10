@@ -302,7 +302,10 @@ lies and who believes them, beats in order.
   miss by three or more is a huge failure and a make by three or more a huge success. `dice_d20` (the
   old table, margins of ±8 huge) stays for a game that names it. `threshold` takes 10. `weighted` rolls once
   against a probability. The RNG is seeded by instance id, turn and a salt, so a replayed turn
-  rolls the same.
+  rolls the same. An undo writes a fresh salt on its `undo` ledger row unless Settings keeps the dice
+  (`settings.dice.keep_on_undo`, off by default, D205): `Engine.dice_key` gives a turn's key (the id, or the id and the
+  latest covering undo's salt; a redo takes its salt back) and `pipeline.rng_for` reads it; a game's own dice outside
+  `rng_for` (a class power's roll) take `pipeline.dice_salt`. A rewrite and an eval replay keep the turn's key.
 - **Clock.** `{day, minute}` at a game-declared path; `slow_minutes` the least a slow action costs (D93),
   `fast_minutes` the least a fast one costs, `lost_cap_fast` / `lost_cap_slow` the most a time-lost note adds (D146),
   `cap_minutes` the most a turn may advance; stops at the next scheduled event. `tasks` (D148) a game's minutes by kind of
@@ -327,6 +330,24 @@ lies and who believes them, beats in order.
   and death only from the dice: a check the game stakes lethal (`lethal_stake`) that comes up a critical failure is
   `fatal` in the call's result, and `after_turn` reads it (`TurnInfo.calls`); the fantasy's own lethal roll at 0 hit
   points (a CON check against high, fatal on a huge or critical failure) and the death fork (dead, carried, survived).
+- **The fantasy's combat** (`games/fantasy/combat.py`, `encounter.py`, `world.py`, `features.py`; parts fifteen and
+  sixteen, D196 to D210; the record `notes/DESIGN-combat-2026-11-09.md`). SRD numbers: a blow is an attack roll and
+  damage dice, a save a d20 against a DC; everyone has a block (the bestiary `notes/content/fantasy/bestiary.yml`, a
+  content block, or the entry a person's role head names). A round a turn: the reading's attack fields (`attack_at`,
+  `weapon`) open the fight; before anything rolls the engine settles the reading (`pipeline.settle_attack`: a weapon or
+  'attack' at named targets with a STR or DEX check is the attack, a CHA, WIS or INT check is no blow, the weapon is no
+  target; the game's `aim_blows` hook: a swing at no one while fighting is at the foe, a plain run in a fight is Flee);
+  `world_turn` joins the struck (an item never, a companion struck leaves the company, a blow at the dead or a fallen one
+  by likeness brings in another like them, someone only in the telling is written in by `bring_in`), and `plan_round`
+  lists every act; the narrator calls `<<ATTACK>>`, `<<ALLY>>`, `<<ENEMY>>` inline and plays the § line; what it left
+  out the backstop rolls after the prose and shows as a § line; `after_turn` lands the round (`combat.land`: enemies
+  dead or down if spared, a fist spares; allies down; morale; XP) and a death told this turn ends the story this turn.
+  The encounter generator picks every unpinned fight by a win-rate band (the simulator's rank, erring easier), drawn
+  off the turn by a background `warm` into `state.encounters`; the offer names who would come, and keeps the scene's
+  own name when matched by kind. Typed levers (`asks_for` reads the player's words loosely): Flee and Yield decide the
+  turn (`CommandSpec.decides`); a power that rolls (Turn Undead) is its own roll, seeded so preview and commit agree.
+  Tested by `tests/test_combat.py`, `test_encounters.py`, `test_calibration.py`, `test_b306.py`, `test_deadly.py`; the
+  stored fight turns by `tools/replay_fights.py check` (TESTING, "Fight rounds").
 - **The fantasy's deck** (`games/fantasy/deck.py`, D161). Hooks dealt in play: people merged by id, places, things,
   flags, hidden lines and events rebased to the deal; `after_turn` settles them (live on the reach, done or failed,
   first-match rewards, `also` rows, milestones) and draws when fewer than two are in motion.

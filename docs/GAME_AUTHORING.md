@@ -533,6 +533,29 @@ situational bonuses: two or three small bonuses on the bell turn a medium check 
 stacking small bonuses (the fantasy, a D&D table: abilities, renown, attitude, a helper, the about text) stays on the
 d20, where each one is a nudge.
 
+## 7d. Fighting people and monsters (the fantasy; parts fifteen and sixteen)
+
+How content meets the combat code (`games/fantasy/combat.py`, `encounter.py`; ARCHITECTURE §6):
+
+- **A person's block.** A `combat:` block names a bestiary entry (`block: veteran`) and changes only what it needs
+  (actions, count, band, `fixed`, `fanatic`, `kind`). With none, the block is the bestiary entry the **head of the role**
+  names: the words before "of", "at", "in", "on", "from", "for", "by", "under", "near" or "with" ("Keeper of the Drowned
+  Lantern" is a keeper, not a drowned dead; "a ghost on Monastery Isle's steps" is a ghost); no match is a commoner. The
+  label (`called`), the name and the description are read only for someone with no role, so a label such as "Shadow" for
+  an actor never makes him a monster. Write the role's first noun as what the person is.
+- **The bestiary** (`notes/content/fantasy/bestiary.yml`): one entry per enemy, SRD numbers, `words` the role heads and
+  the referee's notes that mean it ("skeletal", "bones", "walking dead"). Add a word when a round shows a creature filed
+  as a commoner.
+- **Weapons.** An enemy's library weapon (a bandit's scimitar) is named in the dice line only when the person's own role,
+  description, name or label carries it; otherwise the line says "blow". Give a person their weapon in their description
+  when the story should show it.
+- **A fight the story pins** (a hook's band of four skeletons) keeps its count; the generator may make it weak or feeble.
+  `lint_pinned_fights` names one still under 40% for a lone level-1 character; the answer is a strong ally the quest
+  brings by its own events (`{append: [player.with_them, maren]}`), and the lint counts that ally.
+- **Things.** An item, a weapon or anything carried is never a fight's target; nothing is attackable yet (ROADMAP area 8).
+- **Testing a fight.** `server/tools/fight_sim.py` for the numbers; a fight round and `server/tools/replay_fights.py` for
+  what the models do with it (TESTING, "Fight rounds").
+
 ## 8. The referee's rows
 
 There is one referee call per turn and one schema for every game, `roles.ChangeReport`: a list of

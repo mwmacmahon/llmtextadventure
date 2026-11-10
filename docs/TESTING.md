@@ -343,6 +343,31 @@ change to what readers look for goes there, not into a prompt typed into a sessi
 `notes/playtests/reads/<round>.md` and a light page. Readers describe and do not guess at causes; the causes (prompt,
 parameters, context) are worked out from several takes, never from one.
 
+### Fight rounds and the fight replays (B306 to B312, D206 to D210)
+
+A fight round is a live play test aimed at combat: an Opus player subagent (the player's brief, with a goal such as "start
+a bar brawl, punch with your fist, then find the dead and fight them, run once") plays 15 to 20 turns on a server running
+the fantasy on the box (`:8015` from a scratch worktree at the commit under test, `TA_DATA_DIR` the shared store), and its
+final message lists every fight from the player's chair: did each blow roll, with which weapon, did deaths match the dice.
+Each claim is then checked against the ledger before anything is called a bug (a hit the player "never saw" was often
+rolled and shown). The rounds of 11-10 are in INDEX §2 (p16g-catacombs, -streets, -verify, -verify2, -verify3).
+
+What a round finds is pinned without a model: `server/tools/replay_fights.py` replays a stored turn through today's
+engine (the state before it, the stored reading, the player's words; the engine's own settling, `aim_blows` and
+`settle_attack`, then the world turn; with `verdict: true` the turn's stored referee rows land after it).
+
+    cd server
+    .venv/bin/python tools/replay_fights.py show ../data/textadventure.sqlite3 <iid> <first> <last>   # who is fought, brought in, the round list
+    .venv/bin/python tools/replay_fights.py check                                                     # the regression set
+
+The regression set is `notes/eval/fight_cases.yml` (gitignored, with the store it reads): one case per fight fault found
+in a round, `{iid, turn, why, verdict?, expect: {...}}`, the expectations being `fighting_includes`, `fighting_excludes`,
+`no_person_named`, `person_kind: [name, block]`, `weapon`, `no_attack`, `attack_at` and `flee`. Add a case with every fight
+fix; run `check` before a fight round and after any change to combat.py, world.py, encounter.py or the reading's attack
+fields. The win rates are the simulator's (`server/tools/fight_sim.py`, the engine's combat code, hundreds of fights a
+case) and `tests/test_calibration.py` pins a table of them; the pinned-fight lint (`lint_pinned_fights`) names a story's
+fight still too hard at level 1.
+
 ## The narrator's measure (D60)
 
 The narrator has its own instruments, in `tools/narrator_eval.py`, run through `eval_replay.py`:
