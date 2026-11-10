@@ -1206,3 +1206,17 @@ def test_a_forced_telling_the_state_refused_is_told_by_the_engine_and_its_journa
     s, rep, _ = _force(game, st2, C(kind="move", target="player", value="Rope Walk"), C(kind="add", target="house", field="money", value="+15"))
     assert any(a.startswith("TOLD Nothing was paid") and "Saturday" in a for a in rep.applied), rep.applied
     assert "not before" in game.render_bulletin(st2, "")                         # the block says so up front
+
+
+def test_a_slip_girl_joined_by_a_row_is_refused_and_the_turns_spend_for_her_given_back(game: ClownGame):
+    st = new(game)
+    cid = st.harbour.hand[0]
+    name = game.content.girl_cards()[cid]["name"]
+    s, rep, _ = apply(game, st, C(kind="add", target="house.money", value="-150"), C(kind="set", target=f"{cid}.status", value="joined"))
+    assert any(r.kind == "conflict" for r in rep.rejected)                          # retold
+    s, rep, _ = _force(game, st, C(kind="add", target="house.money", value="-150"), C(kind="set", target=f"{cid}.status", value="joined"),
+                       C(kind="move", target=cid, value="The yard"), C(kind="move", target="player", value="The yard"))
+    assert s.house.money == 200 and s.girl(cid) is None and not any(x.name == name for x in s.people), rep.applied
+    assert sum(1 for a in rep.applied if a.startswith("TOLD ")) == 1 and s.player.location == "The yard"
+    s, rep, _ = apply(game, st, C(kind="set", target=f"{st.active}.mood", value="wary"))
+    assert not any(r.kind == "conflict" for r in rep.rejected)                      # a girl in the house is untouched

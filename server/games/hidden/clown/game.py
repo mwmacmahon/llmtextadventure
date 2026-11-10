@@ -1036,6 +1036,15 @@ class ClownGame(GameBase):
         if low == "player" and "." in field:
             target, field = (x.strip() for x in field.split(".", 1))
             low, field = target.lower(), field.lower()
+        # ---- C63: a row about a girl still on the clerk's slip (joined, moved home) is the sale the prose made; refused as the new person is
+        slip_card = None
+        if kind not in ("learned", "unseen", "ruling", "new") and low not in ("player", "house"):
+            cards = self.content.girl_cards()
+            slip_card = (cards.get(low) if low in s.harbour.hand and s.girl(low) is None and s.person(low) is None else None) \
+                or (self._slip_card_named(s, target) if " " in target.strip() and s.person(low) is None and s.girl(low) is None else None)
+        if slip_card is not None:
+            self._slip_sale(s, slip_card, value, w)
+            return True
         # ---- a booking taken or turned down (the referee's word after the prose)
         hk = s.hook(low.removeprefix("hook-")) if low.startswith("hook-") or s.hook(low) is not None else None
         if hk is not None and field == "declined" and kind == "set":
@@ -1166,13 +1175,7 @@ class ClownGame(GameBase):
         if kind == "new" and low in ("person", "people", "character") and value:
             card = self._slip_card_named(s, value)
             if card is not None:            # C55: a slip girl reaches the house only by Take, at the slip's price
-                price = hb.price_of(card, s, lambda k: dk.dial(s, k))
-                if w.conflict("people", f"{card['name']} is on the clerk's slip at {price} gold; her contract is bought only by Take", value,
-                              "contradiction", f"{card['name']} stays at the shed: her contract is {price} gold on the clerk's slip and is not sold "
-                              f"across the counter or for less. {p.name} may look her over and talk to her there; she comes to the house only "
-                              "when the contract is taken. Nothing is paid for her now. Tell it that way."):
-                    w.note(f"people: {card['name']} not added (the forced telling; she is on the slip, bought only by Take)")
-                    self._told(w, card["name"], f"No contract was sold: {card['name']} is still on the clerk's slip at {price} gold, bought only with Take.")
+                self._slip_sale(s, card, value, w)
                 return True
             if any(x.name.lower() == value.lower() for x in s.people):
                 w.reject("people", f"already listed: {value}", value)
@@ -1684,6 +1687,19 @@ class ClownGame(GameBase):
     def _show_word(quality: int) -> str:
         return "disaster" if quality <= -4 else "poor" if quality <= -1 else "fine" if quality <= 2 else "good" if quality <= 5 else "triumph"
 
+    def _slip_sale(self, s: ClownState, card: dict, value: str, w: Writer) -> None:
+        """C55, C63: the prose sold a slip girl across the counter. A conflict (retold); on the forced telling nobody is added, the
+        engine's line says so, and `after_changes` gives back what the turn paid for her."""
+        price = hb.price_of(card, s, lambda k: dk.dial(s, k))
+        if w.conflict("people", f"{card['name']} is on the clerk's slip at {price} gold; her contract is bought only by Take", value,
+                      "contradiction", f"{card['name']} stays at the shed: her contract is {price} gold on the clerk's slip and is not sold "
+                      f"across the counter or for less. {s.player.name} may look her over and talk to her there; she comes to the house only "
+                      "when the contract is taken. Nothing is paid for her now. Tell it that way."):
+            if not any(a == f"UNTOLD {card['name']}" for a in w.report.applied):
+                w.note(f"people: {card['name']} not added (the forced telling; she is on the slip, bought only by Take)")
+                self._told(w, card["name"], f"No contract was sold and nothing was paid: {card['name']} is still on the clerk's slip at {price} gold, bought only with Take.")
+                w.note(f"UNSOLD {card['name']}")
+
     @staticmethod
     def _told(w: Writer, subject: str, line: str) -> None:
         """C63: a forced telling the state did not follow; the engine's § line says what is so (the pipeline appends TOLD lines to
@@ -1694,6 +1710,15 @@ class ClownGame(GameBase):
 
     def after_changes(self, state: ClownState, report: Any) -> ClownState:
         """C63: a journal row the referee wrote from a telling the state refused (the clerk accepting 150 for a girl on the slip) is dropped."""
+        if any(a.startswith("UNSOLD ") for a in report.applied):     # C63: what the turn paid for her (the clerk's 150) is given back
+            paid = 0
+            for a in report.applied:
+                m = re.match(r"house\.money: (-?\d+) -> (-?\d+)$", a)
+                if m and int(m.group(2)) < int(m.group(1)):
+                    paid += int(m.group(1)) - int(m.group(2))
+            if paid:
+                state.house.money += paid
+                report.applied.append(f"house.money: +{paid} given back (a contract the prose bought and the engine did not sell)")
         subjects = [a[len("UNTOLD "):].lower() for a in report.applied if a.startswith("UNTOLD ")]
         if subjects:
             texts = {a[len("journal: + "):] for a in report.applied if a.startswith("journal: + ")}
