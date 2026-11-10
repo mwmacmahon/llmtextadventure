@@ -230,6 +230,8 @@ class ClockSpec(BaseModel):
     path: str = "clock"             # state path of {day, minute}
     minutes_per_day: int = 1440
     cap_minutes: int = 240          # the most one turn may advance (the "don't jump 8 hours" rule)
+    turn_cap_minutes: int = 0       # when set, the most a turn the player typed may advance; cap_minutes then bounds the commands
+                                    # (the clown's Skip runs days, a typed wait keeps to a night: D205C)
     slow_minutes: int = 5           # the least a slow action costs (D93: a search, a talk, a walk; a fast beat in a fight is exempt)
     fast_minutes: int = 1           # the least a fast action costs (time doc §3, D146: a stall is never free, a fight beat is a minute)
     lost_cap_fast: int = 3          # the most a [[time lost]] note adds on a fast turn (a fight runs three minutes, not an hour)
@@ -288,6 +290,7 @@ class CommandResult(BaseModel):
     directive: str = ""             # narrated mode: what the narrator must play
     summary: str = ""               # narrated mode: the adjudication summary
     minutes: int = 0                # narrated mode: in-game time it takes
+    through: bool = False           # narrated mode: the clock runs all its minutes, past events (a confirmed skip: D205C)
     entities: list[str] = Field(default_factory=list)
     systems: list[str] = Field(default_factory=list)
     log_line: str | None = None     # appended to the game log, clock-stamped

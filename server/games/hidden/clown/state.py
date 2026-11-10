@@ -324,7 +324,8 @@ class HookState(BaseModel):
     title: str
     kind: str = "booking"
     tier: int = 1
-    status: Literal["dealt", "live", "done", "failed", "passed"] = "dealt"   # passed: a card not picked when another was, back in the deck
+    when: str = ""                  # the show's day as the client said it at the deal ("Saturday fortnight"): the hook's {when} (D205C)
+    status: Literal["dealt", "live", "done", "failed", "passed"] = "dealt"   # passed: a week's offer not booked by Sunday night, back in the deck
     dealt_turn: int = 0
     dealt_abs: int = 0
     closed_turn: int | None = None
@@ -349,6 +350,7 @@ class Deck(BaseModel):
     dealt_this_turn: list[str] = Field(default_factory=list)
     repeats: dict[str, int] = Field(default_factory=dict)    # content id -> the clock it last closed (repeat customers)
     counts: dict[str, int] = Field(default_factory=dict)     # content id -> how many times dealt
+    dealt_week: int = 0             # the week whose offers are dealt (D205C: once a week)
 
 
 class Harbour(BaseModel):
@@ -361,6 +363,7 @@ class Harbour(BaseModel):
     ships: int = 0                  # boats come in so far (the first at the open)
     dealt_week: int = 0
     taken_week: int = 0             # the week of the last Take (one a week, a dial)
+    since: dict[str, int] = Field(default_factory=dict)   # card id -> the week she came onto the slip (the clerk's markdown, D205C)
     announce: bool = False          # a boat came in since the last telling: the narrator is told the slip this turn
     overrides: dict[str, dict[str, str]] = Field(default_factory=dict)   # Customize (dev): card id -> {tag group: tag} the lottery honours
 

@@ -182,68 +182,59 @@ def _offer(game: ClownGame, st):
 def test_a_card_in_hand_can_be_taken_for_any_girl_and_the_show_is_set_for_its_day(game: ClownGame):
     st = _offer(game, new(game))
     h = st.hook("rope_walk_birthday")
-    assert h.status == "live" and dk.standing_of(h) == "in hand" and h.locked      # a once-only card is dealt locked
+    assert h.status == "live" and dk.standing_of(h) == "in hand" and h.when == "Saturday fortnight"   # D205C: two weeks out
     book = next(c for c in game.commands(st) if c.id == "book")
     assert [p.name for p in book.params] == ["booking", "girl"] and not any(c.id == "turn_down" for c in game.commands(st))
     st, res = game.run_command(st, "book", {"booking": "rope_walk_birthday", "girl": "dot"})
     assert res.ok and "Dorothea Vance goes" in res.text, res.text
     x = st.shows[0]
     assert weekday(x.at_abs // DAY) == 5 and x.at_abs % DAY == 900 and x.venue == "Rope Walk" and x.fee == 15 and x.girl == "dot"
+    assert x.at_abs // DAY == st.clock.day - weekday(st.clock.day) + 14 + 5 and "week 3" in res.text   # the Saturday fortnight
     assert dk.standing_of(h := st.hook("rope_walk_birthday")) == "booked" and h.girl == "dot"
     assert any(e.id == "curtain_rope_walk_birthday" and e.where == ["Rope Walk"] for e in st.hidden.events)
-    assert st.deck.refill_at_abs > st.now_abs                                      # the hand refills on its clock
     st2, res2 = game.run_command(st, "book", {"booking": "rope_walk_birthday"})
     assert not res2.ok
     _, res3 = game.run_command(st, "turn_down", {"booking": "rope_walk_birthday"})
     assert not res3.ok and "turned down" in res3.text
 
 
-def test_the_hand_is_dealt_full_and_a_pick_passes_the_unlocked_cards_and_keeps_the_locked(game: ClownGame):
+def test_the_weeks_offers_are_dealt_once_open_all_week_and_any_number_may_be_booked(game: ClownGame):
+    """D205C: the hand is the week's offers: dealt at the open and each Sunday night, the callers a day apart; booking one
+    passes nothing; what is not booked by the week's close is passed and the next week's are dealt."""
     st = new(game)
     hand = dk.hand(st)
-    assert st.house.hand_size == 2 and len(hand) == 2 and all(h.kind == "booking" for h in hand)   # day one: full (D203C)
-    other = next(h for h in hand if h.hook != "rope_walk_birthday")
-    other.status, other.offered, other.locked = "live", True, False
-    st.hooks[0].status, st.hooks[0].offered = "live", True
-    st, res = game.run_command(st, "book", {"booking": "rope_walk_birthday", "girl": "dot"})
-    assert res.ok and st.hook(other.id).status == "passed" and dk.standing_of(st.hook(other.id)) == "passed over"
-    assert len(dk.hand(st)) == 0 and not dk.due(st, st.now_abs)                   # short, but the refill clock has not passed
-    assert dk.due(st, st.deck.refill_at_abs)
-    assert any(r.standing == "booked" for r in game.quest_rows(st)) and not any(r.title.startswith(other.title) for r in game.quest_rows(st))
-    # a locked card survives a pick
-    st = new(game)
-    other = next(h for h in dk.hand(st) if h.hook != "rope_walk_birthday")
-    other.status, other.offered, other.locked = "live", True, True
-    st.hooks[0].status, st.hooks[0].offered = "live", True
-    st, res = game.run_command(st, "book", {"booking": "rope_walk_birthday", "girl": "dot"})
-    assert res.ok and st.hook(other.id).status == "live" and len(dk.hand(st)) == 1
-    assert "stays in hand" in next(r.title for r in game.quest_rows(st) if r.title.startswith(other.title))
+    assert st.house.hand_size == 2 and len(hand) == 2 and st.deck.dealt_week == 1
+    assert sorted(h.dealt_abs // DAY for h in hand) == [st.clock.day, st.clock.day + 1] or len({h.dealt_abs for h in hand}) == 2
+    for h in hand:
+        h.status, h.offered = "live", True
+    st.girl("rosalind").status, st.girl("rosalind").location = "passive", "The kitchen"
+    st, r1 = game.run_command(st, "book", {"booking": hand[0].id, "girl": "dot"})
+    st, r2 = game.run_command(st, "book", {"booking": hand[1].id, "girl": "rosalind"})
+    assert r1.ok and r2.ok and all(st.hook(h.id).show for h in hand)          # both booked: nothing passed
+    assert all(x.at_abs // DAY >= st.clock.day + 14 - weekday(st.clock.day) for x in st.shows)   # at least two weeks out
+    # a week's close passes the unbooked and deals the next week's
+    st2 = new(game)
+    first = [h.id for h in dk.hand(st2)]
+    st2.house.week = 2
+    st2.clock.day, st2.clock.minute = 7, 1330                                 # Sunday night, after the close
+    dk.deal_week(st2, dk.deck_of(game.scenario()), game.hooks_content(), random.Random(3), st2.now_abs, 5, "Hal")
+    assert all(st2.hook(i).status == "passed" for i in first) and st2.deck.dealt_week == 2
+    new_cards = dk.hand(st2)
+    assert len(new_cards) == 2 and min(h.dealt_abs for h in new_cards) == 8 * DAY + 540   # Monday morning, a day apart
+    assert dk.deal_week(st2, dk.deck_of(game.scenario()), game.hooks_content(), random.Random(3), st2.now_abs, 6, "Hal") == []
 
-
-def test_a_once_only_card_always_locks_and_an_ordinary_one_only_within_reach(game: ClownGame):
+def test_a_cards_show_is_weeks_off_as_the_card_says_and_the_client_says_when(game: ClownGame):
     st = new(game)
     hooks = game.hooks_content()
-
-    class R:
-        def __init__(self, v): self.v = v
-        def random(self): return self.v
-
-    assert dk.lock_for(st, hooks["rope_walk_birthday"], R(0.99))                   # no repeat block: locked whatever the roll
-    judge = hooks["judge_dinner"]                                                  # wants mime and poise at a demanding room: ask 70 (D203C)
-    assert dk.ask_of(st, judge) == 70
-    slots = dk.slots_until_show(st, judge, st.now_abs)                           # Monday 09:00 to Saturday 20:30: ten slots, five a skill
-    assert slots == 10 and dk.reach_of(st, judge, st.now_abs) == 15 + 5 * 6      # Dot's mime 15 trained nonstop: 45, not 70
-    assert not dk.lock_for(st, judge, R(0.0))                                     # too far to lock whatever the roll
-    st.active_girl.skills["mime"], st.active_girl.skills["poise"] = 50, 50       # 50 + 5 slots slowing past sound = 69 < 70
-    assert dk.reach_of(st, judge, st.now_abs) == 69 and not dk.lock_for(st, judge, R(0.0))
-    st.active_girl.skills["mime"], st.active_girl.skills["poise"] = 55, 55       # 55 + 17 = 72: she could get there
-    assert dk.reach_of(st, judge, st.now_abs) == 72 and dk.lock_for(st, judge, R(0.1)) and not dk.lock_for(st, judge, R(0.9))
-    widow = hooks["sorrel_party"]                                                  # children and balloons at an ordinary room: ask 50
-    assert dk.ask_of(st, widow) == 50 and dk.reach_of(st, widow, st.now_abs) == 5 + 5 * 6     # Dot's balloons 5, the weaker, trained: 35
-    assert not dk.lock_for(st, widow, R(0.0))
-    st.active_girl.skills["children"], st.active_girl.skills["balloons"] = 25, 25
-    assert dk.reach_of(st, widow, st.now_abs) >= 50 and dk.lock_for(st, widow, R(0.1))
-
+    mon = st.clock.day
+    assert dk.show_day(st, hooks["rope_walk_birthday"], st.now_abs) == (mon + 14 + 5, 900)          # the default: two weeks
+    assert dk.show_day(st, hooks["judge_dinner"], st.now_abs)[0] == mon + 21 + 5                    # lead_weeks 3
+    assert dk.show_day(st, hooks["harbour_stag"], st.now_abs)[0] == mon + 7 + 5                     # an outlier: next week
+    assert dk.when_words(st, hooks["judge_dinner"], st.now_abs) == "Saturday 3 weeks off"
+    assert dk.when_words(st, hooks["harbour_stag"], st.now_abs) == "Saturday week"
+    h = dk.deal(st, hooks["sailors_rest"], turn=1, deal_abs=st.now_abs, name="Hal")
+    reach = next(e for e in st.hidden.events if e.id == f"{h.id}_reach")
+    assert "Friday fortnight" in reach.directive and "{when}" not in reach.directive
 
 def test_the_referees_yes_books_it_for_the_girl_named_and_nothing_is_declined(game: ClownGame):
     st = _offer(game, new(game))
@@ -692,8 +683,8 @@ def test_skip_runs_the_clock_to_a_named_point_and_the_pipeline_may_stop_it_soone
     assert ids["sunday"] == (st.clock.day + 6) * DAY + 1320
     assert "show" not in ids
     spec = next(c for c in game.commands(st) if c.id == "skip")
-    assert spec.mode == "narrated" and [o.id for o in spec.params[0].options] == ["tomorrow", "saturday", "sunday"]
-    s2, res = game.run_command(st, "skip", {"to": "saturday"})
+    assert spec.mode == "narrated" and [o.id for o in spec.params[0].options] == ["tomorrow", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+    s2, res = game.run_command(st, "skip", {"to": "saturday", "confirm": "yes"})
     assert res.ok and res.minutes == 5 * DAY and res.player_line and "Saturday" not in res.directive.split("stop")[0][:0]
     assert game.clock.cap_minutes >= res.minutes
     # on a Saturday morning, "saturday" is next week's; a booked show adds "show"
@@ -993,7 +984,7 @@ def test_round_three_fixes_the_double_charge_the_house_as_a_place_the_quest_note
 
 def test_the_skip_directive_tells_the_narrator_the_clock_may_have_stopped_short(game: ClownGame):
     st = new(game)
-    _, res = game.run_command(st, "skip", {"to": "tomorrow"})
+    _, res = game.run_command(st, "skip", {"to": "tomorrow", "confirm": "yes"})
     assert "short of tomorrow morning" in res.directive and "name the day the clock names" in res.directive     # round 3, turn 9: Tuesday written at Monday 17:00
 
 
@@ -1196,17 +1187,13 @@ def test_a_show_is_not_paid_by_the_prose_at_its_hour_either(game: ClownGame):
     assert s.house.money == money
 
 
-def test_a_booking_heard_of_after_its_hour_this_week_reads_next_week(game: ClownGame):
+def test_the_board_shows_the_week_and_day_a_book_would_set(game: ClownGame):
     st = _offer(game, new(game))
     h = st.hook("rope_walk_birthday")
     hooks = game.hooks_content()
-    assert game._board_line(st, h, hooks).startswith("Sat 15:00")
-    sat = next(d for d in range(st.clock.day, st.clock.day + 7) if weekday(d) == 5)
-    st.clock.day, st.clock.minute = sat, 17 * 60 + 10                              # C58: heard of at 17:10 on the Saturday
-    assert game._board_line(st, h, hooks).startswith("next Sat 15:00")
+    assert game._board_line(st, h, hooks).startswith("week 3, Sat 15:00")
     st, res = game.run_command(st, "book", {"booking": "rope_walk_birthday", "girl": "dot"})
-    assert res.ok and st.shows[0].at_abs // DAY == sat + 7
-
+    assert res.ok and game._board_line(st, st.hook("rope_walk_birthday"), hooks).startswith("Sat 15:00")
 
 def test_a_forced_telling_the_state_refused_is_told_by_the_engine_and_its_journal_row_dropped(game: ClownGame):
     st = new(game)
@@ -1241,7 +1228,7 @@ def test_a_slip_girl_joined_by_a_row_is_refused_and_the_turns_spend_for_her_give
     assert not any(r.kind == "conflict" for r in rep.rejected)                      # a girl in the house is untouched
 
 
-# ---- C50 (D203C): a later time named in the input moves the clock ---------------------------------------------------------
+# ---- D205C: the days run only on the player's plain "skip to ...", warned first ------------------------------------------
 
 def _at(game: ClownGame, st, weekday_i: int, minute: int):
     """The clock at this week's weekday (0 Monday) and minute; the events and pendings already in the state dropped, so only
@@ -1251,97 +1238,43 @@ def _at(game: ClownGame, st, weekday_i: int, minute: int):
     return st
 
 
-def test_a_later_time_named_in_the_input_is_read_and_a_past_or_near_one_is_not(game: ClownGame):
-    from games.hidden.clown.game import named_time
+def test_only_a_plain_skip_runs_the_days_and_the_rest_is_an_ordinary_turn(game: ClownGame):
     st = _at(game, new(game), 0, 1020)                                      # Monday 17:00
-    mon = st.clock.day
-    assert named_time("Tuesday morning, I walk down to the harbour.", st) == (mon + 1) * DAY + 540
-    assert named_time("Tomorrow at ten I take the tram to the Judge's.", st) == (mon + 1) * DAY + 600
-    assert named_time("I sit with her a while. Then, on Saturday, I go to the market.", st) == (mon + 5) * DAY + 540
-    assert named_time("Tonight I go down to the Anchor.", st) == mon * DAY + 1140
-    assert named_time("I wait until Thursday afternoon.", st) is None              # a wait "until" is the Skip's and the assistant's
-    assert named_time("I ask about the show. Tomorrow she has a lesson.", st) is None   # the player does not act in it
-    assert named_time("Tomorrow, we go down to the quay.", st) == (mon + 1) * DAY + 540
-    assert named_time("At 8 p.m. I go to the Anchor.", st) == mon * DAY + 1200
-    assert named_time("Tomorrow at quarter to one I see the clerk.", st) == (mon + 1) * DAY + 765
-    assert named_time("This morning I went to the shed.", st) is None                # already past
-    assert named_time("Yesterday was a waste. I go to the shed.", st) is None
-    assert named_time("I ask her what she did on Tuesday.", st) is None               # not where the input opens: no move
-    assert named_time("Next week, I go to the shed.", st) == (mon + 6) * DAY + 1320   # capped at the week's end, Sunday 22:00
-    assert named_time("Saturday's show is on my mind; I go to the practice room.", st) is None
-    st = _at(game, st, 0, 600)                                              # Monday 10:00
-    assert named_time("At three, I go down to the shed.", st) == st.clock.day * DAY + 900       # the afternoon, the same day
-    assert named_time("At half past eight I meet Krol.", st) == st.clock.day * DAY + 1230      # eight this morning has gone: the evening
-    assert named_time("At 10:30 I go to the shed.", st) is None                    # within a walk's minutes of now: the assistant's
-    st = _at(game, st, 2, 1260)                                             # Wednesday 21:00
-    assert named_time("At eight I take her to the market.", st) == (st.clock.day + 1) * DAY + 480   # tomorrow's eight
-    st = _at(game, st, 6, 1080)                                             # Sunday 18:00
-    assert named_time("Tomorrow morning I go to the shed.", st) == st.clock.day * DAY + 1320  # nothing past the week's end
-    st = _at(game, st, 6, 1300)                                             # Sunday 21:40: the week's end is within a walk
-    assert named_time("Tomorrow morning I go to the shed.", st) is None
+    assert game.typed_command(st, "skip to Wednesday") == ("skip", {"to": "wednesday", "confirm": "no"})
+    assert game.typed_command(st, "Fast forward to Saturday.") == ("skip", {"to": "saturday", "confirm": "no"})
+    assert game.typed_command(st, "skip to the show anyway") == ("skip", {"to": "show", "confirm": "yes"})
+    assert game.typed_command(st, "I skip ahead to tomorrow") == ("skip", {"to": "tomorrow", "confirm": "no"})
+    assert game.typed_command(st, "skip to the end of the week")[1]["to"] == "sunday"
+    for text in ("Tuesday morning, I walk down to the harbour.", "I wait until Thursday.", "Let the days run to Saturday.",
+                 "skip to Wednesday and take her to the quay", "I tell her we skip to the good part."):
+        assert game.typed_command(st, text) is None, text
+    assert "skip" in game.typed_only_commands and game.clock.turn_cap_minutes == 720
 
 
-def test_the_named_time_runs_the_clock_with_the_same_stops_and_the_narrator_is_told(game: ClownGame):
-    from engine.pending import Pending
-    from engine.pipeline import _clock_moved, named_lead
-    st = _at(game, new(game), 0, 1020)                                      # Monday 17:00
-    mon = st.clock.day
-    meant, now0, lead, note = named_lead(game, st, "Tuesday morning, I walk down to the harbour.", 3)
-    assert meant == (mon + 1) * DAY + 540 and now0 == st.now_abs and lead == 16 * 60 and not note
-    s2, line = game.clock_moved(st, meant, now0 + lead)
-    assert line.startswith("THE CLOCK MOVED: the player meant Tuesday 09:00") and "never the one" in line
-    assert s2.journal[-1].text == "Tuesday morning came." and "The days ran to Tuesday 09:00." in s2.tally[-1]
-    assert s2.now_abs == st.now_abs and _clock_moved(game, s2, now0 + lead).now_abs == meant     # the clock is the pipeline's to move
-    # something falling due Monday 20:00 stops it there, and the directive and the tally say so
-    st.hidden.pending.append(Pending(id="p1", what="Krol's man calls at the door", due_day=mon, due_minute=1200, source="script"))
-    meant, now0, lead, note = named_lead(game, st, "Tuesday morning, I walk down to the harbour.", 3)
-    assert lead == 180 and "stopped at pending p1" in note
-    s3, line = game.clock_moved(st, meant, now0 + lead)
-    assert "the player meant Tuesday 09:00" in line and "short of Tuesday 09:00" in s3.tally[-1] and s3.journal[-1].text == "Monday evening came."
-    # no later time: no lead
-    assert named_lead(game, st, "I go through to the practice room.", 3)[2] == 0
+def test_a_skip_past_a_show_or_the_weeks_end_warns_first_and_runs_through_when_confirmed(game: ClownGame):
+    st = _offer(game, new(game))
+    st, _ = game.run_command(st, "book", {"booking": "rope_walk_birthday", "girl": "dot"})
+    x = st.shows[0]
+    x.at_abs = (st.clock.day + 5 - weekday(st.clock.day)) * DAY + 900          # this Saturday, so a skip to Sunday passes it
+    st.hidden.events = [e for e in st.hidden.events if not e.id.startswith("curtain_")]
+    s2, res = game.run_command(st, "skip", {"to": "sunday"})
+    assert not res.ok and s2 is st and "runs past" in res.text and x.title in res.text and "without you there" in res.text
+    assert "week closes on Sunday night" in res.text and "skip to sunday anyway" in res.text
+    s3, res = game.run_command(st, "skip", {"to": "sunday", "confirm": "yes"})
+    sunday = (st.clock.day + 6 - weekday(st.clock.day)) * DAY + 1320
+    assert res.ok and res.through and res.minutes == sunday - st.now_abs
+    assert "agreed to let the house run" in res.directive
+    st.hidden.events = [e for e in st.hidden.events if e.fired]
+    s4, res = game.run_command(st, "skip", {"to": "tomorrow"})       # nothing on the way: no warning, the stops as ever
+    assert res.ok and not res.through
 
 
-async def test_a_named_time_through_the_pipeline_moves_the_clock_before_the_turn(engine: Engine):
-    iid = engine.create_instance("clown", dict(SETUP, first_girl="ada_vosk"))
-    game = engine.games["clown"]
-    st0 = game.load_state(engine.store.load_state(iid))
-    events = [ev async for ev in engine.run_turn(iid, "Tomorrow afternoon, I walk down to the harbour.")]
-    assert events[-1]["event"] == "done", [ev["event"] for ev in events]
-    st = game.load_state(engine.store.load_state(iid))
-    rows = [r for r in engine.store.ledger(iid) if r["kind"] == "named_time"]
-    assert rows and rows[0]["payload"]["meant_abs"] == (st0.clock.day + 1) * DAY + 840
-    p = rows[0]["payload"]
-    reached = p["from_abs"] + p["minutes"]
-    assert st.now_abs >= reached > st0.now_abs and (reached == p["meant_abs"] or p["stopped"])   # there, or stopped short by a stop
-    prompt = next(r for r in engine.store.ledger(iid) if r["kind"] == "bulletin" or "THE CLOCK MOVED" in str(r["payload"]))
-    assert "THE CLOCK MOVED: the player meant Tuesday 14:00" in str(prompt["payload"])
-    assert any("came." in n.text for n in st.journal)
-
-
-async def test_a_lead_lands_only_when_the_clock_moves_and_tells_the_narrator_first(engine: Engine):
-    """The debt review of 73fa7e8: the days run only on a turn that moves the clock; a trivial turn still ticks nothing
-    without a lead (B105); a sleep to the named time is the lead itself; THIS TURN names the lead before a split."""
-    from engine.pipeline import _this_turn_block
-    from engine.roles import AssistantReading
-    iid = engine.create_instance("clown", dict(SETUP, first_girl="ada_vosk"))
-    game = engine.games["clown"]
-    st = _at(game, game.load_state(engine.store.load_state(iid)), 0, 1260)  # Monday 21:00
-    now = st.now_abs
-    sleep = AssistantReading(kind="action", summary="sleeps", tempo="slow", time_minutes=600, risk="low")
-    res = engine._resolve(game, st, sleep, iid, 2, [], lead_minutes=720)
-    assert res["elapsed"] == 720 and res["lead"] == 720 and res["state"].now_abs == now + 720     # Tuesday 09:00, not past it
-    clar = AssistantReading(kind="clarify", summary="?", clarify_question="Which?", time_minutes=0, risk="low")
-    res = engine._resolve(game, st, clar, iid, 2, [], lead_minutes=720)
-    assert res["elapsed"] == 0 and not res["lead"]                          # no clock moved: the pipeline writes no days ran
-    triv = AssistantReading(kind="trivial", summary="looks", time_minutes=30, risk="low")
-    st.hidden.pending.append(__import__("engine.pending", fromlist=["Pending"]).Pending(id="p1", what="a knock", due_day=st.clock.day, due_minute=1270, source="script"))
-    res = engine._resolve(game, st, triv, iid, 2, [], lead_minutes=0)
-    assert not res["pending_fired"]                                         # B105: a question moves nothing
-    text = _this_turn_block({"elapsed": 720, "lead": 720, "split": (0, 10), "adjudication": sleep, "directives": []}, "Tue 09:00")
-    assert "ran on to the time the player named" in text and "starts about" not in text
-    text = _this_turn_block({"elapsed": 10, "lead": 10, "lead_short": True, "clock_note": "stopped at pending p1", "adjudication": sleep, "directives": []}, "")
-    assert "stopped short" in text
+def test_the_skip_targets_are_every_weekdays_morning_the_weeks_end_and_the_show(game: ClownGame):
+    st = new(game)                                        # Monday 09:00, week one
+    ids = {k: t for k, _, t in game._skip_targets(st)}
+    assert ids["tomorrow"] == (st.clock.day + 1) * DAY + 540 and ids["wednesday"] == (st.clock.day + 2) * DAY + 540
+    assert ids["monday"] == (st.clock.day + 7) * DAY + 540 and ids["saturday"] == (st.clock.day + 5) * DAY + 540
+    assert ids["sunday"] == (st.clock.day + 6) * DAY + 1320 and "show" not in ids
 
 
 def test_a_written_girl_at_the_door_filed_as_a_new_person_is_that_girl_and_joins(game: ClownGame):

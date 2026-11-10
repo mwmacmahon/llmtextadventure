@@ -100,18 +100,16 @@ def run(weeks: int = 8, kind: str = "charmer", girl: str = "nell_sorley", plan: 
             st, r2 = game.run_command(st, "plan", {"slot": "afternoons", "skill": b})
             if verbose:
                 out(f"  {hhmm(st.clock.minute)} plan: {a} / {b}" + ("" if r1.ok and r2.ok else f" ({r1.text} {r2.text})"))
-        # the hand: take the first card a free girl can go to (the girl in training first, then the bench); the rest are passed
+        # the week's offers (D205C): every card a girl is free for that day, the girl in training first, then the bench
         for h in list(st.hooks):
             if h.status == "live" and h.kind == "booking" and not h.show and (book == "all" or h.hook in book.split(",")):
-                free = [x for x in st.in_house() if not any(y.girl == x.id and not y.result for y in st.shows)]
-                free.sort(key=lambda x: x.id != st.active)
-                if not free:
-                    break
-                st, r = game.run_command(st, "book", {"booking": h.id, "girl": free[0].id})
-                if r.ok:
-                    booked_week.append(f"{h.title} ({free[0].name})")
+                for g in sorted(st.in_house(), key=lambda x: x.id != st.active):
+                    st, r = game.run_command(st, "book", {"booking": h.id, "girl": g.id})
+                    if r.ok:
+                        booked_week.append(f"{h.title} ({g.name})")
+                        break
                 if verbose:
-                    out(f"  {hhmm(st.clock.minute)} book {h.title} for {free[0].name}: {r.text}")
+                    out(f"  {hhmm(st.clock.minute)} book {h.title}: {'booked' if st.hook(h.id).show else 'no girl free'}")
         # the door: a girl asking to be taken on is taken on when there is a room (the talk the referee would read as a yes)
         if recruit:
             for x in [x for x in st.girls if x.status == "available"]:

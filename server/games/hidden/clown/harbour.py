@@ -97,6 +97,7 @@ def deal(state: ClownState, deck: dict, cards: dict[str, dict], size: int) -> li
         card = cards.get(cid)
         if card is not None and tier_open(card, deck, state.house.name):
             hand.append(cid)
+    hb.since = {c: hb.since.get(c, state.house.week) for c in hand}   # D205C: a girl still on the slip keeps her week
     hb.hand = hand
     hb.ships += 1
     hb.dealt_week = state.house.week
@@ -155,7 +156,10 @@ def price_of(card: dict, state: ClownState | None = None, dial=None, n_skills: i
     lift = lift_of(state, dial)
     grown = sum(min(LIFT_MAX, v + lift) for v in seed) + min(LIFT_MAX, 10 + lift) * max(0, n_skills - len(seed))
     opening = max(float(dial("harbour_price_floor")), base * float(dial("harbour_price_scale")))
-    return int(min(float(dial("harbour_price_cap")), round(opening * grown / max(1, expect))))
+    price = min(float(dial("harbour_price_cap")), opening * grown / max(1, expect))
+    waited = state.house.week - state.harbour.since.get(str(card.get("id") or ""), state.house.week)
+    off = min(float(dial("slip_markdown_most")), max(0, waited) * float(dial("slip_markdown")))   # D205C: no haggling; the clerk
+    return int(round(price * (1 - off)))                                                       # takes a little off as she waits
 
 
 def grid_from(card: dict, scenario: Scenario, rng: random.Random, bucket: str, deck: dict, lift: int = 0) -> dict[str, int]:

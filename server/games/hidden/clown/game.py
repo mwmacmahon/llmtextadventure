@@ -62,95 +62,15 @@ GRADUATE_SOUND, GRADUATE_FINISHED = 3, 1                                    # th
 DIFFICULTY_WORDS = {0: "an easy room", 1: "an ordinary room", 2: "a demanding room", 3: "a hard room"}
 SHOW_PAY = {"disaster": 0.0, "poor": 0.5, "fine": 1.0, "good": 1.0, "triumph": 1.5}
 
-# C50 (D203C): a later time the player's input names moves the clock before the turn. Read only where a sentence of the
-# input opens on it and the player then acts in it ("Tuesday morning, I walk ...", "Then at three we go ..."): "she asked me
-# about Tuesday" and "Tomorrow she has a lesson" name no move, and a wrong read runs the clock days. A wait or a skip "until"
-# a time is the Skip command's and the assistant's, as before. A closed vocabulary: a phrase it misses is a C-line, not a word
-# added here (the debt review of 11-10).
-_WHEN_ANCHOR = re.compile(r"(?:^|[.!?;]\s+)(?:(?:and\s+)?then,?\s+|later,?\s+|come\s+|on\s+|by\s+)?")
-_PLAYER_ACTS = re.compile(r"[\s,]*(?:i|we)\b")
-_NUMBER_WORDS = {w: i for i, w in enumerate(("one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"), 1)}
-_PARTS = {"first thing": 480, "morning": 540, "midday": 720, "noon": 720, "after lunch": 840, "afternoon": 840, "evening": 1140, "tonight": 1140, "night": 1260}
-_CLOCK = re.compile(r"at\s+(?:(half|quarter)\s+(past|to)\s+)?(\d{1,2}|" + "|".join(_NUMBER_WORDS) + r")(?::(\d\d)|\.(\d\d))?\s*(am|pm|a\.m\.|p\.m\.|o'clock)?(?=\W|$)")
+# D205C (the owner, 11-10): the days run only on the player's plain word ("skip to Wednesday", "fast forward to Saturday",
+# "skip to the show"), read here as the Skip command before the assistant reads the turn; nothing else moves the clock past a
+# night. "anyway" at the end lets it run past what the warning named.
+_SKIP_WORDS = re.compile(r"^(?:i\s+|let'?s\s+)?(?:skip|fast[- ]?forward|jump)(?:\s+ahead|\s+on)?\s+(?:to|till|until)\s+(?:the\s+)?"
+                         r"(?P<to>[a-z']+(?:\s+(?!anyway|regardless)[a-z']+){0,3})(?P<anyway>,?\s+(?:anyway|regardless))?\s*[.!]?$")
+_SKIP_ALIASES = {"show": "show", "next show": "show", "end of the week": "sunday", "week's end": "sunday", "sunday night": "sunday", "next week": "monday",
+                 "morning": "tomorrow", "tomorrow morning": "tomorrow"}
 
 
-def _read_when(seg: str, s: ClownState) -> tuple[int, str] | None:
-    """The day and minute a clause opens on ("tuesday morning, i walk ...", "tomorrow at ten", "at half past eight"), as an
-    absolute minute, and the rest of the clause; None when it opens on no time."""
-    day, minute, part, clock = s.clock.day, None, None, None
-    named = False
-    rest = seg
-    while rest:
-        m = re.match(r"[\s,]+|(?:on|the|in the|in|this|at)\s+(?=(?:" + "|".join(WEEKDAYS).lower() + r"|morning|afternoon|evening|night|noon|midday)\b)", rest)
-        if m and m.end():
-            rest = rest[m.end():]
-            continue
-        if m2 := re.match(r"next week\b", rest):
-            day, named = s.clock.day + 7 - weekday(s.clock.day), True
-        elif m2 := re.match(r"tomorrow\b", rest):
-            day, named = s.clock.day + 1, True
-        elif m2 := re.match(r"(?:(next|this)\s+)?(" + "|".join(WEEKDAYS).lower() + r")\b(?!')", rest):
-            ahead = ([w.lower() for w in WEEKDAYS].index(m2.group(2)) - weekday(s.clock.day)) % 7
-            day, named = s.clock.day + (7 if m2.group(1) == "next" and ahead == 0 else ahead), True
-        elif m2 := re.match(r"(first thing|after lunch|midday|noon|morning|afternoon|evening|tonight|night)\b", rest):
-            part, named = m2.group(1), True
-        elif m2 := _CLOCK.match(rest):
-            clock, named = m2, True
-        else:
-            break
-        rest = rest[m2.end():]
-    if not named:
-        return None
-    if part is not None:
-        minute = _PARTS[part]
-    if clock is not None:
-        h = int(clock.group(3)) if clock.group(3).isdigit() else _NUMBER_WORDS[clock.group(3)]
-        mm = int(clock.group(4) or clock.group(5) or 0)
-        if clock.group(1):                                  # half past eight, quarter to nine
-            mm = 30 if clock.group(1) == "half" else 15
-            if clock.group(2) == "to":
-                h, mm = (h - 1) or 12, 45
-        ampm = (clock.group(6) or "").replace(".", "")
-        if h > 23 or mm > 59:
-            return None
-        if ampm == "pm" and h < 12 or (not ampm or ampm == "o'clock") and h < 12 and (
-                (part in ("afternoon", "after lunch", "evening", "tonight", "night")) or 1 <= h <= 6
-                or (day == s.clock.day and h * 60 + mm <= s.clock.minute < (h + 12) * 60 + mm and part is None)):
-            h += 12                                         # at three is the afternoon; at eight when eight this morning has gone
-        if ampm == "am" and h == 12:
-            h = 0
-        minute = h * 60 + mm
-    if minute is None:
-        minute = _PARTS["morning"]                          # a day named alone: its morning
-    if day == s.clock.day and minute <= s.clock.minute and clock is not None and part is None:
-        day += 1                                            # "at eight" at 21:00 is tomorrow's
-    return day * DAY + minute, rest
-
-
-def named_time(text: str, s: ClownState) -> int | None:
-    """C50 (D203C): a later time read out of the player's input ("Tuesday morning, I walk down to the harbour" at Monday 17:00
-    is Tuesday 09:00), as an absolute minute, when it is later than now by more than any task's own minutes (a talk, a search, a
-    walk: within that it is the assistant's, as before); never past the week's end, Sunday 22:00. None otherwise ("this morning"
-    at 17:00, "yesterday", a time in someone's words)."""
-    t = (text or "").lower().replace("\u2019", "'")
-    now = s.now_abs
-    for m in _WHEN_ANCHOR.finditer(t):
-        read = _read_when(t[m.end():], s)
-        if read is None or not _PLAYER_ACTS.match(read[1]):
-            continue
-        at = read[0]
-        sunday = s.clock.day + (6 - weekday(s.clock.day))
-        cap = sunday * DAY + WEEK_END_MINUTE
-        if now >= cap:
-            cap += 7 * DAY
-        at = min(at, cap)
-        within = max((r.most for k, r in ClownGame.clock.tasks.items() if k not in ("wait", "sleep")), default=0)
-        return at if at - now > within else None
-    return None
-
-
-def _part_word(minute: int) -> str:
-    return "morning" if minute < 720 else "afternoon" if minute < 1080 else "evening" if minute < 1260 else "night"
 SHOW_STANDING = {"disaster": -2, "poor": -1, "fine": 0, "good": 1, "triumph": 2}
 SHOW_NAME = {"disaster": -5, "poor": -1, "fine": 1, "good": 3, "triumph": 6}
 SHOW_LINES = {
@@ -222,7 +142,7 @@ class ClownGame(GameBase):
     description = "A house behind the harbour that trains clowns. A week at a time, a stable of girls, private clients, the city. Dev mode only."
     hidden = True
 
-    clock = ClockSpec(path="clock", minutes_per_day=1440, cap_minutes=7 * 1440, scene_mark=0, tasks={   # a Skip may run to Sunday; events and the week's end stop it
+    clock = ClockSpec(path="clock", minutes_per_day=1440, cap_minutes=7 * 1440, turn_cap_minutes=720, scene_mark=0, tasks={   # a Skip may run a week (D205C); a typed turn at most a night
         "talk": TaskRow(least=5, most=20, lost=15),
         "search": TaskRow(least=10, most=30, lost=30),
         "travel": TaskRow(least=5, most=45, lost=15),
@@ -230,7 +150,7 @@ class ClownGame(GameBase):
         "sleep": TaskRow(least=60, most=720, lost=0),
     })
     resolver = "threshold"
-    clock_commands = ("skip",)       # C50: a time the input named already ran the clock; a Skip lever beside it is dropped
+    typed_only_commands = ("skip",)  # D205C: the days run only on the player's own "skip to …" (typed_command); never the assistant's pick
     mechanic_numbers = False
     target_offset = 0
     authority = AUTHORITY
@@ -347,10 +267,9 @@ class ClownGame(GameBase):
         state.house.rooms = int(dk.dial(state, "rooms"))
         for hid in dk.deck_of(sc0).get("deal_at_start") or []:
             if hid in hooks:
-                h = dk.deal(state, hooks[hid], turn=0, deal_abs=now, name=name)
-                h.locked = dk.lock_for(state, hooks[hid], random.Random(f"lock:{name}:{hid}"))
+                dk.deal(state, hooks[hid], turn=0, deal_abs=now, name=name)
         self._best(state)
-        dk.deal_hand(state, dk.deck_of(sc0), hooks, random.Random(f"hand:{name}"), now, 0, name)   # the first hand, dealt full
+        dk.deal_week(state, dk.deck_of(sc0), hooks, random.Random(f"hand:{name}"), now, 0, name)   # the first week's offers
         self._first_boat(state)
         if sc0.get("opening_text"):
             for e in state.hidden.events:
@@ -482,7 +401,7 @@ class ClownGame(GameBase):
             hk = hooks.get(h.hook)
             if hk is None or h.status not in ("live",):
                 continue
-            hk = dk.fill(hk, p.name)
+            hk = dk.fill(hk, p.name, h.when)
             out.append("")
             out.append(f"In motion: {h.title}.")
             if hk.get("summary"):
@@ -758,7 +677,7 @@ class ClownGame(GameBase):
         slip = [cards[c] for c in s.harbour.hand if c in cards]
         if slip:
             out.append("")
-            out.append(f"On the clerk's slip at the Harbourmaster's shed (contracts for sale at the price written, which the clerk never lowers; {s.player.name} "
+            out.append(f"On the clerk's slip at the Harbourmaster's shed (contracts for sale at the price written, the clerk's own: a little lower each week a girl waits, and never by talk; {s.player.name} "
                        f"buys one only with the Take command, in their own time, and the girl stays at the shed until then; "
                        f"a new boat on the first and third Sunday of the month, its slip up the Monday after; this is the slip as it stands, and it changes only when THIS TURN says so):")
             for c in slip:
@@ -843,7 +762,7 @@ class ClownGame(GameBase):
     STAT_HELP = {
         "charm": "the town: clients, rich houses, the Judge's good humour, a crowd warmed, a stranger talked round",
         "menace": "the town: the harbour, a rival's man at the door, a debt collector, a man of the town who needs to be afraid",
-        "business": "money: haggling a fee, the books, a bribe that sticks, a contract read right",
+        "business": "money: the books, a bribe that sticks, a contract read right",
         "connections": "who can be telephoned: a councilman, a fence, a doctor who asks nothing, a clerk with a file",
         "craft": "the trade itself: the proprietor's own turn on a floor, judging another house's clown, dressing a girl for a room (teaching a girl is the plan, never a check)",
     }
@@ -869,15 +788,15 @@ class ClownGame(GameBase):
             "an input that names a skill and no slot is two Plan commands, one a slot. Giving her this afternoon (or this morning, or today) off, once, is "
             "not a Plan command: it is a scene, and the referee records the slot off; only a standing change (\"afternoons she rests from now\") is the Plan. Taking a booking by name is the Book command with "
             "booking=<its title as the game state lists it> and girl=<the id of the girl who goes; the one in training when the input names nobody>; "
-            "a booking is never turned down, only left in hand. Switch and Graduate take girl=<her id>; Skip takes to=tomorrow|saturday|sunday|show. "
+            "a booking is never turned down, only left in hand. Switch and Graduate take girl=<her id>. "
             "Buying a contract off the clerk's slip at the Harbourmaster's shed (taking a girl on from the boats) is the Take command with girl=<the "
             "card's id as the game state lists it>; selling a girl's contract on (putting her out of the house for money) is the Sell command with "
             "girl=<her id>, only for a girl bought off the boats. When a reckoning is open (the game state says so), taking what is coming is the Bear "
             "command and signing a girl over to the men waiting is the Give up command with girl=<her id>. Improving the house (a room made up, a line "
             "in the Guild's book) is the Upgrade command with upgrade=<its id as the game state lists it>. A command never replaces the rest of the input.",
             f"Paying more than the house has is impossible (the game state block says what money there is). Putting another girl into training is the "
-            f"Switch command, any day, any girl in the house. Letting the days run to a named point (tomorrow morning, Saturday, Sunday night, the next "
-            f"show) is the Skip command with to=tomorrow|saturday|sunday|show; a wait of an hour or an afternoon is a wait. Passing a girl out as a "
+            f"Switch command, any day, any girl in the house. Days pass only when the player says plainly to skip, and the engine reads that itself: "
+            f"never list Skip; a wait is minutes or hours, at most to the next morning. Passing a girl out as a "
             f"finished clown is the Graduate command, Sunday only; the engine says whether she is ready.",
             "target_entity only for a listed girl or person the player names or the scene identifies; a stranger has no id, so leave it null.",
             "Stats are exactly the five listed (charm, menace, business, connections, craft); never invent one.",
@@ -979,7 +898,7 @@ class ClownGame(GameBase):
     def quests_in_motion(self, s: ClownState) -> list[Quest]:
         hooks = self.hooks_content()
         fired = {e.id for e in s.hidden.events if e.fired}
-        out = [Quest(id=h.id, title=h.title, giver=h.giver, places=[], kind="hook", line=dk.fill(str((hooks.get(h.hook) or {}).get("standing") or ""), s.player.name))
+        out = [Quest(id=h.id, title=h.title, giver=h.giver, places=[], kind="hook", line=dk.fill(str((hooks.get(h.hook) or {}).get("standing") or ""), s.player.name, h.when))
                for h in s.hooks if h.status == "live" or (h.status == "dealt" and f"{h.id}_reach" in fired)]
         names = self.entity_names(s)
         out += [Quest(id=t.id, title=t.title, giver=names.get(t.who, t.who), line=t.about) for t in s.threads if t.status == "open" and not t.id.startswith("hook-")]
@@ -1002,7 +921,7 @@ class ClownGame(GameBase):
 
     def quest_rows(self, s: ClownState) -> list[QuestRow]:
         hooks = self.hooks_content()
-        rows = [QuestRow(title=h.title + (" · stays in hand" if h.locked and not h.show else "") + (" · no girl free that day" if h.kind == "booking" and not h.show and h.status == "live" and self._day_full(s, h) else ""), line=self._board_line(s, h, hooks) + quest_line(dk.fill(str((hooks.get(h.hook) or {}).get("standing") or ""), s.player.name), h.note),
+        rows = [QuestRow(title=h.title + (" · no girl free that day" if h.kind == "booking" and not h.show and h.status == "live" and self._day_full(s, h) else ""), line=self._board_line(s, h, hooks) + quest_line(dk.fill(str((hooks.get(h.hook) or {}).get("standing") or ""), s.player.name, h.when), h.note),
                          standing=dk.standing_of(h), giver=h.giver, tone=dk.STANDING_TONES.get(dk.standing_of(h), "info"))  # type: ignore[arg-type]
                 for h in s.hooks if h.status not in ("dealt", "passed")]
         names = self.entity_names(s)
@@ -1023,12 +942,8 @@ class ClownGame(GameBase):
         if x is not None:
             when, venue = f"{WEEKDAYS[weekday(x.at_abs // DAY)][:3]} {hhmm(x.at_abs % DAY)}", x.venue
         else:
-            wd, minute = int(bk.get("weekday", 5)), int(bk.get("minute", 1200))
-            day = s.clock.day           # C58: the day a Book would set (as _schedule_show), so a slot gone this week reads next week's
-            while weekday(day) != wd or day * DAY + minute <= s.now_abs + 120:
-                day += 1
-            nxt = "next " if week_of(day) != week_of(s.clock.day) else ""
-            when, venue = f"{nxt}{WEEKDAYS[wd][:3]} {hhmm(minute)}", str(bk.get("venue") or "")
+            day, minute = dk.show_day(s, hk, h.dealt_abs)       # the day a Book would set (D205C: weeks off)
+            when, venue = f"week {week_of(day)}, {WEEKDAYS[weekday(day)][:3]} {hhmm(minute)}", str(bk.get("venue") or "")
         return f"{when} · {venue} · " + (f"{fee} gold" if fee else "nothing paid") + " · "
 
     # ---- checks -------------------------------------------------------------------------------------------------------
@@ -1921,13 +1836,11 @@ class ClownGame(GameBase):
             return False, "nobody in the house to send"
         client = s.person(str(hk.get("client") or ""))
         info = client.client if client is not None and client.client else None
-        wd, minute = int(bk.get("weekday", 5)), int(bk.get("minute", 1200))
-        day = s.clock.day
-        while weekday(day) != wd or day * DAY + minute <= s.now_abs + 120:
-            day += 1
+        day, minute = dk.show_day(s, hk, h.dealt_abs)
+        wd = weekday(day)
         at = day * DAY + minute
         if any(x.at_abs // DAY == day and not x.result and x.girl == girl.id for x in s.shows):
-            return False, f"{girl.name} is booked on {WEEKDAYS[wd]} already"
+            return False, f"{girl.name} is booked on {WEEKDAYS[wd]} of week {week_of(day)} already"
         sid = f"show_{h.id}"
         if s.show(sid) is not None:
             return False, "already booked"
@@ -1937,16 +1850,15 @@ class ClownGame(GameBase):
         s.shows.append(x)
         h.show, h.taken, h.declined, h.girl = sid, True, False, girl.id
         dk.restand(h)
-        passed = dk.pick(s, h, s.now_abs, turn)
-        if passed:
-            self._note(s, "Passed over for it: " + "; ".join(passed) + ".")
+        s.deck.copies.pop(h.hook, None)
+        s.deck.repeats[h.hook] = s.now_abs              # D205C: a repeat client's next date is counted from this booking
         s.hidden.events.append(Event.model_validate({
             "id": f"curtain_{h.id}", "at": {"day": day, "minute": minute}, "reveal": "never", "where": [x.venue], "hook": h.id,
             "description": f"{x.title}: the show begins",
             "directive": (f"The curtain: {x.title} at {x.venue}. {s.player.name} is there; {girl.name} is the clown. Write the room, the client, the girl in the wings with "
                           f"her face on, the last thing said to her; stop before her first routine. How it goes is not yours to say: the next turn "
                           f"brings it.")}))
-        self._note(s, f"Booked: {x.title}, {WEEKDAYS[wd]} at {hhmm(minute)}, {x.venue}; {girl.name} goes.")
+        self._note(s, f"Booked: {x.title}, {WEEKDAYS[wd]} of week {week_of(day)} at {hhmm(minute)}, {x.venue}; {girl.name} goes.")
         return True, ""
 
     def _best(self, s: ClownState) -> None:
@@ -2173,7 +2085,7 @@ class ClownGame(GameBase):
                 t.status, t.closed_turn, t.note = "open", None, ""
         deck = dk.deck_of(self.scenario(s.scenario.id))
         if deck and not s.flags.get("licence_revoked"):
-            dk.deal_hand(s, deck, hooks, info.rng, now, info.turn, p.name)
+            dk.deal_week(s, deck, hooks, info.rng, now, info.turn, p.name)
         if deck:
             dk.deal_trouble(s, deck, hooks, info.rng, now, info.turn, p.name)
         self._walk_routines(s)
@@ -2432,10 +2344,10 @@ class ClownGame(GameBase):
         if offered and in_house:
             first = s.active_girl if s.active_girl is not None and s.active_girl.in_house() else in_house[0]
             out.append(CommandSpec(id="book", label="Book", mode="engine",
-                                   params=[Param(name="booking", label="booking", options=[Option(id=h.id, label=h.title + (" (stays in hand)" if h.locked else "") + (" (no girl free that day)" if self._day_full(s, h) else "")) for h in offered], default=offered[0].id),
+                                   params=[Param(name="booking", label="booking", options=[Option(id=h.id, label=h.title + (" (no girl free that day)" if self._day_full(s, h) else "")) for h in offered], default=offered[0].id),
                                            Param(name="girl", label="who goes", options=[Option(id=g.id, label=g.name + (" (in training)" if g.id == s.active else " (graduate)" if g.graduated else "")) for g in in_house], default=first.id)],
-                                   hint="Take a card from the hand: the show is set for its day and the girl named goes. The other cards in the hand are passed over, "
-                                        "but a card marked 'stays in hand' keeps asking. Nothing is ever turned down. A girl on the bench comes off her odd jobs for it.",
+                                   hint="Take one of this week's offers: the show is set for its day (weeks off, as the card says) and the girl named goes. Book "
+                                        "as many as the girls can play; what is not booked by Sunday night is gone. A girl on the bench comes off her odd jobs for it.",
                                    words=["book", "take the booking", "take the job", "accept", "we'll do it", "we will do it", "say yes"]))
         others = [g for g in in_house if g.id != s.active]
         if others:
@@ -2498,10 +2410,12 @@ class ClownGame(GameBase):
                                    words=["upgrade", "make up the box room", "floor the attic", "the guild's book", "cards on the hill"]))
         targets = self._skip_targets(s)
         out.append(CommandSpec(id="skip", label="Skip", mode="narrated",
-                               params=[Param(name="to", label="to", options=[Option(id=k, label=lb[0].upper() + lb[1:]) for k, lb, _ in targets], default=targets[0][0])],
-                               hint="Let the days run, keeping house: to tomorrow morning, Saturday, Sunday night or the next show. The clock stops sooner if "
-                                    "something comes up; the training lands as the days pass.",
-                               words=["skip", "let the week run", "let the days", "until saturday", "until sunday", "to saturday", "to sunday", "the rest of the week"]))
+                               params=[Param(name="to", label="to", options=[Option(id=k, label=lb[0].upper() + lb[1:]) for k, lb, _ in targets], default=targets[0][0]),
+                                       Param(name="confirm", label="past what comes up", options=[Option(id="no", label="Warn me"), Option(id="yes", label="Let it run")], default="no")],
+                               hint="Let the days run, keeping house: to tomorrow morning, a weekday's morning, Sunday night or the next show (or type \"skip to Wednesday\"). "
+                                    "If anything comes up on the way (a show, the week's end, a caller) you are told first, and nothing moves until you let it run; "
+                                    "the training lands as the days pass.",
+                               words=["skip to", "fast forward to"]))
         out.append(CommandSpec(id="journal", label="Journal", mode="engine", typed=False, hint="Read the journal, the bookings and the people."))
         return out
 
@@ -2528,22 +2442,37 @@ class ClownGame(GameBase):
             return ""
         return f"{g.name} is not ready: three skills sound and one finished, or a triumph at a good house."
 
-    def named_time(self, state: ClownState, text: str) -> int | None:
-        """The pipeline's hook (C50): a later time the player's input names, as an absolute minute."""
-        return named_time(text, state)
+    def typed_command(self, state: ClownState, text: str) -> tuple[str, dict[str, Any]] | None:
+        """The pipeline's hook (D205C): the player's plain "skip to Wednesday" is the Skip command; nothing else is."""
+        m = _SKIP_WORDS.match((text or "").strip().lower().replace("\u2019", "'"))
+        if m is None:
+            return None
+        to = m.group("to").strip()
+        to = _SKIP_ALIASES.get(to, to.split()[0] if to.split()[0] in {k for k, _, _ in self._skip_targets(state)} else to)
+        return "skip", {"to": to, "confirm": "yes" if m.group("anyway") else "no"}
 
-    def clock_moved(self, state: ClownState, meant_abs: int, reached_abs: int) -> tuple[ClownState, str]:
-        """The pipeline's hook (C50): the days run from now to `reached_abs` (the time the player named, or as far as the stops let
-        the clock go): a journal note in words and the tally line on the turn's state (its clock is the pipeline's to move); and
-        the narrator's line, the Skip directive's rule (D197C)."""
-        s = state.model_copy(deep=True)
-        meant = f"{WEEKDAYS[weekday(meant_abs // DAY)]} {hhmm(meant_abs % DAY)}"
-        rday, rmin = reached_abs // DAY, reached_abs % DAY
-        s.journal.append(Note(kind="house", text=f"{WEEKDAYS[weekday(rday)]} {_part_word(rmin)} came."))
-        self._tally(s, f"The days ran to {WEEKDAYS[weekday(rday)]} {hhmm(rmin)}" + ("" if reached_abs == meant_abs else f", short of {meant}, the time named") + ".",
-                    at=f"Day {rday} {hhmm(rmin)}")
-        directive = f"THE CLOCK MOVED: the player meant {meant}. " + self._days_ran(s, meant, "Then play what the player does from there, unless something stopped the days short of it.")
-        return s, directive
+    def _slot_words(self, v: str) -> str:
+        return "nothing set" if not v else "rest" if v == "rest" else "a job in town" if v == "work" else self.skill_name(v).lower()
+
+    def _skip_passes(self, s: ClownState, t: int) -> list[str]:
+        """What a Skip to `t` would run past, in the player's words: the shows (played without the proprietor), the week's end
+        (the keep paid, the week's offers closed), the timers the player can see, the calls the house may get."""
+        now, out = s.now_abs, []
+        for x in sorted((x for x in s.shows if not x.result and now < x.at_abs <= t), key=lambda x: x.at_abs):
+            g = s.girl(x.girl)
+            out.append(f"{g.name if g else 'the girl'} plays {x.title} at {x.venue}, {WEEKDAYS[weekday(x.at_abs // DAY)]} {hhmm(x.at_abs % DAY)}, without you there")
+        sunday = s.clock.day + (6 - weekday(s.clock.day))
+        if now < sunday * DAY + WEEK_END_MINUTE <= t:
+            open_cards = [h.title for h in dk.hand(s)]
+            out.append("the week closes on Sunday night: the keep is paid" + (f", and this week's offers close unbooked ({'; '.join(open_cards)})" if open_cards else ""))
+        for pnd in s.hidden.pending:
+            if pnd.live and not pnd.hidden and pnd.tag != "week_end" and now < pnd.due_abs(DAY) <= t:
+                out.append(f"{pnd.what} ({WEEKDAYS[weekday(pnd.due_day)]} {hhmm(pnd.due_minute)})")
+        calls = [e for e in s.hidden.events if not e.fired and e.directive and e.at is not None and not e.id.startswith("curtain_")
+                 and now < int(e.at.get("day", 0)) * DAY + int(e.at.get("minute", 0)) <= t]
+        if calls:
+            out.append("callers at the house and word from the town, heard of only afterwards")
+        return out
 
     def _days_ran(self, s: ClownState, meant: str, then: str) -> str:
         """The one rule for days that run in a turn, a Skip's or a time the player named (D197C, C50): the clock's day, never the
@@ -2562,10 +2491,11 @@ class ClownGame(GameBase):
         now = s.now_abs
         day = s.clock.day
         out = [("tomorrow", "tomorrow morning", (day + 1) * DAY + 540)]
-        sat = day + (5 - weekday(day)) % 7
-        if sat * DAY + 540 <= now:
-            sat += 7
-        out.append(("saturday", "Saturday morning", sat * DAY + 540))
+        for wd in range(6):                 # D205C: any weekday's morning, Monday to Saturday; Sunday is the week's end
+            d = day + (wd - weekday(day)) % 7
+            if d * DAY + 540 <= now:
+                d += 7
+            out.append((WEEKDAYS[wd].lower(), f"{WEEKDAYS[wd]} morning", d * DAY + 540))
         sun = day + (6 - weekday(day)) % 7
         if sun * DAY + WEEK_END_MINUTE <= now:
             sun += 7
@@ -2615,7 +2545,7 @@ class ClownGame(GameBase):
             if not ok:
                 return state, CommandResult(ok=False, label="Book", text=why[:1].upper() + why[1:] + ".")
             x = s.show(h.show)
-            line = f"Booked: {h.title}, {WEEKDAYS[weekday(x.at_abs // DAY)]} at {hhmm(x.at_abs % DAY)}, {x.venue}; {s.girl(x.girl).name} goes."  # type: ignore[union-attr]
+            line = f"Booked: {h.title}, {WEEKDAYS[weekday(x.at_abs // DAY)]} of week {week_of(x.at_abs // DAY)} at {hhmm(x.at_abs % DAY)}, {x.venue}; {s.girl(x.girl).name} goes."  # type: ignore[union-attr]
             warn = self._warn_bench_booked(s, s.girl(x.girl))      # D198C: once, the first time a girl on the bench is booked
             if warn:
                 s.journal.append(Note(kind="house", text=warn))
@@ -2643,9 +2573,20 @@ class ClownGame(GameBase):
             lb, t = targets[to]
             low = lb
             p = s.player
-            directive = f"{p.name} meant to let the time run to {low}, keeping house. " + self._days_ran(s, low, "Stop there.")
+            passes = self._skip_passes(s, t)
+            confirmed = str(args.get("confirm") or "").lower() in ("yes", "true", "1")
+            if passes and not confirmed:            # D205C: a canned warning, before any model is asked
+                g = s.active_girl
+                plan = (f" ({g.name}'s mornings: {self._slot_words(s.plan.mornings)}; afternoons: {self._slot_words(s.plan.afternoons)})" if g else "")
+                return state, CommandResult(ok=False, label="Skip", text=(
+                    f"Skipping to {low} runs past:\n" + "\n".join(f"- {x}" for x in passes)
+                    + f"\nThe house runs on its plan as it stands{plan}, and you are not there for any of it. To let it run, say "
+                    f"\"skip to {to} anyway\", or use Skip with confirm."))
+            directive = f"{p.name} meant to let the time run to {low}, keeping house. " + self._days_ran(s, low, "Stop there.") + (
+                (" The player agreed to let the house run on its own meanwhile: " + "; ".join(passes) + ". Whatever of it THIS TURN tells, "
+                 "tell in a line or two as what the proprietor found or heard on getting there.") if passes else "")
             return s, CommandResult(label="Skip", player_line=f"I let the days run to {low}.", summary=f"{p.name} lets time run to {low}.",
-                                    directive=directive, minutes=max(1, t - s.now_abs))
+                                    directive=directive, minutes=max(1, t - s.now_abs), through=bool(passes))
         if command_id == "graduate":
             if weekday(s.clock.day) != 6:
                 return state, CommandResult(ok=False, label="Graduate", text="Only on a Sunday: she finishes the week.")
