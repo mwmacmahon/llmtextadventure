@@ -512,3 +512,23 @@ def test_round_9s_false_escapes(game):
         reading = AssistantReading(kind="action", summary=summary, time_minutes=1, risk="high", tempo="fast", intents=[Intent(action=words)])
         s2, w = game.world_turn(st, reading, words, Dice(20, 20, 20), 3, 2)
         assert s2.player.peril is not None and not any(m.startswith("Getting out") for m in w.mechanics), (kind, words, w.mechanics)
+
+
+def test_round_10_the_warning_stays_after_a_failed_way_out_and_a_look_is_a_moment(game):
+    """Round 10 (8085528d0af0 T17, T19, T23-T25): a failed swim or warm-up hid the WARNING while the danger stayed; T7 a look
+    while bleeding (read trivial) cost nothing."""
+    from engine.roles import AssistantReading, Intent
+    st = new(game)
+    wo.open_peril(st, "burning", turns=0)
+    bad = {"outcome": "failure", "stat": "dex", "roll": 3}
+    game.check_note(st, bad, "way out: beat at the flames")
+    assert any(a.startswith("WARNING") for a in game.player_alerts(st))
+    good = {"outcome": "success", "stat": "dex", "roll": 18}
+    game.check_note(st, good, "way out: beat at the flames")
+    assert not game.player_alerts(st)
+    assert game.dice_own_hp(st) and not game.dice_own_hp(new(game))      # T3: the referee took 3 on a free shout
+    s2 = new(game)
+    wo.open_peril(s2, "bleeding", turns=0)
+    look = AssistantReading(kind="trivial", summary="looks at the floor", time_minutes=0, risk="none", intents=[Intent(action="look at the floor")])
+    s3, w = game.world_turn(s2, look, "I examine the glass floor", Dice(20), 3, 2)
+    assert s3.player.hp < s2.player.hp or s3.player.peril.step > s2.player.peril.step

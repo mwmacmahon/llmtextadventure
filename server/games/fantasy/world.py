@@ -93,6 +93,25 @@ WAY_WORDS["holding_breath"] = WAY_WORDS["drowning"]
 MARKED = re.compile(r"\s*way out\b", re.I)
 
 
+def breaking_free(s: FantasyState, adj: Any, player_text: str) -> bool:
+    """While a grab holds the player, does this turn go for getting loose: the reading marked a check 'way out:' or the
+    words (the player's, the summary, the intents) break free. One test for the world turn's roll and aim_blows (D222)."""
+    if not any(c.name == "grappled" for c in s.player.conditions) or getattr(adj, "kind", "") != "action":
+        return False
+    intents = getattr(adj, "intents", None) or []
+    if any(MARKED.match(str(getattr(getattr(i, "check", None), "label", "") or "")) for i in intents):
+        return True
+    return bool(BREAK_FREE.search(" ".join([player_text or "", getattr(adj, "summary", "") or ""] + [i.action for i in intents])))
+
+
+def frees_grip(data: dict, label: str) -> bool:
+    """A check that got the player loose of a grab: a success, not an attack, marked 'way out:' or a STR or DEX break-free.
+    One test for check_note's WARNING and after_turn's release."""
+    lab = str(label or data.get("label") or "")
+    return (data.get("outcome") in WON and not data.get("verb")
+            and bool(MARKED.match(lab) or (str(data.get("stat") or "") in ("str", "dex") and BREAK_FREE.search(lab))))
+
+
 def way_out(pr: Any, stat: str, words: str) -> bool:
     """A check that is the way out of this peril: its stat fits and its words go for it (the escape, the peril's own end,
     or a blow at what holds the player under)."""
@@ -269,7 +288,7 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
     held = next((c for c in p.conditions if c.name == "grappled"), None)
     marked = any(MARKED.match(str(getattr(getattr(i, "check", None), "label", "") or ""))
                  for i in (getattr(adj, "intents", None) or []))
-    if held is not None and getattr(adj, "kind", "") == "action" and not marked and BREAK_FREE.search(text):   # round 8: 'run' is no break
+    if breaking_free(s, adj, player_text) and not marked:   # round 8: 'run' is no break; a marked check is the narrator's to call
         # round 7 (f6428fd5c68b T13): "an elbow to its face and I wrench my arms out" was read as a punch, and nothing ended the
         # grab. Words that go for breaking free roll it, STR or DEX (the better); a success ends it
         stat = "str" if p.stats.get("str", 0) >= p.stats.get("dex", 0) else "dex"
@@ -304,7 +323,7 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
         what = PERILS.get(pr.kind, {}).get("what", pr.kind)
         own = escape_check(adj, pr)
         acting = own is not None or any(getattr(i, "attack_at", None) for i in (getattr(adj, "intents", None) or []))
-        if getattr(adj, "kind", "action") != "action" or (not acting and SPEECH.search(player_text or "") and not way_out(pr, pr.stat, player_text or "")):
+        if getattr(adj, "kind", "action") not in ("action", "trivial") or (not acting and SPEECH.search(player_text or "") and not way_out(pr, pr.stat, player_text or "")):
             # B317 (the owner, 11-10 night: "Shouting should be a free action ... When in doubt never assume it!"): words, a
             # shout, a prayer are free; the moments do not run, and nothing here is ever read as choosing to die
             w.directives.append(f"{p.name} is {what}. Words cost nothing here: the moment does not run on while {p.name} speaks or "
@@ -320,7 +339,6 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
             w.directives.append(f"{p.name} was {what}; the way {p.name} goes about it ends it, no roll needed. Play it working.")
             return _after_peril(game, s, adj, player_text, rng, turn, offset, w, text)
         if own is not None:                       # one die for one way out: the player's own roll decides it (check_note)
-            s.flags["escape_pending"] = True          # no WARNING this turn: the roll may end it (after_turn clears the flag)
             w.directives.append(f"{p.name} is {what}. The player's own roll for '{own}' decides it, nothing else: on a success the way "
                                 f"out works ({pr.way}); on a failure {p.name} is still in it, and the engine counts the moment.")
             return _after_peril(game, s, adj, player_text, rng, turn, offset, w, text)
@@ -473,7 +491,7 @@ def peril_moment(game: Any, s: FantasyState, pr: Any, rng: Any, w: "WorldTurn", 
     if ev.get("harm"):
         n, notes = take(game, s, ev["harm"], kind)
         w.skip.append("hp")
-        w.mechanics.append(f"{kind.capitalize()}: {n} hit points" + (f" ({', '.join(notes)})" if notes else ""))
+        w.mechanics.append(f"{kind.capitalize()}: {n} hit point{"s" if n != 1 else ""}" + (f" ({', '.join(notes)})" if notes else ""))
         if ev["event"] == "land":
             p.peril = None
         if p.hp <= 0:
@@ -494,6 +512,7 @@ def peril_by_check(s: FantasyState, data: dict, label: str, game: Any = None) ->
     data["peril_roll"] = pr.kind
     what = PERILS.get(pr.kind, {}).get("what", pr.kind)
     if data.get("outcome") in WON:
+        s.flags["escaped"] = True                 # round 10: this turn's WARNING is not shown (after_turn ends the peril, clears the flag)
         return f" That is the way out: {s.player.name} is no longer {what}. Write it working."
     import random as _r                          # the moment, decided now and told with the roll (a death this turn, B300)
     ev = moment(game, s, pr, _r.Random(f"peril:{pr.kind}:{pr.step}:{s.player.name}:{data.get('roll')}"), 2) if game is not None else {"event": "none", "harm": 0}
@@ -811,7 +830,7 @@ def land(game: Any, s: FantasyState, calls: list[dict], turn: int) -> list[str]:
             n = int(c["harm"])
             p.hp = max(0, p.hp - n)
             if not (c.get("backstop") and c.get("line")):              # a combat backstop's dice line is the row (combat.land)
-                notes.append(f"{c.get('label') or c.get('cause')}: {n} hit points" + (" (after the prose)" if c.get("backstop") else ""))
+                notes.append(f"{c.get('label') or c.get('cause')}: {n} hit point{"s" if n != 1 else ""}" + (" (after the prose)" if c.get("backstop") else ""))
         if c.get("kills") or (c.get("harm") and p.hp <= 0):
             why = str(c.get("cause") or c.get("label") or "the blow")
             p.hp, p.peril = 0, None

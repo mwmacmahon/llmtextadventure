@@ -5,8 +5,8 @@ Fill the four fields, hand the whole file to a subagent (the Agent tool, model o
 server's logs, the store, the scenario files or the notes.
 
 ```
-GAME:    noir | station
-SERVER:  http://127.0.0.1:8013        (TA_URL; :8013 is the local model, :8012 the Sonnet roles: say which was agreed)
+GAME:    noir | station | fantasy
+SERVER:  http://127.0.0.1:8013        (TA_URL; :8013 is the local model, :8012 the Sonnet roles, :8015 the fantasy test server: say which was agreed)
 TAG:     r14L-plain                   (the transcript's name: notes/playtests/<date>-<game>-<tag>.md)
 TITLE:   Local long round 1, plain
 GOAL:    find June Kessler fast: take risks, force doors, lean hard on people, act first and ask later

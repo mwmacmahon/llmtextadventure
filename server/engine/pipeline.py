@@ -1181,7 +1181,9 @@ class Engine:
             written = 0
             last_progress = 0
             yield {"event": "progress", "data": _progress("writing", 0, expected)}
-            cap = _hook(game, "max_calls_now", state, default=None) or getattr(game, "max_calls", 3)   # B313: a fight's round may need more
+            cap = _hook(game, "max_calls_now", state, default=None)        # B313: a fight's round may need more; 0: none (a DEBUG turn)
+            if cap is None:
+                cap = getattr(game, "max_calls", 3)
             async for nev in narrate(provider, role, system, messages, handler, max_calls=cap):
                 if isinstance(nev, Visible):
                     yield {"event": "text", "data": {"t": nev.text}}
@@ -1301,8 +1303,8 @@ class Engine:
                 if world is not None and world.skip:          # the engine took these hit points itself (part four): no second count
                     skip += world.skip
                 if (any((c.get("result") or {}).get("harm") for c in calls_block.get("calls", []))
-                        or _hook(game, "fight_owns_hp", state, default=False)):
-                    skip.append("hp")                         # B326: a fight's hit points are the engine's, whatever the rolls did
+                        or _hook(game, "dice_own_hp", state, default=False)):
+                    skip.append("hp")                         # B326: a fight's or a peril's hit points are the engine's, whatever the rolls did
                 for lv, out in zip(levers, lever_outcomes):
                     if out["status"] == "applied":
                         skip += lv.preview.referee_skip
@@ -1946,6 +1948,11 @@ class Engine:
             if clock and not tense and adj.kind == "action" and getattr(adj, "tempo", "slow") == "fast" and adj.time_minutes < getattr(clock, "fast_minutes", 1):
                 notes.append(f"fast turn: {adj.time_minutes} minutes raised to the floor of {clock.fast_minutes}")
                 adj.time_minutes = clock.fast_minutes
+            # round 10 (8085528d0af0 T4): a search while on fire took thirty minutes; a game may cap a pressing turn (a peril's moment)
+            most = _hook(game, "minutes_cap", state, default=None) if clock else None
+            if most is not None and adj.time_minutes > most:
+                notes.append(f"pressing turn: {adj.time_minutes} minutes cut to the game's cap of {most}")
+                adj.time_minutes = most
             # (iv) the game's minutes by kind of turn (time doc §3, D148): a fight, a talk, a search or a walk keeps to its
             # row; waiting and sleeping run to the player's limit (the "until when" question), so their rows only floor
             if clock and adj.kind == "action" and not getattr(adj, "minutes_fixed", False):

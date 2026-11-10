@@ -666,6 +666,14 @@ class FantasyGame(GameBase):
         q = next((q for q in state.people if q.id == pid), None)
         return q.name if q is not None else None
 
+    def minutes_cap(self, state: FantasyState) -> int | None:
+        """The pipeline's hook (round 10, 8085528d0af0 T4: a search while on fire took thirty minutes): in a peril, held, or in a
+        fight, a turn is a moment, one minute at most; else no cap."""
+        p = state.player
+        if p.peril is not None or any(c.name == "grappled" for c in p.conditions) or p.fighting:
+            return 1
+        return None
+
     def unquiet(self, state: FantasyState) -> str:
         """Why nothing should come to the player now (B104, D177; B248), or "": someone hostile here, a compulsion or a
         peril. Where word can reach them is far_from_word's (B249)."""
@@ -946,8 +954,12 @@ class FantasyGame(GameBase):
         if p.location == "Unknown":
             out.append(self.LOST_TRACK.replace("{name}", p.name))
         if p.location == self.DEBUG_ROOM:              # the owner, 11-10 night: "this room never has anyone besides the player and anyone they spawn"
-            out.append(f"{self.DEBUG_ROOM}: bare glass walls, no door that matters. Nobody is here but {p.name} and what the test brought in; "
-                       f"invent no one, no voice, no watcher. Play only what the engine says happened.")
+            # read fresh by a subagent (round 10): name no element, no copyable example, no 'test', the stay gated to a live peril
+            line = (f"{self.DEBUG_ROOM}: a bare glass room. Only {p.name} and what the engine put here are present; add no one else. "
+                    f"If {p.name} walks out, let them.")
+            if p.peril is not None:
+                line += f" The engine's peril happens here, in this room, and {p.name}'s location stays {self.DEBUG_ROOM}."
+            out.append(line)
         if p.carry_lines and not p.fate:                 # the backstop's blows (B206): the turn opens on them
             out.append("Since the last telling: " + " ".join(p.carry_lines) + " Open on it.")
         foes = wo.present_enemies(self, s)
@@ -1277,7 +1289,8 @@ class FantasyGame(GameBase):
             if c.mod and c.stat in (req.stat, "all") and (not c.words or any(w in label for w in c.words)):
                 mods.append(Modifier(label=c.name, value=c.mod))
         mods += wd.wound_modifiers(p.wounds, req.stat, WOUND_KINDS)          # the wound ladder (B200): minor 0 to ruinous -5
-        if req.stat == "str" and ATTACK.search(req.label) and not HEAVY.search(req.label):   # B222: a finesse weapon, the better of STR and DEX
+        if (req.stat == "str" and ATTACK.search(req.label) and not HEAVY.search(req.label)   # B222: a finesse weapon, the better of STR and DEX
+                and not wo.MARKED.match(req.label)):   # round 10 (T17): 'way out: kick off and claw upward', a swim, took the rapier's finesse
             fw = next((it.name for it in state.inventory if FINESSE.search(it.name)), None)
             gap = int(p.stats.get("dex", 0)) - int(p.stats.get("str", 0))
             if fw and gap > 0:
@@ -1445,15 +1458,18 @@ class FantasyGame(GameBase):
                                f"and leave {p.name} room to run or yield; never say so outright." if e.band == "impossible" else ""))
         w.rows.append({"kind": "encounter", "hit": hit, "why": "the offer", "reason": e.reason})
 
-    def fight_owns_hp(self, state: FantasyState) -> bool:
+    def dice_own_hp(self, state: FantasyState) -> bool:
         """B326 (the combat review): a turn with a round planned or a fight on: the player's hit points are the dice's, and a
-        referee row that writes them (17 in the six rounds, '-10 throat crushed') is never counted, even when every roll missed."""
-        return bool(state.combat is not None or state.player.fighting)
+        referee row that writes them (17 in the six rounds, '-10 throat crushed') is never counted, even when every roll missed.
+        Round 10 (8085528d0af0 T3): in a peril too: a free shout while burning lost 3 to the referee's reading of the prose."""
+        return bool(state.combat is not None or state.player.fighting or state.player.peril is not None)
 
     def max_calls_now(self, state: FantasyState) -> int:
         """B313 (the combat review, 11-10): the narrator's call cap is 3, and a round lists one act for the player, each ally and
         every enemy body: the fourth call was told "resolve this in the prose, without a roll" and the backstop then rolled
         the same act. In a fight the cap is the round's acts and two more for checks, at most twelve."""
+        if state.flags.get("debug_quiet"):              # round 10 (8085528d0af0 T28): the DEBUG turn's fall rolled the catch
+            return 0
         plan = (state.combat.plan if state.combat is not None else None) or []
         return min(12, max(int(getattr(self, "max_calls", 3) or 3), len(plan) + 2))
 
@@ -1469,6 +1485,22 @@ class FantasyGame(GameBase):
         if foe is None:
             return
         intents = getattr(adj, "intents", None) or []
+        if wo.breaking_free(state, adj, player_text):
+            # D222 (round 10, 8085528d0af0 T32-T33): getting loose is the turn's act. 'I run' read as 'break free' with
+            # attack_at the zombie rolled a rapier blow and the break-free; 'saw my dagger across its fingers to cut myself loose'
+            # rolled a dagger blow and the break-free. A grab's way out is the break-free or bringing the grabber down, not both
+            for i in intents:
+                if getattr(i, "attack_at", None):
+                    i.attack_at = []
+            return
+        for i in intents:
+            if (getattr(i, "check", None) is None and hasattr(i, "attack_at") and not i.attack_at
+                    and (getattr(i, "weapon", "") or (i.action or "").split()[:1] == ["attack"])):
+                # round 10 (8085528d0af0 T34): 'attack' with a dagger at the zombie, targets set, no check and attack_at empty:
+                # no roll, and the narrator killed it in prose. A blow at someone the player fights is the attack
+                fought = [t for t in (getattr(i, "targets", None) or []) if t in p.fighting]
+                if fought:
+                    i.attack_at = fought
         picked = {c.id for c in getattr(adj, "commands", None) or []}
         if (state.combat is not None and not picked & {"flee", "yield"} and not any(getattr(i, "attack_at", None) for i in intents)
                 and any(getattr(getattr(i, "check", None), "stat", "") in ("str", "dex") for i in intents)):
@@ -1573,6 +1605,8 @@ class FantasyGame(GameBase):
         costs in a fight or a peril (part four §4: the engine takes the hit points, `data["harm"]`); in a peril, the escape roll
         decides it (one die for one way out)."""
         pline = wo.peril_by_check(state, data, label, game=self)
+        if any(c.name == "grappled" for c in state.player.conditions) and wo.frees_grip(data, label):
+            state.flags["freed"] = True                   # after_turn ends the grab on this same test; no stale WARNING meanwhile
         if data.get("kills") or data.get("peril_roll"):    # a way out tried in a peril: the moment runs after the telling
             return pline
         if pline and data.get("outcome") in WON:
@@ -2651,7 +2685,7 @@ class FantasyGame(GameBase):
         now = s.clock.day * DAY + s.clock.minute
         s.deck.dealt_this_turn = []
         quiet = s.flags.pop("debug_quiet", None)            # (round 8) the DEBUG turn's quiet ends with it
-        s.flags.pop("escape_pending", None)
+        s.flags.pop("escaped", None); s.flags.pop("freed", None)
         # -- the fall, told: the end, the raise, or back to the story
         if p.fate and p.fate_turn < info.turn:
             if p.fate == "dead":
@@ -2680,10 +2714,7 @@ class FantasyGame(GameBase):
         held = next((c for c in p.conditions if c.name == "grappled"), None)
         if held is not None and not p.fate:                 # a grab's hold (the owner, 11-10 night): it ends when broken or the grabber is down
             by = s.person(held.by) if held.by else None
-            freed = any(c.get("outcome") in WON and not c.get("verb")
-                        and (wo.MARKED.match(str(c.get("label") or ""))      # the debt review: break-free words only, not the wide ESCAPE list
-                             or (str(c.get("stat") or "") in ("str", "dex") and wo.BREAK_FREE.search(str(c.get("label") or ""))))
-                        for c in info.calls)
+            freed = any(wo.frees_grip(c, str(c.get("label") or "")) for c in info.calls)   # break-free words or the mark only
             if freed or (held.by and (by is None or by.status != "alive" or held.by not in p.fighting)):
                 p.conditions = [c for c in p.conditions if c is not held]
                 p.shown_notes.append("Free of the grip" if freed else f"Free: {by.name if by else 'the grip'} lets go")
@@ -2701,7 +2732,7 @@ class FantasyGame(GameBase):
         for c in info.calls:                                # part four §4: a failed attempt in a fight or a peril, by its tier
             if c.get("harm") and not c.get("stepped") and p.hp > 0 and not p.fate:
                 n, notes = wo.take(self, s, int(c["harm"]), str(c.get("label") or ""))
-                p.shown_notes.append(f"{c.get('label') or 'The attempt'} failed: {n} hit points" + (f" ({', '.join(notes)})" if notes else ""))
+                p.shown_notes.append(f"{c.get('label') or 'The attempt'} failed: {n} hit point{"s" if n != 1 else ""}" + (f" ({', '.join(notes)})" if notes else ""))
         self._hidden_after(s, info)
         self._names_shown(s, info)
         for q in s.people:
@@ -2769,7 +2800,7 @@ class FantasyGame(GameBase):
             if hid is not None:
                 dk.deal(s, hooks[hid], turn=info.turn, deal_abs=now, name=p.name)
         s.flags.pop("debug_quiet", None)                    # the DEBUG turn is over (round 8)
-        s.flags.pop("escape_pending", None)
+        s.flags.pop("escaped", None); s.flags.pop("freed", None)
         return s
 
     def _hidden_after(self, s: FantasyState, info: TurnInfo) -> None:
@@ -3125,9 +3156,10 @@ class FantasyGame(GameBase):
 
     def player_alerts(self, state: FantasyState) -> list[str]:
         """A peril's WARNING every turn the player is in it (the owner, 11-10 night: "Warning messages every turn")."""
-        if state.flags.get("escape_pending"):            # round 9: the player's own way out is being rolled; no stale warning
-            return []
-        return self.warnings(state)                       # a § line each turn in danger (the status row was not seen in play)
+        # a § line each turn in danger; round 10 (8085528d0af0 T17, T19, T23-T25): a failed way out had hidden it while the danger
+        # stayed. Only a way out that worked this turn (check_note's flag; after_turn ends it) takes its line away
+        return [w for w in self.warnings(state) if not (state.flags.get("escaped") and not w.startswith("WARNING: You are held"))
+                and not (state.flags.get("freed") and w.startswith("WARNING: You are held"))]
 
     def warnings(self, state: FantasyState) -> list[str]:
         """A peril's or a grab's WARNING (the owner, 11-10 night: "Warning messages every turn"), on the turn's end state."""
@@ -3181,10 +3213,10 @@ class FantasyGame(GameBase):
         held = next((c for c in p.conditions if c.name == "grappled"), None)
         if held is not None:
             who = state.person(held.by).name if held.by and state.person(held.by) else "something"
-            out.append(f"{p.name} is held by {who}. If the input tries to break free (pulling, twisting, shoving {who} off), that attempt "
-                       f"gets a STR or DEX check, whichever fits, at the usual difficulty, labelled 'way out:' plus the player's own words for "
-                       f"it. A strike meant to hurt {who} is an ordinary attack with an ordinary label. If the input does both, make two "
-                       f"intents: the attack, and the break-free with its 'way out:' check.")
+            out.append(f"{p.name} is held by {who}; getting loose takes the whole turn. If the input tries to get loose (pull, twist, cut or "
+                       f"pry the grip, shove it off, run), make that the only intent: a STR or DEX check, whichever fits, medium, labelled "
+                       f"'way out: ' followed by words quoted from the input; attack_at empty. A blow only to hurt {who} is a plain attack: "
+                       f"attack_at {held.by or who}, no check. Talk, shouts and looks are not tries at getting loose.")
         return out
 
     DEBUG_ROOM = "The Glass Cellar"
@@ -3238,8 +3270,8 @@ class FantasyGame(GameBase):
             p.hp = min(p.hp_max, p.hp + int(m.group(1))) if m.group(1) else p.hp_max; did = f"healed to {p.hp}/{p.hp_max}"
         elif low.startswith("clear") or low.startswith("reset"):
             p.peril, p.fighting, s.combat = None, [], None
-            p.conditions = [c for c in p.conditions if c.name not in ("grappled", "held")]
-            p.hp = p.hp_max; did = "cleared: no fight, no peril, full hit points"
+            p.conditions = []                             # round 10 (T26): a twisted knee stayed after the clear
+            p.hp = p.hp_max; did = "cleared: no fight, no peril, no conditions, full hit points"
         elif low.startswith("room"):
             p.location = self.DEBUG_ROOM
             from .state import FoundPlace

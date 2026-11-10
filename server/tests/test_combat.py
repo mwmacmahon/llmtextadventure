@@ -908,9 +908,41 @@ def test_the_glass_cellar_holds_nobody_but_the_player_and_the_spawns(game, monke
     the player and anyone they spawn"."""
     monkeypatch.setenv("TA_DEV_MODE", "on")
     st, _ = game.run_command(new(game), "debug", {"text": "room"})
-    assert any("Nobody is here but" in d for d in game.turn_directives(st))
+    assert any("add no one else" in d and "peril happens here" not in d for d in game.turn_directives(st))
     s1, rep, _ = apply_changes(game, st, ChangeReport.of(Change(kind="new", target="person", value="the Voice", field="", note="a voice in the glass")),
                                present=[], causes=[])
     assert s1.person("the_voice") is None and any("holds nobody" in r.reason for r in rep.rejected)
     s2, _ = game.run_command(st, "debug", {"text": "spawn 2 skeletons"})
     assert len(s2.player.fighting) == 2                                     # the test's own spawns are there
+
+
+def test_round_10_held_turns_are_one_act_and_a_bare_attack_is_aimed(game, monkeypatch):
+    """Round 10 (8085528d0af0): T32 'I run' read as 'break free' with attack_at the zombie rolled a rapier blow and the
+    break-free; T33 'cut myself loose' rolled a dagger blow too (D222: getting loose is the turn's act); T34 'attack' with a
+    dagger, targets set, no check and attack_at empty, rolled nothing; T28 the DEBUG fall rolled the narrator's catch."""
+    from engine.roles import AssistantReadingCombat, IntentCombat
+    st, q = _fight(game, 1)
+    game._land_condition(st, "grappled", "dead")
+    run = AssistantReadingCombat(kind="action", summary="runs while grappled", time_minutes=1, risk="medium",
+                                 intents=[IntentCombat(action="break free from the zombie's grip", targets=["dead"], attack_at=["dead"], weapon="none")])
+    game.aim_blows(st, run, "I run along the ledge away from the zombie")
+    assert run.intents[0].attack_at == []
+    both = AssistantReadingCombat(kind="action", summary="cuts loose", time_minutes=1, risk="medium",
+                                  intents=[IntentCombat(action="attack", targets=["dead"], attack_at=["dead"], weapon="dagger"),
+                                           IntentCombat(action="break free", targets=["dead"], attack_at=["dead"], weapon="dagger")])
+    game.aim_blows(st, both, "I saw my dagger across its fingers to cut myself loose")
+    assert all(i.attack_at == [] for i in both.intents)
+    hit = AssistantReadingCombat(kind="action", summary="hits it", time_minutes=1, risk="high",
+                                 intents=[IntentCombat(action="attack my dagger at it", targets=["dead"], weapon="dagger")])
+    game.aim_blows(st, hit, "I drive my dagger up under its jaw")                 # still held: 'attack' alone is no break-free
+    assert hit.intents[0].attack_at == ["dead"]
+    free, _ = _fight(game, 1)
+    bare = AssistantReadingCombat(kind="action", summary="kills it", time_minutes=1, risk="none",
+                                  intents=[IntentCombat(action="attack", targets=["dead"], weapon="dagger")])
+    game.aim_blows(free, bare, "I drive my dagger up under its jaw to finish it")
+    assert bare.intents[0].attack_at == ["dead"] and game.minutes_cap(free) == 1
+    monkeypatch.setenv("TA_DEV_MODE", "on")
+    s1, _ = game.run_command(new(game), "debug", {"text": "push me off"})
+    assert game.max_calls_now(s1) == 0 and game.minutes_cap(new(game)) is None
+    s2, _ = game.run_command(st, "debug", {"text": "clear"})
+    assert s2.player.conditions == []
