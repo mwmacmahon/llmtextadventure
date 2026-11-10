@@ -1175,3 +1175,15 @@ def test_a_booked_show_is_not_paid_before_its_hour(game: ClownGame):
     assert s.house.money == st.house.money                                        # forced: still the engine's fee, paid at the hour
     s, rep, _ = apply(game, st, C(kind="add", target="house", field="money", value="+5", note="a tip at the office"))
     assert s.house.money == st.house.money + 5                                    # elsewhere money lands as before
+
+
+def test_a_booking_heard_of_after_its_hour_this_week_reads_next_week(game: ClownGame):
+    st = _offer(game, new(game))
+    h = st.hook("rope_walk_birthday")
+    hooks = game.hooks_content()
+    assert game._board_line(st, h, hooks).startswith("Sat 15:00")
+    sat = next(d for d in range(st.clock.day, st.clock.day + 7) if weekday(d) == 5)
+    st.clock.day, st.clock.minute = sat, 17 * 60 + 10                              # C58: heard of at 17:10 on the Saturday
+    assert game._board_line(st, h, hooks).startswith("next Sat 15:00")
+    st, res = game.run_command(st, "book", {"booking": "rope_walk_birthday", "girl": "dot"})
+    assert res.ok and st.shows[0].at_abs // DAY == sat + 7

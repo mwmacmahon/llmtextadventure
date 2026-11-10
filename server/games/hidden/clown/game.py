@@ -929,7 +929,12 @@ class ClownGame(GameBase):
         if x is not None:
             when, venue = f"{WEEKDAYS[weekday(x.at_abs // DAY)][:3]} {hhmm(x.at_abs % DAY)}", x.venue
         else:
-            when, venue = f"{WEEKDAYS[int(bk.get('weekday', 5))][:3]} {hhmm(int(bk.get('minute', 1200)))}", str(bk.get("venue") or "")
+            wd, minute = int(bk.get("weekday", 5)), int(bk.get("minute", 1200))
+            day = s.clock.day           # C58: the day a Book would set (as _schedule_show), so a slot gone this week reads next week's
+            while weekday(day) != wd or day * DAY + minute <= s.now_abs + 120:
+                day += 1
+            nxt = "next " if week_of(day) != week_of(s.clock.day) else ""
+            when, venue = f"{nxt}{WEEKDAYS[wd][:3]} {hhmm(minute)}", str(bk.get("venue") or "")
         return f"{when} · {venue} · " + (f"{fee} gold" if fee else "nothing paid") + " · "
 
     # ---- checks -------------------------------------------------------------------------------------------------------
