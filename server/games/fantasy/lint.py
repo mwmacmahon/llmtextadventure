@@ -102,9 +102,54 @@ def _narrator_text(doc: dict, *, hook: bool) -> str:
 IDLE_CALLER = re.compile(r"\b(?:bored|boredom|idle|idly|eager|nothing better to do|at a loose end|has nothing to do)\b", re.I)
 
 
+def lint_bestiary(content_dir: Path) -> list[str]:
+    """Part sixteen §1: every entry has a kind, a CR, actions and a home; every `combat.block` in the content names an entry
+    (or an alias); a unique entry is placed once."""
+    out: list[str] = []
+    data = _load(content_dir / "bestiary.yml")
+    if not data:
+        return ["bestiary.yml: missing"]
+    entries = {str(e.get("id")): e for e in data.get("entries") or [] if isinstance(e, dict)}
+    aliases = {str(k): str(v) for k, v in (data.get("aliases") or {}).items()}
+    kinds = {"humanoid", "undead", "beast", "fey", "monstrosity"}
+    homes = {"catacombs", "water", "wilds", "roads", "city", "anywhere"}
+    xp_of = {"0": 10, "1/8": 25, "1/4": 50, "1/2": 100, "1": 200, "2": 450, "3": 700, "4": 1100, "5": 1800}
+    for eid, e in entries.items():
+        if e.get("kind") not in kinds:
+            out.append(f"bestiary: {eid} has no kind of {sorted(kinds)}")
+        if str(e.get("cr")) not in xp_of:
+            out.append(f"bestiary: {eid} has no CR on the table")
+        elif e.get("xp") != xp_of[str(e.get("cr"))]:
+            out.append(f"bestiary: {eid} xp {e.get('xp')} is not CR {e.get('cr')}'s {xp_of[str(e.get('cr'))]}")
+        if not e.get("actions"):
+            out.append(f"bestiary: {eid} has no actions")
+        if not e.get("home") or set(e.get("home") or []) - homes:
+            out.append(f"bestiary: {eid} needs a home of {sorted(homes)}")
+        if e.get("lead") and e["lead"] not in entries:
+            out.append(f"bestiary: {eid} leads with {e['lead']!r}, not an entry")
+    city = _load(content_dir / "scenarios" / "marrowgate.yml")
+    docs = [("city", city)] + [(p.stem, _load(p)) for p in sorted((content_dir / "hooks").glob("*.yml"))]
+    placed: dict[str, list[str]] = {}
+    for where, doc in docs:
+        for pr in doc.get("people") or []:
+            b = str(((pr or {}).get("combat") or {}).get("block") or "") if isinstance(pr, dict) else ""
+            if not b:
+                continue
+            eid = b if b in entries else aliases.get(b, "")
+            if not eid:
+                out.append(f"{where}: {pr.get('id')} names combat block {b!r}, not in the bestiary")
+                continue
+            placed.setdefault(eid, []).append(f"{where}:{pr.get('id')}")
+    for eid, e in entries.items():
+        if "unique" in (e.get("tags") or []) and len(placed.get(eid, [])) > 1:
+            out.append(f"bestiary: unique {eid} is placed {len(placed[eid])} times ({', '.join(placed[eid])})")
+    return out
+
+
 def lint(content_dir: Path) -> list[str]:
     problems: list[str] = []
     say = problems.append
+    problems += lint_bestiary(content_dir)
     city = _load(content_dir / "scenarios" / "marrowgate.yml")
     hooks: dict[str, dict] = {}
     for p in sorted((content_dir / "hooks").glob("*.yml")):
@@ -680,7 +725,9 @@ def lint_combat(content_dir: Path) -> list[str]:
     """Part fifteen §1 (advisory, not part of `lint`): the records that still use the old `moves` (read as actions until the
     content is rewritten), and who fights (attitude -2 or below, moves, or an undead/fighter block by role) with no block of
     their own (they get the default by their role words)."""
-    from games.fantasy.combat import ROLE_BLOCKS
+    from games.fantasy import combat as cbm
+    if not cbm.ENTRIES:
+        cbm.load_bestiary(content_dir)
     out: list[str] = []
     city = _load(content_dir / "scenarios" / "marrowgate.yml")
     docs = [("city", city)] + [(p.stem, _load(p)) for p in sorted((content_dir / "hooks").glob("*.yml"))]
@@ -691,7 +738,7 @@ def lint_combat(content_dir: Path) -> list[str]:
             if pr.get("moves"):
                 out.append(f"{where}: {pr.get('id')} still uses moves (read as actions)")
             words = f"{pr.get('role', '')} {pr.get('name', '')}"
-            fights = (pr.get("attitude") or 0) <= -2 or pr.get("moves") or any(p.search(words) for p, b in ROLE_BLOCKS if b != "commoner")
+            fights = (pr.get("attitude") or 0) <= -2 or pr.get("moves") or (cbm.match_entry(words) or "commoner") != "commoner"
             if fights and not pr.get("combat"):
                 out.append(f"{where}: {pr.get('id')} fights with no combat block (the default by role words)")
             from games.fantasy.combat import BLOCKS

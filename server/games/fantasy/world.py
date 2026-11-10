@@ -431,7 +431,7 @@ def plan_fight(game: Any, s: FantasyState, adj: Any, player_text: str, rng: Any,
                             f"this turn, enemies included; they may talk. Play it, and stop where {p.name} chooses next.")
         return
     picked = {getattr(c, "id", "") for c in (getattr(adj, "commands", None) or [])}
-    if "flee" in picked or ("yield" in picked and not any(cb.ensure_block(q).kind != "person" or cb.ensure_block(q).fanatic
+    if "flee" in picked or ("yield" in picked and not any(not cb.is_person(cb.ensure_block(q).kind) or cb.ensure_block(q).fanatic
                                                           for q in cb.living_enemies(game, s))):
         s.combat.plan = []                                             # B289: the lever is the turn (its free blows, or the yield taken)
         return                                                         # the lever's own line says what happened (one line, not two)

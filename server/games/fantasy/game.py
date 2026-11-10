@@ -268,6 +268,8 @@ class FantasyGame(GameBase):
     def __init__(self, content_dir: Path):
         self.content = dk.FantasyContent(content_dir)
         self.content_dir = content_dir
+        from . import combat as _cb
+        _cb.load_bestiary(content_dir)                      # part sixteen §1: every enemy in the world
         self._classes: tuple[float, dict[str, cl.ClassDef]] | None = None
 
     def classes(self) -> dict[str, cl.ClassDef]:
