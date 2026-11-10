@@ -220,6 +220,11 @@ the journal and the story so far. Design: DESIGN.md; GAME_AUTHORING; the world p
      exchanges and requests and the blobs no other game names go. Lilith's games and the owner's own are never pruned.
   8. The file shrinks only when told: VACUUM after a pruning, or incremental auto-vacuum set on the database.
   With 1, 2 and 5 the file is about 300 MB of today's 643; with retention most of the rest.
+  **The owner's bar (11-10): "I don't care if database is a few gigs as long as it doesn't grow like crazy."** So the must-do
+  items are the ones that make growth faster than the turns: the snapshots' diffs (2, with 1) and the request by its hash (5).
+  After them a turn adds about 10 to 50 KB (a compressed diff of about 7 KB and each call's new prompt text), a 200-turn game
+  2 to 10 MB, growing with the turns and no faster. Steps 3, 6, 7 and 8 (a bounded save, compressed blobs and prompt diffs,
+  retention, VACUUM) are optional, for when the file passes a few gigabytes.
 
 ## 8. The fantasy game, Marrowgate
 
