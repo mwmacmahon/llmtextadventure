@@ -22,6 +22,14 @@ determine best way forward with care regarding the invented enemies issues. I wi
    monster is identified by its name. The calibration table pinned by a test (it drifted: three skeletons 42%, the code
    says 72%). Last: the chain (part thirteen §3, built off at ce5e547) run on the box against the one call, the
    defaults-left count per field beside the first number (B293). The owner decides on the numbers; nothing on 60/40.
+1b. **Written 11-10: the debt review of the run** (`docs/REVIEW-2026-11-10-debt.md`; the owner: "catalogue any concerns
+   ... something we need to keep doing going forward"). The skeleton is sound; the debt is one rule in several homes, the
+   engine parsing its own English, and fields smuggled in strings and mined by regex since Sonnet's grammar limit. A
+   debt directive is ordered there in ten steps, the first four the ones that change what the next fix costs (typed
+   results, one damage path, one Scene read per turn, fields not strings); **the chain drops the combat reading's attack
+   fields (item 26), so part sixteen §7 waits on that one fix.** The standing practice: one review per directive, a
+   measurements tool, three rules for the build chat. Waiting on the owner: whether the debt directive goes before or
+   beside the next feature.
 2. **The owner plays Super Grimdark Fantasy on Gemma** (:8013, on the LAN) and his tests on her server; the side chat
    reads those saves as they come (p16's report is in notes/playtests). Sonnet rounds are the side chat's own to run.
 3. **Her server moves** when the owner says, after part sixteen's simulator numbers are in; not before.
