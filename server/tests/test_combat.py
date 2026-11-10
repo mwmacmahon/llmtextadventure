@@ -560,3 +560,15 @@ def test_a_typed_flee_plans_no_round_and_its_blows_hold_from_preview_to_commit(g
     st.player.fighting = ["gorm"]
     _, rt = game.run_command(st, "flee", {})
     assert "Gorm" not in rt.directive and "Troll" in rt.directive
+
+
+def test_gorm_takes_a_surrender(game):
+    st = new(game)
+    q = st.person("gorm")
+    assert cb.ensure_block(q).kind == "person" and not cb.ensure_block(q).fanatic       # B289: he talks and wants quiet
+    q.location, q.met = st.player.location, True
+    st.player.fighting = ["gorm"]
+    from games.fantasy.state import CombatState
+    st.combat = CombatState()
+    s2, res = cb.run_fight_command(game, st, "yield")
+    assert s2.player.fighting == [] and s2.combat is None and "takes it" in res.directive

@@ -135,6 +135,8 @@ def block_of(q: Person) -> CombatBlock:
             continue
         else:
             data[k] = v
+    if own.kind == "person" and base.get("kind") not in (None, "person"):
+        data["fanatic"] = bool(own.fanatic)      # B289: a beast's block made a person (Gorm talks) is no beast's fanatic
     data["block"] = own.block or _role_block(q)
     b = CombatBlock(**{k: v for k, v in data.items() if k in CombatBlock.model_fields})
     if not b.actions:
@@ -993,7 +995,7 @@ def run_fight_command(game: Any, state: FantasyState, command_id: str) -> tuple[
     p.fighting = [q.id for q in refusers]
     if not p.fighting:
         s.combat = None
-        directive = (f"{p.name} yields, and {', '.join(q.name for q in takers)} take it: the fight is over on their terms. Play what they "
+        directive = (f"{p.name} yields, and {', '.join(q.name for q in takers)} {'takes' if len(takers) == 1 and ensure_block(takers[0]).count <= 1 else 'take'} it: the fight is over on their terms. Play what they "
                      f"want of {p.name} now (weapons down, what they demand), and stop where {p.name} answers.")
     else:
         one = lambda qs: len(qs) == 1 and ensure_block(qs[0]).count <= 1    # noqa: E731  (a band is many)
