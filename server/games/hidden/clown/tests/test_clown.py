@@ -92,8 +92,8 @@ def test_the_setup_is_four_fields_and_the_first_morning(game: ClownGame):
     assert weekday(st.clock.day) == 0 and st.clock.minute == 540
     pend = next(p for p in st.hidden.pending if p.tag == "week_end")
     assert pend.due_day == 7 and pend.due_minute == 1320 and pend.source == "script"
-    assert st.hooks[0].id == "rope_walk_birthday" and len(st.hooks) == 2              # the hand full at the open: Rope Walk and
-    assert st.hooks[1].id in {"terminus_market", "sailors_rest"}                         # one of the two easy tier-one cards (D203C)
+    assert st.hooks[0].id == "rope_walk_birthday" and len(st.hooks) == 3              # the week's three offers at the open (D208C):
+    assert all(h.tier == 1 for h in st.hooks)                                          # Rope Walk and two of the tier-one cards
     assert st.house.best["acrobatics"] == 45
     prefix = game.frozen_prefix(st)
     assert "Hal Ferris" in prefix and "Hidden: She lit the fire" in prefix and "Comes to the house later" in prefix
@@ -203,14 +203,14 @@ def test_the_weeks_offers_are_dealt_once_open_all_week_and_any_number_may_be_boo
     passes nothing; what is not booked by the week's close is passed and the next week's are dealt."""
     st = new(game)
     hand = dk.hand(st)
-    assert st.house.hand_size == 2 and len(hand) == 2 and st.deck.dealt_week == 1
-    assert sorted(h.dealt_abs // DAY for h in hand) == [st.clock.day, st.clock.day + 1] or len({h.dealt_abs for h in hand}) == 2
+    assert st.house.hand_size == 3 and len(hand) == 3 and st.deck.dealt_week == 1     # three a week from the open (D208C)
+    assert sorted(h.dealt_abs // DAY for h in hand) == [st.clock.day, st.clock.day + 1, st.clock.day + 2]   # a caller a day
     for h in hand:
         h.status, h.offered = "live", True
     st.girl("rosalind").status, st.girl("rosalind").location = "passive", "The kitchen"
     st, r1 = game.run_command(st, "book", {"booking": hand[0].id, "girl": "dot"})
     st, r2 = game.run_command(st, "book", {"booking": hand[1].id, "girl": "rosalind"})
-    assert r1.ok and r2.ok and all(st.hook(h.id).show for h in hand)          # both booked: nothing passed
+    assert r1.ok and r2.ok and st.hook(hand[0].id).show and st.hook(hand[1].id).show and st.hook(hand[2].id).status == "live"   # booked: nothing passed
     assert all(x.at_abs // DAY >= st.clock.day + 14 - weekday(st.clock.day) for x in st.shows)   # at least two weeks out
     # a week's close passes the unbooked and deals the next week's
     st2 = new(game)
@@ -220,7 +220,7 @@ def test_the_weeks_offers_are_dealt_once_open_all_week_and_any_number_may_be_boo
     dk.deal_week(st2, dk.deck_of(game.scenario()), game.hooks_content(), random.Random(3), st2.now_abs, 5, "Hal")
     assert all(st2.hook(i).status == "passed" for i in first) and st2.deck.dealt_week == 2
     new_cards = dk.hand(st2)
-    assert len(new_cards) == 2 and min(h.dealt_abs for h in new_cards) == 8 * DAY + 540   # Monday morning, a day apart
+    assert len(new_cards) == 3 and min(h.dealt_abs for h in new_cards) == 8 * DAY + 540   # Monday morning, a day apart
     assert dk.deal_week(st2, dk.deck_of(game.scenario()), game.hooks_content(), random.Random(3), st2.now_abs, 6, "Hal") == []
 
 def test_a_cards_show_is_weeks_off_as_the_card_says_and_the_client_says_when(game: ClownGame):
@@ -366,7 +366,8 @@ def test_the_deck_deals_by_name_and_wants_and_repeat_customers_come_round(game: 
     now = st.now_abs
     pool = dict(dk.candidates(st, deck, hooks, now, 1))
     assert "judge_dinner" not in pool and "sorrel_party" in pool                                     # the Judge waits on the Hill Road (D203C)
-    assert "terminus_market" in pool and "sailors_rest" not in pool and st.hook("sailors_rest")        # the easy cards; one already in hand
+    assert all(h.hook not in pool for h in dk.hand(st))                                             # an offer is not dealt twice
+    assert sum(1 for k in pool if game.hooks_content()[k].get("tier", 1) == 1) >= 8                   # heavy in the first tier (D208C)
     st.flags["hill_road_heard"] = True
     pool = dict(dk.candidates(st, deck, hooks, now, 1))
     assert "judge_dinner" in pool and "sorrel_party" in pool and "chandlers_dinner" not in pool    # tier 2 needs Name 25
@@ -581,7 +582,7 @@ def test_round_one_fixes_the_journal_row_the_fee_row_the_slot_off_the_job_and_th
 def test_a_reward_row_may_grow_the_hand(game: ClownGame):
     st = new(game)
     game._pay(st, {"hand": 1, "log": "The Guild's clerk sends two more names."}, "x")
-    assert st.house.hand_size == 3 and any("the hand holds 3" in ln for ln in st.tally)
+    assert st.house.hand_size == 4 and any("the hand holds 4" in ln for ln in st.tally)
 
 
 def test_nothing_ends_the_game_the_catastrophes_are_reckonings_borne_or_paid_with_a_girl(game: ClownGame):
@@ -731,9 +732,9 @@ def test_graduation_needs_the_record_and_a_sunday_and_a_graduate_earns_on_her_ow
     money = s2.house.money
     s3 = game.after_turn(s2, info(turn=3, minutes=60))
     assert s3.girl("dot").skills["acrobatics"] == 90 and s3.girl("rosalind").skills["children"] > 50
-    odd = 10 * int(dk.dial(s3, "bench_job_pay"))                                 # the graduate on the bench with no show worked odd jobs (D198C)
+    odd = 12 * int(dk.dial(s3, "bench_job_pay"))                                 # the graduate on the bench worked odd jobs (D198C), Saturdays too (D208C)
     assert s3.house.money == money - 23 + odd and not any("own bookings" in ln for ln in s3.house.report_numbers)   # the keep, two girls in the house
-    assert any("Dorothea Vance, odd jobs: 10 slots" in ln for ln in s3.house.report_numbers)
+    assert any("Dorothea Vance, odd jobs: 12 slots" in ln for ln in s3.house.report_numbers)
     from games.hidden.clown.state import Show
     x = Show(id="s", hook="judge_dinner", title="The Judge's dinner", client="judge", venue="The Judge's house", at_abs=s3.now_abs, wants=["acrobatics"],
              stat="charm", difficulty=0, fee=60, variance=0, girl="dot")
@@ -1014,7 +1015,7 @@ def test_a_bench_girl_without_a_show_works_odd_jobs_and_one_with_a_show_trains_f
     # the week's account: the words and the numbers, beside the booking's own lines
     st = _close_week(game, st, 3)
     assert any(f"{b.name} worked odd jobs about the town every day of the week and brought a little in." == ln for ln in st.house.report)
-    assert any(ln.startswith(f"{b.name}, odd jobs: 10 slots, {10 * pay} gold; diligence {dil + 10 * step} (") for ln in st.house.report_numbers)
+    assert any(ln.startswith(f"{b.name}, odd jobs: 12 slots, {12 * pay} gold; diligence {dil + 12 * step} (") for ln in st.house.report_numbers)
     assert any("on her own for her booking" in ln for ln in st.house.report_numbers) and not any(f"{r.name}, odd jobs" in ln for ln in st.house.report_numbers)
     assert st.girl("billie").week_jobs == 0
     assert not any(ch.isdigit() for ln in st.house.report if "odd jobs" in ln for ch in ln)
@@ -1046,7 +1047,7 @@ def test_dear_contracts_and_the_rooms_the_take_refuses_when_full_and_a_written_g
     assert st.house.rooms == int(dk.dial(st, "rooms")) == 2 and st.house.upgrades == []
     cards = game.content.girl_cards()
     assert all(100 <= c["price"] <= 300 for c in cards.values())
-    assert "The house: 2 rooms for girls, 1 kept; the hand holds 2 cards." in game.render_bulletin(st, "")
+    assert "The house: 2 rooms for girls, 1 kept; the hand holds 3 cards." in game.render_bulletin(st, "")
     cid = st.harbour.hand[0]
     st.house.money = cards[cid]["price"] - 1
     _, res = game.run_command(st, "take", {"girl": cid})
@@ -1096,11 +1097,11 @@ def test_the_house_is_the_upgrade_tree_rooms_and_cards_in_the_hand(game: ClownGa
     s2, _ = game.run_command(s1, "upgrade", {"upgrade": "attic"})
     s2, _ = game.run_command(s2, "upgrade", {"upgrade": "guild_book"})
     s2, res = game.run_command(s2, "upgrade", {"upgrade": "hill_cards"})
-    assert res.ok and s2.house.rooms == 4 and s2.house.hand_size == 4
-    assert "The house: 4 rooms for girls, 1 kept; the hand holds 4 cards." in game.render_bulletin(s2, "")
+    assert res.ok and s2.house.rooms == 4 and s2.house.hand_size == 5
+    assert "The house: 4 rooms for girls, 1 kept; the hand holds 5 cards." in game.render_bulletin(s2, "")
     table = next(p for p in game.ui(s2).panels if p.type == "table" and p.title == "The house")
     cells = [c.text for row in table.rows for c in row]
-    assert "1 kept of 4" in cells and "4 cards" in cells and ups["hill_cards"]["name"] in cells
+    assert "1 kept of 4" in cells and "5 cards" in cells and ups["hill_cards"]["name"] in cells
     s3 = advance(game, s2, 5, 3)
     assert "_upgrade_fresh" not in s3.flags and not any(ln.startswith("THE HOUSE CHANGED") for ln in game.turn_directives(s3))
     # the spine's hand row still grows the hand, to six at most
@@ -1338,3 +1339,51 @@ async def test_a_skip_past_the_weeks_callers_lands_where_asked(engine: Engine):
     st = game.load_state(engine.store.load_state(iid))
     assert st.now_abs == (st0.clock.day + 2 - weekday(st0.clock.day)) * DAY + 540
     assert any(h.status == "live" for h in st.hooks if h.kind == "booking")
+
+
+def test_rest_is_always_worth_a_slot_and_saturday_is_a_training_day(game: ClownGame):
+    """D208C (the owner, 11-10): a rest slot lowers fatigue and the next training slot gains 1.2 times, fresh or not; the
+    Sunday off does the same for Monday; Saturday's slots land like any weekday's."""
+    from games.hidden.clown.game import REST_BONUS
+    st = new(game)
+    g = st.active_girl
+    g.fatigue = 0
+    st, _ = game.run_command(st, "plan", {"slot": "mornings", "skill": "rest"})
+    st, _ = game.run_command(st, "plan", {"slot": "afternoons", "skill": "pratfalls"})
+    st = advance(game, st, SLOTS["mornings"][1] - st.clock.minute + 1, 2)
+    assert st.active_girl.rested and st.active_girl.fatigue == 0
+    before = st.active_girl.skills["pratfalls"]
+    st = advance(game, st, SLOTS["afternoons"][1] - st.clock.minute + 1, 3)
+    gained = st.active_girl.skills["pratfalls"] - before
+    assert not st.active_girl.rested and gained >= 1 and any("rested (x1.2)" in ln for ln in st.log + st.tally)
+    # Saturday's morning slot lands
+    st2 = new(game)
+    st2, _ = game.run_command(st2, "plan", {"slot": "mornings", "skill": "pratfalls"})
+    sat = st2.clock.day + 5
+    st2.clock.day, st2.clock.minute = sat, 500
+    before = st2.active_girl.skills["pratfalls"]
+    st2 = advance(game, st2, SLOTS["mornings"][1] - 500 + 1, 4)
+    assert st2.active_girl.skills["pratfalls"] > before and REST_BONUS == 1.2
+
+
+def test_a_client_who_books_again_asks_a_step_more_up_to_the_clients_limit(game: ClownGame):
+    st = new(game)
+    hooks = game.hooks_content()
+    dk.deal(st, hooks["sailors_rest"], turn=1, deal_abs=st.now_abs, name="Hal")
+    q = st.person("dunning")
+    assert q.client.difficulty == 1 and q.client.pays == 20
+    dk.deal(st, hooks["sailors_rest"], turn=2, deal_abs=st.now_abs, name="Hal")
+    assert q.client.difficulty == 2 and q.client.pays == 25                            # a step more, a quarter more pay
+    dk.deal(st, hooks["sailors_rest"], turn=3, deal_abs=st.now_abs, name="Hal")
+    assert q.client.difficulty == 2 and q.client.pays == 25                            # his limit: one over the first
+    h = st.hooks[-1]
+    assert "a demanding room" in game._board_line(st, h, hooks)
+
+
+def test_switch_says_what_it_costs(game: ClownGame):
+    st = new(game)
+    st.girl("rosalind").status, st.girl("rosalind").location = "passive", "The kitchen"
+    spec = next(c for c in game.commands(st) if c.id == "switch")
+    assert "plan is cleared" in spec.hint and "loses a point of love" in spec.hint
+    _, res = game.run_command(st, "switch", {"girl": "rosalind"})
+    assert "set her mornings and afternoons" in res.text and "a point of love lost" in res.text

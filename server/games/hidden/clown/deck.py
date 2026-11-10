@@ -130,6 +130,15 @@ def merge_into(q: Person, raw: dict) -> None:
 
 # ---- the deal --------------------------------------------------------------------------------------------------------
 
+def harder(info: ClientInfo, base: dict) -> None:
+    """D208C (the owner, 11-10): a client who books again asks a step more each time, up to the client's limit (difficulty_max,
+    default one over the first), and pays a quarter more a step over the first fee."""
+    first = int(base.get("difficulty", info.difficulty))
+    most = int(base.get("difficulty_max", first + 1))
+    info.difficulty = min(most, info.difficulty + 1)
+    info.pays = int(round(int(base.get("pays", info.pays)) * (1 + 0.25 * (info.difficulty - first))))
+
+
 def instance_id(hid: str, count: int) -> str:
     return hid if count <= 1 else f"{hid}#{count}"
 
@@ -159,7 +168,10 @@ def deal(state: ClownState, hook: dict, *, turn: int, deal_abs: int, name: str) 
     ids = {q.id for q in state.people}
     for pr in raw.get("people") or []:
         if pr.get("id") in ids:
-            merge_into(state.person(pr["id"]), pr)          # type: ignore[arg-type]
+            q = state.person(pr["id"])
+            merge_into(q, pr)                               # type: ignore[arg-type]
+            if count > 1 and q is not None and q.client is not None and (pr.get("client") or {}):
+                harder(q.client, pr["client"])
         elif pr.get("name"):
             state.people.append(person_from(pr, hook=hid))
             ids.add(pr["id"])

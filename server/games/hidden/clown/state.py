@@ -34,7 +34,7 @@ NAME_TIERS = ((0, "unknown"), (25, "talked of"), (50, "known"), (75, "famous"))
 SHOW_WORDS = ("disaster", "poor", "fine", "good", "triumph")
 WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 SLOTS: dict[str, tuple[int, int]] = {"mornings": (540, 720), "afternoons": (840, 1020)}   # 09:00-12:00, 14:00-17:00
-TRAINING_DAYS = (0, 1, 2, 3, 4)          # Monday to Friday
+TRAINING_DAYS = (0, 1, 2, 3, 4, 5)       # Monday to Saturday; Sunday is the house's day off (the owner, 11-10: D208C)
 WEEK_END_MINUTE = 1320                   # Sunday 22:00
 STATUS = Literal["active", "passive", "graduated", "gone", "away", "available"]   # available: came to the door, not taken on yet
 AGE_BUCKETS = ((0, "youth"), (18, "young"), (25, "grown"), (40, "older"))   # set by her age, never moved by a model; what each binds is the deck file's (D194C)
@@ -137,6 +137,7 @@ class Girl(BaseModel):
     arrived_day: int = 0
     week_gains: dict[str, int] = Field(default_factory=dict)   # this week's gains per skill, for the report
     week_slots: int = 0
+    rested: bool = False            # a rest slot or a Sunday off: the next training slot gains REST_BONUS times (D208C)
     week_jobs: int = 0              # this week's job slots, for the report (round 2: the account left the job out and the narrator invented one)
     fear_fed: bool = False          # something fed her fear this week (it does not decay)
 
@@ -202,6 +203,7 @@ class ClientInfo(BaseModel):
     reach: str = "none"             # none | gossip | heat | violence
     stat: str = "charm"
     difficulty: int = 1
+    difficulty_max: int | None = None   # a rebooking client asks a step more each time, up to this (default: one over the first; D208C)
     variance: int = 1
     standing: int = 0               # -3..3, moved by the shows
     history: list[str] = Field(default_factory=list)   # one word per show

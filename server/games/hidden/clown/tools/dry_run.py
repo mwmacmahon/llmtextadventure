@@ -102,8 +102,12 @@ def run(weeks: int = 8, kind: str = "charmer", girl: str = "nell_sorley", plan: 
                 out(f"  {hhmm(st.clock.minute)} plan: {a} / {b}" + ("" if r1.ok and r2.ok else f" ({r1.text} {r2.text})"))
         # the week's offers (D205C): every card a girl is free for that day, the girl in training first, then the bench
         for h in list(st.hooks):
-            if h.status == "live" and h.kind == "booking" and not h.show and (book == "all" or h.hook in book.split(",")):
+            if h.status == "live" and h.kind == "booking" and not h.show and (book in ("all", "fit") or h.hook in book.split(",")):
+                q = st.person(str((game.hooks_content().get(h.hook) or {}).get("client") or ""))
+                wants = list(q.client.wants) if q is not None and q.client else []
                 for g in sorted(st.in_house(), key=lambda x: x.id != st.active):
+                    if book == "fit" and wants and max(g.skills.get(k, 0) for k in wants) < 30:
+                        continue                 # D208C: a player books what she can play (passable at one of the wants)
                     st, r = game.run_command(st, "book", {"booking": h.id, "girl": g.id})
                     if r.ok:
                         booked_week.append(f"{h.title} ({g.name})")
@@ -180,7 +184,7 @@ def main() -> None:
     ap.add_argument("--plan", default="pratfalls,children")
     ap.add_argument("--focus", default="", help="for --plan wants: skills to train when nothing is booked, comma-separated")
     ap.add_argument("--rest-at", type=int, default=0)
-    ap.add_argument("--book", default="all", help="all, none, or hook ids comma-separated")
+    ap.add_argument("--book", default="all", help="all, fit (a girl passable at one of the wants), none, or hook ids comma-separated")
     ap.add_argument("--no-attend", action="store_true")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--verbose", action="store_true")

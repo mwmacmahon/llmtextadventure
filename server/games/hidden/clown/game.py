@@ -55,6 +55,7 @@ AXIS_STEP = 2                   # the referee's most in a turn on one axis
 MONEY_ROW = 100                 # the referee's most on money in one row
 HEAT_ROW = 15
 GAIN_BASE = 4                   # a slot's base; traits ±2, the axes, the proprietor on the mats; half past sound (the dry run, 11-09)
+REST_BONUS = 1.2                         # D208C: the slot after a rest (or the Sunday off) gains this much more
 FATIGUE_SLOT, FATIGUE_REST, FATIGUE_SUNDAY, FATIGUE_SHOW, FATIGUE_WORK = 6, -25, -30, 20, 4   # a full week wears her; one rest slot a week holds (the dry run, 11-09); a job's pay is the dial job_pay
 JOB_WORDS = ["the laundry on Harbour Street", "the kiosk at the tram stop", "the chandler's yard", "a scullery on the Hill Road", "the Guild office's copying"]
 RED_LINE = -500
@@ -945,7 +946,8 @@ class ClownGame(GameBase):
         else:
             day, minute = dk.show_day(s, hk, h.dealt_abs)       # the day a Book would set (D205C: weeks off)
             when, venue = f"week {week_of(day)}, {WEEKDAYS[weekday(day)][:3]} {hhmm(minute)}", str(bk.get("venue") or "")
-        return f"{when} · {venue} · " + (f"{fee} gold" if fee else "nothing paid") + " · "
+        room = x.difficulty if x else (q.client.difficulty if q is not None and q.client else None)
+        return f"{when} · {venue} · " + (f"{fee} gold" if fee else "nothing paid") + (f" · {DIFFICULTY_WORDS.get(room, 'a hard room')}" if room is not None else "") + " · "
 
     # ---- checks -------------------------------------------------------------------------------------------------------
     def modifiers(self, state: ClownState, req: CheckRequest, target_entity: str | None) -> list[Modifier]:
@@ -1599,6 +1601,7 @@ class ClownGame(GameBase):
             return
         if what == "rest":
             g.fatigue = max(0, g.fatigue + FATIGUE_REST)
+            g.rested = True                  # D208C: rest is always worth a slot, fresh or not
             if g.fatigue < 80 and any(c.name == "spent" for c in g.conditions):
                 g.conditions = [c for c in g.conditions if c.name != "spent"]
                 s.house.week_lines.append(f"* {label}: she rested, and is no longer spent.")
@@ -1631,6 +1634,9 @@ class ClownGame(GameBase):
         attended = s.player.location == PRACTICE
         before = g.skills.get(what, 0)
         gain, why = self._gain(s, g, what, attended, f"{s.player.name}:{day}:{slot}")
+        if g.rested and gain > 0:
+            gain, g.rested = int(round(gain * REST_BONUS)), False
+            why.append(f"rested (x{REST_BONUS:g})")
         after = min(100, before + gain)
         g.skills[what] = after
         g.fatigue = min(100, g.fatigue + FATIGUE_SLOT)
@@ -1883,6 +1889,7 @@ class ClownGame(GameBase):
         for x in s.girls:
             if x.in_house():
                 x.fatigue = max(0, x.fatigue + FATIGUE_SUNDAY)
+                x.rested = True                  # the Sunday off: Monday's first slot goes better
         g = s.active_girl
         if g is not None and g.in_house():
             gains = ", ".join(f"{self.skill_name(k).lower()} {'much better' if v >= 20 else 'better' if v >= 8 else 'a little better'}" for k, v in g.week_gains.items() if v > 0)
@@ -2360,8 +2367,9 @@ class ClownGame(GameBase):
         if others:
             out.append(CommandSpec(id="switch", label="Switch", mode="engine",
                                    params=[Param(name="girl", label="train", options=[Option(id=g.id, label=g.name + (" (graduate)" if g.graduated else "")) for g in others], default=others[0].id)],
-                                   hint="Put another of the house's girls into training from now, a graduate included (her schooling goes on). The one put aside keeps "
-                                        "her bookings and works at them on her own.",
+                                   hint="Put another of the house's girls into training from now, a graduate included (her schooling goes on). What it costs: "
+                                        "the plan is cleared (set it again for her); the one put aside loses a point of love and goes to the bench, where she keeps "
+                                        "her bookings and works at them a little on her own (or does odd jobs if she has none). Switching back costs the same again.",
                                    words=["switch", "train her instead", "put her in training", "take her on instead"]))
         house_girls = [g for g in in_house if not g.graduated]
         if house_girls:
@@ -2577,7 +2585,8 @@ class ClownGame(GameBase):
             g.status = "active"
             s.active = g.id
             s.plan = Plan(set_week=s.house.week)
-            line = f"{g.name} is in training from now; the plan is empty." + (f" {old.name} is put aside." if old else "")
+            line = (f"{g.name} is in training from now; the plan is empty: set her mornings and afternoons." + (
+                f" {old.name} is put aside (a point of love lost): on the bench she keeps her bookings and works at them a little on her own." if old else ""))
             return s, CommandResult(label="Switch", text=line, log_line=line)
         if command_id == "skip":
             to = str(args.get("to") or "tomorrow").lower().strip()
