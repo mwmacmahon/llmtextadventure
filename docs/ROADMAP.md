@@ -34,7 +34,7 @@ it. *decided*: the owner has ruled, no design yet. *open with the owner*: a ques
 
 | # | Area | State | Design | Left (in one line) |
 |---|---|---|---|---|
-| 1 | The dice, checks and consequences | built; combat built 11-09 to 11-10 (part fifteen, live on both models); encounters directed 11-10, part sixteen | DESIGN.md §7.1a to §7.1c; DESIGN-time-and-attempts | the floor on an engine witness (B217), the fail branch unused (B225), tier-only d20 lines, the two bonuses meeting |
+| 1 | The dice, checks and consequences | built; combat built 11-09 to 11-10 (part fifteen, live on both models); encounters directed 11-10, part sixteen; debt directive written 11-10, part seventeen (`docs/DEBT.md`) | DESIGN.md §7.1a to §7.1c; DESIGN-time-and-attempts | the floor on an engine witness (B217), the fail branch unused (B225), tier-only d20 lines, the two bonuses meeting |
 | 2 | Time and pacing | built, unseen in long rounds | DESIGN-time-and-attempts §3, §4 | travel floors, the fall's hours, a refused rest, "until when" as buttons, per-campaign pacing, missed events |
 | 3 | Measurement and parity | running | MEASURING.md, TESTING.md | the long rounds after parts four to eight, the eval key rebuild, the stale measure pages |
 | 4 | Profiles and the picker | built | DESIGN-context-modules §6 | the model label from the profile, one server for every game, levels edited in the UI |
@@ -51,7 +51,7 @@ it. *decided*: the owner has ruled, no design yet. *open with the owner*: a ques
 | 15 | The clown sim (Clown Maker) | built hidden, in the repo; the hand of bookings (D186C), two Sonnet rounds read (D190C, D191C), gold, the harbour deck of girls built without its model pass (D194C), nothing ends the game (D196C), round 3 read (D197C); the bench at odd jobs, contracts dear, the house bought room by room (D198C) | CLOWN_DESIGN, CLOWN_ROADMAP, the design page | a round on the dear prices and the rooms, the pass at the Take |
 | 16 | Writing for models | running; the sweep proper not run | WRITING_FOR_MODELS.md | the full sweep and its rounds |
 | 17 | Tooling, tests and docs | running | INDEX.md §7 | tests on gitignored content, the docs marked behind, the register's statuses, the phone's pages |
-| 18 | Ideas not yet weighed | idea; X3's count and chain built, its trial on part sixteen's tail | the register | the referee review pass, the preference corpus, the station's self-upgrade |
+| 18 | Ideas not yet weighed | idea; X3's count and chain built, its trial in part seventeen §1 after the chain fix | the register | the referee review pass, the preference corpus, the station's self-upgrade |
 
 ## The order (the owner's, as set)
 
@@ -104,6 +104,12 @@ the simulator at 90/70/50 with an all-out character); part fifteen written. Noir
 - **Later (the owner, 11-10 small hours, "low low priority"): the assistant vetoes an attack the fiction makes impossible.** A melee blow at a distance with no way to close the gap, a bow with no arrows in reach, a blade at someone behind a door: the reading says the attack cannot be made and why, and the turn is the attempt to close or a check, never a roll that lands anyway. The assistant's judgement, as the three kinds of fight turn are; a later version of the reading's attack fields.
 - **Later (the owner, 11-10 small hours): a quirk library for enemies and conditions, with code behind each.** Gorm regenerates today, by one field; the owner: "you could imagine a couple dozen supported quirks as well as things like knocked down, stunned, etc." Each quirk one implemented effect the bestiary names (regenerates, flies, swarms, drains life, fear on sight, resists blades, burns, pack tactics, grapples, poisons; knocked down, stunned, blinded, frightened, poisoned, held as combat ailments with their rules), each with a line of explanation the player gets on hover or a phone tap, so a status ailment's effect is never arbitrary. Portable: the conditions table is every game's, so the station's and noir's dangers take the same library ("make combat / danger situations feel a little more dynamic").
 - **Later, with the quirks (the owner, 11-10 small hours): every harmful effect is one chain of data, not an action kind with code.** "It's literally the checks system but a lot of things in engine need to be like spider bite -> 1d6 damage + CON roll vs poison -> potential status ailment." Today combat.py knows six action kinds by name (strike, drain, hold, grab, song, breath) and each has its own branch: drain is save then damage then a condition, breath is half on a save, song a condition, grab a peril. The general form: an action, a hazard, a trap, a poison or a spell is `{to_hit | save: {stat, dc}, damage, on_fail: {condition, damage, peril}, on_success: half | none, duration}`, resolved by one path that rolls the attack or the save, applies the damage, then the ailment; the conditions table carries each ailment's rule and its explanation. The bestiary's actions should take this shape before thirty entries are written on the kind words (the build chat is writing it now); the engine's branches then become data. Every game's: noir's and the station's hazards are the same chain with 2d6 as the check.
+- **The debt register and part seventeen (the owner, 11-10: "keep a debt document going").** The debt review of the
+  combat run (`docs/REVIEW-2026-11-10-debt.md`) is kept as a running register, `docs/DEBT.md` (T1 to T28, each with its
+  state and step). Part seventeen, the debt directive, is written and ordered: the chain's schemas derived and then the
+  X3 trial, the bestiary's actions as one chain (the bullet above, made a section), typed results, one damage path, one
+  Scene read per turn, fields not strings, items carrying their numbers, a delete pass, the measurements tool, tests to
+  data. `run_turn` into phases and the fantasy's long functions are the directive after it.
 - Later: the player downed rather than dead at 0 (the owner, 11-09 night: "a future roadmap item"); death is death until then.
 
 ## 2. Time and pacing
@@ -404,7 +410,7 @@ A referee review pass, a second call over the referee's own report (X1). A prefe
 blind-pair judgements (X2). The station AI upgrading and downgrading itself (B19). Basic and advanced variants (area
 12). Per-campaign pacing numbers (B13). Each needs a measured run before it is kept.
 
-**The adjudicator as a chain of small questions (X3; the owner, 11-09 night; §2 the count and §3 the chain built 11-09, d3223ad and ce5e547; the trial, §4 and §5, not yet run (B293), re-ordered 11-10 on the tail of part sixteen).** First number (11-09, two Gemma readiness rounds against Sonnet's key of the same 24 turns): about sixteen defaulted fields a round, in pivotal (5, 6), tempo (4, 3), fiat (4, 4), settled (2, 2); open_to_callers predates the field. The structured call keeps
+**The adjudicator as a chain of small questions (X3; the owner, 11-09 night; §2 the count and §3 the chain built 11-09, d3223ad and ce5e547; the trial, §4 and §5, not yet run (B293); moved 11-10 from part sixteen's tail into part seventeen §1, after the chain's schemas are derived, since the chain drops the combat reading's attack fields (B311, DEBT T26)).** First number (11-09, two Gemma readiness rounds against Sonnet's key of the same 24 turns): about sixteen defaulted fields a round, in pivotal (5, 6), tempo (4, 3), fiat (4, 4), settled (2, 2); open_to_callers predates the field. The structured call keeps
 growing (intents, checks, stakes, tempo, open_to_callers, and more to come), and weak models fill big schemas badly
 (B213). The idea: one conversation, several messages in turn, each with its own small schema and, before it, only the
 state and the examples that question needs ("the reading" first; then, only if there is an attempt, the check; then

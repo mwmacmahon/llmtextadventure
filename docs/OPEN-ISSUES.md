@@ -10,11 +10,17 @@ dated history (symptom, cause, fix, guard).
 Every known open issue, one line each, newest group first; a fix moves it to its dated section below with the commit.
 Status words: **flagged** (seen, not analysed), **analysed** (cause known, no fix), **proposed** (design written, waiting
 on the user), **built, unseen** (code in, not yet seen in a live round).
-Numbering (11-09): the build chat's new lines run B233, B234, B235 and on; the side chat's from her first game are B241 to B247, so the build chat skips to B248 after its own. 11-09 night: the build chat reached B260; the side chat's B261 is next, so the build chat continues from B262.
+Numbering (11-09): the build chat's new lines run B233, B234, B235 and on; the side chat's from her first game are B241 to B247, so the build chat skips to B248 after its own. 11-09 night: the build chat reached B260; the side chat's B261 is next, so the build chat continues from B262. 11-10: the build chat reached B301; the side chat's lines run from B311, ten above, and the build chat skips B311 and on once it reaches B310.
 Added 11-07: **built, not exercised (checked 11-07)** (code in, no round on record has reached it) and **ran, no measure on
 record** (the code certainly ran, nobody counted what it did). "Open now" is rolled up by area on the roadmap (docs/ROADMAP.md, the long view, every open line placed) and re-read whenever the queue is re-cut (docs/QUEUE.md, the week).
 **Numbering from 2026-11-08 evening:** the side chat numbers its new lines from B200 upward and the build chat keeps counting from B143, so two chats writing the same hour never clash and a merge never renumbers (today's merges renumbered twice; B130 to B142 carry their old numbers in brackets). Ids: where two groups used the same id, the older carries a date suffix (W1-1031, R1-1031 to R5-1031, E1-1102, E2-1102,
 N6-1031, N7-1031, A1-1031, A2-1031, C1-1101); a bare id is the newer item.
+
+**Added 2026-11-10 (the side chat, B311; numbering: the build chat's last line on origin/2.0 is B301, so the side chat's
+lines from here run from B311, ten above it, and the build chat continues B302 to B310 before skipping past the side
+chat's).**
+
+- B311 *analysed (the side chat, 11-10, debt review item 26, DEBT T26): the chain drops the combat reading's attack fields.* `engine/chain.py` builds `ChainReading`, `ChainIntent` and `ChainStake` from hard-coded field-name lists; checked 11-10 in the venv, `ChainReading` lacks `entities, systems, notes, focus, minutes_fixed` and `ChainIntent` lacks `attack_at, weapon`, so with the chain dial on the fantasy's combat reading comes back with no attack and no `fight_band` (it rides in `notes`), and `settle_attack`, the backstop and the encounter rules see no fight. Also: `split_system` cuts the prompt by two literal markers (an empty rule block if a mod patches the heading), message 1's base prompt asks for `check` that its schema lacks, and the failed-parse retry does not cover the chain. The X3 trial (B293) waits on it; part seventeen §1 derives the schemas.
 
 **Added 2026-11-10 small hours (the side chat, B292 and B293; the build chat continues from B294).**
 

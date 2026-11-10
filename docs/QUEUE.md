@@ -20,16 +20,16 @@ determine best way forward with care regarding the invented enemies issues. I wi
    thresholds and ranks by the simulator (thirty fights a cell, three variants: weak, standard, veteran), off the turn,
    cached per place; the engine offers the cast in THIS TURN when danger is read, the referee's filing is a resolver, a
    monster is identified by its name. The calibration table pinned by a test (it drifted: three skeletons 42%, the code
-   says 72%). Last: the chain (part thirteen §3, built off at ce5e547) run on the box against the one call, the
-   defaults-left count per field beside the first number (B293). The owner decides on the numbers; nothing on 60/40.
-1b. **Written 11-10: the debt review of the run** (`docs/REVIEW-2026-11-10-debt.md`; the owner: "catalogue any concerns
-   ... something we need to keep doing going forward"). The skeleton is sound; the debt is one rule in several homes, the
-   engine parsing its own English, and fields smuggled in strings and mined by regex since Sonnet's grammar limit. A
-   debt directive is ordered there in ten steps, the first four the ones that change what the next fix costs (typed
-   results, one damage path, one Scene read per turn, fields not strings); **the chain drops the combat reading's attack
-   fields (item 26), so part sixteen §7 waits on that one fix.** The standing practice: one review per directive, a
-   measurements tool, three rules for the build chat. Waiting on the owner: whether the debt directive goes before or
-   beside the next feature.
+   says 72%). Its §7 (the chain, part thirteen §3, run on the box against the one call) now runs inside part seventeen
+   §1, after the chain's schemas are fixed.
+1b. **Part seventeen written 11-10: the debt directive** (the register: `docs/DEBT.md`, [Debt Register](https://claude.ai/artifact/Dk8Tz4Rdj57qnfXmbJDUhy); the
+   evidence: `docs/REVIEW-2026-11-10-debt.md`). It holds the chain's schemas derived and then the X3 trial (§1: the chain
+   drops the combat reading's `attack_at` and `fight_band`, B311, so part sixteen §7 moved here), the bestiary's actions
+   as one chain (§2), the review's steps 1 to 6 (typed results, one damage path, one Scene read per turn, fields not
+   strings, items carry their numbers, the delete pass), `tools/debt_report.py` and tests to data with the calibration
+   at 300 fights. It opens with the three standing rules for the build chat. The review's step 9 (`run_turn` into phases,
+   the fantasy's long functions) is the next directive. Waiting on the owner: whether it goes before or beside the next
+   feature.
 2. **The owner plays Super Grimdark Fantasy on Gemma** (:8013, on the LAN) and his tests on her server; the side chat
    reads those saves as they come (p16's report is in notes/playtests). Sonnet rounds are the side chat's own to run.
 3. **Her server moves** when the owner says, after part sixteen's simulator numbers are in; not before.
