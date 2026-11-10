@@ -256,6 +256,13 @@ DIALS: dict[str, float] = {
     "harbour_lift": 1,             # skill points every girl off the boat has more for every week the house has run (her whole grid; D199C)
     "harbour_price_floor": 250,    # no contract opens under this (the 100-gold cards included); the growth runs from it (D199C, C54)
     "harbour_price_cap": 1000,     # the dearest a contract can come; the price rises with the lift in proportion to her grid
+    "gear_cap": 2,                 # D213C: a girl's gear adds at most this to a show's quality
+    "tutor_cost": 12, "tutor_gain": 1.5,     # a tutor for a slot: this much gold, and the slot's gain times this
+    "master_cost": 30, "master_gain": 2.0,   # a master: dearer and better; only once the house has a name (master_name)
+    "master_name": 25,
+    "name_step_1": 25,             # D213C: at this Name every client asks a step harder (and pays a quarter more) and the rent rises
+    "name_step_2": 50,             # and again here
+    "rent_per_step": 40,           # the rent's rise at each step (every fourth week)
     "slip_markdown": 0.05,         # the clerk takes this share off a contract for every week she has waited on the slip (D205C: in place of haggling)
     "slip_markdown_most": 0.10,    # and never more than this
     "hand_size": 2,          # cards in the hand at the start (house.hand_size; the upgrades `gives: {hand: 1}` and reward rows `hand: +1` raise it)
@@ -355,7 +362,7 @@ def settle(state: ClownState, content_hooks: dict[str, dict], turn: int, pay) ->
             row = first_match(rows, doc, events, turn)
             if row is not None:
                 pay(row, h.title)
-                h.reward = ", ".join(f"{row[k]:+d} {k}" for k in ("money", "name", "heat") if row.get(k))
+                h.reward = ", ".join(f"{row[k]:+d} {k}" for k in ("money", "name") if row.get(k))
         h.status, h.closed_turn = ("done" if done else "failed"), turn
         state.deck.repeats[h.hook] = state.now_abs
         restand(h)

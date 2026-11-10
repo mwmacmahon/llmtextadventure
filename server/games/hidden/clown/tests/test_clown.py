@@ -373,7 +373,8 @@ def test_money_heat_people_and_places_land_and_the_engrosalind_fields_are_refuse
     s, rep, _ = apply(game, st, C(kind="add", target="house", field="money", value="-20", note="Dr Lisle"), C(kind="add", target="house", field="heat", value="+5"),
                       C(kind="set", target="judge", field="attitude", value="warm"), C(kind="move", target="player", value="the harbour"),
                       C(kind="set", target="house", field="name", value="+5"), C(kind="learned", target="pell", value="She kept house for the Brascombes before the Canal War."))
-    assert s.house.money == 180 and s.house.heat == 5 and s.person("judge").attitude == 1 and s.person("judge").met
+    assert s.house.money == 180 and s.house.heat == 0 and any(r.path == "house.heat" for r in rep.rejected)   # D213C: no heat
+    assert s.person("judge").attitude == 1 and s.person("judge").met
     assert s.player.location == "The harbour"
     assert any(r.path == "house.name" for r in rep.rejected)
     pell = s.person("pell")
@@ -1525,3 +1526,66 @@ def test_a_saved_game_keeps_a_rebooking_clients_step_on_load(game: ClownGame):
     assert st.person("dunning").client.difficulty == 2
     again = game.load_state(st.model_dump(mode="json"))
     assert again.person("dunning").client.difficulty == 2 and again.person("dunning").client.pays == 25
+
+
+def test_there_is_no_heat_and_the_cops_come_from_the_plot(game: ClownGame):
+    """D213C (the owner, 11-10: "lose the heat mechanic altogether. Cops can be at our door because they're corrupt or we are
+    bad people"): no heat shown or kept; an enemy Brascombe sets the fire and the paid licensing office on his own clock; a bad
+    deed brings Haldane."""
+    st = new(game)
+    assert not any("heat" in (getattr(c, "label", "") or "").lower() for p in game.ui(st).panels for c in (getattr(p, "items", None) or []))
+    assert "authorities" not in game.render_bulletin(st, "") and "heat" not in game.referee_rules(st).lower().replace("hearth", "")
+    st.flags["brascombe_enemy"] = True
+    st = advance(game, st, 5, 2)
+    ev = {e.id: e for e in st.hidden.events}
+    assert "brascombe_moves" in ev
+    sc = game.scenario()
+    triggers = {e["id"]: str(e.get("trigger")) for e in sc.get("events") or []}
+    assert "house.heat" not in " ".join(triggers.values())
+    assert "fire_due" in triggers["fire_attempt"] and "police_paid" in triggers["repression"] and "bad_deed" in triggers["haldane_calls"]
+
+
+def test_the_clients_ask_more_as_the_house_is_known_and_the_rent_rises(game: ClownGame):
+    """D213C (the owner, 11-10: "soft-snowballs ... then the clients start getting harder"): a room a step harder at Name 25 and
+    two at 50, never past a hard room, a quarter more paid a step; the rent forty more a step."""
+    st = new(game)
+    q = st.person("rope_walk_mother")
+    assert game._asks(st, q.client) == (q.client.difficulty, q.client.pays) and game._rent(st) == st.house.rent
+    st.house.name = 30
+    assert game._asks(st, q.client) == (q.client.difficulty + 1, int(round(q.client.pays * 1.25))) and game._rent(st) == st.house.rent + 40
+    st.house.name = 60
+    assert game._asks(st, q.client)[0] == min(3, q.client.difficulty + 2) and game._rent(st) == st.house.rent + 80
+
+
+def test_gear_adds_to_a_show_that_wants_it_and_wears_out_and_paid_training_costs_and_gains(game: ClownGame):
+    """D213C: gear bought for a girl (Equip) adds its bonus to a show wanting one of its skills (at most +2 in all) and wears
+    out after its shows; a tutor or a master teaches a slot for gold, at a better rate."""
+    from games.hidden.clown.state import Show
+    st = new(game)
+    g = st.active_girl
+    st.house.money = 1000
+    st, r = game.run_command(st, "equip", {"girl": g.id, "item": "motley"})
+    assert r.ok and st.house.money == 920 and st.active_girl.gear == {"motley": 12}
+    _, r = game.run_command(st, "equip", {"girl": g.id, "item": "hill_dress"})
+    assert not r.ok and "nobody has heard of" in r.text                     # Name 25
+    g = st.active_girl
+    x = Show(id="s", hook="rope_walk_birthday", title="A birthday", client="rope_walk_mother", venue="Rope Walk", at_abs=st.now_abs,
+             wants=["children", "balloons"], stat="charm", difficulty=1, fee=15, variance=0)
+    q0, _, _ = game._show_quality(st, x, g)
+    g.gear = {}
+    q1, _, _ = game._show_quality(st, x, g)
+    assert q0 == q1 + 1
+    g.gear = {"motley": 1}
+    st.player.location = "Rope Walk"
+    st.shows.append(x.model_copy(update={"girl": g.id}))
+    game._resolve_show(st, st.shows[-1], 3)
+    assert "motley" not in st.active_girl.gear                              # worn out after its last show
+    # paid training
+    st2 = new(game)
+    st2.house.money = 500
+    st2, _ = game.run_command(st2, "plan", {"slot": "mornings", "skill": "pratfalls", "with": "tutor"})
+    assert st2.plan.mornings_with == "tutor"
+    before, money = st2.active_girl.skills["pratfalls"], st2.house.money
+    st2 = advance(game, st2, SLOTS["mornings"][1] - st2.clock.minute + 1, 2)
+    assert st2.house.money == money - 12 and st2.active_girl.skills["pratfalls"] > before
+    assert any("the tutor (x1.5, 12 gold)" in ln for ln in st2.log + st2.tally)

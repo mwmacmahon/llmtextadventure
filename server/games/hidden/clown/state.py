@@ -137,6 +137,7 @@ class Girl(BaseModel):
     arrived_day: int = 0
     week_gains: dict[str, int] = Field(default_factory=dict)   # this week's gains per skill, for the report
     week_slots: int = 0
+    gear: dict[str, int] = Field(default_factory=dict)   # D213C: her gear, item id -> shows left before it is worn out
     rested: bool = False            # a rest slot or a Sunday off: the next training slot gains REST_BONUS times (D208C)
     week_jobs: int = 0              # this week's job slots, for the report (round 2: the account left the job out and the narrator invented one)
     fear_fed: bool = False          # something fed her fear this week (it does not decay)
@@ -247,6 +248,8 @@ class Thing(BaseModel):
 class Plan(BaseModel):
     mornings: str = ""              # a skill id, "rest", "work" or ""
     afternoons: str = ""
+    mornings_with: str = "house"    # D213C: who teaches the slot: the house (free), a tutor or a master (paid, a slot at a time)
+    afternoons_with: str = "house"
     set_week: int = 0
     carried: bool = False           # this week's plan is last week's, unchanged (the report says so)
 

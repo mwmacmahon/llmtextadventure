@@ -57,6 +57,16 @@ class Strategy:
                                # hard: the worst (Dot given up to Fenn, Hatch's men put out, Sallis shown out)
     brascombe: str = "refuse"  # accept: his money and his cut; refuse: his enmity; ignore: no answer
     reckoning: str = "bear"    # bear it, or give_up the girl worth least
+    # the investment (D213C): where a player's money goes
+    gear: str = "none"         # none; match: buy each girl the gear her booked shows want (and replace it when worn); lavish:
+                               # also the gear of her three best skills
+    tutor: str = "house"       # house, tutor or master for the training slots (a master once the house has a name; the engine
+                               # falls back to the house when the money is short)
+    tutor_floor: int = 150     # the tutor or master only while the house has this much in hand (the house teaches otherwise)
+    defend: bool = True        # the proprietor puts out the fire before it catches, and the Judge's word lifts the arrest when he has
+                               # dined (the prose's "unless"); False: every threat lands
+    roster: int = 0            # buy contracts (and the rooms for them) until the house keeps this many girls (0: only `take`)
+    margin: int = 60           # what the house keeps in hand when it spends on gear, rooms or a contract for the roster
 
     def label(self) -> str:
         d = {f.name: getattr(self, f.name) for f in fields(self) if getattr(self, f.name) != f.default}
@@ -89,6 +99,13 @@ def _plot(game: Any, st: Any, strategy: Strategy, seen: dict[str, int], log: dic
             st.flags["brascombe_bought"], log["brascombe"] = True, f"accepted week {st.house.week}"
         elif strategy.brascombe == "refuse":
             st.flags["brascombe_enemy"], log["brascombe"] = True, f"refused week {st.house.week}"
+    if strategy.defend:                         # the prose's "unless": the fire put out, the Judge's word for the licence
+        for p in st.hidden.pending:
+            if p.live and ((p.tag == "house_fire") or (p.tag == "arrest" and st.flags.get("judge_dined"))):
+                p.resolved, p.resolved_why = True, "stopped: " + ("put out before it caught" if p.tag == "house_fire" else "the Judge's word")
+                log["reckonings"].append(f"averted {p.tag} week {st.house.week}")
+                if p.tag == "arrest":
+                    st.flags["licence_revoked"] = False
     if st.flags.get("gala_offered") and not st.flags.get("gala_done"):
         st.flags["gala_done"], log["gala"] = True, st.house.week
     if st.house.reckoning and not getattr(st.house, "fate", ""):
@@ -102,6 +119,51 @@ def _plot(game: Any, st: Any, strategy: Strategy, seen: dict[str, int], log: dic
             log["reckonings"].append(f"{kind}:{'gave ' + girl.id if strategy.reckoning == 'give_up' and st.in_house() else 'bore it'} week {st.house.week}")
             st = st2
     return st
+
+
+ROOMS = ["box_room", "attic", "third_storey"]
+
+
+def _invest(game: Any, st: Any, strategy: Strategy) -> dict[str, int]:
+    """D213C: the money a strategy puts into gear, rooms and contracts. Returns the gold spent on each this stop."""
+    out = {"gear": 0, "rooms": 0, "contracts": 0}
+    keep = strategy.margin
+    if strategy.gear != "none":
+        items = [it for it in game.gear_list(st).values() if st.house.name >= int(it.get("name_needed", 0) or 0)]
+        for g in st.in_house():
+            wanted: set[str] = set()
+            for x in st.shows:
+                if not x.result and x.girl == g.id:
+                    wanted |= set(x.wants)
+            if strategy.gear == "lavish":
+                wanted |= set(sorted(g.skills, key=lambda k: -g.skills[k])[:3])
+            for it in sorted(items, key=lambda it: -int(it.get("bonus", 1))):
+                if str(it["id"]) in g.gear or not (set(it.get("skills") or []) & wanted):
+                    continue
+                if st.house.money >= int(it["cost"]) + keep:
+                    _, r = game.run_command(st, "equip", {"girl": g.id, "item": str(it["id"])})
+                    if r.ok:
+                        out["gear"] += int(it["cost"])
+    if strategy.roster and len(st.in_house()) < strategy.roster:
+        if game._rooms_free(st) <= 0:
+            for rid in ROOMS:
+                u = game._upgrade(st, rid)
+                if u is not None and u["id"] not in st.house.upgrades:
+                    if st.house.money >= int(u.get("cost") or 0) + keep:
+                        _, r = game.run_command(st, "upgrade", {"upgrade": rid})
+                        if r.ok:
+                            out["rooms"] += int(u.get("cost") or 0)
+                    break
+        elif st.harbour.hand:
+            cards = game.content.girl_cards()
+            price = lambda c: hb.price_of(c, st, lambda k: dk.dial(st, k))  # noqa: E731
+            slip = sorted((cards[c] for c in st.harbour.hand if c in cards), key=price)
+            if slip and st.house.money >= price(slip[0]) + keep:
+                paid = price(slip[0])
+                _, r = game.run_command(st, "take", {"girl": slip[0]["id"]})
+                if r.ok:
+                    out["contracts"] += paid
+    return out
 
 
 def _fingerprint(game: Any) -> str:
@@ -123,6 +185,7 @@ def trial(strategy: Strategy, weeks: int, seed: int, content: Path = CONTENT, ch
     money_by_week: list[int] = []
     taken = upgrades = 0
     seen: dict[str, int] = {}
+    spend = {"gear": 0, "rooms": 0, "contracts": 0}
     plot_log: dict[str, Any] = {"troubles": [], "reckonings": [], "brascombe": "", "gala": None}
     upgrades_wanted = [u for u in (strategy.upgrade.split(",") if strategy.upgrade else
                                    ["guild_book", "box_room", "attic", "hill_cards", "third_storey"] if strategy.plot == "rush"
@@ -134,8 +197,9 @@ def trial(strategy: Strategy, weeks: int, seed: int, content: Path = CONTENT, ch
             a, b = choose_plan(game, st, strategy.plan, GALA_SKILLS if gala else [], strategy.rest_at)
             if strategy.work_empty and not any(not x.result for x in st.shows if x.girl == g.id) and b != "rest":
                 b = "work"
-            st, _ = game.run_command(st, "plan", {"slot": "mornings", "skill": a})
-            st, _ = game.run_command(st, "plan", {"slot": "afternoons", "skill": b})
+            teacher = strategy.tutor if st.house.money >= strategy.tutor_floor else "house"
+            st, _ = game.run_command(st, "plan", {"slot": "mornings", "skill": a, "with": teacher})
+            st, _ = game.run_command(st, "plan", {"slot": "afternoons", "skill": b, "with": teacher})
         if strategy.book != "none":
             hooks = game.hooks_content()
             for h in list(st.hooks):
@@ -159,6 +223,10 @@ def trial(strategy: Strategy, weeks: int, seed: int, content: Path = CONTENT, ch
                 upgrades += int(r.ok)
                 break
         st = _plot(game, st, strategy, seen, plot_log)
+        spent = _invest(game, st, strategy)
+        spend["gear"] += spent.get("gear", 0)
+        spend["rooms"] += spent.get("rooms", 0)
+        spend["contracts"] += spent.get("contracts", 0)
         if strategy.take and st.harbour.hand:
             cards = game.content.girl_cards()
             price = lambda c: hb.price_of(c, st, lambda k: dk.dial(st, k))  # noqa: E731
@@ -184,7 +252,8 @@ def trial(strategy: Strategy, weeks: int, seed: int, content: Path = CONTENT, ch
             "girls": len(st.in_house()), "quality": round(statistics.mean([x.quality or 0 for x in played]), 2) if played else None,
             "gala": plot_log["gala"], "brascombe": plot_log["brascombe"], "troubles": plot_log["troubles"], "reckonings": plot_log["reckonings"],
             "partner": bool(st.flags.get("brascombe_partner")), "licence_revoked": bool(st.flags.get("licence_revoked")),
-            "best": {k: st.house.best.get(k, 0) for k in GALA_SKILLS}}
+            "best": {k: st.house.best.get(k, 0) for k in GALA_SKILLS}, "spend": spend,
+            "tutored": sum(1 for ln in st.tally if "the tutor (" in ln or "the master (" in ln)}
 
 
 def _pct(xs: list[float], p: float) -> float:
@@ -206,6 +275,8 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "gala_week_p50": _pct([r["gala"] for r in rows if r.get("gala")], .5) if any(r.get("gala") for r in rows) else None,
             "reckonings": round(sum(len(r.get("reckonings") or []) for r in rows) / len(rows), 2),
             "girls_p50": _pct([r["girls"] for r in rows], .5),
+            "gear_p50": _pct([r["spend"]["gear"] for r in rows], .5),
+            "rooms_contracts_p50": _pct([r["spend"]["rooms"] + r["spend"]["contracts"] for r in rows], .5),
             "curve_p50": [_pct([r["money"][i] for r in rows if len(r["money"]) > i], .5) for i in range(max(len(r["money"]) for r in rows))]}
 
 
@@ -237,12 +308,12 @@ def grid(spec: list[str]) -> list[Strategy]:
 
 
 def table(results: list[tuple[Strategy, dict[str, Any]]]) -> str:
-    out = ["| strategy | money p10 / p50 / p90 | low p10 | in the red | shows a week | disaster / poor / fine / good / triumph | Name p50 | bought a contract | girls p50 | the gala (week p50) | reckonings a game |",
-           "|---|---|---|---|---|---|---|---|---|---|---|"]
+    out = ["| strategy | money p10 / p50 / p90 | low p10 | in the red | shows a week | disaster / poor / fine / good / triumph | Name p50 | bought a contract | girls p50 | gear spent p50 | rooms and contracts p50 | the gala (week p50) | reckonings a game |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for s, r in sorted(results, key=lambda x: -x[1]["final_p50"]):
         mix = " / ".join(f"{r['mix'][w]:.2f}" for w in SHOW_WORDS)
         out.append(f"| {s.label()} | {r['final_p10']} / {r['final_p50']} / {r['final_p90']} | {r['low_p10']} | {r['in_red']:.0%} | "
-                   f"{r['shows_per_week']} | {mix} | {r['name_p50']} | {r['took_contract']:.0%} | {r['girls_p50']} | "
+                   f"{r['shows_per_week']} | {mix} | {r['name_p50']} | {r['took_contract']:.0%} | {r['girls_p50']} | {r['gear_p50']} | {r['rooms_contracts_p50']} | "
                    f"{r['gala']:.0%}" + (f" (w{r['gala_week_p50']})" if r.get('gala_week_p50') else "") + f" | {r['reckonings']} |")
     return "\n".join(out)
 
@@ -251,7 +322,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--trials", type=int, default=200)
     ap.add_argument("--weeks", type=int, default=16)
-    ap.add_argument("--grid", nargs="*", default=[], help="field=v1,v2 ... (book, plan, rest_at, work_empty, take, upgrade, upgrade_margin, recruit, attend, girl, plot, trouble, brascombe, reckoning)")
+    ap.add_argument("--grid", nargs="*", default=[], help="field=v1,v2 ... (book, plan, rest_at, work_empty, take, upgrade, upgrade_margin, recruit, attend, girl, plot, trouble, brascombe, reckoning, gear, tutor, roster, margin)")
     ap.add_argument("--workers", type=int, default=0, help="processes (0: every core)")
     ap.add_argument("--check", action="store_true", help="verify the content cache is unchanged after the first trial")
     ap.add_argument("--out", default="", help="write the table and the median curves as markdown here")
