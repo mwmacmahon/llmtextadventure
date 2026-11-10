@@ -33,7 +33,7 @@ from engine.game import (
 )
 from engine.game import Rejection
 from engine.gamekit import Clock, Writer, quest_line, with_introduction
-from engine.mechanics import CheckRequest, Modifier
+from engine.mechanics import WON, CheckRequest, Modifier
 from engine.narration import default_mechanic_line
 from engine.pending import Pending
 from engine.resolve import Quest, same_person
@@ -1575,9 +1575,9 @@ class FantasyGame(GameBase):
         pline = wo.peril_by_check(state, data, label, game=self)
         if data.get("kills") or data.get("peril_roll"):    # a way out tried in a peril: the moment runs after the telling
             return pline
-        if pline and data.get("outcome") in ("success", "huge_success", "critical_success"):
+        if pline and data.get("outcome") in WON:
             return pline
-        if data.get("outcome") not in ("success", "huge_success", "critical_success"):
+        if data.get("outcome") not in WON:
             danger = str((data.get("stake") or {}).get("danger") or "")
             if danger in ("scrape", "solid", "serious", "lethal"):        # B206: the step the assistant's stake named
                 if danger == "lethal":
@@ -2680,17 +2680,16 @@ class FantasyGame(GameBase):
         held = next((c for c in p.conditions if c.name == "grappled"), None)
         if held is not None and not p.fate:                 # a grab's hold (the owner, 11-10 night): it ends when broken or the grabber is down
             by = s.person(held.by) if held.by else None
-            freed = any(c.get("outcome") in ("success", "huge_success", "critical_success") and not c.get("verb")
-                        and (re.match(r"\s*way out\b", str(c.get("label") or ""), re.I)
-                             or (str(c.get("stat") or "") in ("str", "dex") and (wo.ESCAPE.search(str(c.get("label") or ""))
-                                                                              or wo.BREAK_FREE.search(str(c.get("label") or "")))))
+            freed = any(c.get("outcome") in WON and not c.get("verb")
+                        and (wo.MARKED.match(str(c.get("label") or ""))      # the debt review: break-free words only, not the wide ESCAPE list
+                             or (str(c.get("stat") or "") in ("str", "dex") and wo.BREAK_FREE.search(str(c.get("label") or ""))))
                         for c in info.calls)
             if freed or (held.by and (by is None or by.status != "alive" or held.by not in p.fighting)):
                 p.conditions = [c for c in p.conditions if c is not held]
                 p.shown_notes.append("Free of the grip" if freed else f"Free: {by.name if by else 'the grip'} lets go")
         for c in info.calls:                                # one die for one way out: the player's escape roll settles the peril
             if c.get("peril_roll") and p.peril is not None and not p.fate:
-                if c.get("outcome") in ("success", "huge_success", "critical_success"):
+                if c.get("outcome") in WON:
                     p.shown_notes.append(f"Out of it: no longer {wo.PERILS.get(p.peril.kind, {}).get('what', p.peril.kind)}")
                     p.peril = None
                 else:                                       # a failed way out: the moment told with the roll, applied here
@@ -2783,7 +2782,7 @@ class FantasyGame(GameBase):
             if c.get("verb") == "ATTACK" and not c.get("none"):               # B290: the combat roll is a blow too (the second stab was 'from hiding')
                 p.hidden_from_others = False
                 continue
-            label, stat, ok = str(c.get("label") or ""), c.get("stat"), c.get("outcome") in ("success", "huge_success", "critical_success")
+            label, stat, ok = str(c.get("label") or ""), c.get("stat"), c.get("outcome") in WON
             if stat == "cha" or ATTACK.search(label) or LOUD.search(label):
                 p.hidden_from_others = False
             elif HIDE.search(label):

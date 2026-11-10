@@ -23,7 +23,7 @@ from .brackets import (CLOSE_CALL, BracketError, Call, Declaration, Note, Stream
                        with_mechanic)
 from .assistant_view import branch_text
 from .config import RoleConfig
-from .mechanics import CheckRequest, CheckResult, Modifier, TIER_ORDER, Tier, outcome_words
+from .mechanics import WON, CheckRequest, CheckResult, Modifier, TIER_ORDER, Tier, outcome_words
 from .providers.base import Msg, Provider, StreamDone, TextDelta, Usage
 
 CONTINUE = ("Continue the narration from exactly where you stopped. Do not repeat anything already written "
@@ -326,7 +326,7 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
             f". Rolled {res.roll}{sign} = {res.total} against {res.target}: {outcome_words(res.outcome)}. "
             "Play that in the story; never soften or reverse it, and never mention dice, numbers or how well it rolled."
             + ((note_for(data, label) or "") if note_for else "") + tail)
-    causes = [target] if target and res.outcome in ("success", "huge_success", "critical_success") else []
+    causes = [target] if target and res.outcome in WON else []
     mechanic = render(res)
     if isinstance(data.get("harm"), int) and data["harm"] > 0:          # B306 (Gemma, 11-10): a failure's hit points on its own line
         mechanic += f" It costs {data['harm']} hit point{'s' if data['harm'] != 1 else ''}."

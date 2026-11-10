@@ -22,7 +22,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from engine.mechanics import CheckRequest, Modifier, dice_d20
+from engine.mechanics import WON, CheckRequest, Modifier, dice_d20
 
 from .state import Condition, FantasyState, Peril, Person
 
@@ -30,12 +30,6 @@ LETHAL = re.compile(r"\b(drown (myself|himself|herself|themselves)|let (the (wat
                     r"stop breathing|give up and die|kill (myself|himself|herself|themselves)|"
                     r"end (it|my life)|let (myself|go and) (drown|sink|die)|i (want to|choose to|let myself) die|"
                     r"breathe (the|in the) water|open my mouth (and|to) (breathe|let the water))", re.I)
-ESCAPE = re.compile(r"\b(swim|surface|climb|break (free|loose|out|her grip|his grip|their grip)|pull (free|loose|away|myself)|kick (free|loose|off|away)|"
-                    r"get (out|free|clear|away|loose)|escape|struggle|wrench|twist (free|away)|thrash|claw|grab (for|at|the)|hold (my|our) breath|"
-                    r"stab|cut|strike|hack|bite|fight|shove|push (off|away)|roll (away|clear)|drop and roll|roll (on|in) the|crawl|run|flee|stop the bleeding|bind|bandage|"
-                    r"press (on|hard on|down on) the wound|tie (it|the wound|off)|tourniquet|staunch|"
-                    r"smother|stamp (it|them|the flames|the fire) out|stamp out|pat (it|them|the flames) out|beat (at )?the flames|"
-                    r"put out|beat out|douse|warm|fire|hold on|cling|reach)", re.I)
 STEPS = {"scrape": (1, 2), "solid": (3, 5), "serious": (6, 10)}
 STEP_WORDS = {"scrape": "a scrape", "solid": "a solid blow", "serious": "a serious hit", "lethal": "a killing blow"}
 TIER_STEP = {"failure": "scrape", "huge_failure": "solid", "critical_failure": "serious"}
@@ -77,7 +71,7 @@ WAY_STATS = {"burning": ("dex",), "bleeding": ("wis", "dex"), "drowning": ("str"
              "freezing": ("con",), "held": ("str", "dex"), "falling": ("dex", "str")}
 BREAK_FREE = re.compile(r"\b(break (free|loose|out|its grip|the grip|their grip|his grip|her grip)|wrench|twist (free|away|out)|"
                         r"pull (free|loose|away)|shake (off|free|loose)|throw (it|him|her|them) off|slip (free|out of)|elbow|"
-                        r"kick (free|loose|off|away)|get free|escape (the|its|his|her|their) (grip|hold|grasp)|"
+                        r"kick (free|loose|off|away)|get (free|loose)|struggle\w* (free|loose)|escape (the|its|his|her|their) (grip|hold|grasp)|"
                         r"(hack|cut|slash|saw)\w* (free|loose|at the (hands?|arms?|fingers?|grip|tentacles?|weeds?|roots?)))", re.I)
 
 
@@ -95,12 +89,16 @@ WAY_WORDS = {"bleeding": re.compile(r"\b(press\w*|bind\w*|tie\w*|tourniquet|stau
 WAY_WORDS["holding_breath"] = WAY_WORDS["drowning"]
 
 
+# the assistant's mark on a check (D220: "way out:" plus the player's words), read the same everywhere
+MARKED = re.compile(r"\s*way out\b", re.I)
+
+
 def way_out(pr: Any, stat: str, words: str) -> bool:
     """A check that is the way out of this peril: its stat fits and its words go for it (the escape, the peril's own end,
     or a blow at what holds the player under)."""
     from .game import ATTACK
     k = pr.kind
-    if re.match(r"\s*way out\b", words or "", re.I):   # the assistant marked it (the owner: "Can't assistant help match intents??")
+    if MARKED.match(words or ""):                         # the assistant marked it (the owner: "Can't assistant help match intents??")
         return True
     fits = stat in WAY_STATS.get(k, (pr.stat,))
     ends = ENDS_BY.get(k)
@@ -269,7 +267,7 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
         return s, w
     text = " ".join([player_text or "", getattr(adj, "summary", "") or ""] + [i.action for i in (getattr(adj, "intents", None) or [])])
     held = next((c for c in p.conditions if c.name == "grappled"), None)
-    marked = any(re.match(r"\s*way out\b", str(getattr(getattr(i, "check", None), "label", "") or ""), re.I)
+    marked = any(MARKED.match(str(getattr(getattr(i, "check", None), "label", "") or ""))
                  for i in (getattr(adj, "intents", None) or []))
     if held is not None and getattr(adj, "kind", "") == "action" and not marked and BREAK_FREE.search(text):   # round 8: 'run' is no break
         # round 7 (f6428fd5c68b T13): "an elbow to its face and I wrench my arms out" was read as a punch, and nothing ended the
@@ -280,7 +278,7 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
         w.mechanics.append(f"Breaking free: {line}")
         w.rows.append({"kind": "grapple", "outcome": res.outcome, "line": line})
         who = s.person(held.by).name if held.by and s.person(held.by) else "the grip"
-        if res.outcome in ("success", "huge_success", "critical_success"):
+        if res.outcome in WON:
             p.conditions = [c for c in p.conditions if c is not held]
             w.directives.append(f"{p.name} breaks free of {who} (the engine rolled it: a success). Play it; {p.name} can move and run again.")
         else:
@@ -336,7 +334,7 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
             line = game.render_mechanic(s, res)
             w.mechanics.append(f"Getting out: {line}")
             w.rows.append({"kind": "peril", "peril": pr.kind, "outcome": res.outcome, "line": line})
-            if res.outcome in ("success", "huge_success", "critical_success"):
+            if res.outcome in WON:
                 p.peril = None
                 w.directives.append(f"{p.name} is {what}, and the engine rolled the way out: a success. It works: {pr.way}, by the "
                                     f"attempt the player made. Play the struggle and the way out.")
@@ -422,7 +420,7 @@ def moment(game: Any, s: FantasyState, pr: Any, rnd: Any, offset: int = 2) -> di
     if pr.kind in CHECKED and not pr.failing:
         res = _check(game, s, "con", "medium", f"{pr.kind}: hold on", rnd, [], offset)
         line = game.render_mechanic(s, res)
-        if res.outcome in ("success", "huge_success", "critical_success"):
+        if res.outcome in WON:
             return {"event": "held_on", "harm": 0, "line": line}
     return {"event": "land" if pr.kind == "falling" else "hurt", "harm": harm(step, rnd.randint(1, 20)), "step": step,
             "line": line, "failing": pr.kind in CHECKED}
@@ -495,7 +493,7 @@ def peril_by_check(s: FantasyState, data: dict, label: str, game: Any = None) ->
         return ""
     data["peril_roll"] = pr.kind
     what = PERILS.get(pr.kind, {}).get("what", pr.kind)
-    if data.get("outcome") in ("success", "huge_success", "critical_success"):
+    if data.get("outcome") in WON:
         return f" That is the way out: {s.player.name} is no longer {what}. Write it working."
     import random as _r                          # the moment, decided now and told with the roll (a death this turn, B300)
     ev = moment(game, s, pr, _r.Random(f"peril:{pr.kind}:{pr.step}:{s.player.name}:{data.get('roll')}"), 2) if game is not None else {"event": "none", "harm": 0}
@@ -525,7 +523,7 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
             line = f"{who}'s pull: " + game.render_mechanic(s, res)
             w.mechanics.append(line)
             w.rows.append({"kind": "compulsion", "by": who, "floor": floor, "outcome": res.outcome, "line": line})
-            if res.outcome in ("success", "huge_success", "critical_success"):
+            if res.outcome in WON:
                 w.directives.append(f"{p.name} fights {who}'s pull, and the engine rolled it: {p.name} wins this moment, and the attempt "
                                     f"goes ahead as the player wrote it.")
             else:
@@ -722,7 +720,7 @@ def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tal
         res = _check(game, s, hz.get("stat", "con"), hz.get("difficulty", "medium"), f"{hz.get('when') or hz.get('id')}", rng, extra, offset)
         line = f"{hz.get('id', '').replace('_', ' ').capitalize()}: " + game.render_mechanic(s, res)
         data = {"verb": "HAZARD", "hazard": hz.get("id"), "outcome_player": res.outcome, "label": hz.get("when") or hz.get("id")}
-        if res.outcome in ("success", "huge_success", "critical_success"):
+        if res.outcome in WON:
             return {"text": f"{p.name} weathers it ({hz.get('when', '')}). Play it, and go on.", "mechanic": line, "data": data}
         bad = hz.get("huge_fail") if res.outcome in ("huge_failure", "critical_failure") and hz.get("huge_fail") else hz.get("fail") or {}
         step = bad.get("hp") or ""
@@ -848,7 +846,9 @@ def failure_harm(game: Any, s: FantasyState, data: dict, label: str) -> int:
     hot = s.player.peril is not None or in_fight(game, s) or bool(getattr(s.player, "exposed", None))
     if not hot:
         return 0
-    if not (ATTACK.search(label) or ESCAPE.search(label) or data.get("stat") in ("str", "dex", "con")):
+    pr = s.player.peril                           # an attack, a physical check, or a way out (no longer the old wide ESCAPE list)
+    if not (ATTACK.search(label) or data.get("stat") in ("str", "dex", "con") or MARKED.match(label) or BREAK_FREE.search(label)
+            or (pr is not None and way_out(pr, str(data.get("stat") or "").lower(), label))):
         return 0
     return harm(step, int(data.get("roll") or 0))
 

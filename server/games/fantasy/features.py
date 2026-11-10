@@ -20,6 +20,7 @@ from __future__ import annotations
 from typing import Any
 
 from engine.game import CommandResult, CommandSpec, Option, Param
+from engine.mechanics import WON
 
 from .state import Condition, FantasyState
 
@@ -174,7 +175,7 @@ def run(game: Any, state: FantasyState, fid: str, args: dict) -> tuple[FantasySt
         res = dice_d20(rng, req)
         line = f"{name}: " + game.render_mechanic(s, res)
         p.turn_notes.append(line)
-        if res.outcome in ("success", "huge_success", "critical_success"):
+        if res.outcome in WON:
             gone = []
             for q in undead:
                 b = ensure_block(q)

@@ -845,6 +845,10 @@ def test_a_grab_grapples_and_hurts_and_is_never_a_peril(game):
     assert not res.ok and "break free" in res.text                                # held: no running
     free = game.after_turn(after, _info(3, [{"stat": "str", "outcome": "success", "label": "break free of the grip"}]))
     assert not free.player.has_condition("grappled")
+    ran = game.after_turn(after, _info(3, [{"stat": "dex", "outcome": "success", "label": "run for the door"}]))
+    assert ran.player.has_condition("grappled")                                 # the debt review: running is no break-free
+    for label in ("struggle loose of its arms", "way out: claw at its fingers"):
+        assert not game.after_turn(after, _info(3, [{"stat": "dex", "outcome": "success", "label": label}])).player.has_condition("grappled")
     after.person("dead").status = "dead"
     gone = game.after_turn(after, _info(3, []))
     assert not gone.player.has_condition("grappled")

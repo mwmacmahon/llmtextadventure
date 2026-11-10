@@ -74,6 +74,8 @@ class CheckResult(BaseModel):
         return self.outcome.replace("_", " ")
 
 
+WON = ("success", "huge_success", "critical_success")    # every tier that succeeds (one tuple, not a copy per file)
+
 OUTCOME_WORDS = {"critical_success": "it could not have gone better", "huge_success": "it goes very well", "success": "it works",
                  "failure": "it fails", "huge_failure": "it fails badly",
                  "critical_failure": "it goes badly wrong and costs something real (a hurt, noise, notice, something lost); it ends nothing"}
