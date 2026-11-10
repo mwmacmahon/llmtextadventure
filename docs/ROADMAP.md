@@ -40,7 +40,7 @@ it. *decided*: the owner has ruled, no design yet. *open with the owner*: a ques
 | 4 | Profiles and the picker | built | DESIGN-context-modules §6 | the model label from the profile, one server for every game, levels edited in the UI |
 | 5 | The narrator's context | not started | DESIGN-context-modules §2 to §4 | the four modules; the chant, the formula, the leak, the retold order are its cases |
 | 6 | The assistant | built | ASSISTANT-DESIGN; DESIGN2 §17 | fiat and levers, a retold turn's stakes, the parked beats, the unsettled attempts |
-| 7 | The world's records | built | DESIGN.md; GAME_AUTHORING | "unknown", a place under another name, one object twice, name clashes, stale time text |
+| 7 | The world's records | built | DESIGN.md; GAME_AUTHORING | the save's size and the per-turn snapshots (B329: compress, deltas, a bounded save, retention); "unknown", a place under another name, one object twice, name clashes, stale time text |
 | 8 | The fantasy game, Marrowgate | built; part eight in; playable on Sonnet with open items accepted | FANTASY_DESIGN; DIRECTIVE-fantasy | part nine (B217 to B228), the XP question, the rescue later, magic, the content questions |
 | 9 | Noir, Lowtown | built | notes/design/noir page; DESIGN.md | whether noir takes death is death, the nerves sitting, stray engine lines |
 | 10 | The station | built | DESIGN-time-and-attempts §4; station page | the locked-out text, what each project unlocks, the upgrades, the canister, the station's week |
@@ -185,6 +185,20 @@ the journal and the story so far. Design: DESIGN.md; GAME_AUTHORING; the world p
 - The quest machinery to watch in the next fantasy rounds: a second job from the same giver merged into the first
   (B137); the pre-check hint on every turn a giver is named (B138); hooks with no player-safe standing line (B136).
 - A serious ruling whose fix says there is nothing to fix (N5); a contradiction ruled when the state is stale (N7-1031).
+- **The save's size and the snapshots (B329, every game; the owner, 11-10: "That size is not acceptable ... needs to be in
+  roadmap"). State: proposed.** A full copy of the save is stored after every turn, and the save itself only grows (the whole
+  log, every fired event, every person's history). Measured 11-10: every game's save is 82 to 121 KB by turn 50; round 4's
+  snapshots were 4.3 MB for 50 turns; the simulator's save is 914 KB at week 40; snapshots are 237 MB of the 643 MB database
+  (the ledger 196 MB, the rest the stored prompts). A turn changes about 1 KB of a 105 KB save. The engine's time is not the
+  problem (a full conversion 2 ms, a load 10 ms at week 40). The order of the fix:
+  1. Compress the snapshot (zlib: 105 KB to 24 KB, four times smaller); nothing else changes. Small, first.
+  2. Snapshots as differences: a full save every tenth turn and the turn's changes between (about 1 KB a turn), rebuilt on
+     load and undo from the nearest full one. With 1, a 200-turn game's snapshots go from 40 to 80 MB to well under 1 MB.
+  3. The save stops growing: an event that fired once and cannot fire again folded to its id; the log in the save a window
+     (the last weeks; the transcript and the ledger keep the history, the Timeline overlay reads them); people's and girls'
+     history lists capped. Each game's own lists checked the same way.
+  4. Retention: the ledger's exchanges and prompt blobs kept for recent rounds (the call report reads them) and compressed or
+     dropped for old test games; an archived game keeps its full snapshots only.
 
 ## 8. The fantasy game, Marrowgate
 
