@@ -224,7 +224,24 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
     w = WorldTurn()
     if p.fate or p.hp <= 0 or game.ending(s):
         return s, w
+    if (player_text or "").startswith("(debug:"):       # the test hook's own turn (round 7): it sets things up; nothing acts yet
+        return s, w
     text = " ".join([player_text or "", getattr(adj, "summary", "") or ""] + [i.action for i in (getattr(adj, "intents", None) or [])])
+    held = next((c for c in p.conditions if c.name == "grappled"), None)
+    if held is not None and getattr(adj, "kind", "") == "action" and ESCAPE.search(text):
+        # round 7 (f6428fd5c68b T13): "an elbow to its face and I wrench my arms out" was read as a punch, and nothing ended the
+        # grab. Words that go for breaking free roll it, STR or DEX (the better); a success ends it
+        stat = "str" if p.stats.get("str", 0) >= p.stats.get("dex", 0) else "dex"
+        res = _check(game, s, stat, "medium", "break free of the grip", rng, [], offset)
+        line = game.render_mechanic(s, res)
+        w.mechanics.append(f"Breaking free: {line}")
+        w.rows.append({"kind": "grapple", "outcome": res.outcome, "line": line})
+        who = s.person(held.by).name if held.by and s.person(held.by) else "the grip"
+        if res.outcome in ("success", "huge_success", "critical_success"):
+            p.conditions = [c for c in p.conditions if c is not held]
+            w.directives.append(f"{p.name} breaks free of {who} (the engine rolled it: a success). Play it; {p.name} can move and run again.")
+        else:
+            w.directives.append(f"{p.name} fights {who}'s grip and fails (the engine rolled it): still held, no running. Play it.")
     # -- a chosen death (B100 (b)): no roll stands between a player and the end they chose
     if LETHAL.search(player_text or "") and chose_death(adj):
         _end(game, s, turn, "by their own choice", w=w, cause=f"chose to die at {p.location}")

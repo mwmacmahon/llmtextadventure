@@ -3112,9 +3112,14 @@ class FantasyGame(GameBase):
     def player_alerts(self, state: FantasyState) -> list[str]:
         """A peril's WARNING every turn the player is in it (the owner, 11-10 night: "Warning messages every turn")."""
         p = state.player
-        if p.peril is None or p.fate:
+        if p.fate:
             return []
-        return ["WARNING: " + wo.PERILS.get(p.peril.kind, {}).get("warn", p.peril.kind)]
+        out = ["WARNING: " + wo.PERILS.get(p.peril.kind, {}).get("warn", p.peril.kind)] if p.peril is not None else []
+        held = next((c for c in p.conditions if c.name == "grappled"), None)
+        if held is not None:                              # round 7: a grab showed no warning and no chip
+            who = state.person(held.by).name if held.by and state.person(held.by) else "something"
+            out.append(f"WARNING: You are held by {who}! Break free (a STR or DEX check), or bring them down. You cannot run while held.")
+        return out
 
     DEBUG_ROOM = "The Glass Cellar"
 
@@ -3171,8 +3176,9 @@ class FantasyGame(GameBase):
             p.hp = p.hp_max; did = "cleared: no fight, no peril, full hit points"
         elif low.startswith("room"):
             p.location = self.DEBUG_ROOM
-            if self.DEBUG_ROOM not in s.found_places:
-                s.found_places.append(self.DEBUG_ROOM)
+            from .state import FoundPlace
+            if not any(f.name == self.DEBUG_ROOM for f in s.found_places):
+                s.found_places.append(FoundPlace(name=self.DEBUG_ROOM, within=""))
             did = f"moved to {self.DEBUG_ROOM}, a bare room of glass walls, nobody else here"
         else:
             return state, CommandResult(ok=False, label="Debug", text="DEBUG: say one of: spawn <what> [minion..elite], set me on fire, "
@@ -3679,6 +3685,10 @@ class FantasyGame(GameBase):
             now.append(Chip(label="", value="Raging", tone="bad"))
         if p.hidden_from_others:
             now.append(Chip(label="", value="Hidden", tone="info"))
+        held = next((c for c in p.conditions if c.name == "grappled"), None)
+        if held is not None:                              # round 7: held, with the way out
+            who = s.person(held.by).name if held.by and s.person(held.by) else ""
+            now.append(Chip(label="Held" + (f" by {who}" if who else ""), value="break free (STR or DEX)", tone="bad"))
         if p.peril is not None:
             pk = p.peril.kind                            # the status names the way out (the owner, 11-10 night)
             now.append(Chip(label=wo.PERIL_LABEL.get(pk, pk.capitalize()),

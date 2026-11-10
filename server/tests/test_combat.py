@@ -877,3 +877,23 @@ def test_the_debug_command_spawns_and_hurts_on_a_dev_server_only(game, monkeypat
     assert s7.player.location == game.DEBUG_ROOM
     monkeypatch.setenv("TA_DEV_MODE", "off")                                      # Lilith's server: no such thing
     assert game.typed_command(st, "DEBUG: spawn a troll") is None and "debug" not in [c.id for c in game.commands(st)]
+
+
+def test_breaking_a_grab_rolls_and_a_debug_turn_sets_up_without_acting(game, monkeypatch):
+    """Round 7 (f6428fd5c68b): 'I wrench my arms out' was a punch and nothing ended the grab; every DEBUG peril escaped on its
+    own turn; DEBUG: room broke the turn (a place as a bare string)."""
+    from engine.roles import AssistantReading, Intent
+    monkeypatch.setenv("TA_DEV_MODE", "on")
+    st, q = _fight(game, 1)
+    game._land_condition(st, "grappled", "dead")
+    words = "I drive an elbow into its face and wrench my arms out of its grip"
+    adj = AssistantReading(kind="action", summary=words, time_minutes=1, risk="high", tempo="fast", intents=[Intent(action=words)])
+    s2, w = game.world_turn(st, adj, words, _Seq([18, 18, 18]), 5, 2)
+    assert any(m.startswith("Breaking free:") for m in w.mechanics) and not s2.player.has_condition("grappled")
+    assert any("held by" in a for a in game.player_alerts(st))
+    s3, _ = game.run_command(new(game), "debug", {"text": "set me on fire"})
+    s4, w4 = game.world_turn(s3, AssistantReading(kind="action", summary="debug", time_minutes=0, risk="low", intents=[]),
+                             "(debug: set me on fire)", _Seq([20]), 2, 2)
+    assert s4.player.peril is not None and s4.player.peril.kind == "burning" and not w4.mechanics
+    s5, _ = game.run_command(new(game), "debug", {"text": "room"})
+    assert any(f.name == game.DEBUG_ROOM for f in s5.found_places) and game.turn_directives(s5) is not None
