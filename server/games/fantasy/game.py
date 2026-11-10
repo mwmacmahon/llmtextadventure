@@ -223,6 +223,8 @@ def city_from(sc: dict) -> City:
 
 
 
+MONSTER = re.compile(r"\b(troll|ogre|giant|beast|monster|wolf|wolves|rat|rats|drake|dragon|wight|ghost|ghoul|skeleton|dead|siren|spider|bear)\b", re.I)   # B290: not the Watch's business
+
 class FantasyGame(GameBase):
     name = "fantasy"
     version = "0.1.0"
@@ -1137,12 +1139,12 @@ class FantasyGame(GameBase):
         """The Quests panel (B93): the hooks the player knows of, then their own threads, one shape: title, one line, the
         standing word, the giver."""
         hooks = self.hooks_content()
-        rows = [QuestRow(title=h.title, line=quest_line(dk.fill(self._standing_line(h.id, hooks), s.player.name), h.note),
-                         standing=dk.standing_of(h), giver=h.giver, tone=dk.STANDING_TONES.get(dk.standing_of(h), "info"))  # type: ignore[arg-type]
-                for h in s.hooks if h.status != "dealt"]
+        rows = [QuestRow(title=h.title, line=self.unnamed(s, quest_line(dk.fill(self._standing_line(h.id, hooks), s.player.name), h.note)),
+                         standing=dk.standing_of(h), giver=self.unnamed(s, h.giver), tone=dk.STANDING_TONES.get(dk.standing_of(h), "info"))  # type: ignore[arg-type]
+                for h in s.hooks if h.status != "dealt"]                 # B290: names as the player knows them (Maud, 'the troll Gorm')
         names = self.entity_names(s)
-        rows += [QuestRow(title=t.title, line=quest_line(t.about, t.note), standing=THREAD_STANDING.get(t.status, t.status),
-                          giver="" if t.who.strip().lower() in ("player", "you", s.player.name.lower()) else names.get(t.who, t.who),   # B224.24
+        rows += [QuestRow(title=t.title, line=self.unnamed(s, quest_line(t.about, t.note)), standing=THREAD_STANDING.get(t.status, t.status),
+                          giver="" if t.who.strip().lower() in ("player", "you", s.player.name.lower()) else self.unnamed(s, names.get(t.who, t.who)),   # B224.24
                           tone="ok" if t.status == "resolved" else "bad" if t.status == "failed" else "info")
                  for t in s.threads if not t.id.startswith("hook-")]
         return rows
@@ -1479,7 +1481,8 @@ class FantasyGame(GameBase):
             if label == q.name:
                 continue
             first = q.name.split()[0]
-            names = [q.name] + ([first] if len(first) > 2 and first.lower() not in TITLES else [])
+            mine = {x.lower() for x in s.player.name.split()}                # the player's own name is never swapped (a player called Wren)
+            names = [q.name] + ([first] if len(first) > 2 and first.lower() not in TITLES and first.lower() not in mine else [])
             for nm in names:
                 text = re.sub(r"(?<![\w<])" + re.escape(nm) + r"(?!\w)", label, text)
         return text
@@ -1513,7 +1516,14 @@ class FantasyGame(GameBase):
             what = "a theft"
         if not what:
             return ""
+        vq = s.person(victim) if victim else None
+        if vq is not None:                                   # B290: a troll under the inn is no crime for the Watch (95aa120b8c51 T5)
+            from .combat import ensure_block
+            if ensure_block(vq).kind in ("beast", "undead") or MONSTER.search(f"{vq.role} {vq.called}"):
+                return ""
+        fought = set(p.fighting) | set(s.combat.defeated if s.combat else [])
         seen = [q for q in s.people if q.status == "alive" and q.id != victim and q.id not in p.with_them and not q.hidden_from_player
+                and q.id not in fought                       # B290: the robber fighting beside the one you cut does not run to the Watch (T20)
                 and q.location and self._same_spot(s, q.location, p.location)]
         nxt = next((lo for lo, _ in HEAT_TIERS if lo > p.heat), None)
         if not seen or nxt is None:
@@ -2220,8 +2230,7 @@ class FantasyGame(GameBase):
     def _same_person(s: FantasyState, name: str) -> Person | None:
         return same_person(s.people, name, PERSON_TITLES)
 
-    @staticmethod
-    def _described(s: FantasyState, name: str, note: str = "") -> Person | None:
+    def _described(self, s: FantasyState, name: str, note: str = "", here: bool = False) -> Person | None:
         """A stranger the prose introduces by a description that fits one listed person not yet met: "the grey-green siren"
         is Mirren ("grey-green", "the siren in the shallows"), "a child in a river-brown dress" is Wren Reedy ("river-brown
         like her father"). Two shared words or more, and more than anyone else shares; on a tie, the row's note decides
@@ -2232,7 +2241,8 @@ class FantasyGame(GameBase):
             return None
         scored = sorted((((len(words & _words(" ".join([q.name, *q.aliases, q.description]))),
                            len(said & _words(" ".join([q.role, *q.aliases, q.description])))), i)
-                         for i, q in enumerate(s.people) if not q.met and q.status == "alive"), reverse=True)
+                         for i, q in enumerate(s.people) if not q.met and q.status == "alive"
+                         and (not here or not q.location or self._same_spot(s, q.location, s.player.location))), reverse=True)   # B290: here, not the isle's ghost
         if not scored or scored[0][0][0] < 2 or (len(scored) > 1 and scored[1][0] == scored[0][0]):
             return None
         return s.people[scored[0][1]]
@@ -2250,7 +2260,8 @@ class FantasyGame(GameBase):
 
     def _new_person(self, s: FantasyState, name: str, role: str, w: Writer, where: str = "") -> None:
         p = s.player
-        q = s.person(slug(name)) or self._same_person(s, name) or self._described(s, name, role)
+        here = not where.strip() or where.strip().lower() in ("player", "here", p.name.lower())
+        q = s.person(slug(name)) or self._same_person(s, name) or self._described(s, name, role, here=here)
         if q is not None:
             if q.name.lower() != name.strip().lower():
                 w.note(f"new person {name.strip()!r} is {q.id} ({q.name}): nothing added")
@@ -2277,7 +2288,9 @@ class FantasyGame(GameBase):
         w.note(f"people += {nid} ({name.strip()}, {role.strip()})")
 
     def _new_place(self, s: FantasyState, name: str, within: str, w: Writer) -> None:
-        clean = name.strip().strip('"').strip()[:40]
+        clean = name.strip().strip('"').strip()
+        if len(clean) > 40:                                  # B290: at a word, not 'the round cham'
+            clean = clean[:41].rsplit(" ", 1)[0].rstrip(" ,;:-")
         same = self._place(s, clean)
         if same is not None and same.lower().removeprefix("the ") == clean.lower().removeprefix("the "):
             self._heard_of_place(s, same, w)
@@ -2434,6 +2447,9 @@ class FantasyGame(GameBase):
         p = s.player
         hid_check = False
         for c in info.calls:
+            if c.get("verb") == "ATTACK" and not c.get("none"):               # B290: the combat roll is a blow too (the second stab was 'from hiding')
+                p.hidden_from_others = False
+                continue
             label, stat, ok = str(c.get("label") or ""), c.get("stat"), c.get("outcome") in ("success", "huge_success", "critical_success")
             if stat == "cha" or ATTACK.search(label) or LOUD.search(label):
                 p.hidden_from_others = False

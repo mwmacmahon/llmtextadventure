@@ -572,3 +572,34 @@ def test_gorm_takes_a_surrender(game):
     st.combat = CombatState()
     s2, res = cb.run_fight_command(game, st, "yield")
     assert s2.player.fighting == [] and s2.combat is None and "takes it" in res.directive
+
+
+# ---- B290 (Sonnet, 11-09, 95aa120b8c51): the round's smaller faults (the invented enemies themselves go to the table chat) ----
+def test_a_riders_words_that_name_no_feature_are_no_claim(game):
+    assert cb._a_feature(game, "divine smite") and not cb._a_feature(game, "slash at the arm") and not cb._a_feature(game, "staying in hazel's line")
+
+
+def test_the_quest_panel_names_people_as_the_player_knows_them(game):
+    st = new(game)
+    st.hook("cellar_rats").status = "live"
+    st.hook("cellar_rats").giver = "Maud Tallow"
+    st.hook("cellar_rats").note = "the troll Gorm under the quay"
+    row = next(r for r in game.quest_rows(st) if r.title == "Rats in the Cellar")
+    assert row.giver == "Innkeeper" and "Gorm" not in row.line
+
+
+def test_heat_is_not_raised_by_a_monster_or_by_the_people_you_are_fighting(game):
+    from engine.game import TurnInfo
+    st = new(game)
+    _troll(st)
+    st.person("gorm").combat.hp = 20
+    info = TurnInfo(turn=5, elapsed_minutes=1, rng=random.Random(1), applied=["people.gorm.condition: '' -> 'wounded'"], player_text="I stab the troll", calls=[])
+    assert game._crime_seen(st, info) == "" and st.player.heat_word == "nobody"
+
+
+def test_a_long_new_place_name_is_cut_at_a_word(game):
+    from engine.changes import ApplyReport, Writer
+    st = new(game)
+    w = Writer(game.authority, ApplyReport(), actor="engine")
+    game._new_place(st, "low arch and stair beyond the round chamber of bones", "The Catacombs", w)
+    assert any(f.name == "low arch and stair beyond the round" for f in st.found_places)

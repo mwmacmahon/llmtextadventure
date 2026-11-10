@@ -128,6 +128,7 @@ def test_the_thread_title_split():
 
 def test_the_quests_panel_rows_share_one_shape(game):
     st = _live(new(game))
+    st.player.names_heard += ["Maud Tallow", "Wren"]                 # B290: the panel names whom the player has heard
     s, _, _ = _land(game, st, DUPLICATE, C(kind="thread_open", title="The herder's goat", value="A herder asks Wren to find his goat"))
     panel = next(p for p in game.ui(s).panels if isinstance(p, QuestPanel))
     assert panel.title == "Quests" and all(isinstance(r, QuestRow) for r in panel.rows)

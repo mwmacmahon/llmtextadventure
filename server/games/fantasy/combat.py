@@ -737,6 +737,8 @@ def resolve_attack(game: Any, s: FantasyState, entry: dict, rng: Any, offset: in
                 extra.append((f"Sneak Attack, {why}", "2d6" if p.level >= 3 else "1d6"))
             mine = [(fid, f) for fid, f in ft.specs(game, p).items() if f.get("kind") == "rider"]
             for r in riders:
+                if not _a_feature(game, r):
+                    continue                                           # B290: 'slash at the arm' is how, not a feature claimed
                 if not any(_names_rider(r, fid, f) for fid, f in mine) and "sneak" not in r.lower() and not any(r in n for n in notes):
                     notes.append(f"{r}: not something {p.name} has; ignored")
         part, over = _one_blow(game, s, rng, tally, who, bonus, dice, t, body, spare=bool(entry.get("spare")), extra_dice=extra,
@@ -765,6 +767,21 @@ def resolve_attack(game: Any, s: FantasyState, entry: dict, rng: Any, offset: in
     text = "; then ".join(x["text"] for x in parts)
     line = " ".join(x["line"] for x in parts) + (f" ({'; '.join(notes)})" if notes else "")
     return {"text": f"{text}. Play it landing where it lands, and go on.", "mechanic": line, "data": data}
+
+
+def _a_feature(game: Any, words: str) -> bool:
+    """B290: the words name a feature some class has (Divine Smite, Rage, Hunter's Mark), as a rider would."""
+    w = (words or "").lower().strip()
+    if not w:
+        return False
+    try:
+        names = {f.name.lower() for c in game.classes().values() for fs in c.levels.values() for f in fs if getattr(f, "name", "")}
+    except Exception:
+        return True
+    if any(n and (n in w or w in n) for n in names if len(n) > 3):
+        return True
+    words = w.split()                                                 # a short bare name ('whirlwind') is a claim; 'slash at the arm' is how
+    return len(words) <= 2 and not set(words) & {"at", "in", "on", "to", "from", "with", "the", "a", "for", "into", "low", "high", "behind"}
 
 
 def bodies_now(q: Person, tally: dict) -> list[int]:
@@ -986,7 +1003,8 @@ def run_fight_command(game: Any, state: FantasyState, command_id: str) -> tuple[
                      + ("; ".join(told) or "none lands") + ". " + (f"It kills {p.name}: write the death straight." if dead else
                      f"Play the getting away and where {p.name} ends up, and stop."))
         p.turn_notes += lines
-        return s, CommandResult(label="Flee", player_line="I run for it.", summary=f"{p.name} flees the fight.", directive=directive, minutes=1,
+        return s, CommandResult(label="Flee", text="Out of the fight; each enemy in reach got one blow as you went.", player_line="I run for it.",
+                                summary=f"{p.name} flees the fight.", directive=directive, minutes=1,
                                 referee_skip=["hp"])
     takers = [q for q in living_enemies(game, s) if ensure_block(q).kind == "person" and not ensure_block(q).fanatic]
     refusers = [q for q in living_enemies(game, s) if q not in takers]
@@ -1003,7 +1021,8 @@ def run_fight_command(game: Any, state: FantasyState, command_id: str) -> tuple[
                                                       f"{'s' if one(takers) else ''} back; " if takers else "")
                      + (f"{refusers[0].name} does not: it comes on. Play it." if one(refusers) else
                         f"{', '.join(q.name for q in refusers)} do not: they come on. Play it."))
-    return s, CommandResult(label="Yield", player_line="I yield.", summary=f"{p.name} offers to yield.", directive=directive, minutes=1)
+    return s, CommandResult(label="Yield", text=("Yielded: the fight is over on their terms." if not p.fighting else "Yield refused: the fight goes on."),
+                            player_line="I yield.", summary=f"{p.name} offers to yield.", directive=directive, minutes=1)
 
 
 # ---- §8: scaling, by a budget (the record §9b) -----------------------------------------------------------------------------

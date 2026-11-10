@@ -1100,6 +1100,7 @@ def test_a_threads_giver_is_who_gave_it(game: FantasyGame):
     player's own job: no giver."""
     from engine.threads import Thread
     st = new(game)
+    st.player.names_heard += ["Hazel Oakhew", "Oswin Pell", "Maud Tallow"]          # B290: the panel names whom the player has heard
     st.threads.append(Thread(id="t12-hazel", title="Hazel hired for the lake", about="Hazel paid ten gold to go", who="player"))
     st.threads.append(Thread(id="t13-oswin", title="Oswin's shadow", about="find it", who="oswin"))
     rows = {r.title: r for r in game.quest_rows(st)}

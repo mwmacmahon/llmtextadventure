@@ -434,9 +434,7 @@ def plan_fight(game: Any, s: FantasyState, adj: Any, player_text: str, rng: Any,
     if "flee" in picked or ("yield" in picked and not any(cb.ensure_block(q).kind != "person" or cb.ensure_block(q).fanatic
                                                           for q in cb.living_enemies(game, s))):
         s.combat.plan = []                                             # B289: the lever is the turn (its free blows, or the yield taken)
-        w.mechanics.append("Flee: no round; each enemy in reach gets its blow as the player goes." if "flee" in picked else
-                           "Yield: no round; the fight ends on their terms.")
-        return
+        return                                                         # the lever's own line says what happened (one line, not two)
     s.combat.free_turns = 0
     s.combat.plan = cb.plan_round(game, s, adj, player_text, turn, rng)
     w.directives += cb.round_lines(game, s)      # THIS TURN's round list (the game's standing lines are read before the plan exists)
