@@ -275,7 +275,16 @@ async def test_a_hostile_the_narrator_invents_is_a_person_with_a_block_before_th
 def test_the_lint_names_a_pinned_content_fight_that_stays_deadly(game):
     from games.fantasy.lint import lint_pinned_fights
     notes = lint_pinned_fights(CONTENT, game, n=20)
-    assert any("catacomb_dead" in x and "Rogue" in x for x in notes), notes
+    assert not any("catacomb_dead" in x for x in notes), notes          # Sister Maren comes down beside the player (the owner, 11-10)
+    import shutil, tempfile, yaml
+    tmp = Path(tempfile.mkdtemp())
+    shutil.copytree(CONTENT, tmp / "fantasy")
+    qd = tmp / "fantasy" / "hooks" / "the_quiet_dead.yml"
+    doc = yaml.safe_load(qd.read_text())
+    doc["events"] = [e for e in doc["events"] if not str(e["id"]).startswith("maren_")]
+    qd.write_text(yaml.safe_dump(doc, sort_keys=False))
+    alone = lint_pinned_fights(tmp / "fantasy", game, n=20)
+    assert any("catacomb_dead" in x and "Rogue" in x for x in alone), alone   # without her, four skeletons stay deadly
 
 
 def test_the_simulated_player_uses_no_consumables(game):
@@ -289,3 +298,26 @@ def test_the_simulated_player_uses_no_consumables(game):
     names = [i.name.lower() for i in base.inventory]
     assert not any("wand" in n or "potion" in n or "javelin" in n for n in names) and any("rapier" in n for n in names)
     assert base.player.count("smoke").value == 0
+
+
+def test_the_warden_comes_down_beside_the_player_and_makes_the_quiet_dead_winnable(game):
+    """The owner, 11-10: "make sure the npc ally is strong there, it's a game design question". Four skeletons, pinned by the
+    story, beat a lone level-1 rogue even at their feeblest; Sister Maren (a veteran) comes down beside the player, and the
+    generator holds the fight near its target."""
+    from engine import events as ev
+    from engine.pipeline import _events_of
+    from games.fantasy import deck as dk
+    st = new(game, klass="Rogue", place="The Old Channel")
+    if st.hook("the_quiet_dead") is None:
+        dk.deal(st, game.hooks_content()["the_quiet_dead"], turn=1, deal_abs=0, name=st.player.name)
+    h = st.hook("the_quiet_dead")
+    h.status = "live"
+    doc = st.model_dump(mode="json")
+    fired, _, directives = ev.tick(_events_of(game, doc), doc, 3)
+    s2 = game.load_state(doc)
+    assert "maren" in s2.player.with_them and s2.person("maren").location == "The Old Channel"
+    assert any("Sister Maren" in d for d in directives)
+    from games.fantasy import combat as cbm
+    assert "maren" in [q.id for q in cbm.party(s2)] and cbm.ensure_block(s2.person("maren")).block == "veteran"
+    e = en.encounter(game, s2, en.Want(band="normal", pinned=[("skeleton", 4)], n=40))
+    assert e.bodies == [("skeleton", 4)] and e.win >= 60, e.reason

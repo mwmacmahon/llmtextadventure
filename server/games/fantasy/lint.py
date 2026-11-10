@@ -164,14 +164,23 @@ def lint_pinned_fights(content_dir: Path, game=None, n: int = 30) -> list[str]:
             cbk = (pr or {}).get("combat") or {} if isinstance(pr, dict) else {}
             if not cbk.get("block") or (cbk.get("count") or 1) <= 1 or cbk.get("fixed"):
                 continue
+            # an ally the quest brings to the player's side by an event (Sister Maren, the owner 11-10) fights beside them
+            brought = {e2[1] for ev2 in doc.get("events") or [] for eff in ev2.get("effects") or []
+                       if isinstance(eff, dict) and (e2 := eff.get("append")) and e2[0] == "player.with_them"}
+            allies = [x for x in doc.get("people") or [] if isinstance(x, dict) and x.get("id") in brought and x.get("combat")]
             rates = []
             for klass in ("Paladin", "Rogue", "Barbarian"):
                 st = game.new_instance({"name": "Lint", "klass": klass, "race": "Human", "gender": "", "about": ""})[1]
+                from games.fantasy.state import CombatBlock, Person
+                for a in allies:
+                    st.people.append(Person(id=a["id"], name=a.get("name", a["id"]), role=a.get("role", ""), location=st.player.location, met=True,
+                                            attitude=2, combat=CombatBlock(**{k: v for k, v in a["combat"].items() if k in CombatBlock.model_fields})))
+                    st.player.with_them.append(a["id"])
                 base = en.party_base(game, st)
                 rates.append((klass, en.win_rate(game, base, [(cbk["block"], int(cbk["count"]))], "feeble", n, 2, f"lint:{where}:{pr.get('id')}:{klass}")))
             low = [(k, r) for k, r in rates if r < 40]
             if low:
-                out.append(f"{where}: {pr.get('id')} ({cbk['block']} x{cbk['count']}, pinned) stays deadly at level 1 even feeble for "
+                out.append(f"{where}: {pr.get('id')} ({cbk['block']} x{cbk['count']}, pinned{', with ' + ', '.join(a['id'] for a in allies) if allies else ''}) stays deadly at level 1 even feeble for "
                            + ", ".join(f"a {k} ({r:.0f}% won alone)" for k, r in low))
     return out
 
