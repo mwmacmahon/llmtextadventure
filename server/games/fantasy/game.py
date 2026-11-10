@@ -2480,7 +2480,8 @@ class FantasyGame(GameBase):
         same = s.person(slug(name))
         if (same is not None and here and role.strip() and same.id not in p.with_them and same.id not in p.fighting
                 and not self._same_spot(s, same.location, p.location)
-                and not (_words(role) & _words(" ".join([same.name, same.role, same.called or "", *same.aliases, same.description])))):
+                and not ((_words(role) & _words(" ".join([same.name, same.role, same.called or "", *same.aliases, same.description])))
+                         - {"thing", "figure", "shape", "creature", "person", "people"})):   # e933e85fb6c2 T17: 'things' alone is no match
             # B307 (Gemma, 11-10, 4d6f4c683fd3 T8, adcf1869ec54 T19, 187ae951f07d T11): 'new person the_drowned', a skeleton in a
             # shroud, in a temple crypt: the Mire's drowned band was merged and moved across the city, its drowning grab with it.
             # An id that is someone elsewhere, with a note that shares nothing with them, is a new person; this report's other

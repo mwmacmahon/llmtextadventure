@@ -135,7 +135,7 @@ def derived_weight(b: CombatBlock) -> float:
     return round(max(0.5, w), 1)
 
 
-_ROLE_TAIL = re.compile(r"\s+(?:of|at|in|on|from|for|by|under|near)\s+.*$", re.I)
+_ROLE_TAIL = re.compile(r"\s+(?:of|at|in|on|from|for|by|under|near|with)\s+.*$", re.I)
 
 
 def _role_block(q: Person) -> str:
@@ -773,7 +773,8 @@ def _one_blow(game: Any, s: FantasyState, rng: Any, tally: dict, who: str, bonus
     word = fallen_word(t, spare) if left <= 0 else hp_word(left, tb.hp_max or 1)
     riders = "".join(f" ({label})" for label, _ in extra_dice)
     return ({"text": f"{who} at {tname}: a hit, {n} damage{riders}; {tname} is {word}",
-             "line": attack_line(who, tname, res, n, f"{tname} is {word}" + riders), "dmg": n, "hit": {"pid": t.id, "body": body, "dmg": n}},
+             "line": attack_line(who, tname, res, n, f"{tname} is {word}" + riders), "dmg": n,
+             "hit": {"pid": t.id, "body": body, "dmg": n, "spare": spare}},          # B311: land reads it (a knockout was a death)
             max(0, -left))
 
 
@@ -1107,8 +1108,8 @@ def run_fight_command(game: Any, state: FantasyState, command_id: str) -> tuple[
         directive = (f"{p.name} runs for it, out of reach of {names}. As {p.name} goes, each of them gets one blow: "
                      + ("; ".join(told) or "none lands") + ". " + (f"It kills {p.name}: write the death straight." if dead else
                      f"Play the getting away and where {p.name} ends up, and stop."))
-        p.turn_notes += lines
-        return s, CommandResult(label="Flee", text="Out of the fight; each enemy in reach got one blow as you went.", player_line="I run for it.",
+        # B311 (e933e85fb6c2 T20): the line said each got one blow and showed none of the rolls
+        return s, CommandResult(label="Flee", text="Out of the fight. As you went: " + (" ".join(lines) or "nobody was in reach."), player_line="I run for it.",
                                 summary=f"{p.name} flees the fight.", directive=directive, minutes=1,
                                 referee_skip=["hp"])
     takers = [q for q in living_enemies(game, s) if is_person(ensure_block(q).kind) and not ensure_block(q).fanatic]

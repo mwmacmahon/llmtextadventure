@@ -362,9 +362,21 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
         if not struck and is_fight(adj) and ATTACK.search(" ".join([player_text or "", text])):
             struck = list(getattr(adj, "entities", None) or [])     # B286: a fast beat with no blow in it (a shout, a question) joins nobody
         from .combat import is_item
-        struck = [e for e in struck if not is_item(s, e)]                   # B310: a weapon or a thing is never fought
+        struck = list(dict.fromkeys(e for e in struck if not is_item(s, e)))   # B310: a weapon or a thing is never fought; once each
         for e in struck:
             q = s.person(e) or game._same_person(s, e)
+            if q is not None and q.status != "alive" and e in aimed and (q.status == "dead" or s.person(e) is None):
+                # B311 (Gemma, 11-10, e933e85fb6c2 T3-T5, T9, T12): blows at 'sailor_2' matched the fallen Sailor 1, blows at the
+                # knife-man went to robber_1, dead a turn before: nothing rolled while the prose knocked them out. A blow the
+                # reading aims at someone already dead, or at a fallen one only by likeness, is at another like them
+                from .encounter import spawn
+                like = re.sub(r"\s+\d+$", "", q.name or "") or "Stranger"
+                made = spawn(s, [((q.combat.block if q.combat else "") or "commoner", 1)], "standard", names=[like])
+                s.people += made
+                for m in made:
+                    p.fighting.append(m.id)
+                w.rows.append({"kind": "encounter", "why": f"another like {q.name} ({q.status})", "reason": f"the blow aimed at {e}"})
+                continue
             if q is None and e in aimed and hasattr(game, "bring_in"):      # §4 (c), B290: a blow at someone only in the telling
                 made, row = game.bring_in(s, e, ref=e, band=str(getattr(adj, "fight_band", "") or "normal"), offset=offset, named=True)
                 if row:

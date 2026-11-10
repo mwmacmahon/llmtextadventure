@@ -9,7 +9,8 @@ and gitignored, so this is a dev tool, not a test).
     .venv/bin/python tools/replay_fights.py show <store.sqlite3 | export.json> <iid> <first> <last> [--out file.md]
     .venv/bin/python tools/replay_fights.py check [cases.yml] [--store ../data/textadventure.sqlite3]
 
-A case (notes/eval/fight_cases.yml): {iid, turn, why, expect: {...}} where expect holds any of
+A case (notes/eval/fight_cases.yml): {iid, turn, why, verdict?, expect: {...}} (verdict: true lands the turn's stored referee rows
+after the world turn, for what the referee files) where expect holds any of
   fighting_includes: id          the player fights them after the turn
   fighting_excludes: id
   no_person_named: name          nobody of that name is brought in
@@ -126,6 +127,14 @@ def check(a) -> int:
             print(f"SKIP {iid} T{t}: no stored state or reading ({c.get('why', '')})")
             continue
         s, w, adj, said, st = r
+        if c.get("verdict"):                    # the referee's stored rows for the turn, landed on the world turn's state
+            from engine.changes import apply_changes
+            from engine.roles import Change, ChangeReport
+            v = next((p for tt, k, p in cache[iid][1] if tt == t and k == "verdict"), None)
+            if v:
+                rows = [Change(**{k: x.get(k, "") if k not in ("minutes", "hidden") else x.get(k, 0 if k == "minutes" else False)
+                                  for k in ("kind", "target", "field", "value", "note", "title", "minutes", "hidden", "who")}) for x in v["changes"]]
+                s, _, _ = apply_changes(game, s, ChangeReport(changes=rows, log_line="", confidence="high"), present=v.get("present", []), causes=[])
         bad = []
         names = {q.name.lower() for q in s.people}
         if "fighting_includes" in exp and exp["fighting_includes"] not in s.player.fighting:

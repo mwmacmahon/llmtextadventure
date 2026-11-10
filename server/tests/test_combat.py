@@ -398,7 +398,7 @@ def test_the_fight_panel_shows_everyone_with_numbers_and_the_chips(game):
 def test_flee_ends_the_fight_with_a_free_blow_from_each_and_yield_is_taken_by_people_only(game):
     st, q = _fight(game, 2)
     s1, res = cb.run_fight_command(game, st, "flee")
-    assert s1.combat is None and s1.player.fighting == [] and "gets one blow" in res.directive and s1.player.turn_notes
+    assert s1.combat is None and s1.player.fighting == [] and "gets one blow" in res.directive and "against AC" in res.text   # B311: the rolls on the line
     st2, q2 = _fight(game, 1)
     st2.people.append(Person(id="snag", name="Snag", role="dock thug", location=st2.player.location, met=True))
     st2.player.fighting.append("snag")
@@ -761,3 +761,21 @@ def test_a_plain_run_in_a_fight_is_the_flee_lever(game):
                                   intents=[IntentCombat(action="brace the door", targets=[], check=CheckSpec(label="brace", stat="str", difficulty="medium"))])
     game.aim_blows(st, hold, "I brace the door with my shoulder")
     assert hold.commands == []
+
+
+def test_a_knockout_is_down_after_the_turn_not_dead(game):
+    """B311 (e933e85fb6c2 T2): 'Sailor 1 is down' on the line, and the turn's end made him dead (the hit lost its spare)."""
+    st = new(game, klass="Barbarian")
+    st.people.append(Person(id="sailor_1", name="Sailor 1", role="sailor", location=st.player.location, met=True))
+    st.player.fighting = ["sailor_1"]
+    punch = AssistantReadingCombat(kind="action", summary="Punch.", time_minutes=1, tempo="fast", risk="medium",
+                                   intents=[IntentCombat(action="punch the sailor", targets=["sailor_1"], attack_at=["sailor_1"], weapon="fist")])
+    s, w = game.world_turn(st, punch, "I punch the sailor", random.Random(1), 2, 2)
+    q = s.person("sailor_1")
+    cb.ensure_block(q).hp = 1
+    tally = {"hp": 0}
+    entry = next(e for e in s.combat.plan if e["side"] == "player")
+    out = cb.resolve(game, s, entry, _Seq([18, 6]), 2, tally)
+    assert out["data"]["hits"] and out["data"]["hits"][0].get("spare")
+    cb.land(game, s, [out["data"]], 2, 2, random.Random(1))
+    assert q.status == "down"
