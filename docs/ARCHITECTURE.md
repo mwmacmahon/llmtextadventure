@@ -346,6 +346,12 @@ lies and who believes them, beats in order.
   off the turn by a background `warm` into `state.encounters`; the offer names who would come, and keeps the scene's
   own name when matched by kind. Typed levers (`asks_for` reads the player's words loosely): Flee and Yield decide the
   turn (`CommandSpec.decides`); a power that rolls (Turn Undead) is its own roll, seeded so preview and commit agree.
+  Grabs grapple (no running until broken free or the grabber is down); perils are a state of their own (`world.PERILS`:
+  holding breath, then drowning; freezing; burning; bleeding; falling; held), the save keeping the player out, and once in,
+  `world.moment` decides each moment (CON checks to the first failure for drowning and the cold, then harm every moment;
+  fire and bleeding harm until put out or bound); any attempt in a peril is the way out tried, some ways need no roll, only
+  speech is free; the referee opens and ends them. The ladder of variants runs minion, feeble, frail, weak, standard,
+  veteran, elite (`encounter.LADDER`), the player shown only the strong rungs.
   Tested by `tests/test_combat.py`, `test_encounters.py`, `test_calibration.py`, `test_b306.py`, `test_deadly.py`; the
   stored fight turns by `tools/replay_fights.py check` (TESTING, "Fight rounds").
 - **The fantasy's deck** (`games/fantasy/deck.py`, D161). Hooks dealt in play: people merged by id, places, things,

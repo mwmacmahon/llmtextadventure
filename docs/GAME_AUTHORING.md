@@ -557,8 +557,13 @@ How content meets the combat code (`games/fantasy/combat.py`, `encounter.py`; AR
   hazard's `huge_fail` does; the save keeps the player out of a peril. A `drowning` peril starts as holding breath (CON + 1
   moments, at least 2, safe), then drowning; drowning and freezing take a CON check a moment, no harm until the first fails,
   then harm every moment with no more checks (world.CHECKED, DOT); burning and bleeding hurt every moment until put out (DEX)
-  or bound; a fall lands once; getting out is an attempt's roll; never death by itself. `burning` only from content (a
-  hazard, a trap): fire damage never opens it. Words, a shout or a prayer in a peril are free. Give a peril only where the place has it (water, fire, a drop).
+  or bound (WIS); a fall lands once; never death by itself. `burning` only from content (a hazard, a trap): fire damage
+  never opens it. Getting out: any check the player makes in a peril is the way out tried; a deed with no roll of its own
+  rolls the peril's stat (STR to swim, high while something holds them under); some ways need no roll (world.ENDS_BY:
+  water for fire, a bandage, potion or healing for a wound, warmth for the cold); only speech is free (world.SPEECH). The
+  player sees a WARNING naming the way out when a peril opens (PERILS `warn`) and the status chip names it each turn
+  (`hint`). The referee opens and ends perils like any status: '+on fire', '-burning', or a `peril` field of `none`
+  (a rescue the prose shows). Words, a shout or a prayer in a peril are free. Give a peril only where the place has it (water, fire, a drop).
 - **The ladder.** The generator's variants are minion (a band's bodies at 1 or 2 hit points, light blows), feeble, frail, weak,
   standard, veteran and elite (encounter.LADDER); the
   player sees only the stronger ones, in the name ("Big skeleton", "Fearsome bandit").
