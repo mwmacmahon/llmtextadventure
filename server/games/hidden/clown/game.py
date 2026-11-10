@@ -585,7 +585,8 @@ class ClownGame(GameBase):
         shows = [x for x in s.shows if not x.result and x.at_abs > s.now_abs]
         if shows:
             lines.append("Booked: " + "; ".join(f"{x.title} at {x.venue}, {WEEKDAYS[weekday(x.at_abs // DAY)]} at {hhmm(x.at_abs % DAY)}"
-                                                + (f", {s.girl(x.girl).name} goes" if s.girl(x.girl) else "") for x in shows) + ".")
+                                                + (f", {s.girl(x.girl).name} goes" if s.girl(x.girl) else "") for x in shows)
+                         + ". Each is played, and its fee paid, there at its hour and not before.")
         if h.last_show:
             last = max((x for x in s.shows if x.result), key=lambda x: x.at_abs, default=None)
             when = f" (on {WEEKDAYS[weekday(last.at_abs // DAY)]}, {'this week' if last.at_abs // DAY >= s.clock.day - weekday(s.clock.day) else 'last week'})" if last else ""
@@ -666,7 +667,8 @@ class ClownGame(GameBase):
         slip = [cards[c] for c in s.harbour.hand if c in cards]
         if slip:
             out.append("")
-            out.append(f"On the clerk's slip at the Harbourmaster's shed (contracts for sale; {s.player.name} buys one with the Take command, in their own time; "
+            out.append(f"On the clerk's slip at the Harbourmaster's shed (contracts for sale at the price written, which the clerk never lowers; {s.player.name} "
+                       f"buys one only with the Take command, in their own time, and the girl stays at the shed until then; "
                        f"a new boat on the first and third Sunday of the month, its slip up the Monday after; this is the slip as it stands, and it changes only when THIS TURN says so):")
             for c in slip:
                 out.append(f"- {hb.card_line(c, deck, self.skill_name, s, lambda k: dk.dial(s, k))}. In her own words: \"{str(c.get('voice') or '').strip()}\"")
@@ -1086,6 +1088,7 @@ class ClownGame(GameBase):
                                   f"{early.title} is not until {when}. Nothing is performed for it and nothing is paid for it now; "
                                   "the client says so, or the visit is only to look the place over. Tell it that way."):
                         w.note(f"house.money: {value} not paid (the forced telling; {early.title} pays at its hour)")
+                        self._told(w, early.title, f"Nothing was paid: {early.title} is played, and paid, at {early.venue} on {when}.")
                     return True
                 if n > MONEY_ROW:          # C56: never a silent clip; a sum the town does not pay out of hand is retold
                     if not w.conflict("house.money", f"{n} gold handed over in a scene is more than the town pays out of hand (at most {MONEY_ROW})",
@@ -1097,6 +1100,7 @@ class ClownGame(GameBase):
                                       f"The house has {s.house.money} gold and no credit in the town; the {-n} is not paid, and what it would "
                                       "have bought is not handed over. Tell it so."):
                         return True
+                    self._told(w, "", f"The house had {s.house.money} gold, and paid that; the rest was not paid.")
                     n = -s.house.money
                 if w.set("house.money", s.house.money, s.house.money + n):
                     s.house.money += n
@@ -1168,6 +1172,7 @@ class ClownGame(GameBase):
                               f"across the counter or for less. {p.name} may look her over and talk to her there; she comes to the house only "
                               "when the contract is taken. Nothing is paid for her now. Tell it that way."):
                     w.note(f"people: {card['name']} not added (the forced telling; she is on the slip, bought only by Take)")
+                    self._told(w, card["name"], f"No contract was sold: {card['name']} is still on the clerk's slip at {price} gold, bought only with Take.")
                 return True
             if any(x.name.lower() == value.lower() for x in s.people):
                 w.reject("people", f"already listed: {value}", value)
@@ -1678,6 +1683,27 @@ class ClownGame(GameBase):
     @staticmethod
     def _show_word(quality: int) -> str:
         return "disaster" if quality <= -4 else "poor" if quality <= -1 else "fine" if quality <= 2 else "good" if quality <= 5 else "triumph"
+
+    @staticmethod
+    def _told(w: Writer, subject: str, line: str) -> None:
+        """C63: a forced telling the state did not follow; the engine's § line says what is so (the pipeline appends TOLD lines to
+        the stored prose), and `after_changes` drops this turn's journal rows that name the subject."""
+        w.note(f"TOLD {line}")
+        if subject:
+            w.note(f"UNTOLD {subject}")
+
+    def after_changes(self, state: ClownState, report: Any) -> ClownState:
+        """C63: a journal row the referee wrote from a telling the state refused (the clerk accepting 150 for a girl on the slip) is dropped."""
+        subjects = [a[len("UNTOLD "):].lower() for a in report.applied if a.startswith("UNTOLD ")]
+        if subjects:
+            texts = {a[len("journal: + "):] for a in report.applied if a.startswith("journal: + ")}
+            keep = [n for n in state.journal if not (n.text[:60] in texts and any(x in n.text.lower() for x in subjects))]
+            if len(keep) != len(state.journal):
+                report.applied.append(f"journal: - {len(state.journal) - len(keep)} row(s) from a refused telling")
+                state.journal = keep
+            for g in state.girls:
+                g.facts = [f for f in g.facts if not (f[:60] in texts and any(x in f.lower() for x in subjects))]
+        return state
 
     def _slip_card_named(self, s: ClownState, value: str) -> dict | None:
         """The clerk's slip card a new person's name is (C55): the full name, or the first name when one card on the slip has it."""

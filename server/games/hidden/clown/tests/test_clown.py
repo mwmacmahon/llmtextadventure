@@ -1187,3 +1187,22 @@ def test_a_booking_heard_of_after_its_hour_this_week_reads_next_week(game: Clown
     assert game._board_line(st, h, hooks).startswith("next Sat 15:00")
     st, res = game.run_command(st, "book", {"booking": "rope_walk_birthday", "girl": "dot"})
     assert res.ok and st.shows[0].at_abs // DAY == sat + 7
+
+
+def test_a_forced_telling_the_state_refused_is_told_by_the_engine_and_its_journal_row_dropped(game: ClownGame):
+    st = new(game)
+    cards = game.content.girl_cards()
+    name = cards[st.harbour.hand[0]]["name"]
+    s, rep, _ = _force(game, st, C(kind="new", target="person", value=name),
+                       C(kind="learned", target="player", value=f"The clerk accepted 150 gold for {name}'s contract."),
+                       C(kind="learned", target="player", value="The clerk chews straw and spits it at the stove."))
+    told = [a for a in rep.applied if a.startswith("TOLD ")]
+    assert told and name in told[0] and "still on the clerk's slip" in told[0], rep.applied
+    assert not any(name in n.text for n in s.journal) and any("straw" in n.text for n in s.journal)   # only the refused row goes
+    s, rep, _ = apply(game, st, C(kind="new", target="person", value=name))
+    assert not any(a.startswith("TOLD ") for a in rep.applied)                    # a telling that will be retold says nothing yet
+    st2 = _offer(game, new(game))
+    st2, _ = game.run_command(st2, "book", {"booking": "rope_walk_birthday", "girl": "dot"})
+    s, rep, _ = _force(game, st2, C(kind="move", target="player", value="Rope Walk"), C(kind="add", target="house", field="money", value="+15"))
+    assert any(a.startswith("TOLD Nothing was paid") and "Saturday" in a for a in rep.applied), rep.applied
+    assert "not before" in game.render_bulletin(st2, "")                         # the block says so up front

@@ -1270,6 +1270,9 @@ class Engine:
         for lv, out in zip(levers, lever_outcomes):
             yield {"event": "mechanic", "data": {"turn": turn, "text": out["text"], "data": {"lever": lv.id, "status": out["status"]}}}
             narration_stored = with_mechanic(narration_stored, out["text"])
+        for told in [x[len("TOLD "):] for x in report.applied if x.startswith("TOLD ")]:   # C63: a forced telling the state refused; the game says what is so
+            yield {"event": "mechanic", "data": {"turn": turn, "text": told, "data": {"told": True}}}
+            narration_stored = with_mechanic(narration_stored, told)
         self.store.append_transcript(iid, turn, "narrator", narration_stored)
 
         touched = [f"{p}: set by script" for p in res["effect_paths"]]
