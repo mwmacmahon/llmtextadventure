@@ -42,8 +42,12 @@ def engine(tmp_path: Path) -> Engine:
     return Engine(cfg, Store(tmp_path / "t.sqlite3"), load_games(cfg.resolve(cfg.server.content_root)))
 
 
-def new(game: ClownGame, **over):
-    return game.new_instance({**SETUP, **over})[1]
+def new(game: ClownGame, challenges: bool = False, **over):
+    """A fresh game; the nights' random challenges off unless a test asks (D215C), so a test's sums are its own."""
+    st = game.new_instance({**SETUP, **over})[1]
+    if not challenges:
+        st.scenario.dials["challenge_rate"], st.scenario.dials["challenge_step"] = 0, 0
+    return st
 
 
 def info(turn=1, minutes=5, seed=0):
@@ -1615,3 +1619,39 @@ def test_a_rival_may_slash_a_costume_in_the_wardrobe_unless_the_house_holds_it(g
         game._wardrobe(st)
         lost += 2 - len(st.active_girl.gear)
     assert lost == 8 and "slashed" in st.house.alerts[-1]
+
+
+def test_the_nights_bring_random_challenges_settled_by_2d6_and_a_stat_and_told(game: ClownGame):
+    """D215C (the owner, 11-10): a chance each night (more at the Name's steps); drawn by weight among those whose `when`
+    holds; 2d6 plus the check against its target; the effect lands; the player told with the roll, the narrator in words."""
+    pool = game.content.challenges()
+    assert len(pool) >= 16
+    by_player = sum(1 for c in pool if c.get("check") in ("charm", "menace", "business", "connections", "craft"))
+    assert by_player / len(pool) >= 0.66                                     # two-thirds helped by the proprietor's stats
+    st = new(game, challenges=True)
+    st.scenario.dials["challenge_rate"] = 1.0
+    st.house.money = 500
+    money, name = st.house.money, st.house.name
+    st = advance(game, st, 7 * DAY, 2)                                       # a week of nights, one challenge each
+    assert len(st.house.alerts) >= 6 and all("2d6" in a and "against" in a for a in st.house.alerts)
+    assert st.house.tells and not any(ch.isdigit() for t in st.house.tells for ch in t.split(" (")[0])
+    assert any(ln.startswith("IN THE NIGHT") for ln in game.turn_directives(st))
+    assert st.house.money != money or st.house.name != name or any("held" in ln for ln in st.tally)
+    mod, whose = game._check_mod(st, "girl:nerve")
+    assert "nerve" in whose and -3 <= mod <= 3
+
+
+def test_the_proprietor_spends_parts_of_the_day_bettering_a_stat(game: ClownGame):
+    """D215C: Better yourself spends the rest of the part of the day and a fee; enough sessions (five from 0, two more a point)
+    raise the stat, up to +4."""
+    st = new(game)
+    assert st.player.stats["menace"] == -1 and game._sessions_needed(st, "menace") == 3
+    st.house.money = 200
+    for i in range(3):
+        st, r = game.run_command(st, "better", {"stat": "menace"})
+        assert r.ok and r.minutes > 0 and r.directive
+    assert st.player.stats["menace"] == 0 and st.player.practice["menace"] == 0 and st.house.money == 200 - 3 * 8
+    assert "is +0 now" in r.text
+    st.player.stats["charm"] = 4
+    _, r = game.run_command(st, "better", {"stat": "charm"})
+    assert not r.ok and "as good as it will get" in r.text

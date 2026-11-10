@@ -107,6 +107,11 @@ class ClownContent(Content):
                 out[data["id"]] = data
         return out
 
+    def challenges(self) -> list[dict]:
+        """challenges.yml: the random challenges a night may bring (D215C)."""
+        p = self.dir / "challenges.yml"
+        return list((self._yaml(p) or {}).get("challenges") or []) if p.exists() else []
+
     def death_lines(self) -> list[dict]:
         p = self.dir / "death_lines.yml"
         return list((self._yaml(p) or {}).get("lines") or []) if p.exists() else []
@@ -256,6 +261,10 @@ DIALS: dict[str, float] = {
     "harbour_lift": 1,             # skill points every girl off the boat has more for every week the house has run (her whole grid; D199C)
     "harbour_price_floor": 250,    # no contract opens under this (the 100-gold cards included); the growth runs from it (D199C, C54)
     "harbour_price_cap": 1000,     # the dearest a contract can come; the price rises with the lift in proportion to her grid
+    "challenge_rate": 0.14,        # D215C: a night's chance of a random challenge (about one a week)
+    "challenge_step": 0.07,        # and this much more at each of the Name's steps
+    "self_cost": 8,                # D215C: a session spent bettering the proprietor costs this (the gym, the club, the books)
+    "self_cap": 4,                 # the most any of the proprietor's stats can be raised to
     "gear_boost": 10,              # D214C: a girl's skill for a show, lifted this much a point of each serving item's bonus
     "gear_pay": 0.2,               # and the fee this much more for each serving item (the owner: about 20% a costume)
     "gear_theft_chance": 0.15,     # D214C: a week's chance a rival gets at the wardrobe, while the house has gear

@@ -67,6 +67,8 @@ class Strategy:
                                # dined (the prose's "unless"); False: every threat lands
     roster: int = 0            # buy contracts (and the rooms for them) until the house keeps this many girls (0: only `take`)
     margin: int = 60           # what the house keeps in hand when it spends on gear, rooms or a contract for the roster
+    self_train: str = "none"   # D215C: the proprietor's own sessions (Better yourself): none, weakest (the lowest stat), or a stat
+    self_per_week: int = 2     # sessions a week, while the house has 100 in hand (each is a part of the day the player spends)
     dials: tuple = ()          # the game's dials overridden for the trial, as (key, value) pairs: a grid's `dial.<key>=a,b`
 
     def label(self) -> str:
@@ -170,8 +172,10 @@ def _invest(game: Any, st: Any, strategy: Strategy) -> dict[str, int]:
     return out
 
 
-def _fingerprint(game: Any) -> str:
-    return str(hash(json.dumps({k: v[1] for k, v in sorted(game.content._cache.items())}, sort_keys=True, default=str)))
+def _fingerprint(game: Any, keys: list[str] | None = None) -> str:
+    """The content cache's data (only `keys`, the files loaded before a trial: a file read for the first time is not a change)."""
+    cache = game.content._cache
+    return str(hash(json.dumps({k: cache[k][1] for k in sorted(keys if keys is not None else cache) if k in cache}, sort_keys=True, default=str)))
 
 
 def trial(strategy: Strategy, weeks: int, seed: int, content: Path = CONTENT, check: bool = False, in_place: bool = True) -> dict[str, Any]:
@@ -185,7 +189,9 @@ def trial(strategy: Strategy, weeks: int, seed: int, content: Path = CONTENT, ch
     _, st = game.new_instance({"name": f"Proprietor {seed}", "kind": "charmer", "first_girl": girl})
     for k, v in strategy.dials:                 # the calibration's dials, on this game only
         st.scenario.dials[k] = v
-    before = _fingerprint(game) if check else ""
+    game.content.challenges()                   # load every file a trial reads, so the check compares like with like
+    keys = sorted(game.content._cache)
+    before = _fingerprint(game, keys) if check else ""
     rng = random.Random(seed)
     turn = 1
     money_by_week: list[int] = []
@@ -203,6 +209,13 @@ def trial(strategy: Strategy, weeks: int, seed: int, content: Path = CONTENT, ch
             a, b = choose_plan(game, st, strategy.plan, GALA_SKILLS if gala else [], strategy.rest_at)
             if strategy.work_empty and not any(not x.result for x in st.shows if x.girl == g.id) and b != "rest":
                 b = "work"
+            if strategy.self_train != "none":
+                for _ in range(strategy.self_per_week):
+                    if st.house.money < 100:
+                        break
+                    k = min(("charm", "menace", "business", "connections", "craft"), key=lambda x: st.player.stats.get(x, 0)) \
+                        if strategy.self_train == "weakest" else strategy.self_train
+                    st, _ = game.run_command(st, "better", {"stat": k})
             teacher = strategy.tutor if st.house.money >= strategy.tutor_floor else "house"
             st, _ = game.run_command(st, "plan", {"slot": "mornings", "skill": a, "with": teacher})
             st, _ = game.run_command(st, "plan", {"slot": "afternoons", "skill": b, "with": teacher})
@@ -248,7 +261,7 @@ def trial(strategy: Strategy, weeks: int, seed: int, content: Path = CONTENT, ch
         turn += 1
         if st.house.week != week:
             money_by_week.append(st.house.money)
-    if check and _fingerprint(game) != before:
+    if check and _fingerprint(game, keys) != before:
         raise RuntimeError("the content cache changed during a trial: a caller mutates content; fast mode is not safe")
     played = [x for x in st.shows if x.result]
     return {"seed": seed, "girl": girl, "weeks": len(money_by_week), "money": money_by_week, "final": st.house.money,
@@ -259,7 +272,10 @@ def trial(strategy: Strategy, weeks: int, seed: int, content: Path = CONTENT, ch
             "gala": plot_log["gala"], "brascombe": plot_log["brascombe"], "troubles": plot_log["troubles"], "reckonings": plot_log["reckonings"],
             "partner": bool(st.flags.get("brascombe_partner")), "licence_revoked": bool(st.flags.get("licence_revoked")),
             "best": {k: st.house.best.get(k, 0) for k in GALA_SKILLS}, "spend": spend,
-            "tutored": sum(1 for ln in st.tally if "the tutor (" in ln or "the master (" in ln)}
+            "tutored": sum(1 for ln in st.tally if "the tutor (" in ln or "the master (" in ln),
+            "stats": dict(st.player.stats),
+            "challenges": {"held": sum(1 for ln in st.log + st.tally if " against " in ln and ln.rstrip().endswith(": held.")),
+                           "failed": sum(1 for ln in st.log + st.tally if " against " in ln and ln.rstrip().endswith(": failed."))}}
 
 
 def _pct(xs: list[float], p: float) -> float:
@@ -281,6 +297,8 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "gala_week_p50": _pct([r["gala"] for r in rows if r.get("gala")], .5) if any(r.get("gala") for r in rows) else None,
             "reckonings": round(sum(len(r.get("reckonings") or []) for r in rows) / len(rows), 2),
             "girls_p50": _pct([r["girls"] for r in rows], .5),
+            "challenges_p50": _pct([r["challenges"]["held"] + r["challenges"]["failed"] for r in rows], .5),
+            "held_share": round(sum(r["challenges"]["held"] for r in rows) / max(1, sum(r["challenges"]["held"] + r["challenges"]["failed"] for r in rows)), 2),
             "gear_p50": _pct([r["spend"]["gear"] for r in rows], .5),
             "fees_p50": _pct([r["fees"] for r in rows], .5),
             "rooms_contracts_p50": _pct([r["spend"]["rooms"] + r["spend"]["contracts"] for r in rows], .5),
@@ -323,13 +341,13 @@ def grid(spec: list[str]) -> list[Strategy]:
 
 
 def table(results: list[tuple[Strategy, dict[str, Any]]]) -> str:
-    out = ["| strategy | money p10 / p50 / p90 | low p10 | in the red | shows a week | disaster / poor / fine / good / triumph | Name p50 | bought a contract | girls p50 | fees earned p50 | gear spent p50 | rooms and contracts p50 | the gala (week p50) | reckonings a game |",
-           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    out = ["| strategy | money p10 / p50 / p90 | low p10 | in the red | shows a week | disaster / poor / fine / good / triumph | Name p50 | bought a contract | girls p50 | fees earned p50 | gear spent p50 | rooms and contracts p50 | the gala (week p50) | reckonings a game | challenges a game (held) |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for s, r in sorted(results, key=lambda x: -x[1]["final_p50"]):
         mix = " / ".join(f"{r['mix'][w]:.2f}" for w in SHOW_WORDS)
         out.append(f"| {s.label()} | {r['final_p10']} / {r['final_p50']} / {r['final_p90']} | {r['low_p10']} | {r['in_red']:.0%} | "
                    f"{r['shows_per_week']} | {mix} | {r['name_p50']} | {r['took_contract']:.0%} | {r['girls_p50']} | {r['fees_p50']} | {r['gear_p50']} | {r['rooms_contracts_p50']} | "
-                   f"{r['gala']:.0%}" + (f" (w{r['gala_week_p50']})" if r.get('gala_week_p50') else "") + f" | {r['reckonings']} |")
+                   f"{r['gala']:.0%}" + (f" (w{r['gala_week_p50']})" if r.get('gala_week_p50') else "") + f" | {r['reckonings']} | {r['challenges_p50']} ({r['held_share']:.0%}) |")
     return "\n".join(out)
 
 

@@ -285,6 +285,7 @@ class Proprietor(BaseModel):
     kind_name: str = ""
     about: str = ""
     stats: dict[str, int] = Field(default_factory=dict)
+    practice: dict[str, int] = Field(default_factory=dict)   # D215C: sessions spent bettering a stat since its last rise
     location: str = "The office"
     conditions: list[Condition] = Field(default_factory=list)
     with_them: list[str] = Field(default_factory=list)
@@ -292,6 +293,7 @@ class Proprietor(BaseModel):
 
 class House(BaseModel):
     alerts: list[str] = Field(default_factory=list)   # D211C: the player's § lines for the next turn (a worn girl before her show)
+    tells: list[str] = Field(default_factory=list)    # D215C: what the narrator plays at the next turn (a night's challenge), in words
     warned: list[str] = Field(default_factory=list)   # "day:show" warned already (once a day)
     money: int = 200
     heat: int = 0
