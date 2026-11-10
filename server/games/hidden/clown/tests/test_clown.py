@@ -468,6 +468,7 @@ def test_the_harbour_girls_get_better_and_dearer_as_the_weeks_go_to_a_cap(game: 
     assert max(hb.price_of(c, st, dl) for c in cards.values()) == int(dk.dial(st, "harbour_price_cap"))
     st.house.week = 27
     cid = st.harbour.hand[0]
+    st.harbour.since[cid] = 27                    # she came off this week's boat (a girl waiting since week 1 keeps week 1's lift)
     st.house.money, st.house.rooms = 5000, 5
     price = hb.price_of(cards[cid], st, dl)
     s, res = game.run_command(st, "take", {"girl": cid})
@@ -1193,7 +1194,9 @@ def test_the_board_shows_the_week_and_day_a_book_would_set(game: ClownGame):
     hooks = game.hooks_content()
     assert game._board_line(st, h, hooks).startswith("week 3, Sat 15:00")
     st, res = game.run_command(st, "book", {"booking": "rope_walk_birthday", "girl": "dot"})
-    assert res.ok and game._board_line(st, st.hook("rope_walk_birthday"), hooks).startswith("Sat 15:00")
+    assert res.ok and game._board_line(st, st.hook("rope_walk_birthday"), hooks).startswith("week 3, Sat 15:00")
+    titles = [getattr(p, "title", "") or "" for p in game.ui(st).panels]
+    assert any(t.startswith("This week's offers (") for t in titles) and "Booked" in titles
 
 def test_a_forced_telling_the_state_refused_is_told_by_the_engine_and_its_journal_row_dropped(game: ClownGame):
     st = new(game)
@@ -1258,12 +1261,12 @@ def test_a_skip_past_a_show_or_the_weeks_end_warns_first_and_runs_through_when_c
     x.at_abs = (st.clock.day + 5 - weekday(st.clock.day)) * DAY + 900          # this Saturday, so a skip to Sunday passes it
     st.hidden.events = [e for e in st.hidden.events if not e.id.startswith("curtain_")]
     s2, res = game.run_command(st, "skip", {"to": "sunday"})
-    assert not res.ok and s2 is st and "runs past" in res.text and x.title in res.text and "without you there" in res.text
+    assert not res.ok and s2 is st and "runs past" in res.text and x.title in res.text and "with the proprietor away" in res.text
     assert "week closes on Sunday night" in res.text and "skip to sunday anyway" in res.text
     s3, res = game.run_command(st, "skip", {"to": "sunday", "confirm": "yes"})
     sunday = (st.clock.day + 6 - weekday(st.clock.day)) * DAY + 1320
     assert res.ok and res.through and res.minutes == sunday - st.now_abs
-    assert "agreed to let the house run" in res.directive
+    assert "let the house run itself" in res.directive and "played" in res.directive
     st.hidden.events = [e for e in st.hidden.events if e.fired]
     s4, res = game.run_command(st, "skip", {"to": "tomorrow"})       # nothing on the way: no warning, the stops as ever
     assert res.ok and not res.through
@@ -1292,17 +1295,33 @@ def test_a_written_girl_at_the_door_filed_as_a_new_person_is_that_girl_and_joins
 
 
 async def test_a_typed_skip_is_warned_before_any_model_and_anyway_runs_it_through(engine: Engine):
-    """D205C through the pipeline: "skip to Saturday" with the week's callers on the way is the canned list (no model, no
-    clock); "... anyway" runs to Saturday 09:00 past them; any other typed turn keeps to a night."""
+    """D205C through the pipeline: "skip to Monday" past the week's close is the canned list (no model, no clock); "... anyway"
+    runs to Monday 09:00 through it; a skip with nothing on the way (the week's callers lose nothing) just runs."""
     iid = engine.create_instance("clown", dict(SETUP, first_girl="ada_vosk"))
     game = engine.games["clown"]
     st0 = game.load_state(engine.store.load_state(iid))
-    events = [ev async for ev in engine.run_turn(iid, "skip to Saturday")]
+    events = [ev async for ev in engine.run_turn(iid, "skip to Monday")]
     cmd = next(e for e in events if e["event"] == "command")
-    assert not cmd["data"]["ok"] and "runs past" in cmd["data"]["text"] and not any(e["event"] == "adjudication" for e in events)
+    assert not cmd["data"]["ok"] and "week closes on Sunday night" in cmd["data"]["text"] and not any(e["event"] == "adjudication" for e in events)
     assert game.load_state(engine.store.load_state(iid)).now_abs == st0.now_abs
-    events = [ev async for ev in engine.run_turn(iid, "skip to Saturday anyway")]
+    events = [ev async for ev in engine.run_turn(iid, "skip to Monday anyway")]
     assert events[-1]["event"] == "done", [e["event"] for e in events]
     st = game.load_state(engine.store.load_state(iid))
-    sat = (st0.clock.day + 5 - weekday(st0.clock.day)) * DAY + 540
-    assert st.now_abs == sat
+    assert st.now_abs == (st0.clock.day + 7 - weekday(st0.clock.day)) * DAY + 540 and st.house.week == 2
+
+def test_a_girl_waiting_on_the_slip_gets_a_little_cheaper_and_never_by_talk(game: ClownGame):
+    """D205C and round 6: no haggling; she is priced as she came off the boat, and the clerk takes 5% a week she waits, at most 10%."""
+    from games.hidden.clown import harbour as hb
+    st = new(game)
+    cards = game.content.girl_cards()
+    dl = lambda k: dk.dial(st, k)  # noqa: E731
+    cid = st.harbour.hand[0]
+    first = hb.price_of(cards[cid], st, dl)
+    st.house.week = 2
+    second = hb.price_of(cards[cid], st, dl)
+    st.house.week = 5
+    later = hb.price_of(cards[cid], st, dl)
+    assert second == round(first * 0.95) and later == round(first * 0.90) and later < second < first
+    s, rep, _ = apply(game, st, C(kind="learned", target="player", value=f"The clerk will let her go for 150."))
+    assert hb.price_of(cards[cid], s, dl) == later                      # talk moves nothing
+    assert "haggl" not in game.adjudication_rules(st).lower()

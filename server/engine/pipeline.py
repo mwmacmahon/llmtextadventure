@@ -1343,7 +1343,8 @@ class Engine:
         for lv, out in zip(levers, lever_outcomes):
             yield {"event": "mechanic", "data": {"turn": turn, "text": out["text"], "data": {"lever": lv.id, "status": out["status"]}}}
             narration_stored = with_mechanic(narration_stored, out["text"])
-        for told in [x[len("TOLD "):] for x in report.applied if x.startswith("TOLD ")]:   # C63: a forced telling the state refused; the game says what is so
+        capped_line = _hook(game, "turn_cap_line", state, default=None) if res.get("turn_capped") else None   # round 6: a typed wait of days
+        for told in [x[len("TOLD "):] for x in report.applied if x.startswith("TOLD ")] + ([capped_line] if capped_line else []):   # C63: what is so
             yield {"event": "mechanic", "data": {"turn": turn, "text": told, "data": {"told": True}}}
             narration_stored = with_mechanic(narration_stored, told)
         self.store.append_transcript(iid, turn, "narrator", narration_stored)
@@ -1843,6 +1844,7 @@ class Engine:
         notes: list[str] = []
         clock_note = ""
         elapsed = 0
+        turn_capped = False
         split: tuple[int, int] | None = None
         clock = getattr(game, "clock", None)
         clock_path = getattr(clock, "path", "clock")
@@ -1924,6 +1926,7 @@ class Engine:
                 want = min(planned, cap)
                 if want < adj.time_minutes:
                     clock_note = f"capped from {adj.time_minutes} to {want} minutes"
+                    turn_capped = bool(clock.turn_cap_minutes) and cap == clock.turn_cap_minutes
                 clk = sp.lookup(doc, clock.path)
                 now = clk["day"] * clock.minutes_per_day + clk["minute"]
                 if not through:
@@ -1995,7 +1998,7 @@ class Engine:
         if scene_long:
             notes.append(f"scene marked long: turn {scene_long} of a fight")
         return {"state": new_state, "assessments": assessments, "fired": fired, "expired": expired, "happened": happened,
-                "elapsed": elapsed, "clock_note": clock_note, "directives": directives, "adjudication": adj, "effect_paths": effect_paths,
+                "elapsed": elapsed, "clock_note": clock_note, "turn_capped": turn_capped, "directives": directives, "adjudication": adj, "effect_paths": effect_paths,
                 "split": split, "scene_long": scene_long,
                 "notes": notes, "pending_fired": pending_fired, "pending_lapsed": pending_lapsed, "holds": list(ectx.holds),
                 "fail_streak": self._fail_streak(iid, turn) if assessments else 0,
@@ -3762,6 +3765,9 @@ def _this_turn_block(res: dict[str, Any], clock_text: str = "") -> str:
             lines.append(f"- The first attempt starts about {res['elapsed']} minutes on; the clock above shows that moment. Open on what happens "
                          "on the way to it, what is seen, said and done, then call the check. Each check's result says how long that attempt "
                          "takes; the turn ends when the last attempt does.")
+    elif res["elapsed"] and res.get("turn_capped"):     # round 6: "I wait until Thursday" ran a night, the prose said Thursday
+        lines.append(f"- Time passes: about {max(1, round(res['elapsed'] / 60))} hours, no more" + (f", to {clock_text}" if clock_text else "")
+                     + ". Tell up to that hour and stop; the player is still waiting.")
     elif res["elapsed"]:
         if "stopped at" in note and adj is not None and adj.time_minutes > res["elapsed"]:
             lines.append(f"- Time passes: about {res['elapsed']} minutes of the {adj.time_minutes} the player meant to spend; something falls due then (below). "

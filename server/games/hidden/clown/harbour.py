@@ -138,11 +138,12 @@ def lottery(card: dict, deck: dict, rng: random.Random, overrides: dict[str, str
 LIFT_MAX = 90                   # no skill off the boat over this, however late
 
 
-def lift_of(state: ClownState | None, dial) -> int:
-    """The skill points a girl off the boat has over her card, by how long the house has run (D199C): the harbour's girls get better."""
+def lift_of(state: ClownState | None, dial, week: int | None = None) -> int:
+    """The skill points a girl off the boat has over her card, by how long the house has run (D199C): the harbour's girls get better.
+    `week`: as of that week (a girl on the slip is priced as she came off the boat, D205C)."""
     if state is None or dial is None:
         return 0
-    return int(round(float(dial("harbour_lift")) * max(0, state.house.week - 1)))
+    return int(round(float(dial("harbour_lift")) * max(0, (state.house.week if week is None else week) - 1)))
 
 
 def price_of(card: dict, state: ClownState | None = None, dial=None, n_skills: int = 15) -> int:
@@ -153,7 +154,8 @@ def price_of(card: dict, state: ClownState | None = None, dial=None, n_skills: i
         return base
     seed = [int(v) for v in (card.get("seed") or {}).values()]
     expect = sum(seed) + 10 * max(0, n_skills - len(seed))
-    lift = lift_of(state, dial)
+    came = state.harbour.since.get(str(card.get("id") or ""))
+    lift = lift_of(state, dial, came)           # round 6: priced as she came off the boat, so the markdown makes a waiting girl cheaper
     grown = sum(min(LIFT_MAX, v + lift) for v in seed) + min(LIFT_MAX, 10 + lift) * max(0, n_skills - len(seed))
     opening = max(float(dial("harbour_price_floor")), base * float(dial("harbour_price_scale")))
     price = min(float(dial("harbour_price_cap")), opening * grown / max(1, expect))
@@ -206,7 +208,7 @@ def seed_words(card: dict, skill_name, lift: int = 0) -> str:
 def card_line(card: dict, deck: dict, skill_name, state: ClownState | None = None, dial=None) -> str:
     """One line of a card for the narrator and the slip: who, how old, from where, bound for what, what the slip says she can do, the price."""
     return (f"{card['name']}, {card.get('age')}, {tag_meaning(deck, str(card.get('origin') or ''))}, bound for {card.get('bound_for')}; the slip says "
-            f"{seed_words(card, skill_name, lift_of(state, dial))}; {price_of(card, state, dial)} gold for the contract")
+            f"{seed_words(card, skill_name, lift_of(state, dial, state.harbour.since.get(str(card.get('id') or ''))))}; {price_of(card, state, dial)} gold for the contract")
 
 
 def girl_file_lines(g: Girl, deck: dict) -> list[str]:
@@ -249,7 +251,7 @@ def take(state: ClownState, cid: str, deck: dict, cards: dict[str, dict], rng: r
     hb.queue = [c for c in hb.queue if c != cid]
     hb.gone.append(cid)
     hb.taken_week = state.house.week
-    g = make_girl(card, deck, state.scenario, rng, state.clock.day, price, hb.overrides.get(cid), lift_of(state, dial))
+    g = make_girl(card, deck, state.scenario, rng, state.clock.day, price, hb.overrides.get(cid), lift_of(state, dial, hb.since.get(cid)))
     state.girls.append(g)
     if not state.active or state.active_girl is None or not state.active_girl.in_house():
         state.active, g.status = g.id, "active"

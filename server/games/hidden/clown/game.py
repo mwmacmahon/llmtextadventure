@@ -794,7 +794,8 @@ class ClownGame(GameBase):
             "girl=<her id>, only for a girl bought off the boats. When a reckoning is open (the game state says so), taking what is coming is the Bear "
             "command and signing a girl over to the men waiting is the Give up command with girl=<her id>. Improving the house (a room made up, a line "
             "in the Guild's book) is the Upgrade command with upgrade=<its id as the game state lists it>. A command never replaces the rest of the input.",
-            f"Paying more than the house has is impossible (the game state block says what money there is). Putting another girl into training is the "
+            f"Prices are the engine's (the clerk's slip, each client's fee). Talk about a price, asking it or offering less, is never a "
+            f"check and changes no money: put it under fiat with the outcome that the price stands. Paying more than the house has is impossible (the game state block says what money there is). Putting another girl into training is the "
             f"Switch command, any day, any girl in the house. Days pass only when the player says plainly to skip, and the engine reads that itself: "
             f"never list Skip; a wait is minutes or hours, at most to the next morning. Passing a girl out as a "
             f"finished clown is the Graduate command, Sunday only; the engine says whether she is ready.",
@@ -939,8 +940,8 @@ class ClownGame(GameBase):
         bk = hk.get("booking") or {}
         q = s.person(str(hk.get("client") or ""))
         fee = x.fee if x else (q.client.pays if q is not None and q.client else 0)
-        if x is not None:
-            when, venue = f"{WEEKDAYS[weekday(x.at_abs // DAY)][:3]} {hhmm(x.at_abs % DAY)}", x.venue
+        if x is not None:                                  # round 6: with several Saturdays booked the week tells them apart
+            when, venue = f"week {week_of(x.at_abs // DAY)}, {WEEKDAYS[weekday(x.at_abs // DAY)][:3]} {hhmm(x.at_abs % DAY)}", x.venue
         else:
             day, minute = dk.show_day(s, hk, h.dealt_abs)       # the day a Book would set (D205C: weeks off)
             when, venue = f"week {week_of(day)}, {WEEKDAYS[weekday(day)][:3]} {hhmm(minute)}", str(bk.get("venue") or "")
@@ -1098,6 +1099,9 @@ class ClownGame(GameBase):
                     w.reject("house.money", f"the show's fee is the engine's and was paid ({told_now[0].paid} gold); no row for it", value)
                     return True
                 early = self._show_ahead_here(s) if n > 0 else None
+                if early is not None and early.at_abs <= s.now_abs:   # round 6: at or past its hour the engine pays it this turn;
+                    w.reject("house.money", f"{early.title}'s fee is the engine's, paid as it is played; no row for it", value)   # no retell
+                    return True
                 if early is not None:      # C57: a booked show played and paid before its hour; the engine pays it at the hour
                     when = f"{WEEKDAYS[weekday(early.at_abs // DAY)]} {hhmm(early.at_abs % DAY)}"
                     if w.conflict("house.money", f"{early.title} is booked for {when}; its fee is paid at the show, not before", value, "contradiction",
@@ -1284,8 +1288,11 @@ class ClownGame(GameBase):
                     w.reject(f"girls.{g.id}.status", "only a girl who has come to the door asking to be taken on can join", value)
                     return True
                 why = self._take_on(s, g, ch.note or "")
-                if why:
-                    w.reject(f"girls.{g.id}.status", why, value)
+                if why:                     # round 6 (t46): refused in silence, the prose took Rosalind in and she never joined
+                    if w.conflict(f"girls.{g.id}.status", why, value, "contradiction",
+                                  f"Rewrite the arrival: {g.name} is not taken in; the house's {s.house.rooms} rooms are full. She can talk, wait "
+                                  f"or leave, but does not move in this turn."):
+                        self._told(w, "", f"{g.name} was not taken on: the house's {s.house.rooms} rooms are full; an upgrade makes up another.")
                 else:
                     w.set(f"girls.{g.id}.status", "available", g.status)
                 return True
@@ -2422,11 +2429,10 @@ class ClownGame(GameBase):
     def _day_full(self, s: ClownState, h: Any) -> bool:
         """Every girl in the house already has a show on the day this card would be booked for (round 2: the Judge's Saturday clashed
         with the Widow's and the lever said nothing)."""
-        bk = (self.hooks_content().get(h.hook) or {}).get("booking") or {}
-        wd, minute = int(bk.get("weekday", 5)), int(bk.get("minute", 1200))
-        day = s.clock.day
-        while weekday(day) != wd or day * DAY + minute <= s.now_abs + 120:
-            day += 1
+        hk = self.hooks_content().get(h.hook) or {}
+        if not hk.get("booking"):
+            return False
+        day, _ = dk.show_day(s, hk, h.dealt_abs)          # round 6: the old this-week day said "no girl free" for the Judge
         girls = s.in_house()
         return bool(girls) and all(any(x.at_abs // DAY == day and not x.result and x.girl == g.id for x in s.shows) for g in girls)
 
@@ -2451,27 +2457,35 @@ class ClownGame(GameBase):
         to = _SKIP_ALIASES.get(to, to.split()[0] if to.split()[0] in {k for k, _, _ in self._skip_targets(state)} else to)
         return "skip", {"to": to, "confirm": "yes" if m.group("anyway") else "no"}
 
+    def turn_cap_line(self, state: ClownState) -> str:
+        """The pipeline's hook (round 6): the player's line when a typed turn meant days and the clock ran a night at most."""
+        return "The clock runs at most a night on its own. To let days pass, say \"skip to Thursday\" (or another day, or \"skip to the show\")."
+
     def _slot_words(self, v: str) -> str:
         return "nothing set" if not v else "rest" if v == "rest" else "a job in town" if v == "work" else self.skill_name(v).lower()
 
-    def _skip_passes(self, s: ClownState, t: int) -> list[str]:
+    def _skip_passes(self, s: ClownState, t: int, past: bool = False) -> list[str]:
         """What a Skip to `t` would run past, in the player's words: the shows (played without the proprietor), the week's end
         (the keep paid, the week's offers closed), the timers the player can see, the calls the house may get."""
         now, out = s.now_abs, []
         for x in sorted((x for x in s.shows if not x.result and now < x.at_abs <= t), key=lambda x: x.at_abs):
             g = s.girl(x.girl)
-            out.append(f"{g.name if g else 'the girl'} plays {x.title} at {x.venue}, {WEEKDAYS[weekday(x.at_abs // DAY)]} {hhmm(x.at_abs % DAY)}, without you there")
+            out.append(f"{g.name if g else 'the girl'} {'played' if past else 'plays'} '{x.title}' ({x.venue}, {WEEKDAYS[weekday(x.at_abs // DAY)]} "
+                       f"{hhmm(x.at_abs % DAY)}) with the proprietor away")
         sunday = s.clock.day + (6 - weekday(s.clock.day))
         if now < sunday * DAY + WEEK_END_MINUTE <= t:
-            open_cards = [h.title for h in dk.hand(s)]
-            out.append("the week closes on Sunday night: the keep is paid" + (f", and this week's offers close unbooked ({'; '.join(open_cards)})" if open_cards else ""))
+            heard = [h.title for h in dk.hand(s) if h.status == "live"]
+            unheard = sum(1 for h in dk.hand(s) if h.status == "dealt")
+            out.append(("the week closed on Sunday night and the house's upkeep was paid" if past else "the week closes on Sunday night: the house's upkeep is paid") + (f"; this week's offers close unbooked ({'; '.join(heard)})" if heard else "")
+                       + (f"; {unheard} offer{'s' if unheard > 1 else ''} not yet heard of close with them" if unheard else ""))
         for pnd in s.hidden.pending:
             if pnd.live and not pnd.hidden and pnd.tag != "week_end" and now < pnd.due_abs(DAY) <= t:
                 out.append(f"{pnd.what} ({WEEKDAYS[weekday(pnd.due_day)]} {hhmm(pnd.due_minute)})")
+        reach = {f"{h.id}_reach" for h in s.hooks if h.kind == "booking"}      # a booking's caller loses nothing: the offer stays open to Sunday
         calls = [e for e in s.hidden.events if not e.fired and e.directive and e.at is not None and not e.id.startswith("curtain_")
-                 and now < int(e.at.get("day", 0)) * DAY + int(e.at.get("minute", 0)) <= t]
+                 and e.id not in reach and now < int(e.at.get("day", 0)) * DAY + int(e.at.get("minute", 0)) <= t]
         if calls:
-            out.append("callers at the house and word from the town, heard of only afterwards")
+            out.append("something may happen at the house or in the town meanwhile, heard of only afterwards")
         return out
 
     def _days_ran(self, s: ClownState, meant: str, then: str) -> str:
@@ -2583,8 +2597,8 @@ class ClownGame(GameBase):
                     + f"\nThe house runs on its plan as it stands{plan}, and you are not there for any of it. To let it run, say "
                     f"\"skip to {to} anyway\", or use Skip with confirm."))
             directive = f"{p.name} meant to let the time run to {low}, keeping house. " + self._days_ran(s, low, "Stop there.") + (
-                (" The player agreed to let the house run on its own meanwhile: " + "; ".join(passes) + ". Whatever of it THIS TURN tells, "
-                 "tell in a line or two as what the proprietor found or heard on getting there.") if passes else "")
+                (" The player let the house run itself meanwhile: " + "; ".join(self._skip_passes(s, t, past=True)) + ". Tell any of it only as "
+                 "news the proprietor hears at the end, in a line or two.") if passes else "")
             return s, CommandResult(label="Skip", player_line=f"I let the days run to {low}.", summary=f"{p.name} lets time run to {low}.",
                                     directive=directive, minutes=max(1, t - s.now_abs), through=bool(passes))
         if command_id == "graduate":
@@ -2822,9 +2836,13 @@ class ClownGame(GameBase):
                                         details=[Chip(label="Where", value="about the town" if x.location == AWAY_PLACE else x.location or "unknown")],
                                         notes=x.facts[-4:]))
         panels.append(EntityCards(title="The girls", cards=cards))
-        hand_rows = [r for r in self.quest_rows(s) if r.standing in ("in hand", "booked")]
-        panels.append(QuestPanel(title=f"The hand ({len(dk.hand(s))} of {h.hand_size} cards)", rows=hand_rows, place="main"))
-        panels.append(QuestPanel(title="Bookings and trouble", rows=[r for r in self.quest_rows(s) if r.standing not in ("in hand", "booked")]))
+        rows_all = self.quest_rows(s)
+        heard = sum(1 for x in dk.hand(s) if x.status == "live")
+        coming = sum(1 for x in dk.hand(s) if x.status == "dealt")
+        panels.append(QuestPanel(title=f"This week's offers ({heard} open to Sunday night" + (f", {coming} still to call" if coming else "") + ")",
+                                 rows=[r for r in rows_all if r.standing == "in hand"], place="main"))   # round 6: "2 of 2: nothing"
+        panels.append(QuestPanel(title="Booked", rows=sorted((r for r in rows_all if r.standing == "booked"), key=lambda r: r.line), place="main"))
+        panels.append(QuestPanel(title="Played and trouble", rows=[r for r in rows_all if r.standing not in ("in hand", "booked")]))
         deck, cards = self.content.girls_deck(), self.content.girl_cards()
         if deck:
             nxt = next((w for w in range(h.week, h.week + 4) if hb.ship_sunday(w)), h.week)
@@ -2835,7 +2853,7 @@ class ClownGame(GameBase):
                     continue
                 price = hb.price_of(card, s, lambda k: dk.dial(s, k))
                 rows.append(QuestRow(title=f"{card['name']}, {card.get('age')} · {hb.tag_meaning(deck, str(card.get('origin') or ''))}",
-                                     line=f"{price} gold · bound for {card.get('bound_for')} · {hb.seed_words(card, self.skill_name, hb.lift_of(s, lambda k: dk.dial(s, k)))} · " + ", ".join(card.get("traits") or []),
+                                     line=f"{price} gold · bound for {card.get('bound_for')} · {hb.seed_words(card, self.skill_name, hb.lift_of(s, lambda k: dk.dial(s, k), s.harbour.since.get(c)))} · " + ", ".join(card.get("traits") or []),
                                      standing="for sale" if price <= h.money else "too dear", giver="the clerk at the shed", tone="info" if price <= h.money else "neutral"))
             panels.append(QuestPanel(title=f"The clerk's slip ({len(rows)} contracts; the next boat Sunday of week {nxt}" + ("; one bought this week" if s.harbour.taken_week == h.week and h.week else "") + ")",
                                      rows=rows, place="main"))
