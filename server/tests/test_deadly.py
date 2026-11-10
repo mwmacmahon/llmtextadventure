@@ -162,7 +162,8 @@ def test_in_a_peril_words_are_free_and_never_a_chosen_death(game):
         s2, w = game.world_turn(st, act(words), words, Dice(20), 3, 2)
         assert not s2.player.fate and s2.player.peril.turns_left == st.player.peril.turns_left and "Words cost nothing" in w.directives[0]
     s3, w3 = game.world_turn(st, act("I look at the fish"), "I look at the fish", Dice(2, 2), 3, 2)   # a deed, not words: a moment
-    assert not s3.player.fate and s3.player.peril is not None and any("Getting out" in m for m in w3.mechanics)
+    assert not s3.player.fate and s3.player.peril is not None and not any("Getting out" in m for m in w3.mechanics)
+    assert any("air left" in m for m in w3.mechanics)                    # round 8: it is a moment in it, not a way out
 
 
 def test_every_way_out_is_an_attempt_and_some_need_no_roll(game):
@@ -446,3 +447,53 @@ def test_cold_water_opens_freezing_and_no_hazard_rolls_once_in_a_peril(game):
     wo.open_peril(st, "freezing", turns=0)
     out = game.world_call(st, call("HAZARD", "cold_water"), Dice(1), 2, {"hp": 0})
     assert out["data"].get("none") and "no roll" in out["text"]
+
+
+def test_a_check_that_does_not_go_for_the_way_out_is_no_escape(game):
+    """Round 8 (62e207f3fefa): a CHA shout put the fire out; a WIS look ended the drowning; the zombie struck on the DEBUG
+    turn; 'I run' while held rolled a break-free."""
+    from engine.roles import CheckStaked as CheckSpec
+    from engine.roles import AssistantReadingCombat, IntentCombat
+    st = new(game)
+    wo.open_peril(st, "burning", turns=0)
+    shout = AssistantReadingCombat(kind="action", summary="shouts", time_minutes=1, risk="low",
+                                   intents=[IntentCombat(action="shout for help", check=CheckSpec(label="Call for help", stat="cha", difficulty="medium"))])
+    s2, w = game.world_turn(st, shout, "HELP! Somebody help me!", Dice(20), 3, 2)
+    assert s2.player.peril is not None and "Words cost nothing" in w.directives[0]
+    data = {"outcome": "success", "stat": "cha", "roll": 18}
+    assert game.check_note(st, data, "Call for help") == "" or "way out" not in game.check_note(st, data, "Call for help")
+    st2 = new(game)
+    wo.open_peril(st2, "drowning", turns=0)
+    look = AssistantReadingCombat(kind="action", summary="looks", time_minutes=1, risk="low",
+                                  intents=[IntentCombat(action="look around the walls", check=CheckSpec(label="Search the walls", stat="wis", difficulty="medium"))])
+    s3, w3 = game.world_turn(st2, look, "I feel along the walls for a gap", Dice(20, 20), 3, 2)
+    assert s3.player.peril is not None                                      # a look is a moment in it, never the way out
+    assert wo.way_out(st2.player.peril, "str", "I swim for the surface") and not wo.way_out(st2.player.peril, "wis", "Search the walls")
+    st3 = new(game)
+    st3.flags["debug_quiet"] = True
+    foe(st3)
+    out = game.world_call(st3, call("ENEMY", "maud"), Dice(20, 20), 2, {"hp": 0})
+    assert out["data"].get("none")
+
+
+def test_the_assistant_marks_the_way_out_and_the_engine_counts_it(game):
+    """The owner, 11-10 night: "Can't assistant help match intents?? I thought that's half the point of it": the note tells
+    the reading, a check labelled 'way out:' is the attempt, whatever the words."""
+    from engine.pipeline import adjudicator_inputs
+    from engine.roles import CheckStaked as CheckSpec
+    from engine.roles import AssistantReadingCombat, IntentCombat
+    st = new(game)
+    wo.open_peril(st, "burning", turns=0)
+    notes = game.assistant_notes(st)
+    assert notes and "'way out:'" in notes[0] and "water" in notes[0]
+    system, msgs, _ = adjudicator_inputs(game, st, [], "I fling myself at the floor and writhe")
+    assert "[ENGINE NOTE]" in msgs[-1].content and "way out:" in msgs[-1].content
+    marked = AssistantReadingCombat(kind="action", summary="writhes", time_minutes=1, risk="high",
+                                    intents=[IntentCombat(action="fling at the floor and writhe", check=CheckSpec(label="way out: writhe on the floor", stat="dex", difficulty="medium"))])
+    s2, w = game.world_turn(st, marked, "I fling myself at the floor and writhe", Dice(20), 3, 2)
+    assert "decides it" in w.directives[0]                               # the reading's own roll decides it
+    ok = {"outcome": "success", "stat": "dex", "roll": 16}
+    assert "way out" in game.check_note(s2, ok, "way out: writhe on the floor")
+    after = game.after_turn(s2, info_calls(3, [ok]))
+    assert after.player.peril is None
+    assert not game.assistant_notes(new(game))                           # no peril, no note

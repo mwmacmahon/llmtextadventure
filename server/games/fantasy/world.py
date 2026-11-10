@@ -32,7 +32,9 @@ LETHAL = re.compile(r"\b(drown (myself|himself|herself|themselves)|let (the (wat
                     r"breathe (the|in the) water|open my mouth (and|to) (breathe|let the water))", re.I)
 ESCAPE = re.compile(r"\b(swim|surface|climb|break (free|loose|out|her grip|his grip|their grip)|pull (free|loose|away|myself)|kick (free|loose|off|away)|"
                     r"get (out|free|clear|away|loose)|escape|struggle|wrench|twist (free|away)|thrash|claw|grab (for|at|the)|hold (my|our) breath|"
-                    r"stab|cut|strike|hack|bite|fight|shove|push (off|away)|roll (away|clear)|crawl|run|flee|stop the bleeding|bind|bandage|"
+                    r"stab|cut|strike|hack|bite|fight|shove|push (off|away)|roll (away|clear)|drop and roll|roll (on|in) the|crawl|run|flee|stop the bleeding|bind|bandage|"
+                    r"press (on|hard on|down on) the wound|tie (it|the wound|off)|tourniquet|staunch|"
+                    r"smother|stamp (it|them|the flames|the fire) out|stamp out|pat (it|them|the flames) out|beat (at )?the flames|"
                     r"put out|beat out|douse|warm|fire|hold on|cling|reach)", re.I)
 STEPS = {"scrape": (1, 2), "solid": (3, 5), "serious": (6, 10)}
 STEP_WORDS = {"scrape": "a scrape", "solid": "a solid blow", "serious": "a serious hit", "lethal": "a killing blow"}
@@ -69,6 +71,34 @@ PERIL_LABEL = {"holding_breath": "Holding breath", "drowning": "Drowning", "free
 ENDS_BY = {"burning": re.compile(r"\b(water|canal|river|lake|sea|pond|bucket|trough|puddle|douse[sd]?|dousing|soak|wet (blanket|cloak))", re.I),
            "bleeding": re.compile(r"\b(bandage|healer'?s kit|potion|heal(ing)?|lay on hands|cure wounds|tourniquet)", re.I),
            "freezing": re.compile(r"\b(fire|hearth|blankets?|furs?|shelter|inside|indoors|dry clothes|warm (room|inn|tavern)|by the stove)", re.I)}
+# round 8 (62e207f3fefa): a CHA shout put the fire out and a WIS look ended the drowning ("any check is the way out" was
+# too wide). A check is the way out when its stat fits the peril and its words go for the way out
+WAY_STATS = {"burning": ("dex",), "bleeding": ("wis", "dex"), "drowning": ("str", "dex"), "holding_breath": ("str", "dex"),
+             "freezing": ("con",), "held": ("str", "dex"), "falling": ("dex", "str")}
+BREAK_FREE = re.compile(r"\b(break (free|loose|out|its grip|the grip|their grip|his grip|her grip)|wrench|twist (free|away|out)|"
+                        r"pull (free|loose|away)|shake (off|free|loose)|throw (it|him|her|them) off|slip (free|out of)|elbow|"
+                        r"kick (free|loose|off|away)|get free|escape (the|its|his|her|their) (grip|hold|grasp))", re.I)
+
+
+WAY_WORDS = {"bleeding": re.compile(r"\b(press\w*|bind\w*|tie\w*|tourniquet|staunch\w*|bandag\w*|wrap\w*|stem\w*|stop the bleeding|"
+                                   r"hold (it|the wound) (shut|closed|tight))", re.I)}
+
+
+def way_out(pr: Any, stat: str, words: str) -> bool:
+    """A check that is the way out of this peril: its stat fits and its words go for it (the escape, the peril's own end,
+    or a blow at what holds the player under)."""
+    from .game import ATTACK
+    k = pr.kind
+    if re.match(r"\s*way out\b", words or "", re.I):   # the assistant marked it (the owner: "Can't assistant help match intents??")
+        return True
+    fits = stat in WAY_STATS.get(k, (pr.stat,))
+    ends = ENDS_BY.get(k)
+    own = WAY_WORDS.get(k)
+    goes = bool(ESCAPE.search(words) or BREAK_FREE.search(words) or (ends is not None and ends.search(words)) or (own is not None and own.search(words))
+                or (k in ("drowning", "holding_breath", "held") and ATTACK.search(words)))
+    return fits and goes
+
+
 # words that are only words (the owner: "Shouting should be a free action"): a turn of these alone costs no moment
 SPEECH = re.compile(r"\b(say|says|said|shout|shouts|shouted|yell|yells|scream|screams|call|calls|called|cry|cries|pray|prays|beg|begs|"
                     r"ask|asks|tell|tells|whisper|curse|swear|sing|plead|answer|speak|talk|help)\b|[\"!]", re.I)
@@ -228,7 +258,9 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
         return s, w
     text = " ".join([player_text or "", getattr(adj, "summary", "") or ""] + [i.action for i in (getattr(adj, "intents", None) or [])])
     held = next((c for c in p.conditions if c.name == "grappled"), None)
-    if held is not None and getattr(adj, "kind", "") == "action" and ESCAPE.search(text):
+    marked = any(re.match(r"\s*way out\b", str(getattr(getattr(i, "check", None), "label", "") or ""), re.I)
+                 for i in (getattr(adj, "intents", None) or []))
+    if held is not None and getattr(adj, "kind", "") == "action" and not marked and BREAK_FREE.search(text):   # round 8: 'run' is no break
         # round 7 (f6428fd5c68b T13): "an elbow to its face and I wrench my arms out" was read as a punch, and nothing ended the
         # grab. Words that go for breaking free roll it, STR or DEX (the better); a success ends it
         stat = "str" if p.stats.get("str", 0) >= p.stats.get("dex", 0) else "dex"
@@ -261,7 +293,7 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
         pr = p.peril
         from .game import ATTACK
         what = PERILS.get(pr.kind, {}).get("what", pr.kind)
-        own = escape_check(adj)
+        own = escape_check(adj, pr)
         acting = own is not None or any(getattr(i, "attack_at", None) for i in (getattr(adj, "intents", None) or []))
         if getattr(adj, "kind", "action") != "action" or (not acting and SPEECH.search(player_text or "") and not ESCAPE.search(text)):
             # B317 (the owner, 11-10 night: "Shouting should be a free action ... When in doubt never assume it!"): words, a
@@ -283,8 +315,9 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
                                 f"out works ({pr.way}); on a failure {p.name} is still in it, and the engine counts the moment.")
             return _after_peril(game, s, adj, player_text, rng, turn, offset, w, text)
         from .game import ATTACK
-        fighting_on = any(getattr(i, "attack_at", None) for i in (getattr(adj, "intents", None) or [])) or (ATTACK.search(text) and not ESCAPE.search(text))
-        if not fighting_on:                       # an attempt with no roll of its own: the way out's roll (an action, no save)
+        goes = way_out(pr, pr.stat, player_text or "") or way_out(pr, pr.stat, text)
+        if goes:                                  # the words go for the way out, with no fitting roll of their own: the way out's roll
+
             held_under = pr.kind in ("drowning", "holding_breath") and pr.by and any(
                 (q := s.person(x)) is not None and q.status == "alive" and pr.by in (q.id, q.name) for x in p.fighting)
             res = _check(game, s, pr.stat, "high" if held_under else "medium", f"{pr.kind}: get {pr.way}", rng, [], offset)
@@ -345,14 +378,17 @@ def _break_contact(s: FantasyState, w: "WorldTurn") -> str:
     return "; ".join(said)
 
 
-def escape_check(adj: Any) -> str | None:
+def escape_check(adj: Any, pr: Any = None) -> str | None:
     """The label of the player's own check this turn, which in a peril is the way out tried (the owner, 11-10 night: a word list
     let 'I drop and roll' and 'I press on the wound' do nothing), or None."""
     for i in getattr(adj, "intents", None) or []:
         c = getattr(i, "check", None)
         if c is None:
             continue
-        return str(getattr(c, "label", "") or getattr(i, "action", ""))   # in a peril, any check is the way out tried (11-10 night)
+        stat = re.sub(r"\s*\(.*?\)\s*$", "", str(getattr(c, "stat", ""))).strip().lower()
+        words = f"{getattr(c, 'label', '')} {getattr(i, 'action', '')}"     # the label first: 'way out: ...' is the assistant's mark
+        if pr is None or way_out(pr, stat, words):
+            return str(getattr(c, "label", "") or getattr(i, "action", ""))
     return None
 
 
@@ -443,7 +479,7 @@ def peril_by_check(s: FantasyState, data: dict, label: str, game: Any = None) ->
     if pr is None or data.get("peril_roll"):
         return ""
     from .game import ATTACK
-    if not label:                                # in a peril, any check the player makes is the way out tried (11-10 night)
+    if not way_out(pr, str(data.get("stat") or "").lower(), label):   # round 8: only a check that goes for the way out
         return ""
     data["peril_roll"] = pr.kind
     what = PERILS.get(pr.kind, {}).get("what", pr.kind)
@@ -628,6 +664,8 @@ def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tal
     `data` carries what lands after the prose (harm, a peril, a condition, death). In a fight (part fifteen §3) <<ATTACK>>,
     <<ALLY>> and <<ENEMY>> roll the round's listed actions; an <<ENEMY>> for someone not yet in the fight joins them (B208)."""
     p = s.player
+    if s.flags.get("debug_quiet"):                       # round 8: the DEBUG turn sets things up; nobody acts until the next
+        return {"text": "Nobody acts this turn: it only sets the scene. Play it without a roll.", "data": {"verb": call.verb, "none": True}}
     if call.verb in ("ATTACK", "ALLY", "ENEMY"):         # B323: every ENEMY through the round's resolver and the person's own block
         from . import combat as cb
         out = cb.world_call(game, s, call, rng, offset, tally)

@@ -563,7 +563,11 @@ How content meets the combat code (`games/fantasy/combat.py`, `encounter.py`; AR
   water for fire, a bandage, potion or healing for a wound, warmth for the cold); only speech is free (world.SPEECH). The
   player sees a WARNING naming the way out when a peril opens (PERILS `warn`) and the status chip names it each turn
   (`hint`). The referee opens and ends perils like any status: '+on fire', '-burning', or a `peril` field of `none`
-  (a rescue the prose shows). Words, a shout or a prayer in a peril are free. Give a peril only where the place has it (water, fire, a drop).
+  (a rescue the prose shows).
+  The assistant judges the attempt: while the player is in a peril or held, its input carries an ENGINE NOTE (the game's
+  `assistant_notes` hook, `FantasyGame.PERIL_ASK`) asking it to label the attempt's check 'way out:' plus the player's
+  words; the engine counts that check (world.way_out), with the stat-and-words test as the fallback. Getting into water
+  is a move, not a check. Words, a shout or a prayer in a peril are free. Give a peril only where the place has it (water, fire, a drop).
 - **Hazards** (`hazards:` per place: cold water, the causeway): the check while exposed is the save that keeps the player
   out; its `fail` should open the peril it is (cold water `{peril: freezing}`), its `huge_fail` the worse one (`{peril:
   drowning}`); while the player is in any peril the hazard rolls nothing. A `fail` of hit points and a condition still

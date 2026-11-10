@@ -2741,6 +2741,7 @@ def adjudicator_inputs(game: Game, state: BaseModel, recent: list[Msg], player_t
         extra = stakes_blocks(game, state, fresh)
     system, msgs = adjudicator_messages(rules, state_text, recent, player_text, _commands_text(_hook(game, "commands", state, default=[])), extra=extra)
     system += "\n\n" + words_decide(game)          # B207, B211 (D179): the words decide first; the edge on every check
+    notes = list(notes or []) + list(_hook(game, "assistant_notes", state, default=None) or [])   # a game's own word to the reading
     if notes:                                        # the pre-checks' lines (engine/prechecks.py, B105): a nudge, the assistant decides
         msgs[-1] = Msg(msgs[-1].role, msgs[-1].content + "\n\n[ENGINE NOTE]\n" + "\n".join(notes), cache=msgs[-1].cache)
     if extra:

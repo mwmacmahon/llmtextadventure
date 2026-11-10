@@ -867,7 +867,7 @@ def test_the_debug_command_spawns_and_hurts_on_a_dev_server_only(game, monkeypat
     s2, r2 = game.run_command(s1, "debug", {"text": "grab me"})
     assert s2.player.has_condition("grappled")
     s3, r3 = game.run_command(s2, "debug", {"text": "set me on fire"})
-    assert s3.player.peril.kind == "burning" and game.player_alerts(s3)[0].startswith("WARNING: You are on fire!")
+    assert s3.player.peril.kind == "burning" and game.warnings(s3)[0].startswith("WARNING: You are on fire!")
     s4, _ = game.run_command(s3, "debug", {"text": "drown me"})
     s5, _ = game.run_command(new(game), "debug", {"text": "drown me"})
     assert s5.player.peril.kind == "holding_breath"
@@ -890,10 +890,23 @@ def test_breaking_a_grab_rolls_and_a_debug_turn_sets_up_without_acting(game, mon
     adj = AssistantReading(kind="action", summary=words, time_minutes=1, risk="high", tempo="fast", intents=[Intent(action=words)])
     s2, w = game.world_turn(st, adj, words, _Seq([18, 18, 18]), 5, 2)
     assert any(m.startswith("Breaking free:") for m in w.mechanics) and not s2.player.has_condition("grappled")
-    assert any("held by" in a for a in game.player_alerts(st))
+    assert any("held by" in a for a in game.warnings(st))
     s3, _ = game.run_command(new(game), "debug", {"text": "set me on fire"})
     s4, w4 = game.world_turn(s3, AssistantReading(kind="action", summary="debug", time_minutes=0, risk="low", intents=[]),
                              "(debug: set me on fire)", _Seq([20]), 2, 2)
     assert s4.player.peril is not None and s4.player.peril.kind == "burning" and not w4.mechanics
     s5, _ = game.run_command(new(game), "debug", {"text": "room"})
     assert any(f.name == game.DEBUG_ROOM for f in s5.found_places) and game.turn_directives(s5) is not None
+
+
+def test_the_glass_cellar_holds_nobody_but_the_player_and_the_spawns(game, monkeypatch):
+    """The owner, 11-10 night: "the voice thing is weird ... need to hardcode somewhere that this room never has anyone besides
+    the player and anyone they spawn"."""
+    monkeypatch.setenv("TA_DEV_MODE", "on")
+    st, _ = game.run_command(new(game), "debug", {"text": "room"})
+    assert any("Nobody is here but" in d for d in game.turn_directives(st))
+    s1, rep, _ = apply_changes(game, st, ChangeReport.of(Change(kind="new", target="person", value="the Voice", field="", note="a voice in the glass")),
+                               present=[], causes=[])
+    assert s1.person("the_voice") is None and any("holds nobody" in r.reason for r in rep.rejected)
+    s2, _ = game.run_command(st, "debug", {"text": "spawn 2 skeletons"})
+    assert len(s2.player.fighting) == 2                                     # the test's own spawns are there

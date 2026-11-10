@@ -945,6 +945,9 @@ class FantasyGame(GameBase):
                        f"waking and the price in the priest's own words, and stop.")
         if p.location == "Unknown":
             out.append(self.LOST_TRACK.replace("{name}", p.name))
+        if p.location == self.DEBUG_ROOM:              # the owner, 11-10 night: "this room never has anyone besides the player and anyone they spawn"
+            out.append(f"{self.DEBUG_ROOM}: bare glass walls, no door that matters. Nobody is here but {p.name} and what the test brought in; "
+                       f"invent no one, no voice, no watcher. Play only what the engine says happened.")
         if p.carry_lines and not p.fate:                 # the backstop's blows (B206): the turn opens on them
             out.append("Since the last telling: " + " ".join(p.carry_lines) + " Open on it.")
         foes = wo.present_enemies(self, s)
@@ -2535,6 +2538,9 @@ class FantasyGame(GameBase):
 
     def _new_person(self, s: FantasyState, name: str, role: str, w: Writer, where: str = "") -> None:
         p = s.player
+        if p.location == self.DEBUG_ROOM:              # nobody but the player and the test's spawns (the owner, 11-10 night)
+            w.reject("people", f"{self.DEBUG_ROOM} holds nobody but the player and what the test brings in", name)
+            return
         here = not where.strip() or where.strip().lower() in ("player", "here", p.name.lower())
         same = s.person(slug(name))
         if (same is not None and here and role.strip() and same.id not in p.with_them and same.id not in p.fighting
@@ -2642,6 +2648,7 @@ class FantasyGame(GameBase):
         p = s.player
         now = s.clock.day * DAY + s.clock.minute
         s.deck.dealt_this_turn = []
+        quiet = s.flags.pop("debug_quiet", None)            # (round 8) the DEBUG turn's quiet ends with it
         # -- the fall, told: the end, the raise, or back to the story
         if p.fate and p.fate_turn < info.turn:
             if p.fate == "dead":
@@ -2670,8 +2677,11 @@ class FantasyGame(GameBase):
         held = next((c for c in p.conditions if c.name == "grappled"), None)
         if held is not None and not p.fate:                 # a grab's hold (the owner, 11-10 night): it ends when broken or the grabber is down
             by = s.person(held.by) if held.by else None
-            freed = any(str(c.get("stat") or "") in ("str", "dex") and c.get("outcome") in ("success", "huge_success", "critical_success")
-                        and wo.ESCAPE.search(str(c.get("label") or "")) for c in info.calls if not c.get("verb"))
+            freed = any(c.get("outcome") in ("success", "huge_success", "critical_success") and not c.get("verb")
+                        and (re.match(r"\s*way out\b", str(c.get("label") or ""), re.I)
+                             or (str(c.get("stat") or "") in ("str", "dex") and (wo.ESCAPE.search(str(c.get("label") or ""))
+                                                                              or wo.BREAK_FREE.search(str(c.get("label") or "")))))
+                        for c in info.calls)
             if freed or (held.by and (by is None or by.status != "alive" or held.by not in p.fighting)):
                 p.conditions = [c for c in p.conditions if c is not held]
                 p.shown_notes.append("Free of the grip" if freed else f"Free: {by.name if by else 'the grip'} lets go")
@@ -2756,6 +2766,10 @@ class FantasyGame(GameBase):
             hid = dk.draw(s, deck, hooks, info.rng, now, info.turn)
             if hid is not None:
                 dk.deal(s, hooks[hid], turn=info.turn, deal_abs=now, name=p.name)
+        s.flags.pop("debug_quiet", None)                    # the DEBUG turn is over (round 8)
+        for line in self.warnings(s):                       # every turn in danger, after any escape has landed (round 8)
+            if line not in p.shown_notes:
+                p.shown_notes.append(line)
         return s
 
     def _hidden_after(self, s: FantasyState, info: TurnInfo) -> None:
@@ -3111,6 +3125,10 @@ class FantasyGame(GameBase):
 
     def player_alerts(self, state: FantasyState) -> list[str]:
         """A peril's WARNING every turn the player is in it (the owner, 11-10 night: "Warning messages every turn")."""
+        return []                                         # round 8: written at the turn's end (after an escape lands), warnings()
+
+    def warnings(self, state: FantasyState) -> list[str]:
+        """A peril's or a grab's WARNING (the owner, 11-10 night: "Warning messages every turn"), on the turn's end state."""
         p = state.player
         if p.fate:
             return []
@@ -3119,6 +3137,52 @@ class FantasyGame(GameBase):
         if held is not None:                              # round 7: a grab showed no warning and no chip
             who = state.person(held.by).name if held.by and state.person(held.by) else "something"
             out.append(f"WARNING: You are held by {who}! Break free (a STR or DEX check), or bring them down. You cannot run while held.")
+        return out
+
+    # the reading's word on a peril (the owner, 11-10 night: "Can't assistant help match intents?? I thought that's half the
+    # point of it"; "it should try to guess the intent of what you are doing"; "jumping in water etc doesn't take a check,
+    # that's changing locations"); the wording read fresh by a subagent (the example not copied, water only where it belongs,
+    # an attack and a break-free as two intents, other checks keeping their labels)
+    PERIL_ASK = {
+        "burning": ("tries to put the fire out", "a DEX check",
+                    "Plunging into water or being doused puts it out without a roll: that attempt gets no check, and its action says 'water'."),
+        "bleeding": ("tries to stop the bleeding (pressing on it, binding it, tying it off)", "a WIS check",
+                     "A bandage, a potion or healing stops it without a roll: that attempt gets no check, and its action says which."),
+        "holding_breath": ("tries to get up to the air (swimming up, climbing out)", "a STR or DEX check, whichever fits", ""),
+        "drowning": ("tries to get up to the air (swimming up, climbing out)", "a STR or DEX check, whichever fits", ""),
+        "freezing": ("tries to push on through the cold", "a CON check",
+                     "Getting to warmth, shelter, a fire or dry clothes ends it without a roll: that attempt gets no check, and its action says where."),
+        "falling": ("tries to catch hold of something", "a DEX check", ""),
+        "held": ("tries to break free (pulling, twisting, shoving off what holds them)", "a STR or DEX check, whichever fits", ""),
+    }
+
+    def assistant_notes(self, state: FantasyState) -> list[str]:
+        """The reading's note while the player is in a peril or held: the attempt to get out gets the way out's check, labelled
+        'way out:' plus the player's own words, which the engine counts (world.way_out)."""
+        p = state.player
+        if p.fate:
+            return []
+        out = []
+        tail = ("Shouting, calling for help or praying, with nothing else, gets no check. Any other check this turn (looking, "
+                "searching) keeps its usual label, without 'way out:'.")
+        if p.peril is not None and p.peril.kind in self.PERIL_ASK:
+            pk = p.peril.kind
+            tries, check, free = self.PERIL_ASK[pk]
+            what = wo.PERILS.get(pk, {}).get("what", pk)
+            line = (f"{p.name} is {what}. If the input {tries}, that attempt gets {check} (at the usual difficulty), labelled 'way out:' "
+                    f"plus the player's own words for it (e.g. 'way out: {'beat at the flames' if pk == 'burning' else 'kick for the surface' if pk in ('drowning', 'holding_breath') else 'tie it off' if pk == 'bleeding' else 'keep walking' if pk == 'freezing' else 'grab the ledge' if pk == 'falling' else 'twist loose'}').")
+            if free:
+                line += " " + free
+            if pk in ("drowning", "holding_breath") and p.peril.by:
+                line += f" A blow at what holds {p.name} under counts as a way out."
+            out.append(line + " " + tail)
+        held = next((c for c in p.conditions if c.name == "grappled"), None)
+        if held is not None:
+            who = state.person(held.by).name if held.by and state.person(held.by) else "something"
+            out.append(f"{p.name} is held by {who}. If the input tries to break free (pulling, twisting, shoving {who} off), that attempt "
+                       f"gets a STR or DEX check, whichever fits, at the usual difficulty, labelled 'way out:' plus the player's own words for "
+                       f"it. A strike meant to hurt {who} is an ordinary attack with an ordinary label. If the input does both, make two "
+                       f"intents: the attack, and the break-free with its 'way out:' check.")
         return out
 
     DEBUG_ROOM = "The Glass Cellar"
@@ -3183,6 +3247,7 @@ class FantasyGame(GameBase):
         else:
             return state, CommandResult(ok=False, label="Debug", text="DEBUG: say one of: spawn <what> [minion..elite], set me on fire, "
                                         "drown me, make me bleed, freeze me, push me off, grab me, hurt N, heal [N], clear, room.")
+        s.flags["debug_quiet"] = True                    # round 8: no call acts on the DEBUG turn (after_turn clears it)
         if p.peril is not None and did and not did.startswith(("spawned", "grappled", "hurt", "healed", "cleared", "moved")):
             p.shown_notes.append("WARNING: " + wo.PERILS.get(p.peril.kind, {}).get("warn", p.peril.kind))
         return s, CommandResult(label="Debug", text=f"DEBUG: {did}.", player_line=f"(debug: {w})", summary=f"Debug: {did}.",
