@@ -416,7 +416,7 @@ def plan_fight(game: Any, s: FantasyState, adj: Any, player_text: str, rng: Any,
     for x in p.fighting:
         q = s.person(x)
         if q is not None:
-            w.mechanics += cb.scale(s, q, cb.diff_shift(offset))          # §8: a band sized to the player at its first fight
+            w.mechanics += cb.scale(s, q, cb.diff_shift(offset), game=game, offset=offset)   # §12b: a band sized by the generator at its first fight
             cb.size_band(q)
     if s.combat is None:
         s.combat = CombatState(round=0, since_turn=turn, surprise="player" if p.hidden_from_others and cb.player_attack(adj) else "")

@@ -216,7 +216,7 @@ def city_from(sc: dict) -> City:
     city = sc.get("city") or {}
     return City(id=sc["id"], name=sc.get("name", sc["id"]), premise=sc.get("premise", ""), city_name=city.get("name", ""),
                 city_description=city.get("description", ""), locations=list(city.get("locations") or []),
-                safe_locations=list(city.get("safe_locations") or []), narrator_flags=dict(sc.get("narrator_flags") or {}),
+                safe_locations=list(city.get("safe_locations") or []), regions=dict(city.get("regions") or {}), narrator_flags=dict(sc.get("narrator_flags") or {}),
                 gated=dict(sc.get("gated_places") or {}), aliases={k.lower(): v for k, v in (sc.get("place_aliases") or {}).items()},
                 country=list(sc.get("country") or []), hazards={k: list(v or []) for k, v in (sc.get("hazards") or {}).items()})
 

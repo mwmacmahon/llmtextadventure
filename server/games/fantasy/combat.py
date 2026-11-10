@@ -475,7 +475,7 @@ def plan_round(game: Any, s: FantasyState, adj: Any, player_text: str, turn: int
         for body in bodies(q):
             if s.combat.surprise == "player" and q.id == c.target and c.round == 0:
                 continue                                              # struck from hiding: the target loses its first action
-            action = pick_action(b, p)
+            action = pick_action(b, p, rng)
             tgt = "player"
             if allies and rng.random() < 0.3:
                 tgt = rng.choice(allies).id
@@ -511,12 +511,27 @@ def player_attack(adj: Any) -> dict | None:
     return None
 
 
-def pick_action(b: CombatBlock, p: Any) -> dict:
-    """An enemy's action this round: a hold or grab when the player is free of one, a song when not yet sung, else a strike."""
+MOVE_WEIGHT = {"strike": 3, "drain": 2, "hold": 1, "grab": 1, "song": 1, "breath": 1}
+
+
+def pick_action(b: CombatBlock, p: Any, rng: Any = None) -> dict:
+    """An enemy's move this round (part sixteen, the owner: "the most rudimentary ai ... can pick at random with weights"):
+    among the moves that make sense now (no hold or grab while the player is already held, no song on the enthralled), a
+    weighted draw: a move's own `weight`, else a strike 3, a drain 2, the rest 1. Without an rng (a call that must not
+    change the dice), the first that makes sense."""
     acts = b.actions or [{"kind": "strike"}]
-    return next((a for a in acts if a.get("kind") in ("hold", "grab") and p.peril is None), None) \
-        or next((a for a in acts if a.get("kind") == "song" and not any(x.name == "enthralled" for x in p.conditions)), None) \
-        or next((a for a in acts if a.get("kind") in ("strike", "drain")), None) or acts[0]
+    held = p.peril is not None
+    sung = any(x.name == "enthralled" for x in p.conditions)
+    ok = [a for a in acts if not (a.get("kind") in ("hold", "grab") and held) and not (a.get("kind") == "song" and sung)] or acts
+    if rng is None:
+        return ok[0]
+    weights = [float(a.get("weight") or MOVE_WEIGHT.get(str(a.get("kind") or "strike"), 1)) for a in ok]
+    r = rng.random() * sum(weights)                 # rng.random() alone, so any die the engine is handed will do
+    for a, w in zip(ok, weights):
+        r -= w
+        if r < 0:
+            return a
+    return ok[-1]
 
 
 def round_lines(game: Any, s: FantasyState) -> list[str]:
@@ -1073,64 +1088,39 @@ def run_fight_command(game: Any, state: FantasyState, command_id: str) -> tuple[
                             player_line="I yield.", summary=f"{p.name} offers to yield.", directive=directive, minutes=1)
 
 
-# ---- §8: scaling, by a budget (the record §9b) -----------------------------------------------------------------------------
-# tuned by the simulator (part fifteen §9; tools/fight_sim.py): the record's 0.5 / 1 / 1.5 / 2.5 made fair and hard the same one
-# skeleton at level 1 (won 100%); doubled, a level-1 paladin alone wins fair (two skeletons) about 96% at little cost, hard (three) about
-# 72% at a steep one, deadly (three, the remainder spent as +1 and +25%) about half
-BANDS = {"easy": 1.0, "fair": 2.0, "hard": 3.0, "deadly": 3.75}
+# ---- §8: scaling (the record §9b, now §12b): the encounter generator sizes a content band -------------------------------------
+# B292: the old budget's calibration drifted with no test to say so; tests/test_combat.py now pins the simulator's table.
+BANDS = {"easy": 1.0, "fair": 2.0, "hard": 3.0, "deadly": 3.75}       # §9b's words, read as the generator's bands (encounter.OLD_BANDS)
 DIFFICULTY = {-2: 0.75, 0: 1.0, 2: 1.25}
 MAX_BODIES = 6
 
 
 def budget(level: int, fighters: int, band: str = "hard", shift: int = 0) -> float:
-    """(level + 1) x (1 + party members who fight x 0.6) x the band x the difficulty."""
+    """§9b's budget, kept for the pages and the old saves' notes; the generator (games/fantasy/encounter.py) sizes fights now."""
     return (level + 1) * (1 + fighters * 0.6) * BANDS.get(band or "hard", 1.5) * DIFFICULTY.get(shift, 1.0)
 
 
-def scale(s: FantasyState, q: Person, shift: int = 0) -> list[str]:
-    """A band's size at its first fight: the count that fits the budget (one to six), then, past six bodies, attack and DCs +1,
-    then hit points +25% (never more); under one body, fewer hit points. A fixed block keeps its numbers; a named person's
-    block is theirs (only an unnamed band is sized). Returns the steps, for the mechanics line."""
+def scale(s: FantasyState, q: Person, shift: int = 0, game: Any = None, offset: int | None = None, n: int = 10) -> list[str]:
+    """A content band at its first fight (part sixteen §2): its count pinned when the content gave one (only the variant
+    moves), else the generator's to size; the band's word read as the generator's (hard is normal, deadly hard). A fixed
+    block keeps its numbers; a person alone is theirs. Ten fights a cell (a cold miss, on the turn). The steps, for the line."""
     b = ensure_block(q)
     if b.sized or b.fixed:
         return []
     b.sized = True
     if b.count <= 1 and not b.band:
-        return []                                                      # a person, not a band: their own numbers
-    fighters = len([x for x in party(s) if (x.combat is None or not x.combat.fixed)])
-    band = b.band or "hard"
-    money = budget(s.player.level, fighters, band, shift)
-    w = float(b.weight or derived_weight(b))
-    n = int(money // w)
-    steps: list[str] = []
-    if n < 1:
-        n = 1
-        cut = max(1, int(round((b.hp_max or 1) * money / w)))
-        steps.append(f"hit points {b.hp_max} -> {cut}")
-        b.hp_max = b.hp = cut
-    elif n <= MAX_BODIES and money / w - n >= 0.5:                   # a remainder of half a body or more: the numbers, never more bodies
-        rem = money / w - n
-        b.attack = (b.attack or 0) + 1
-        b.dc = (b.dc or 12) + 1
-        steps.append("attack and DCs +1")
-        if rem >= 0.75:
-            b.hp_max = int(round((b.hp_max or 1) * 1.25))
-            b.hp = b.hp_max
-            steps.append("hit points +25%")
-    elif n > MAX_BODIES:
-        over = money / (MAX_BODIES * w)
-        n = MAX_BODIES
-        if over >= 1.25:
-            b.attack = (b.attack or 0) + 1
-            b.dc = (b.dc or 12) + 1
-            steps.append("attack and DCs +1")
-        if over >= 1.5:
-            b.hp_max = int(round((b.hp_max or 1) * 1.25))
-            b.hp = b.hp_max
-            steps.append("hit points +25%")
-    b.count = n
-    b.hps = [b.hp_max or 1] * n
-    word = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}[n]
-    note = f"{word} {b.block}{'s' if n > 1 else ''}, {band} for level {s.player.level}" + (f" ({'; '.join(steps)})" if steps else "")
+        return []
+    if game is None:
+        return []
+    from . import encounter as en
+    off = offset if offset is not None else {-2: 0, 0: 2, 2: 4}.get(shift, 2)
+    want = en.Want(band=en.band_of(b.band or "hard"), pinned=[(b.block, b.count if b.count > 1 else None)], place=s.player.location, offset=off, n=n,
+                   seed=f"{s.player.name}:{q.id}:{s.player.level}")
+    got = en.encounter(game, s, want)
+    count = got.bodies[0][1] if got.bodies else b.count
+    b.count = count
+    en.vary(b, got.variant)
+    b.hps = [b.hp_max or 1] * count if count > 1 else []
+    note = f"{got.reason} (ten fights a cell, on the turn)"
     b.notes = [note]
     return [note]

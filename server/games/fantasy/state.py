@@ -308,6 +308,7 @@ class City(BaseModel):
     city_description: str = ""
     locations: list[str] = Field(default_factory=list)
     safe_locations: list[str] = Field(default_factory=list)
+    regions: dict[str, str] = Field(default_factory=dict)          # place -> region type (part sixteen §2: catacombs, water, wilds, roads, city)
     narrator_flags: dict[str, str] = Field(default_factory=dict)
     gated: dict[str, str] = Field(default_factory=dict)            # place -> flag
     aliases: dict[str, str] = Field(default_factory=dict)          # alias -> place
