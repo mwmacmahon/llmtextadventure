@@ -978,3 +978,16 @@ def test_round_11_no_blow_without_one_leaving_is_flee_and_a_walk_keeps_its_time(
     cold.player.location = "Lantern Row"
     assert game.minutes_cap(cold, walk) is None and game.minutes_cap(cold, None) == 1
     assert wo.out_of_it("burning") == "Out of it: no longer on fire."
+
+
+def test_round_12_weapon_none_is_no_weapon_and_no_blow(game):
+    """Round 12 (067eadd5207f T19): 'follow the stranger quietly', weapon 'none' and attack_at the stranger the player was
+    fighting: round 10's rule read the truthy 'none' as a weapon and aimed the blow again, and a dagger killed the stranger."""
+    from engine.roles import AssistantReadingCombat, IntentCombat
+    assert IntentCombat(action="x", weapon="none").weapon == "" and IntentCombat(action="x", weapon="None, smite").attack is None
+    assert IntentCombat(action="x", weapon="longsword, smite", attack_at=["dead"]).attack.riders == ["smite"]
+    f, _ = _fight(game, 1)
+    tail = AssistantReadingCombat(kind="action", summary="follows", time_minutes=5, risk="medium",
+                                  intents=[IntentCombat(action="follow the stranger quietly", targets=["dead"], attack_at=["dead"], weapon="none")])
+    game.aim_blows(f, tail, "I pocket the key, step into the fog and follow the stranger quietly along the warehouses")
+    assert tail.intents[0].attack_at == []

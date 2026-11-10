@@ -10,7 +10,7 @@ import re
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, PrivateAttr
+from pydantic import BaseModel, Field, PrivateAttr, field_validator
 from pydantic.json_schema import SkipJsonSchema
 
 from .mechanics import Tier
@@ -165,6 +165,20 @@ class _Blow:
         return AttackSpec(targets=at, weapon=parts[0] if parts else "", riders=[x.lower() for x in parts[1:] if x])
 
 
+NO_WEAPON = {"none", "no", "nothing", "no weapon", "n/a", "na", "null", "-", "empty"}
+
+
+def no_weapon_none(v: object) -> object:
+    """Round 12 (067eadd5207f T19): weapon 'none' is a truthy string, and a rule that read any weapon as a blow aimed 'follow the
+    stranger quietly' at the stranger. 'none' and its kin are no weapon; riders after a comma stay."""
+    if not isinstance(v, str):
+        return v
+    parts = [x.strip() for x in v.split(",")]
+    if parts and parts[0].lower() in NO_WEAPON:
+        parts[0] = ""
+    return ", ".join(parts) if any(parts[1:]) else parts[0]
+
+
 _ATTACK_AT = ("A blow the player strikes at someone, with a weapon or a fist, in a fight or to start one: whom it is at, by the person's "
               "id only, never the weapon or a thing (the weapon goes in weapon); two or three ids only when the words name them all. A "
               "blow is never a check: no check and no difficulty. Set it whenever the words strike a blow, even when they also run, grab "
@@ -178,6 +192,11 @@ class IntentCombatV2(_Blow, IntentV2):
     check: CheckProposal | None = Field(default=None, description=_COMBAT_CHECK)
     attack_at: list[str] = Field(default_factory=list, description=_ATTACK_AT)
     weapon: str = Field(default="", description=_WEAPON)
+
+    @field_validator("weapon", mode="before")
+    @classmethod
+    def _none_is_no_weapon(cls, v: object) -> object:
+        return no_weapon_none(v)
 
 
 _BAND_IN_NOTES = re.compile(r"\bfight\s*[:=-]?\s*(trivial|easy|normal|hard|boss|impossible)\b(?:\s*[,:;-]\s*([^.;\n]*))?", re.I)
@@ -211,6 +230,11 @@ class IntentCombat(_Blow, IntentStaked):
     check: CheckStaked | None = Field(default=None, description="The check that decides this attempt when its outcome is uncertain and matters: stat, difficulty, label, then both futures (STAKES). An escape under threat, a forced or hurried physical feat, a lock, a hidden search, an attempt to get something out of someone who may refuse, and anything in a fight that is not a blow with a weapon has one; a blow with a weapon is an attack instead, with no check. Null for anything routine with nothing in the scene pressing on the player, hurt or not.")
     attack_at: list[str] = Field(default_factory=list, description=_ATTACK_AT)
     weapon: str = Field(default="", description=_WEAPON)
+
+    @field_validator("weapon", mode="before")
+    @classmethod
+    def _none_is_no_weapon(cls, v: object) -> object:
+        return no_weapon_none(v)
 
 
 class AssistantReadingCombat(_Band, AssistantReadingStaked):
