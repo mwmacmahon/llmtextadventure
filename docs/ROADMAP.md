@@ -199,6 +199,11 @@ the journal and the story so far. Design: DESIGN.md; GAME_AUTHORING; the world p
      history lists capped. Each game's own lists checked the same way.
   4. Retention: the ledger's exchanges and prompt blobs kept for recent rounds (the call report reads them) and compressed or
      dropped for old test games; an archived game keeps its full snapshots only.
+  Measured 11-10 on round 4's 50 saves (the owner asked the cost of the diffs): a turn's diff 0.1 ms to compute, 0.04 ms to
+  apply; the worst rebuild from the nearest full save 1 to 2 ms; rebuilt exactly. Compressed, with a full save every N turns:
+  N=5 412 KB, N=10 346 KB, N=20 299 KB, against 4.4 MB now (a rough differ that replaces a whole changed list; a finer one
+  would do better). N=10 is the choice: about 13 times smaller, a 200-turn game 2 to 3 MB instead of 40 to 80, at no cost a
+  player would feel.
 
 ## 8. The fantasy game, Marrowgate
 
@@ -249,7 +254,7 @@ B144 covers the plain words).
 - A fight table in the call report (B328), then the record's `combat.prerolled` dial (§3, §10) measured against called
   rolls on Gemma in blind pairs. *built in part: the fight table (B328); the dial designed*
 - The debt: one enemy resolver, one damage-reduction table and the shield counted once, the dead code, ATTACK's word
-  boundary (B323, B324, B325, B327); and the minors (B314, B321, B322, B326). *built in part: B314, B321 to B323, B325 to B327; B324's merge of the four reduction homes not started, its shield the owner's call*
+  boundary (B323, B324, B325, B327); and the minors (B314, B321, B322, B326). *built in part: B314, B321 to B323, B325 to B327; B324's shield counted once (the owner); its merge of the four reduction homes not started*
 
 ## 9. Noir, Lowtown
 
