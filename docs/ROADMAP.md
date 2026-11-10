@@ -281,6 +281,15 @@ B144 covers the plain words).
   rolls on Gemma in blind pairs. *built in part: the fight table (B328); the dial designed*
 - The debt: one enemy resolver, one damage-reduction table and the shield counted once, the dead code, ATTACK's word
   boundary (B323, B324, B325, B327); and the minors (B314, B321, B322, B326). *built in part: B314, B321 to B323, B325 to B327; B324's shield counted once (the owner); its merge of the four reduction homes not started*
+- Perils and grabs (D213 to D222, Gemma rounds 7 to 10, B333 to B338): the save keeps the player out, held breath then
+  checked drowning and freezing, burning only from content, the WARNING each turn, the assistant's 'way out:' mark with the
+  word test as fallback (game_notes per profile), getting loose takes the turn, a pressing turn a minute. *built*
+- The peril debt (docs/REVIEW-2026-11-10-perils-debt.md): one escape resolver for every way out of a peril or a grab, a
+  turn scratch instead of turn-local flags in saved state, one `turn_limits` hook for the call cap, the minutes and the
+  hit points, a check `aim` of escape and attack read before the label's words (after a Sonnet extract test), the DEBUG
+  and perils split out of game.py and world.py, `way_by` counted each round. *open*
+- The narrator's invented gear losses never reach the sheet (a burning pack, armour off; B338), a dead foe still listed
+  hostile, the § line netting the modifiers into one number (B338). *open*
 
 ## 9. Noir, Lowtown
 
