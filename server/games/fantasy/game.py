@@ -3858,8 +3858,9 @@ class FantasyGame(GameBase):
             EntityCards(title="People", cards=[
                 EntityCard(id=q.id, title=q.name if self.name_shown(s, q) else self.called(q),
                            subtitle=(q.role or None) if self.name_shown(s, q) else "not yet named",
-                           badges=[Chip(label="attitude", value=q.attitude_word, tone=self.ATTITUDE_TONES.get(q.attitude_word)),
-                                   *([Chip(label="mood", value=q.mood)] if q.mood else []),
+                           badges=[*([Chip(label="attitude", value=q.attitude_word, tone=self.ATTITUDE_TONES.get(q.attitude_word))]
+                                     if q.status == "alive" else []),     # rounds 10, 11: a destroyed zombie still read 'hostile'
+                                   *([Chip(label="mood", value=q.mood)] if q.mood and q.status == "alive" else []),
                                    *([Chip(label="hit points", value=person_hp_word(q), tone="bad")] if person_hp_word(q) else []),
                                    *([Chip(label="status", value=q.status, tone="bad")] if q.status != "alive" else [])],
                            details=[Chip(label="Last seen", value=q.seen_at or "unknown")], notes=self.card_notes(s, q))

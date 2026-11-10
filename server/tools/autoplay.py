@@ -80,7 +80,7 @@ def _state_line(game: str, ui: dict) -> str:
                 people.append(f"{c['title'].split()[-1]} @{d.get('Location', '?')} susp {d.get('Suspicion', '?').split('/')[0]} trust {d.get('Trust', '?').split(' ')[0]} "
                               f"stress {d.get('Stress', '?').split('/')[0]} {b.get('mood', '')} secrets {d.get('Secrets', '')}")
             else:
-                people.append(f"{c['title']} last seen {d.get('Last seen', d.get('Location', d.get('Where', '?')))} {b.get('attitude', '')}")
+                people.append(f"{c['title']} last seen {d.get('Last seen', d.get('Location', d.get('Where', '?')))} {b.get('status') or b.get('attitude', '')}")   # rounds 10, 11: the dead read 'hostile'
         bits.append(" | ".join(people))
     coming = _panel(ui, "Coming")
     if coming:
