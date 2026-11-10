@@ -79,10 +79,10 @@ def ship_sunday(week: int) -> bool:
     return int(week) % 4 in (1, 3)
 
 
-def tier_open(card: dict, deck: dict, name: int) -> bool:
+def tier_open(card: dict, deck: dict, renown: int) -> bool:
     tiers = deck.get("tiers") or {}
     t = tiers.get(int(card.get("tier", 1))) or tiers.get(str(card.get("tier", 1))) or {}
-    return int(name) >= int(t.get("name", 0))
+    return int(renown) >= int(t.get("renown", t.get("name", 0)))
 
 
 def deal(state: ClownState, deck: dict, cards: dict[str, dict], size: int) -> list[str]:
@@ -95,7 +95,7 @@ def deal(state: ClownState, deck: dict, cards: dict[str, dict], size: int) -> li
         if len(hand) >= size:
             break
         card = cards.get(cid)
-        if card is not None and tier_open(card, deck, state.house.name):
+        if card is not None and tier_open(card, deck, state.house.renown):
             hand.append(cid)
     hb.since = {c: hb.since.get(c, state.house.week) for c in hand}   # D205C: a girl still on the slip keeps her week
     hb.hand = hand
@@ -273,7 +273,7 @@ def sell(state: ClownState, g: Girl, dial) -> int:
         if other.in_house() and other.bonds.get(g.id, 0) >= 2:
             other.love = max(-5, other.love - 1)
     if g.credibility >= 1:
-        state.house.name = max(0, state.house.name - 2)
+        state.house.renown = max(0, state.house.renown - 2)
     if state.active == g.id:
         nxt = next((x for x in state.girls if x.status == "passive"), None)
         state.active = nxt.id if nxt else ""

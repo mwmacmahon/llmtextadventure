@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 from engine.events import Event
 from engine.gamekit import Clock
@@ -30,7 +30,7 @@ TIER_POINTS = {"clumsy": -2, "passable": 0, "sound": 2, "finished": 4}   # clums
 FATIGUE_TIERS = ((0, "fresh"), (30, "tired"), (60, "worn"), (80, "spent"))
 DILIGENCE_TIERS = ((0, "idle"), (25, "willing"), (50, "steady"), (75, "diligent"))   # not a clown skill: raised by a job in town, it helps every slot
 HEAT_TIERS = ((0, "quiet"), (25, "noticed"), (50, "watched"), (75, "hunted"))
-NAME_TIERS = ((0, "unknown"), (25, "talked of"), (50, "known"), (75, "famous"))
+RENOWN_TIERS = ((0, "unknown"), (25, "talked of"), (50, "known"), (75, "famous"))   # the house's renown (was Name, renamed 11-10)
 SHOW_WORDS = ("disaster", "poor", "fine", "good", "triumph")
 WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 SLOTS: dict[str, tuple[int, int]] = {"mornings": (540, 720), "afternoons": (840, 1020)}   # 09:00-12:00, 14:00-17:00
@@ -297,7 +297,7 @@ class House(BaseModel):
     warned: list[str] = Field(default_factory=list)   # "day:show" warned already (once a day)
     money: int = 200
     heat: int = 0
-    name: int = 0
+    renown: int = Field(default=0, validation_alias=AliasChoices("renown", "name"))   # the house's renown: how well the town knows it (a save's "name" read as it)
     week: int = 1
     best: dict[str, int] = Field(default_factory=dict)       # the best of every girl in the house per skill (the spine's gates)
     red_weeks: int = 0
@@ -323,8 +323,8 @@ class House(BaseModel):
         return tier_of(self.heat, HEAT_TIERS)
 
     @property
-    def name_word(self) -> str:
-        return tier_of(self.name, NAME_TIERS)
+    def renown_word(self) -> str:
+        return tier_of(self.renown, RENOWN_TIERS)
 
 
 class HookState(BaseModel):

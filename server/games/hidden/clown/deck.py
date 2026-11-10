@@ -261,7 +261,7 @@ DIALS: dict[str, float] = {
     "harbour_lift": 1,             # skill points every girl off the boat has more for every week the house has run (her whole grid; D199C)
     "harbour_price_floor": 250,    # no contract opens under this (the 100-gold cards included); the growth runs from it (D199C, C54)
     "harbour_price_cap": 1000,     # the dearest a contract can come; the price rises with the lift in proportion to her grid
-    "challenge_rate": 0.14,        # D215C: a night's chance of a random challenge (about one a week)
+    "challenge_rate": 0.08,        # D215C: a night's chance of a random challenge (D216C: about one in two weeks at the start)
     "challenge_step": 0.07,        # and this much more at each of the Name's steps
     "self_cost": 8,                # D215C: a session spent bettering the proprietor costs this (the gym, the club, the books)
     "self_cap": 4,                 # the most any of the proprietor's stats can be raised to
@@ -270,12 +270,12 @@ DIALS: dict[str, float] = {
     "gear_theft_chance": 0.15,     # D214C: a week's chance a rival gets at the wardrobe, while the house has gear
     "gear_price": 1.0,             # the gear's prices times this (the simulator's calibration)
     "gear_wear": 1.0,              # the gear's life in shows times this
-    "step_pay": 0.25,              # a client a step harder pays this much more of the fee a step                 # D213C: a girl's gear adds at most this to a show's quality
+    "step_pay": 0.6,               # a client a step harder pays this much more of the fee a step (D216C: was 0.25)                 # D213C: a girl's gear adds at most this to a show's quality
     "tutor_cost": 12, "tutor_gain": 1.5,     # a tutor for a slot: this much gold, and the slot's gain times this
     "master_cost": 30, "master_gain": 2.0,   # a master: dearer and better; only once the house has a name (master_name)
-    "master_name": 25,
-    "name_step_1": 25,             # D213C: at this Name every client asks a step harder (and pays a quarter more) and the rent rises
-    "name_step_2": 50,             # and again here
+    "master_renown": 25,
+    "renown_step_1": 25,             # D213C: at this renown every client asks a step harder (and pays a quarter more) and the rent rises
+    "renown_step_2": 50,             # and again here
     "rent_per_step": 40,           # the rent's rise at each step (every fourth week)
     "slip_markdown": 0.05,         # the clerk takes this share off a contract for every week she has waited on the slip (D205C: in place of haggling)
     "slip_markdown_most": 0.10,    # and never more than this
@@ -376,7 +376,7 @@ def settle(state: ClownState, content_hooks: dict[str, dict], turn: int, pay) ->
             row = first_match(rows, doc, events, turn)
             if row is not None:
                 pay(row, h.title)
-                h.reward = ", ".join(f"{row[k]:+d} {k}" for k in ("money", "name") if row.get(k))
+                h.reward = ", ".join(f"{row[k]:+d} {k}" for k in ("money", "renown") if row.get(k))
         h.status, h.closed_turn = ("done" if done else "failed"), turn
         state.deck.repeats[h.hook] = state.now_abs
         restand(h)
@@ -393,9 +393,9 @@ def settle(state: ClownState, content_hooks: dict[str, dict], turn: int, pay) ->
 
 # ---- the draw --------------------------------------------------------------------------------------------------------
 
-def tier_open(tier: int, tiers: dict, name: int) -> bool:
+def tier_open(tier: int, tiers: dict, renown: int) -> bool:
     t = tiers.get(tier) or tiers.get(str(tier)) or {}
-    return name >= int(t.get("name", 0))
+    return renown >= int(t.get("renown", t.get("name", 0)))
 
 
 def in_motion(state: ClownState) -> int:
@@ -437,7 +437,7 @@ def candidates(state: ClownState, deck: dict, content_hooks: dict[str, dict], no
             if rep.get("max") and state.deck.counts.get(hid, 0) >= int(rep["max"]):
                 continue
         tier = int(row.get("tier", hk.get("tier", 1)))
-        if not tier_open(tier, tiers, state.house.name):
+        if not tier_open(tier, tiers, state.house.renown):
             continue
         if row.get("wants") is not None and not _holds(row["wants"], doc, state.hidden.events, turn):
             continue

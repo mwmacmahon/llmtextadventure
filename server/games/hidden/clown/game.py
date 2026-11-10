@@ -82,7 +82,7 @@ _SKIP_ALIASES = {"show": "show", "next show": "show", "end of the week": "sunday
 
 
 SHOW_STANDING = {"disaster": -2, "poor": -1, "fine": 0, "good": 1, "triumph": 2}
-SHOW_NAME = {"disaster": -5, "poor": -1, "fine": 1, "good": 3, "triumph": 6}
+SHOW_RENOWN = {"disaster": -5, "poor": -1, "fine": 1, "good": 3, "triumph": 6}
 SHOW_LINES = {
     "disaster": "it went badly wrong: the room turned on her, and the client saw it",
     "poor": "it went poorly: she got through it and nobody asked for more",
@@ -571,7 +571,7 @@ class ClownGame(GameBase):
         s, p, h = state, state.player, state.house
         lines = [f"Time: {day_text(s.clock.day, s.clock.minute)} (day {s.clock.day})."]
         lines.append(f"{p.name}: at {p.location or 'unknown'}" + (f"; {', '.join(c.name for c in p.conditions)}" if p.conditions else "") + ".")
-        lines.append(f"The house: the house's name is {h.name_word}" + (f"; money {h.money} gold" if engine else
+        lines.append(f"The house: the house is {h.renown_word} in the town" + (f"; money {h.money} gold" if engine else
                      f"; money {money_word(h.money)}") + ".")
         lines.append(f"The house: {h.rooms} rooms for girls, {len(s.in_house())} kept; the hand holds {h.hand_size} cards.")
         lines.extend(self._house_lines(s, engine))
@@ -755,21 +755,21 @@ class ClownGame(GameBase):
         items = self.gear_list(s)
         return [items[i] for i in g.gear if i in items and set(items[i].get("skills") or []) & set(x.wants)]
 
-    def _name_steps(self, s: ClownState) -> int:
+    def _renown_steps(self, s: ClownState) -> int:
         """D213C (the owner, 11-10: "the game soft-snowballs ... then the clients start getting harder"): how many of the Name's
         steps (dial name_steps: 25 and 50) the house has passed."""
-        return sum(1 for n in (dk.dial(s, "name_step_1"), dk.dial(s, "name_step_2")) if s.house.name >= n)
+        return sum(1 for n in (dk.dial(s, "renown_step_1"), dk.dial(s, "renown_step_2")) if s.house.renown >= n)
 
     def _asks(self, s: ClownState, info: Any) -> tuple[int, int]:
         """(the room's difficulty, the fee) a client asks now: a step harder for each of the Name's steps, never past a hard room,
         and a quarter more paid a step (D213C). The one home of a show's terms: Book sets them, the board shows them."""
-        steps = self._name_steps(s)
+        steps = self._renown_steps(s)
         room = min(3, int(info.difficulty) + steps)
         return room, int(round(int(info.pays) * (1 + dk.dial(s, "step_pay") * (room - int(info.difficulty)))))
 
     def _rent(self, s: ClownState) -> int:
         """The rent every fourth week: the lease's, and the landlord's rise with each of the Name's steps (D213C)."""
-        return int(s.house.rent + dk.dial(s, "rent_per_step") * self._name_steps(s))
+        return int(s.house.rent + dk.dial(s, "rent_per_step") * self._renown_steps(s))
 
     def _worn_before_show(self, s: ClownState) -> list[tuple[Girl, Any, str]]:
         """D211C: (girl, show, when) for every show in the next three days whose girl is over 50 fatigue."""
@@ -1159,7 +1159,7 @@ class ClownGame(GameBase):
         if kind in ("move", "set") and (kind == "move" or field == "location"):
             value = self._place(s, value) or value
         # ---- the house
-        if low == "house" or low in ("money", "heat", "name", "cashbox"):
+        if low == "house" or low in ("money", "heat", "name", "renown", "cashbox"):
             f = field if low == "house" else low
             if f in ("money", "cashbox") and kind in ("add", "set"):
                 n = self._step(value)
@@ -1201,8 +1201,8 @@ class ClownGame(GameBase):
             if f == "heat":              # D213C (the owner, 11-10): no heat; the cops come from the plot
                 w.reject("house.heat", "there is no heat in this game: what the authorities do comes from the story's own events", value)
                 return True
-            if f in ("name", "reputation"):
-                w.reject("house.name", "the house's name is the engine's: the shows and what comes of them move it", value)
+            if f in ("name", "reputation", "renown", "fame"):
+                w.reject("house.renown", "the house's name is the engine's: the shows and what comes of them move it", value)
                 return True
             w.reject(f"house.{f}", "not a field of the house the referee writes", value)
             return True
@@ -1702,7 +1702,7 @@ class ClownGame(GameBase):
         teacher = getattr(s.plan, f"{slot}_with", "house")
         if teacher in ("tutor", "master") and gain > 0:      # D213C: paid training, a slot at a time
             cost = int(dk.dial(s, f"{teacher}_cost"))
-            if teacher == "master" and s.house.name < dk.dial(s, "master_name"):
+            if teacher == "master" and s.house.renown < dk.dial(s, "master_renown"):
                 why.append("no master will come to an unknown house")
             elif s.house.money < cost:
                 why.append(f"no money for the {teacher} ({cost} gold)")
@@ -1869,7 +1869,7 @@ class ClownGame(GameBase):
             if q is not None and q.client:
                 q.client.standing = max(-3, q.client.standing - 2)
                 q.client.history.append("missed")
-            s.house.name = max(0, s.house.name - 3)
+            s.house.renown = max(0, s.house.renown - 3)
             self._note(s, f"{x.title}: nobody went. {q.name if q else 'The client'} will remember.")
             s.house.last_show = f"{x.title}: nobody went; the client will remember."
             return
@@ -1895,8 +1895,8 @@ class ClownGame(GameBase):
             self._tally(s, f"{x.title}: Brascombe's cut, {cut} gold.")
         s.house.money += x.paid
         g.credibility = max(-3, min(3, g.credibility + SHOW_STANDING[word]))
-        name_gain = SHOW_NAME[word] if SHOW_NAME[word] <= 0 else int(round(SHOW_NAME[word] * ff))
-        s.house.name = max(0, min(100, s.house.name + name_gain))
+        name_gain = SHOW_RENOWN[word] if SHOW_RENOWN[word] <= 0 else int(round(SHOW_RENOWN[word] * ff))
+        s.house.renown = max(0, min(100, s.house.renown + name_gain))
         for it in self._gear_for(s, g, x):                     # D213C: each show wears the gear it used
             g.gear[it["id"]] = g.gear.get(it["id"], 0) - 1
             if g.gear[it["id"]] <= 0:
@@ -1907,7 +1907,7 @@ class ClownGame(GameBase):
             q.client.standing = max(-3, min(3, q.client.standing + SHOW_STANDING[word]))
             q.client.history.append(word)
             if word == "disaster" and q.client.reach in ("heat", "gossip"):   # D213C: a client who talks costs Name, never heat
-                s.house.name = max(0, s.house.name - 2)
+                s.house.renown = max(0, s.house.renown - 2)
             if word == "disaster" and q.client.reach == "violence":
                 g.conditions.append(Condition(name="bruised", group="body", mod=-1, duration="", expires_at=s.now_abs + 3 * DAY))
                 g.fear = min(5, g.fear + 1)
@@ -1997,7 +1997,7 @@ class ClownGame(GameBase):
             if not since < day * DAY + 1320 <= now:
                 continue
             rng = random.Random(f"challenge:{s.player.name}:{day}")
-            if rng.random() >= dk.dial(s, "challenge_rate") + dk.dial(s, "challenge_step") * self._name_steps(s):
+            if rng.random() >= dk.dial(s, "challenge_rate") + dk.dial(s, "challenge_step") * self._renown_steps(s):
                 continue
             doc = doc or s.model_dump(mode="json")
             ok = [c for c in pool if (c.get("when") is None or dk._holds(c["when"], doc, s.hidden.events, 0))
@@ -2025,9 +2025,9 @@ class ClownGame(GameBase):
         if eff.get("money"):
             s.house.money += int(eff["money"])
             out.append("money lost" if int(eff["money"]) < 0 else "money gained")
-        if eff.get("name"):
-            s.house.name = max(0, min(100, s.house.name + int(eff["name"])))
-            out.append("the house's name the worse for it" if int(eff["name"]) < 0 else "the house's name the better")
+        if eff.get("renown"):
+            s.house.renown = max(0, min(100, s.house.renown + int(eff["renown"])))
+            out.append("the house's renown the worse for it" if int(eff["renown"]) < 0 else "the house's renown the better")
         girls = s.in_house()
         if eff.get("fatigue") and girls:
             g = s.active_girl if s.active_girl in girls else girls[0]
@@ -2154,8 +2154,8 @@ class ClownGame(GameBase):
             h.money -= rent
             lines.append("The rent was paid." if rent == h.rent else "The rent was paid, at the landlord's new figure.")
             nums.append(f"The rent, {rent} gold, was paid.")
-        lines.append(f"Money: {money_word(h.money)}. The house's name: {h.name_word}.")
-        nums.append(f"Money: {h.money} gold. Name {h.name} ({h.name_word}).")
+        lines.append(f"Money: {money_word(h.money)}. The house's renown: {h.renown_word}.")
+        nums.append(f"Money: {h.money} gold. Renown {h.renown} ({h.renown_word}).")
         for x in s.girls:
             if not x.in_house():
                 continue
@@ -2236,8 +2236,8 @@ class ClownGame(GameBase):
         if row.get("money"):
             s.house.money += int(row["money"])
             bits.append(f"{int(row['money']):+d} gold")
-        if row.get("name"):
-            s.house.name = max(0, min(100, s.house.name + int(row["name"])))
+        if row.get("renown"):
+            s.house.renown = max(0, min(100, s.house.renown + int(row["renown"])))
         for k in row.get("flags") or []:   # D213C: a reward row's flags (a bad deed: `bad_deed`), as the content writes them
             s.flags[str(k)] = True
         for pid, step in (row.get("attitude") or {}).items():
@@ -2338,7 +2338,7 @@ class ClownGame(GameBase):
         h, p = s.house, s.player
         if kind == "ruined":
             h.money = max(h.money, 0)
-            h.name = max(0, h.name - 15)
+            h.renown = max(0, h.renown - 15)
             h.red_weeks = 0
             self._close_house(s, 7)
             for g in s.in_house():
@@ -2372,12 +2372,11 @@ class ClownGame(GameBase):
         who = RECKONINGS.get(kind, {}).get("who", "them")
         g.status, g.location = "gone", "Unknown"
         g.history.append(stamp(s, f"her contract given up to {who}"))
-        s.flags["girl_given_up"] = True                  # D213C: a bad deed; the licensing office hears of it (Haldane)
         for other in s.in_house():
             other.love, other.respect, other.fear = max(-5, other.love - 2), max(-5, other.respect - 1), min(5, other.fear + 1)
             other.fear_fed = True
             other.history.append(stamp(s, f"saw {g.name} given up to {who}"))
-        h.name = max(0, h.name - 5)
+        h.renown = max(0, h.renown - 5)
         s.flags["gave_up_a_girl"] = True
         s.flags[f"gave_up_{g.id}"] = True
         if kind == "ruined":
@@ -2419,7 +2418,7 @@ class ClownGame(GameBase):
 
     def death_score(self, state: ClownState) -> dict[str, Any]:
         s = state
-        return {"weeks": s.house.week, "money": s.house.money, "name": s.house.name, "name_word": s.house.name_word,
+        return {"weeks": s.house.week, "money": s.house.money, "renown": s.house.renown, "renown_word": s.house.renown_word,
                 "graduates": sum(1 for g in s.girls if g.graduated), "shows": sum(1 for x in s.shows if x.result and x.result != "disaster"),
                 "days": s.clock.day}
 
@@ -2433,8 +2432,8 @@ class ClownGame(GameBase):
         b, a, out = before, after, []
         if a.house.money != b.house.money:
             out.append(f"Money: {b.house.money} gold → {a.house.money} gold")
-        if a.house.name_word != b.house.name_word:
-            out.append(f"Name: {b.house.name_word} → {a.house.name_word}")
+        if a.house.renown_word != b.house.renown_word:
+            out.append(f"Renown: {b.house.renown_word} → {a.house.renown_word}")
         for ga in a.girls:
             gb = b.girl(ga.id)
             if gb is None or not ga.in_house():
@@ -2568,7 +2567,7 @@ class ClownGame(GameBase):
                                    Param(name="with", label="taught by", options=[Option(id="house", label="The house (free)"),
                                          Option(id="tutor", label=f"A tutor ({int(dk.dial(s, 'tutor_cost'))} gold a slot, x{dk.dial(s, 'tutor_gain'):g})"),
                                          Option(id="master", label=f"A master ({int(dk.dial(s, 'master_cost'))} gold a slot, x{dk.dial(s, 'master_gain'):g}"
-                                                + (")" if s.house.name >= dk.dial(s, 'master_name') else f"; not until the house has a name)"))], default="house")],
+                                                + (")" if s.house.renown >= dk.dial(s, 'master_renown') else f"; not until the house has a name)"))], default="house")],
                            hint="Set what the girl in training does in the mornings or the afternoons this week: one of the fifteen skills, Rest, or a job in town (a little money, and her diligence, which helps every slot after). The plan holds until changed.",
                            words=["plan", "train", "put her on", "work on", "practise", "practice", "mornings", "afternoons", "rest", "drill"]))
         out.append(CommandSpec(id="better", label="Better yourself", mode="narrated",   # D215C
@@ -2579,7 +2578,7 @@ class ClownGame(GameBase):
                                words=["better myself", "work on my", "train myself", "go to the gym", "go to the club", "study the books"]))
         gear = self.gear_list(s)
         if gear and s.in_house():                    # D213C: gear for a girl
-            avail = [it for it in gear.values() if s.house.name >= int(it.get("name_needed", 0) or 0)]
+            avail = [it for it in gear.values() if s.house.renown >= int(it.get("renown_needed", 0) or 0)]
             out.append(CommandSpec(id="equip", label="Equip", mode="engine",
                                    params=[Param(name="girl", label="for", options=[Option(id=g.id, label=g.name) for g in s.in_house()], default=(s.active or s.in_house()[0].id)),
                                            Param(name="item", label="item", options=[Option(id=str(it["id"]), label=f"{it['name']} ({int(it['cost'])} gold; "
@@ -2840,7 +2839,7 @@ class ClownGame(GameBase):
                 return state, CommandResult(ok=False, label="Equip", text="For whom? " + ", ".join(x.name for x in s.in_house()))
             if it is None:
                 return state, CommandResult(ok=False, label="Equip", text="Which? " + ", ".join(str(x["name"]) for x in self.gear_list(s).values()))
-            if s.house.name < int(it.get("name_needed", 0) or 0):
+            if s.house.renown < int(it.get("renown_needed", 0) or 0):
                 return state, CommandResult(ok=False, label="Equip", text=f"Nobody sells {it['name'].lower()} to a house nobody has heard of.")
             cost = int(round(int(it["cost"]) * dk.dial(s, "gear_price")))
             if s.house.money < cost:
@@ -3069,7 +3068,7 @@ class ClownGame(GameBase):
         s, h, p = state, state.house, state.player
         g = s.active_girl if s.active_girl is not None and s.active_girl.in_house() else None
         strip = [Chip(label="Time", value=day_text(s.clock.day, s.clock.minute)), Chip(label="Place", value=p.location or "unknown"),
-                 Chip(label="Money", value=f"{h.money} gold", tone="bad" if h.money < 0 else None),                  Chip(label="Name", value=h.name_word)]
+                 Chip(label="Money", value=f"{h.money} gold", tone="bad" if h.money < 0 else None),                  Chip(label="Renown", value=h.renown_word)]
         if g is not None:
             strip.append(Chip(label="In training", value=g.name))
         if h.reckoning in RECKONINGS:

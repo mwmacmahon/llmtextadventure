@@ -380,7 +380,7 @@ def test_money_heat_people_and_places_land_and_the_engrosalind_fields_are_refuse
     assert s.house.money == 180 and s.house.heat == 0 and any(r.path == "house.heat" for r in rep.rejected)   # D213C: no heat
     assert s.person("judge").attitude == 1 and s.person("judge").met
     assert s.player.location == "The harbour"
-    assert any(r.path == "house.name" for r in rep.rejected)
+    assert any(r.path == "house.renown" for r in rep.rejected)
     pell = s.person("pell")
     assert pell.facts and pell.tells[0].told          # the fact's own words mark the tell told
 
@@ -413,7 +413,7 @@ def test_the_deck_deals_by_name_and_wants_and_repeat_customers_come_round(game: 
     assert "judge_dinner" in pool and "sorrel_party" in pool and "chandlers_dinner" not in pool    # tier 2 needs Name 25
     assert "harbour_stag" not in pool                                                                # wants Name 10 or Krol met
     assert "pruitt_evening" not in pool                                                              # the roster gate
-    st.house.name = 30
+    st.house.renown = 30
     st.active_girl.skills["discretion"], st.active_girl.skills["poise"] = 60, 40
     game._best(st)
     pool = dict(dk.candidates(st, deck, hooks, now, 1))
@@ -631,14 +631,14 @@ def test_nothing_ends_the_game_the_catastrophes_are_reckonings_borne_or_paid_wit
     assert not game.dead(st) and not any(e.id.startswith("ending_") for e in st.hidden.events)
     assert {e.id for e in st.hidden.events} >= {"reckoning_ruined", "reckoning_arrested", "reckoning_shot", "brascombe_partner"}
     # the bailiffs: bear it
-    st.house.money, st.house.red_weeks, st.house.name = -600, 2, 30
+    st.house.money, st.house.red_weeks, st.house.renown = -600, 2, 30
     st.house.reckoning = "ruined"
     s = advance(game, st, 5, 3)
     assert s.house.reckoning == "ruined" and s.house.reckoning_until_abs == s.now_abs + 2 * DAY and not game.dead(s)
     assert [c.id for c in game.commands(s)][:2] == ["bear", "give_up"] and "A reckoning is open" in game.render_bulletin(s, "")
     assert any(ln.startswith("THE RECKONING") for ln in game.turn_directives(s)) and any(c.label == "Reckoning" for c in game.ui(s).panels[0].chips)
     s2, res = game.run_command(s, "bear", {})
-    assert res.ok and res.directive and s2.house.money == 0 and s2.house.name == 15 and s2.house.red_weeks == 0 and s2.house.closed_until_abs >= s2.now_abs + 7 * DAY
+    assert res.ok and res.directive and s2.house.money == 0 and s2.house.renown == 15 and s2.house.red_weeks == 0 and s2.house.closed_until_abs >= s2.now_abs + 7 * DAY
     assert s2.house.reckoning == "" and s2.house.reckonings == ["ruined: borne"] and s2.flags["bailiffs_came"] and "Reckoned: ruined: borne" in game.seen_changes(s, s2)
     # the Tallyman's man: a girl given up instead
     st.girl("dot").status, st.girl("dot").location, st.girl("dot").bonds = "passive", "The kitchen", {"pim_dace": 2}
@@ -646,7 +646,7 @@ def test_nothing_ends_the_game_the_catastrophes_are_reckonings_borne_or_paid_wit
     s3, res = game.run_command(st, "give_up", {"girl": "pim_dace"})
     assert res.ok and "signed over" in res.directive and not res.referee_skip
     assert s3.girl("pim_dace").status == "gone" and s3.active == "dot" and s3.girl("dot").status == "active"
-    assert s3.girl("dot").love == -2 and s3.girl("dot").respect == -1 and s3.girl("dot").fear == 1 and s3.house.name == max(0, st.house.name - 5)
+    assert s3.girl("dot").love == -2 and s3.girl("dot").respect == -1 and s3.girl("dot").fear == 1 and s3.house.renown == max(0, st.house.renown - 5)
     assert s3.flags["gave_up_a_girl"] and s3.flags["gave_up_pim_dace"] and s3.flags["tallyman_settled"] and not s3.player.conditions
     assert "Pim Dace: gone" not in game.seen_changes(st, s3) and s3.house.reckonings == ["shot: Pim Dace given up"]
     # Haldane takes no girl; shot and borne wounds; nobody answering lands it by itself
@@ -776,7 +776,8 @@ def test_graduation_needs_the_record_and_a_sunday_and_a_graduate_earns_on_her_ow
     s3 = game.after_turn(s2, info(turn=3, minutes=60))
     assert s3.girl("dot").skills["acrobatics"] == 90 and s3.girl("rosalind").skills["children"] > 50
     odd = 12 * int(dk.dial(s3, "bench_job_pay"))                                 # the graduate on the bench worked odd jobs (D198C), Saturdays too (D208C)
-    assert s3.house.money == money - 23 + odd and not any("own bookings" in ln for ln in s3.house.report_numbers)   # the keep, two girls in the house
+    keep = int(dk.dial(s3, "keep")) + int(dk.dial(s3, "keep_per_girl"))   # the keep, two girls in the house
+    assert s3.house.money == money - keep + odd and not any("own bookings" in ln for ln in s3.house.report_numbers)
     assert any("Dorothea Vance, odd jobs: 12 slots" in ln for ln in s3.house.report_numbers)
     from games.hidden.clown.state import Show
     x = Show(id="s", hook="judge_dinner", title="The Judge's dinner", client="judge", venue="The Judge's house", at_abs=s3.now_abs, wants=["acrobatics"],
@@ -830,7 +831,7 @@ def test_a_tier_two_card_waits_in_its_place_until_the_name_opens_it(game: ClownG
     st.harbour.hand = []
     hb.deal(st, deck, cards, 4)
     assert tier3 not in st.harbour.hand and st.harbour.queue[0] == tier3
-    st.house.name = 50
+    st.house.renown = 50
     st.harbour.hand = []
     hb.deal(st, deck, cards, 4)
     assert st.harbour.hand[0] == tier3
@@ -965,11 +966,11 @@ def test_customize_fixes_a_lottery_group_within_the_bucket(game: ClownGame):
 def test_the_keep_rises_per_girl_in_the_house(game: ClownGame):
     st = new(game)
     s = _close_week(game, st, 9)
-    assert any("The week's keep, 20 gold, was paid." in ln for ln in s.house.report_numbers)
+    assert any(f"The week's keep, {int(dk.dial(s, 'keep'))} gold, was paid." in ln for ln in s.house.report_numbers)
     st = new(game)
     st.girl("rosalind").status, st.girl("billie").status = "passive", "passive"
     s = _close_week(game, st, 9)
-    assert any("The week's keep, 26 gold (3 girls), was paid." in ln for ln in s.house.report_numbers)
+    assert any(f"The week's keep, {int(dk.dial(s, 'keep')) + 2 * int(dk.dial(s, 'keep_per_girl'))} gold (3 girls), was paid." in ln for ln in s.house.report_numbers)
 
 
 def test_a_save_from_before_the_harbour_gets_its_first_boat_on_load(game: ClownGame):
@@ -1555,9 +1556,9 @@ def test_the_clients_ask_more_as_the_house_is_known_and_the_rent_rises(game: Clo
     st = new(game)
     q = st.person("rope_walk_mother")
     assert game._asks(st, q.client) == (q.client.difficulty, q.client.pays) and game._rent(st) == st.house.rent
-    st.house.name = 30
-    assert game._asks(st, q.client) == (q.client.difficulty + 1, int(round(q.client.pays * 1.25))) and game._rent(st) == st.house.rent + 40
-    st.house.name = 60
+    st.house.renown = 30
+    assert game._asks(st, q.client) == (q.client.difficulty + 1, int(round(q.client.pays * (1 + dk.dial(st, "step_pay"))))) and game._rent(st) == st.house.rent + 40
+    st.house.renown = 60
     assert game._asks(st, q.client)[0] == min(3, q.client.difficulty + 2) and game._rent(st) == st.house.rent + 80
 
 
@@ -1631,12 +1632,12 @@ def test_the_nights_bring_random_challenges_settled_by_2d6_and_a_stat_and_told(g
     st = new(game, challenges=True)
     st.scenario.dials["challenge_rate"] = 1.0
     st.house.money = 500
-    money, name = st.house.money, st.house.name
+    money, name = st.house.money, st.house.renown
     st = advance(game, st, 7 * DAY, 2)                                       # a week of nights, one challenge each
     assert len(st.house.alerts) >= 6 and all("2d6" in a and "against" in a for a in st.house.alerts)
     assert st.house.tells and not any(ch.isdigit() for t in st.house.tells for ch in t.split(" (")[0])
     assert any(ln.startswith("IN THE NIGHT") for ln in game.turn_directives(st))
-    assert st.house.money != money or st.house.name != name or any("held" in ln for ln in st.tally)
+    assert st.house.money != money or st.house.renown != name or any("held" in ln for ln in st.tally)
     mod, whose = game._check_mod(st, "girl:nerve")
     assert "nerve" in whose and -3 <= mod <= 3
 

@@ -133,7 +133,7 @@ def _invest(game: Any, st: Any, strategy: Strategy) -> dict[str, int]:
     out = {"gear": 0, "rooms": 0, "contracts": 0}
     keep = strategy.margin
     if strategy.gear != "none":
-        items = [it for it in game.gear_list(st).values() if st.house.name >= int(it.get("name_needed", 0) or 0)]
+        items = [it for it in game.gear_list(st).values() if st.house.renown >= int(it.get("renown_needed", 0) or 0)]
         for g in st.in_house():
             wanted: set[str] = set()
             for x in st.shows:
@@ -267,7 +267,7 @@ def trial(strategy: Strategy, weeks: int, seed: int, content: Path = CONTENT, ch
     return {"seed": seed, "girl": girl, "weeks": len(money_by_week), "money": money_by_week, "final": st.house.money,
             "low": min(money_by_week) if money_by_week else st.house.money, "fate": st.house.fate or "",
             "shows": len(played), "results": {w: sum(1 for x in played if x.result == w) for w in SHOW_WORDS},
-            "fees": sum(x.paid for x in played), "name": st.house.name, "heat": st.house.heat, "taken": taken, "upgrades": upgrades,
+            "fees": sum(x.paid for x in played), "renown": st.house.renown, "heat": st.house.heat, "taken": taken, "upgrades": upgrades,
             "girls": len(st.in_house()), "quality": round(statistics.mean([x.quality or 0 for x in played]), 2) if played else None,
             "gala": plot_log["gala"], "brascombe": plot_log["brascombe"], "troubles": plot_log["troubles"], "reckonings": plot_log["reckonings"],
             "partner": bool(st.flags.get("brascombe_partner")), "licence_revoked": bool(st.flags.get("licence_revoked")),
@@ -291,7 +291,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "low_p10": _pct(lows, .1), "in_red": round(sum(1 for x in lows if x < 0) / len(rows), 2),
             "shows_per_week": round(shows / max(1, sum(r["weeks"] for r in rows)), 2),
             "mix": {w: round(res[w] / max(1, shows), 2) for w in SHOW_WORDS},
-            "name_p50": _pct([r["name"] for r in rows], .5), "took_contract": round(sum(1 for r in rows if r["taken"]) / len(rows), 2),
+            "renown_p50": _pct([r["renown"] for r in rows], .5), "took_contract": round(sum(1 for r in rows if r["taken"]) / len(rows), 2),
             "fate": round(sum(1 for r in rows if r["fate"]) / len(rows), 2),
             "gala": round(sum(1 for r in rows if r.get("gala")) / len(rows), 2),
             "gala_week_p50": _pct([r["gala"] for r in rows if r.get("gala")], .5) if any(r.get("gala") for r in rows) else None,
@@ -341,12 +341,12 @@ def grid(spec: list[str]) -> list[Strategy]:
 
 
 def table(results: list[tuple[Strategy, dict[str, Any]]]) -> str:
-    out = ["| strategy | money p10 / p50 / p90 | low p10 | in the red | shows a week | disaster / poor / fine / good / triumph | Name p50 | bought a contract | girls p50 | fees earned p50 | gear spent p50 | rooms and contracts p50 | the gala (week p50) | reckonings a game | challenges a game (held) |",
+    out = ["| strategy | money p10 / p50 / p90 | low p10 | in the red | shows a week | disaster / poor / fine / good / triumph | Renown p50 | bought a contract | girls p50 | fees earned p50 | gear spent p50 | rooms and contracts p50 | the gala (week p50) | reckonings a game | challenges a game (held) |",
            "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for s, r in sorted(results, key=lambda x: -x[1]["final_p50"]):
         mix = " / ".join(f"{r['mix'][w]:.2f}" for w in SHOW_WORDS)
         out.append(f"| {s.label()} | {r['final_p10']} / {r['final_p50']} / {r['final_p90']} | {r['low_p10']} | {r['in_red']:.0%} | "
-                   f"{r['shows_per_week']} | {mix} | {r['name_p50']} | {r['took_contract']:.0%} | {r['girls_p50']} | {r['fees_p50']} | {r['gear_p50']} | {r['rooms_contracts_p50']} | "
+                   f"{r['shows_per_week']} | {mix} | {r['renown_p50']} | {r['took_contract']:.0%} | {r['girls_p50']} | {r['fees_p50']} | {r['gear_p50']} | {r['rooms_contracts_p50']} | "
                    f"{r['gala']:.0%}" + (f" (w{r['gala_week_p50']})" if r.get('gala_week_p50') else "") + f" | {r['reckonings']} | {r['challenges_p50']} ({r['held_share']:.0%}) |")
     return "\n".join(out)
 
