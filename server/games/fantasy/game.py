@@ -991,9 +991,9 @@ class FantasyGame(GameBase):
             "thing dropped or drawn) is no check and no time. The player's words still earn an edge (a plan, the ground, a feint named), as a "
             "modifier with a why. A cantrip in a calm moment needs no check; a spell under pressure is an int check "
             "with the spell named in the label.",
-            f"When a fight starts or may start, say how hard it should be for {p.name} in the world's terms, with a why: two drunks are "
-            "trivial, a band of robbers normal, the Watch's full muster impossible. Write it in notes as 'fight: normal, a band of robbers' "
-            "(trivial, easy, normal, hard, boss or impossible). The engine sizes what the story has not already fixed.",
+            f"Only when violence is starting or openly threatened, say how hard the fight should be for {p.name} in the world's terms, with "
+            "a why: two drunks are trivial, a band of robbers normal, the Watch's full muster impossible. Write it in notes as 'fight: "
+            "normal, a band of robbers' (trivial, easy, normal, hard, boss or impossible). You name the band; the engine picks the numbers.",
         ]
         if p.about.strip():
             said = p.about.strip()
@@ -1090,8 +1090,9 @@ class FantasyGame(GameBase):
             "a fact the player learned and may need again (a name, a place, a time, a price, what a thing is), only when new; not "
             "what happened this turn (that is the log line).",
             "- new person value=name, field=<place>, note=role: anyone the prose names who is not listed (at most two a turn). An alias of a listed "
-            "person is that person: use their id. A hostile the telling shows who is not in the state is a new person row, its role the words "
-            "the telling used; the engine gives it a block. Someone THIS TURN offered by an id (robber_1) is filed by that id.",
+            "person is that person: use their id. If the prose shows someone not in the state attacking the player, file a new person "
+            "row whose role is the prose's words for them. If they are ones THIS TURN offered, file each one who actually appeared, by "
+            "its id (robber_1); file none who did not.",
             "present: the listed people in the scene with the player when the prose ends; someone only talked about is not present.",
             "Threads: open one for a job, a promise or a rumour the player took up that is not one of the quests in motion (a notice from the board, "
             "a favour asked at the bar). Close it when the prose settles it, with how in the note. The quests the game deals have thread ids "
@@ -1396,8 +1397,8 @@ class FantasyGame(GameBase):
 
     def _offer(self, s: FantasyState, adj: Any, w: Any, offset: int) -> None:
         """Part sixteen §4 (a): when the reading says a fight may come (a high risk, a danger on a check, or a fight band) and
-        nobody is fighting or ready to, THIS TURN names who it would be, from the cache ("If anyone comes at Corra here, it is
-        three robbers (robber_1 to robber_3)"); the narrator decides whether they come; the engine owns their numbers."""
+        nobody is fighting or ready to, THIS TURN names who it would be, from the cache ("If a fight comes here, the attackers are three robbers. In the story they are just robbers; only inside
+        <<ATTACK>> and <<ENEMY>> calls are they robber_1 to robber_3."); the narrator decides whether they come; the engine owns their numbers."""
         from . import combat as cb
         from . import encounter as en
         from . import world as wo2
@@ -1421,8 +1422,12 @@ class FantasyGame(GameBase):
         s.offer = {"place": dest, "fresh": True, "ids": ids, "bodies": [list(b) for b in e.bodies], "variant": e.variant, "band": e.band, "reason": e.reason}
         who = en.called_plural(e.bodies)
         span = ids[0] if len(ids) == 1 else f"{ids[0]} to {ids[-1]}"
-        w.directives.append(f"If anyone comes at {p.name} here, it is {who} ({span}); name them and the engine has them."
-                            + (" They cannot be beaten: if they come, show it, and the way out is to run or to yield." if e.band == "impossible" else ""))
+        plural = len(ids) > 1
+        w.directives.append(f"If a fight comes here, the {'attackers are' if plural else 'attacker is'} {who}. In the story "
+                            f"{'they are' if plural else 'it is'} just {re.sub(r'^(a|an|one|two|three|four|five|six) ', '', who)}; only inside "
+                            f"<<ATTACK>> and <<ENEMY>> calls {'are they' if plural else 'is it'} {span}."
+                            + (f" These are too many to beat. If they come, let the prose show it (their numbers, their ease with steel) "
+                               f"and leave {p.name} room to run or yield; never say so outright." if e.band == "impossible" else ""))
         w.rows.append({"kind": "encounter", "hit": hit, "why": "the offer", "reason": e.reason})
 
     def bring_in(self, s: FantasyState, words: str, *, ref: str = "", band: str = "normal", offset: int = 2, join: bool = True,

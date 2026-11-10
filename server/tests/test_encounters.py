@@ -170,8 +170,8 @@ def test_the_offer_names_who_would_come_and_the_narrators_call_brings_them(game)
     look = AssistantReadingCombat(kind="action", summary="Brin creeps down the passage toward the voices.", time_minutes=2, risk="high",
                                   intents=[IntentCombat(action="Creep toward the voices")])
     s, w = game.world_turn(st, look, "I creep toward the voices", random.Random(1), 9, 2)
-    line = next(d for d in w.directives if d.startswith("If anyone comes at Brin here"))
-    assert s.offer["ids"] and s.offer["ids"][0] in line and "name them and the engine has them" in line
+    line = next(d for d in w.directives if d.startswith("If a fight comes here, the"))
+    assert s.offer["ids"] and s.offer["ids"][0] in line and "only inside <<ATTACK>> and <<ENEMY>> calls" in line
     assert w.rows and w.rows[0]["kind"] == "encounter" and w.rows[0]["why"] == "the offer"
     ref = s.offer["ids"][0]
     out = game.world_call(s, type("C", (), {"verb": "ENEMY", "ref": ref, "raw": f"ENEMY {ref}", "stat": "", "num": 0, "den": 0})(), random.Random(2), 2, {"hp": 0})
@@ -181,7 +181,7 @@ def test_the_offer_names_who_would_come_and_the_narrators_call_brings_them(game)
     calm = AssistantReadingCombat(kind="action", summary="Brin orders a drink.", time_minutes=5, risk="none", intents=[IntentCombat(action="order a drink")])
     st2 = new(game, place="The Drowned Lantern")
     _, w2 = game.world_turn(st2, calm, "I order a drink", random.Random(1), 2, 2)
-    assert not any(d.startswith("If anyone comes") for d in w2.directives)
+    assert not any(d.startswith("If a fight comes here") for d in w2.directives)
 
 
 def test_the_referee_files_a_monster_and_the_engine_fights_it(game):
