@@ -135,9 +135,17 @@ def derived_weight(b: CombatBlock) -> float:
     return round(max(0.5, w), 1)
 
 
+_ROLE_TAIL = re.compile(r"\s+(?:of|at|in|on|from|for|by|under|near)\s+.*$", re.I)
+
+
 def _role_block(q: Person) -> str:
-    """The entry a person's role words name (the bestiary's `words`), else a commoner (the record §1, §12c)."""
-    return match_entry(q.role) or match_entry(q.called) or match_entry(q.name) or match_entry(q.description[:120]) or "commoner"
+    """The entry a person's role words name (the bestiary's `words`), else a commoner (the record §1, §12c). B309 (11-10): the
+    role's head only, before 'of', 'at', 'in' ... ("Keeper of the Drowned Lantern" made Maud a zombie by the inn's name); the
+    label, the name and the description only for someone with no role (the actor 'called: Shadow' was made a Shadow)."""
+    head = _ROLE_TAIL.sub("", q.role or "")
+    if q.role:
+        return match_entry(head) or "commoner"         # 'called' is the player's label for the unnamed ("Shadow" for an actor)
+    return match_entry(q.called) or match_entry(q.name) or match_entry(q.description[:120]) or "commoner"
 
 
 def derived_xp(b: CombatBlock) -> int:
@@ -461,7 +469,9 @@ def plan_round(game: Any, s: FantasyState, adj: Any, player_text: str, turn: int
             c.target = targets[0]
             weapon = att.get("weapon") or ("fist" if UNARMED.search(player_text or "") else "")     # B308: a punch is a fist
             plan.append({"key": "player", "side": "player", "who": "player", "targets": targets[:3], "weapon": weapon,
-                         "riders": list(att.get("riders") or []), "spare": bool(SPARE.search(player_text or ""))})
+                         "riders": list(att.get("riders") or []),
+                         # B309 (Gemma, 11-10, adcf1869ec54 T7): a bar-room punch killed Old Hesk outright; a fist knocks people down
+                         "spare": bool(SPARE.search(player_text or "")) or bool(UNARMED.search(weapon or ""))})
     foes = living_enemies(game, s)
     for q in party(s):
         if not bodies(q):

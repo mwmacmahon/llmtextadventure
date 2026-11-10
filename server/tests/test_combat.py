@@ -648,3 +648,21 @@ def test_a_stranger_brought_in_by_an_id_is_named_in_words(game):
     st = new(game)
     made, _ = game.bring_in(st, "the_wealthy_stranger", ref="the_wealthy_stranger", named=True)
     assert made and "_" not in made[0].name
+
+
+# ---- B309 (Gemma fight round 3, 11-10, adcf1869ec54) ----
+def test_a_role_names_its_head_not_its_place_and_a_label_is_no_monster():
+    assert cb.block_of(Person(id="maud", name="Maud Tallow", role="Keeper of the Drowned Lantern", called="Innkeeper")).block == "commoner"
+    assert cb.block_of(Person(id="the_shadow", name="Oswin's shadow", role="An actor, and now a manager", called="Shadow")).block == "commoner"
+    assert cb.block_of(Person(id="g", name="X", role="a ghost on Monastery Isle's steps")).block == "ghost"
+    assert cb.block_of(Person(id="s", name="the dead thing", role="", description="a skeleton in a rotting linen shroud")).block == "skeleton"
+
+
+def test_a_fist_knocks_down_and_does_not_kill(game):
+    st = new(game, klass="Barbarian")
+    st.people.append(Person(id="hesk", name="Old Hesk", role="an old man", location=st.player.location, met=True))
+    st.player.fighting = ["hesk"]
+    punch = AssistantReadingCombat(kind="action", summary="Punch.", time_minutes=1, tempo="fast", risk="medium",
+                                   intents=[IntentCombat(action="punch the old man", targets=["hesk"], attack_at=["hesk"], weapon="fist")])
+    s, w = game.world_turn(st, punch, "I punch the old man", random.Random(1), 7, 2)
+    assert s.combat is not None and s.combat.plan[0]["weapon"] == "fist" and s.combat.plan[0]["spare"] is True

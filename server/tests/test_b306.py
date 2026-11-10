@@ -111,3 +111,17 @@ def test_a_failures_hit_points_are_on_its_line():
     clean = run_check(call, 1, {"str": 0}, lambda rng, req: dice_2d6(_Fixed(1, 2), req), random.Random(0), [a],
                       lambda req, t: [], lambda res: "STR, medium. Failure.", note_for=lambda d, l: "")
     assert clean.mechanic == "STR, medium. Failure."
+
+
+def test_turn_undead_with_nothing_dead_spends_nothing_and_the_lines_show_numbers(engine: Engine):
+    game = engine.games["fantasy"]
+    iid = engine.create_instance("fantasy", SHEET)
+    st = game.load_state(engine.store.load_state(iid))
+    for q in st.people:
+        q.location = "The Far Shore"                                  # nobody here, living or dead
+    before = st.player.count("turn_undead").value
+    s, res = game.run_command(st, "turn_undead", {})
+    assert s.player.count("turn_undead").value == before and "not spent" in res.text    # B309: an empty room spends nothing
+    st.player.hp = 3
+    s2, heal = game.run_command(st, "lay_on_hands", {})
+    assert s2.player.hp > 3 and "hit points back" in heal.text                           # the § line says how many

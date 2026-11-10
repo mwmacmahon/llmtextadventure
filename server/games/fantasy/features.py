@@ -137,7 +137,7 @@ def run(game: Any, state: FantasyState, fid: str, args: dict) -> tuple[FantasySt
             who, said = q.name, f"{amount} hit points back" + (", up again" if was_down else "")
         line = f"{name}: {who}, {said}."
         p.turn_notes.append(line)
-        return s, CommandResult(label=name, player_line=f.get("player_line") or (f"I use {name} on {who}." if q else f"I use {name}."),
+        return s, CommandResult(label=name, text=line, player_line=f.get("player_line") or (f"I use {name} on {who}." if q else f"I use {name}."),
                                 summary=f"{p.name} uses {name} on {who}.",
                                 directive=f"{p.name} uses {name} on {who}: {f.get('directive') or 'the hurt eases'} ({said}). A line or two, then stop where they would act.",
                                 minutes=int(f.get("minutes", 1)), referee_skip=["hp", fid], entities=[q.id] if q else [])
@@ -153,11 +153,12 @@ def run(game: Any, state: FantasyState, fid: str, args: dict) -> tuple[FantasySt
             return state, CommandResult(ok=False, label=name, text="Spent; a long rest brings it back.")
         from .combat import ensure_block
         undead = [q for q in _people_here(game, s) if q.status == "alive" and ensure_block(q).kind == "undead"]
-        c.value -= 1
-        if not undead:
-            return s, CommandResult(label=name, player_line="I raise the holy symbol and call on my oath.", summary=f"{p.name} tries to turn the dead.",
+        if not undead:                                            # B309 (Gemma, 11-10, adcf1869ec54 T16): an empty crypt spends nothing
+            return s, CommandResult(label=name, text=f"{name}: nothing dead is here; not spent.", player_line="I raise the holy symbol and call on my oath.",
+                                    summary=f"{p.name} tries to turn the dead.",
                                     directive=f"{p.name} raises the holy symbol and calls on the oath; nothing dead is here to answer. Play it, and stop.",
                                     minutes=0, referee_skip=[fid])
+        c.value -= 1
         strongest = max(undead, key=lambda q: float(ensure_block(q).weight or 1))
         w = float(ensure_block(strongest).weight or 1)
         diff = "low" if w <= 2 else "medium" if w <= 5 else "high" if w <= 8 else "very_high"
@@ -183,7 +184,7 @@ def run(game: Any, state: FantasyState, fid: str, args: dict) -> tuple[FantasySt
                     + (f", and {', '.join(gone)} come apart" if gone else ""))
         else:
             told = "the oath does not take; the dead come on"
-        return s, CommandResult(label=name, player_line="I raise the holy symbol and call on my oath.", summary=f"{p.name} turns the dead.",
+        return s, CommandResult(label=name, text=line, player_line="I raise the holy symbol and call on my oath.", summary=f"{p.name} turns the dead.",
                                 directive=f"{p.name} raises the holy symbol and calls on the oath: {told}. Play it, and stop where {p.name} chooses next.",
                                 minutes=0, referee_skip=[fid])
     if kind == "buff":
