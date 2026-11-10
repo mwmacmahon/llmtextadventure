@@ -1,6 +1,7 @@
 """The fight simulator (part fifteen §9; the combat record §10): N fights of a character against blocks, no model.
 
-The character fights all out, as a player who uses everything would: the best weapon at the first enemy standing, Smite on
+The character fights all out with its class features, as a player who uses everything a rest refills would (and nothing
+it carries that is used up: no potion, wand or javelin while it has a blade, no smoke pellet): the best weapon at the first enemy standing, Smite on
 every blow while it lasts, Rage at the start, Lay on Hands (the pool) when under 40% hit points, Second Wind under half,
 Cure Wounds from the slots when low. Every roll goes through the engine's own combat code (games/fantasy/combat.py:
 plan_round, resolve, land), so the numbers here are the game's.
@@ -52,6 +53,10 @@ def character(game, klass: str, level: int, race: str = "Human"):
                 p.level = lv
                 p.hp_max += 6 + p.stats.get("con", 0)
         p.hp = p.hp_max
+    st.inventory = en.kit_for_sim(st)                    # no consumables (the owner, 11-10: "no using the wand of fireballs")
+    for c in p.counts:
+        if c.refill == "never":
+            c.value = 0
     st.people = [q for q in st.people if q.id in ("hazel", "tam")]
     for q in st.people:
         q.location = "elsewhere"

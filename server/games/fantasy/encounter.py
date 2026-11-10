@@ -15,7 +15,8 @@ The book's shortlist: the DMG's XP thresholds per level (one share per party mem
 nearest the band's threshold; a lieutenant where the entry has `lead` and the count is three or more; never more than six
 bodies, never more than two entries unless pinned. The simulator ranks: each candidate against this party at full strength
 (never the player's current wounds or spent uses), at three variants (weak: hit points -25%, attack -1; standard; veteran:
-hit points +25%, attack +1, DC +1); the candidate and variant nearest the band's target win.
+hit points +25%, attack +1, DC +1); the candidate and variant nearest the band's target from those at or above it win
+(the owner, 11-10: never the set that is too hard if avoidable; none reaching it, the easiest measured).
 
 The band is a win rate: trivial about 99%, easy 90, normal 70 (tough but winnable, the default), hard 50, boss 40 (a named
 unique at veteran), impossible under 10 (never sized down). Difficulty moves every target ten points (Easy +10, Hard -10).
@@ -36,7 +37,7 @@ TARGET = {"trivial": 99, "easy": 90, "normal": 70, "hard": 50, "boss": 40, "impo
 OLD_BANDS = {"easy": "trivial", "fair": "easy", "hard": "normal", "deadly": "hard"}      # §9b's words, as the record §12b reads them
 THRESHOLDS = {1: (25, 50, 75, 100), 2: (50, 100, 150, 200), 3: (75, 150, 225, 400), 4: (125, 250, 375, 500), 5: (250, 500, 750, 1100)}
 MULTIPLIERS = (1.0, 1.5, 2.0, 2.5, 3.0, 4.0)
-VARIANTS = ("weak", "standard", "veteran")
+VARIANTS = ("weak", "standard", "veteran")          # and "feeble" (hit points -50%, attack and DC -2): a pinned fight's last knob
 MAX_BODIES = 6
 NUMBER = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}
 KIND_WORDS = [
@@ -147,8 +148,9 @@ def located_pool(region: str) -> list[tuple[str, int]]:
 
 # ---- the simulator, from the game's own state ------------------------------------------------------------------------------
 def party_base(game: Any, s: FantasyState) -> FantasyState:
-    """This party at full strength for the simulator: the player rested (hit points, every count full, no conditions, no
-    peril), the allies who fight at full hit points; nobody else; no journal, log or threads to copy."""
+    """This party at full strength for the simulator: the player rested (hit points, every feature's count full, no
+    conditions, no peril), the allies who fight at full hit points; nobody else; no journal, log or threads to copy. No
+    consumables (kit_for_sim): its weapons and armour only, and no count that never refills."""
     st = s.model_copy(deep=True)
     p = st.player
     keep = {q.id for q in cb.party(s)}
@@ -161,12 +163,30 @@ def party_base(game: Any, s: FantasyState) -> FantasyState:
     p.with_them = [x for x in p.with_them if x in keep]
     p.hp = p.hp_max
     for c in p.counts:
-        c.value = c.max
+        c.value = c.max if c.refill != "never" else 0     # a feature a rest refills, yes; a consumable (smoke pellets), never
+    st.inventory = kit_for_sim(st)
     p.conditions, p.peril, p.fighting, p.fate, p.flags_on = [], None, [], "", []
     p.hidden_from_others = False
     st.combat = None
     st.journal, st.log, st.threads, st.lost = [], [], [], []
     return st
+
+
+ARMOUR = re.compile(r"\b(mail|armou?r|leather|shield|plate|breastplate|brigandine|hauberk|gambeson|buckler)\b", re.I)
+
+
+def kit_for_sim(st: FantasyState) -> list:
+    """The owner, 11-10: the simulated player uses no consumable from the pockets ("no using the wand of fireballs or
+    whatever"). It keeps its weapons that are not spent by use and its armour; a thrown or shot weapon (javelins, arrows)
+    only when it has nothing else to fight with; nothing else it carries (potions, wands, scrolls, oil, bombs)."""
+    keep, thrown = [], []
+    for it in st.inventory:
+        hit = cb.weapons_carried(type("S", (), {"inventory": [it]})())[0]
+        if hit[0] != "fist":
+            (thrown if hit[2] in ("thrown", "ranged") else keep).append(it)
+        elif ARMOUR.search(it.name):
+            keep.append(it)
+    return keep + (thrown if not any(cb.weapons_carried(type("S", (), {"inventory": [it]})())[0][0] != "fist" for it in keep) else [])
 
 
 def spawn(s: FantasyState, cand: list[tuple[str, int]], variant: str = "standard", ids: list[str] | None = None,
@@ -205,7 +225,11 @@ def _free_id(s: FantasyState, made: list[Person], stem: str) -> str:
 
 
 def vary(b: CombatBlock, variant: str) -> None:
-    if variant == "weak":
+    if variant == "feeble":                           # pinned fights only, when weak is still too hard (the owner, 11-10: easier)
+        b.hp_max = max(1, int(round((b.hp_max or 1) * 0.5)))
+        b.attack = (b.attack or 0) - 2
+        b.dc = (b.dc or 12) - 2
+    elif variant == "weak":
         b.hp_max = max(1, int(round((b.hp_max or 1) * 0.75)))
         b.attack = (b.attack or 0) - 1
     elif variant == "veteran":
@@ -394,8 +418,21 @@ def encounter(game: Any, s: FantasyState, want: Want) -> Encounter:
             fights += want.n
             tried.append((c, v, w))
     pinned_all = bool(want.pinned) and all(n for _, n in want.pinned)
-    pick = (lambda: min(tried, key=lambda t: (t[2] > 10, abs(t[2] - target)))) if band == "impossible" else (lambda: min(tried, key=lambda t: abs(t[2] - target)))
+    def pick():
+        if band == "impossible":
+            return min(tried, key=lambda t: (t[2] > 10, abs(t[2] - target)))
+        if band == "boss":
+            return min(tried, key=lambda t: abs(t[2] - target))
+        # the owner, 11-10: "err on the side of enemies being easier ... never pick the enemy set that is too hard if
+        # avoidable": the nearest at or above the target; when none reaches it, the easiest measured
+        ok = [t for t in tried if t[2] >= target]
+        return min(ok, key=lambda t: t[2] - target) if ok else max(tried, key=lambda t: t[2])
     c, v, w = pick()
+    if pinned_all and band not in ("boss", "impossible") and w < target:   # the story's count, and still too hard: the feeble variant
+        wf = win_rate(game, base, c, "feeble", want.n, want.offset, f"{seed}:{describe(c)}:feeble")
+        fights += want.n
+        tried.append((c, "feeble", wf))
+        c, v, w = pick()
     for _ in range(3):                                # the knobs: a body more or fewer, as the simulator points (never a pinned count)
         if pinned_all or abs(w - target) <= 12:
             break
@@ -416,8 +453,8 @@ def encounter(game: Any, s: FantasyState, want: Want) -> Encounter:
     others = [(f"{describe(oc, ov)}", ow) for oc, ov, ow in tried if (oc, ov) != (c, v)]
     alt = min(others, key=lambda t: abs(t[1] - target)) if others else None
     reason = f"{describe(c, v)}: {w:.0f}% at {band} for level {level}" + (f" (target {target}%)" if True else "")
-    if pinned_all and v == "weak" and abs(w - target) > 15:
-        reason += "; pinned by the story, the weak variant and still off the band"
+    if pinned_all and v in ("weak", "feeble") and w < target - 15:
+        reason += f"; pinned by the story, the {v} variant and still off the band"
     elif pinned_all and v != "standard":
         reason += f"; pinned by the story, the {v} variant"
     if alt:
