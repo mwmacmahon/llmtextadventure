@@ -1,6 +1,6 @@
 """The player's command line, for a Claude Code subagent that plays a round (D84: players are subagents, never API calls).
 
-    turn.py new <game> --tag TAG [--title T] [--setup k=v ...]
+    turn.py new <game> --tag TAG [--title T] [--setup k=v ...] [--mod file.yml ...]
         makes an instance, starts the playtest transcript notes/playtests/<date>-<game>-<tag>.md, prints the id, the
         opening and what the player sees.
     turn.py play <iid> "<what the player does>"      (or: turn.py play <iid> --command <id> [k=v ...])
@@ -42,7 +42,7 @@ def _save(iid: str, d: dict) -> None:
 def new(a: argparse.Namespace) -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     setup = {k: v for k, _, v in (p.partition("=") for p in a.setup or [])}
-    view = _post("/api/instances", {"game": a.game, "setup": setup})
+    view = _post("/api/instances", {"game": a.game, "setup": setup, "mods": list(a.mod or [])})
     iid = view["id"]
     if a.title:
         _req("PATCH", f"/api/instances/{iid}", {"title": a.title})
@@ -148,7 +148,7 @@ def finish(a: argparse.Namespace) -> int:
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    n = sub.add_parser("new"); n.add_argument("game"); n.add_argument("--tag", required=True); n.add_argument("--title"); n.add_argument("--setup", nargs="*", action="extend")
+    n = sub.add_parser("new"); n.add_argument("game"); n.add_argument("--tag", required=True); n.add_argument("--title"); n.add_argument("--setup", nargs="*", action="extend"); n.add_argument("--mod", action="append", help="a mod file to tick (B79), e.g. tweaks.yml")
     p = sub.add_parser("play"); p.add_argument("iid"); p.add_argument("text", nargs="*"); p.add_argument("--command")
     f = sub.add_parser("finish"); f.add_argument("iid"); f.add_argument("--title")
     a = ap.parse_args(_reordered(argv))

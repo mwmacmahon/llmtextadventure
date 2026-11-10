@@ -838,9 +838,11 @@ class ClownGame(GameBase):
             "turn that changes how they treat the proprietor. set <person id>.mood <word>; set <person id>.status alive|dead|gone; set <person id>.told "
             "value=<tell id>: the person gave that piece this turn (the game state lists the open pieces with ids). learned <person id> value=fact.",
             "- new person value=name, field=<place>, note=role: someone the prose brings into the scene who is not listed (at most two a turn); never for a "
-            "person only spoken of (Aurel Brascombe, the Alderman, the Mayor are talked about, not met). An alias of a listed person is that person: use their id.",
+            "person only spoken of (Aurel Brascombe, the Alderman, the Mayor are talked about, not met). An alias of a listed person is that person: use their id. "
+            "Never for a girl on the clerk's slip: her contract is bought only by the Take lever at the slip's price, never in the prose.",
             "- add house.money -n / +n: money the prose shows paid, spent, taken or received in the scene (a bribe, a doctor paid, a tip, a debt paid), "
-            "never more than the house has. Money that changes hands at a show is its fee, and the engine pays that itself: no row.",
+            "never more than the house has. Money that changes hands at a show is its fee, and the engine pays that itself at the show's hour: no row, "
+            "and none for a booked show played or paid before its hour.",
             "- add house.heat +n: the proprietor was seen doing something the authorities would care about (a bribe refused and reported, a blow in the "
             "street, a girl hurt where a neighbour saw). 5 for a small thing, 15 for a crime in open view. Never a row for what no one saw.",
             "- set player.conditions +<name> / -<name>: the proprietor's own body, from the same list. move player <place>.",
@@ -1068,14 +1070,29 @@ class ClownGame(GameBase):
                     n -= s.house.money
                 if not n:
                     return True
-                n = max(-MONEY_ROW, min(MONEY_ROW, n))
                 told_now = [x for x in s.shows if x.result and not x.told]
                 if n > 0 and told_now:
                     w.reject("house.money", f"the show's fee is the engine's and was paid ({told_now[0].paid} gold); no row for it", value)
                     return True
-                if n < 0 and s.house.money + n < -50 and s.house.money <= 0:
-                    w.reject("house.money", f"the house has {s.house.money} gold; it cannot pay more", value)
+                early = self._show_ahead_here(s) if n > 0 else None
+                if early is not None:      # C57: a booked show played and paid before its hour; the engine pays it at the hour
+                    when = f"{WEEKDAYS[weekday(early.at_abs // DAY)]} {hhmm(early.at_abs % DAY)}"
+                    if w.conflict("house.money", f"{early.title} is booked for {when}; its fee is paid at the show, not before", value, "contradiction",
+                                  f"{early.title} is not until {when}. Nothing is performed for it and nothing is paid for it now; "
+                                  "the client says so, or the visit is only to look the place over. Tell it that way."):
+                        w.note(f"house.money: {value} not paid (the forced telling; {early.title} pays at its hour)")
                     return True
+                if n > MONEY_ROW:          # C56: never a silent clip; a sum the town does not pay out of hand is retold
+                    if not w.conflict("house.money", f"{n} gold handed over in a scene is more than the town pays out of hand (at most {MONEY_ROW})",
+                                      value, "contradiction", f"The sum is at most {MONEY_ROW} gold. Tell it so."):
+                        return True
+                    n = MONEY_ROW
+                if n < 0 and -n > s.house.money:   # C56: spending past the cashbox is refused, not clipped
+                    if not w.conflict("house.money", f"the house has {s.house.money} gold; {-n} cannot be paid", value, "contradiction",
+                                      f"The house has {s.house.money} gold and no credit in the town; the {-n} is not paid, and what it would "
+                                      "have bought is not handed over. Tell it so."):
+                        return True
+                    n = -s.house.money
                 if w.set("house.money", s.house.money, s.house.money + n):
                     s.house.money += n
                 return True
@@ -1138,6 +1155,15 @@ class ClownGame(GameBase):
             return self._person_row(s, q, kind, field, value, ch, w)
         # ---- new people
         if kind == "new" and low in ("person", "people", "character") and value:
+            card = self._slip_card_named(s, value)
+            if card is not None:            # C55: a slip girl reaches the house only by Take, at the slip's price
+                price = hb.price_of(card, s, lambda k: dk.dial(s, k))
+                if w.conflict("people", f"{card['name']} is on the clerk's slip at {price} gold; her contract is bought only by Take", value,
+                              "contradiction", f"{card['name']} stays at the shed: her contract is {price} gold on the clerk's slip and is not sold "
+                              f"across the counter or for less. {p.name} may look her over and talk to her there; she comes to the house only "
+                              "when the contract is taken. Nothing is paid for her now. Tell it that way."):
+                    w.note(f"people: {card['name']} not added (the forced telling; she is on the slip, bought only by Take)")
+                return True
             if any(x.name.lower() == value.lower() for x in s.people):
                 w.reject("people", f"already listed: {value}", value)
                 return True
@@ -1647,6 +1673,25 @@ class ClownGame(GameBase):
     @staticmethod
     def _show_word(quality: int) -> str:
         return "disaster" if quality <= -4 else "poor" if quality <= -1 else "fine" if quality <= 2 else "good" if quality <= 5 else "triumph"
+
+    def _slip_card_named(self, s: ClownState, value: str) -> dict | None:
+        """The clerk's slip card a new person's name is (C55): the full name, or the first name when one card on the slip has it."""
+        cards = self.content.girl_cards()
+        slip = [cards[c] for c in s.harbour.hand if c in cards and s.girl(c) is None]
+        v = " ".join(value.lower().split())
+        hit = [c for c in slip if str(c.get("name", "")).lower() == v]
+        if not hit and " " not in v:
+            hit = [c for c in slip if str(c.get("name", "")).lower().split()[:1] == [v]]
+        return hit[0] if len(hit) == 1 else None
+
+    def _show_ahead_here(self, s: ClownState) -> Show | None:
+        """A booked show not yet played whose venue the proprietor is at, or whose client is with him, before its hour (C57)."""
+        loc = s.player.location
+        for x in sorted((x for x in s.shows if not x.result and x.at_abs > s.now_abs), key=lambda x: x.at_abs):
+            q = s.person(x.client)
+            if loc == x.venue or (q is not None and q.location == loc):
+                return x
+        return None
 
     def _resolve_show(self, s: ClownState, x: Show, turn: int) -> None:
         g = s.girl(x.girl) if x.girl else s.active_girl
