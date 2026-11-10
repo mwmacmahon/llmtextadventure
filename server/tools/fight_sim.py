@@ -7,16 +7,16 @@ plan_round, resolve, land), so the numbers here are the game's.
 
     .venv/bin/python tools/fight_sim.py                          # the standard table (the record's first cases), 2000 fights each
     .venv/bin/python tools/fight_sim.py --class Paladin --vs skeleton:3 --n 5000
-    .venv/bin/python tools/fight_sim.py --class Rogue --vs watchman:6 --fixed
-    .venv/bin/python tools/fight_sim.py --class Paladin --band hard --block skeleton      # the scaled band at level 1
-    .venv/bin/python tools/fight_sim.py --class Rogue --vs watchman --band fair --ally hazel  # with an NPC ally (Hazel, Tam: city people with a block)
+    .venv/bin/python tools/fight_sim.py --class Rogue --vs guard:6 --fixed
+    .venv/bin/python tools/fight_sim.py --class Paladin --vs skeleton --band normal      # the band sized by the generator at level 1
+    .venv/bin/python tools/fight_sim.py --class Rogue --vs guard --band easy --ally hazel  # with an NPC ally (Hazel, Tam: city people with a block)
 
-An ally fights beside the character (the engine's own ally turns: at the character's target, or their order) and counts in
-the budget (each ally who fights adds 0.6 to the party), so a band grows with her. The enemies go for an ally now and then;
+An ally fights beside the character (the engine's own ally turns: at the character's target, or their order) and is part of
+the party the generator sizes a band against, so a band grows with her. The enemies go for an ally now and then;
 a Rogue's Sneak Attack lands on an enemy who goes for an ally, or one an ally is fighting, that round.
 
-Targets (the owner, 11-09 night): fair about 90% won at little cost, hard about 70% at a steep cost in hit points and
-resources, deadly about 50%.
+Targets (part sixteen §2): trivial about 99% won, easy 90, normal 70 (tough but winnable), hard 50, boss 40, impossible
+under 10; Easy and Hard difficulty move each ten points.
 """
 from __future__ import annotations
 
@@ -33,6 +33,7 @@ from engine.config import load_config  # noqa: E402
 from engine.registry import load_games  # noqa: E402
 from engine.roles import AssistantReadingCombat, AttackSpec, IntentCombat  # noqa: E402
 from games.fantasy import combat as cb  # noqa: E402
+from games.fantasy import encounter as en  # noqa: E402
 from games.fantasy.state import CombatBlock, CombatState, Person  # noqa: E402
 
 KITS = {"Paladin": {}, "Rogue": {"kit_rogue_1": "rapier"}, "Barbarian": {"kit_barbarian_1": "a greataxe"}, "Fighter": {}}
@@ -65,70 +66,13 @@ def enemies(st, spec: list[tuple[str, int]], band: str = "", fixed: bool = False
         st.player.fighting.append(q.id)
 
 
-def _use(st, cid: str) -> bool:
-    c = st.player.count(cid)
-    if c is not None and c.value > 0:
-        c.value -= 1
-        return True
-    return False
-
-
 def fight(game, st, rng: random.Random, offset: int, rounds_cap: int = 20) -> dict:
-    p = st.player
-    spent: dict[str, int] = {}
-    shift = cb.diff_shift(offset)
-    for x in list(p.fighting):
-        cb.scale(st, st.person(x), shift)
+    """One fight, all out: games/fantasy/encounter.py's sim_fight (the generator ranks with the same code), a content band
+    sized first by the generator (part sixteen §2)."""
+    for x in list(st.player.fighting):
+        cb.scale(st, st.person(x), cb.diff_shift(offset), game=game, offset=offset)
         cb.size_band(st.person(x))
-    st.combat = CombatState()
-    if p.count("rage") is not None and _use(st, "rage"):
-        p.flags_on.append("raging")
-        spent["rage"] = spent.get("rage", 0) + 1
-    hp0 = p.hp
-    rounds = 0
-    while rounds < rounds_cap and cb.living_enemies(game, st) and p.hp > 0:
-        rounds += 1
-        # healing first when low (a turn spent healing is still a round: the enemies act)
-        heal = 0
-        loh = p.count("lay_on_hands")
-        if p.hp * 10 < p.hp_max * 4 and loh is not None and loh.value > 0:
-            heal = min(loh.value, p.hp_max - p.hp)
-            loh.value -= heal
-            spent["lay_on_hands"] = spent.get("lay_on_hands", 0) + heal
-        elif p.hp * 2 < p.hp_max and _use(st, "second_wind"):
-            heal = 5 + p.level
-            spent["second_wind"] = spent.get("second_wind", 0) + 1
-        elif p.hp * 10 < p.hp_max * 4 and _use(st, "spell_slots"):
-            heal = rng.randint(1, 8) + p.stats.get("cha", 0)
-            spent["cure_wounds"] = spent.get("cure_wounds", 0) + 1
-        p.hp = min(p.hp_max, p.hp + heal)
-        target = cb.living_enemies(game, st)[0].id
-        riders = ["smite"] if any((p.count(c) or None) and p.count(c).value > 0 for c in ("smite", "divine_smite", "holy_power")) else []
-        adj = AssistantReadingCombat(kind="action", summary="attack", time_minutes=1, risk="high",
-                                     intents=[IntentCombat(action="attack", targets=[target], attack_at=[target], weapon=", ".join(["", *riders]) if riders else "")] if not heal else
-                                     [IntentCombat(action="heal")])
-        st.combat.plan = cb.plan_round(game, st, adj, "", rounds, rng)
-        tally: dict = {"hp": 0}
-        calls = []
-        for e in st.combat.plan:
-            if p.hp - int(tally.get("hp", 0)) <= 0:
-                break
-            before = {c.id: c.value for c in p.counts}
-            r = cb.resolve(game, st, e, rng, offset, tally)
-            for c in p.counts:
-                if before.get(c.id, c.value) > c.value and c.id in ("smite", "divine_smite", "holy_power"):
-                    spent["smite"] = spent.get("smite", 0) + (before[c.id] - c.value)
-            calls.append(r["data"])
-        p.hp = max(0, p.hp - int(tally.get("hp", 0)))
-        if p.hp <= 0:
-            break
-        cb.land(game, st, calls, rounds, offset, rng)
-        if st.combat is None:
-            break
-        st.combat.plan = []
-    won = p.hp > 0 and not cb.living_enemies(game, st)
-    return {"won": won, "rounds": rounds, "hp_left": p.hp, "hp_max": p.hp_max, "hp_lost": max(0, hp0 - p.hp) + sum(v for k, v in spent.items() if k == "lay_on_hands"),
-            "spent": spent}
+    return en.sim_fight(game, st, rng, offset, rounds_cap)
 
 
 def with_allies(st, allies):
@@ -143,10 +87,19 @@ def with_allies(st, allies):
 def run_case(game, klass: str, level: int, spec, band: str, fixed: bool, difficulty: str, n: int, seed: int = 0, allies: list[str] | None = None) -> dict:
     out = []
     rng = random.Random(seed)
+    sized_blocks = None                                  # a band is sized once (the generator, on the first fight), then reused
     for i in range(n):
         st = with_allies(character(game, klass, level), allies)
         enemies(st, spec, band, fixed)
-        r = fight(game, st, rng, OFFSETS[difficulty])
+        if sized_blocks is None:
+            for x in list(st.player.fighting):
+                cb.scale(st, st.person(x), cb.diff_shift(OFFSETS[difficulty]), game=game, offset=OFFSETS[difficulty])
+                cb.size_band(st.person(x))
+            sized_blocks = {x: st.person(x).combat.model_copy(deep=True) for x in st.player.fighting}
+        else:
+            for x, b in sized_blocks.items():
+                st.person(x).combat = b.model_copy(deep=True)
+        r = en.sim_fight(game, st, rng, OFFSETS[difficulty])
         r["allies_down"] = sum(1 for a in allies or [] if st.person(a) is not None and st.person(a).status != "alive")
         out.append(r)
     wins = [r for r in out if r["won"]]
@@ -154,12 +107,7 @@ def run_case(game, klass: str, level: int, spec, band: str, fixed: bool, difficu
     for r in wins:
         for k, v in r["spent"].items():
             spent[k] = spent.get(k, 0) + v
-    sized = ""
-    st = with_allies(character(game, klass, level), allies)
-    enemies(st, spec, band, fixed)
-    for x in st.player.fighting:
-        notes = cb.scale(st, st.person(x), cb.diff_shift(OFFSETS[difficulty]))
-        sized = "; ".join(notes) or sized
+    sized = "; ".join(n for b in (sized_blocks or {}).values() for n in b.notes)
     return {"class": klass + (" + " + ", ".join(a.capitalize() for a in allies) if allies else ""), "level": level, "vs": " + ".join(f"{b} x{c}" for b, c in spec) if not band else f"{spec[0][0]} band",
             "band": band or ("fixed" if fixed else "as written"), "sized": sized, "difficulty": difficulty, "n": n,
             "win": round(100 * len(wins) / n, 1), "rounds": round(statistics.mean(r["rounds"] for r in out), 1),
@@ -168,25 +116,25 @@ def run_case(game, klass: str, level: int, spec, band: str, fixed: bool, difficu
             "ally_down_pct": round(100 * sum(1 for r in out if r.get("allies_down")) / n, 1) if allies else None}
 
 
-STANDARD = [  # (class, level, vs, band, fixed, allies)
+STANDARD = [  # (class, level, vs, band, fixed, allies): the bands are the generator's (part sixteen §2): a win rate each
     ("Paladin", 1, [("skeleton", 2)], "", True, []),
     ("Paladin", 1, [("skeleton", 3)], "", True, []),
     ("Paladin", 1, [("skeleton", 4)], "", True, []),
-    ("Paladin", 1, [("skeleton", 1)], "fair", False, []),
+    ("Paladin", 1, [("skeleton", 1)], "easy", False, []),
+    ("Paladin", 1, [("skeleton", 1)], "normal", False, []),
     ("Paladin", 1, [("skeleton", 1)], "hard", False, []),
-    ("Paladin", 1, [("skeleton", 1)], "deadly", False, []),
-    ("Rogue", 1, [("watchman", 6)], "", True, []),
-    ("Rogue", 1, [("watchman", 1)], "fair", False, []),
-    ("Rogue", 1, [("watchman", 1)], "hard", False, []),
-    ("Rogue", 1, [("watchman", 1)], "deadly", False, []),
-    ("Barbarian", 1, [("skeleton", 1)], "hard", False, []),
+    ("Rogue", 1, [("guard", 6)], "", True, []),
+    ("Rogue", 1, [("guard", 1)], "easy", False, []),
+    ("Rogue", 1, [("guard", 1)], "normal", False, []),
+    ("Rogue", 1, [("guard", 1)], "hard", False, []),
+    ("Barbarian", 1, [("skeleton", 1)], "normal", False, []),
     ("Paladin", 1, [("troll", 1)], "", True, []),
     ("Rogue", 1, [("troll", 1)], "", True, []),
-    ("Rogue", 1, [("watchman", 1)], "fair", False, ["hazel"]),
-    ("Rogue", 1, [("watchman", 1)], "hard", False, ["hazel"]),
-    ("Rogue", 1, [("watchman", 1)], "deadly", False, ["hazel"]),
-    ("Paladin", 1, [("skeleton", 1)], "fair", False, ["hazel"]),
-    ("Paladin", 1, [("skeleton", 1)], "hard", False, ["hazel"]),
+    ("Rogue", 1, [("guard", 1)], "easy", False, ["hazel"]),
+    ("Rogue", 1, [("guard", 1)], "normal", False, ["hazel"]),
+    ("Rogue", 1, [("guard", 1)], "hard", False, ["hazel"]),
+    ("Paladin", 1, [("skeleton", 1)], "easy", False, ["hazel"]),
+    ("Paladin", 1, [("skeleton", 1)], "normal", False, ["hazel"]),
 ]
 
 

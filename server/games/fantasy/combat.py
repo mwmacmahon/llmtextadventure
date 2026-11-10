@@ -37,42 +37,76 @@ CLASS_SAVES: dict[str, tuple[str, str]] = {
     "warlock": ("wis", "cha"), "wizard": ("int", "wis"),
 }
 
-# the library: a content block may name one (`combat: {block: skeleton, count: 4}`) and change what it needs
-BLOCKS: dict[str, dict[str, Any]] = {
-    "commoner": {"ac": 10, "hp": 4, "attack": 2, "damage": "1d4", "weight": 1, "kind": "person"},
-    "watchman": {"ac": 12, "hp": 9, "attack": 3, "damage": "1d6+1", "weight": 2, "kind": "person"},
-    "brute": {"ac": 14, "hp": 30, "attack": 5, "damage": "1d8+3", "weight": 6, "kind": "person"},
-    "hunter": {"ac": 13, "hp": 11, "attack": 4, "damage": "1d6+2", "weight": 2, "kind": "person"},
-    "captain": {"ac": 15, "hp": 16, "attack": 5, "damage": "1d8+3", "weight": 5, "kind": "person"},
-    "skeleton": {"ac": 13, "hp": 13, "attack": 4, "damage": "1d6+2", "weight": 2, "kind": "undead", "fanatic": True,
-                 "saves": {"dex": 2, "con": 2, "wis": -1}},
-    "zombie": {"ac": 8, "hp": 22, "attack": 3, "damage": "1d6+1", "weight": 3, "kind": "undead", "fanatic": True,
-               "saves": {"con": 3, "wis": 0}},
-    "ghost": {"ac": 11, "hp": 20, "attack": 3, "damage": "1d6", "weight": 5, "kind": "undead", "fanatic": True, "dc": 12,
-              "actions": [{"kind": "song", "stat": "wis", "dc": 12, "condition": "chilled", "harm": "a touch that chills"}],
-              "notes": ["no blade bites it without the oath or fire"]},
-    "wight": {"ac": 14, "hp": 30, "attack": 5, "damage": "1d8+3", "weight": 8, "kind": "undead", "fanatic": True, "fixed": True, "dc": 13,
-              "actions": [{"kind": "strike", "harm": "blade"},
-                          {"kind": "drain", "stat": "con", "dc": 13, "condition": "drained", "damage": "1d6", "harm": "life-draining touch"}]},
-    "siren": {"ac": 13, "hp": 20, "attack": 4, "damage": "1d6+2", "weight": 4, "kind": "person", "dc": 13},
-    "troll": {"ac": 14, "hp": 40, "attack": 6, "damage": "1d10+4", "weight": 10, "kind": "beast", "fixed": True, "regen": 3,
-              "regen_unless": "fire", "fanatic": True},
-    "beast": {"ac": 12, "hp": 11, "attack": 4, "damage": "1d6+2", "weight": 2, "kind": "beast", "fanatic": True},
-}
-# the defaults by role words, for anyone with no block (the record §1)
-ROLE_BLOCKS: list[tuple[re.Pattern, str]] = [
-    (re.compile(r"\bskeleton|bone|catacomb dead", re.I), "skeleton"),
-    (re.compile(r"\bzombie|drowned dead|corpse", re.I), "zombie"),
-    (re.compile(r"\bghost|spirit|shade|wraith", re.I), "ghost"),
-    (re.compile(r"\bwight\b", re.I), "wight"),
-    (re.compile(r"\bsiren", re.I), "siren"),
-    (re.compile(r"\btroll|ogre|giant|brute", re.I), "brute"),
-    (re.compile(r"\bcaptain\b", re.I), "captain"),
-    (re.compile(r"\bwatch|guard|blade|sergeant|constable|soldier|thug|bandit|bravo|mercenar|enforcer|bouncer|hired", re.I), "watchman"),
-    (re.compile(r"\bhunter|huntress|archer|ranger", re.I), "hunter"),
-    (re.compile(r"\bwolf|dog|hound|bear|boar|beast|rat swarm", re.I), "beast"),
-]
-UNDEAD = {"skeleton", "zombie", "ghost", "wight"}
+# the library (part sixteen §1, the combat record §12a): every enemy in the world is an entry in the content's bestiary.yml,
+# loaded by load_bestiary (FantasyGame at start); a content block names one (`combat: {block: skeleton, count: 4}`) and
+# changes what it needs. BLOCKS holds each entry's numbers, ENTRIES the whole entry (name, called, kind, cr, xp, words,
+# home, tags), ALIASES the ids an older save may carry.
+BLOCKS: dict[str, dict[str, Any]] = {"commoner": {"ac": 10, "hp": 4, "attack": 2, "damage": "1d4", "xp": 10, "weight": 0.4, "kind": "humanoid"}}
+ENTRIES: dict[str, dict[str, Any]] = {}
+ALIASES: dict[str, str] = {}
+UNDEAD: set[str] = set()
+BLOCK_FIELDS = ("ac", "hp", "attack", "damage", "saves", "kind", "actions", "dc", "regen", "regen_unless", "fanatic", "lead", "fixed")
+PERSON_KINDS = ("person", "humanoid", "fey")        # who takes a yield, loses their nerve, is a stranger until named
+
+
+def is_person(kind: str) -> bool:
+    return (kind or "") in PERSON_KINDS
+
+
+def load_bestiary(content_dir: Any) -> dict[str, dict[str, Any]]:
+    """Read content/bestiary.yml into BLOCKS, ENTRIES, ALIASES and UNDEAD (in place, so every importer sees them)."""
+    import yaml
+    from pathlib import Path
+    path = Path(content_dir) / "bestiary.yml"
+    if not path.exists():
+        return ENTRIES
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    entries = {str(e["id"]): dict(e) for e in data.get("entries") or []}
+    ENTRIES.clear()
+    ENTRIES.update(entries)
+    BLOCKS.clear()
+    for eid, e in entries.items():
+        b = {k: e[k] for k in BLOCK_FIELDS if k in e and e[k] not in (None, "")}
+        b["xp"] = int(e.get("xp") or 10)
+        b["weight"] = round(b["xp"] / 25, 2)                 # §9b's units, for the old scaler until the generator replaces it
+        BLOCKS[eid] = b
+    ALIASES.clear()
+    ALIASES.update({str(k): str(v) for k, v in (data.get("aliases") or {}).items()})
+    UNDEAD.clear()
+    UNDEAD.update(eid for eid, e in entries.items() if e.get("kind") == "undead")
+    _WORDS.clear()
+    return ENTRIES
+
+
+def _ensure_loaded() -> None:
+    """The bestiary from the default content folder when no game has loaded one (a test, a tool)."""
+    if not ENTRIES:
+        from pathlib import Path
+        load_bestiary(Path(__file__).resolve().parents[3] / "notes" / "content" / "fantasy")
+
+
+def entry_id(block: str) -> str:
+    """A block id as the bestiary has it (an older save's watchman is the guard)."""
+    _ensure_loaded()
+    b = (block or "").strip()
+    return b if b in BLOCKS else ALIASES.get(b, b)
+
+
+_WORDS: list[tuple[re.Pattern, str, int]] = []
+
+
+def match_entry(text: str) -> str | None:
+    """The bestiary entry the words name (its name or one of its `words`, a plural too): the earliest in the text, then the
+    longest phrase there; None when nothing does."""
+    _ensure_loaded()
+    if not _WORDS:
+        for eid, e in ENTRIES.items():
+            for w in {str(e.get("name") or eid), eid.replace("_", " "), *[str(x) for x in e.get("words") or []]}:
+                w = w.strip()
+                if len(w) > 2:
+                    _WORDS.append((re.compile(r"(?<![\w-])" + re.escape(w) + r"(?:e?s)?(?![\w-])", re.I), eid, len(w)))
+    hits = [(m.start(), -n, eid) for pat, eid, n in _WORDS if (m := pat.search(text or ""))]
+    return min(hits)[2] if hits else None          # the earliest word (a role's head noun: "Sergeant of the Watch"), then the longest
 
 
 def dice_avg(d: str) -> float:
@@ -99,8 +133,13 @@ def derived_weight(b: CombatBlock) -> float:
 
 
 def _role_block(q: Person) -> str:
-    words = f"{q.role} {q.name} {q.description[:120]}"
-    return next((name for pat, name in ROLE_BLOCKS if pat.search(words)), "commoner")
+    """The entry a person's role words name (the bestiary's `words`), else a commoner (the record §1, §12c)."""
+    return match_entry(q.role) or match_entry(q.called) or match_entry(q.name) or match_entry(q.description[:120]) or "commoner"
+
+
+def derived_xp(b: CombatBlock) -> int:
+    """§12a: XP for a block with no entry, from its numbers (the old weight's formula in XP)."""
+    return int(round(derived_weight(b) * 25))
 
 
 def moves_as_actions(moves: list[dict]) -> list[dict]:
@@ -123,8 +162,10 @@ def moves_as_actions(moves: list[dict]) -> list[dict]:
 def block_of(q: Person) -> CombatBlock:
     """A person's block, every number filled: the content's own, over the library block it names, over the default by the
     role words. A band's bodies' hit points are filled at its first fight (`size`), not here."""
+    _ensure_loaded()
     own = q.combat or CombatBlock()
-    base = dict(BLOCKS.get(own.block or "", {}) or BLOCKS[_role_block(q)])
+    eid = entry_id(own.block) if own.block else _role_block(q)
+    base = dict(BLOCKS.get(eid) or BLOCKS.get("commoner") or {})
     data = dict(base)
     for k, v in own.model_dump().items():         # a saved block carries every field: its defaults never undo the library's
         if k == "block" or v in (None, "", [], {}):
@@ -135,20 +176,27 @@ def block_of(q: Person) -> CombatBlock:
             continue
         else:
             data[k] = v
-    if own.kind == "person" and base.get("kind") not in (None, "person"):
+    if is_person(own.kind) and not is_person(str(base.get("kind") or "")):
         data["fanatic"] = bool(own.fanatic)      # B289: a beast's block made a person (Gorm talks) is no beast's fanatic
-    data["block"] = own.block or _role_block(q)
+    if own.block and own.weight is not None and own.xp is None:
+        data.pop("weight", None)                 # an older save's weight (the old units): the entry's XP decides now
+    data["block"] = eid
+    data["xp"] = own.xp if own.xp is not None else base.get("xp")
+    if q.moves and not own.actions:
+        data["actions"] = moves_as_actions(q.moves)   # the person's own moves win over the library's (Mirren's song and hold)
     b = CombatBlock(**{k: v for k, v in data.items() if k in CombatBlock.model_fields})
     if not b.actions:
-        b.actions = moves_as_actions(q.moves) or [{"kind": "strike", "harm": "blow"}]
+        b.actions = [{"kind": "strike", "harm": "blow"}]
     if b.hp_max is None:
         b.hp_max = b.hp if b.hp is not None else 4
     if b.hp is None:
         b.hp = b.hp_max
     if b.weight is None:
-        b.weight = derived_weight(b)
+        b.weight = round((b.xp / 25), 2) if b.xp else derived_weight(b)
+    if b.xp is None:
+        b.xp = derived_xp(b)
     if not b.kind:
-        b.kind = "undead" if data["block"] in UNDEAD else "person"
+        b.kind = "undead" if data["block"] in UNDEAD else "humanoid"
     return b
 
 
@@ -427,7 +475,7 @@ def plan_round(game: Any, s: FantasyState, adj: Any, player_text: str, turn: int
         for body in bodies(q):
             if s.combat.surprise == "player" and q.id == c.target and c.round == 0:
                 continue                                              # struck from hiding: the target loses its first action
-            action = pick_action(b, p)
+            action = pick_action(b, p, rng)
             tgt = "player"
             if allies and rng.random() < 0.3:
                 tgt = rng.choice(allies).id
@@ -463,12 +511,27 @@ def player_attack(adj: Any) -> dict | None:
     return None
 
 
-def pick_action(b: CombatBlock, p: Any) -> dict:
-    """An enemy's action this round: a hold or grab when the player is free of one, a song when not yet sung, else a strike."""
+MOVE_WEIGHT = {"strike": 3, "drain": 2, "hold": 1, "grab": 1, "song": 1, "breath": 1}
+
+
+def pick_action(b: CombatBlock, p: Any, rng: Any = None) -> dict:
+    """An enemy's move this round (part sixteen, the owner: "the most rudimentary ai ... can pick at random with weights"):
+    among the moves that make sense now (no hold or grab while the player is already held, no song on the enthralled), a
+    weighted draw: a move's own `weight`, else a strike 3, a drain 2, the rest 1. Without an rng (a call that must not
+    change the dice), the first that makes sense."""
     acts = b.actions or [{"kind": "strike"}]
-    return next((a for a in acts if a.get("kind") in ("hold", "grab") and p.peril is None), None) \
-        or next((a for a in acts if a.get("kind") == "song" and not any(x.name == "enthralled" for x in p.conditions)), None) \
-        or next((a for a in acts if a.get("kind") in ("strike", "drain")), None) or acts[0]
+    held = p.peril is not None
+    sung = any(x.name == "enthralled" for x in p.conditions)
+    ok = [a for a in acts if not (a.get("kind") in ("hold", "grab") and held) and not (a.get("kind") == "song" and sung)] or acts
+    if rng is None:
+        return ok[0]
+    weights = [float(a.get("weight") or MOVE_WEIGHT.get(str(a.get("kind") or "strike"), 1)) for a in ok]
+    r = rng.random() * sum(weights)                 # rng.random() alone, so any die the engine is handed will do
+    for a, w in zip(ok, weights):
+        r -= w
+        if r < 0:
+            return a
+    return ok[-1]
 
 
 def round_lines(game: Any, s: FantasyState) -> list[str]:
@@ -836,7 +899,7 @@ def backstop(game: Any, s: FantasyState, rng: Any, offset: int, tally: dict) -> 
 def land(game: Any, s: FantasyState, calls: list[dict], turn: int, offset: int, rng: Any) -> list[str]:
     """After the prose: the round's hits on everyone's hit points (the player's own land through world.land), the fallen
     (enemies dead or destroyed, down if spared; allies down, dead at -10), morale, the round counter, and the fight's end
-    with its XP (the weights x 25)."""
+    with its XP (the entries' XP, by CR)."""
     from engine.mechanics import save_roll
     p = s.player
     c = s.combat
@@ -873,14 +936,14 @@ def land(game: Any, s: FantasyState, calls: list[dict], turn: int, offset: int, 
                 word = fallen_word(q, q.id in spared)
                 q.status = "down" if word == "down" else "dead"
                 c.defeated.append(q.id)
-                c.weight_won += float(b.weight or derived_weight(b)) * max(1, b.count)
+                c.weight_won += float(b.xp or derived_xp(b)) * max(1, b.count)
                 notes.append(f"{q.name}: {word}")
-            elif b.count <= 1 and q.status == "alive" and not b.fanatic and b.kind == "person" and 0 < b.hp * 4 <= (b.hp_max or 1):
+            elif b.count <= 1 and q.status == "alive" and not b.fanatic and is_person(b.kind) and 0 < b.hp * 4 <= (b.hp_max or 1):
                 res = save_roll(rng, b.saves.get("wis", 0), 10 + p.level)          # morale: a quarter left
                 if not res.holds:
                     p.fighting = [x for x in p.fighting if x != q.id]
                     c.defeated.append(q.id)
-                    c.weight_won += float(b.weight or derived_weight(b))
+                    c.weight_won += float(b.xp or derived_xp(b))
                     q.mood = "yielded"
                     notes.append(f"{q.name} yields ({save_line('wis', 'their nerve', res)})")
         elif q.id in p.with_them and q.status == "alive" and (b.hp or 0) <= 0:
@@ -898,7 +961,7 @@ def land(game: Any, s: FantasyState, calls: list[dict], turn: int, offset: int, 
             p.fighting.remove(x)
             c.defeated.append(q.id)
             b = ensure_block(q)
-            c.weight_won += float(b.weight or derived_weight(b))
+            c.weight_won += float(b.xp or derived_xp(b))
             notes.append(f"{q.name} stands down")
     p.fighting = [x for x in p.fighting if (q := s.person(x)) is not None and q.status == "alive"]
     for x in p.fighting:                                               # the fight goes where the player goes (a chase through the wall)
@@ -914,7 +977,7 @@ def land(game: Any, s: FantasyState, calls: list[dict], turn: int, offset: int, 
         c.round += 1
     c.plan = []
     if not living_enemies(game, s) and not p.fate:
-        xp = int(round(c.weight_won * 25))
+        xp = int(round(c.weight_won))                          # §12a: the entries' XP (CR's), the standard way
         if xp:
             p.xp += xp
             notes.append(f"The fight is over: {xp} XP")
@@ -1006,7 +1069,7 @@ def run_fight_command(game: Any, state: FantasyState, command_id: str) -> tuple[
         return s, CommandResult(label="Flee", text="Out of the fight; each enemy in reach got one blow as you went.", player_line="I run for it.",
                                 summary=f"{p.name} flees the fight.", directive=directive, minutes=1,
                                 referee_skip=["hp"])
-    takers = [q for q in living_enemies(game, s) if ensure_block(q).kind == "person" and not ensure_block(q).fanatic]
+    takers = [q for q in living_enemies(game, s) if is_person(ensure_block(q).kind) and not ensure_block(q).fanatic]
     refusers = [q for q in living_enemies(game, s) if q not in takers]
     for q in takers:
         q.mood = "accepted a yield"
@@ -1025,64 +1088,39 @@ def run_fight_command(game: Any, state: FantasyState, command_id: str) -> tuple[
                             player_line="I yield.", summary=f"{p.name} offers to yield.", directive=directive, minutes=1)
 
 
-# ---- §8: scaling, by a budget (the record §9b) -----------------------------------------------------------------------------
-# tuned by the simulator (part fifteen §9; tools/fight_sim.py): the record's 0.5 / 1 / 1.5 / 2.5 made fair and hard the same one
-# skeleton at level 1 (won 100%); doubled, a level-1 paladin alone wins fair (two skeletons) about 96% at little cost, hard (three) about
-# 72% at a steep one, deadly (three, the remainder spent as +1 and +25%) about half
-BANDS = {"easy": 1.0, "fair": 2.0, "hard": 3.0, "deadly": 3.75}
+# ---- §8: scaling (the record §9b, now §12b): the encounter generator sizes a content band -------------------------------------
+# B292: the old budget's calibration drifted with no test to say so; tests/test_combat.py now pins the simulator's table.
+BANDS = {"easy": 1.0, "fair": 2.0, "hard": 3.0, "deadly": 3.75}       # §9b's words, read as the generator's bands (encounter.OLD_BANDS)
 DIFFICULTY = {-2: 0.75, 0: 1.0, 2: 1.25}
 MAX_BODIES = 6
 
 
 def budget(level: int, fighters: int, band: str = "hard", shift: int = 0) -> float:
-    """(level + 1) x (1 + party members who fight x 0.6) x the band x the difficulty."""
+    """§9b's budget, kept for the pages and the old saves' notes; the generator (games/fantasy/encounter.py) sizes fights now."""
     return (level + 1) * (1 + fighters * 0.6) * BANDS.get(band or "hard", 1.5) * DIFFICULTY.get(shift, 1.0)
 
 
-def scale(s: FantasyState, q: Person, shift: int = 0) -> list[str]:
-    """A band's size at its first fight: the count that fits the budget (one to six), then, past six bodies, attack and DCs +1,
-    then hit points +25% (never more); under one body, fewer hit points. A fixed block keeps its numbers; a named person's
-    block is theirs (only an unnamed band is sized). Returns the steps, for the mechanics line."""
+def scale(s: FantasyState, q: Person, shift: int = 0, game: Any = None, offset: int | None = None, n: int = 10) -> list[str]:
+    """A content band at its first fight (part sixteen §2): its count pinned when the content gave one (only the variant
+    moves), else the generator's to size; the band's word read as the generator's (hard is normal, deadly hard). A fixed
+    block keeps its numbers; a person alone is theirs. Ten fights a cell (a cold miss, on the turn). The steps, for the line."""
     b = ensure_block(q)
     if b.sized or b.fixed:
         return []
     b.sized = True
     if b.count <= 1 and not b.band:
-        return []                                                      # a person, not a band: their own numbers
-    fighters = len([x for x in party(s) if (x.combat is None or not x.combat.fixed)])
-    band = b.band or "hard"
-    money = budget(s.player.level, fighters, band, shift)
-    w = float(b.weight or derived_weight(b))
-    n = int(money // w)
-    steps: list[str] = []
-    if n < 1:
-        n = 1
-        cut = max(1, int(round((b.hp_max or 1) * money / w)))
-        steps.append(f"hit points {b.hp_max} -> {cut}")
-        b.hp_max = b.hp = cut
-    elif n <= MAX_BODIES and money / w - n >= 0.5:                   # a remainder of half a body or more: the numbers, never more bodies
-        rem = money / w - n
-        b.attack = (b.attack or 0) + 1
-        b.dc = (b.dc or 12) + 1
-        steps.append("attack and DCs +1")
-        if rem >= 0.75:
-            b.hp_max = int(round((b.hp_max or 1) * 1.25))
-            b.hp = b.hp_max
-            steps.append("hit points +25%")
-    elif n > MAX_BODIES:
-        over = money / (MAX_BODIES * w)
-        n = MAX_BODIES
-        if over >= 1.25:
-            b.attack = (b.attack or 0) + 1
-            b.dc = (b.dc or 12) + 1
-            steps.append("attack and DCs +1")
-        if over >= 1.5:
-            b.hp_max = int(round((b.hp_max or 1) * 1.25))
-            b.hp = b.hp_max
-            steps.append("hit points +25%")
-    b.count = n
-    b.hps = [b.hp_max or 1] * n
-    word = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}[n]
-    note = f"{word} {b.block}{'s' if n > 1 else ''}, {band} for level {s.player.level}" + (f" ({'; '.join(steps)})" if steps else "")
+        return []
+    if game is None:
+        return []
+    from . import encounter as en
+    off = offset if offset is not None else {-2: 0, 0: 2, 2: 4}.get(shift, 2)
+    want = en.Want(band=en.band_of(b.band or "hard"), pinned=[(b.block, b.count if b.count > 1 else None)], place=s.player.location, offset=off, n=n,
+                   seed=f"{s.player.name}:{q.id}:{s.player.level}")
+    got = en.encounter(game, s, want)
+    count = got.bodies[0][1] if got.bodies else b.count
+    b.count = count
+    en.vary(b, got.variant)
+    b.hps = [b.hp_max or 1] * count if count > 1 else []
+    note = f"{got.reason} (ten fights a cell, on the turn)"
     b.notes = [note]
     return [note]

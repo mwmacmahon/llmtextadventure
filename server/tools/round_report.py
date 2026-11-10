@@ -247,6 +247,13 @@ def render_engine(r: dict) -> str:
     if k == "forced":
         return (f"<div class='sentback' style='border-color:var(--bad, #c0392b)'><b>FORCED after {p.get('attempt', '?')} retellings: the prose stands, the state follows it.</b> "
                 f"{E('; '.join((p.get('applied') or []) + [r.get('rule', '') + ': ' + r.get('what', '') for r in p.get('rulings') or []]))}</div>")
+    if k == "encounter_cache":                            # part sixteen §3: the background job's draw, taken at this turn's start
+        bands = "; ".join(f"{b}: {x}" for b, x in (p.get("bands") or {}).items())
+        return (f"<div class='eng'><b>encounters ranked off the turn</b> {E(p.get('place', ''))} ({E(p.get('key', ''))}), "
+                f"{p.get('fights', '?')} fights in {p.get('seconds', '?')} s · {E(_short(bands, 600))}</div>")
+    if k == "world" and p.get("kind") == "encounter":     # part sixteen §2-§4: the generator's choice at fight time
+        return (f"<div class='eng'><b>encounter {'(cache hit)' if p.get('hit') else '(cold miss: inline)'}</b> {E(p.get('why', ''))}: "
+                f"{E(_short(p.get('reason', ''), 400))}</div>")
     if k in ("command", "command_preview"):
         return f"<div class='eng'><b>{E(k.replace('_', ' '))}</b> {E(p.get('id', ''))} {E(_short(p.get('args') or {}))} {'ok' if p.get('ok') else 'refused'}: {E(_short(p.get('text') or ''))}</div>"
     return f"<div class='eng'><b>{E(k)}</b> {E(_short(p))}</div>"
@@ -543,6 +550,12 @@ def build(inst: dict, ledger: list[dict], blobs: dict[str, str], transcript: lis
     mods_line = ", ".join(f"{m.get('name')} ({m.get('hash')})" for m in mods_applied)
     who = "".join(f"<div class='stat'>{E(ROLE_LABEL.get(r, r or '?'))} <b>{E(m or '?')}</b> ×{n}</div>" for (r, m), n in sorted(models.items(), key=lambda x: str(x[0])))
     rn, rrules, rturns = retell_counts(ledger)
+    warm = [r["payload"] for r in ledger if r["kind"] == "encounter_cache"]               # part sixteen §3
+    asks = [r["payload"] for r in ledger if r["kind"] == "world" and (r.get("payload") or {}).get("kind") == "encounter"]
+    hits = sum(1 for a in asks if a.get("hit"))
+    enc_text = ((f"{len(warm)} background draw{'s' if len(warm) != 1 else ''}, {sum(float(w.get('seconds') or 0) for w in warm) / max(1, len(warm)):.2f} s each "
+                 f"({sum(int(w.get('fights') or 0) for w in warm)} fights)" if warm else "no background draw")
+                + (f"; {len(asks)} asked at fight time, {hits} from the cache ({100 * hits // max(1, len(asks))}%)" if asks else "; none asked at fight time"))
     retold_text = (f"{rn} time{'s' if rn != 1 else ''}: " + ", ".join(f"{k} ×{v}" for k, v in rrules.most_common())
                    + f" (turns {', '.join(str(x) for x in rturns)})") if rn else "never"
     head = (f"<h1>{E(title or inst.get('title') or inst['id'])}</h1>"
@@ -552,6 +565,7 @@ def build(inst: dict, ledger: list[dict], blobs: dict[str, str], transcript: lis
             f"<dt>started</dt><dd>{E(inst.get('created', '')[:16].replace('T', ' '))} UTC</dd><dt>turns</dt><dd>{len(turns)}</dd><dt>model calls kept</dt><dd>{calls_n}</dd>"
             f"<dt>profile</dt><dd>{E(profile_runs(runs))}</dd>"
             f"<dt>retold by the guard</dt><dd>{E(retold_text)}</dd>"
+            + (f"<dt>encounters</dt><dd>{E(enc_text)}</dd>" if inst.get("game") in ("fantasy", "super_grimdark_fantasy") else "")
             + (f"<dt>mods</dt><dd>{E(mods_line)}</dd>" if mods_applied else "")
             + "</dl>"
             f"<div class='stats'>{who}</div>")

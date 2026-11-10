@@ -22,6 +22,9 @@ os.environ.setdefault("TA_GUARD", "log")
 # The stakes are live by default (B94, D176); the suite's canned assessments carry no stakes, so it pins off and the
 # tests of the stakes set the dial themselves.
 os.environ.setdefault("TA_STAKES", "off")
+# Part sixteen §3: the encounters ranked in a thread after each turn; the suite's pipelines would each start one, so it pins
+# off (tests/test_encounters.py calls the job directly, and its pipeline test turns it on).
+os.environ.setdefault("TA_WARM", "off")
 
 from engine import spontaneous as spon  # noqa: E402
 from engine.config import Config  # noqa: E402

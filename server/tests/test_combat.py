@@ -32,14 +32,17 @@ def new(game, **over):
 
 
 def test_the_defaults_by_role_words_and_the_library():
-    for role, block, ac, hp, atk, dmg in (("Ferryman", "commoner", 10, 4, 2, "1d4"), ("Sergeant of the Watch", "watchman", 12, 9, 3, "1d6+1"),
-                                          ("A small troll", "brute", 14, 30, 5, "1d8+3"), ("the catacomb dead", "skeleton", 13, 13, 4, "1d6+2")):
+    # part sixteen §1: the bestiary's SRD numbers (a multiattack folded into one roll); a sergeant is the veteran
+    for role, block, ac, hp, atk, dmg in (("Ferryman", "commoner", 10, 4, 2, "1d4"), ("Sergeant of the Watch", "veteran", 17, 58, 5, "2d8+6"),
+                                          ("A small troll", "troll", 14, 40, 6, "1d10+4"), ("the catacomb dead", "skeleton", 13, 13, 4, "1d6+2")):
         b = cb.block_of(Person(id="x", name="X", role=role))
         assert (b.block, b.ac, b.hp, b.attack, b.damage) == (block, ac, hp, atk, dmg), role
-    gorm = cb.block_of(Person(id="gorm", name="Gorm", role="a troll", combat=CombatBlock(block="troll")))
-    assert gorm.fixed and gorm.regen == 3 and gorm.hp == 40 and gorm.weight == 10
+    gorm = cb.block_of(Person(id="gorm", name="Gorm", role="a troll", combat=CombatBlock(block="troll", fixed=True)))
+    assert gorm.fixed and gorm.regen == 3 and gorm.hp == 40 and gorm.xp == 700 and gorm.kind == "monstrosity"
     saved = CombatBlock.model_validate(CombatBlock(block="troll").model_dump())        # a saved block's defaults never undo the library's
-    assert cb.block_of(Person(id="g", name="G", combat=saved)).fixed
+    assert cb.block_of(Person(id="g", name="G", combat=saved)).regen == 3
+    old = cb.block_of(Person(id="w", name="W", combat=CombatBlock(block="watchman", weight=2)))     # an older save's id and weight
+    assert old.block == "guard" and old.xp == 25 and old.ac == 16
 
 
 def test_the_players_block_from_the_sheet(game):
@@ -77,7 +80,7 @@ def test_an_invented_enemy_who_fights_gets_a_block_and_joins(game):
     s1, rep, _ = apply_changes(game, st, ChangeReport.of(Change(kind="new", target="person", value="Snag", field="", note="a dock thug, fights")),
                                present=[], causes=[])
     q = s1.person("snag")
-    assert q is not None and q.role == "a dock thug" and q.combat is not None and q.combat.block == "watchman" and "snag" in s1.player.fighting
+    assert q is not None and q.role == "a dock thug" and q.combat is not None and q.combat.block == "thug" and "snag" in s1.player.fighting
 
 
 def test_the_combat_lint_names_the_old_moves(game):
@@ -257,7 +260,7 @@ def test_a_sweep_rolls_each_target_with_minus_two_after_the_first(game):
     st.people.append(Person(id="ghoul", name="Snag", role="dock thug", location=st.player.location, met=True))
     st.player.fighting.append("ghoul")
     r = cb.resolve_attack(game, st, {"key": "player", "side": "player", "targets": ["dead", "ghoul"]}, _Seq([10, 1, 10, 1]), 2, {"hp": 0})
-    assert "15 against AC 13" in r["mechanic"] and "13 against AC 12" in r["mechanic"]          # +5, then +5 -2
+    assert "15 against AC 13" in r["mechanic"] and "13 against AC 11" in r["mechanic"]          # +5, then +5 -2 (a thug: AC 11)
 
 
 def test_extra_attack_at_five_and_smite_spends_on_a_hit_only(game):

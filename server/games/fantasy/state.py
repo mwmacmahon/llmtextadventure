@@ -108,15 +108,16 @@ class CombatBlock(BaseModel):
     """Part fifteen §1 (the combat record §1): a person's fighting numbers, SRD 5.1. `block` names one from the library
     (games/fantasy/combat.py BLOCKS) whose numbers fill what this one leaves out. A band (`count` > 1) is that many of the
     block, their hit points in `hps`. Hit points move only by the engine."""
-    block: str = ""                 # a library block this one starts from (skeleton, watchman, ...)
+    block: str = ""                 # a bestiary entry this one starts from (skeleton, guard, ...; content/fantasy/bestiary.yml)
     ac: int | None = None
     hp: int | None = None           # now (a single body); a band keeps each body's in hps
     hp_max: int | None = None
     attack: int | None = None       # to-hit bonus
     damage: str | None = None       # dice and bonus, "1d6+2"
     saves: dict[str, int] = Field(default_factory=dict)
-    kind: str = ""                  # person, beast, undead (Turn Undead and Smite read it)
+    kind: str = ""                  # humanoid, undead, beast, fey, monstrosity (part sixteen; "person" in older content is a humanoid)
     weight: float | None = None     # the SRD's challenge in the engine's units (§9b); derived from the numbers when None
+    xp: int | None = None           # the bestiary entry's XP (its CR's), paid when the fight is won (part sixteen §1)
     actions: list[dict] = Field(default_factory=list)   # strike, grab, hold, song, breath (the old moves read as these)
     dc: int | None = None           # its actions' save DC when an action names none
     count: int = 1                  # a band: this many of the block
@@ -307,6 +308,7 @@ class City(BaseModel):
     city_description: str = ""
     locations: list[str] = Field(default_factory=list)
     safe_locations: list[str] = Field(default_factory=list)
+    regions: dict[str, str] = Field(default_factory=dict)          # place -> region type (part sixteen §2: catacombs, water, wilds, roads, city)
     narrator_flags: dict[str, str] = Field(default_factory=dict)
     gated: dict[str, str] = Field(default_factory=dict)            # place -> flag
     aliases: dict[str, str] = Field(default_factory=dict)          # alias -> place
@@ -371,6 +373,8 @@ class FantasyState(BaseModel):
     hooks: list[HookState] = Field(default_factory=list)
     deck: Deck = Field(default_factory=Deck)
     combat: CombatState | None = None  # part fifteen §3: a fight in progress
+    encounters: dict[str, dict] = Field(default_factory=dict)   # part sixteen §3: place -> the generator's ranked fights for this party there
+    offer: dict = Field(default_factory=dict)                   # part sixteen §4: who might come at the player here (ids, entry, variant)
 
     @property
     def places(self) -> list[str]:

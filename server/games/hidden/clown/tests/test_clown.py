@@ -1125,3 +1125,98 @@ def test_the_lint_catches_a_bad_upgrade(game: ClownGame):
     problems = lint(CONTENT / "clown", scenario=bad, state=new(game).model_dump(mode="json"))
     assert any("gives 'rent'" in p for p in problems) and any("needs 'no_such_room'" in p for p in problems)
     assert any("duplicate upgrade id" in p for p in problems)
+
+
+# ---- the Gemma long round's fixes (C55, C56, C57; de01def30b76) --------------------------------------------------------
+
+def _force(game, st, *rows):
+    return apply_changes(game, st, ChangeReport.of(*rows, log_line="Something happened."), present=[], causes=[], force=True)
+
+
+def test_a_girl_on_the_slip_is_never_added_by_the_prose_only_by_take(game: ClownGame):
+    st = new(game)
+    cards = game.content.girl_cards()
+    cid = st.harbour.hand[0]
+    name = cards[cid]["name"]
+    s, rep, _ = apply(game, st, C(kind="new", target="person", value=name, note="a girl off the boat"))
+    assert not any(x.name == name for x in s.people) and s.girl(cid) is None
+    assert any(r.kind == "conflict" and "Take" in r.reason for r in rep.rejected), rep.rejected
+    s, rep, _ = apply(game, st, C(kind="new", target="person", value=name.split()[0], note="first name only"))
+    assert not any(x.name == name.split()[0] for x in s.people)
+    s, rep, _ = _force(game, st, C(kind="new", target="person", value=name))      # the forced telling still adds no ghost girl
+    assert not any(x.name == name for x in s.people) and s.girl(cid) is None
+    s, rep, _ = apply(game, st, C(kind="new", target="person", value="Tobias Wren", note="a carter"))
+    assert any(x.name == "Tobias Wren" for x in s.people)                          # anyone else is still welcome
+
+
+def test_money_is_never_clipped_silently_a_spend_past_the_cashbox_is_retold(game: ClownGame):
+    st = new(game)
+    assert st.house.money == 200
+    s, rep, _ = apply(game, st, C(kind="add", target="house", field="money", value="-150", note="a trapeze rig"))
+    assert s.house.money == 50 and not rep.rejected                               # a dear purchase the house can pay lands whole
+    s, rep, _ = apply(game, st, C(kind="add", target="house", field="money", value="-300", note="the chandler"))
+    assert s.house.money == 200 and any(r.kind == "conflict" and "200 gold" in r.reason for r in rep.rejected)
+    s, rep, _ = _force(game, st, C(kind="add", target="house", field="money", value="-300"))
+    assert s.house.money == 0                                                     # forced: what there is, never below nothing
+    s, rep, _ = apply(game, st, C(kind="add", target="house", field="money", value="+250", note="a windfall"))
+    assert s.house.money == 200 and any(r.kind == "conflict" for r in rep.rejected)
+    s, rep, _ = apply(game, st, C(kind="add", target="house", field="money", value="+40", note="a tip"))
+    assert s.house.money == 240
+
+
+def test_a_booked_show_is_not_paid_before_its_hour(game: ClownGame):
+    st = _offer(game, new(game))
+    st, res = game.run_command(st, "book", {"booking": "rope_walk_birthday", "girl": "dot"})
+    assert res.ok and st.shows[0].at_abs > st.now_abs
+    s, rep, _ = apply(game, st, C(kind="move", target="player", value="Rope Walk"), C(kind="add", target="house", field="money", value="+15", note="the mother pays"))
+    assert s.player.location == "Rope Walk" and s.house.money == st.house.money
+    assert any(r.kind == "conflict" and "Saturday" in r.reason for r in rep.rejected), rep.rejected
+    s, rep, _ = _force(game, st, C(kind="move", target="player", value="Rope Walk"), C(kind="add", target="house", field="money", value="+15"))
+    assert s.house.money == st.house.money                                        # forced: still the engine's fee, paid at the hour
+    s, rep, _ = apply(game, st, C(kind="add", target="house", field="money", value="+5", note="a tip at the office"))
+    assert s.house.money == st.house.money + 5                                    # elsewhere money lands as before
+
+
+def test_a_booking_heard_of_after_its_hour_this_week_reads_next_week(game: ClownGame):
+    st = _offer(game, new(game))
+    h = st.hook("rope_walk_birthday")
+    hooks = game.hooks_content()
+    assert game._board_line(st, h, hooks).startswith("Sat 15:00")
+    sat = next(d for d in range(st.clock.day, st.clock.day + 7) if weekday(d) == 5)
+    st.clock.day, st.clock.minute = sat, 17 * 60 + 10                              # C58: heard of at 17:10 on the Saturday
+    assert game._board_line(st, h, hooks).startswith("next Sat 15:00")
+    st, res = game.run_command(st, "book", {"booking": "rope_walk_birthday", "girl": "dot"})
+    assert res.ok and st.shows[0].at_abs // DAY == sat + 7
+
+
+def test_a_forced_telling_the_state_refused_is_told_by_the_engine_and_its_journal_row_dropped(game: ClownGame):
+    st = new(game)
+    cards = game.content.girl_cards()
+    name = cards[st.harbour.hand[0]]["name"]
+    s, rep, _ = _force(game, st, C(kind="new", target="person", value=name),
+                       C(kind="learned", target="player", value=f"The clerk accepted 150 gold for {name}'s contract."),
+                       C(kind="learned", target="player", value="The clerk chews straw and spits it at the stove."))
+    told = [a for a in rep.applied if a.startswith("TOLD ")]
+    assert told and name in told[0] and "still on the clerk's slip" in told[0], rep.applied
+    assert not any(name in n.text for n in s.journal) and any("straw" in n.text for n in s.journal)   # only the refused row goes
+    s, rep, _ = apply(game, st, C(kind="new", target="person", value=name))
+    assert not any(a.startswith("TOLD ") for a in rep.applied)                    # a telling that will be retold says nothing yet
+    st2 = _offer(game, new(game))
+    st2, _ = game.run_command(st2, "book", {"booking": "rope_walk_birthday", "girl": "dot"})
+    s, rep, _ = _force(game, st2, C(kind="move", target="player", value="Rope Walk"), C(kind="add", target="house", field="money", value="+15"))
+    assert any(a.startswith("TOLD Nothing was paid") and "Saturday" in a for a in rep.applied), rep.applied
+    assert "not before" in game.render_bulletin(st2, "")                         # the block says so up front
+
+
+def test_a_slip_girl_joined_by_a_row_is_refused_and_the_turns_spend_for_her_given_back(game: ClownGame):
+    st = new(game)
+    cid = st.harbour.hand[0]
+    name = game.content.girl_cards()[cid]["name"]
+    s, rep, _ = apply(game, st, C(kind="add", target="house.money", value="-150"), C(kind="set", target=f"{cid}.status", value="joined"))
+    assert any(r.kind == "conflict" for r in rep.rejected)                          # retold
+    s, rep, _ = _force(game, st, C(kind="add", target="house.money", value="-150"), C(kind="set", target=f"{cid}.status", value="joined"),
+                       C(kind="move", target=cid, value="The yard"), C(kind="move", target="player", value="The yard"))
+    assert s.house.money == 200 and s.girl(cid) is None and not any(x.name == name for x in s.people), rep.applied
+    assert sum(1 for a in rep.applied if a.startswith("TOLD ")) == 1 and s.player.location == "The yard"
+    s, rep, _ = apply(game, st, C(kind="set", target=f"{st.active}.mood", value="wary"))
+    assert not any(r.kind == "conflict" for r in rep.rejected)                      # a girl in the house is untouched

@@ -6,6 +6,8 @@ dicts): the engine clamps instead.
 """
 from __future__ import annotations
 
+import re
+
 from typing import Literal
 
 from pydantic import BaseModel, Field, PrivateAttr
@@ -182,8 +184,26 @@ class IntentCombatV2(_Blow, IntentV2):
     weapon: str = Field(default="", description=_WEAPON)
 
 
-class AssistantReadingCombatV2(AssistantReadingV2):
-    """The fantasy's reading with the attack, the stakes off (part fifteen §6)."""
+_BAND_IN_NOTES = re.compile(r"\bfight\s*[:=-]?\s*(trivial|easy|normal|hard|boss|impossible)\b(?:\s*[,:;-]\s*([^.;\n]*))?", re.I)
+
+
+class _Band:
+    """Part sixteen §5: the fight's band, read from the reading's notes ("fight: normal, a band of robbers"). Not a field: the
+    staked reading is at the edge of Sonnet's strict grammar, and one more string field was refused (B272's error, 11-10)."""
+    @property
+    def fight_band(self) -> str:
+        m = _BAND_IN_NOTES.search(str(getattr(self, "notes", "") or ""))
+        return m.group(1).lower() if m else ""
+
+    @property
+    def fight_band_why(self) -> str:
+        m = _BAND_IN_NOTES.search(str(getattr(self, "notes", "") or ""))
+        return (m.group(2) or "").strip() if m else ""
+
+
+
+class AssistantReadingCombatV2(_Band, AssistantReadingV2):
+    """The fantasy's reading with the attack, the stakes off (part fifteen §6); the fight's band in its notes (part sixteen §5)."""
     intents: list[IntentCombatV2] = Field(default_factory=list, description="The concrete attempts, usually one, at most three. A blow with a weapon in a fight is an attack, with no check; for each other uncertain one, assess the check (stat, difficulty, target).")  # type: ignore[assignment]
 
     @classmethod
@@ -197,8 +217,8 @@ class IntentCombat(_Blow, IntentStaked):
     weapon: str = Field(default="", description=_WEAPON)
 
 
-class AssistantReadingCombat(AssistantReadingStaked):
-    """The fantasy's staked reading with the attack (part fifteen §6)."""
+class AssistantReadingCombat(_Band, AssistantReadingStaked):
+    """The fantasy's staked reading with the attack (part fifteen §6); the fight's band in its notes (part sixteen §5)."""
     intents: list[IntentCombat] = Field(default_factory=list, description="The concrete attempts, usually one, at most three. A blow with a weapon in a fight is an attack, with no check; for each other uncertain one, assess the check and write both futures.")  # type: ignore[assignment]
 
     @classmethod

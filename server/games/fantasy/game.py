@@ -47,7 +47,7 @@ from . import deck as dk
 from . import sheet as sh
 from .combat import person_hp_word
 from .state import (
-    ATTITUDE_WORDS, COINS, COPPERS, COPPERS_TO_GOLD, HUNTED_AT, STAT_NAMES, STATS, WANTED_AT, Ability, City, Condition, Count,
+    ATTITUDE_WORDS, COINS, COPPERS, COPPERS_TO_GOLD, HUNTED_AT, STAT_NAMES, STATS, WANTED_AT, Ability, City, CombatBlock, Condition, Count,
     FantasyState, FoundPlace, Hidden, Item, Note, Person, Player, find_item, purse_text, tier_of, RENOWN_TIERS, RENOWN_SCALE, HEAT_TIERS,
 )
 
@@ -203,6 +203,11 @@ def slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")[:32] or "x"
 
 
+def _cb_match(text: str) -> str | None:
+    from . import combat as cb
+    return cb.match_entry(text)
+
+
 def _words(text: str) -> set[str]:
     return {x.rstrip("s") for x in re.findall(r"[a-z]+", (text or "").lower()) if len(x) >= 4 and x not in STOP}
 
@@ -216,7 +221,7 @@ def city_from(sc: dict) -> City:
     city = sc.get("city") or {}
     return City(id=sc["id"], name=sc.get("name", sc["id"]), premise=sc.get("premise", ""), city_name=city.get("name", ""),
                 city_description=city.get("description", ""), locations=list(city.get("locations") or []),
-                safe_locations=list(city.get("safe_locations") or []), narrator_flags=dict(sc.get("narrator_flags") or {}),
+                safe_locations=list(city.get("safe_locations") or []), regions=dict(city.get("regions") or {}), narrator_flags=dict(sc.get("narrator_flags") or {}),
                 gated=dict(sc.get("gated_places") or {}), aliases={k.lower(): v for k, v in (sc.get("place_aliases") or {}).items()},
                 country=list(sc.get("country") or []), hazards={k: list(v or []) for k, v in (sc.get("hazards") or {}).items()})
 
@@ -224,6 +229,10 @@ def city_from(sc: dict) -> City:
 
 
 MONSTER = re.compile(r"\b(troll|ogre|giant|beast|monster|wolf|wolves|rat|rats|drake|dragon|wight|ghost|ghoul|skeleton|dead|siren|spider|bear)\b", re.I)   # B290: not the Watch's business
+
+# part sixteen §4 (b): a person filed by these entries' words is hostile when a fight is on or was offered this turn (a cutthroat
+# in a brawl); on a quiet afternoon a smuggler is a person to talk to
+HOSTILE_ENTRIES = {"bandit", "bandit_captain", "thug", "cultist", "berserker"}
 
 class FantasyGame(GameBase):
     name = "fantasy"
@@ -268,6 +277,8 @@ class FantasyGame(GameBase):
     def __init__(self, content_dir: Path):
         self.content = dk.FantasyContent(content_dir)
         self.content_dir = content_dir
+        from . import combat as _cb
+        _cb.load_bestiary(content_dir)                      # part sixteen §1: every enemy in the world
         self._classes: tuple[float, dict[str, cl.ClassDef]] | None = None
 
     def classes(self) -> dict[str, cl.ClassDef]:
@@ -980,6 +991,9 @@ class FantasyGame(GameBase):
             "thing dropped or drawn) is no check and no time. The player's words still earn an edge (a plan, the ground, a feint named), as a "
             "modifier with a why. A cantrip in a calm moment needs no check; a spell under pressure is an int check "
             "with the spell named in the label.",
+            f"When a fight starts or may start, say how hard it should be for {p.name} in the world's terms, with a why: two drunks are "
+            "trivial, a band of robbers normal, the Watch's full muster impossible. Write it in notes as 'fight: normal, a band of robbers' "
+            "(trivial, easy, normal, hard, boss or impossible). The engine sizes what the story has not already fixed.",
         ]
         if p.about.strip():
             said = p.about.strip()
@@ -1076,7 +1090,8 @@ class FantasyGame(GameBase):
             "a fact the player learned and may need again (a name, a place, a time, a price, what a thing is), only when new; not "
             "what happened this turn (that is the log line).",
             "- new person value=name, field=<place>, note=role: anyone the prose names who is not listed (at most two a turn). An alias of a listed "
-            "person is that person: use their id.",
+            "person is that person: use their id. A hostile the telling shows who is not in the state is a new person row, its role the words "
+            "the telling used; the engine gives it a block. Someone THIS TURN offered by an id (robber_1) is filed by that id.",
             "present: the listed people in the scene with the player when the prose ends; someone only talked about is not present.",
             "Threads: open one for a job, a promise or a rumour the player took up that is not one of the quests in motion (a notice from the board, "
             "a favour asked at the bar). Close it when the prose settles it, with how in the note. The quests the game deals have thread ids "
@@ -1321,10 +1336,152 @@ class FantasyGame(GameBase):
         s.player.conditions.append(Condition(name=row.name, source="engine", stat=row.stat, words=list(row.words), mod=row.mod, duration=row.duration,
                                              expires_at=now + row.minutes if row.duration == "minutes" else None, compelled=compelled))
 
+    # ---- part sixteen §3: the encounters, ranked off the turn ------------------------------------------------------------
+    WARM_BANDS = ("trivial", "easy", "normal", "hard")
+
+    def warm_key(self, state: FantasyState) -> str:
+        """The cache key for where the player is (level, the party, the region), or "" when the cache already holds it."""
+        from . import encounter as en
+        from . import combat as cb
+        s = state
+        if s.player.fate or self.ending(s):
+            return ""
+        key = f"{s.player.level}|{','.join(sorted(q.id for q in cb.party(s)))}|{en.region_of(s)}"
+        return "" if (s.encounters.get(s.player.location) or {}).get("key") == key else key
+
+    def warm(self, state: FantasyState) -> dict:
+        """The background job (§3): this place's encounters for this party, one per band, thirty fights a cell. A pure
+        function of the state it is handed; the pipeline runs it in a thread after the turn and hands the result back."""
+        import time as _t
+        from . import encounter as en
+        t0 = _t.time()
+        s = state
+        place, key = s.player.location, self.warm_key(s) or (s.encounters.get(s.player.location) or {}).get("key", "")
+        bands = {}
+        fights = 0
+        for band in self.WARM_BANDS:
+            e = en.encounter(self, s, en.Want(band=band, place=place, n=30, seed=f"{s.player.name}:{key}:{band}"))
+            fights += e.fights
+            bands[band] = {"bodies": [list(b) for b in e.bodies], "variant": e.variant, "win": round(e.win, 1), "target": e.target,
+                           "reason": e.reason, "region": e.region}
+        return {"place": place, "key": key, "bands": bands, "fights": fights, "seconds": round(_t.time() - t0, 2)}
+
+    def take_warm(self, state: FantasyState, result: dict) -> FantasyState:
+        """The background job's result into the state, if it is still this party's (the key it was made for)."""
+        if not result or not result.get("place"):
+            return state
+        s = state
+        place = result["place"]
+        if place == s.player.location and self.warm_key(s) not in ("", result.get("key")):
+            return state                                  # the party or the level moved since: a stale draw
+        s.encounters[place] = {k: result[k] for k in ("key", "bands", "fights", "seconds")}
+        return s
+
+    def encounter_for(self, s: FantasyState, band: str, words: str = "", pinned: list | None = None, offset: int = 2, place: str = ""):
+        """§3 at fight time: the cache's fight for the band here (a hit), else the generator inline at ten fights a cell (a
+        cold miss: the first turn somewhere, a pin or a word the cache never saw). Returns (Encounter, hit)."""
+        from . import combat as cb
+        from . import encounter as en
+        band = en.band_of(band)
+        place = place or s.player.location
+        here = s.encounters.get(place) or {}
+        key = f"{s.player.level}|{','.join(sorted(q.id for q in cb.party(s)))}|{en.region_of(s, place)}"
+        got = (here.get("bands") or {}).get(band)
+        if got and here.get("key") == key and not words and not pinned and offset == 2:
+            return en.Encounter(bodies=[tuple(b) for b in got["bodies"]], variant=got["variant"], win=got["win"], band=band,
+                                target=got["target"], reason=got["reason"], region=got.get("region", "")), True
+        e = en.encounter(self, s, en.Want(band=band, words=words, pinned=list(pinned or []), place=place, offset=offset, n=10))
+        e.reason += " (ten fights a cell, on the turn)"
+        return e, False
+
+    def _offer(self, s: FantasyState, adj: Any, w: Any, offset: int) -> None:
+        """Part sixteen §4 (a): when the reading says a fight may come (a high risk, a danger on a check, or a fight band) and
+        nobody is fighting or ready to, THIS TURN names who it would be, from the cache ("If anyone comes at Corra here, it is
+        three robbers (robber_1 to robber_3)"); the narrator decides whether they come; the engine owns their numbers."""
+        from . import combat as cb
+        from . import encounter as en
+        from . import world as wo2
+        p = s.player
+        if s.offer:
+            s.offer = {**s.offer, "fresh": False}          # an offer is good for the turn it was made in, and after at its place
+        if adj is None or getattr(adj, "kind", "") not in ("action", "trivial") or p.fighting or p.fate or s.combat is not None or p.peril is not None:
+            return
+        band = str(getattr(adj, "fight_band", "") or "")
+        danger = any(str(getattr(getattr(i, "check", None), "danger", "none") or "none") not in ("none", "") for i in getattr(adj, "intents", None) or [])
+        if not (band or danger or getattr(adj, "risk", "") == "high") or wo2.could_turn(self, s):
+            return
+        if band in ("boss",):
+            return                                                          # a boss is the content's, never drawn here
+        dest = next((self._place(s, str(getattr(i, "transition", "") or "").removeprefix("move:").split(" via:", 1)[0].strip())
+                     for i in getattr(adj, "intents", None) or [] if str(getattr(i, "transition", "") or "").strip()), None) or p.location
+        e, hit = self.encounter_for(s, band or "normal", offset=offset, place=dest)   # where the turn is heading
+        ids = [q.id for q in en.spawn(s, e.bodies, e.variant)]
+        if not ids:
+            return
+        s.offer = {"place": dest, "fresh": True, "ids": ids, "bodies": [list(b) for b in e.bodies], "variant": e.variant, "band": e.band, "reason": e.reason}
+        who = en.called_plural(e.bodies)
+        span = ids[0] if len(ids) == 1 else f"{ids[0]} to {ids[-1]}"
+        w.directives.append(f"If anyone comes at {p.name} here, it is {who} ({span}); name them and the engine has them."
+                            + (" They cannot be beaten: if they come, show it, and the way out is to run or to yield." if e.band == "impossible" else ""))
+        w.rows.append({"kind": "encounter", "hit": hit, "why": "the offer", "reason": e.reason})
+
+    def bring_in(self, s: FantasyState, words: str, *, ref: str = "", band: str = "normal", offset: int = 2, join: bool = True,
+                 named: bool = False) -> tuple[list[Person], dict]:
+        """Part sixteen §4: the people a hostile in the words is, written in here and met with their blocks (and joined to the
+        fight when `join`). The offer's first, when the words or the id are theirs; else the generator through the matcher:
+        an entry by the words, else the kind the words say, else a commoner; one body for 'the kneeling man', the count the
+        words give ('three robbers'), or the generator's for a plural with none ('the robbers'), six at most. `named`: the
+        words are the player's own name for one stranger, kept as the name. Returns (people, the ledger's encounter row)."""
+        from . import combat as cb
+        from . import encounter as en
+        p = s.player
+        made: list[Person] = []
+        row: dict = {}
+        off = s.offer or {}
+        if off.get("ids") and (off.get("place") == p.location or off.get("fresh")):
+            ids, bodies = list(off["ids"]), [tuple(b) for b in off["bodies"]]
+            ents = {e for e, _ in bodies}
+            word_e = cb.match_entry(words) if words else None
+            if ref in ids or (word_e and word_e in ents) or (not word_e and en.kind_of_words(words)
+                                                            and en.kind_of_words(words) == cb.ENTRIES.get(bodies[0][0], {}).get("kind")):
+                spawned = en.spawn(s, bodies, off.get("variant", "standard"), ids=ids)
+                pick = [ref] if ref in ids and en.count_in(words or ref) == 1 else ids
+                made = [q for q in spawned if q.id in pick and s.person(q.id) is None]
+                left = [i for i in ids if i not in {q.id for q in made}]
+                s.offer = {**off, "ids": left} if left else {}
+                row = {"kind": "encounter", "hit": True, "why": f"the offer, by '{ref or words}'", "reason": off.get("reason", "")}
+        if not made and words:
+            region = en.region_of(s)
+            n = en.count_in(words)
+            pool, note = en.named_entries(words, region)
+            members = 1 + len(cb.party(s))
+            if n == 1 and len(pool) > 1:                  # one body of a kind: the entry nearest the band for one
+                thr = en.threshold(en.band_of(band), p.level, members)
+                pool = [min(pool, key=lambda e: abs(en.adjusted_xp([(e, 1)], members) - thr))]
+            pinned = [(pool[0], n)] if len(pool) == 1 else None
+            if pinned:
+                e, hit = self.encounter_for(s, band, pinned=pinned, offset=offset)
+            else:
+                e, hit = self.encounter_for(s, band, words=words, offset=offset)
+            if n is None and sum(c for _, c in e.bodies) < 2 and e.bodies:   # a plural is two at least ('the Hill men')
+                e, hit = self.encounter_for(s, band, pinned=[(e.bodies[0][0], 2)], offset=offset)
+            person = cb.is_person(str(cb.ENTRIES.get(e.bodies[0][0], {}).get("kind") or "")) if e.bodies else False
+            own = re.sub(r"^(the|a|an)\s+", "", " ".join(words.split()), flags=re.I)[:40]
+            made = en.spawn(s, e.bodies, e.variant, names=[own[:1].upper() + own[1:]] if named and n == 1 and person else None)
+            # a monster is known by its name (the owner: "it can just be an Owlbear"); only a person keeps the player's words
+            row = {"kind": "encounter", "hit": hit, "why": f"'{words}'" + (f" ({note})" if note else ""), "reason": e.reason}
+        s.people += made
+        if join:
+            for q in made:
+                if q.id not in p.fighting:
+                    p.fighting.append(q.id)
+        return made, row
+
     def world_turn(self, state: FantasyState, adj: Any, player_text: str, rng: Any, turn: int, offset: int):
         """The engine's own rolls before the narrator writes (part four, D176): a chosen death, a peril's countdown, the
         enemies' moves. Returns (state, WorldTurn)."""
         s, w = wo.world_turn(self, state, adj, player_text, rng, turn, offset)
+        self._offer(s, adj, w, offset)                                      # part sixteen §4 (a): who might come at the player here
         w.directives = [self.unnamed(s, d) for d in w.directives]          # B286: the round list calls them as the player does
         w.mechanics = [self.unnamed(s, m) for m in w.mechanics]
         return s, w
@@ -2270,20 +2427,37 @@ class FantasyGame(GameBase):
         if len(s.people) >= MAX_PEOPLE:
             w.reject("people", "the cast is full", name)
             return
+        if here and (s.offer or {}).get("ids") and (slug(name) in s.offer["ids"] or name.strip() in s.offer["ids"]
+                                                    or (cb_entry := _cb_match(f"{role} {name}"))
+                                                    and cb_entry in {b[0] for b in s.offer.get("bodies") or []}):
+            made, _row = self.bring_in(s, f"{name} {role}".strip(), ref=slug(name) if slug(name) in s.offer["ids"] else name.strip())
+            if made:                                     # part sixteen §4 (b): the offer's, by the ids the engine chose
+                w.note(f"people += {', '.join(q.id for q in made)} (the offer: {', '.join(q.combat.block for q in made)}, in the fight)")
+                return
         elsewhere = self._place(s, where) if where.strip() and where.strip().lower() not in ("player", "here", p.name.lower()) else None
         elsewhere = elsewhere if elsewhere and not self._same_spot(s, elsewhere, p.location) else None
         loc = elsewhere or p.location
         nid = slug(name)
         fights = bool(re.search(r"\bfights?\b(\s*:\s*true)?", role or "", re.I))       # part fifteen §1: an invented enemy
         role = re.sub(r"[,;]?\s*\bfights?\b(\s*:\s*true)?", "", role or "", flags=re.I).strip()
+        from . import combat as cb
+        from . import encounter as en
+        entry = cb.match_entry(f"{role} {name}")
+        monster = bool(entry) and not cb.is_person(str(cb.ENTRIES.get(entry, {}).get("kind") or ""))
+        hostile = entry in HOSTILE_ENTRIES and (bool(p.fighting) or s.combat is not None or bool((s.offer or {}).get("fresh")))
         s.people.append(Person(id=nid, name=name.strip()[:40], role=role.strip()[:60], location=loc, seen_at=loc if elsewhere is None else "",
                                met=elsewhere is None, heard_of=True))
-        if fights and elsewhere is None:
-            from .combat import ensure_block
-            ensure_block(s.people[-1])
+        if (fights or monster or hostile) and elsewhere is None:   # part sixteen §4 (b): a hostile the telling showed is the engine's to fight
+            q = s.people[-1]
+            n = en.count_in(name)
+            q.combat = CombatBlock(block=entry or "", count=n or 1, band="normal" if n != 1 else "")
+            cb.ensure_block(q)
+            if monster:
+                q.called = str(cb.ENTRIES.get(entry, {}).get("called") or q.called)    # a monster is known by its name
+                q.attitude = min(q.attitude, -2)
             if nid not in p.fighting:
                 p.fighting.append(nid)
-            w.note(f"people.{nid} fights: a {s.people[-1].combat.block} block, in the fight")
+            w.note(f"people.{nid} fights: a {q.combat.block} block{f' x{n}' if n and n > 1 else ' (the generator sizes the band)' if n is None else ''}, in the fight")
         s.journal.append(Note(kind="contact", text=name.strip() + (f": {role.strip()}" if role.strip() else "") + (f" ({loc})" if loc else "")).stamped(s.clock))   # B283: no empty role
         w.note(f"people += {nid} ({name.strip()}, {role.strip()})")
 
@@ -2490,6 +2664,7 @@ class FantasyGame(GameBase):
         for c in [c for c in p.conditions if c.source == "narrator" and c.duration in cn.RESTED[kind]]:
             p.conditions.remove(c)                       # B96: a rest dries and warms; a long one ends what lasts until rested
         if kind == "long":
+            s.encounters = {k: v for k, v in s.encounters.items() if k == p.location}   # §3: dropped on a long rest elsewhere
             p.hp = p.hp_max
             for c in p.counts:
                 if c.refill in ("long", "short"):
