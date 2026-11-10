@@ -2023,6 +2023,8 @@ class FantasyGame(GameBase):
                 p.peril = None
                 p.shown_notes.append(f"Out of it: no longer {wo.PERILS.get(live, {}).get('what', live)}")
             return True
+        if kind == "bleeding" and not removing:          # round 9: a referee's '+bleeding' from any blow opened the peril;
+            return False                                  # a wound stays a wound (only content and the test hook open bleeding)
         if live is None and w.set("player.peril", None, kind):
             wo.open_peril(s, kind)
             p.shown_notes.append("WARNING: " + wo.PERILS.get(p.peril.kind, {}).get("warn", kind))
@@ -2649,6 +2651,7 @@ class FantasyGame(GameBase):
         now = s.clock.day * DAY + s.clock.minute
         s.deck.dealt_this_turn = []
         quiet = s.flags.pop("debug_quiet", None)            # (round 8) the DEBUG turn's quiet ends with it
+        s.flags.pop("escape_pending", None)
         # -- the fall, told: the end, the raise, or back to the story
         if p.fate and p.fate_turn < info.turn:
             if p.fate == "dead":
@@ -2767,9 +2770,7 @@ class FantasyGame(GameBase):
             if hid is not None:
                 dk.deal(s, hooks[hid], turn=info.turn, deal_abs=now, name=p.name)
         s.flags.pop("debug_quiet", None)                    # the DEBUG turn is over (round 8)
-        for line in self.warnings(s):                       # every turn in danger, after any escape has landed (round 8)
-            if line not in p.shown_notes:
-                p.shown_notes.append(line)
+        s.flags.pop("escape_pending", None)
         return s
 
     def _hidden_after(self, s: FantasyState, info: TurnInfo) -> None:
@@ -3125,7 +3126,9 @@ class FantasyGame(GameBase):
 
     def player_alerts(self, state: FantasyState) -> list[str]:
         """A peril's WARNING every turn the player is in it (the owner, 11-10 night: "Warning messages every turn")."""
-        return []                                         # round 8: written at the turn's end (after an escape lands), warnings()
+        if state.flags.get("escape_pending"):            # round 9: the player's own way out is being rolled; no stale warning
+            return []
+        return self.warnings(state)                       # a § line each turn in danger (the status row was not seen in play)
 
     def warnings(self, state: FantasyState) -> list[str]:
         """A peril's or a grab's WARNING (the owner, 11-10 night: "Warning messages every turn"), on the turn's end state."""

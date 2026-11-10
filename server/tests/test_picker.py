@@ -131,6 +131,10 @@ def test_a_profile_refuses_an_unbuilt_module_level_and_a_hosted_role_on_the_box(
     _write(tmp_path, "bare", "dials: {stakes: off}\nmodules: {own_prose: not yet, pull: light}\n")      # YAML's bare off
     p = profiles.load("bare", tmp_path)
     assert p.dials.stakes == "off" and p.level("own_prose") == profiles.NOT_YET and p.level("window") == "full"
+    _write(tmp_path, "plain", "config: config.yml\ndials: {game_notes: off}\n")    # D221: assistant judging off for a play
+    plain = profiles.load("plain", tmp_path)
+    assert plain.dials.game_notes is False and config_for(plain).role("assistant").game_notes is False
+    assert config_for(profiles.load("bare", tmp_path)).role("assistant").game_notes is True      # unset: on
 
 
 def test_the_environment_still_wins_over_a_profile(monkeypatch):

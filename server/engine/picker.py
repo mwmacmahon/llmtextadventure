@@ -234,6 +234,8 @@ async def card(engine: "Engine", name: str) -> dict[str, Any]:
         "stakes": {"value": narrator.stakes if narrator else None, "from": "profile" if p.dials.stakes else "base config"},
         "checks": {"value": narrator.checks if narrator else None, "from": "profile" if p.dials.checks else "base config"},
         "guard": guard,
+        "game_notes": {"value": cfg.role("assistant").game_notes if "assistant" in cfg.roles else None,
+                       "from": "profile" if p.dials.game_notes is not None else "base config"},
         "target_offset": {g.name: {"value": int(p.dials.target_offset[g.name]) if g.name in p.dials.target_offset else int(getattr(g, "target_offset", 0) or 0),
                                    "from": "profile" if g.name in p.dials.target_offset else "game"} for g in engine.games.values()},
     }

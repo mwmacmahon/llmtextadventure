@@ -23,7 +23,7 @@ modules' levels. Each server process has one active profile (Config.profile); th
 
     config: config.yml                          # a hosted play: no model, no server block
     roles: {narrator: {provider: anthropic, model: claude-sonnet-5-5}}
-    dials: {stakes: "off", checks: called, guard: log, target_offset: {station: 1}}
+    dials: {stakes: "off", checks: called, guard: log, game_notes: off, target_offset: {station: 1}}
     modules: {window: full}                     # a level that exists today (MODULES); unset: today's level
 """
 from __future__ import annotations
@@ -88,6 +88,7 @@ class Dials(BaseModel):
     stakes: Literal["off", "shadow", "live"] | None = None
     checks: Literal["called", "told"] | None = None
     guard: Literal["log", "rewrite", "gate"] | None = None
+    game_notes: bool | None = None       # the assistant role's game_notes (a game's own notes to the reading, D221); unset: the base config's (on)
     target_offset: dict[str, int] = Field(default_factory=dict)     # per game: {station: 1} moves its every check one harder
 
     @field_validator("stakes", mode="before")
@@ -122,14 +123,16 @@ class Profile(BaseModel):
         return {m: self.level(m) for m in MODULES}
 
     def role_overrides(self, role: str) -> dict[str, Any]:
-        """What this profile lays over the base config's role: its own overrides and, on the narrator, the stakes and
-        checks dials."""
+        """What this profile lays over the base config's role: its own overrides; on the narrator, the stakes and
+        checks dials; on the assistant, the game_notes dial."""
         ov = dict(self.roles.get(role) or {})
         if role == "narrator":
             if self.dials.stakes is not None:
                 ov["stakes"] = self.dials.stakes
             if self.dials.checks is not None:
                 ov["checks"] = self.dials.checks
+        if role == "assistant" and self.dials.game_notes is not None:
+            ov["game_notes"] = self.dials.game_notes
         return ov
 
     @field_validator("name")

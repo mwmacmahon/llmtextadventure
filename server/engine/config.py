@@ -42,6 +42,10 @@ class RoleConfig(BaseModel):
     # reading, then the checks, then the stakes; engine/chain.py) instead of one structured call. Off by default, as the
     # referee's `split`; off, the code path is the one call exactly.
     chain: bool = False
+    # assistant only (the owner, 11-10 night: "Assistant judging should probably be toggleable like other module type stuff, so it
+    # might be turned on for sonnet but not for a local model"): the game's own notes to the reading (a peril's way out to mark,
+    # D220); off: the engine's own word test alone
+    game_notes: bool = True
     # llamacpp only (engine/providers/llamacpp_provider.py): the server, the slot this role is pinned to so its
     # cache stays resident beside the other roles', whether the model may think, sampling temperature, auth.
     base_url: str = Field(default_factory=lambda: os.environ.get("TA_LLAMA_URL", "http://127.0.0.1:8080"))

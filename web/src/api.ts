@@ -110,7 +110,7 @@ export type TurnCost = { turns: number; calls: number; usd_total: number; usd_pe
 export type ProfileCard = ProfileSummary & {
   active: boolean;
   roles: Record<string, RoleCard>;
-  dials: { stakes: Dial; checks: Dial; guard: Dial; target_offset: Record<string, Dial> };
+  dials: { stakes: Dial; checks: Dial; guard: Dial; game_notes?: Dial; target_offset: Record<string, Dial> };
   modules: ModuleLevel[];
   server: Record<string, string>;
   box?: BoxState;

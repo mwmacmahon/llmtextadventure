@@ -497,3 +497,18 @@ def test_the_assistant_marks_the_way_out_and_the_engine_counts_it(game):
     after = game.after_turn(s2, info_calls(3, [ok]))
     assert after.player.peril is None
     assert not game.assistant_notes(new(game))                           # no peril, no note
+    _, quiet, _ = adjudicator_inputs(game, st, [], "I fling myself at the floor and writhe", game_notes=False)
+    assert "[ENGINE NOTE]" not in quiet[-1].content                      # D221: the assistant's game_notes off, the engine's word test alone
+
+
+def test_round_9s_false_escapes(game):
+    """Round 9 (93a54b141f99): a shout whose reading said 'on fire' put the fire out ('fire' in the old escape list); 'seam'
+    was the sea; 'reach down and feel the riverbed' rolled a swim-up."""
+    for kind, words, summary in (("burning", 'I scream for help. "Someone! I\'m burning!"', "screams for help while on fire"),
+                                 ("burning", "I look closely at the glass walls, searching for any seam", "searches while on fire"),
+                                 ("drowning", "I reach down and feel along the riverbed for anything solid", "feels the riverbed while submerged")):
+        st = new(game)
+        wo.open_peril(st, kind, turns=0)
+        reading = AssistantReading(kind="action", summary=summary, time_minutes=1, risk="high", tempo="fast", intents=[Intent(action=words)])
+        s2, w = game.world_turn(st, reading, words, Dice(20, 20, 20), 3, 2)
+        assert s2.player.peril is not None and not any(m.startswith("Getting out") for m in w.mechanics), (kind, words, w.mechanics)

@@ -1752,7 +1752,7 @@ class Engine:
         if retell is not None:                                  # B280: the player's rewrite reads the turn again, with what they said of it
             notes.append(f"The player asked for this turn again, and said: \"{retell.strip()}\"" if retell.strip() else "The player asked for this turn again.")
         system, msgs, schema = adjudicator_inputs(game, state, recent, player_text, stakes=nrole.stakes != "off" and nrole.checks == "called",
-                                                  notes=notes)
+                                                  notes=notes, game_notes=role.game_notes)
         for m in mods_mod.parsed(self._mods(iid)):              # B79: the assistant's rules text by section, per save
             system = mods_mod.patch_sections(system, (m.get("rules") or {}).get("assistant"))[0]
         t0 = time.monotonic()
@@ -2726,7 +2726,7 @@ def words_decide(game: Game) -> str:
 
 
 def adjudicator_inputs(game: Game, state: BaseModel, recent: list[Msg], player_text: str, stakes: bool = False,
-                       notes: list[str] | None = None) -> tuple[str, list[Msg], type]:
+                       notes: list[str] | None = None, game_notes: bool = True) -> tuple[str, list[Msg], type]:
     """Everything the adjudicator is sent, built from a state and an input alone, so a stored turn can be
     replayed outside the pipeline (tools/eval_replay.py) and get exactly what the live turn got. `stakes` (the
     narrator's dial on, D115): each assessed check carries both its futures, the system text gains the STAKES rules
@@ -2741,7 +2741,8 @@ def adjudicator_inputs(game: Game, state: BaseModel, recent: list[Msg], player_t
         extra = stakes_blocks(game, state, fresh)
     system, msgs = adjudicator_messages(rules, state_text, recent, player_text, _commands_text(_hook(game, "commands", state, default=[])), extra=extra)
     system += "\n\n" + words_decide(game)          # B207, B211 (D179): the words decide first; the edge on every check
-    notes = list(notes or []) + list(_hook(game, "assistant_notes", state, default=None) or [])   # a game's own word to the reading
+    if game_notes:                                                  # the assistant role's game_notes (on by default)
+        notes = list(notes or []) + list(_hook(game, "assistant_notes", state, default=None) or [])   # a game's own word to the reading
     if notes:                                        # the pre-checks' lines (engine/prechecks.py, B105): a nudge, the assistant decides
         msgs[-1] = Msg(msgs[-1].role, msgs[-1].content + "\n\n[ENGINE NOTE]\n" + "\n".join(notes), cache=msgs[-1].cache)
     if extra:

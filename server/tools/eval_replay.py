@@ -562,7 +562,8 @@ async def _replay_roles(rec: dict, game, state, exp: dict, res: dict, current: d
         role = _role_with(cfg, "assistant", opts)
         provider = get_provider(role)
         recent = [Msg(**m) for m in rec["recent"]]
-        system, msgs, schema = adjudicator_inputs(game, state, recent, rec["player_text"], stakes=str(opts.get("stakes", "")).lower() == "true")
+        system, msgs, schema = adjudicator_inputs(game, state, recent, rec["player_text"], stakes=str(opts.get("stakes", "")).lower() == "true",
+                                                  game_notes=str(opts.get("game_notes", "true")).lower() != "false")
         t0 = time.monotonic()
         try:
             adj, usage, retry, recovered = await extract_adjudication(provider, role, system, msgs, schema, _hook(game, "stats", state, default={}))

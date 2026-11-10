@@ -77,6 +77,11 @@ function Card({ card }: { card: ProfileCard }) {
         </span>
         <span>checks: {String(card.dials.checks.value)} <span className="muted small">({card.dials.checks.from})</span></span>
         <span>guard: {String(card.dials.guard.value)} <span className="muted small">({card.dials.guard.from})</span></span>
+        {card.dials.game_notes && card.dials.game_notes.value !== null && (
+          <span title="The game's own notes to the assistant's reading (a peril's way out to mark). Off: the engine's word test alone.">
+            game notes: {card.dials.game_notes.value ? "on" : "off"} <span className="muted small">({card.dials.game_notes.from})</span>
+          </span>
+        )}
         <span>
           check offset:{" "}
           {offsets.map(([g, d], i) => (
