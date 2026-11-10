@@ -311,8 +311,10 @@ as a formula. Design: CLOWN_DESIGN and CLOWN_ROADMAP (both gitignored), the desi
 Stage A done (the cold read, the dry run, Skip, Graduate). The bookings are a hand (D186C: two to four cards, every girl
 bookable, no deadlines, the bench working at its own bookings, Switch at will, a student's share, the dials in the house
 file; the hand panel in the centre pane and a grid a girl in the side, the one in training pinned). The round tools send
-the dev header. **Left:** the first Sonnet round; the money dials (the student's share sinks the house in the dry run);
-the daytime activities; the content pass; the C-lines in its own roadmap.
+the dev header. Three Sonnet rounds and a Gemma long round played and read; the harbour deck of sixty cards, the first girl off
+the boat, reckonings in place of endings, bench odd jobs, dear contracts, the house as the upgrade tree (D194C to D202C); the
+economy curve retuned and a later time named in the input moves the clock (D203C: the fee is the house's, the first cards
+beatable; C50). **Left:** round 4 on the new economy; the content pass; the C-lines in its own roadmap.
 
 ## 16. Writing for models
 

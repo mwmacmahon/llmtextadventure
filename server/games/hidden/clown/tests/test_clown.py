@@ -92,7 +92,8 @@ def test_the_setup_is_four_fields_and_the_first_morning(game: ClownGame):
     assert weekday(st.clock.day) == 0 and st.clock.minute == 540
     pend = next(p for p in st.hidden.pending if p.tag == "week_end")
     assert pend.due_day == 7 and pend.due_minute == 1320 and pend.source == "script"
-    assert [h.id for h in st.hooks] == ["rope_walk_birthday"]
+    assert st.hooks[0].id == "rope_walk_birthday" and len(st.hooks) == 2              # the hand full at the open: Rope Walk and
+    assert st.hooks[1].id in {"terminus_market", "sailors_rest"}                         # one of the two easy tier-one cards (D203C)
     assert st.house.best["acrobatics"] == 45
     prefix = game.frozen_prefix(st)
     assert "Hal Ferris" in prefix and "Hidden: She lit the fire" in prefix and "Comes to the house later" in prefix
@@ -199,12 +200,8 @@ def test_a_card_in_hand_can_be_taken_for_any_girl_and_the_show_is_set_for_its_da
 
 def test_the_hand_is_dealt_full_and_a_pick_passes_the_unlocked_cards_and_keeps_the_locked(game: ClownGame):
     st = new(game)
-    assert st.house.hand_size == 2 and len(dk.hand(st)) == 1                       # day one: only Rope Walk qualifies yet
-    st.clock.day = 12                                                              # the Judge (day 10) and the Widow (day 6) qualify
-    hooks = game.hooks_content()
-    dk.deal_hand(st, dk.deck_of(game.scenario()), hooks, random.Random(1), st.now_abs, 1, "Hal")
     hand = dk.hand(st)
-    assert len(hand) == 2 and all(h.kind == "booking" for h in hand)
+    assert st.house.hand_size == 2 and len(hand) == 2 and all(h.kind == "booking" for h in hand)   # day one: full (D203C)
     other = next(h for h in hand if h.hook != "rope_walk_birthday")
     other.status, other.offered, other.locked = "live", True, False
     st.hooks[0].status, st.hooks[0].offered = "live", True
@@ -215,8 +212,6 @@ def test_the_hand_is_dealt_full_and_a_pick_passes_the_unlocked_cards_and_keeps_t
     assert any(r.standing == "booked" for r in game.quest_rows(st)) and not any(r.title.startswith(other.title) for r in game.quest_rows(st))
     # a locked card survives a pick
     st = new(game)
-    st.clock.day = 12
-    dk.deal_hand(st, dk.deck_of(game.scenario()), hooks, random.Random(1), st.now_abs, 1, "Hal")
     other = next(h for h in dk.hand(st) if h.hook != "rope_walk_birthday")
     other.status, other.offered, other.locked = "live", True, True
     st.hooks[0].status, st.hooks[0].offered = "live", True
@@ -234,15 +229,15 @@ def test_a_once_only_card_always_locks_and_an_ordinary_one_only_within_reach(gam
         def random(self): return self.v
 
     assert dk.lock_for(st, hooks["rope_walk_birthday"], R(0.99))                   # no repeat block: locked whatever the roll
-    judge = hooks["judge_dinner"]                                                  # wants mime and poise at a hard room: ask 90
-    assert dk.ask_of(st, judge) == 90
+    judge = hooks["judge_dinner"]                                                  # wants mime and poise at a demanding room: ask 70 (D203C)
+    assert dk.ask_of(st, judge) == 70
     slots = dk.slots_until_show(st, judge, st.now_abs)                           # Monday 09:00 to Saturday 20:30: ten slots, five a skill
-    assert slots == 10 and dk.reach_of(st, judge, st.now_abs) == 15 + 5 * 6      # Dot's mime 15 trained nonstop: 45, not 90
+    assert slots == 10 and dk.reach_of(st, judge, st.now_abs) == 15 + 5 * 6      # Dot's mime 15 trained nonstop: 45, not 70
     assert not dk.lock_for(st, judge, R(0.0))                                     # too far to lock whatever the roll
-    st.active_girl.skills["mime"], st.active_girl.skills["poise"] = 70, 70       # 70 + 5 slots at 3 (past sound) = 85 < 90
-    assert dk.reach_of(st, judge, st.now_abs) == 85 and not dk.lock_for(st, judge, R(0.0))
-    st.active_girl.skills["mime"], st.active_girl.skills["poise"] = 75, 80       # 75 + 15 = 90: she could get there
-    assert dk.reach_of(st, judge, st.now_abs) == 90 and dk.lock_for(st, judge, R(0.1)) and not dk.lock_for(st, judge, R(0.9))
+    st.active_girl.skills["mime"], st.active_girl.skills["poise"] = 50, 50       # 50 + 5 slots slowing past sound = 69 < 70
+    assert dk.reach_of(st, judge, st.now_abs) == 69 and not dk.lock_for(st, judge, R(0.0))
+    st.active_girl.skills["mime"], st.active_girl.skills["poise"] = 55, 55       # 55 + 17 = 72: she could get there
+    assert dk.reach_of(st, judge, st.now_abs) == 72 and dk.lock_for(st, judge, R(0.1)) and not dk.lock_for(st, judge, R(0.9))
     widow = hooks["sorrel_party"]                                                  # children and balloons at an ordinary room: ask 50
     assert dk.ask_of(st, widow) == 50 and dk.reach_of(st, widow, st.now_abs) == 5 + 5 * 6     # Dot's balloons 5, the weaker, trained: 35
     assert not dk.lock_for(st, widow, R(0.0))
@@ -285,7 +280,7 @@ def test_the_show_resolves_at_its_hour_by_the_formula_and_is_told_next_turn(game
     x = st.shows[0]
     from games.hidden.clown.game import SHOW_PAY
     assert x.result in ("fine", "good", "triumph") and x.attended and x.resolved_turn == 5
-    assert x.paid == int(round(15 * SHOW_PAY[x.result] * 0.25)) and any("student" in ln for ln in x.why_numbers)   # a student's share
+    assert x.paid == int(round(15 * SHOW_PAY[x.result])) and not any("student" in ln for ln in x.why_numbers)   # the fee is the house's (D203C)
     assert st.flags.get("rope_walk_birthday_played") and st.flags.get(f"rope_walk_birthday_{x.result}")
     assert st.house.money == 200 + x.paid and st.active_girl.credibility > 0
     assert any(ln.startswith("THE SHOW, as it went") for ln in game.turn_directives(st))
@@ -379,6 +374,10 @@ def test_the_deck_deals_by_name_and_wants_and_repeat_customers_come_round(game: 
     st.clock.day = 12                                      # the Judge's wants: day >= 10; the Widow's: day >= 6
     now = st.now_abs
     pool = dict(dk.candidates(st, deck, hooks, now, 1))
+    assert "judge_dinner" not in pool and "sorrel_party" in pool                                     # the Judge waits on the Hill Road (D203C)
+    assert "terminus_market" in pool and "sailors_rest" not in pool and st.hook("sailors_rest")        # the easy cards; one already in hand
+    st.flags["hill_road_heard"] = True
+    pool = dict(dk.candidates(st, deck, hooks, now, 1))
     assert "judge_dinner" in pool and "sorrel_party" in pool and "chandlers_dinner" not in pool    # tier 2 needs Name 25
     assert "harbour_stag" not in pool                                                                # wants Name 10 or Krol met
     assert "pruitt_evening" not in pool                                                              # the roster gate
@@ -465,6 +464,7 @@ def test_a_girl_at_the_door_may_be_taken_on_the_same_turn(game: ClownGame):
 def test_the_harbour_girls_get_better_and_dearer_as_the_weeks_go_to_a_cap(game: ClownGame):
     from games.hidden.clown import harbour as hb
     st = new(game)
+    st.scenario.dials["harbour_lift"] = 1          # the engine's own rule, a point a week; the house file runs it at 0.5 (D203C)
     cards = game.content.girl_cards()
     dl = lambda k: dk.dial(st, k)  # noqa: E731
     week1 = [hb.price_of(c, st, dl) for c in cards.values()]
@@ -560,7 +560,10 @@ def test_round_one_fixes_the_journal_row_the_fee_row_the_slot_off_the_job_and_th
     money = st2.house.money
     s2, rep2, _ = apply(game, st2, C(kind="add", target="house", field="money", value="+15"))
     assert s2.house.money == money and rep2.rejected
-    assert any("The house was paid " in ln and " gold" in ln and "student's rate" in ln for ln in game.turn_directives(st2))
+    paid = [ln for ln in game.turn_directives(st2) if "The house was paid " in ln]
+    assert paid and " gold" in paid[0] and "student's rate" not in paid[0]       # the fee is the house's: no student's words (D203C)
+    st2.scenario.dials["student_pay"] = 0.25
+    assert any("student's rate, 0.25 of the full fee" in ln for ln in game.turn_directives(st2))
     # a slot off by the proprietor's word
     st3 = new(game)
     st3, _ = game.run_command(st3, "plan", {"slot": "afternoons", "skill": "work"})
@@ -1220,3 +1223,75 @@ def test_a_slip_girl_joined_by_a_row_is_refused_and_the_turns_spend_for_her_give
     assert sum(1 for a in rep.applied if a.startswith("TOLD ")) == 1 and s.player.location == "The yard"
     s, rep, _ = apply(game, st, C(kind="set", target=f"{st.active}.mood", value="wary"))
     assert not any(r.kind == "conflict" for r in rep.rejected)                      # a girl in the house is untouched
+
+
+# ---- C50 (D203C): a later time named in the input moves the clock ---------------------------------------------------------
+
+def _at(game: ClownGame, st, weekday_i: int, minute: int):
+    """The clock at this week's weekday (0 Monday) and minute; the events and pendings already in the state dropped, so only
+    what a test puts there can stop the clock."""
+    st.clock.day, st.clock.minute = st.clock.day - weekday(st.clock.day) + weekday_i, minute
+    st.hidden.events, st.hidden.pending = [], []
+    return st
+
+
+def test_a_later_time_named_in_the_input_is_read_and_a_past_or_near_one_is_not(game: ClownGame):
+    from games.hidden.clown.game import named_time
+    st = _at(game, new(game), 0, 1020)                                      # Monday 17:00
+    mon = st.clock.day
+    assert named_time("Tuesday morning, I walk down to the harbour.", st) == (mon + 1) * DAY + 540
+    assert named_time("Tomorrow at ten I take the tram to the Judge's.", st) == (mon + 1) * DAY + 600
+    assert named_time("I sit with her a while. Then, on Saturday, I go to the market.", st) == (mon + 5) * DAY + 540
+    assert named_time("Tonight I go down to the Anchor.", st) == mon * DAY + 1140
+    assert named_time("I wait until Thursday afternoon.", st) == (mon + 3) * DAY + 840
+    assert named_time("This morning I went to the shed.", st) is None                # already past
+    assert named_time("Yesterday was a waste. I go to the shed.", st) is None
+    assert named_time("I ask her what she did on Tuesday.", st) is None               # not where the input opens: no move
+    assert named_time("Next week I will think about it.", st) == (mon + 6) * DAY + 1320   # capped at the week's end, Sunday 22:00
+    assert named_time("Saturday's show is on my mind; I go to the practice room.", st) is None
+    st = _at(game, st, 0, 600)                                              # Monday 10:00
+    assert named_time("At three, I go down to the shed.", st) == st.clock.day * DAY + 900       # the afternoon, the same day
+    assert named_time("At half past eight I meet Krol.", st) == st.clock.day * DAY + 1230      # eight this morning has gone: the evening
+    assert named_time("At 10:30 I go to the shed.", st) is None                    # within a walk's minutes of now: the assistant's
+    st = _at(game, st, 6, 1080)                                             # Sunday 18:00
+    assert named_time("Tomorrow morning I go to the shed.", st) == st.clock.day * DAY + 1320  # nothing past the week's end
+    st = _at(game, st, 6, 1300)                                             # Sunday 21:40: the week's end is within a walk
+    assert named_time("Tomorrow morning I go to the shed.", st) is None
+
+
+def test_the_named_time_runs_the_clock_with_the_same_stops_and_the_narrator_is_told(game: ClownGame):
+    from engine.pending import Pending
+    from engine.pipeline import _clock_moved, named_lead
+    st = _at(game, new(game), 0, 1020)                                      # Monday 17:00
+    mon = st.clock.day
+    meant, now0, lead, note = named_lead(game, st, "Tuesday morning, I walk down to the harbour.", 3)
+    assert meant == (mon + 1) * DAY + 540 and now0 == st.now_abs and lead == 16 * 60 and not note
+    s2, line = game.clock_moved(st, meant, now0 + lead)
+    assert line.startswith("THE CLOCK MOVED: the player meant Tuesday 09:00") and "never the one" in line
+    assert s2.journal[-1].text == "Tuesday morning came." and "The days ran to Tuesday 09:00." in s2.tally[-1]
+    assert s2.now_abs == st.now_abs and _clock_moved(game, s2, now0 + lead).now_abs == meant     # the clock is the pipeline's to move
+    # something falling due Monday 20:00 stops it there, and the directive and the tally say so
+    st.hidden.pending.append(Pending(id="p1", what="Krol's man calls at the door", due_day=mon, due_minute=1200, source="script"))
+    meant, now0, lead, note = named_lead(game, st, "Tuesday morning, I walk down to the harbour.", 3)
+    assert lead == 180 and "stopped at pending p1" in note
+    s3, line = game.clock_moved(st, meant, now0 + lead)
+    assert "the player meant Tuesday 09:00" in line and "short of Tuesday 09:00" in s3.tally[-1] and s3.journal[-1].text == "Monday evening came."
+    # no later time: no lead
+    assert named_lead(game, st, "I go through to the practice room.", 3)[2] == 0
+
+
+async def test_a_named_time_through_the_pipeline_moves_the_clock_before_the_turn(engine: Engine):
+    iid = engine.create_instance("clown", dict(SETUP, first_girl="ada_vosk"))
+    game = engine.games["clown"]
+    st0 = game.load_state(engine.store.load_state(iid))
+    events = [ev async for ev in engine.run_turn(iid, "Tomorrow afternoon, I walk down to the harbour.")]
+    assert events[-1]["event"] == "done", [ev["event"] for ev in events]
+    st = game.load_state(engine.store.load_state(iid))
+    rows = [r for r in engine.store.ledger(iid) if r["kind"] == "named_time"]
+    assert rows and rows[0]["payload"]["meant_abs"] == (st0.clock.day + 1) * DAY + 840
+    p = rows[0]["payload"]
+    reached = p["from_abs"] + p["minutes"]
+    assert st.now_abs >= reached > st0.now_abs and (reached == p["meant_abs"] or p["stopped"])   # there, or stopped short by a stop
+    prompt = next(r for r in engine.store.ledger(iid) if r["kind"] == "bulletin" or "THE CLOCK MOVED" in str(r["payload"]))
+    assert "THE CLOCK MOVED: the player meant Tuesday 14:00" in str(prompt["payload"])
+    assert any("came." in n.text for n in st.journal)

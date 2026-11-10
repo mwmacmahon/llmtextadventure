@@ -5,7 +5,7 @@ holds, no happenings, no narrator): the plan set on Mondays by a strategy, every
 proprietor at the venue for the show (or not), and prints the grid, fatigue, money, Heat, Name and the shows' words week
 by week. The model-free way to tune the numbers and to find a week that cannot be survived.
 
-    cd server && .venv/bin/python -m games.hidden.clown.tools.dry_run --weeks 8 --kind charmer --girl dot --plan pratfalls,children
+    cd server && .venv/bin/python -m games.hidden.clown.tools.dry_run --weeks 8 --kind charmer --girl nell_sorley --plan pratfalls,children
     .venv/bin/python -m games.hidden.clown.tools.dry_run --weeks 12 --plan wants --rest-at 60 --book all --attend --verbose
 
 `--take N` buys a contract off the clerk's slip whenever the house has N gold to spare over the price (the cheapest first);
@@ -78,7 +78,7 @@ def choose_plan(game: ClownGame, st: ClownState, plan: str, focus: list[str], re
     return a, b
 
 
-def run(weeks: int = 8, kind: str = "charmer", girl: str = "dot", plan: str = "pratfalls,children", focus: str = "", rest_at: int = 0,
+def run(weeks: int = 8, kind: str = "charmer", girl: str = "nell_sorley", plan: str = "pratfalls,children", focus: str = "", rest_at: int = 0,
         book: str = "all", attend: bool = True, seed: int = 0, verbose: bool = False, content: Path = CONTENT, out=print, take: int = 0, recruit: bool = True) -> ClownState:
     game = make_game(content)
     _, st = game.new_instance({"name": "the proprietor", "kind": kind, "first_girl": girl})
@@ -178,7 +178,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--weeks", type=int, default=8)
     ap.add_argument("--kind", default="charmer")
-    ap.add_argument("--girl", default="dot")
+    ap.add_argument("--girl", default="nell_sorley", help="a starter off the boat (the written dot is accepted, unlisted)")
     ap.add_argument("--plan", default="pratfalls,children")
     ap.add_argument("--focus", default="", help="for --plan wants: skills to train when nothing is booked, comma-separated")
     ap.add_argument("--rest-at", type=int, default=0)

@@ -61,6 +61,90 @@ RED_LINE = -500
 GRADUATE_SOUND, GRADUATE_FINISHED = 3, 1                                    # the record that makes her: three skills sound, one finished
 DIFFICULTY_WORDS = {0: "an easy room", 1: "an ordinary room", 2: "a demanding room", 3: "a hard room"}
 SHOW_PAY = {"disaster": 0.0, "poor": 0.5, "fine": 1.0, "good": 1.0, "triumph": 1.5}
+
+# C50 (D203C): a later time the player's input names moves the clock before the turn. Read only where the input opens on it
+# (the text's start, a sentence's start, after "then", "come", "on", "by") or after "until"/"till": "she asked me about Tuesday"
+# names no move, and a wrong read would run the clock days.
+_WHEN_ANCHOR = re.compile(r"(?:^|[.!?;]\s+|\b(?:until|till|til)\s+)(?:(?:and\s+)?then,?\s+|later,?\s+|come\s+|on\s+|by\s+)?")
+_NUMBER_WORDS = {w: i for i, w in enumerate(("one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"), 1)}
+_PARTS = {"first thing": 480, "morning": 540, "midday": 720, "noon": 720, "after lunch": 840, "afternoon": 840, "evening": 1140, "tonight": 1140, "night": 1260}
+_CLOCK = re.compile(r"at\s+(?:(half|quarter)\s+(past|to)\s+)?(\d{1,2}|" + "|".join(_NUMBER_WORDS) + r")(?::(\d\d)|\.(\d\d))?\s*(am|pm|a\.m\.|p\.m\.|o'clock)?\b")
+
+
+def _read_when(seg: str, s: ClownState) -> int | None:
+    """The day and minute a clause opens on ("tuesday morning, i walk ...", "tomorrow at ten", "at half past eight"), as an
+    absolute minute; None when it opens on no time."""
+    day, minute, part, clock = s.clock.day, None, None, None
+    named = False
+    rest = seg
+    while rest:
+        m = re.match(r"[\s,]+|(?:on|the|in the|in|this|at)\s+(?=(?:" + "|".join(WEEKDAYS).lower() + r"|morning|afternoon|evening|night|noon|midday)\b)", rest)
+        if m and m.end():
+            rest = rest[m.end():]
+            continue
+        if m2 := re.match(r"next week\b", rest):
+            day, named = s.clock.day + 7 - weekday(s.clock.day), True
+        elif m2 := re.match(r"tomorrow\b", rest):
+            day, named = s.clock.day + 1, True
+        elif m2 := re.match(r"(?:(next|this)\s+)?(" + "|".join(WEEKDAYS).lower() + r")\b(?!')", rest):
+            ahead = ([w.lower() for w in WEEKDAYS].index(m2.group(2)) - weekday(s.clock.day)) % 7
+            day, named = s.clock.day + (7 if m2.group(1) == "next" and ahead == 0 else ahead), True
+        elif m2 := re.match(r"(first thing|after lunch|midday|noon|morning|afternoon|evening|tonight|night)\b", rest):
+            part, named = m2.group(1), True
+        elif m2 := _CLOCK.match(rest):
+            clock, named = m2, True
+        else:
+            break
+        rest = rest[m2.end():]
+    if not named:
+        return None
+    if part is not None:
+        minute = _PARTS[part]
+    if clock is not None:
+        h = int(clock.group(3)) if clock.group(3).isdigit() else _NUMBER_WORDS[clock.group(3)]
+        mm = int(clock.group(4) or clock.group(5) or 0)
+        if clock.group(1):                                  # half past eight, quarter to nine
+            mm = 30 if clock.group(1) == "half" else 15
+            if clock.group(2) == "to":
+                h, mm = h - 1, 45
+        ampm = (clock.group(6) or "").replace(".", "")
+        if h > 23 or mm > 59:
+            return None
+        if ampm == "pm" and h < 12 or (not ampm or ampm == "o'clock") and h < 12 and (
+                (part in ("afternoon", "after lunch", "evening", "tonight", "night")) or 1 <= h <= 6
+                or (day == s.clock.day and h * 60 + mm <= s.clock.minute and part is None)):
+            h += 12                                         # at three is the afternoon; at eight when eight this morning has gone
+        if ampm == "am" and h == 12:
+            h = 0
+        minute = h * 60 + mm
+    if minute is None:
+        minute = _PARTS["morning"]                          # a day named alone: its morning
+    return day * DAY + minute
+
+
+def named_time(text: str, s: ClownState) -> int | None:
+    """C50 (D203C): a later time read out of the player's input ("Tuesday morning, I walk down to the harbour" at Monday 17:00
+    is Tuesday 09:00), as an absolute minute, when it is later than now by more than any task's own minutes (a talk, a search, a
+    walk: within that it is the assistant's, as before); never past the week's end, Sunday 22:00. None otherwise ("this morning"
+    at 17:00, "yesterday", a time in someone's words)."""
+    t = (text or "").lower().replace("\u2019", "'")
+    now = s.now_abs
+    for m in _WHEN_ANCHOR.finditer(t):
+        at = _read_when(t[m.end():], s)
+        if at is None:
+            continue
+        sunday = s.clock.day + (6 - weekday(s.clock.day))
+        cap = sunday * DAY + WEEK_END_MINUTE
+        if now >= cap:
+            cap += 7 * DAY
+        at = min(at, cap)
+        within = max((r.most for k, r in ClownGame.clock.tasks.items() if k not in ("wait", "sleep")), default=0)
+        return at if at - now > within else None
+    return None
+
+
+def _part_word(minute: int) -> str:
+    return "morning" if minute < 720 else "afternoon" if minute < 1080 else "evening" if minute < 1260 else "night"
 SHOW_STANDING = {"disaster": -2, "poor": -1, "fine": 0, "good": 1, "triumph": 2}
 SHOW_NAME = {"disaster": -5, "poor": -1, "fine": 1, "good": 3, "triumph": 6}
 SHOW_LINES = {
@@ -140,6 +224,7 @@ class ClownGame(GameBase):
         "sleep": TaskRow(least=60, most=720, lost=0),
     })
     resolver = "threshold"
+    clock_commands = ("skip",)       # C50: a time the input named already ran the clock; a Skip lever beside it is dropped
     mechanic_numbers = False
     target_offset = 0
     authority = AUTHORITY
@@ -710,8 +795,9 @@ class ClownGame(GameBase):
                 words = SHOW_LINES[x.result]
                 why = "; ".join(x.why).rstrip(".") + "."
                 g = s.girl(x.girl)
-                paid = (f"The house was paid {x.paid} gold" + ("" if g is None or g.graduated or not x.fee or x.paid >= x.fee else
-                        f": a student's rate, a quarter of the full fee of {x.fee} gold, which a graduate's show would have earned whole") + ".") if x.fee else "Nothing was to be paid."
+                share = dk.dial(s, "student_pay")
+                paid = (f"The house was paid {x.paid} gold" + ("" if g is None or g.graduated or not x.fee or share == 1.0 else
+                        f": a student's rate, {share:g} of the full fee of {x.fee} gold, which a graduate's show would have earned whole") + ".") if x.fee else "Nothing was to be paid."
                 if x.attended:
                     out.append(f"THE SHOW, as it went: {x.title} at {x.venue}: {words}. Why: {why} {paid} Write the show from the first routine to the "
                                f"client's face at the end, in the fiction's words, showing the why and never saying it, and stop where {p.name} would next decide. "
@@ -791,6 +877,8 @@ class ClownGame(GameBase):
             "Stats are exactly the five listed (charm, menace, business, connections, craft); never invent one.",
             "Time: a word at the desk 2 minutes; a talk 10 to 20; a practice hour with her 45 to 75; a tram ride as the town's list says; a show "
             "an evening; waiting is however long they wait, and the week ends on Sunday night whatever they do.",
+            "When the input opens on a later time (\"Tuesday morning, I walk down to the harbour\"), the clock is already at that time in the game "
+            "state: time_minutes is the task's own minutes from there, and it is not a Skip.",
             "",
             f"Where {p.name} is, who is with them, the money, the attention on the house: the game state block. Read it before ruling something impossible.",
             "Entities (the girls and the people, by id): " + ", ".join(f"{g.id} ({g.name}" + (", not yet in the house; about the town)" if g.status == "away" else ", asking to be taken on; not in the house)" if g.status == "available" else ")") for g in s.girls if g.status != "gone")
@@ -2426,6 +2514,28 @@ class ClownGame(GameBase):
         if (sound >= GRADUATE_SOUND and finished >= GRADUATE_FINISHED) or triumph:
             return ""
         return f"{g.name} is not ready: three skills sound and one finished, or a triumph at a good house."
+
+    def named_time(self, state: ClownState, text: str) -> int | None:
+        """The pipeline's hook (C50): a later time the player's input names, as an absolute minute."""
+        return named_time(text, state)
+
+    def clock_moved(self, state: ClownState, meant_abs: int, reached_abs: int) -> tuple[ClownState, str]:
+        """The pipeline's hook (C50): the days run from now to `reached_abs` (the time the player named, or as far as the stops let
+        the clock go): a journal note in words and the tally line on the turn's state (its clock is the pipeline's to move); and
+        the narrator's line, the Skip directive's rule (D197C)."""
+        s = state.model_copy(deep=True)
+        meant = f"{WEEKDAYS[weekday(meant_abs // DAY)]} {hhmm(meant_abs % DAY)}"
+        rday, rmin = reached_abs // DAY, reached_abs % DAY
+        s.journal.append(Note(kind="house", text=f"{WEEKDAYS[weekday(rday)]} {_part_word(rmin)} came."))
+        self._tally(s, f"The days ran to {WEEKDAYS[weekday(rday)]} {hhmm(rmin)}" + ("" if reached_abs == meant_abs else f", short of {meant}, the time named") + ".",
+                    at=f"Day {rday} {hhmm(rmin)}")
+        p = s.player
+        directive = (f"THE CLOCK MOVED: the player meant {meant}. The days ran only as far as the game state's clock says (its Time line: the day "
+                     f"and the hour), and no further: if that is short of {meant}, something stopped them, and THIS TURN says what. Open at the "
+                     f"clock's day and hour, never the one {p.name} meant; the time between passes in a line, built from one thing of the house or "
+                     f"the street that has not been told before, and nothing is done in it that the player did not say. Then play what the player "
+                     f"does from there, or what stopped the days.")
+        return s, directive
 
     def _skip_targets(self, s: ClownState) -> list[tuple[str, str, int]]:
         """(id, label, absolute minute) for where a Skip may run the clock: tomorrow morning, Saturday morning, Sunday night (the

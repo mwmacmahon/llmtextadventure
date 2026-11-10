@@ -926,10 +926,27 @@ class Engine:
                 ledger("precheck", {"kind": "trivial", **h})
                 ledger("settled", {"settled": "works", "attempt": h["attempt"], "outcome": next((f.outcome for f in adj.fiat if f.attempt == h["attempt"]), ""), "why": h["why"]})
 
+        # ---- 0b. a later time the player named (C50, D203C): the clock runs there first, through the same stops as any turn,
+        #          and the assistant reads the turn from there; the narrator is told the days ran (the game's own wording)
+        lead = 0
+        seen_state = state
+        lead_note = None
+        if command is None:
+            meant, now0, lead, stop_note = named_lead(game, state, player_text or "", turn)
+            if lead:
+                moved = _hook(game, "clock_moved", state, meant, now0 + lead, default=None)
+                if moved is not None:
+                    state, line = moved
+                    extra_directives.append(line)
+                seen_state = _clock_moved(game, state, now0 + lead)
+                lead_note = (f"The clock already moved {lead} minutes to the time the player's input opens on" + (" (stopped short of it: something falls due)" if stop_note else "")
+                             + ": the game state's Time line is now. time_minutes is the task's own minutes from there, and it is no Skip or wait to that time.")
+                ledger("named_time", {"meant_abs": meant, "from_abs": now0, "minutes": lead, "stopped": stop_note})
+                log.info("named_time " + logs.kv(iid=iid, turn=turn, meant=meant, minutes=lead, stopped=stop_note or None))
         # ---- 1. adjudicate --------------------------------------------------
         if adj is None and not getattr(game, "skip_adjudication", False):
             try:
-                adj, meta = await self._adjudicate(game, state, iid, player_text,
+                adj, meta = await self._adjudicate(game, seen_state, iid, player_text, clock_note=lead_note,
                                                    retell=replay.hint if replay is not None and replay.by == "player" else None)
                 struck = settle_attack(adj)                      # B288: a blow with a weapon is the attack roll, not a check too
                 hopeless = settle_hopeless(adj)                  # B225: very high and an edge of -3 or worse is a fail, no roll
@@ -962,12 +979,14 @@ class Engine:
         # ---- 1b. waiting and sleeping (time doc §3 (v), D149): a wait with no limit asks "until when" first, the way a lever with a
         #          missing parameter asks (a question turn previews no lever: nothing is done); sleep with no limit runs to morning
         if command is None and adj is not None and adj.kind == "action" and getattr(game, "clock", None) is not None:
-            adj, asked = until_when(game, state, adj, player_text or "")
+            adj, asked = until_when(game, seen_state, adj, player_text or "")
             if asked:
                 ledger("until_when", {"task": adj.summary, "asked": asked})
         # ---- 1c. typed levers: previewed now, in order, played by the narrator, committed after the prose
         #          unless the referee reports one was not completed (DESIGN2 §6, LOG §12)
         levers: list[PendingLever] = []
+        if lead and adj is not None and adj.commands:          # C50: the days already ran; a Skip to the same time would run them twice
+            adj.commands = [c for c in adj.commands if c.id not in getattr(game, "clock_commands", ())]
         if command is None and adj is not None and adj.kind != "clarify" and adj.commands:
             adj, levers = self._preview_levers(game, state, adj, iid, turn, ledger, player_text or "")
             extra_directives.extend(lv.directive for lv in levers)
@@ -986,7 +1005,7 @@ class Engine:
             yield {"event": "adjudication", "data": adj.model_dump(mode="json")}
 
         # ---- 2. resolve -----------------------------------------------------
-        res = self._resolve(game, state, adj, iid, turn, extra_directives)
+        res = self._resolve(game, state, adj, iid, turn, extra_directives, lead_minutes=lead)
         state = res["state"]
         # ---- 2b. the world acts (part four, D176): the game's own rolls before the prose (a chosen death, a peril's
         #          countdown, the enemies' moves); the narrator is told each in THIS TURN, the § lines follow the prose
@@ -1661,7 +1680,8 @@ class Engine:
             return provider
         return Taped(provider, lambda label, ex: tape("exchange", exchange_row(self.store.put_blob, label, ex)), step)
 
-    async def _adjudicate(self, game: Game, state: BaseModel, iid: str, player_text: str, retell: str | None = None) -> tuple[AssistantReading, dict]:
+    async def _adjudicate(self, game: Game, state: BaseModel, iid: str, player_text: str, retell: str | None = None,
+                          clock_note: str | None = None) -> tuple[AssistantReading, dict]:
         role = self.cfg.role("assistant")
         provider = self._provider(role, iid, "assistant")
         recent = _recent_prose(self.store, iid, turns=2)
@@ -1670,6 +1690,8 @@ class Engine:
         notes = [h.line for h in hits]
         if retell is not None:                                  # B280: the player's rewrite reads the turn again, with what they said of it
             notes.append(f"The player asked for this turn again, and said: \"{retell.strip()}\"" if retell.strip() else "The player asked for this turn again.")
+        if clock_note:                                          # C50 (D203C): the time the player named is already on the clock
+            notes.append(clock_note)
         system, msgs, schema = adjudicator_inputs(game, state, recent, player_text, stakes=nrole.stakes != "off" and nrole.checks == "called",
                                                   notes=notes)
         for m in mods_mod.parsed(self._mods(iid)):              # B79: the assistant's rules text by section, per save
@@ -1790,7 +1812,7 @@ class Engine:
         return new_state, {"id": lever.id, "status": "applied", "text": (res.text or lever.label).strip()}
 
     def _resolve(self, game: Game, state: BaseModel, adj: AssistantReading | None, iid: str, turn: int,
-                 extra_directives: list[str] | None = None) -> dict[str, Any]:
+                 extra_directives: list[str] | None = None, lead_minutes: int = 0) -> dict[str, Any]:
         doc = state.model_dump(mode="json")
         directives: list[str] = list(extra_directives or [])
         directives.extend(_hook(game, "turn_directives", state, default=[]) or [])     # the game's own standing lines (noir: "where is Frank?")
@@ -1872,31 +1894,18 @@ class Engine:
                 if 0 < at_roll:
                     split = (max(adj.time_minutes - at_roll, 0), adj.time_minutes)
                     notes.append(f"split at the roll: {split[0]} minutes before the attempt of the {split[1]} planned")
-            # clock, stopping where an event would fire (any time in its trigger or fallback) so it fires on time
-            planned = split[0] if split else adj.time_minutes
+            # clock, stopping where an event would fire (any time in its trigger or fallback) so it fires on time; a time the
+            # player named runs first (C50, D203C: the lead), through the same stops
+            planned = lead_minutes + (split[0] if split else adj.time_minutes)
             if clock and planned > 0:
                 want = min(planned, clock.cap_minutes)
-                if want < adj.time_minutes:
-                    clock_note = f"capped from {adj.time_minutes} to {want} minutes"
+                if want < lead_minutes + adj.time_minutes:
+                    clock_note = f"capped from {lead_minutes + adj.time_minutes} to {want} minutes"
                 clk = sp.lookup(doc, clock.path)
                 now = clk["day"] * clock.minutes_per_day + clk["minute"]
-                nxt_f = ev.next_firing(_events_of(game, doc), doc, turn, now, now + want, clock.minutes_per_day, clock.path,
-                                       getattr(game, "pending_path", None) or "hidden.pending",
-                                       getattr(game, "location_path", "player.location"))
-                if nxt_f is not None:
-                    nxt, at = nxt_f
-                    want = at - now
-                    clock_note = (clock_note + "; " if clock_note else "") + f"stopped at scheduled event {nxt.id}"
-                ppath = getattr(game, "pending_path", None)
-                # the owner (11-08 evening), every game: what the player cannot see happen does not stop their clock; it goes
-                # on in the background and the narrator is told it happened unseen (the tick below fires it with the turn's time)
-                seen_p = [x for x in pend.load(doc, ppath) if not x.hidden] if ppath else []
-                nxt_p = pend.next_due(seen_p, clock.minutes_per_day) if ppath else None
-                if nxt_p is not None:
-                    at = nxt_p.due_abs(clock.minutes_per_day)
-                    if now < at <= now + want:          # the world does not wait: the clock stops where something falls due
-                        want = at - now
-                        clock_note = (clock_note + "; " if clock_note else "") + f"stopped at pending {nxt_p.id}"
+                want, stop_note = clock_stop(game, doc, turn, now, want)
+                if stop_note:
+                    clock_note = (clock_note + "; " if clock_note else "") + stop_note
                 elapsed = want
                 total = now + want
                 clk["day"], clk["minute"] = total // clock.minutes_per_day, total % clock.minutes_per_day
@@ -1922,7 +1931,7 @@ class Engine:
                                 far=str(_hook(game, "far_from_word", state, default="") or ""),
                                 newcomer=nc[0], unmet=nc[1])
         # B105 (D177): a question about the scene (kind trivial) moves nothing: no event, pending or hazard ticks on it
-        quiet = adj is not None and adj.kind == "trivial"
+        quiet = adj is not None and adj.kind == "trivial" and not elapsed
         fired, expired, ev_directives = ([], [], []) if quiet else ev.tick(events, doc, turn, clock_path, log_path, ectx, since_abs=since_abs)
         sp.assign(doc, getattr(game, "events_path", "hidden.events"), [e.model_dump(mode="json") for e in events])
         directives.extend(ev_directives)
@@ -1962,7 +1971,7 @@ class Engine:
         if scene_long:
             notes.append(f"scene marked long: turn {scene_long} of a fight")
         return {"state": new_state, "assessments": assessments, "fired": fired, "expired": expired, "happened": happened,
-                "elapsed": elapsed, "clock_note": clock_note, "directives": directives, "adjudication": adj, "effect_paths": effect_paths,
+                "elapsed": elapsed, "clock_note": clock_note, "lead": lead_minutes if elapsed else 0, "directives": directives, "adjudication": adj, "effect_paths": effect_paths,
                 "split": split, "scene_long": scene_long,
                 "notes": notes, "pending_fired": pending_fired, "pending_lapsed": pending_lapsed, "holds": list(ectx.holds),
                 "fail_streak": self._fail_streak(iid, turn) if assessments else 0,
@@ -2936,6 +2945,56 @@ def own_words(text: str) -> str:
     return QUOTED.sub(" ", text or "")
 
 
+def clock_stop(game: Any, doc: dict[str, Any], turn: int, now: int, want: int) -> tuple[int, str]:
+    """How far the clock may run from `now` toward `now + want`: it stops where a scheduled event would fire (any time in its
+    trigger or fallback, so it fires on time) or a pending the player can see falls due. Returns (minutes, note)."""
+    clock = game.clock
+    note = ""
+    nxt_f = ev.next_firing(_events_of(game, doc), doc, turn, now, now + want, clock.minutes_per_day, clock.path,
+                           getattr(game, "pending_path", None) or "hidden.pending",
+                           getattr(game, "location_path", "player.location"))
+    if nxt_f is not None:
+        nxt, at = nxt_f
+        want = at - now
+        note = f"stopped at scheduled event {nxt.id}"
+    ppath = getattr(game, "pending_path", None)
+    # the owner (11-08 evening), every game: what the player cannot see happen does not stop their clock; it goes
+    # on in the background and the narrator is told it happened unseen (the tick fires it with the turn's time)
+    seen_p = [x for x in pend.load(doc, ppath) if not x.hidden] if ppath else []
+    nxt_p = pend.next_due(seen_p, clock.minutes_per_day) if ppath else None
+    if nxt_p is not None:
+        at = nxt_p.due_abs(clock.minutes_per_day)
+        if now < at <= now + want:          # the world does not wait: the clock stops where something falls due
+            want = at - now
+            note = (note + "; " if note else "") + f"stopped at pending {nxt_p.id}"
+    return want, note
+
+
+def _clock_moved(game: Any, state: BaseModel, to_abs: int) -> BaseModel:
+    """A copy of the state with the clock at `to_abs` (nothing ticked): what the assistant reads when the player named a later time."""
+    doc = state.model_dump(mode="json")
+    clk = sp.lookup(doc, game.clock.path)
+    clk["day"], clk["minute"] = to_abs // game.clock.minutes_per_day, to_abs % game.clock.minutes_per_day
+    return game.load_state(doc)
+
+
+def named_lead(game: Any, state: BaseModel, text: str, turn: int) -> tuple[int, int, int, str]:
+    """C50 (D203C): a later time the player's input names (the game's `named_time` hook) runs the clock there before the turn,
+    through the same stops as any turn. Returns (meant_abs, now_abs, minutes the clock may run, stop note); (0, 0, 0, "") when
+    the input names no later time or the game reads none."""
+    clock = getattr(game, "clock", None)
+    meant = _hook(game, "named_time", state, own_words(text or ""), default=None) if clock is not None else None
+    if not meant:
+        return 0, 0, 0, ""
+    doc = state.model_dump(mode="json")
+    clk = sp.lookup(doc, clock.path, None) or {}
+    now = int(clk.get("day", 1)) * clock.minutes_per_day + int(clk.get("minute", 0))
+    if meant <= now:
+        return 0, 0, 0, ""
+    want, note = clock_stop(game, doc, turn, now, min(meant - now, clock.cap_minutes))
+    return int(meant), now, want, note
+
+
 def until_when(game: Any, state: BaseModel, adj: AssistantReading, text: str) -> tuple[AssistantReading, str]:
     """Waiting and sleeping (time doc §3 (v), D149), for a game whose clock lists them: an input with no limit is asked
     "until when" before the turn runs (a clarify turn, no time passes); "until something happens" runs the clock to the
@@ -3646,7 +3705,7 @@ def _soften_unreached(rulings: list[dict[str, Any]], res: dict[str, Any]) -> lis
     recorded and not serious (no retell)."""
     adj = res.get("adjudication")
     note = res.get("clock_note") or ""
-    if "stopped at" not in note or adj is None or adj.time_minutes <= res.get("elapsed", 0):
+    if "stopped at" not in note or adj is None or adj.time_minutes + res.get("lead", 0) <= res.get("elapsed", 0):
         return rulings
     out = []
     for r in rulings:
@@ -3675,7 +3734,14 @@ def _this_turn_block(res: dict[str, Any], clock_text: str = "") -> str:
                          "takes; the turn ends when the last attempt does.")
     elif res["elapsed"]:
         note = res.get("clock_note") or ""
-        if "stopped at" in note and adj is not None and adj.time_minutes > res["elapsed"]:
+        if res.get("lead") and res["elapsed"] <= res["lead"] and "stopped at" in note:     # C50 (D203C): stopped short of it
+            lines.append("- The clock ran on toward the time the player named and stopped short where something falls due (below): THE CLOCK MOVED "
+                         "says how to tell it. Narrate up to that moment; what the player meant to do then has not begun.")
+        elif res.get("lead"):                           # C50 (D203C): the clock ran to the time the player named first
+            lines.append(f"- The clock ran on to the time the player named (THE CLOCK MOVED, below), and the turn's own time from there: about "
+                         f"{max(res['elapsed'] - res['lead'], 0)} minutes" + (f"; the clock reads {clock_text} when this turn ends" if clock_text else "")
+                         + ". Stop the prose there; never run past it.")
+        elif "stopped at" in note and adj is not None and adj.time_minutes > res["elapsed"]:
             lines.append(f"- Time passes: about {res['elapsed']} minutes of the {adj.time_minutes} the player meant to spend; something falls due then (below). "
                          "Narrate up to that moment, in the fiction: the player's intent is simply not finished yet. Never mention minutes being given, the clock stopping, or the engine.")
         else:
