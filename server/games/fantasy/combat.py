@@ -610,14 +610,12 @@ def round_lines(game: Any, s: FantasyState) -> list[str]:
 
 
 def _player_take(game: Any, s: FantasyState, n: int, tally: dict) -> tuple[int, list[str], bool]:
-    """Hit points an enemy's roll takes from the player, through the steps (the shield, Rage, Uncanny Dodge, Defence, Shield
-    of Faith) as flat reductions (STEP_DICE). On the running count; the state lands after the prose. B324: the shield also
-    adds +2 AC, so it counts twice against a roll (the SRD has the AC only); kept for the owner, since without the cut a
-    level-1 paladin alone wins 47% against three skeletons, not 83%."""
+    """Hit points an enemy's roll takes from the player, through the steps (Rage, Uncanny Dodge, Defence, Shield of Faith) as
+    flat reductions (STEP_DICE). On the running count; the state lands after the prose. The shield is the +2 AC the roll had
+    to beat and nothing more here (B324, the owner, 11-10: "remove the shield glitch as it's probably part of why the
+    paladin is so op compared to other classes"; it counted twice)."""
     p = s.player
     notes: list[str] = []
-    if s.item("shield") is not None and n >= 6 and not p.effect("damage_taken_step"):
-        n, notes = step_lighter(n), notes + ["the shield takes the worst of it"]
     defence = p.effect("defence") and any(w in it.name.lower() for it in s.inventory for w in ("chain mail", "mail", "plate"))
     if ("raging" in p.flags_on and p.effect("damage_taken_step")) or defence:
         m = step_lighter(n)

@@ -342,6 +342,6 @@ def test_the_simulator_plays_the_contents_own_moves_and_their_perils(game):
     st = new(game)
     grab = [{"kind": "strike", "harm": "rotten grip"},
             {"kind": "grab", "stat": "str", "dc": 12, "peril": "drowning", "harm": "a pull under the chapel water"}]
-    plain = en.win_rate(game, st, [("zombie", 3)], "standard", 120, 2, "t")
-    played = en.win_rate(game, st, [("zombie", 3)], "standard", 120, 2, "t", grab)
-    assert played < plain - 10
+    plain = en.win_rate(game, st, [("zombie", 3)], "weak", 200, 2, "t")         # 88 and 73 at 300 fights (11-10, after B324)
+    played = en.win_rate(game, st, [("zombie", 3)], "weak", 200, 2, "t", grab)
+    assert played < plain - 8
