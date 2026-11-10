@@ -206,8 +206,8 @@ the journal and the story so far. Design: DESIGN.md; GAME_AUTHORING; the world p
   player would feel.
   **The owner's choice (11-10): diffs, with the last turns kept whole.** The shape: the last N turns (N=10) stay full
   snapshots, so undo, a retell and the call report read them as now; a turn that ages out of that window becomes a diff from
-  the turn before, except every tenth turn, which stays a full keyframe; all compressed. Loading an old turn rebuilds it from
-  its keyframe (at most nine diffs, about 2 ms). Steps 3 and 4 (a bounded save, retention) stay on the list behind it.
+  the turn before, except every twentieth turn, which stays a full keyframe (the owner, 11-10: "keyframes every 20 should be plenty"); all
+  compressed. Loading an old turn rebuilds it from its keyframe (at most nineteen diffs, about 2 ms). Steps 3 and 4 (a bounded save, retention) stay on the list behind it.
   **The database (the owner, 11-10: "What about database side of it? That bloat?").** Measured: the file is 643 MB: the
   snapshots 240 MB, the ledger 211 MB (its `model_call` rows 125 MB, 87% of each the full request, a second copy of a prompt
   the blob table already holds once; the retold turns' `rewrite` rows 27 MB; the exchanges 28 MB), the prompt blobs 138 MB,
