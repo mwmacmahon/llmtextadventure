@@ -45,7 +45,9 @@ def specs(game: Any, p: Any) -> dict[str, dict]:
 
 
 def _people_here(game: Any, s: FantasyState) -> list:
-    return [q for q in s.people if q.id in game.people_here(s) or (q.id in s.player.with_them and q.status in ("alive", "down"))]
+    # round 13 (9c6ac4cbe0ae T15): 'the_shadow', a person the player has never seen, was offered as a Lay on Hands target
+    return [q for q in s.people if not q.hidden_from_player
+            and (q.id in game.people_here(s) or (q.id in s.player.with_them and q.status in ("alive", "down")))]
 
 
 def chips(game: Any, s: FantasyState) -> list[CommandSpec]:
@@ -66,7 +68,9 @@ def chips(game: Any, s: FantasyState) -> list[CommandSpec]:
             params = [Param(name="on", label="On", options=who, default="self")]     # B306: no one named is the player
         if kind == "rider" and f.get("armed_flag") and f["armed_flag"] in p.flags_on:
             continue
-        out.append(CommandSpec(id=fid, label=f"{f['name']}{left}", mode="narrated", params=params,
+        # round 13 (9c6ac4cbe0ae T22): a rider (Divine Smite) clicked took a turn with no blow in it; the narrator wrote a smite
+        # that killed a swarm the sheet kept alive. Arming a rider is instant: the engine's reply, no turn; the next blow carries it
+        out.append(CommandSpec(id=fid, label=f"{f['name']}{left}", mode="engine" if kind == "rider" else "narrated", params=params,
                                enabled=c is None or c.value > 0 or (kind == "rider" and _slots(p) > 0 and f.get("slots")),
                                hint=f.get("hint") or f.get("text") or f["name"], words=list(f.get("words") or [])))
     return out

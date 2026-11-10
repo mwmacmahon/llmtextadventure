@@ -991,3 +991,21 @@ def test_round_12_weapon_none_is_no_weapon_and_no_blow(game):
                                   intents=[IntentCombat(action="follow the stranger quietly", targets=["dead"], attack_at=["dead"], weapon="none")])
     game.aim_blows(f, tail, "I pocket the key, step into the fog and follow the stranger quietly along the warehouses")
     assert tail.intents[0].attack_at == []
+
+
+def test_round_13_abilities_show_their_line_smite_arms_at_once_and_the_hidden_are_no_targets(game):
+    """Round 13 (9c6ac4cbe0ae): Turn Undead's roll and Lay on Hands' heal never reached the player; Divine Smite clicked took a turn
+    with no blow (the narrator smote a swarm the sheet kept alive, the referee spent the count); 'the_shadow' was a Lay on Hands
+    target; the referee's '+grappled' held the player after the Strength save held."""
+    from games.fantasy import features as ft
+    st = new(game, klass="Paladin")
+    spec = {c.id: c for c in game.commands(st)}
+    assert spec["divine_smite"].mode == "engine"
+    s2, r = game.run_command(st, "lay_on_hands", {"on": "self"})
+    assert r.ok and r.shown and "hit point" in r.shown
+    hidden = next(q for q in st.people if q.id == "the_shadow")
+    hidden.location, hidden.hidden_from_player = st.player.location, True
+    assert all(q.id != "the_shadow" for q in ft._people_here(game, st))
+    st.player.flags_on.append("smite_armed")
+    s3, rep, _ = apply_changes(game, st, ChangeReport.of(Change(kind="add", target="player", field="holy_power", value="-1")), present=[], causes=[])
+    assert s3.player.count("holy_power").value == st.player.count("holy_power").value and any("power's own" in r.reason for r in rep.rejected)

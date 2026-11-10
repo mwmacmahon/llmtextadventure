@@ -1379,6 +1379,9 @@ class Engine:
                 log.warning("guard.forced_death " + logs.kv(iid=iid, turn=turn))
                 narration = wrote
         narration_stored = narration
+        if cmd_result is not None and cmd_result.shown:      # round 13 (9c6ac4cbe0ae): Turn Undead's roll and Lay on Hands' heal were never shown
+            yield {"event": "mechanic", "data": {"turn": turn, "text": cmd_result.shown, "data": {"command": True}}}
+            narration_stored = with_mechanic(narration_stored, cmd_result.shown)
         for lv, out in zip(levers, lever_outcomes):
             yield {"event": "mechanic", "data": {"turn": turn, "text": out["text"], "data": {"lever": lv.id, "status": out["status"]}}}
             narration_stored = with_mechanic(narration_stored, out["text"])

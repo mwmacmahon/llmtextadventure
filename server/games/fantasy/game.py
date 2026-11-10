@@ -1926,7 +1926,11 @@ class FantasyGame(GameBase):
             if n > 0:
                 w.reject(f"player.counts.{c.id}", "rests and the commands refill counts", value)
                 return True
-            if c.id == "spell_slots" or any(cs.id == c.id for cs in self.commands(s)):
+            from . import features as ft
+            if (c.id == "spell_slots" or any(cs.id == c.id for cs in self.commands(s))
+                    or any(f.get("count") == c.id for f in ft.specs(self, p).values())):
+                # round 13 (9c6ac4cbe0ae T22): the referee spent Divine Smite's holy_power from prose that told a smite; the
+                # count's id is not the command's, and an armed smite has no lever showing, so the test above missed it
                 # B306 (Gemma, 11-10, 4d6f4c683fd3 turn 12): Lay on Hands was not run, the referee spent a point of its pool and no
                 # hit point came back; a power's count moves only when the power runs (its lever skips the referee's own row)
                 w.reject(f"player.counts.{c.id}", "the power's own: it is spent when the power is used by name", value)
@@ -2143,17 +2147,12 @@ class FantasyGame(GameBase):
             return True
         if p.has_condition(row.name):
             return True
-        by = ""
         if row.name == "grappled":
-            # round 11 (56dd55904e70 T28): 'grappling with the child' as the player scooped Wren up became a grip on the player
-            # (no running, a WARNING by 'something'). A grab is a foe's: one the player fights, named in the row or the only one
-            foes = [q for q in s.people if q.id in p.fighting and q.status == "alive"]
-            named = next((q for q in foes if q.name and q.name.lower() in f"{note} {phrase}".lower()), None)
-            pick = named or (foes[0] if len(foes) == 1 else None)
-            if pick is None:
-                w.reject("player.conditions", "a grab is a foe's: nobody the player fights holds them", phrase)
-                return True
-            by = pick.id
+            # round 11 (56dd55904e70 T28): 'grappling with the child' as the player scooped Wren up held the player; round 13
+            # (9c6ac4cbe0ae T12): the dice said the Strength save held, and the referee's '+grappled' from the prose held them anyway.
+            # A grab is the dice's: a foe's grab move rolls it in a fight, and outside one nobody holds the player
+            w.reject("player.conditions", "a grab is the dice's (a foe's grab move), never the prose's", phrase)
+            return True
         now = s.clock.day * DAY + s.clock.minute
         compelled = None
         if row.compelled is not None:
@@ -2163,7 +2162,7 @@ class FantasyGame(GameBase):
                 compelled["by"] = who.id if who is not None else (note or phrase).strip()[:80]
         if w.set("player.conditions", None, row.name):
             p.conditions.append(Condition(name=row.name, stat=row.stat, words=list(row.words), mod=row.mod, duration=row.duration,
-                                          expires_at=now + row.minutes if row.duration == "minutes" else None, compelled=compelled, by=by))
+                                          expires_at=now + row.minutes if row.duration == "minutes" else None, compelled=compelled))
         return True
 
     def _expire_conditions(self, s: FantasyState, now: int) -> None:
@@ -3458,7 +3457,10 @@ class FantasyGame(GameBase):
         from . import features as ft                                       # part fifteen §10: a feature in the class file runs by its kind
         done = ft.run(self, state, command_id, args or {})
         if done is not None:
-            return done
+            st, r = done
+            if r.ok and r.text and not r.shown:          # round 13: the feature's own line (the roll, the heal) shown after the prose
+                r.shown = r.text
+            return st, r
         if command_id == "rage":
             c = p.count("rage")
             if c is None or c.value <= 0 or "raging" in p.flags_on:

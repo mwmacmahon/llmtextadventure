@@ -300,6 +300,7 @@ class CommandResult(BaseModel):
     systems: list[str] = Field(default_factory=list)
     log_line: str | None = None     # appended to the game log, clock-stamped
     referee_skip: list[str] = Field(default_factory=list)   # narrated mode: referee fields the engine already applied (reset to default before apply)
+    shown: str = ""                 # narrated mode: a § line the player sees after the prose (a roll, a heal); empty: none (round 13)
 
 
 @dataclass
