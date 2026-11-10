@@ -97,3 +97,64 @@ def test_an_enemy_picks_its_move_by_weight_among_those_that_make_sense():
     assert {cb.pick_action(b, held, rng)["kind"] for _ in range(50)} == {"strike"}  # no second grab on the held
     b.actions[1]["weight"] = 9
     assert [cb.pick_action(b, free, rng)["kind"] for _ in range(200)].count("grab") > 125         # 9 to 3
+
+
+# ---- §3: off the turn ------------------------------------------------------------------------------------------------------
+def test_the_cache_is_warmed_off_the_turn_and_refreshes_on_level_and_party(game, monkeypatch):
+    monkeypatch.setattr(type(game), "WARM_BANDS", ("normal",))
+    st = new(game, place="The Catacombs")
+    key = game.warm_key(st)
+    assert key == "1||catacombs"
+    st = game.take_warm(st, game.warm(st))
+    assert game.warm_key(st) == "" and st.encounters["The Catacombs"]["bands"]["normal"]["reason"]
+    e, hit = game.encounter_for(st, "normal")
+    assert hit and e.bodies and "on the turn" not in e.reason
+    cold, hit2 = game.encounter_for(st, "hard")                     # a band the cache never drew: inline, ten fights a cell
+    assert not hit2 and "ten fights a cell, on the turn" in cold.reason
+    st.player.level = 2
+    assert game.warm_key(st) == "2||catacombs"                      # the level moved: draw again
+    st.player.level = 1
+    hz = st.person("hazel")
+    hz.location, hz.attitude = st.player.location, 2
+    st.player.with_them.append("hazel")
+    assert game.warm_key(st) == "1|hazel|catacombs"                 # the party moved: draw again
+    stale = {"place": "The Catacombs", "key": "1||catacombs", "bands": {}, "fights": 0, "seconds": 0}
+    assert game.take_warm(st, stale).encounters["The Catacombs"]["key"] == "1||catacombs"     # kept only as it was; the key decides a hit
+    _, hit3 = game.encounter_for(st, "normal")
+    assert not hit3
+
+
+def test_a_long_rest_elsewhere_drops_the_cache(game):
+    from engine.game import TurnInfo
+    st = new(game, place="The Drowned Lantern")
+    st.encounters = {"The Catacombs": {"key": "x", "bands": {}}, "The Drowned Lantern": {"key": "y", "bands": {}}}
+    st.player.resting = "long"
+    s2 = game.after_turn(st, TurnInfo(turn=3, elapsed_minutes=480, rng=random.Random(1), applied=[], calls=[]))
+    assert list(s2.encounters) == ["The Drowned Lantern"]
+
+
+def test_the_pipeline_runs_the_job_after_a_turn_and_takes_it_at_the_next(game, monkeypatch, tmp_path):
+    """The job is started after the turn and its result is on the state (and the ledger) at the next turn's start."""
+    import asyncio
+    from engine.pipeline import Engine
+    monkeypatch.setenv("TA_WARM", "on")
+    monkeypatch.setattr(type(game), "WARM_BANDS", ("normal",))
+
+    class FakeStore:
+        rows: list = []
+
+        def append_ledger(self, iid, turn, kind, payload):
+            self.rows.append((kind, payload))
+
+    eng = Engine.__new__(Engine)
+    eng._warm = {}
+    st = new(game, place="The Catacombs")
+
+    async def run():
+        eng._start_warm(game, "x", st)
+        assert "x" in eng._warm
+        await eng._warm["x"]
+        store = FakeStore()
+        return eng._take_warm(game, "x", st, lambda k, p: store.append_ledger("x", 2, k, p)), store.rows
+    s2, rows = asyncio.run(run())
+    assert s2.encounters["The Catacombs"]["bands"]["normal"]["bodies"] and rows[0][0] == "encounter_cache" and rows[0][1]["seconds"] >= 0

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 import time
 from dataclasses import asdict, dataclass
@@ -101,6 +102,7 @@ class Engine:
         self._asides: dict[str, Any] = {}         # iid -> an aside's learned pass still running (B244); a turn waits for it
         self._mods_cache: dict[str, list[dict]] = {}   # iid -> the mods its save was made with (B79)
         self._games_cache: dict[str, Any] = {}           # iid and mod hashes -> the game as that modded save sees it (B79)
+        self._warm: dict[str, Any] = {}                  # iid -> the game's background job after a turn (part sixteen §3: the encounters)
         self.graves = Graveyard(store)            # the player-only section (B81): written here, read by the gallery alone
         self.providers: dict[str, Any] = {}       # step -> a provider to use instead of the role's (the narrator replay's capture)
         # Runtime settings the UI can change (the guard mode, the progress estimate); persisted beside the store.
@@ -439,6 +441,36 @@ class Engine:
         if raw:                                                 # B244 (c): what the aside said is canon; the next turn waits for it
             self._asides[iid] = asyncio.create_task(self._aside_learned(iid, turn, q, answer))
         return {"ok": True, "text": answer, "turn": turn}
+
+    def _take_warm(self, game: Game, iid: str, state: BaseModel, ledger: Any) -> BaseModel:
+        """Part sixteen §3: the background job's result (the encounters ranked after the last turn), if it has finished; a
+        job still running is left to finish for a later turn (the fight, if one comes now, is a cold miss)."""
+        job = self._warm.get(iid)
+        if job is None or not job.done():
+            return state
+        self._warm.pop(iid, None)
+        try:
+            result = job.result()
+        except Exception as e:  # noqa: BLE001 - a failed draw costs a cold miss, never a turn
+            log.warning("warm.failed " + logs.kv(iid=iid, error=str(e)[:200]))
+            return state
+        if result:
+            state = _hook(game, "take_warm", state, result, default=state)
+            ledger("encounter_cache", {"place": result.get("place"), "key": result.get("key"), "seconds": result.get("seconds"),
+                                       "fights": result.get("fights"), "bands": {b: x.get("reason") for b, x in (result.get("bands") or {}).items()}})
+        return state
+
+    def _start_warm(self, game: Game, iid: str, state: BaseModel) -> None:
+        """Part sixteen §3: after a turn, when the cache does not hold this place for this party, the game's job runs in a
+        thread (never on the turn); the next turn takes its result."""
+        if iid in self._warm or not hasattr(game, "warm") or os.environ.get("TA_WARM", "on") == "off":
+            return
+        try:
+            if not _hook(game, "warm_key", state, default=""):
+                return
+            self._warm[iid] = asyncio.ensure_future(asyncio.to_thread(game.warm, state.model_copy(deep=True)))
+        except RuntimeError:                              # no running loop (a script): nothing to warm
+            return
 
     async def aside_settled(self, iid: str) -> None:
         """B244 (c): wait for an aside's learned pass (a turn starts only after it, so its rows are never lost)."""
@@ -824,6 +856,7 @@ class Engine:
             self.store.drop_transcript_turn(iid, turn)
             ledger("turn_failed", {"step": "cut off", "error": "the turn before this input never finished (its stream was dropped)"})
         self._tapes[iid] = ledger
+        state = self._take_warm(game, iid, state, ledger)
         t_turn = time.monotonic()
         stamp = self.profile_stamp(iid)               # the play's profile and difficulty, on the ledger and the mechanics row (Stage 3)
         log.info("turn.start " + logs.kv(iid=iid, turn=turn, command=command[0] if command else None,
@@ -1459,6 +1492,7 @@ class Engine:
             ledger("forced", mechanics["forced"])
             log.warning("guard.forced " + logs.kv(iid=iid, turn=turn, attempt=replay.attempt if replay else 0, applied=len(forced_lines), rulings=len(serious_left)))
         self.store.append_transcript(iid, turn, "mechanics", json.dumps(mechanics))
+        self._start_warm(game, iid, state)                # part sixteen §3: this place's encounters, ranked off the turn
 
         yield {
             "event": "done",

@@ -373,6 +373,8 @@ class FantasyState(BaseModel):
     hooks: list[HookState] = Field(default_factory=list)
     deck: Deck = Field(default_factory=Deck)
     combat: CombatState | None = None  # part fifteen §3: a fight in progress
+    encounters: dict[str, dict] = Field(default_factory=dict)   # part sixteen §3: place -> the generator's ranked fights for this party there
+    offer: dict = Field(default_factory=dict)                   # part sixteen §4: who might come at the player here (ids, entry, variant)
 
     @property
     def places(self) -> list[str]:

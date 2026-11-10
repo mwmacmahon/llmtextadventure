@@ -1323,6 +1323,63 @@ class FantasyGame(GameBase):
         s.player.conditions.append(Condition(name=row.name, source="engine", stat=row.stat, words=list(row.words), mod=row.mod, duration=row.duration,
                                              expires_at=now + row.minutes if row.duration == "minutes" else None, compelled=compelled))
 
+    # ---- part sixteen §3: the encounters, ranked off the turn ------------------------------------------------------------
+    WARM_BANDS = ("trivial", "easy", "normal", "hard")
+
+    def warm_key(self, state: FantasyState) -> str:
+        """The cache key for where the player is (level, the party, the region), or "" when the cache already holds it."""
+        from . import encounter as en
+        from . import combat as cb
+        s = state
+        if s.player.fate or self.ending(s):
+            return ""
+        key = f"{s.player.level}|{','.join(sorted(q.id for q in cb.party(s)))}|{en.region_of(s)}"
+        return "" if (s.encounters.get(s.player.location) or {}).get("key") == key else key
+
+    def warm(self, state: FantasyState) -> dict:
+        """The background job (§3): this place's encounters for this party, one per band, thirty fights a cell. A pure
+        function of the state it is handed; the pipeline runs it in a thread after the turn and hands the result back."""
+        import time as _t
+        from . import encounter as en
+        t0 = _t.time()
+        s = state
+        place, key = s.player.location, self.warm_key(s) or (s.encounters.get(s.player.location) or {}).get("key", "")
+        bands = {}
+        fights = 0
+        for band in self.WARM_BANDS:
+            e = en.encounter(self, s, en.Want(band=band, place=place, n=30, seed=f"{s.player.name}:{key}:{band}"))
+            fights += e.fights
+            bands[band] = {"bodies": [list(b) for b in e.bodies], "variant": e.variant, "win": round(e.win, 1), "target": e.target,
+                           "reason": e.reason, "region": e.region}
+        return {"place": place, "key": key, "bands": bands, "fights": fights, "seconds": round(_t.time() - t0, 2)}
+
+    def take_warm(self, state: FantasyState, result: dict) -> FantasyState:
+        """The background job's result into the state, if it is still this party's (the key it was made for)."""
+        if not result or not result.get("place"):
+            return state
+        s = state
+        place = result["place"]
+        if place == s.player.location and self.warm_key(s) not in ("", result.get("key")):
+            return state                                  # the party or the level moved since: a stale draw
+        s.encounters[place] = {k: result[k] for k in ("key", "bands", "fights", "seconds")}
+        return s
+
+    def encounter_for(self, s: FantasyState, band: str, words: str = "", pinned: list | None = None, offset: int = 2):
+        """§3 at fight time: the cache's fight for the band here (a hit), else the generator inline at ten fights a cell (a
+        cold miss: the first turn somewhere, a pin or a word the cache never saw). Returns (Encounter, hit)."""
+        from . import combat as cb
+        from . import encounter as en
+        band = en.band_of(band)
+        here = s.encounters.get(s.player.location) or {}
+        key = f"{s.player.level}|{','.join(sorted(q.id for q in cb.party(s)))}|{en.region_of(s)}"
+        got = (here.get("bands") or {}).get(band)
+        if got and here.get("key") == key and not words and not pinned and offset == 2:
+            return en.Encounter(bodies=[tuple(b) for b in got["bodies"]], variant=got["variant"], win=got["win"], band=band,
+                                target=got["target"], reason=got["reason"], region=got.get("region", "")), True
+        e = en.encounter(self, s, en.Want(band=band, words=words, pinned=list(pinned or []), place=s.player.location, offset=offset, n=10))
+        e.reason += " (ten fights a cell, on the turn)"
+        return e, False
+
     def world_turn(self, state: FantasyState, adj: Any, player_text: str, rng: Any, turn: int, offset: int):
         """The engine's own rolls before the narrator writes (part four, D176): a chosen death, a peril's countdown, the
         enemies' moves. Returns (state, WorldTurn)."""
@@ -2492,6 +2549,7 @@ class FantasyGame(GameBase):
         for c in [c for c in p.conditions if c.source == "narrator" and c.duration in cn.RESTED[kind]]:
             p.conditions.remove(c)                       # B96: a rest dries and warms; a long one ends what lasts until rested
         if kind == "long":
+            s.encounters = {k: v for k, v in s.encounters.items() if k == p.location}   # §3: dropped on a long rest elsewhere
             p.hp = p.hp_max
             for c in p.counts:
                 if c.refill in ("long", "short"):
