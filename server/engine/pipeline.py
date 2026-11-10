@@ -2559,7 +2559,8 @@ def scrub_hidden(game: Game, state: BaseModel, adj: Any, player_text: str) -> di
     if leaks(adj.clarify_question):
         adj.clarify_question = "What exactly are you trying to do?"; hit("clarify")
     if leaks(adj.notes):
-        adj.notes = None; hit("notes")
+        band = str(getattr(adj, "fight_band", "") or "")     # part sixteen §5: the fight's band lives in the notes; it survives the scrub
+        adj.notes = f"fight: {band}" if band else None; hit("notes")
     focus = getattr(adj, "focus", None)
     if focus is not None and focus.topics:
         kept_t = [t for t in focus.topics if not leaks(t)]

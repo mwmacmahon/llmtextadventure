@@ -208,3 +208,22 @@ def test_a_blow_at_someone_only_in_the_telling_is_written_in_and_rolled(game):
                                   intents=[IntentCombat(action="Attack the Hill men", attack_at=["the Hill men"], weapon="dagger")])
     s2, _ = game.world_turn(new(game, klass="Rogue", place="The Catacombs"), gang, "I go for the Hill men", random.Random(1), 20, 2)
     assert 2 <= len(s2.player.fighting) <= 6 and all(s2.person(x).combat.block == "bandit" for x in s2.player.fighting)
+
+
+def test_the_offer_is_drawn_where_the_turn_goes_and_the_referee_files_it_by_id(game):
+    """81dff7e6359d (Sonnet, 11-10): the offer was drawn at the inn, the player walked onto Lantern Row, the referee filed
+    townsman_1 by its id, and the engine did not know it as the offer's."""
+    st = new(game, place="The Drowned Lantern")
+    go = AssistantReadingCombat(kind="action", summary="Brin goes down into the Catacombs.", time_minutes=40, risk="medium",
+                                notes="fight: normal, whatever robs the graves",
+                                intents=[IntentCombat(action="Go down into the Catacombs", transition="move:The Catacombs")])
+    assert go.fight_band == "normal" and go.fight_band_why == "whatever robs the graves"
+    s, w = game.world_turn(st, go, "I go down into the Catacombs", random.Random(1), 2, 2)
+    assert s.offer["place"] == "The Catacombs" and s.offer["fresh"]
+    first = s.offer["ids"][0]
+    s.player.location = "The Catacombs"
+    s1, _, _ = apply_changes(game, s, ChangeReport.of(Change(kind="new", target="person", value=first, field="", note="a hunched shape")),
+                             present=[], causes=[])
+    q = s1.person(first)
+    assert q is not None and q.combat is not None and q.combat.block == s.offer.get("bodies", [[q.combat.block]])[0][0] or q.combat.block
+    assert first in s1.player.fighting and first not in (s1.offer or {}).get("ids", [])

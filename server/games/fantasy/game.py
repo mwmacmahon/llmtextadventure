@@ -987,6 +987,9 @@ class FantasyGame(GameBase):
             "thing dropped or drawn) is no check and no time. The player's words still earn an edge (a plan, the ground, a feint named), as a "
             "modifier with a why. A cantrip in a calm moment needs no check; a spell under pressure is an int check "
             "with the spell named in the label.",
+            f"When a fight starts or may start, say how hard it should be for {p.name} in the world's terms, with a why: two drunks are "
+            "trivial, a band of robbers normal, the Watch's full muster impossible. Write it in notes as 'fight: normal, a band of robbers' "
+            "(trivial, easy, normal, hard, boss or impossible). The engine sizes what the story has not already fixed.",
         ]
         if p.about.strip():
             said = p.about.strip()
@@ -1083,7 +1086,8 @@ class FantasyGame(GameBase):
             "a fact the player learned and may need again (a name, a place, a time, a price, what a thing is), only when new; not "
             "what happened this turn (that is the log line).",
             "- new person value=name, field=<place>, note=role: anyone the prose names who is not listed (at most two a turn). An alias of a listed "
-            "person is that person: use their id.",
+            "person is that person: use their id. A hostile the telling shows who is not in the state is a new person row, its role the words "
+            "the telling used; the engine gives it a block. Someone THIS TURN offered by an id (robber_1) is filed by that id.",
             "present: the listed people in the scene with the player when the prose ends; someone only talked about is not present.",
             "Threads: open one for a job, a promise or a rumour the player took up that is not one of the quests in motion (a notice from the board, "
             "a favour asked at the bar). Close it when the prose settles it, with how in the note. The quests the game deals have thread ids "
@@ -1369,19 +1373,20 @@ class FantasyGame(GameBase):
         s.encounters[place] = {k: result[k] for k in ("key", "bands", "fights", "seconds")}
         return s
 
-    def encounter_for(self, s: FantasyState, band: str, words: str = "", pinned: list | None = None, offset: int = 2):
+    def encounter_for(self, s: FantasyState, band: str, words: str = "", pinned: list | None = None, offset: int = 2, place: str = ""):
         """§3 at fight time: the cache's fight for the band here (a hit), else the generator inline at ten fights a cell (a
         cold miss: the first turn somewhere, a pin or a word the cache never saw). Returns (Encounter, hit)."""
         from . import combat as cb
         from . import encounter as en
         band = en.band_of(band)
-        here = s.encounters.get(s.player.location) or {}
-        key = f"{s.player.level}|{','.join(sorted(q.id for q in cb.party(s)))}|{en.region_of(s)}"
+        place = place or s.player.location
+        here = s.encounters.get(place) or {}
+        key = f"{s.player.level}|{','.join(sorted(q.id for q in cb.party(s)))}|{en.region_of(s, place)}"
         got = (here.get("bands") or {}).get(band)
         if got and here.get("key") == key and not words and not pinned and offset == 2:
             return en.Encounter(bodies=[tuple(b) for b in got["bodies"]], variant=got["variant"], win=got["win"], band=band,
                                 target=got["target"], reason=got["reason"], region=got.get("region", "")), True
-        e = en.encounter(self, s, en.Want(band=band, words=words, pinned=list(pinned or []), place=s.player.location, offset=offset, n=10))
+        e = en.encounter(self, s, en.Want(band=band, words=words, pinned=list(pinned or []), place=place, offset=offset, n=10))
         e.reason += " (ten fights a cell, on the turn)"
         return e, False
 
@@ -1393,6 +1398,8 @@ class FantasyGame(GameBase):
         from . import encounter as en
         from . import world as wo2
         p = s.player
+        if s.offer:
+            s.offer = {**s.offer, "fresh": False}          # an offer is good for the turn it was made in, and after at its place
         if adj is None or getattr(adj, "kind", "") not in ("action", "trivial") or p.fighting or p.fate or s.combat is not None or p.peril is not None:
             return
         band = str(getattr(adj, "fight_band", "") or "")
@@ -1401,11 +1408,13 @@ class FantasyGame(GameBase):
             return
         if band in ("boss",):
             return                                                          # a boss is the content's, never drawn here
-        e, hit = self.encounter_for(s, band or "normal", offset=offset)
+        dest = next((self._place(s, str(getattr(i, "transition", "") or "").removeprefix("move:").split(" via:", 1)[0].strip())
+                     for i in getattr(adj, "intents", None) or [] if str(getattr(i, "transition", "") or "").strip()), None) or p.location
+        e, hit = self.encounter_for(s, band or "normal", offset=offset, place=dest)   # where the turn is heading
         ids = [q.id for q in en.spawn(s, e.bodies, e.variant)]
         if not ids:
             return
-        s.offer = {"place": p.location, "ids": ids, "bodies": [list(b) for b in e.bodies], "variant": e.variant, "band": e.band, "reason": e.reason}
+        s.offer = {"place": dest, "fresh": True, "ids": ids, "bodies": [list(b) for b in e.bodies], "variant": e.variant, "band": e.band, "reason": e.reason}
         who = en.called_plural(e.bodies)
         span = ids[0] if len(ids) == 1 else f"{ids[0]} to {ids[-1]}"
         w.directives.append(f"If anyone comes at {p.name} here, it is {who} ({span}); name them and the engine has them."
@@ -1425,7 +1434,7 @@ class FantasyGame(GameBase):
         made: list[Person] = []
         row: dict = {}
         off = s.offer or {}
-        if off.get("ids") and off.get("place") == p.location:
+        if off.get("ids") and (off.get("place") == p.location or off.get("fresh")):
             ids, bodies = list(off["ids"]), [tuple(b) for b in off["bodies"]]
             ents = {e for e, _ in bodies}
             word_e = cb.match_entry(words) if words else None

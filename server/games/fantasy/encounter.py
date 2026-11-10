@@ -47,7 +47,8 @@ KIND_WORDS = [
 
 
 def band_of(word: str) -> str:
-    w = (word or "").strip().lower()
+    """A band word ("normal", or the reading's "normal: a band of robbers"), the older words read as the record says."""
+    w = (word or "").split(":", 1)[0].strip().lower()
     return w if w in TARGET else OLD_BANDS.get(w, "normal")
 
 
