@@ -361,6 +361,8 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
                 aimed |= {str(t) for t in getattr(a, "targets", None) or [] if t}
         if not struck and is_fight(adj) and ATTACK.search(" ".join([player_text or "", text])):
             struck = list(getattr(adj, "entities", None) or [])     # B286: a fast beat with no blow in it (a shout, a question) joins nobody
+        from .combat import is_item
+        struck = [e for e in struck if not is_item(s, e)]                   # B310: a weapon or a thing is never fought
         for e in struck:
             q = s.person(e) or game._same_person(s, e)
             if q is None and e in aimed and hasattr(game, "bring_in"):      # §4 (c), B290: a blow at someone only in the telling

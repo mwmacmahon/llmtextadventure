@@ -211,6 +211,10 @@ rolled (B225, area 1); the siren's grab following the player off the island (B22
 (B227); the clock and the question in the prose, an error string shown to the player (B228); no check on a player name
 that is a cast member's (B45).
 
+**Later, low priority.** Attackable things (the owner, 11-10): an item is never a fight's target today (combat.is_item,
+B310); a tag that makes a thing attackable (a door, a barricade, a rope bridge) with its own armour and hit points, when a
+quest wants one: designed by the owner's rule, not built.
+
 **Open with the owner (content).** The Watch raid the build added (B40); the Temple's price as a hook (B43); a quest
 settled a way no flag names (B58); the thirteen hooks whose endings the lint found one-sided (B110 to B122, each with
 its proposed `another_way` flag); a `standing:` line per hook (B136).

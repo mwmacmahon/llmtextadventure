@@ -247,6 +247,19 @@ def weapon_bonus(s: FantasyState, weapon: str) -> int:
     return best
 
 
+def is_item(s: FantasyState, ref: str) -> bool:
+    """B310 (the owner, 11-10: "an item is never a target unless it has some kind of tag that makes it attackable"): a target
+    that names a weapon, something carried or a thing in the world is no one to fight. Nothing is attackable yet (ROADMAP)."""
+    from .state import find_item
+    k = " ".join((ref or "").replace("_", " ").lower().split())
+    if not k or s.person(ref) is not None:
+        return False
+    k1 = re.sub(r"^(the|a|an|my|his|her|their)\s+", "", k)
+    if k1 in WEAPONS or k1 in WEAPON_WORDS or k1.rstrip("s") in WEAPONS or UNARMED.fullmatch(k1 or "-"):
+        return True
+    return find_item(s.inventory, k1, strict=True) is not None or find_item(s.things, k1, strict=True) is not None
+
+
 def player_weapon(s: FantasyState, named: str = "") -> tuple[str, str, str]:
     """The weapon the reading names (by word), else the best melee one carried, else the best of any."""
     ws = weapons_carried(s)

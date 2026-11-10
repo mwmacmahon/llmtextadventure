@@ -674,3 +674,16 @@ def test_the_weapon_is_not_a_target():
                                  intents=[IntentCombat(action="attack", targets=["the_drowned"], attack_at=["the_drowned", "longsword"], weapon="longsword")])
     settle_attack(adj)
     assert adj.intents[0].attack_at == ["the_drowned"]                   # B310
+
+
+def test_an_item_is_never_a_target(game):
+    st = new(game)
+    assert cb.is_item(st, "longsword") and cb.is_item(st, "the greataxe") and cb.is_item(st, "fist")
+    carried = st.inventory[0].name
+    assert cb.is_item(st, carried)
+    assert not cb.is_item(st, "the_drowned") and not cb.is_item(st, "the wiry sailor") and not cb.is_item(st, "a skeleton")
+    assert not cb.is_item(st, "the sailor with the belaying pin")
+    hit = AssistantReadingCombat(kind="action", summary="Brin attacks.", time_minutes=1, tempo="fast", risk="medium",
+                                 intents=[IntentCombat(action="attack", targets=["longsword"], attack_at=["longsword"], weapon="")])
+    s, w = game.world_turn(st, hit, "I attack", random.Random(1), 3, 2)
+    assert not any(q.name.lower() == "longsword" for q in s.people) and s.player.fighting == []
