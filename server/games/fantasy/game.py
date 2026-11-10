@@ -666,13 +666,16 @@ class FantasyGame(GameBase):
         q = next((q for q in state.people if q.id == pid), None)
         return q.name if q is not None else None
 
-    def minutes_cap(self, state: FantasyState) -> int | None:
+    def minutes_cap(self, state: FantasyState, adj: Any = None) -> int | None:
         """The pipeline's hook (round 10, 8085528d0af0 T4: a search while on fire took thirty minutes): in a peril, held, or in a
-        fight, a turn is a moment, one minute at most; else no cap."""
+        fight, a turn is a moment, one minute at most; else no cap. Round 11 (56dd55904e70 T11): a walk to the inn's fire while
+        freezing took a minute; a move to another place, out of a fight, takes its travel time."""
         p = state.player
-        if p.peril is not None or any(c.name == "grappled" for c in p.conditions) or p.fighting:
-            return 1
-        return None
+        if not (p.peril is not None or any(c.name == "grappled" for c in p.conditions) or p.fighting):
+            return None
+        moving = any((t := (getattr(i, "transition", "") or "").strip()) and not self._same_spot(state, t, p.location)
+                     for i in (getattr(adj, "intents", None) or []))
+        return None if moving and not p.fighting else 1
 
     def unquiet(self, state: FantasyState) -> str:
         """Why nothing should come to the player now (B104, D177; B248), or "": someone hostile here, a compulsion or a
@@ -1481,10 +1484,18 @@ class FantasyGame(GameBase):
         makes it the attack roll). Outside a fight, with no one named, it stays a check: there is no one to roll against."""
         from . import combat as cb
         p = state.player
+        intents = getattr(adj, "intents", None) or []
+        blow_words = bool(ATTACK.search(player_text or "") or cb.UNARMED.search(player_text or ""))
+        for i in intents:
+            wpn = (getattr(i, "weapon", "") or "").strip().lower()
+            if (getattr(i, "attack_at", None) and wpn in ("", "none") and not blow_words
+                    and not (ATTACK.search(i.action or "") or cb.UNARMED.search(i.action or ""))):
+                # round 11 (56dd55904e70 T30): 'retreat from the gallery', no weapon, attack_at the drowned: the engine brought
+                # three drowned in and rolled a longsword blow the player never asked for, at foes the story had not shown
+                i.attack_at = []
         foe = next((x for x in p.fighting if (q := state.person(x)) is not None and q.status == "alive"), None)
         if foe is None:
             return
-        intents = getattr(adj, "intents", None) or []
         if wo.breaking_free(state, adj, player_text):
             # D222 (round 10, 8085528d0af0 T32-T33): getting loose is the turn's act. 'I run' read as 'break free' with
             # attack_at the zombie rolled a rapier blow and the break-free; 'saw my dagger across its fingers to cut myself loose'
@@ -1502,6 +1513,14 @@ class FantasyGame(GameBase):
                 if fought:
                     i.attack_at = fought
         picked = {c.id for c in getattr(adj, "commands", None) or []}
+        away = [t for i in intents if (t := (getattr(i, "transition", "") or "").strip()) and not self._same_spot(state, t, p.location)]
+        if away and not picked & {"flee", "yield"} and not any(getattr(i, "attack_at", None) for i in intents):
+            # round 11 (56dd55904e70 T32): carried out of the tunnel to the ferry landing mid-fight, the drowned followed and
+            # struck there (the fight goes where the player goes). Leaving for another place in a fight is the Flee lever:
+            # each foe in reach gets its blow, and the fight is over
+            from engine.roles import CommandPick
+            adj.commands = list(getattr(adj, "commands", None) or []) + [CommandPick(id="flee")]
+            return
         if (state.combat is not None and not picked & {"flee", "yield"} and not any(getattr(i, "attack_at", None) for i in intents)
                 and any(getattr(getattr(i, "check", None), "stat", "") in ("str", "dex") for i in intents)):
             from engine.pipeline import asks_for
@@ -2055,7 +2074,7 @@ class FantasyGame(GameBase):
         if removing:
             if live and same and w.set("player.peril", live, None):
                 p.peril = None
-                p.shown_notes.append(f"Out of it: no longer {wo.PERILS.get(live, {}).get('what', live)}")
+                p.shown_notes.append(wo.out_of_it(live))
             return True
         if kind == "bleeding" and not removing:          # round 9: a referee's '+bleeding' from any blow opened the peril;
             return False                                  # a wound stays a wound (only content and the test hook open bleeding)
@@ -2124,6 +2143,17 @@ class FantasyGame(GameBase):
             return True
         if p.has_condition(row.name):
             return True
+        by = ""
+        if row.name == "grappled":
+            # round 11 (56dd55904e70 T28): 'grappling with the child' as the player scooped Wren up became a grip on the player
+            # (no running, a WARNING by 'something'). A grab is a foe's: one the player fights, named in the row or the only one
+            foes = [q for q in s.people if q.id in p.fighting and q.status == "alive"]
+            named = next((q for q in foes if q.name and q.name.lower() in f"{note} {phrase}".lower()), None)
+            pick = named or (foes[0] if len(foes) == 1 else None)
+            if pick is None:
+                w.reject("player.conditions", "a grab is a foe's: nobody the player fights holds them", phrase)
+                return True
+            by = pick.id
         now = s.clock.day * DAY + s.clock.minute
         compelled = None
         if row.compelled is not None:
@@ -2133,7 +2163,7 @@ class FantasyGame(GameBase):
                 compelled["by"] = who.id if who is not None else (note or phrase).strip()[:80]
         if w.set("player.conditions", None, row.name):
             p.conditions.append(Condition(name=row.name, stat=row.stat, words=list(row.words), mod=row.mod, duration=row.duration,
-                                          expires_at=now + row.minutes if row.duration == "minutes" else None, compelled=compelled))
+                                          expires_at=now + row.minutes if row.duration == "minutes" else None, compelled=compelled, by=by))
         return True
 
     def _expire_conditions(self, s: FantasyState, now: int) -> None:
@@ -2721,7 +2751,7 @@ class FantasyGame(GameBase):
         for c in info.calls:                                # one die for one way out: the player's escape roll settles the peril
             if c.get("peril_roll") and p.peril is not None and not p.fate:
                 if c.get("outcome") in WON:
-                    p.shown_notes.append(f"Out of it: no longer {wo.PERILS.get(p.peril.kind, {}).get('what', p.peril.kind)}")
+                    p.shown_notes.append(wo.out_of_it(p.peril.kind))
                     p.peril = None
                 else:                                       # a failed way out: the moment told with the roll, applied here
                     ev = c.get("peril_moment") or {}          # (the harm lands in the failed-attempt loop below)

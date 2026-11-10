@@ -93,6 +93,11 @@ WAY_WORDS["holding_breath"] = WAY_WORDS["drowning"]
 MARKED = re.compile(r"\s*way out\b", re.I)
 
 
+def out_of_it(kind: str) -> str:
+    """The player's line when a peril ends (round 11: 'no longer the cold closing in, the limbs going' read as cut off)."""
+    return f"Out of it: no longer {PERIL_LABEL.get(kind, kind).lower()}."
+
+
 def breaking_free(s: FantasyState, adj: Any, player_text: str) -> bool:
     """While a grab holds the player, does this turn go for getting loose: the reading marked a check 'way out:' or the
     words (the player's, the summary, the intents) break free. One test for the world turn's roll and aim_blows (D222)."""
@@ -334,7 +339,7 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
             # the owner: "douse yourself with water": the way out that needs no roll (water for fire, a bandage or healing for a
             # wound, warmth for the cold)
             p.peril = None
-            w.mechanics.append(f"Out of it: no longer {what}")
+            w.mechanics.append(out_of_it(pr.kind))
             w.rows.append({"kind": "peril", "peril": pr.kind, "outcome": "ended", "line": "by the way out the words take"})
             w.directives.append(f"{p.name} was {what}; the way {p.name} goes about it ends it, no roll needed. Play it working.")
             return _after_peril(game, s, adj, player_text, rng, turn, offset, w, text)
@@ -756,6 +761,8 @@ def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tal
         if bad.get("peril"):
             spec = PERILS.get(bad["peril"], PERILS["held"])
             data.update(peril=bad["peril"], by=hz.get("when") or "")
+            if p.peril is None:                       # round 11 (56dd55904e70 T10): opened now, so this turn's WARNING shows (after_turn skips it)
+                open_peril(s, bad["peril"], by=hz.get("when") or "")
             told.append(f"{p.name} is {spec['what']}: {spec.get('hint', spec['way'])}; end the turn on that moment; what {p.name} does next is the player's to say.")
         return {"text": f"The danger reaches {p.name} ({hz.get('when', '')}): " + "; ".join(told or ["it costs them"]) + ". Play it.",
                 "mechanic": line, "data": data}

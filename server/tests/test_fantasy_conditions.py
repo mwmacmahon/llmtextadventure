@@ -64,7 +64,12 @@ def test_aliases_and_longer_phrases_map_to_the_name(game):
     assert [c.name for c in s.player.conditions] == ["soaked"]
     s, _ = cond(game, s, "+enthralled by the siren song", note="Mirren sings from the rocks")
     s, _ = cond(game, s, "+gripped by sirens, being dragged over the side")
+    assert [c.name for c in s.player.conditions] == ["soaked", "enthralled"]       # round 11: a grab is a foe's; nobody fights the player
+    s.player.fighting = ["mirren"]
+    s.person("mirren").status = "alive"
+    s, _ = cond(game, s, "+gripped by Mirren, being dragged over the side")
     assert [c.name for c in s.player.conditions] == ["soaked", "enthralled", "grappled"]
+    assert next(c for c in s.player.conditions if c.name == "grappled").by == "mirren"
     assert next(c for c in s.player.conditions if c.name == "enthralled").compelled["resist"] == "wis"
     s, _ = cond(game, s, "-soaking wet")
     assert [c.name for c in s.player.conditions] == ["enthralled", "grappled"]

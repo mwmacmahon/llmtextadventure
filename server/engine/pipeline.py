@@ -1949,7 +1949,7 @@ class Engine:
                 notes.append(f"fast turn: {adj.time_minutes} minutes raised to the floor of {clock.fast_minutes}")
                 adj.time_minutes = clock.fast_minutes
             # round 10 (8085528d0af0 T4): a search while on fire took thirty minutes; a game may cap a pressing turn (a peril's moment)
-            most = _hook(game, "minutes_cap", state, default=None) if clock else None
+            most = _hook(game, "minutes_cap", state, adj, default=None) if clock else None
             if most is not None and adj.time_minutes > most:
                 notes.append(f"pressing turn: {adj.time_minutes} minutes cut to the game's cap of {most}")
                 adj.time_minutes = most

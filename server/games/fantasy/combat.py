@@ -1119,6 +1119,10 @@ def run_fight_command(game: Any, state: FantasyState, command_id: str) -> tuple[
         took = int(tally.get("hp", 0))
         p.hp = max(0, p.hp - took)
         names = ", ".join(q.name for q in (s.person(x) for x in p.fighting) if q is not None)
+        won = int(round(s.combat.weight_won))                  # round 11: the foes downed before running still count (they paid nothing)
+        if won and p.hp > 0:
+            p.xp += won
+            lines.append(f"Downed before you ran: {won} XP.")
         p.fighting, s.combat = [], None
         dead = p.hp <= 0
         if dead:

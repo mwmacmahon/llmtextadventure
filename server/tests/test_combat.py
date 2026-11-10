@@ -946,3 +946,35 @@ def test_round_10_held_turns_are_one_act_and_a_bare_attack_is_aimed(game, monkey
     assert game.max_calls_now(s1) == 0 and game.minutes_cap(new(game)) is None
     s2, _ = game.run_command(st, "debug", {"text": "clear"})
     assert s2.player.conditions == []
+
+
+def test_round_11_no_blow_without_one_leaving_is_flee_and_a_walk_keeps_its_time(game):
+    """Round 11 (56dd55904e70): T30 'retreat from the gallery' with attack_at the drowned and no weapon rolled a longsword blow at
+    foes the story had not shown; T32 a walk to the ferry landing mid-fight took the drowned along (it struck there); T11 a
+    walk to the inn's fire while freezing took one minute."""
+    from engine.roles import AssistantReadingCombat, IntentCombat
+    from games.fantasy import world as wo
+    st = new(game)
+    back = AssistantReadingCombat(kind="action", summary="retreats", time_minutes=3, risk="medium",
+                                  intents=[IntentCombat(action="retreat from the gallery", attack_at=["the_drowned"], weapon="")])
+    game.aim_blows(st, back, "I snatch up the torch and back out of the gallery the way I came, keeping my eyes on the pool")
+    assert back.intents[0].attack_at == []
+    swing = AssistantReadingCombat(kind="action", summary="swings", time_minutes=1, risk="high",
+                                   intents=[IntentCombat(action="swing at the drowned", attack_at=["the_drowned"], weapon="")])
+    game.aim_blows(st, swing, "I swing at the drowned one")
+    assert swing.intents[0].attack_at == ["the_drowned"]                     # a blow in the words stays a blow
+    f, _ = _fight(game, 1)
+    go = AssistantReadingCombat(kind="action", summary="carries Wren out", time_minutes=5, risk="low",
+                                intents=[IntentCombat(action="carry Wren to the ferry landing", transition="Ferry Landing")])
+    game.aim_blows(f, go, "I carry Wren straight out to the ferry landing")
+    assert [c.id for c in go.commands] == ["flee"]
+    f.combat.weight_won = 50
+    s2, res = cb.run_fight_command(game, f, "flee")
+    assert res.ok and s2.player.xp == f.player.xp + 50 and s2.combat is None
+    cold = new(game)
+    wo.open_peril(cold, "freezing", turns=0)
+    walk = AssistantReadingCombat(kind="action", summary="goes to the fire", time_minutes=10, risk="low",
+                                  intents=[IntentCombat(action="go to the inn's fire", transition="The Drowned Lantern")])
+    cold.player.location = "Lantern Row"
+    assert game.minutes_cap(cold, walk) is None and game.minutes_cap(cold, None) == 1
+    assert wo.out_of_it("burning") == "Out of it: no longer on fire."
