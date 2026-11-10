@@ -264,7 +264,11 @@ DIALS: dict[str, float] = {
     "challenge_rate": 0.08,        # D215C: a night's chance of a random challenge (D216C: about one in two weeks at the start)
     "challenge_step": 0.07,        # and this much more at each of the Name's steps
     "self_cost": 8,                # D215C: a session spent bettering the proprietor costs this (the gym, the club, the books)
-    "self_cap": 4,                 # the most any of the proprietor's stats can be raised to
+    "xp_self": 2,                  # D218C: points a session of Better yourself is worth (whole under 50, half to 80, a quarter after)
+    "xp_teach": 0.25,              # a training slot the proprietor attends, toward the stat the skill is taught from
+    "xp_show": 1,                  # a show the proprietor attends, toward the client's stat
+    "xp_challenge": 1,             # a night's challenge held by the proprietor's stat, toward it
+    "teach_max": 0.5,              # attended training times 1 + this x the teaching stat's points / 100 (x1.5 at 100)
     "gear_boost": 10,              # D214C: a girl's skill for a show, lifted this much a point of each serving item's bonus
     "gear_pay": 0.2,               # and the fee this much more for each serving item (the owner: about 20% a costume)
     "gear_theft_chance": 0.15,     # D214C: a week's chance a rival gets at the wardrobe, while the house has gear

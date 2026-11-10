@@ -285,7 +285,9 @@ class Proprietor(BaseModel):
     kind_name: str = ""
     about: str = ""
     stats: dict[str, int] = Field(default_factory=dict)
-    practice: dict[str, int] = Field(default_factory=dict)   # D215C: sessions spent bettering a stat since its last rise
+    points: dict[str, int] = Field(default_factory=dict)     # D218C: each stat 0-100, the truth; `stats` holds the check modifier made from it
+    xp: dict[str, float] = Field(default_factory=dict)       # D218C: the part-point earned toward the next point
+    away: list[int] = Field(default_factory=list)            # D218C: [start, end] of a part of the day spent bettering themself
     location: str = "The office"
     conditions: list[Condition] = Field(default_factory=list)
     with_them: list[str] = Field(default_factory=list)

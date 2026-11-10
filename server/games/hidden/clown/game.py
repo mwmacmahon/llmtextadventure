@@ -124,6 +124,14 @@ SELF_WHERE = {"charm": ("the right drawing rooms", "in the right drawing rooms, 
               "craft": ("an old clown's workshop on the quay", "in an old clown's workshop on the quay, learning the trade from the floor up")}
 
 
+POINTS_FOR_MOD = {-1: 5, 0: 20, 1: 35, 2: 50, 3: 65, 4: 80}   # D218C: a kind's stat as its starting points
+
+
+def stat_mod(points: int) -> int:
+    """D218C: the check modifier a stat's points make: -1 under 20, 0 from 20, +1 from 35, +2 from 50, +3 from 65, +4 from 80."""
+    return max(-1, min(4, (int(points) - 20) // 15))
+
+
 def part_of_day(minute: int) -> str:
     """D210C: the part of the day by the clown's blocks (morning from 09:00, afternoon 14:00, evening 19:00, night 22:00)."""
     return "night" if minute >= 1320 or minute < 540 else "evening" if minute >= 1140 else "afternoon" if minute >= 840 else "morning"
@@ -284,7 +292,7 @@ class ClownGame(GameBase):
                             stats={k: int(kind.get("stats", {}).get(k, 0)) for k in STATS}, location=OFFICE)
         events = [Event.model_validate(e) for e in sc.get("events") or []]
         state = ClownState(
-            scenario=scenario_from(sc), clock=clock, player=player, house=House(last_tick_abs=clock.day * DAY + clock.minute),
+            scenario=scenario_from(sc), clock=clock, player=self._with_points(player), house=House(last_tick_abs=clock.day * DAY + clock.minute),
             girls=girls, active=first, people=[dk.person_from(p) for p in sc.get("people") or []], things=things,
             log=[f"{clock_text(clock.day, clock.minute)}. {scenario_from(sc).house_name} opens for business; {next(g.name for g in girls if g.id == first)} is on the mats."],
             hidden=Hidden(events=events, spontaneous=[Spontaneous.model_validate(x) for x in sc.get("spontaneous") or []],
@@ -319,6 +327,7 @@ class ClownGame(GameBase):
             if g.get("status") == "graduated":
                 g["status"], g["graduated"] = "passive", True
         st = ClownState.model_validate(data)
+        st.player = self._with_points(st.player)     # D218C: a save from before the points: its modifiers as points
         if not st.harbour.ships and not st.harbour.queue:   # a save from before the harbour deck: the boat comes in now
             self._first_boat(st)
         return st
@@ -769,6 +778,8 @@ class ClownGame(GameBase):
 
     def _rent(self, s: ClownState) -> int:
         """The rent every fourth week: the lease's, and the landlord's rise with each of the Name's steps (D213C)."""
+        if self._favour(s, "rent_frozen"):              # D218C: the bank manager
+            return int(s.house.rent)
         return int(s.house.rent + dk.dial(s, "rent_per_step") * self._renown_steps(s))
 
     def _worn_before_show(self, s: ClownState) -> list[tuple[Girl, Any, str]]:
@@ -1567,11 +1578,9 @@ class ClownGame(GameBase):
             elif group == "room":
                 gain -= 2
                 why.append("afraid: cannot read a room -2")
-        if attended:
-            c = s.player.stats.get("craft", 0)
-            v = 1 + max(0, c) // 2
-            gain += v
-            why.append(f"you worked with her {v:+d}")
+        if attended:                                     # D218C: the proprietor as a teacher, by the stat the skill is taught from
+            gain += 1
+            why.append("you worked with her +1")
         if f"bent_{group}" in g.tags:
             gain += 1
             why.append("it comes easily to her +1")
@@ -1679,6 +1688,21 @@ class ClownGame(GameBase):
         if not what:
             s.house.week_lines.append(f"* {label}: nothing was set; {g.name} did what she liked.")
             return
+        away = len(s.player.away) == 2 and s.player.away[0] < t_abs <= s.player.away[1] + 1
+        if away and what not in ("rest", ""):            # D218C: the proprietor gone bettering themself: she works at bench rate
+            if what == "work":
+                pay = int(dk.dial(s, "bench_job_pay"))
+                s.house.money += pay
+                s.house.week_lines.append(f"* {label}: with nobody to see her off she picked up odd jobs; a little came of it.")
+                self._note(s, f"{label}: {g.name} picked up odd jobs while {s.player.name} was away.", f"{label}: {g.name}, odd jobs (+{pay} gold): the proprietor away.", at=clock_text(day, SLOTS[slot][1]))
+            elif what not in g.untrainable or s.flags.get(f"{g.id}_spoke"):
+                step = int(dk.dial(s, "self_train"))
+                g.skills[what] = min(100, g.skills.get(what, 0) + step)
+                g.week_gains[what] = g.week_gains.get(what, 0) + step
+                s.house.week_lines.append(f"* {label}: she worked at it alone; it barely moved.")
+                self._note(s, f"{label}: {g.name} worked alone at {self.skill_name(what).lower()} while {s.player.name} was away.",
+                           f"{label}: {self.skill_name(what)} +{step} (bench rate: the proprietor away).", at=clock_text(day, SLOTS[slot][1]))
+            return
         if what == "work":
             pay, up = int(dk.dial(s, "job_pay")), int(dk.dial(s, "job_diligence"))
             s.house.money += pay
@@ -1699,6 +1723,12 @@ class ClownGame(GameBase):
         attended = s.player.location == PRACTICE
         before = g.skills.get(what, 0)
         gain, why = self._gain(s, g, what, attended, f"{s.player.name}:{day}:{slot}")
+        if attended and gain > 0:                         # D218C: the proprietor as a teacher (up to x1.5 at 100), and a little practice
+            k = self._teaches(s, what)
+            mult = 1 + dk.dial(s, "teach_max") * s.player.points.get(k, 20) / 100 + self._favour(s, "teach")
+            gain = int(round(gain * mult))
+            why.append(f"your {STAT_NAMES[k].lower()} as a teacher (x{mult:.2f})")
+            self._practise(s, k, dk.dial(s, "xp_teach"), f"teaching {self.skill_name(what).lower()}")
         teacher = getattr(s.plan, f"{slot}_with", "house")
         if teacher in ("tutor", "master") and gain > 0:      # D213C: paid training, a slot at a time
             cost = int(dk.dial(s, f"{teacher}_cost"))
@@ -1859,6 +1889,8 @@ class ClownGame(GameBase):
         if g is not None and not g.in_house():
             g = None
         x.attended = s.player.location == x.venue
+        if x.attended:                                   # D218C: a show the proprietor worked, a little practice in the client's stat
+            self._practise(s, x.stat, dk.dial(s, "xp_show"), f"working {x.title}")
         x.girl = g.id if g else ""
         q = s.person(x.client)
         if g is None or s.house.closed_until_abs > x.at_abs or s.flags.get("licence_revoked"):
@@ -2002,13 +2034,20 @@ class ClownGame(GameBase):
             doc = doc or s.model_dump(mode="json")
             ok = [c for c in pool if (c.get("when") is None or dk._holds(c["when"], doc, s.hidden.events, 0))
                   and (c.get("needs") != "booked" or any(not x.result for x in s.shows))
-                  and (c.get("needs") != "gear" or any(g.gear for g in s.in_house()))]
+                  and (c.get("needs") != "gear" or any(g.gear for g in s.in_house()))
+                  and not (c.get("rough") and self._favour(s, "no_rough"))]
             if not ok:
                 continue
             c = rng.choices(ok, weights=[int(x.get("weight", 1)) for x in ok])[0]
             mod, whose = self._check_mod(s, str(c.get("check", "charm")))
             a, b = rng.randint(1, 6), rng.randint(1, 6)
             held = a + b + mod >= int(c.get("target", 8))
+            if not held and self._favour(s, "fortune") and not s.flags.get(f"fortune_week_{s.house.week}"):   # D218C: Madame Oriel
+                s.flags[f"fortune_week_{s.house.week}"] = True
+                a, b = rng.randint(1, 6), rng.randint(1, 6)
+                held = a + b + mod >= int(c.get("target", 8))
+            if held and str(c.get("check", "")) in STATS:   # D218C: a challenge met is practice in the stat that met it
+                self._practise(s, str(c["check"]), dk.dial(s, "xp_challenge"), str(c.get("title", "")))
             lost = "" if held else self._challenge_effect(s, c.get("fail") or {}, rng)
             if held and c.get("pass"):
                 self._challenge_effect(s, c["pass"], rng)
@@ -2061,15 +2100,79 @@ class ClownGame(GameBase):
             s.flags[str(eff["flag"])] = True
         return "; ".join(out)
 
-    def _sessions_needed(self, s: ClownState, k: str) -> int:
-        """D215C: sessions to raise a stat a point: five from 0, two more for each point (seven, nine, eleven); three from below 0."""
-        return max(3, 5 + 2 * int(s.player.stats.get(k, 0)))
+    @staticmethod
+    def _with_points(p: Any) -> Any:
+        """D218C: the proprietor's points (0-100) for every stat, from the kind's modifiers where none are kept; the modifiers
+        made from the points (the one home of the modifier: `stat_mod`)."""
+        for k in STATS:
+            if k not in p.points:
+                p.points[k] = POINTS_FOR_MOD.get(max(-1, min(4, int(p.stats.get(k, 0)))), 20)
+            p.stats[k] = stat_mod(p.points[k])
+        return p
+
+    def _practise(self, s: ClownState, k: str, amount: float, why: str = "") -> int:
+        """D218C (the owner, 11-10: "training girls should also give you a little xp ... bettering yourself should be a
+        relatively small part"): points toward a stat, slower as it rises (whole under 50, half to 80, a quarter after).
+        Returns the whole points gained."""
+        p = s.player
+        if k not in STATS:
+            return 0
+        v = p.points.get(k, 20)
+        rate = 1.0 if v < 50 else 0.5 if v < 80 else 0.25
+        p.xp[k] = p.xp.get(k, 0.0) + amount * rate
+        gained = 0
+        while p.xp[k] >= 1 and p.points.get(k, 20) < 100:
+            p.xp[k] -= 1
+            p.points[k] = p.points.get(k, 20) + 1
+            gained += 1
+        if gained:
+            before = p.stats.get(k, 0)
+            p.stats[k] = stat_mod(p.points[k])
+            if p.stats[k] != before:
+                s.house.alerts.append(f"{STAT_NAMES[k]} is {p.points[k]} now ({p.stats[k]:+d} on a check)" + (f": {why}" if why else "") + ".")
+        return gained
+
+    def favours(self, s: ClownState) -> list[dict]:
+        return list(self.scenario(s.scenario.id).get("favours") or [])
+
+    def _favour(self, s: ClownState, key: str) -> float:
+        """D218C: an open favours' effect: the sum (hand, guard, teach), the product (gear_price) or 1 if any has it (the rest)."""
+        vals = [float(f["effect"][key]) for f in self.favours(s) if s.flags.get(f"favour_{f['id']}") and key in (f.get("effect") or {}) and isinstance(f["effect"][key], (int, float))]
+        if key == "gear_price":
+            out = 1.0
+            for v in vals:
+                out *= v
+            return out
+        return sum(vals)
+
+    def _favour_open_for(self, s: ClownState, tier: str) -> bool:
+        return any(s.flags.get(f"favour_{f['id']}") and (f.get("effect") or {}).get("gear_tier") == tier for f in self.favours(s))
+
+    def _open_favours(self, s: ClownState) -> None:
+        """D218C: a favour opens for good the first time its stat's points reach its need; the player is told."""
+        for f in self.favours(s):
+            fid = f"favour_{f['id']}"
+            if s.flags.get(fid) or s.player.points.get(str(f.get("stat")), 0) < int(f.get("need", 101)):
+                continue
+            s.flags[fid] = True
+            hand = int((f.get("effect") or {}).get("hand", 0))
+            if hand:
+                s.house.hand_size = max(1, min(6, s.house.hand_size + hand))
+            s.house.alerts.append(f"A favour of the town: {f['name']} ({STAT_NAMES[f['stat']]} {f['need']}). {f.get('text', '')}")
+            self._note(s, f"{f['name']}: {f.get('text', '')}")
+
+    def _teaches(self, s: ClownState, skill: str) -> str:
+        """D218C: the proprietor's stat a skill is taught from (the house file's `teach_stats`)."""
+        for k, skills in (self.scenario(s.scenario.id).get("teach_stats") or {}).items():
+            if skill in (skills or []):
+                return k
+        return "craft"
 
     def _guard(self, s: ClownState) -> int:
         """D214C: the house's guard over the wardrobe: the proprietor's menace, a girl with nerve, the lock (an upgrade's guard)."""
         lock = sum(int((self._upgrade(s, u) or {}).get("gives", {}).get("guard", 0)) for u in s.house.upgrades)
         nerve = 1 if any(g.skills.get("nerve", 0) >= 60 for g in s.in_house()) else 0
-        return int(s.player.stats.get("menace", 0)) + nerve + lock
+        return int(s.player.stats.get("menace", 0)) + nerve + lock + int(self._favour(s, "guard"))
 
     def _wardrobe(self, s: ClownState) -> None:
         """D214C (the owner, 11-10: "a rival who comes and slashes a costume in your wardrobe (instant loss of random costume) if
@@ -2320,6 +2423,7 @@ class ClownGame(GameBase):
             dk.deal_trouble(s, deck, hooks, info.rng, now, info.turn, p.name)
         self._walk_routines(s)
         self._fatigue_warnings(s)
+        self._open_favours(s)
         self._best(s)
         if s.active and (s.active_girl is None or s.active_girl.status != "active"):
             nxt = next((x for x in s.girls if x.status == "passive"), None)
@@ -2571,14 +2675,23 @@ class ClownGame(GameBase):
                            hint="Set what the girl in training does in the mornings or the afternoons this week: one of the fifteen skills, Rest, or a job in town (a little money, and her diligence, which helps every slot after). The plan holds until changed.",
                            words=["plan", "train", "put her on", "work on", "practise", "practice", "mornings", "afternoons", "rest", "drill"]))
         out.append(CommandSpec(id="better", label="Better yourself", mode="narrated",   # D215C
-                               params=[Param(name="stat", label="at", options=[Option(id=k, label=f"{STAT_NAMES[k]} ({s.player.stats.get(k, 0):+d}; "
-                                             f"{s.player.practice.get(k, 0)} of {self._sessions_needed(s, k)} sessions; {SELF_WHERE[k][0]})") for k in STATS], default="charm")],
-                               hint=f"Spend the rest of this part of the day on yourself, at {int(dk.dial(s, 'self_cost'))} gold a session: the gym, the club, the books, "
-                                    f"the workshop or the right drawing rooms. Enough sessions raise the stat a point (more for each point), up to +{int(dk.dial(s, 'self_cap'))}.",
+                               params=[Param(name="stat", label="at", options=[Option(id=k, label=f"{STAT_NAMES[k]} {s.player.points.get(k, 20)} "
+                                             f"({s.player.stats.get(k, 0):+d}; {SELF_WHERE[k][0]})") for k in STATS], default="charm")],
+                               hint=f"Spend the rest of this part of the day on yourself, at {int(dk.dial(s, 'self_cost'))} gold a session: a couple of points (fewer as "
+                                    f"the stat rises). The girl you would have worked with does what she can alone that part of the day. Most of a proprietor's "
+                                    f"growth comes from the work itself: training a girl, working a show, a bad night met.",
                                words=["better myself", "work on my", "train myself", "go to the gym", "go to the club", "study the books"]))
+        swappable = [h for h in dk.hand(s) if h.status == "live"]
+        if self._favour(s, "swap") and swappable:    # D218C: the Guild clerk's ear
+            used = bool(s.flags.get(f"swap_week_{s.house.week}"))
+            out.append(CommandSpec(id="swap", label="Swap an offer", mode="engine", enabled=not used,
+                                   params=[Param(name="booking", label="trade", options=[Option(id=h.id, label=h.title) for h in swappable], default=swappable[0].id)],
+                                   hint="The Guild's clerk trades one of this week's offers for another from the book, once a week" + (" (done this week)." if used else "."),
+                                   words=["swap", "trade an offer", "another booking"]))
         gear = self.gear_list(s)
         if gear and s.in_house():                    # D213C: gear for a girl
-            avail = [it for it in gear.values() if s.house.renown >= int(it.get("renown_needed", 0) or 0)]
+            avail = [it for it in gear.values() if s.house.renown >= int(it.get("renown_needed", 0) or 0)
+                     and (not it.get("favour_needed") or self._favour_open_for(s, str(it["favour_needed"])))]
             out.append(CommandSpec(id="equip", label="Equip", mode="engine",
                                    params=[Param(name="girl", label="for", options=[Option(id=g.id, label=g.name) for g in s.in_house()], default=(s.active or s.in_house()[0].id)),
                                            Param(name="item", label="item", options=[Option(id=str(it["id"]), label=f"{it['name']} ({int(it['cost'])} gold; "
@@ -2805,33 +2918,47 @@ class ClownGame(GameBase):
             what = "rest" if skill == "rest" else "work a job in town" if skill == "work" else self.skill_name(skill)
             line = f"{slot.capitalize()}: {g.name} will {what if skill in ('rest',) else ('work a job in town' if skill == 'work' else 'work on ' + what.lower())}."
             return s, CommandResult(label="Plan", text=line, log_line=line)
-        if command_id == "better":                     # D215C: the proprietor's own stats, bought with time
+        if command_id == "better":                     # D215C, D218C: a small part of the game: a few points a session, the girl at bench rate
             k = str(args.get("stat") or "").lower()
             if k not in STATS:
                 return state, CommandResult(ok=False, label="Better yourself", text="At what? " + ", ".join(STAT_NAMES[x] for x in STATS))
             p = s.player
-            if p.stats.get(k, 0) >= int(dk.dial(s, "self_cap")):
+            if p.points.get(k, 20) >= 100:
                 return state, CommandResult(ok=False, label="Better yourself", text=f"{STAT_NAMES[k]} is as good as it will get.")
             cost = int(dk.dial(s, "self_cost"))
             if s.house.money < cost:
                 return state, CommandResult(ok=False, label="Better yourself", text=f"A session is {cost} gold; the house has {s.house.money}.")
             s.house.money -= cost
-            p.practice[k] = p.practice.get(k, 0) + 1
-            need = self._sessions_needed(s, k)
-            rose = p.practice[k] >= need
-            if rose:
-                p.stats[k] = p.stats.get(k, 0) + 1
-                p.practice[k] = 0
-            where, does = SELF_WHERE[k]
-            line = (f"{p.name} spent the {part_of_day(s.clock.minute)} at {where}" + (f": {STAT_NAMES[k]} is {p.stats[k]:+d} now." if rose
-                    else f" ({p.practice[k]} of {need} sessions toward {STAT_NAMES[k]} {p.stats.get(k, 0) + 1:+d})."))
+            before = p.points.get(k, 20)
+            self._practise(s, k, dk.dial(s, "xp_self"), "the session")
             minutes = max(1, next_block(self.clock, s.clock.minute))   # the engine's own parts of the day (D210C)
-            directive = (f"{p.name} spends the rest of the {part_of_day(s.clock.minute)} {does}. Tell it in a short paragraph from the inside: what "
-                         f"is practised, one person met there, one small thing learned; " + ("and that it has come together, that they are better at it now. "
-                         if rose else "and that it is slow work. ") + "Stop at the end of the session.")
-            self._tally(s, f"Better yourself: {STAT_NAMES[k]}, {cost} gold; {p.practice.get(k, 0) if not rose else need} of {need}" + (f"; {STAT_NAMES[k]} {p.stats[k]:+d}" if rose else "") + ".")
-            return s, CommandResult(label="Better yourself", text=line, log_line=line, player_line=f"I spend the {part_of_day(s.clock.minute)} {does}.",
-                                    summary=f"{p.name} spends the {part_of_day(s.clock.minute)} {does}.", directive=directive, minutes=minutes, referee_skip=["money"])
+            p.away = [s.now_abs, s.now_abs + minutes]                  # her slot in it runs at bench rate
+            where, does = SELF_WHERE[k]
+            part = part_of_day(s.clock.minute)
+            line = f"{p.name} spent the {part} at {where}: {STAT_NAMES[k]} {before} to {p.points[k]}" + (f" ({p.stats[k]:+d} on a check)" if stat_mod(before) != p.stats[k] else "") + "."
+            directive = (f"{p.name} spends the rest of the {part} {does}. Tell it in a short paragraph from the inside: what is practised, one "
+                         f"person met there, one small thing learned; slow work. Stop at the end of the session.")
+            self._tally(s, f"Better yourself: {STAT_NAMES[k]}, {cost} gold; {before} to {p.points[k]}; the girls at bench rate this {part}.")
+            return s, CommandResult(label="Better yourself", text=line, log_line=line, player_line=f"I spend the {part} {does}.",
+                                    summary=f"{p.name} spends the {part} {does}.", directive=directive, minutes=minutes, referee_skip=["money"])
+        if command_id == "swap":                       # D218C: the Guild clerk's ear, once a week
+            if not self._favour(s, "swap"):
+                return state, CommandResult(ok=False, label="Swap an offer", text="Nobody at the Guild owes the house that.")
+            if s.flags.get(f"swap_week_{s.house.week}"):
+                return state, CommandResult(ok=False, label="Swap an offer", text="Once a week; the clerk has done it this week.")
+            h = s.hook(str(args.get("booking") or ""))
+            if h is None or h.status != "live" or h.show or h.kind != "booking":
+                return state, CommandResult(ok=False, label="Swap an offer", text="Which offer? " + ", ".join(x.title for x in dk.hand(s) if x.status == "live"))
+            h.status, h.closed_turn = "passed", 0
+            s.flags[f"swap_week_{s.house.week}"] = True
+            hooks = self.hooks_content()
+            hid = dk.draw(s, dk.deck_of(self.scenario(s.scenario.id)), hooks, random.Random(f"swap:{s.player.name}:{s.house.week}"), s.now_abs, 0)
+            if hid is None:
+                return s, CommandResult(label="Swap an offer", text=f"{h.title} is handed back; the book has nothing else this week.")
+            new = dk.deal(s, hooks[hid], turn=0, deal_abs=s.now_abs - 120, name=s.player.name)
+            line = f"The Guild's clerk takes back {h.title} and sends {new.title} instead; its caller comes shortly."
+            self._tally(s, f"Swap: {h.title} for {new.title}.")
+            return s, CommandResult(label="Swap an offer", text=line, log_line=line)
         if command_id == "equip":
             g = s.girl(str(args.get("girl") or s.active))
             it = self.gear_list(s).get(str(args.get("item") or ""))
@@ -2841,7 +2968,10 @@ class ClownGame(GameBase):
                 return state, CommandResult(ok=False, label="Equip", text="Which? " + ", ".join(str(x["name"]) for x in self.gear_list(s).values()))
             if s.house.renown < int(it.get("renown_needed", 0) or 0):
                 return state, CommandResult(ok=False, label="Equip", text=f"Nobody sells {it['name'].lower()} to a house nobody has heard of.")
-            cost = int(round(int(it["cost"]) * dk.dial(s, "gear_price")))
+            if it.get("favour_needed") and not self._favour_open_for(s, str(it["favour_needed"])):
+                need = next((f for f in self.favours(s) if (f.get("effect") or {}).get("gear_tier") == it["favour_needed"]), {})
+                return state, CommandResult(ok=False, label="Equip", text=f"{it['name']} is sold only in {need.get('name', 'a back room')} ({STAT_NAMES.get(need.get('stat', ''), '')} {need.get('need', '')}).")
+            cost = int(round(int(it["cost"]) * dk.dial(s, "gear_price") * self._favour(s, "gear_price")))
             if s.house.money < cost:
                 return state, CommandResult(ok=False, label="Equip", text=f"{it['name']} is {cost} gold; the house has {s.house.money}.")
             s.house.money -= cost
@@ -3115,6 +3245,12 @@ class ClownGame(GameBase):
             what = "in training" if x.id == s.active else "a graduate" if x.graduated else "not in training"
             booked_x = ("; " + "; ".join(f"booked: {y.title} ({WEEKDAYS[weekday(y.at_abs // DAY)][:3]} {hhmm(y.at_abs % DAY)})" for y in shows_x)) if shows_x else ""
             panels.append(ListPanel(title=f"{x.name} · {what} · {x.fatigue_word} · {x.credibility_word}{booked_x}", items=tiles, layout="grid", pinned=x.id == s.active))
+        fav = self.favours(s)
+        if fav:                                          # D218C: every favour, open or not, with the stat and level it needs
+            panels.append(ListPanel(title="The town's favours", layout="stack", fold=4, items=[
+                Chip(label=f"{f['name']} · {STAT_NAMES[f['stat']]} {f['need']}" + (" · open" if s.flags.get(f"favour_{f['id']}") else f" · yours {s.player.points.get(f['stat'], 0)}"),
+                     tone="ok" if s.flags.get(f"favour_{f['id']}") else "neutral", value=str(f.get("text", "")))
+                for f in sorted(fav, key=lambda f: (not s.flags.get(f"favour_{f['id']}"), f["stat"], int(f["need"])))]))
         worn = self._worn_before_show(s)                 # D211C: the warning where the player sees it at once
         if worn:
             panels.append(ListPanel(title="Before the shows", place="main", pinned=True, layout="stack", items=[

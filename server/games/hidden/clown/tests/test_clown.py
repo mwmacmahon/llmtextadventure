@@ -1538,7 +1538,8 @@ def test_there_is_no_heat_and_the_cops_come_from_the_plot(game: ClownGame):
     bad people"): no heat shown or kept; an enemy Brascombe sets the fire and the paid licensing office on his own clock; a bad
     deed brings Haldane."""
     st = new(game)
-    assert not any("heat" in (getattr(c, "label", "") or "").lower() for p in game.ui(st).panels for c in (getattr(p, "items", None) or []))
+    import re as _re
+    assert not any(_re.search(r"\bheat\b", (getattr(c, "label", "") or "").lower()) for p in game.ui(st).panels for c in (getattr(p, "items", None) or []))
     assert "authorities" not in game.render_bulletin(st, "") and "heat" not in game.referee_rules(st).lower().replace("hearth", "")
     st.flags["brascombe_enemy"] = True
     st = advance(game, st, 5, 2)
@@ -1634,7 +1635,8 @@ def test_the_nights_bring_random_challenges_settled_by_2d6_and_a_stat_and_told(g
     st.house.money = 500
     money, name = st.house.money, st.house.renown
     st = advance(game, st, 7 * DAY, 2)                                       # a week of nights, one challenge each
-    assert len(st.house.alerts) >= 6 and all("2d6" in a and "against" in a for a in st.house.alerts)
+    nights = [a for a in st.house.alerts if "2d6" in a]
+    assert len(nights) >= 6 and all("against" in a for a in nights)
     assert st.house.tells and not any(ch.isdigit() for t in st.house.tells for ch in t.split(" (")[0])
     assert any(ln.startswith("IN THE NIGHT") for ln in game.turn_directives(st))
     assert st.house.money != money or st.house.renown != name or any("held" in ln for ln in st.tally)
@@ -1642,17 +1644,72 @@ def test_the_nights_bring_random_challenges_settled_by_2d6_and_a_stat_and_told(g
     assert "nerve" in whose and -3 <= mod <= 3
 
 
-def test_the_proprietor_spends_parts_of_the_day_bettering_a_stat(game: ClownGame):
-    """D215C: Better yourself spends the rest of the part of the day and a fee; enough sessions (five from 0, two more a point)
-    raise the stat, up to +4."""
+def test_the_proprietors_stats_are_points_grown_mostly_by_the_work_and_a_little_by_bettering(game: ClownGame):
+    """D218C (the owner, 11-10): stats are 0-100 points, the check's modifier made from them; a session of Better yourself is a
+    couple of points (fewer as the stat rises) and leaves the girl at bench rate that part of the day; attended training
+    practises the stat the skill is taught from and teaches up to x1.5; a show worked practises the client's stat."""
+    from games.hidden.clown.game import stat_mod
     st = new(game)
-    assert st.player.stats["menace"] == -1 and game._sessions_needed(st, "menace") == 3
+    p = st.player
+    assert p.points["charm"] == 65 and p.stats["charm"] == 3 and p.points["menace"] == 5 and p.stats["menace"] == -1
+    assert [stat_mod(v) for v in (0, 19, 20, 35, 50, 65, 80, 100)] == [-1, -1, 0, 1, 2, 3, 4, 4]
     st.house.money = 200
-    for i in range(3):
-        st, r = game.run_command(st, "better", {"stat": "menace"})
-        assert r.ok and r.minutes > 0 and r.directive
-    assert st.player.stats["menace"] == 0 and st.player.practice["menace"] == 0 and st.house.money == 200 - 3 * 8
-    assert "is +0 now" in r.text
-    st.player.stats["charm"] = 4
-    _, r = game.run_command(st, "better", {"stat": "charm"})
-    assert not r.ok and "as good as it will get" in r.text
+    st, r = game.run_command(st, "better", {"stat": "menace"})
+    assert r.ok and st.player.points["menace"] == 7 and st.house.money == 192 and r.minutes > 0 and len(st.player.away) == 2
+    st.player.points["charm"] = 90
+    before = st.player.points["charm"]
+    st, r = game.run_command(st, "better", {"stat": "charm"})
+    assert st.player.points["charm"] == before and abs(st.player.xp["charm"] - 0.5) < 1e-9     # a quarter rate past 80
+    # the girl at bench rate while the proprietor is away
+    st2 = new(game)
+    st2, _ = game.run_command(st2, "plan", {"slot": "mornings", "skill": "pratfalls"})
+    st2.house.money = 100
+    st2, _ = game.run_command(st2, "better", {"stat": "craft"})
+    before = st2.active_girl.skills["pratfalls"]
+    st2 = advance(game, st2, SLOTS["mornings"][1] - st2.clock.minute + 1, 2)
+    assert st2.active_girl.skills["pratfalls"] == before + int(dk.dial(st2, "self_train"))
+    assert any("bench rate" in ln for ln in st2.log + st2.tally)
+    # attended training: the teaching multiplier and a little practice in the teaching stat
+    st3 = new(game)
+    st3, _ = game.run_command(st3, "plan", {"slot": "mornings", "skill": "pratfalls"})
+    st3.player.location = "The practice room"
+    craft0 = st3.player.points["craft"] + st3.player.xp.get("craft", 0)
+    st3 = advance(game, st3, SLOTS["mornings"][1] - st3.clock.minute + 1, 2)
+    assert any("as a teacher (x1.10)" in ln for ln in st3.log + st3.tally)          # craft 20 points: x1.10
+    assert st3.player.points["craft"] + st3.player.xp.get("craft", 0) > craft0
+
+
+def test_the_towns_favours_open_by_stat_and_level_and_are_shown(game: ClownGame):
+    """D218C: every favour on a panel with its stat and level; it opens for good when the points reach it, and its effect lands."""
+    st = new(game)
+    fav = {f["id"]: f for f in game.favours(st)}
+    assert len(fav) >= 10 and {f["stat"] for f in fav.values()} == {"charm", "menace", "business", "connections", "craft"}
+    panel = next(p for p in game.ui(st).panels if getattr(p, "title", "") == "The town's favours")
+    assert any("Charm 40" in c.label for c in panel.items) and any("Menace 80" in c.label for c in panel.items)
+    hand = st.house.hand_size
+    st = advance(game, st, 5, 2)                                             # a charmer (65) has Madame Oriel and the drawing rooms
+    assert st.flags.get("favour_fortune_teller") and st.flags.get("favour_hill_drawing_rooms") and st.house.hand_size == hand + 1
+    assert not st.flags.get("favour_mayoress_circle")
+    st.player.points["business"], st.player.points["menace"] = 85, 50
+    st = advance(game, st, 5, 3)
+    assert st.flags.get("favour_bank_manager") and game._rent(st) == st.house.rent
+    st.house.renown = 60
+    assert game._rent(st) == st.house.rent                                   # frozen by the bank manager
+    assert game._guard(st) >= 2 + int(st.player.stats["menace"])
+    st.house.money = 1000
+    _, r = game.run_command(st, "equip", {"girl": st.active, "item": "spangled_motley"})
+    assert not r.ok and "Craft 50" in r.text
+    st.player.points["craft"] = 55
+    st = advance(game, st, 5, 4)
+    st, r = game.run_command(st, "equip", {"girl": st.active, "item": "spangled_motley"})
+    assert r.ok
+    st.player.points["connections"] = 55
+    st = advance(game, st, 5, 5)
+    offer = next((h for h in dk.hand(st) if h.status == "live"), None)
+    if offer is None:
+        offer = dk.hand(st)[0]
+        offer.status = "live"
+    st, r = game.run_command(st, "swap", {"booking": offer.id})
+    assert r.ok and st.hook(offer.id).status == "passed"
+    _, r2 = game.run_command(st, "swap", {"booking": offer.id})
+    assert not r2.ok
