@@ -139,6 +139,11 @@ class Note(BaseModel):
     kind: Literal["clue", "contact"] = "clue"
     text: str
     turn: int = 0
+    when: str = ""                  # B284: "Day N HH:MM. " when it was written down, for the Case log (empty: before the stamp)
+
+    def stamped(self, clock: "Clock") -> "Note":
+        self.when = clock.stamp()
+        return self
 
 
 class FoundPlace(BaseModel):

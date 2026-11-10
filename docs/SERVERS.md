@@ -1,38 +1,38 @@
-# The game servers
+# The servers
 
-Every server the project runs, what it is for, what it serves from, and who may restart it. Formalised 2026-11-09 (the
-owner: "we should formalize these game servers"). The launch entries are `.claude/launch.json`; the environment flags
-are `server/engine/config.py` (`TA_*`). This page is the contract; the launch file is the mechanism.
+The contract for every game server on this machine (B232, the owner 11-09). Keep it current in the same commit that adds,
+moves or stops a server.
 
-## The rule
+## Three kinds
 
-A server is one of three kinds, and the kind says who touches it.
+- **A player's server.** Someone is playing on it. Pinned to a commit in a worktree of its own, with its own data folder.
+  Dev mode is off (`TA_DEV_MODE=off`): no dev switch in Settings, and hidden games are never loaded. **Only the owner moves it**,
+  deliberately, with the update script after the suite passes. A build never restarts it.
+- **The rounds servers.** The build chat plays rounds on them and restarts them on every build. They run from the shared
+  checkout and the shared store. Nobody plays a real game on them.
+- **Dev servers.** Started and stopped at will (the preview, a fake provider, a UI check). Their own data folder when they
+  write (`TA_DATA_DIR`), so they never touch a round's store.
 
-1. **A player's server** (today: Lilith's, :8016) runs from its own checkout pinned at a commit, with its own data
-   folder, and nothing restarts it but the owner, by the update script. Dev mode is off at the server (B232): no hidden
-   game is loaded, the Settings page shows no dev-mode switch, and the dev header is ignored.
-2. **A rounds server** (:8013, :8014) runs from the shared checkout and the build chat restarts it whenever a build
-   lands; the readiness and parity rounds and the owner's own test games run here. Saves here may be interrupted.
-3. **A dev server** (:8010, :8011, :8015 and the web dev ports) runs with `--reload` or the fake provider for the build
-   chat's own work and is started and stopped at will.
+## Running now
 
-A server never changes kind in place: a new kind is a new entry and a new port.
+| Port | Kind | Profile | Code | Data | Restarted by |
+|---|---|---|---|---|---|
+| :8016 | **player's: Lilith** (B230) | `sonnet` (every role), no reload, `0.0.0.0` for the LAN (http://192.168.0.84:8016), `TA_DEV_MODE=off`; Normal by default | worktree `../llmtextadventure-lilith`, detached at a pinned commit, its own `web/dist` and its own copy of `notes/content` (the shared venv) | `../llmtextadventure-lilith-data` (`TA_DATA_DIR`; `server.log`, `deploys.log`) | **the owner only**: `server/tools/lilith_update.sh <commit>` (dry run first; refuses if her store was written in the last 10 minutes; backs her store up to the data folder's backups/ before anything changes; restarts with the same data and flags; logs the move); `api-lilith` in `.claude/launch.json` |
+| :8013 | rounds | `gemma4-31b` in every role, `TA_STAKES=live`, `config.llamacpp.yml` against the box (`TA_LLAMA_URL` :8280, prepare :8281); `0.0.0.0` for the LAN (http://192.168.0.84:8013; the owner plays his Gemma games here, 11-09) | the shared checkout | `data/` (shared store) | the build chat, on every build |
+| :8014 | rounds | `sonnet`; `0.0.0.0` | the shared checkout | `data/` (shared store) | the build chat, on every build |
 
-## The servers
+**:8016 today:** 86e147a, moved 2026-11-10 00:35 UTC on the owner's word ("update and fix save games re: troll and anything else"; through 3556f55 at 00:22, each move backed up first): B288 and B289 (one swing one roll, named weapons, allies die only in the told, typed Flee and Yield are the turn, Gorm takes a surrender). Her save 25a51df64905 and his test 9a305574cf0f fixed in place by notes/scripts/fix_saves_b289.py (owner_fix rows, 00:25): labels, Gorm, the combat and Time rules and Pip out of the prompt. Before that: 615023f, moved 2026-11-09 23:36 UTC on the owner's word ("Update hers too, that's where I'm testing anyway"; backups/textadventure.before-d583e50-to-615023f.20261109T233618Z.sqlite3): B286 (a shout joins nobody to a fight; the leak guard skips the § lines; `called` labels for the unnamed) and B287 (Flee and Yield typed, no buttons). The owner's test game there, 9a305574cf0f, had the content's labels copied in by notes/scripts/backfill_called.py (an owner_fix row); Lilith's own saves were not touched. Before that: d583e50, moved 2026-11-09 22:54 UTC on the owner's word ("update liliths' server? I don't see paladin"; deploys.log: 83ac136 -> d583e50; her store backed up first to backups/textadventure.before-83ac136-to-d583e50.20261109T225408Z.sqlite3), dev mode off. It adds part fifteen (B264 to B285): combat mode, the Paladin playable (with Barbarian and Rogue; the rest still under construction), Sneak Attack by the round, the Rogue's fine blades, the Time rule with no clock or bells, the trivial-check settle, rewrite asks again, the delete box, the mobile pass, the Journal folded into the Timeline, Tansy in Pip's place. Before that: 83ac136, moved 2026-11-09 17:10 UTC on the owner's word (deploys.log: bbbd735 -> 83ac136; her store backed up first to backups/textadventure.before-bbbd735-to-83ac136.20261109T171012Z.sqlite3), dev mode off: only station, noir and the fantasy are listed. It adds part twelve (B242 to B246, B261, B224.23-24): the engine's catch for a beat told again, People cards that show only what was told, the aside as canon with its learned pass, the tense clock, one whistle and gifts that land, a thread's giver, the Timeline overlay and the folded Journal. Before that: bbbd735 (parts eight to eleven, B213 to B260), and the two owner fixes in her save of 11-09 (owner_fix rows; a backup from before them in backups/); a third owner fix 11-09 20:31 UTC removed Pip, unmet, from her save (B275; backups/textadventure.before-remove-pip.20261109T203125Z.sqlite3); the server was not restarted.
 
-| Port | Name (launch.json) | Kind | For | Provider / profile | Serves from | Data | Host | Restarted by |
-|---|---|---|---|---|---|---|---|---|
-| 8016 | `api-lilith` | player | Lilith's game | Sonnet (`TA_PROFILE=sonnet`) | `../llmtextadventure-lilith`, a worktree pinned (detached) at the commit she plays on; its own `web/dist`; its own copy of `notes/content` taken at the update | `../llmtextadventure-lilith-data` (`TA_DATA_DIR`) | 0.0.0.0 (the LAN; her phone) | the owner, `server/tools/lilith_update.sh <commit>` (refuses within 10 minutes of a write to her store; logs each move to `deploys.log`; rollback is the same script with the old commit) |
-| 8014 | `api-fantasy-sonnet` | rounds | the fantasy on Sonnet: readiness rounds, the owner's test games | Sonnet | the shared checkout | `data/` (shared) | 0.0.0.0 | the build chat, on each build |
-| 8013 | `api-rounds-gemma-live` (and the other `api-local-*` entries, one at a time) | rounds | noir, the station and the fantasy on the box's model | Gemma 4 31B on gumbo (`TA_PROFILE=gemma4-31b`, `TA_STAKES=live`, `TA_CONFIG=config.llamacpp.yml`) | the shared checkout | `data/` (shared) | 127.0.0.1 | the build chat, on each build |
-| 8015 | `api-fantasy-fake` | dev | the fantasy on the fake provider (tests by hand, the UI) | fake (`TA_PROVIDER=fake`) | the shared checkout | `data/fantasy-fake` | 0.0.0.0 | the build chat |
-| 8010 | `api`, `api-fake` | dev | the engine with `--reload` | config default, or fake | the shared checkout | `data/` | 0.0.0.0 | the build chat (the one from 10-28 was stopped 11-09) |
-| 8011 | `api-local` | dev | the box's model with `--reload` | llama.cpp on gumbo | the shared checkout | `data/` | 0.0.0.0 | the build chat |
-| 5173 / 5174 / 5175 | `web`, `web-local`, `web-fantasy-fake` | dev | the web client in development, proxying `/api` to 8010 / 8011 / 8015 | | `web/` | | | the build chat |
+Stopped: the old :8010 (`--reload`, from 10-28; B230). The preview entries in `.claude/launch.json` (`api`, `api-fake`,
+`api-local*`, `web-local`) are dev servers, started at will.
 
-Running on 2026-11-09 night: 8013, 8014, 8016 (http://192.168.0.84:8016 on the LAN). **:8016 today:** 83ac136, moved 2026-11-09 17:10 UTC on the owner's word (deploys.log: 6c9099a -> 7c77af6 at 05:13, 7c77af6 -> bbbd735 at 05:39, bbbd735 -> 83ac136 at 17:10; part twelve complete, the Timeline and the Journal included), dev mode off: only station, noir and the fantasy are listed. It has parts eight to eleven and the fixes since (B213 to B260): among them the walk-up holds and the assistant's open_to_callers, word held far from the city, quest deadlines from when she hears of them, the quest check that closes a finished quest, Hazel waiting to be spoken to, the "In your words" panel, a cut-off turn cleaning itself up. Her save had two owner fixes on 11-09 (owner_fix rows): the cellar quest's troll_settled flag, and the brass whistle moved from Wren to Tansy; a backup from before them is in backups/. `server.log` and `deploys.log` sit beside her saves. The box (gumbo, 192.168.0.215) serves one model for every role on
-:8280 behind the cache proxy; `TA_LLAMA_URL` and `TA_LLAMA_PREPARE_URL` point every local server at it.
+## Moving a player's server
 
+1. The suite passes on the commit.
+2. The owner says go.
+3. `server/tools/lilith_update.sh <commit> --dry-run`, read it, then without `--dry-run`. Never `--force` while she may be
+   playing.
+4. Update the table above in the same commit as anything that changed it.
 ## The flags a server takes
 
 | Flag | What it does | Set on |
@@ -46,11 +46,3 @@ Running on 2026-11-09 night: 8013, 8014, 8016 (http://192.168.0.84:8016 on the L
 | `TA_DEV_PIN` | a pin the dev-mode header must carry (B76) | any server where dev mode stays on but should be locked |
 | `TA_DEV_MODE=off` | dev mode off at the server (B232): hidden games not loaded, no switch in Settings, the header ignored | 8016 |
 
-## Moving a player's server
-
-Her server moves to a new commit only when the owner says, by `server/tools/lilith_update.sh <commit>` after the suite
-passes on that commit: `--dry-run` first and read it, then without; never `--force` while she may be playing; this page's
-table updated in the same commit as anything that changed it. The script checks the commit is on 2.0, that nothing was written to her store in the last ten
-minutes, checks the worktree out at the commit, copies `notes/content` again, builds the web inside the worktree,
-restarts :8016 with the same data folder, confirms `/api/build`, and logs the move. Her saves never move. A second
-player's server is the same shape under another name, port and data folder.

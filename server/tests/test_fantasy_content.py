@@ -45,9 +45,9 @@ def test_every_hook_deals_into_a_fresh_game_and_the_prefix_builds():
     for hid, hk in g.hooks_content().items():
         if st.hook(hid) is None:
             dk.deal(st, hk, turn=1, deal_abs=4000, name="Tess")
-    assert len(st.hooks) == 15
+    assert len(st.hooks) == 16                                       # part fifteen §12: the_quiet_dead
     pre = g.frozen_prefix(st)
-    assert pre.count("In motion: ") == 15 and "{name}" not in pre
+    assert pre.count("In motion: ") == 16 and "{name}" not in pre
     g.load_state(st.model_dump(mode="json"))
     g.render_bulletin(st, "")
     g.ui(st)

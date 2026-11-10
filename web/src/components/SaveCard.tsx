@@ -121,10 +121,10 @@ function Properties({ card, act, onGone }: { card: Card; act: (fn: () => Promise
       {deleting && (
         <div className="delete-confirm">
           <label className="setup-field">
-            <span className="small">To delete it for good, type its title: <b>{card.title}</b></span>
+            <span className="small">To delete it for good, type <b>delete</b></span>
             <input type="text" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="off" />
           </label>
-          <button className="danger-btn" disabled={confirm.trim() !== card.title.trim()} onClick={() => act(() => api.remove(card.id)).then(onGone)}>
+          <button className="danger-btn" disabled={confirm.trim().toLowerCase() !== "delete"} onClick={() => act(() => api.remove(card.id)).then(onGone)}>
             Delete this game
           </button>
         </div>

@@ -35,7 +35,7 @@ from engine.game import (
     ApplyReport, Chip, ClockSpec, CommandResult, Commands, CommandSpec, EntityCard, EntityCards, GameBase, ListPanel,
     LogPanel, Meter, Option, Param, StatusStrip, Table, TableCell, TurnInfo, UISchema, Rejection,
 )
-from engine.gamekit import Content, Writer, hhmm, threads_panel
+from engine.gamekit import Content, Writer, hhmm, threads_panel, with_introduction
 from engine.mechanics import CheckRequest, Modifier
 from engine.roles import AssistantReadingV2, Change
 from engine.spontaneous import Spontaneous
@@ -465,7 +465,7 @@ class StationGame(GameBase):
 
     def opening(self, state: StationState) -> str | None:
         sc = self._scenarios().get(state.scenario.id, {})
-        return sc.get("opening_text")
+        return with_introduction(sc, sc.get("opening_text"))              # part fourteen: the introduction first
 
     # ---- frozen prefix (rules + scenario briefing) ---------------------------
     def frozen_prefix(self, state: StationState) -> str:
@@ -1125,6 +1125,7 @@ class StationGame(GameBase):
             w.reject("findings", "the station's findings are full", f)
             return
         s.findings.append(f)
+        s.findings_when[f] = s.clock.stamp()
         w.note(f"findings += {f[:120]!r}")
         self._mark_known(s, s.crew, f, w)
 
@@ -1845,10 +1846,11 @@ class StationGame(GameBase):
                     ],
                 ),
                 Commands(title="Station controls", items=self.commands(s)),
-                *([ListPanel(title="Findings", items=[Chip(label="found", value=f) for f in reversed(s.findings)], fold=6, journal=True)] if s.findings else []),
+
                 threads_panel(s.threads, names=self.entity_names(s)),
                 ListPanel(title="Capabilities", items=[Chip(label=k, value=f"{v:+d}") for k, v in s.stats.items()]),
-                LogPanel(title="Logfile", lines=list(s.log), timeline=True),
+                # B284: what the station found rides in the Logfile at its moment, marked (the journal folds into the timeline)
+                LogPanel(title="Logfile", lines=list(s.log), timeline=True, learned=[s.findings_when.get(f, "") + f for f in s.findings]),
             ],
         )
 

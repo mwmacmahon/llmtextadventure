@@ -210,18 +210,18 @@ def test_one_newcomer_a_scene(engine, no_happenings):
     iid = engine.create_instance("fantasy", SHEET)
     st = state_of(engine, iid)
     st.player.location = "The Drowned Lantern"
-    tam, pip = st.person("tam"), st.person("pip")
+    tam, pip = st.person("tam"), st.person("tansy")      # Tansy took Pip's place (11-09)
     tam.location, tam.met = "The Drowned Lantern", True
     pip.location, pip.met = "The Drowned Lantern", False
     engine.store.append_ledger(iid, 10, "event_fired", {"event_id": "ferrymans_daughter_reach", "variant": "trigger",
                                                         "directive": "Tam Reedy the ferryman comes in wet and stands by the table."})
     engine.store.append_ledger(iid, 10, "delta", {"applied": ["people.tam.met: False -> True"], "rejected": []})
     why, names, ids = engine._newcomer(iid, 11, game, st)
-    assert why == "Tam Reedy came in lately and is still here" and "pip" in ids and "pip" in names
+    assert why == "Tam Reedy came in lately and is still here" and "tansy" in ids and "tansy" in names
     doc = st.model_dump(mode="json")
-    pip_comes = spon.Spontaneous(id="pip_tags_along", chance_per_hour=1.0, who=["pip"], directive="Pip is at the player's elbow.")
+    pip_comes = spon.Spontaneous(id="tansy_tags_along", chance_per_hour=1.0, who=["tansy"], directive="Tansy is at the player's elbow.")
     assert not no_happenings([pip_comes], doc, random.Random(1), 30, 11, 2000, newcomer=why, unmet=ids)[0]
-    reach = ev.Event.model_validate({"id": "pip_reach", "hook": "y", "trigger": True, "directive": "Pip Tallow comes up with a question."})
+    reach = ev.Event.model_validate({"id": "pip_reach", "hook": "y", "trigger": True, "directive": "Tansy Fell comes up with a question."})
     ctx = ev.EffectContext(newcomer=why, unmet=names)
     assert not ev.tick([reach], doc, 11, ctx=ctx)[0] and ctx.holds[0]["why"] == why
     back = ev.Event.model_validate({"id": "tam_back", "hook": "z", "trigger": True, "directive": "Tam Reedy comes back for his answer."})

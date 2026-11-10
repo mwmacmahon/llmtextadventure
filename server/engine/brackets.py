@@ -35,7 +35,7 @@ OPEN_DECL, CLOSE_DECL = "[[", "]]"
 STOP_SEQUENCES = [CLOSE_CALL]
 MECHANIC_MARK = "§"
 
-CallVerb = Literal["CHECK", "LOOK", "ODDS", "ENEMY", "HAZARD"]
+CallVerb = Literal["CHECK", "LOOK", "ODDS", "ENEMY", "HAZARD", "ATTACK", "ALLY"]
 DeclVerb = Literal["NEW", "MOVED", "SET", "LEARNED", "GONE"]
 
 DIFFICULTY_WORDS = {
@@ -140,6 +140,9 @@ def parse_call(text: str) -> Call:
         if not words:
             raise BracketError("ENEMY needs who acts")
         return Call(verb="ENEMY", raw=inner, ref=words[0].strip(".,").lower(), stat=(words[1].lower() if len(words) > 1 else ""))
+    if verb in ("ATTACK", "ALLY"):                       # part fifteen §3: <<ATTACK skeleton>> the player's blow, <<ALLY hazel>> an ally's
+        words = rest.replace('"', "").split()
+        return Call(verb=verb, raw=inner, ref=(words[0].strip(".,").lower() if words else ""))
     if verb == "HAZARD":                                 # B206 (D178): <<HAZARD cold_water>>: a danger reaches the player
         if not rest:
             raise BracketError("HAZARD needs the hazard's name")

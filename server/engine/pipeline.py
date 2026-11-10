@@ -847,7 +847,7 @@ class Engine:
             label = cmd_result.label or spec.label
             if cmd_result.log_line:
                 doc = state.model_dump(mode="json")
-                sp.append(doc, getattr(game, "log_path", "log"), f"{_clock_text(game, doc)}{cmd_result.log_line.strip()}")
+                sp.append(doc, getattr(game, "log_path", "log"), f"{_clock_text(game, doc)}{unstamped(cmd_result.log_line)}")
                 state = game.load_state(doc)
             ledger("profile", stamp)
             ledger("command", {"id": cid, "args": args, "mode": spec.mode, **cmd_result.model_dump(mode="json")})
@@ -880,19 +880,34 @@ class Engine:
             ledger("rewrite", {"hint": replay.hint, "attempt": replay.attempt, "by": replay.by, "history": replay.history})
             log.info("turn.rewrite " + logs.kv(iid=iid, turn=turn, attempt=replay.attempt, by=replay.by, hint_chars=len(replay.hint)))
             yield {"event": "rewrite", "data": {"turn": turn, "hint": replay.hint, "attempt": replay.attempt, "by": replay.by}}
-            adj = replay.adjudication
-            ledger("adjudication", {**adj.model_dump(mode="json"), "_call": {
-                "provider": replay.call.get("provider"), "model": replay.call.get("model"), "seconds": 0, "usage": asdict(Usage()),
-                "replayed": True, "attempt": replay.attempt}})
+            adj = replay.adjudication                            # None on the player's rewrite: the assistant reads the turn again (B280)
+            struck = settle_attack(adj) if adj is not None else []     # B288: the attack is the roll
+            trivial = settle_trivial(adj) if adj is not None else []   # B279: a reading stored before the rule settles too
+            if adj is not None:
+                ledger("adjudication", {**adj.model_dump(mode="json"), "_call": {
+                    "provider": replay.call.get("provider"), "model": replay.call.get("model"), "seconds": 0, "usage": asdict(Usage()),
+                    "replayed": True, "attempt": replay.attempt}})
+            for h in struck:
+                ledger("precheck", {"kind": "attack", **h})
+            for h in trivial:
+                ledger("precheck", {"kind": "trivial", **h})
+                ledger("settled", {"settled": "works", "attempt": h["attempt"], "outcome": next((f.outcome for f in adj.fiat if f.attempt == h["attempt"]), ""), "why": h["why"]})
 
         # ---- 1. adjudicate --------------------------------------------------
         if adj is None and not getattr(game, "skip_adjudication", False):
             try:
-                adj, meta = await self._adjudicate(game, state, iid, player_text)
+                adj, meta = await self._adjudicate(game, state, iid, player_text,
+                                                   retell=replay.hint if replay is not None and replay.by == "player" else None)
+                struck = settle_attack(adj)                      # B288: a blow with a weapon is the attack roll, not a check too
                 hopeless = settle_hopeless(adj)                  # B225: very high and an edge of -3 or worse is a fail, no roll
+                trivial = settle_trivial(adj)                    # B279: very low with nothing at stake simply happens
                 ledger("adjudication", {**adj.model_dump(mode="json"), "_call": meta})
+                for h in struck:
+                    ledger("precheck", {"kind": "attack", **h})
                 for h in hopeless:
                     ledger("precheck", {"kind": "hopeless", **h})
+                for h in trivial:
+                    ledger("precheck", {"kind": "trivial", **h})
                 for f in getattr(adj, "fiat", None) or []:     # B207 (D179): each attempt the words settled, with why
                     ledger("settled", {"settled": getattr(f, "settled", "works"), "attempt": f.attempt, "outcome": f.outcome, "why": getattr(f, "why", "")})
                 unchecked = [i.action for i in adj.intents if i.check is None]
@@ -1455,7 +1470,7 @@ class Engine:
 
     async def rewrite_turn(self, iid: str, hint: str, by: str = "player") -> AsyncIterator[dict[str, Any]]:
         """"You're out of line": tell the last turn again. The turn is rewound and replayed with its stored
-        adjudication, the same levers and the same dice seed, with the player's ruling as a directive; the
+        adjudication (the referee's retell) or a fresh one with the player's words about it (the player's, B280), the same levers and the same dice seed, with the player's ruling as a directive; the
         narrator and the referee run again and this telling replaces the last one. The earlier tellings stay
         in the turn's `rewrite` ledger row. Only a typed turn can be retold: a clicked command is not prose."""
         inst = self.store.get_instance(iid)
@@ -1475,7 +1490,7 @@ class Engine:
         game = self.game_of(inst)
         schema = getattr(game, "adjudication_schema", AssistantReading)
         if issubclass(schema, AssistantReadingV2) and "pivotal" in adj_row:       # a stored adjudication with its stakes (D115)
-            schema = AssistantReadingStaked
+            schema = getattr(game, "adjudication_schema_staked", AssistantReadingStaked)
         adj = schema.model_validate({k: v for k, v in adj_row.items() if k != "_call"})
         transcript = [r for r in self.store.transcript(iid) if r.turn == turn]
         player_text = next((r.text for r in transcript if r.role == "player"), None)
@@ -1500,7 +1515,10 @@ class Engine:
         if not call.get("model"):                 # the row came from an earlier rewrite that kept no call meta
             role = self.cfg.role("assistant")
             call = {"provider": role.provider, "model": role.model}
-        async for ev in self.run_turn(iid, player_text, replay=Replay(adjudication=adj, hint=hint, attempt=attempt, history=history, call=call, by=by)):
+        # B280 (the owner, 11-09: "rewrite should also redo the assistant turn"): the player's rewrite asks the assistant again,
+        # with their words about it; the referee's retell (a prose fault) keeps the reading, its checks and its settlings
+        again = None if by == "player" else adj
+        async for ev in self.run_turn(iid, player_text, replay=Replay(adjudication=again, hint=hint, attempt=attempt, history=history, call=call, by=by)):
             yield ev
 
     # ---- the graveyard (B81, B84): player-only; nothing here reaches a model --------------------------------------
@@ -1606,14 +1624,17 @@ class Engine:
             return provider
         return Taped(provider, lambda label, ex: tape("exchange", exchange_row(self.store.put_blob, label, ex)), step)
 
-    async def _adjudicate(self, game: Game, state: BaseModel, iid: str, player_text: str) -> tuple[AssistantReading, dict]:
+    async def _adjudicate(self, game: Game, state: BaseModel, iid: str, player_text: str, retell: str | None = None) -> tuple[AssistantReading, dict]:
         role = self.cfg.role("assistant")
         provider = self._provider(role, iid, "assistant")
         recent = _recent_prose(self.store, iid, turns=2)
         nrole = self.cfg.role("narrator")
         hits = [h for h in [prechecks.question(player_text)] if h is not None]
+        notes = [h.line for h in hits]
+        if retell is not None:                                  # B280: the player's rewrite reads the turn again, with what they said of it
+            notes.append(f"The player asked for this turn again, and said: \"{retell.strip()}\"" if retell.strip() else "The player asked for this turn again.")
         system, msgs, schema = adjudicator_inputs(game, state, recent, player_text, stakes=nrole.stakes != "off" and nrole.checks == "called",
-                                                  notes=[h.line for h in hits])
+                                                  notes=notes)
         for m in mods_mod.parsed(self._mods(iid)):              # B79: the assistant's rules text by section, per save
             system = mods_mod.patch_sections(system, (m.get("rules") or {}).get("assistant"))[0]
         t0 = time.monotonic()
@@ -1664,6 +1685,8 @@ class Engine:
                                               "intents": [i.model_copy(update={"check": None}) for i in adj.intents],
                                               "commands": []}), []
             kept.append(pick)
+            if spec.decides:                                         # B289: the lever is the roll (Gemma set a DEX escape check beside Flee)
+                adj = adj.model_copy(update={"intents": [i.model_copy(update={"check": None}) for i in adj.intents]})
             after, res = game.run_command(working, spec.id, args)
             label = res.label or spec.label
             if not res.ok:
@@ -1723,7 +1746,7 @@ class Engine:
             return state, {"id": lever.id, "status": "blocked", "text": f"{lever.label}: {res.text.strip()}"}
         if res.log_line:
             doc = new_state.model_dump(mode="json")
-            sp.append(doc, getattr(game, "log_path", "log"), f"{_clock_text(game, doc)}{res.log_line.strip()}")
+            sp.append(doc, getattr(game, "log_path", "log"), f"{_clock_text(game, doc)}{unstamped(res.log_line)}")
             new_state = game.load_state(doc)
         ledger("command", {"id": lever.id, "args": lever.args, "mode": lever.mode, "typed": True, **res.model_dump(mode="json")})
         log.info("command.typed " + logs.kv(iid=iid, turn=turn, id=lever.id, mode=lever.mode, args=json.dumps(lever.args)))
@@ -1914,12 +1937,13 @@ class Engine:
         names them) and is still here."""
         people = list(getattr(state, "people", None) or getattr(state, "crew", None) or [])
         unmet = [q for q in people if not getattr(q, "met", True)]
-        names = sorted({n for q in unmet for n in (str(q.name).lower(), str(q.name).lower().split(" ")[0]) if len(n) >= 3})
+        skip = {"the", "old", "young", "lord", "lady", "brother", "sister", "captain", "sergeant", "master", "mother", "father"}   # a name's first word that is no name
+        names = sorted({n for q in unmet for n in (str(q.name).lower(), str(q.name).lower().split(" ")[0]) if len(n) >= 3 and n not in skip})
         ids = {q.id for q in unmet}
         here = set(_hook(game, "people_here", state, default=None) or [])
         if not here:
             return "", names, ids
-        by_name = {n: q.id for q in people for n in (str(q.name).lower(), str(q.name).lower().split(" ")[0]) if len(n) >= 3}
+        by_name = {n: q.id for q in people for n in (str(q.name).lower(), str(q.name).lower().split(" ")[0]) if len(n) >= 3 and n not in skip}
         came: set[str] = set()
         met_lately: set[str] = set()
         try:
@@ -1943,7 +1967,7 @@ class Engine:
             return "", names, ids
         who = next((q.name for q in people if q.id == new[0]), new[0])
         others = [q for q in unmet if q.id not in new]           # the newcomer is never held back by being one
-        names = sorted({n for q in others for n in (str(q.name).lower(), str(q.name).lower().split(" ")[0]) if len(n) >= 3})
+        names = sorted({n for q in others for n in (str(q.name).lower(), str(q.name).lower().split(" ")[0]) if len(n) >= 3 and n not in skip})
         return f"{who} came in lately and is still here", names, {q.id for q in others}
 
     def _last_turn(self, iid: str, turn: int) -> dict:
@@ -2115,7 +2139,7 @@ class Engine:
                                  note_for=lambda d, label: _hook(game, "check_note", state, d, label, default="") or "",
                                  caps=getattr(game, "caps", False),
                                  meets=lambda target, words: _hook(game, "meets_tell", state, target, words, default=None))
-            if call.verb in ("ENEMY", "HAZARD"):            # B206 (D178): the world's move, rolled when the prose reaches it
+            if call.verb in ("ENEMY", "HAZARD", "ATTACK", "ALLY"):   # B206 (D178), part fifteen §3: rolled when the prose reaches it
                 out = _hook(game, "world_call", state, call, rng_for(iid, turn, f"world:{call.verb}:{call.ref}:{n}"), offset, tally, default=None)
                 if out is None:
                     return CallResult(text=f"[ENGINE] Nothing in this game answers {call.raw!r}. Play it without a roll.")
@@ -2274,6 +2298,10 @@ async def extract_adjudication(provider: Any, role: Any, system: str, msgs: list
     """The adjudicator's call as the engine makes it, live and in the replay harness: the extract, one
     retry when an action comes back with no intents, and checks recovered from the wrong field."""
     retry: str | None = None
+    if getattr(role, "chain", False) and issubclass(schema, AssistantReadingV2):     # part thirteen §3: the chain dial (off by default)
+        from .chain import chain_adjudication
+        adj, usage = await chain_adjudication(provider, role, system, msgs, schema)
+        return without_repeats(adj), usage, None, recover_misplaced_checks(without_repeats(adj), stats)
     try:
         adj, usage = await provider.extract(role, system, msgs, schema)
     except RuntimeError as e:
@@ -2541,7 +2569,7 @@ def adjudicator_inputs(game: Game, state: BaseModel, recent: list[Msg], player_t
     schema = getattr(game, "adjudication_schema", AssistantReading)
     extra = ""
     if stakes and issubclass(schema, AssistantReadingV2):
-        schema = AssistantReadingStaked
+        schema = getattr(game, "adjudication_schema_staked", AssistantReadingStaked)      # the fantasy's carries the attack (part fifteen)
         _, fresh = game.new_instance({})
         extra = stakes_blocks(game, state, fresh)
     system, msgs = adjudicator_messages(rules, state_text, recent, player_text, _commands_text(_hook(game, "commands", state, default=[])), extra=extra)
@@ -2782,7 +2810,7 @@ class Replay:
     adjudicator call), the levers are previewed again on the same state, the dice come from the same seed
     (`rng_for(iid, turn)`), and the player's ruling joins THIS TURN as a directive. Only the words change,
     then the referee reads them again (DESIGN2 §8, the manual half)."""
-    adjudication: AssistantReading
+    adjudication: AssistantReading | None   # None: the assistant reads the turn again (the player's rewrite, B280)
     hint: str
     attempt: int                      # 1 for the first rewrite of a turn
     history: list[dict[str, Any]]     # every earlier telling of this turn: {attempt, hint, narration, mechanics, ledger}
@@ -2930,7 +2958,9 @@ def rearmed(pitems: list, new: Any, turn: int, within: int = 3) -> Any:
 
 
 # B206 (D178): the games whose enemies and dangers act through the narrator's calls (the fantasy) add this to the protocol
-WORLD_PROTOCOL = ("\n  <<ENEMY id move>> and <<HAZARD name>>  when THIS TURN lists people fighting the player or dangers here: at the moment one "
+WORLD_PROTOCOL = ("\n  <<ATTACK id>> and <<ALLY id>>  in A FIGHT, the player's blow and an ally's, as THIS TURN lists them: write the call on its own "
+                  "line at the moment the blow comes and stop; the engine rolls it and says what it did."
+                  "\n  <<ENEMY id move>> and <<HAZARD name>>  when THIS TURN lists people fighting the player or dangers here: at the moment one "
                   "of them acts or reaches the player, write the call on its own line and stop, as for a check, such as <<ENEMY mirren hold>> or "
                   "<<HAZARD cold_water>>. The engine rolls it and tells you what happened; play that and go on. Every one THIS TURN lists as "
                   "fighting acts once a turn.")
@@ -2983,6 +3013,9 @@ def in_private(now: str, before: list[str]) -> bool:
     return False
 
 
+LEARNING_LOG = re.compile(r"\b(learns?|learned|hears?|heard|is told|was told|finds? out|found out|discovers?|discovered|reads?|works? out|realises|realizes)\b", re.I)
+
+
 def journal_not_log(game: Any, before: Any, after: Any, log_line: str, report: Any) -> Any:
     """B261: a journal line the rows added this turn that is the turn's log line said again is dropped: at least two content
     words shared beyond the names, and at least half of the journal line's own (the directive's bare two-word test dropped 21
@@ -3001,6 +3034,8 @@ def journal_not_log(game: Any, before: Any, after: Any, log_line: str, report: A
             names |= {w.lower().rstrip("s") for w in re.findall(r"[A-Za-z]{3,}", str(q.get("name", "")))}
     pl = a.get("player") or {}
     names |= {w.lower().rstrip("s") for w in re.findall(r"[A-Za-z]{3,}", str(pl.get("name", "")))}
+    if LEARNING_LOG.search(log_line or ""):        # B283: the log line reports the learning itself ("learns from the carter that
+        return after                               # Oswin offers eight gold"): the fact is the journal's, kept (the owner's T29, T35)
     said = _content_words(log_line) - names
     keep, dropped = [], []
     for x in now:
@@ -3058,7 +3093,9 @@ def quiet_why(game: Any, state: Any, adj: Any, doc: dict, turn: int, last: dict 
     here speaking (the referee's `present` and a quoted line). `last` is last turn as the ledger has it (Engine._last_turn)."""
     last = last or {}
     action = adj is not None and getattr(adj, "kind", "") == "action"
-    if action and is_fight(adj):
+    # a narrated command's reading carries tempo "fast" so its own minutes stand (minutes_fixed); that is not a fight, and the
+    # clown's round 1 (11-09) held a booking's caller through four Skips on "in a fight" until the player typed a scene
+    if action and is_fight(adj) and not getattr(adj, "minutes_fixed", False):
         return "in a fight", False
     why = str(_hook(game, "unquiet", state, default="") or "")
     if why:
@@ -3158,6 +3195,52 @@ def settle_hopeless(adj: Any) -> list[dict]:
         outcome = str(getattr(c, "failure_outcome", "") or "") or f"It does not come: {c.label}."
         adj.fiat = list(adj.fiat or []) + [FiatOutcome(attempt=i.action or c.label, outcome=outcome, settled="fails", why=why)]
         out.append({"attempt": i.action or c.label, "label": c.label, "edge": int(c.edge), "why": why})
+        i.check = None
+    return out
+
+
+def settle_attack(adj: Any) -> list[dict]:
+    """B288 (Gemma, 11-09, 2cfb46d7187d turn 6): an intent with `attack_at` is a blow, and the engine's attack roll (against
+    the target's armour) decides it. A STR or DEX check the reading also set on that intent is dropped, so one swing is one
+    roll: the narrator called 'CHECK str medium' and the backstop rolled the attack again after the prose."""
+    out: list[dict] = []
+    if adj is None:
+        return out
+    for i in getattr(adj, "intents", None) or []:
+        c = getattr(i, "check", None)
+        if c is None or not (getattr(i, "attack_at", None) or []) or getattr(c, "stat", "") not in ("str", "dex"):
+            continue
+        out.append({"attempt": i.action or c.label, "label": c.label, "stat": c.stat, "why": "the attack roll decides a blow"})
+        if getattr(adj, "pivotal", "") == c.label:
+            adj.pivotal = ""
+        i.check = None
+    return out
+
+
+def settle_trivial(adj: Any) -> list[dict]:
+    """B279 (the owner, 11-09: "another case of 'this does not need to be a skill check'. I'm just seeing if anyone's around.
+    nobody is hiding"): B225's mirror. A check the assistant set at very_low, with no danger and no complication on failure,
+    aimed at nobody (no target_entity) and no edge against the player, outside a fight, is settled as works before the
+    narrator calls anything: its success becomes a fiat 'works'. Gemma's 'notice who is in the kitchen' (WIS, very low, edge
+    0, 'routine observation in a familiar place') failed on a 3 and the narrator wrote a kitchen nobody could see into."""
+    from .roles import FiatOutcome
+    out: list[dict] = []
+    if adj is None or not hasattr(adj, "fiat"):
+        return out
+    intents = getattr(adj, "intents", None) or []
+    if any(getattr(i, "attack_at", None) for i in intents):
+        return out                                                    # a fight: every roll stands
+    for i in intents:
+        c = getattr(i, "check", None)
+        if (c is None or c.difficulty != "very_low" or int(getattr(c, "edge", 0) or 0) < 0 or getattr(c, "target_entity", None)
+                or getattr(c, "danger", None) != "none" or getattr(c, "complication", None) != "none"):
+            continue
+        why = f"nothing in the way: {(getattr(c, 'edge_why', '') or 'anyone could').strip()}"
+        outcome = str(getattr(c, "success_gain", "") or "") or f"It works: {c.label}."
+        adj.fiat = list(adj.fiat or []) + [FiatOutcome(attempt=i.action or c.label, outcome=outcome, settled="works", why=why)]
+        out.append({"attempt": i.action or c.label, "label": c.label, "stat": c.stat, "why": why})
+        if getattr(adj, "pivotal", "") == c.label:
+            adj.pivotal = ""
         i.check = None
     return out
 
@@ -3383,7 +3466,7 @@ def land_extras(game: Any, state: BaseModel, log_line: str, report: ApplyReport,
         if _same_line(last, log_line):    # a weak referee repeats last turn's line
             report.rejected.append(Rejection(path="log", reason="the same as the last log line", value=log_line.strip(), kind="duplicate"))
         else:
-            sp.append(doc, lpath, f"{_clock_text(game, doc)}{log_line.strip()}")
+            sp.append(doc, lpath, f"{_clock_text(game, doc)}{unstamped(log_line)}")
     for m in getattr(extras, "merges", []):          # B93: a thread opened for a quest already in motion landed as its note
         ledger("merge", m)
     tpath = getattr(game, "threads_path", None)
@@ -3412,6 +3495,15 @@ def _effect_paths(effects: list[dict]) -> list[str]:
 def _events_of(game: Any, doc: dict) -> list[ev.Event]:
     raw = sp.lookup(doc, getattr(game, "events_path", "hidden.events"), []) or []
     return [ev.Event.model_validate(e) for e in raw]
+
+
+STAMP = re.compile(r"^\s*(Day \d+,?\s+)?\d{1,2}:\d{2}\.?\s+(?=\S)")
+
+
+def unstamped(text: str) -> str:
+    """B284: a log line the model began with its own clock ("Day 2 06:00. Ungdall rests...", copied from the log it reads) loses
+    it; the engine stamps every line itself (the owner's Timeline read "06:00. Day 2 06:00. Ungdall rests by the fire")."""
+    return STAMP.sub("", (text or "").strip(), count=1)
 
 
 def _clock_text(game: Any, doc: dict) -> str:

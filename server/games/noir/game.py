@@ -29,7 +29,7 @@ from engine.game import (
     ApplyReport, Chip, ClockSpec, TaskRow, CommandResult, Commands, CommandSpec, EntityCard, EntityCards, GameBase, ListPanel,
     LogPanel, Meter, StatusStrip, TurnInfo, UISchema,
 )
-from engine.gamekit import Clock, Content, Writer, threads_panel
+from engine.gamekit import Clock, Content, Writer, threads_panel, with_introduction
 from engine.mechanics import CheckRequest, Modifier
 from engine.pending import Pending
 from engine.resolve import same_person
@@ -291,7 +291,8 @@ class NoirGame(GameBase):
         return st
 
     def opening(self, state: NoirState) -> str | None:
-        return self.content.scenarios().get(state.case.id, {}).get("opening_text")
+        sc = self.content.scenarios().get(state.case.id, {})              # part fourteen: the introduction first
+        return with_introduction(sc, sc.get("opening_text"))
 
     # ---- frozen prefix (rules + case file) -----------------------------------
     def frozen_prefix(self, state: NoirState) -> str:
@@ -945,7 +946,7 @@ class NoirGame(GameBase):
         if kind == "learned" and is_player:
             c = value[:200]
             if c and not any(n.text == c for n in s.notebook):
-                s.notebook.append(Note(kind="clue", text=c))     # unbounded (D77): the bulletin shows the recent ones
+                s.notebook.append(Note(kind="clue", text=c).stamped(s.clock))     # unbounded (D77): the bulletin shows the recent ones
                 w.note(f"notebook += {c[:120]!r}")
             self._mark_told(s, [q for q in s.people if q.location == p.location], c, w)
             return True
@@ -1252,7 +1253,7 @@ class NoirGame(GameBase):
             for th_ in s.things:
                 if th_.held_by == q.id:
                     th_.held_by = t.id
-            s.notebook.append(Note(kind="contact", text=f"{q.name} is {t.name}."))
+            s.notebook.append(Note(kind="contact", text=f"{q.name} is {t.name}.").stamped(s.clock))
             q.merged, q.location = True, ""
             if w is not None:
                 w.note(f"people.{q.id}: identified as {t.name} ({t.id})")
@@ -1352,7 +1353,7 @@ class NoirGame(GameBase):
         elsewhere = elsewhere if elsewhere and not self._same_spot(s, elsewhere, p.location) else None
         loc = elsewhere or (p.location if p.location in locs else "")
         s.people.append(Person(id=nid, name=name.strip()[:40], role=role.strip()[:60], location=loc, met=elsewhere is None, heard_of=True))
-        s.notebook.append(Note(kind="contact", text=f"{name.strip()}: {role.strip()}" + (f" ({loc})" if loc else "")))
+        s.notebook.append(Note(kind="contact", text=name.strip() + (f": {role.strip()}" if role.strip() else "") + (f" ({loc})" if loc else "")).stamped(s.clock))
         w.note(f"people += {nid} ({name.strip()}, {role.strip()})")
 
     def _new_place(self, s: NoirState, name: str, within: str, w: Writer) -> None:
@@ -1760,9 +1761,11 @@ class NoirGame(GameBase):
                         for q in s.cast if q.heard_of and not q.met
                     ],
                 ),
-                ListPanel(title="Notebook", items=[Chip(label=n.kind, value=n.text) for n in reversed(s.notebook)], fold=6, journal=True),
+
                 threads_panel(s.threads, names=self.entity_names(s)),
                 ListPanel(title="Stats", items=[Chip(label=k, value=f"{v:+d}") for k, v in p.stats.items()]),
-                LogPanel(title="Case log", lines=list(s.log), timeline=True),
+                # B284 (the owner, 11-09: the journal folds into the timeline, in every game): Frank's clues ride in the Case
+                # log at their moment, marked; the contacts are the People cards
+                LogPanel(title="Case log", lines=list(s.log), timeline=True, learned=[n.when + n.text for n in s.notebook if n.kind == "clue"]),
             ],
         )

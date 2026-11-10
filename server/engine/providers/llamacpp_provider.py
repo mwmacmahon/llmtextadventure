@@ -65,7 +65,11 @@ _CHECK_FIELDS = ("edge", "edge_why")          # B217: aim is advisory, no longer
 REQUIRED_BY_NAME: dict[str, tuple[str, ...]] = {"CheckProposal": _CHECK_FIELDS, "CheckStaked": _CHECK_FIELDS,
                                                 "FiatOutcome": ("settled", "why"),
                                                 # B256: a default true the grammar would let Gemma skip, and then never say no
-                                                "AssistantReadingV2": ("open_to_callers",), "AssistantReadingStaked": ("open_to_callers",)}
+                                                "AssistantReadingV2": ("open_to_callers",), "AssistantReadingStaked": ("open_to_callers",),
+                                                # part thirteen §3: the chain's own schemas, every field the one call's grammar names
+                                                "ChainReading": ("open_to_callers", "tempo"), "ChainIntent": ("targets", "transition"),
+                                                "ChainChecks": ("pivotal",), "ChainStake": ("success_gain", "success_minutes", "failure_outcome",
+                                                                                            "failure_minutes", "complication", "complication_what", "danger")}
 
 
 def inline_schema(js: dict) -> dict:

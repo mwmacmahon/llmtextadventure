@@ -23,7 +23,8 @@ def info(turn=1, minutes=5, applied=None, levers=None):
 def test_the_opening_is_shown_at_turn_zero_and_its_event_is_played(engine, game):
     iid = engine.create_instance("fantasy", SHEET)
     rows = engine.store.transcript(iid)
-    assert rows[0].turn == 0 and rows[0].role == "narrator" and rows[0].text.startswith("The common room of the Drowned Lantern at dusk")
+    assert rows[0].turn == 0 and rows[0].role == "narrator" and rows[0].text.startswith("Marrowgate is a river city under a fog")   # part fourteen: the introduction first
+    assert "\n\nThe common room of the Drowned Lantern at dusk" in rows[0].text
     st = state_of(engine, iid)
     op = next(e for e in st.hidden.events if e.id == "opening")
     assert op.fired and op.fired_turn == 0
@@ -95,6 +96,8 @@ def test_acceptance_5_rerun_on_the_file_as_written(game):
     now = st.clock.day * dk.DAY + st.clock.minute
     st.player.visited["Lake Ambercold"] = now + 100
     st.hooks = st.hooks[:1]                                                   # one in motion: a draw is due
+    from games.fantasy.state import HookState                                 # part fifteen §12: the deck's first draw, out of the way
+    st.hooks.append(HookState(id="the_quiet_dead", title="The Quiet Dead", tier=1, status="done"))
     lake = {h for h, hk in hooks.items() if dk.hook_places(hk) & set(deck["water"])}
     picks = [dk.draw(st, deck, hooks, random.Random(seed), now + 360, 1) for seed in range(10)]
     print("acceptance 5:", sum(1 for x in picks if x in lake), "of 10 lake hooks;", picks)

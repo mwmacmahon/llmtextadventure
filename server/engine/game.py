@@ -116,6 +116,7 @@ class LogPanel(BaseModel):
     title: str
     lines: list[str]
     timeline: bool = False           # B261: the game's log (what happened): not in a column; the Timeline overlay, by day
+    learned: list[str] = Field(default_factory=list)   # B284: what was learned ("Day N HH:MM. text", or undated): marked in the Timeline
 
 
 class Choice(BaseModel):
@@ -171,6 +172,7 @@ class CommandSpec(BaseModel):
     hint: str = ""
     typed: bool = True              # the adjudicator may map typed input onto it; False for read-only console commands
     words: list[str] = Field(default_factory=list)   # typed use: the input must contain one of these (a word start) for the adjudicator's pick to count
+    decides: bool = False           # B289: a typed pick settles the attempt itself (Flee, Yield): the reading's checks go
     enabled: bool = True            # the panel shows it greyed when False (Level up before the XP is there); the engine still refuses
     panel: "CommandPanel | None" = None   # a command that opens a panel of its own (the level-up screen, B92) instead of selects
 

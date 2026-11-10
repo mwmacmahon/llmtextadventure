@@ -31,12 +31,12 @@ from engine.game import (
     UISchema,
 )
 from engine.game import Rejection
-from engine.gamekit import Clock, Writer, quest_line
+from engine.gamekit import Clock, Writer, quest_line, with_introduction
 from engine.mechanics import CheckRequest, Modifier
 from engine.narration import default_mechanic_line
 from engine.pending import Pending
 from engine.resolve import Quest, same_person
-from engine.roles import AssistantReadingV2, Change
+from engine.roles import AssistantReadingCombat, AssistantReadingCombatV2, AssistantReadingV2, Change
 from engine.spontaneous import Spontaneous
 from engine.statepath import Actor
 
@@ -45,6 +45,7 @@ from . import conditions as cn
 from . import world as wo
 from . import deck as dk
 from . import sheet as sh
+from .combat import person_hp_word
 from .state import (
     ATTITUDE_WORDS, COINS, COPPERS, COPPERS_TO_GOLD, HUNTED_AT, STAT_NAMES, STATS, WANTED_AT, Ability, City, Condition, Count,
     FantasyState, FoundPlace, Hidden, Item, Note, Person, Player, find_item, purse_text, tier_of, RENOWN_TIERS, RENOWN_SCALE, HEAT_TIERS,
@@ -220,6 +221,10 @@ def city_from(sc: dict) -> City:
                 country=list(sc.get("country") or []), hazards={k: list(v or []) for k, v in (sc.get("hazards") or {}).items()})
 
 
+
+
+MONSTER = re.compile(r"\b(troll|ogre|giant|beast|monster|wolf|wolves|rat|rats|drake|dragon|wight|ghost|ghoul|skeleton|dead|siren|spider|bear)\b", re.I)   # B290: not the Watch's business
+
 class FantasyGame(GameBase):
     name = "fantasy"
     version = "0.1.0"
@@ -251,7 +256,8 @@ class FantasyGame(GameBase):
     log_path = "log"
     journal_path = "journal"            # B261: what was learned (a journal line that says the turn's log line again is dropped)
     mechanic_numbers = True
-    adjudication_schema = AssistantReadingV2
+    adjudication_schema = AssistantReadingCombatV2             # part fifteen §6: an intent's attack, the stakes on or off
+    adjudication_schema_staked = AssistantReadingCombat
     fallback_stat = "wis"
     static_paths = ["player.name", "player.race", "player.klass", "player.gender", "player.about", "player.sheet_notes"]
     extra_rulings = {"too_far": "Cut it where it turned (at the door, before the advance, at the first blow) and pick up after it; a job or "
@@ -288,7 +294,8 @@ class FantasyGame(GameBase):
         classes = self.classes()
         out: dict[str, Any] = {
             "name": {"kind": "text", "label": "Name", "required": True},
-            "klass": {"kind": "select", "label": "Class", "required": True, "options": [{"id": c.name, "name": c.label} for c in classes.values()]},
+            "klass": {"kind": "select", "label": "Class", "required": True, "options": [{"id": c.name, "name": c.label} for c in      # the playable classes first (the owner, 11-09)
+                                                                                   sorted(classes.values(), key=lambda c: c.status != "full")]},
         }
         for c in classes.values():                         # the kit as selects in the SRD's manner, shown for the class picked (B92)
             for key, ch in c.kit_fields():
@@ -425,7 +432,15 @@ class FantasyGame(GameBase):
         return s
 
     def opening(self, state: FantasyState) -> str | None:
-        return self.scenario(state.city.id).get("opening_text")          # B51 (D167): as written, at turn 0
+        sc = self.scenario(state.city.id)                                  # B51 (D167): as written, at turn 0; part fourteen: the introduction first
+        p = state.player
+        race = p.race.lower()
+
+        def fill(t: str) -> str:
+            if race[:1] in "aeiou":
+                t = t.replace("a {race}", "an {race}")
+            return t.replace("{race}", race).replace("{klass}", p.klass.lower()).replace("{name}", p.name)
+        return with_introduction(sc, sc.get("opening_text"), fill)
 
     # ---- the frozen prefix -------------------------------------------------------------------------------------------
     def fill_prefix(self, p: Player) -> str:
@@ -445,6 +460,8 @@ class FantasyGame(GameBase):
         out = [f"- {q.name} ({q.id}), {q.role}. {q.description}".rstrip() + (f" Also called {', '.join(q.aliases)}." if q.aliases else "")
                + (f" At the start: {q.mood}, at {q.location}." if q.mood and q.location else f" At the start: at {q.location}." if q.location else "")
                + (f" Already {q.status}." if q.status not in ("alive", "") else "")]
+        if self.called(q) != q.name:
+            out.append(f"    Until {s.player.name} hears the name: '{self.called(q)}'.")      # B286
         if q.wants:
             out.append(f"    Wants: {q.wants}")
         if q.facts:
@@ -588,6 +605,7 @@ class FantasyGame(GameBase):
         a place's name counts as learned once the player has met them or been there (the content README)."""
         if not state.hidden.terms:
             return []
+        prose = "\n".join(ln for ln in (prose or "").splitlines() if not ln.lstrip().startswith("§"))   # B286: the engine's dice lines are not the telling
         voice = re.sub(r'"[^"]*"|“[^”]*”', " ", prose)
         said = " ".join(re.findall(r'"[^"]*"|“[^”]*”', prose))
         # the owner (11-08 evening): Elowen named in the telling because the young siren had been in the scene. Being met is not
@@ -618,7 +636,7 @@ class FantasyGame(GameBase):
             q = s.person(pid)
             if q is None:
                 continue
-            who = q.name if self.name_shown(s, q) else (q.role or "someone, not yet named")
+            who = q.name if self.name_shown(s, q) else self.called(q)
             bits = [b for b in (q.role if who != q.role else "", q.description.strip()) if b]
             out.append(f"- {who}" + (": " + "; ".join(bits) if bits else ""))
         return out
@@ -665,7 +683,7 @@ class FantasyGame(GameBase):
         if t:
             out.append({"rule": "clock_in_prose", "what": f"the telling writes the clock's time ('{t.group(0)}')",
                         "fix": "Never write the clock's time in the telling; the player sees it on the strip. Say the hour as the "
-                               "city shows it (the bells, the light, the fog, the dark), or leave it out."})
+                               "city shows it (the light, the fog, the dark), or leave it out."})
         q = re.search(r"\bwhat (do|does|will) (you|" + re.escape(state.player.name) + r")( now)? do\b[^.?!]*\?", voice, re.I)
         if q:
             out.append({"rule": "question_in_prose", "what": f"the telling asks the player what they do ('{q.group(0)}')",
@@ -728,7 +746,7 @@ class FantasyGame(GameBase):
         here = [s.person(x) for x in p.with_them]
         here = [q for q in here if q is not None and q.status == "alive"]
         if here:
-            lines.append(f"With {p.name}: " + ", ".join(f"{q.name} ({q.attitude_word})" for q in here) + ".")
+            lines.append(f"With {p.name}: " + ", ".join(f"{self.as_known(s, q)} ({q.attitude_word})" for q in here) + ".")
         texts = s.city.place_texts.get(p.location) or []
         if texts:
             lines.append(f"At {p.location}, from the quests in motion: " + " ".join(texts))
@@ -749,8 +767,9 @@ class FantasyGame(GameBase):
             lines.append("")
             lines.append(f"People {p.name} has dealt with:")
             for q in met:
-                bits = [q.status if q.status != "alive" else "", f"at {q.location or 'unknown'}", f"{q.attitude_word} toward {p.name}", q.mood, q.condition]
-                lines.append(f"- {q.name}: " + ", ".join(x for x in bits if x) + ".")
+                bits = [q.status if q.status != "alive" else "", f"at {q.location or 'unknown'}", f"{q.attitude_word} toward {p.name}",
+                        person_hp_word(q) if q.status == "alive" else "", q.mood, q.condition]      # part fifteen §1: the hit point word
+                lines.append(f"- {self.as_known(s, q, full=True)}: " + ", ".join(x for x in bits if x) + ".")
                 if q.wants:
                     lines.append(f"    Wants: {q.wants}")
                 for f in q.facts[-4:]:
@@ -904,6 +923,9 @@ class FantasyGame(GameBase):
         if p.carry_lines and not p.fate:                 # the backstop's blows (B206): the turn opens on them
             out.append("Since the last telling: " + " ".join(p.carry_lines) + " Open on it.")
         foes = wo.present_enemies(self, s)
+        from . import combat as cb
+        if s.combat is not None:                         # part fifteen §3: the round list comes from world_turn, where the plan is made
+            foes = []
         if foes and not p.fate:                          # B206 (D178): every hostile acts once a turn in a fight; the narrator calls it
             out.append("In a fight with " + p.name + ": " + "; ".join(
                 q.name + " (" + ", ".join(str(m.get("kind")) for m in (q.moves or [wo.DEFAULT_STRIKE])) + ")" for q in foes)
@@ -922,8 +944,9 @@ class FantasyGame(GameBase):
                        + f". When the telling puts {p.name} in one, write its call at that moment and wait for the answer.")
         party = [q for q in (s.person(x) for x in p.with_them) if q is not None and q.status == "alive" and not q.hidden_from_player]
         if party and not p.fate:          # the owner (11-08 evening): Tam sat in the boat as scenery while the search was for his own child
-            out.append(f"With {p.name} this turn: " + "; ".join(q.name + (f", who wants this: {q.wants.rstrip('.')}" if q.wants else "")
-                                                              + (f" (now {q.mood})" if q.mood else "") for q in party)
+            out.append(f"With {p.name} this turn: " + "; ".join(self.as_known(s, q) + (f", who wants this: {q.wants.rstrip('.')}" if q.wants else "")
+                                                              + (f" (now {q.mood})" if q.mood else "")
+                                                              + (f" ({person_hp_word(q)})" if person_hp_word(q) else "") for q in party)
                        + ". Those the moment touches speak or act, true to what they want and how they are; the rest are there and need "
                          "nothing, or a word. Not everyone every turn.")
         return out
@@ -950,8 +973,12 @@ class FantasyGame(GameBase):
             "",
             "Difficulty: very_low = easy; low = routine; medium = a real chance to fail; high = hard; very_high = nearly impossible without an edge.",
             "Checks: one per real risk. Talking to a friend needs none; getting something out of a stranger, a wary or a hostile person is a cha check "
-            "against them (name them in target_entity). Searching for something hidden is wis; knowing a thing is int; a lock is dex; a fight is str "
-            "(dex for a bow, a thrown knife or a quick blade). A cantrip in a calm moment needs no check; a spell under pressure is an int check "
+            "against them (name them in target_entity). Searching for something hidden is wis; knowing a thing is int; a lock is dex. "
+            "In a fight, a blow at someone with a weapon is an attack: name the target or targets and the weapon, and any rider the player named; "
+            "no difficulty. Something the player tries in a fight that is not a blow with a weapon (sand in the eyes, the trapdoor, a shove off the "
+            "ledge, a feint, a word to the leader) is a check as always, staked with what it does to them if it works; a free action (a word, a "
+            "thing dropped or drawn) is no check and no time. The player's words still earn an edge (a plan, the ground, a feint named), as a "
+            "modifier with a why. A cantrip in a calm moment needs no check; a spell under pressure is an int check "
             "with the spell named in the label.",
         ]
         if p.about.strip():
@@ -1040,7 +1067,9 @@ class FantasyGame(GameBase):
                f"quote it in the note."] if any(q.hidden_from_player for q in s.people) else []),
             "- set <person id>.told value=<tell id>: the person gave that piece of what they know this turn. The game state lists the open pieces, with "
             "their ids, for the people with the player; one row per piece told.",
-            "- set <person id>.status alive|dead|missing|gone; set <person id>.condition <a few words>; set <person id>.mood <a word>.",
+            "- set <person id>.status alive|dead|missing|gone; set <person id>.condition <a few words>; set <person id>.mood <a word>. "
+            "In A FIGHT (THIS TURN lists a round), write no hit point or status rows for anyone the round touched: the engine counted every "
+            "blow and told the narrator what happened; conditions, places and heat as always.",
             "- learned <person id> value=fact: what they told the player or what the player learned about them, one sentence; when it makes something "
             "already known about them false now (they moved, changed sides, were lying), note=replaces followed by a few words copied exactly from the "
             "old fact as listed; not when the new fact only adds to the old. learned player value=clue: "
@@ -1110,12 +1139,12 @@ class FantasyGame(GameBase):
         """The Quests panel (B93): the hooks the player knows of, then their own threads, one shape: title, one line, the
         standing word, the giver."""
         hooks = self.hooks_content()
-        rows = [QuestRow(title=h.title, line=quest_line(dk.fill(self._standing_line(h.id, hooks), s.player.name), h.note),
-                         standing=dk.standing_of(h), giver=h.giver, tone=dk.STANDING_TONES.get(dk.standing_of(h), "info"))  # type: ignore[arg-type]
-                for h in s.hooks if h.status != "dealt"]
+        rows = [QuestRow(title=h.title, line=self.unnamed(s, quest_line(dk.fill(self._standing_line(h.id, hooks), s.player.name), h.note)),
+                         standing=dk.standing_of(h), giver=self.unnamed(s, h.giver), tone=dk.STANDING_TONES.get(dk.standing_of(h), "info"))  # type: ignore[arg-type]
+                for h in s.hooks if h.status != "dealt"]                 # B290: names as the player knows them (Maud, 'the troll Gorm')
         names = self.entity_names(s)
-        rows += [QuestRow(title=t.title, line=quest_line(t.about, t.note), standing=THREAD_STANDING.get(t.status, t.status),
-                          giver="" if t.who.strip().lower() in ("player", "you", s.player.name.lower()) else names.get(t.who, t.who),   # B224.24
+        rows += [QuestRow(title=t.title, line=self.unnamed(s, quest_line(t.about, t.note)), standing=THREAD_STANDING.get(t.status, t.status),
+                          giver="" if t.who.strip().lower() in ("player", "you", s.player.name.lower()) else self.unnamed(s, names.get(t.who, t.who)),   # B224.24
                           tone="ok" if t.status == "resolved" else "bad" if t.status == "failed" else "info")
                  for t in s.threads if not t.id.startswith("hook-")]
         return rows
@@ -1215,7 +1244,7 @@ class FantasyGame(GameBase):
             if not a.words or any(w in label for w in a.words):
                 mods.append(Modifier(label=a.name, value=a.mod))
         for c in p.conditions:
-            if c.mod and c.stat == req.stat and (not c.words or any(w in label for w in c.words)):
+            if c.mod and c.stat in (req.stat, "all") and (not c.words or any(w in label for w in c.words)):
                 mods.append(Modifier(label=c.name, value=c.mod))
         mods += wd.wound_modifiers(p.wounds, req.stat, WOUND_KINDS)          # the wound ladder (B200): minor 0 to ruinous -5
         if req.stat == "str" and ATTACK.search(req.label) and not HEAVY.search(req.label):   # B222: a finesse weapon, the better of STR and DEX
@@ -1264,11 +1293,23 @@ class FantasyGame(GameBase):
 
     def world_call(self, state: FantasyState, call: Any, rng: Any, offset: int, tally: dict) -> dict | None:
         """<<ENEMY who move>> and <<HAZARD name>> (B206, D178): rolled now, landed after the prose (world.land)."""
-        return wo.world_call(self, state, call, rng, offset, tally)
+        out = wo.world_call(self, state, call, rng, offset, tally)
+        if out is not None:
+            out = {**out, "text": self.unnamed(state, out.get("text", "")), "mechanic": self.unnamed(state, out.get("mechanic", ""))}
+            if isinstance(out.get("data"), dict) and out["data"].get("line"):
+                out["data"] = {**out["data"], "line": self.unnamed(state, out["data"]["line"])}
+        return out
 
     def backstop(self, state: FantasyState, tally: dict, rng: Any, offset: int) -> list[dict]:
         """The hostiles the prose left out of a fight turn, rolled after it (B206)."""
-        return wo.backstop(self, state, list(tally.get("acted") or []), rng, offset, tally)
+        out = wo.backstop(self, state, list(tally.get("acted") or []), rng, offset, tally)
+        for c in out:                                       # B286: the dice lines name nobody the player has not heard named
+            for k in ("mechanic", "told"):
+                if c.get(k):
+                    c[k] = self.unnamed(state, c[k])
+            if isinstance(c.get("result"), dict) and c["result"].get("line"):
+                c["result"]["line"] = self.unnamed(state, c["result"]["line"])
+        return out
 
     def _land_condition(self, s: FantasyState, name: str, by: str = "") -> None:
         """A condition the engine sets (a song, a hazard): the table's row, with its compulsion's `by` (B96, part four §6)."""
@@ -1283,7 +1324,10 @@ class FantasyGame(GameBase):
     def world_turn(self, state: FantasyState, adj: Any, player_text: str, rng: Any, turn: int, offset: int):
         """The engine's own rolls before the narrator writes (part four, D176): a chosen death, a peril's countdown, the
         enemies' moves. Returns (state, WorldTurn)."""
-        return wo.world_turn(self, state, adj, player_text, rng, turn, offset)
+        s, w = wo.world_turn(self, state, adj, player_text, rng, turn, offset)
+        w.directives = [self.unnamed(s, d) for d in w.directives]          # B286: the round list calls them as the player does
+        w.mechanics = [self.unnamed(s, m) for m in w.mechanics]
+        return s, w
 
     def forced_death(self, state: FantasyState, narration: str, rows: list[dict], calls: list[dict]) -> str | None:
         """B215: the guard's last telling of a death turn still did not write the death. The engine writes it: the prose up
@@ -1400,6 +1444,49 @@ class FantasyGame(GameBase):
                         and re.search(r"\b" + re.escape(nm) + r"\b", text, re.I):
                     s.player.names_heard.append(nm)
 
+    @staticmethod
+    def called(q: Person) -> str:  # noqa: D401
+        """B286 (the owner, 11-09: "all entities need a name for what to call them when they are not identified"): the
+        content's `called` ("Troll", "Young siren"), else the role's first words ("A small troll" -> "Small troll")."""
+        if q.called.strip():
+            return q.called.strip()
+        r = re.split(r"[,;(]| of | who | in | from ", q.role or "", maxsplit=1)[0].strip()
+        r = re.sub(r"^(a|an|the)\s+", "", r, flags=re.I)
+        return (r[:1].upper() + r[1:]) if r and len(r.split()) <= 4 else "Stranger"
+
+    def shown_name(self, s: FantasyState, q: Person) -> str:
+        """What the player calls them now: the name once heard (name_shown), else what they are called."""
+        return q.name if self.name_shown(s, q) else self.called(q)
+
+    def as_known(self, s: FantasyState, q: Person, full: bool = False) -> str:
+        """B286: a person in the narrator's state block as the player knows them: the name once heard, else what the player
+        calls them, the name beside it for the narrator, and (in the people list) how to use it."""
+        if self.name_shown(s, q) or self.called(q) == q.name:
+            return q.name
+        c = self.called(q)
+        if not full:
+            return f"{c} ({q.name}; {s.player.name} has not heard the name)"
+        return (f"{c} ({q.name}; {s.player.name} has not heard the name: in the telling they are '{c}' or what {s.player.name} sees, "
+                f"until someone in the story says the name to {s.player.name})")
+
+    def unnamed(self, s: FantasyState, text: str) -> str:
+        """B286: an engine line with every name the player has not heard put as what they call that person (Gorm -> Troll):
+        the dice lines, the Fight panel, the round list. Ids in a <<CALL id>> are lower case and left alone."""
+        if not text:
+            return text
+        for q in sorted(s.people, key=lambda q: -len(q.name or "")):
+            if not q.name or self.name_shown(s, q):
+                continue
+            label = self.called(q)
+            if label == q.name:
+                continue
+            first = q.name.split()[0]
+            mine = {x.lower() for x in s.player.name.split()}                # the player's own name is never swapped (a player called Wren)
+            names = [q.name] + ([first] if len(first) > 2 and first.lower() not in TITLES and first.lower() not in mine else [])
+            for nm in names:
+                text = re.sub(r"(?<![\w<])" + re.escape(nm) + r"(?!\w)", label, text)
+        return text
+
     def name_shown(self, s: FantasyState, q: Person) -> bool:
         """B224: the People panel names a person once the telling, the player, or the journal has (Gorm and Mirren were on the
         panel by name turns before the prose named them); until then the card says what they are."""
@@ -1429,7 +1516,14 @@ class FantasyGame(GameBase):
             what = "a theft"
         if not what:
             return ""
+        vq = s.person(victim) if victim else None
+        if vq is not None:                                   # B290: a troll under the inn is no crime for the Watch (95aa120b8c51 T5)
+            from .combat import ensure_block
+            if ensure_block(vq).kind in ("beast", "undead") or MONSTER.search(f"{vq.role} {vq.called}"):
+                return ""
+        fought = set(p.fighting) | set(s.combat.defeated if s.combat else [])
         seen = [q for q in s.people if q.status == "alive" and q.id != victim and q.id not in p.with_them and not q.hidden_from_player
+                and q.id not in fought                       # B290: the robber fighting beside the one you cut does not run to the Watch (T20)
                 and q.location and self._same_spot(s, q.location, p.location)]
         nxt = next((lo for lo, _ in HEAT_TIERS if lo > p.heat), None)
         if not seen or nxt is None:
@@ -1554,7 +1648,7 @@ class FantasyGame(GameBase):
                 w.reject("journal", "a journal line is a whole sentence; this one runs past 200 characters with no end inside them", value[:80])
                 return True
             if text and not any(n.text == text for n in s.journal):
-                s.journal.append(Note(kind="clue", text=text))
+                s.journal.append(Note(kind="clue", text=text).stamped(s.clock))
                 w.note(f"journal += {text[:120]!r}")
             self._mark_told(s, [q for q in s.people if self._same_spot(s, q.location, p.location)], text, w)
             return True
@@ -1713,7 +1807,7 @@ class FantasyGame(GameBase):
         if row is None:                                  # a sentence, or a name the table does not have: the journal keeps it
             text = f"{p.name}: {phrase}"
             if not any(n.text == text for n in s.journal):
-                s.journal.append(Note(kind="clue", text=text))
+                s.journal.append(Note(kind="clue", text=text).stamped(s.clock))
             w.note(f"player.conditions: {phrase!r} is not a condition name; journal += {text!r}")
             return True
         if p.has_condition(row.name):
@@ -2012,6 +2106,10 @@ class FantasyGame(GameBase):
                 w.note(f"people.{q.id}.facts += {f!r}")
             self._mark_told(s, [q], f, w)
             return True
+        if kind == "set" and field == "status" and s.combat is not None and any(e.get("who") == q.id or q.id in (e.get("targets") or [])
+                                                                                 or e.get("target") == q.id for e in s.combat.plan):
+            w.reject(f"people.{q.id}.status", "in a fight the engine counts the blows (part fifteen): no status rows for anyone the round touched", value)
+            return True
         if kind == "set" and field == "status":
             v = value.strip().lower()
             if v in ("alive", "dead", "missing", "gone", "unknown"):
@@ -2132,8 +2230,7 @@ class FantasyGame(GameBase):
     def _same_person(s: FantasyState, name: str) -> Person | None:
         return same_person(s.people, name, PERSON_TITLES)
 
-    @staticmethod
-    def _described(s: FantasyState, name: str, note: str = "") -> Person | None:
+    def _described(self, s: FantasyState, name: str, note: str = "", here: bool = False) -> Person | None:
         """A stranger the prose introduces by a description that fits one listed person not yet met: "the grey-green siren"
         is Mirren ("grey-green", "the siren in the shallows"), "a child in a river-brown dress" is Wren Reedy ("river-brown
         like her father"). Two shared words or more, and more than anyone else shares; on a tie, the row's note decides
@@ -2144,7 +2241,8 @@ class FantasyGame(GameBase):
             return None
         scored = sorted((((len(words & _words(" ".join([q.name, *q.aliases, q.description]))),
                            len(said & _words(" ".join([q.role, *q.aliases, q.description])))), i)
-                         for i, q in enumerate(s.people) if not q.met and q.status == "alive"), reverse=True)
+                         for i, q in enumerate(s.people) if not q.met and q.status == "alive"
+                         and (not here or not q.location or self._same_spot(s, q.location, s.player.location))), reverse=True)   # B290: here, not the isle's ghost
         if not scored or scored[0][0][0] < 2 or (len(scored) > 1 and scored[1][0] == scored[0][0]):
             return None
         return s.people[scored[0][1]]
@@ -2162,7 +2260,8 @@ class FantasyGame(GameBase):
 
     def _new_person(self, s: FantasyState, name: str, role: str, w: Writer, where: str = "") -> None:
         p = s.player
-        q = s.person(slug(name)) or self._same_person(s, name) or self._described(s, name, role)
+        here = not where.strip() or where.strip().lower() in ("player", "here", p.name.lower())
+        q = s.person(slug(name)) or self._same_person(s, name) or self._described(s, name, role, here=here)
         if q is not None:
             if q.name.lower() != name.strip().lower():
                 w.note(f"new person {name.strip()!r} is {q.id} ({q.name}): nothing added")
@@ -2175,13 +2274,23 @@ class FantasyGame(GameBase):
         elsewhere = elsewhere if elsewhere and not self._same_spot(s, elsewhere, p.location) else None
         loc = elsewhere or p.location
         nid = slug(name)
+        fights = bool(re.search(r"\bfights?\b(\s*:\s*true)?", role or "", re.I))       # part fifteen §1: an invented enemy
+        role = re.sub(r"[,;]?\s*\bfights?\b(\s*:\s*true)?", "", role or "", flags=re.I).strip()
         s.people.append(Person(id=nid, name=name.strip()[:40], role=role.strip()[:60], location=loc, seen_at=loc if elsewhere is None else "",
                                met=elsewhere is None, heard_of=True))
-        s.journal.append(Note(kind="contact", text=f"{name.strip()}: {role.strip()}" + (f" ({loc})" if loc else "")))
+        if fights and elsewhere is None:
+            from .combat import ensure_block
+            ensure_block(s.people[-1])
+            if nid not in p.fighting:
+                p.fighting.append(nid)
+            w.note(f"people.{nid} fights: a {s.people[-1].combat.block} block, in the fight")
+        s.journal.append(Note(kind="contact", text=name.strip() + (f": {role.strip()}" if role.strip() else "") + (f" ({loc})" if loc else "")).stamped(s.clock))   # B283: no empty role
         w.note(f"people += {nid} ({name.strip()}, {role.strip()})")
 
     def _new_place(self, s: FantasyState, name: str, within: str, w: Writer) -> None:
-        clean = name.strip().strip('"').strip()[:40]
+        clean = name.strip().strip('"').strip()
+        if len(clean) > 40:                                  # B290: at a word, not 'the round cham'
+            clean = clean[:41].rsplit(" ", 1)[0].rstrip(" ,;:-")
         same = self._place(s, clean)
         if same is not None and same.lower().removeprefix("the ") == clean.lower().removeprefix("the "):
             self._heard_of_place(s, same, w)
@@ -2237,7 +2346,9 @@ class FantasyGame(GameBase):
         p.shown_notes, p.turn_notes, p.notes_turn = list(p.turn_notes), [], info.turn
         self._seeds_shown(s, info.prose)                                 # B243: the cards follow the telling
         p.carry_lines = []
-        p.shown_notes += wo.land(self, s, info.calls, info.turn)          # the world's calls and the backstop (B206)
+        p.shown_notes += [self.unnamed(s, n) for n in wo.land(self, s, info.calls, info.turn)]     # the world's calls and the backstop (B206)
+        from . import combat as cb                                         # part fifteen §3: the round on everyone's hit points
+        p.shown_notes += [self.unnamed(s, n) for n in cb.land(self, s, info.calls, info.turn, int(getattr(info, "target_offset", 0) or 0), info.rng)]
         if p.fate == "dead" and p.fate_turn < info.turn:                  # a death the narrator was told inline: it ends this turn
             s.flags["ending"] = f"{p.name} died at {p.location or 'Marrowgate'} on day {s.clock.day}. The fog keeps the rest."
             return s
@@ -2336,6 +2447,9 @@ class FantasyGame(GameBase):
         p = s.player
         hid_check = False
         for c in info.calls:
+            if c.get("verb") == "ATTACK" and not c.get("none"):               # B290: the combat roll is a blow too (the second stab was 'from hiding')
+                p.hidden_from_others = False
+                continue
             label, stat, ok = str(c.get("label") or ""), c.get("stat"), c.get("outcome") in ("success", "huge_success", "critical_success")
             if stat == "cha" or ATTACK.search(label) or LOUD.search(label):
                 p.hidden_from_others = False
@@ -2670,7 +2784,19 @@ class FantasyGame(GameBase):
         p = state.player
         if self.ending(state) or p.fate in ("dead", "carried"):
             return [CommandSpec(id="journal", label="Journal", mode="engine", typed=False, hint="Read the journal, the quests and the people.")]
-        out = [CommandSpec(id="rest", label="Rest", mode="narrated", params=[Param(name="kind", label="Rest", options=[Option(id="short", label="Short (an hour)"), Option(id="long", label="Long (the night)")], default="short")],
+        out = []
+        if state.combat is not None and state.player.fighting:              # part fifteen §7; B287 (the owner, 11-09): typed, no buttons
+            out += [CommandSpec(id="flee", label="Flee", mode="narrated", typed=True, decides=True,
+                                hint="Run from the fight: the player turns their back on it and goes (out of reach, out of the place). Every enemy "
+                                     "within reach gets one free blow as they go. Not a step back, a dodge, or a move to better ground inside the fight.",
+                                words=["run", "flee", "bolt", "escape", "get away", "get out", "retreat", "make a break", "dash", "sprint", "leg it",
+                                       "scramble", "back away", "back off", "withdraw", "out of here", "for the door", "for the stairs"]),
+                    CommandSpec(id="yield", label="Yield", mode="narrated", typed=True, decides=True,
+                                hint="Give up the fight: the player surrenders, begs for mercy, or throws down their weapon. People may take it "
+                                     "(the fight ends); the dead, beasts and fanatics do not. Not a parley offered mid-swing or a bluff.",
+                                words=["yield", "surrender", "give up", "i give", "mercy", "quarter", "throw down", "drop my", "lay down", "enough",
+                                       "don't kill", "spare me", "beg"])]
+        out += [CommandSpec(id="rest", label="Rest", mode="narrated", params=[Param(name="kind", label="Rest", options=[Option(id="short", label="Short (an hour)"), Option(id="long", label="Long (the night)")], default="short")],
                            hint="Rest: an hour (some hit points back) or the night (all of them, and what a night refills), here or close by with nothing "
                                 "in the way. Not when the player names a place farther off to sleep: that is a move there, not a rest.",
                            words=["rest", "sleep", "catch my breath", "lie down", "turn in", "bed down", "nap"])]
@@ -2679,21 +2805,25 @@ class FantasyGame(GameBase):
                                panel=self._level_panel(p) if p.xp >= nxt else None, typed=False,
                                hint="Open the level-up screen when the XP is there: what is new, the hit points, a stat raise at levels 4, 8 and 12.",
                                words=["level up", "level-up"]))
-        rage = p.count("rage")
-        if "raging" in p.flags_on:
+        from . import features as ft                                       # part fifteen §10: the class file's features as chips
+        feat = ft.chips(self, state)
+        covered = {c.id for c in feat} | {c.id[4:] for c in feat if c.id.startswith("end_")} | set(ft.specs(self, p))
+        out += feat
+        rage = p.count("rage") if "rage" not in covered else None
+        if "raging" in p.flags_on and "rage" not in covered:
             out.append(CommandSpec(id="end_rage", label="End rage", mode="engine", hint="Let the rage go before the scene ends.",
                                    words=["calm down", "end the rage", "stop raging", "let the rage go"]))
         elif rage is not None:
             out.append(CommandSpec(id="rage", label=f"Rage ({rage.value} left)", mode="narrated", enabled=rage.value > 0,
                                    hint="Fly into a rage until the scene ends: STR +2 to fight, force, lift and break; blows land a step lighter; CHA -2 to talk.",
                                    words=["rage", "raging", "fly into a rage", "berserk"]))
-        if p.count("lay_on_hands"):
+        if p.count("lay_on_hands") and "lay_on_hands" not in covered:
             out.append(CommandSpec(id="lay_on_hands", label="Lay on Hands", mode="narrated", hint="A healing touch: 5 hit points back, once between long rests.",
                                    words=["lay on hands", "lay hands"]))
-        if p.count("second_wind"):
+        if p.count("second_wind") and "second_wind" not in covered:
             out.append(CommandSpec(id="second_wind", label="Second wind", mode="narrated", hint="Catch a second wind: 5 hit points back, once between long rests.",
                                    words=["second wind"]))
-        if p.count("smoke_pellets"):
+        if p.count("smoke_pellets") and "smoke_pellets" not in covered:
             out.append(CommandSpec(id="smoke_pellets", label="Smoke pellets", mode="narrated", hint="Crack a smoke pellet and vanish from the scene.",
                                    words=["smoke pellet", "smoke bomb", "pellet"]))
         if p.count("breath"):
@@ -2781,8 +2911,12 @@ class FantasyGame(GameBase):
             p.hp_max += gain
             p.hp += gain
             line = f"{p.name} is level {p.level}: {gain} more hit points" + (f"; {'; '.join(got)}" if got else "") + "."
-            s.journal.append(Note(kind="clue", text=line[:200]))
+            s.journal.append(Note(kind="clue", text=line[:200]).stamped(s.clock))
             return s, CommandResult(label="Level up", text=line, log_line=line)
+        from . import features as ft                                       # part fifteen §10: a feature in the class file runs by its kind
+        done = ft.run(self, state, command_id, args or {})
+        if done is not None:
+            return done
         if command_id == "rage":
             c = p.count("rage")
             if c is None or c.value <= 0 or "raging" in p.flags_on:
@@ -2827,6 +2961,14 @@ class FantasyGame(GameBase):
                                     directive=f"{p.name} cracks a smoke pellet: grey smoke fills the place in a breath, and when it thins {p.name} is gone from the scene, "
                                               f"a few streets or a few rooms away and unseen. Say where they come out, and stop.",
                                     minutes=2, referee_skip=["smoke_pellets"])
+        if command_id in ("flee", "yield"):                               # part fifteen §7
+            from . import combat as cb
+            s2, res = cb.run_fight_command(self, state, command_id)
+            if getattr(res, "directive", None):                         # B286: the names as the player knows them
+                res = res.model_copy(update={"directive": self.unnamed(s2, res.directive), "summary": self.unnamed(s2, res.summary or "")})
+            if s2 is not state:
+                s2.player.turn_notes = [self.unnamed(s2, n) for n in s2.player.turn_notes]
+            return s2, res
         if command_id == "breath":
             c = p.count("breath")
             if c is None or c.value <= 0:
@@ -3106,6 +3248,7 @@ class FantasyGame(GameBase):
         return rows
 
     def ui(self, state: FantasyState) -> UISchema:
+        from . import combat as cb
         s, p = state, state.player
         nxt, floor = sh.xp_for(p.level), sh.xp_floor(p.level)
         gold = s.item("gold").count if s.item("gold") else 0
@@ -3140,7 +3283,8 @@ class FantasyGame(GameBase):
                   tier="ready to level up" if p.xp >= nxt else f"to level {p.level + 1}"),
             MeterGroup(meters=[Meter(label="Renown", value=p.renown, tier=p.renown_word, tone="info", thresholds=[25, 50, 75]),
                                Meter(label="Heat", value=p.heat, tier=p.heat_word, tone=self.HEAT_TONES.get(p.heat_word, "warn"), thresholds=[20, 50, 80])]),
-            Commands(title=None, items=self.commands(s)),
+            *cb.fight_panel(self, s),                       # part fifteen §7: the Fight panel, main column, pinned
+            Commands(title=None, items=[c for c in self.commands(s) if c.id not in ("flee", "yield")]),
             ListPanel(title="Character", items=sheet, layout="grid"),
             *([ListPanel(title="In your words", items=[Chip(label="", value=p.about.strip())], layout="stack")] if p.about.strip() else []),
             ListPanel(title="Abilities", items=[Chip(label=a.name, value=a.text + (" (now)" if a.while_flag and a.while_flag in p.flags_on else ""))
@@ -3157,20 +3301,22 @@ class FantasyGame(GameBase):
                                                                      *[Chip(label="owed", value=d) for d in p.debts]], layout="stack"))
         panels += [
             EntityCards(title="People", cards=[
-                EntityCard(id=q.id, title=q.name if self.name_shown(s, q) else (q.role or "someone, not yet named"),
+                EntityCard(id=q.id, title=q.name if self.name_shown(s, q) else self.called(q),
                            subtitle=(q.role or None) if self.name_shown(s, q) else "not yet named",
                            badges=[Chip(label="attitude", value=q.attitude_word, tone=self.ATTITUDE_TONES.get(q.attitude_word)),
                                    *([Chip(label="mood", value=q.mood)] if q.mood else []),
+                                   *([Chip(label="hit points", value=person_hp_word(q), tone="bad")] if person_hp_word(q) else []),
                                    *([Chip(label="status", value=q.status, tone="bad")] if q.status != "alive" else [])],
                            details=[Chip(label="Last seen", value=q.seen_at or "unknown")], notes=self.card_notes(s, q))
                 for q in met] + [
-                EntityCard(id=q.id, title=q.name if self.name_shown(s, q) else (q.role or "someone, not yet named"), subtitle="heard of, not met",
+                EntityCard(id=q.id, title=q.name if self.name_shown(s, q) else self.called(q), subtitle="heard of, not met",
                            notes=self.card_notes(s, q),
                            details=[Chip(label="Said to be at", value=q.location)] if q.location and q.location != "Unknown" else []) for q in heard]),
             ListPanel(title="Places", items=self._places_panel(s), layout="stack"),
             QuestPanel(title="Quests", rows=self.quest_rows(s)),
-            ListPanel(title="Journal", items=[Chip(label="contact" if n.kind == "contact" else "", value=n.text) for n in reversed(s.journal)],
-                      layout="stack", fold=6, journal=True),
-            LogPanel(title="Timeline", lines=list(s.log), timeline=True),
+            # B284 (the owner, 11-09: "journal right now is just a worse timeline ... maybe key facts on timeline are bold or red"):
+            # no Journal panel; what was learned rides in the Timeline at its day and time, marked; contacts are the People cards
+            LogPanel(title="Timeline", lines=list(s.log), timeline=True,
+                     learned=[(f"Day {n.day} {n.minute // 60:02d}:{n.minute % 60:02d}. " if n.day else "") + n.text for n in s.journal if n.kind == "clue"]),
         ]
         return UISchema(phase="ended" if self.ending(s) else "narrate", free_text=not self.ending(s), placeholder=f"What does {p.name} do?", panels=panels)

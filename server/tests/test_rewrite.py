@@ -54,7 +54,7 @@ RELOAD = AssistantReading(kind="action", summary="Frank reloads and runs for the
                       intents=[Intent(action="run for the ladder on the bad leg", check=CheckProposal(label="run on the bad leg", stat="muscle", difficulty="high"))])
 
 
-async def test_rewrite_retells_the_last_turn_with_the_ruling_same_facts_same_dice(engine: Engine, fake: FakeProvider):
+async def test_rewrite_retells_the_last_turn_with_the_ruling_same_facts_same_dice(engine: Engine, fake: FakeProvider, monkeypatch):
     iid = engine.create_instance("noir", {})
     doc = engine.store.load_state(iid)
     next(i for i in doc["inventory"] if i["id"] == "revolver")["loaded"] = 2
@@ -79,8 +79,16 @@ async def test_rewrite_retells_the_last_turn_with_the_ruling_same_facts_same_dic
     st = engine.games["noir"].load_state(engine.store.load_state(iid))
     assert st.item("revolver").loaded == 6                                           # the lever landed
 
-    # the ruling: no shots were fired. Same adjudication, same dice; new words; the referee reads them again.
-    fake.canned["AssistantReading"] = []                                                  # the adjudicator must not be called
+    # the ruling: no shots were fired. The player's rewrite reads the turn again (B280: the owner, "rewrite should also redo the
+    # assistant turn"), with the ruling in the assistant's message; the same reading rolls the same dice; the referee reads again.
+    fake.canned["AssistantReading"] = [RELOAD]
+    import engine.pipeline as pl
+    real_inputs = pl.adjudicator_inputs
+
+    def spy(*a, **k):
+        seen["assistant_notes"] = k.get("notes")
+        return real_inputs(*a, **k)
+    monkeypatch.setattr(pl, "adjudicator_inputs", spy)
     fake.script = lambda system, messages: ("Frank thumbs the rounds in and runs.\n<<CHECK muscle high>>" if not messages[-1].content.startswith("[ENGINE]")
                                              else "He makes the ladder with the gun still cold in his hand.")
     assert "fires twice" in seen["referee_saw"]
@@ -88,12 +96,12 @@ async def test_rewrite_retells_the_last_turn_with_the_ruling_same_facts_same_dic
     assert second[0]["event"] == "rewrite" and second[0]["data"] == {"turn": 1, "hint": "Frank never fired; the gun stayed in his hand.", "attempt": 1, "by": "player"}
     assert second[-1]["event"] == "done" and second[-1]["data"]["turn"] == 1 and engine.store.latest_turn(iid) == 1
     roll_after = next(e["data"]["text"] for e in second if e["event"] == "mechanic" and "muscle" in e["data"]["text"].lower())
-    assert roll_after == roll_before                                                   # same seed, same dice
-    assert fake.canned["AssistantReading"] == []                                           # nothing was popped: no adjudicator call
+    assert roll_after == roll_before                                                   # same seed, same reading, same dice
+    assert fake.canned["AssistantReading"] == []                                           # the assistant was asked again
+    assert 'The player asked for this turn again, and said: "Frank never fired; the gun stayed in his hand."' in seen["assistant_notes"]
     rows = engine.store.ledger(iid, 1)
     adj_row = next(r["payload"] for r in rows if r["kind"] == "adjudication")
-    assert adj_row["_call"]["replayed"] is True and adj_row["_call"]["attempt"] == 1 and adj_row["_call"]["model"] == "fake"
-    assert adj_row["_call"]["usage"]["input_tokens"] == 0 and [c["id"] for c in adj_row["commands"]] == ["reload"]      # not counted twice
+    assert not adj_row["_call"].get("replayed") and [c["id"] for c in adj_row["commands"]] == ["reload"]
     rw = next(r["payload"] for r in rows if r["kind"] == "rewrite")
     assert rw["hint"].startswith("Frank never fired") and rw["attempt"] == 1
     assert rw["history"][0]["attempt"] == 0 and "fires twice" in rw["history"][0]["narration"]   # the first telling is kept

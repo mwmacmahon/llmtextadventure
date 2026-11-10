@@ -58,6 +58,13 @@ def game(engine: Engine) -> FantasyGame:
     return g
 
 
+def _quiet_dead_drawn(game, st):
+    """The deck draws the_quiet_dead first (part fifteen §12); a test of the other draws deals it out of the way."""
+    if st.hook("the_quiet_dead") is None and "the_quiet_dead" in game.hooks_content():
+        from games.fantasy.state import HookState
+        st.hooks.append(HookState(id="the_quiet_dead", title="The Quiet Dead", tier=1, status="done"))
+
+
 def new(game: FantasyGame, **over):
     return game.new_instance({**SHEET, **over})[1]
 
@@ -92,7 +99,7 @@ def test_the_sheet_is_five_fields_with_one_hint(game: FantasyGame):
     assert shown == ["name", "klass", "race", "gender", "about"]
     assert [f[k].kind for k in shown] == ["text", "select", "select", "text", "textarea"]
     assert [k for k, x in f.items() if x.required] == ["name", "klass", "race"]
-    assert [o.name for o in f["klass"].options][:2] == ["Barbarian", "Bard (under construction)"] and len(f["klass"].options) == 12
+    assert [o.name for o in f["klass"].options][:4] == ["Barbarian", "Paladin", "Rogue", "Bard (under construction)"] and len(f["klass"].options) == 12
     assert f["kit_barbarian_1"].show_if == {"klass": "Barbarian"} and f["expertise_rogue"].kind == "checks" and f["expertise_rogue"].pick == 2
     assert [k for k, x in f.items() if x.hint] == ["about"]
     assert [o.id for o in f["race"].options][-1] == "Dragonborn" and len(f["race"].options) == 9
@@ -216,9 +223,9 @@ def test_damage_is_bounded_and_the_shield_takes_a_step(game: FantasyGame):
     st = new(game)                                                   # 13 hp: half is 6, the shield lowers it to 5
     s2, rep, _ = apply(game, st, C(kind="add", target="player", field="hp", value="-20", note="a troll's fist"))
     assert s2.player.hp == 8
-    no_shield = new(game, klass="Rogue")                             # 8 + 2 = 10 hp: half is 5
+    no_shield = new(game, klass="Rogue")                             # 10 + 3 = 13 hp (a Dwarf; B278): half is 6
     s3, _, _ = apply(game, no_shield, C(kind="add", target="player", field="hp", value="-9"))
-    assert s3.player.hp == 5
+    assert s3.player.hp == 7
     big = new(game, klass="Rogue")
     big.player.hp = big.player.hp_max = 40
     s4, _, _ = apply(game, big, C(kind="add", target="player", field="hp", value="-30"))
@@ -547,6 +554,7 @@ def test_failed_closes_with_nothing_paid(game: FantasyGame):
 
 def test_the_deck_draws_by_the_rule(game: FantasyGame):
     st = new(game)
+    _quiet_dead_drawn(game, st)                                    # part fifteen §12: the deck's first draw, out of the way
     deck = dk.deck_of(game.scenario())
     hooks = game.hooks_content()
     now = st.clock.day * 1440 + st.clock.minute
@@ -567,6 +575,7 @@ def test_the_draw_favours_a_hook_whose_reach_is_where_the_player_has_been(game: 
     in the last day. The content's lake hooks reach the player on the quay (B39), so the rule is shown on the real deck with
     a lake hook's reach moved onto the water, seeded, over ten tries."""
     st = new(game)
+    _quiet_dead_drawn(game, st)                                    # part fifteen §12: the deck's first draw, out of the way
     deck = dk.deck_of(game.scenario())
     hooks = dict(game.hooks_content())
     singing = dict(hooks["singing_on_the_lake"])
@@ -682,6 +691,7 @@ async def test_tam_rows_out_alone_and_is_lost(engine: Engine, fake: FakeProvider
         doc = engine.store.load_state(iid)
         st = engine.games["fantasy"].load_state(doc)
         st.clock.day, st.clock.minute = 4, 355
+        _quiet_dead_drawn(engine.games["fantasy"], st)                  # part fifteen §12: the deck's first draw, out of the way
         st.player.location = "Lantern Row"
         st.person("tam").location = "Lantern Row"
         for e in st.hidden.events:                                     # everything else has played: the one-hook-a-turn rule holds nothing back
@@ -708,7 +718,7 @@ async def test_tam_rows_out_alone_and_is_lost(engine: Engine, fake: FakeProvider
         if aboard:
             assert "tam_lost" not in fired and not st.flags.get("tam_gone_out")
         else:
-            assert "tam_lost" in fired and st.flags.get("tam_gone_out") and st.person("tam").location == "Unknown"
+            assert "tam_lost" in fired and st.flags.get("tam_gone_out") and st.person("tam").location == "Unknown", (fired, events[-1]["data"]["mechanics"].get("holds"), events[-1]["data"]["mechanics"].get("happenings"))
 
 
 async def test_death_by_the_pipeline(engine: Engine, fake: FakeProvider):
@@ -1090,6 +1100,7 @@ def test_a_threads_giver_is_who_gave_it(game: FantasyGame):
     player's own job: no giver."""
     from engine.threads import Thread
     st = new(game)
+    st.player.names_heard += ["Hazel Oakhew", "Oswin Pell", "Maud Tallow"]          # B290: the panel names whom the player has heard
     st.threads.append(Thread(id="t12-hazel", title="Hazel hired for the lake", about="Hazel paid ten gold to go", who="player"))
     st.threads.append(Thread(id="t13-oswin", title="Oswin's shadow", about="find it", who="oswin"))
     rows = {r.title: r for r in game.quest_rows(st)}
@@ -1101,20 +1112,27 @@ def test_a_threads_giver_is_who_gave_it(game: FantasyGame):
 def test_the_log_goes_to_the_timeline_and_the_journal_folds(engine: Engine, game: FantasyGame):
     st = new(game)
     from games.fantasy.state import Note
-    st.journal = [Note(kind="clue", text=f"clue {i}") for i in range(9)]
+    st.journal = [Note(kind="clue", text=f"clue {i}") for i in range(9)] + [Note(kind="contact", text="Snag (the Lantern)")]
+    st.journal[3].stamped(st.clock)
     panels = game.ui(st).panels
-    j = next(p for p in panels if getattr(p, "title", "") == "Journal")
-    assert j.journal and j.fold == 6 and [c.value for c in j.items][:2] == ["clue 8", "clue 7"] and len(j.items) == 9
+    assert not any(getattr(p, "title", "") == "Journal" for p in panels)     # B284: the Journal folds into the Timeline
     log = next(p for p in panels if p.type == "log")
     assert log.timeline and log.lines == list(st.log)
-    for name, jt, lt in (("noir", "Notebook", "Case log"), ("station", "Findings", "Logfile")):
+    m = st.clock.minute
+    assert log.learned[3] == f"Day {st.clock.day} {m // 60:02d}:{m % 60:02d}. clue 3" and log.learned[0] == "clue 0" and len(log.learned) == 9   # no contact
+    for name, jt, lt in (("noir", "Notebook", "Case log"), ("station", "Findings", "Logfile")):   # B284: every game folds it in
         g = engine.games[name]
         s = g.new_instance({})[1]
         if name == "station":
             s.findings = ["a"]
+            s.findings_when = {"a": s.clock.stamp()}
+        else:
+            from games.noir.state import Note as NoirNote
+            s.notebook = [NoirNote(kind="clue", text="a").stamped(s.clock), NoirNote(kind="contact", text="Rosa: a singer")]
         ps = g.ui(s).panels
-        assert next(p for p in ps if getattr(p, "title", "") == jt).journal
-        assert next(p for p in ps if getattr(p, "title", "") == lt).timeline
+        assert not any(getattr(p, "title", "") == jt for p in ps)
+        tl = next(p for p in ps if getattr(p, "title", "") == lt)
+        assert tl.timeline and tl.learned == [s.clock.stamp() + "a"]
 
 
 def test_a_journal_line_that_says_the_log_line_again_is_dropped(game: FantasyGame):
@@ -1131,3 +1149,24 @@ def test_a_journal_line_that_says_the_log_line_again_is_dropped(game: FantasyGam
     s3, _, _ = apply(game, st, C(kind="learned", target="player", value="Maud's cellar has rats that grow in number each night; she offers two gold and free meals to clear them."))
     s4 = journal_not_log(game, st, s3, "Maud Tallow sat down with Lillian and asked her to clear the rats from the cellar.", ApplyReport())
     assert any("two gold" in n.text for n in s4.journal)
+    # B283 (the owner's grimdark T29: "Ungdall learns from the river-carter that Oswin Pell is offering eight gold for his
+    # shadow" dropped the clue itself): a log line that reports the learning keeps the journal's line
+    s5, _, _ = apply(game, st, C(kind="learned", target="player", value="Oswin Pell is offering eight gold for the return of his shadow."))
+    s6 = journal_not_log(game, st, s5, "Brin learns from the river-carter that Oswin Pell is offering eight gold for his shadow.", ApplyReport())
+    assert any("eight gold" in n.text for n in s6.journal)
+
+
+def test_a_new_person_with_no_role_is_a_clean_contact_line(game: FantasyGame):
+    """B283: the owner's grimdark journal read 'river-carter:  (The Drowned Lantern)'; with no role the colon goes too."""
+    st = new(game)
+    s1, _, _ = apply(game, st, C(kind="new", target="person", value="river-carter", note=""))
+    contact = [n.text for n in s1.journal if n.kind == "contact"]
+    assert contact and contact[-1] == f"river-carter ({st.player.location})"
+
+
+def test_a_log_line_the_model_stamped_itself_is_stamped_once():
+    """B284: the owner's Timeline read "06:00. Day 2 06:00. Ungdall rests by the fire"; the model copied the stamp."""
+    from engine.pipeline import unstamped
+    assert unstamped("Day 2 06:00. Ungdall rests by the fire.") == "Ungdall rests by the fire."
+    assert unstamped("07:50. While prowling Lantern Row, Ungdall loses his rope.") == "While prowling Lantern Row, Ungdall loses his rope."
+    assert unstamped("Ungdall waits until 22:00 for the boat.") == "Ungdall waits until 22:00 for the boat."

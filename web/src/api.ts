@@ -30,7 +30,7 @@ export type Widget = Placed & (
   | { type: "table"; title: string; columns: string[]; rows: TableCell[][] }
   | { type: "entity_cards"; title: string; cards: EntityCard[] }
   | { type: "list"; title: string; items: Chip[]; layout?: "rows" | "grid" | "stack"; fold?: number; journal?: boolean }
-  | { type: "log"; title: string; lines: string[]; timeline?: boolean }
+  | { type: "log"; title: string; lines: string[]; timeline?: boolean; learned?: string[] }
   | { type: "choices"; title?: string | null; choices: Choice[] }
   | { type: "commands"; title?: string | null; items: CommandSpec[] }
   | { type: "quests"; title: string; rows: QuestRow[] });

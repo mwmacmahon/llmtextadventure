@@ -168,6 +168,7 @@ class StationState(BaseModel):
     crew: list[CrewMember] = Field(default_factory=list)
     log: list[str] = Field(default_factory=list)      # visible summary lines
     findings: list[str] = Field(default_factory=list)   # what the station itself has learned: logs read, patterns seen (learned player rows)
+    findings_when: dict[str, str] = Field(default_factory=dict)   # B284: finding -> "Day N HH:MM. " when it was found, for the Logfile
     threads: list[Thread] = Field(default_factory=list)   # open/settled commitments the referee maintains
     sealed: list[str] = Field(default_factory=list)   # modules whose hatches the AI has sealed (engine command)
     flags: dict[str, Any] = Field(default_factory=dict)

@@ -51,8 +51,10 @@ BK="$DATA/backups/textadventure.before-$FROM-to-$TO.$(date -u +%Y%m%dT%H%M%SZ).s
 run "mkdir -p '$DATA/backups' && sqlite3 '$DATA/textadventure.sqlite3' \".backup '$BK'\" && say \"backed up her store: $BK\""
 
 # 3-5. code, content, web
-run "git -C '$WT' checkout -q --detach '$FULL'"
-run "rm -rf '$WT/notes/content' && mkdir -p '$WT/notes' && cp -Rc '$ROOT/notes/content' '$WT/notes/content'"
+# the copied content goes aside first: a file in it the new commit tracks (notes/content/clown/mods/example.yml) stops a checkout
+run "[[ ! -e '$WT/notes/content' ]] || mv '$WT/notes/content' '$WT/notes/content.before'"
+run "if ! git -C '$WT' checkout -q --detach '$FULL'; then [[ ! -e '$WT/notes/content.before' ]] || mv '$WT/notes/content.before' '$WT/notes/content'; exit 1; fi"
+run "rm -rf '$WT/notes/content.before' '$WT/notes/content' && mkdir -p '$WT/notes' && cp -Rc '$ROOT/notes/content' '$WT/notes/content'"
 run "[[ -d '$WT/web/node_modules' ]] || cp -Rc '$ROOT/web/node_modules' '$WT/web/node_modules'"
 run "npm --prefix '$WT/web' run build >/dev/null"
 

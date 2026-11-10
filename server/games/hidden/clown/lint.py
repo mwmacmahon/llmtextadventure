@@ -4,8 +4,9 @@ Checks: ids unique; the deck names hooks that exist; a booking names a client th
 people) with a `client` block; reward rows name girls, people and skills that exist; the girls' skills are the grid's;
 traits named are in the table; every event, reach and happening loads and rebases; prose-timed hook events carry
 `not_before`; a hook's `done` reads flags the hook, the engine or the house file declares; no engine word in a directive;
-aliases unique across the cast; secret terms never in the open text; every predicate's and effect's state path resolves
-against a fresh game's state (C6: a mistyped `house.best.crwd` is silently false), `house.best.<skill>` by the grid.
+aliases unique across the cast; secret terms never in the open text; the harbour deck's cards (harbour.lint_cards); every predicate's and effect's state path resolves
+against a fresh game's state (C6: a mistyped `house.best.crwd` is silently false), `house.best.<skill>` by the grid; the house's
+upgrades (D198C: ids unique, a name, a positive cost, `gives` only rooms or hand, `needs` an upgrade that exists).
 """
 from __future__ import annotations
 
@@ -145,6 +146,35 @@ def lint(content_dir: Path, scenario: dict | None = None, state: dict | None = N
             problems.append(f"dial {k!r} is not one the game reads ({', '.join(DIALS)})")
         elif not isinstance(v, (int, float)) or isinstance(v, bool):
             problems.append(f"dial {k!r} is not a number")
+    # the house's upgrades (D198C): ids unique, a name, a positive cost, gives only rooms or hand, needs an upgrade that exists
+    ups = sc.get("upgrades") or (sc.get("house") or {}).get("upgrades") or []
+    up_ids = [u.get("id") for u in ups if isinstance(u, dict)]
+    for i, u in enumerate(ups):
+        if not isinstance(u, dict) or not u.get("id"):
+            problems.append(f"upgrade #{i + 1}: no id")
+            continue
+        uid = u["id"]
+        if up_ids.count(uid) > 1 and up_ids.index(uid) == i:
+            problems.append(f"duplicate upgrade id {uid}")
+        if not str(u.get("name") or "").strip():
+            problems.append(f"upgrade {uid}: no name")
+        cost = u.get("cost")
+        if not isinstance(cost, int) or isinstance(cost, bool) or cost <= 0:
+            problems.append(f"upgrade {uid}: cost {cost!r} is not a positive whole number")
+        gives = u.get("gives")
+        if not isinstance(gives, dict) or not gives:
+            problems.append(f"upgrade {uid}: gives nothing (rooms or hand)")
+        else:
+            for k, v in gives.items():
+                if k not in ("rooms", "hand"):
+                    problems.append(f"upgrade {uid}: gives {k!r}, not rooms or hand")
+                elif not isinstance(v, int) or isinstance(v, bool):
+                    problems.append(f"upgrade {uid}: gives {k} {v!r}, not a whole number")
+        need = u.get("needs")
+        if need and need not in up_ids:
+            problems.append(f"upgrade {uid}: needs {need!r}, which is not an upgrade")
+        if need == uid:
+            problems.append(f"upgrade {uid}: needs itself")
     # the deck
     deck = sc.get("deck") or {}
     for hid in deck.get("deal_at_start") or []:
@@ -246,6 +276,17 @@ def lint(content_dir: Path, scenario: dict | None = None, state: dict | None = N
         for where, pth in named:
             if not _path_ok(state, pth, skills):
                 problems.append(f"{where}: the path {pth!r} does not resolve in the state")
+    # the harbour deck's cards (harbour.py)
+    gd = content_dir / "girls" / "deck.yml"
+    if gd.exists():
+        from .harbour import lint_cards
+        cards = {}
+        for p in sorted((content_dir / "girls").glob("*.yml")):
+            if p.name != "deck.yml":
+                c = yaml.safe_load(p.read_text()) or {}
+                if c.get("id"):
+                    cards[c["id"]] = c
+        problems += lint_cards(yaml.safe_load(gd.read_text()) or {}, cards, sc)
     # secret terms in the open
     open_text = " ".join([str(sc.get("premise", "")), str((sc.get("house") or {}).get("description", "")), str(sc.get("opening_text", ""))]
                          + [str(q.get("description", "")) + str(q.get("wants", "")) for q in people.values()]

@@ -114,6 +114,10 @@ td { padding: 3px 6px 3px 0; border-top: 1px solid var(--border); }
 ul.kv { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
 ul.kv li { display: flex; justify-content: space-between; gap: 12px; }
 ul.log, ul.notes { margin: 0; padding-left: 18px; font-size: 13px; }
+/* B284: what was learned, in the Timeline: the key facts stand out */
+ul.log li.learned { font-weight: 700; color: var(--warn); }
+ul.log li.learned::marker { content: "★ "; }
+.learned-filter { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; color: var(--muted); cursor: pointer; }
 .cards { display: flex; flex-direction: column; gap: 6px; }
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; cursor: pointer; }
 .card.open { border-color: var(--accent); }
@@ -141,6 +145,18 @@ ul.log, ul.notes { margin: 0; padding-left: 18px; font-size: 13px; }
 }
 /* phone width (ISSUES B22): the header wraps above; tighter here so it takes two rows, not four */
 @media (max-width: 600px) {
+  .footer-chips .panels-toggle { display: inline-flex; }
+  /* B282: in a game the site bar's links repeat the game header's (saves, settings); only a notice keeps it */
+  .app-play .bar > a, .app-play .bar > button, .app-play .bar > .spacer, .app-play .bar > .bar-where { display: none; }
+  .app-play .bar:not(:has(.bar-error)) { display: none; }
+  .layout header .hdr-extra { display: none; }
+  .side { max-height: 55vh; padding: 10px 12px; }
+  .side.side-closed { overflow: hidden; padding: 6px 12px; }
+  .side.side-closed .side-full { display: none; }
+  .side.side-closed .side-compact { display: block; }
+  /* in a fight the Fight panel carries everyone's hit points: the compact strip gives way to the story */
+  .layout:has(.main-panels) .side.side-closed { display: none; }
+  .side-compact .panels { gap: 6px; }
   header { gap: 6px 8px; padding: 8px 12px; }
   header button:not(.link), header .button-like { padding: 3px 8px; font-size: 13px; }
   .narrative { padding: 14px 16px; }
@@ -344,6 +360,8 @@ dl.score dd { margin: 0; font-family: var(--pixel-font); font-size: 15px; }
 /* B261: the Timeline overlay (in the page, over the story), the folded Journal, the footer chips */
 .see-more { margin-top: 6px; display: inline-block; margin-right: 12px; }
 .footer-chips { display: flex; gap: 6px; flex-wrap: wrap; padding-top: 6px; }
+/* B282: the Panels toggle and the compact strip exist at phone width only; wider, the side column is always whole */
+.panels-toggle, .side-compact { display: none; }
 .overlay { position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, 0.45); display: flex; justify-content: center; align-items: flex-end; }
 .overlay-sheet { background: var(--panel, var(--bg, #1b1b1f)); color: inherit; width: min(720px, 100%); max-height: 85vh; display: flex; flex-direction: column;
   border-radius: 12px 12px 0 0; box-shadow: 0 -6px 30px rgba(0, 0, 0, 0.35); padding-bottom: env(safe-area-inset-bottom, 0px); }
@@ -357,3 +375,6 @@ dl.score dd { margin: 0; font-family: var(--pixel-font); font-size: 15px; }
 .overlay-body details.day { border-bottom: 1px solid var(--border, rgba(127, 127, 127, 0.2)); padding: 6px 0; }
 .overlay-body details.day > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
 .overlay-body ul.log { margin: 4px 0 6px; }
+
+/* part fifteen §7: an attack, damage or save line in the prose as a dice card */
+.mechanic-line.dice-card { border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 8px; padding: 6px 10px; background: var(--panel); }

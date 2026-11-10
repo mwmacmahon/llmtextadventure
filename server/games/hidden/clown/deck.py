@@ -75,6 +75,24 @@ class ClownContent(Content):
             out[data["id"]] = data
         return out
 
+    def girls_deck(self) -> dict:
+        """girls/deck.yml: the cards' order before the shuffle, the tiers, the tags' meanings, the age buckets (the harbour deck, D194C)."""
+        p = self.dir / "girls" / "deck.yml"
+        return dict(self._yaml(p) or {}) if p.exists() else {}
+
+    def girl_cards(self) -> dict[str, dict]:
+        out: dict[str, dict] = {}
+        d = self.dir / "girls"
+        if not d.is_dir():
+            return out
+        for p in sorted(d.glob("*.yml")):
+            if p.name == "deck.yml":
+                continue
+            data = self._yaml(p)
+            if data and data.get("id"):
+                out[data["id"]] = data
+        return out
+
     def death_lines(self) -> list[dict]:
         p = self.dir / "death_lines.yml"
         return list((self._yaml(p) or {}).get("lines") or []) if p.exists() else []
@@ -207,16 +225,32 @@ STANDING_TONES = {"done": "ok", "failed": "bad", "passed over": "neutral", "book
 
 # the dials a house file may set (`dials:`) and a mod may turn; the defaults
 DIALS: dict[str, float] = {
-    "hand_size": 2,          # cards in the hand at the start (house.hand_size; reward rows `hand: +1` raise it)
+    "harbour_price_scale": 1.25,   # a contract's price is the card's price times this (the cards average 196: the slip opens near 250; D199C)
+    "harbour_lift": 1,             # skill points every girl off the boat has more for every week the house has run (her whole grid; D199C)
+    "harbour_price_floor": 250,    # no contract opens under this (the 100-gold cards included); the growth runs from it (D199C, C54)
+    "harbour_price_cap": 1000,     # the dearest a contract can come; the price rises with the lift in proportion to her grid
+    "hand_size": 2,          # cards in the hand at the start (house.hand_size; the upgrades `gives: {hand: 1}` and reward rows `hand: +1` raise it)
     "refill_days": 3,        # the hand refills this many days after a pick, divided by the girls in the house, never under a day
     "lock_chance": 0.25,     # an ordinary card locks in the hand with this chance, when within the gap cap
     "lock_slack": 0,         # a card may lock when the best girl, trained nonstop at what it wants until its show day, would reach its ask, less this
-    "self_train": 1,         # a girl on the bench with a booking of her own gains this a slot at the booking's skills (nothing past finished)
+    "self_train": 1,         # a girl on the bench with a booking of her own gains this a slot at the booking's skills (nothing past finished); on odd jobs, this diligence
     "booking_boost": 1.5,    # the girl in training gains this much more at a skill her own booking wants
     "student_pay": 0.25,     # a student's show pays this share of the fee; a graduate's pays the whole
     "trouble_days": 5,       # troubles are dealt one at a time, at least this many days apart, when one is eligible
-    "job_pay": 6,            # a slot at a job in town pays the house this much
+    "job_pay": 8,            # a slot at a job in town pays the house this much: five slots a week cover the rent and the keep with a little over (the owner, 11-09)
     "job_diligence": 3,      # and raises her diligence by this
+    "keep": 20,              # the house's keep a week (coal, food, Mrs Pell), paid on Sunday night beside the rent every fourth week
+    "keep_per_girl": 3,      # and this much more a week for every girl in the house beyond the first (D194C)
+    "harbour_hand": 4,       # contracts on the clerk's slip at once (the harbour deck, D194C): four, refreshed on the first and third Sunday of the month
+    "take_per_week": 1,      # the house buys at most this many contracts a week
+    "sell_share": 0.75,      # a contract sold on pays this share of her contract value
+    "partner_cut": 0.25,     # Brascombe's share of every fee once he is the house's silent partner (D196C)
+    "reckoning_days": 2,     # a reckoning waits this long for the proprietor's answer before the engine lands the consequence
+    "rooms": 2,              # rooms for girls at the start (house.rooms; the Upgrade command adds them); the Take refuses when they are full (D198C)
+    "bench_job_pay": 1,      # a girl on the bench with no show of her own works odd jobs about the town: this much gold a slot (D198C)
+    "value_per_point": 2.5,  # the contract value: gold a skill point above ten (D198C, was 0.5)
+    "value_credibility": 50, # and a point of her name in the trade (was 10)
+    "value_graduate": 125,   # and a graduate (was 25)
 }
 
 
@@ -559,7 +593,7 @@ def reread(data: dict, scenario: dict, content_hooks: dict[str, dict], name: str
         g = by_g.get(raw["id"])
         if g is None:
             continue
-        for key in ("name", "aliases", "age", "bio", "traits", "routine", "arc", "untrainable"):
+        for key in ("name", "aliases", "age", "bio", "traits", "routine", "arc", "untrainable", "before"):
             if key in raw:
                 g[key] = raw[key]
         known = {s.get("id"): (s.get("known", False), s.get("learned_turn")) for s in g.get("secrets") or []}

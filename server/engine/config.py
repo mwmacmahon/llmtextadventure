@@ -38,6 +38,10 @@ class RoleConfig(BaseModel):
     # (a table, or the assistant's stake); table: the game's table for every kind (a weak assistant); off: the consequence
     # roll never fires, a failure is only its failure outcome. A retry still shuts the way under every setting.
     consequences: Literal["map", "table", "off"] = "map"
+    # assistant only (part thirteen §3, the X3 trial): the adjudication as a chain of messages on one conversation (the
+    # reading, then the checks, then the stakes; engine/chain.py) instead of one structured call. Off by default, as the
+    # referee's `split`; off, the code path is the one call exactly.
+    chain: bool = False
     # llamacpp only (engine/providers/llamacpp_provider.py): the server, the slot this role is pinned to so its
     # cache stays resident beside the other roles', whether the model may think, sampling temperature, auth.
     base_url: str = Field(default_factory=lambda: os.environ.get("TA_LLAMA_URL", "http://127.0.0.1:8080"))

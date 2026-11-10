@@ -36,8 +36,8 @@ def test_armour_class_from_the_pockets(game):
     st = new(game)                                                  # the Fighter: chain mail and a shield, DEX +1
     ac, how = wo.armour_class(st)
     assert ac == 10 + 1 + 4 + 2 and "shield" in how
-    rogue = new(game, klass="Rogue", race="Human")                   # leather, DEX +3
-    assert wo.armour_class(rogue)[0] == 10 + 3 + 1
+    rogue = new(game, klass="Rogue", race="Human")                   # leather, DEX +4 (B278)
+    assert wo.armour_class(rogue)[0] == 10 + 4 + 1
 
 
 def call(verb, ref, move=""):

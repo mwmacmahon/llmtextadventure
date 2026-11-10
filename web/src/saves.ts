@@ -27,7 +27,25 @@ export function endingShort(e: string): string {
 // "Hide undone turns" (Settings): kept in this browser. Undone turns show struck through in the log unless it is on.
 const HIDE_UNDONE = "ta.hideUndone";
 
+// Phone width: the panels under the story open or closed (closed by default; kept in this browser).
+const PANELS_OPEN = "ta.phonePanelsOpen";
+
 export const prefs = {
+  phonePanelsOpen(): boolean {
+    try {
+      return localStorage.getItem(PANELS_OPEN) === "1";
+    } catch {
+      return false;
+    }
+  },
+  setPhonePanelsOpen(on: boolean) {
+    try {
+      if (on) localStorage.setItem(PANELS_OPEN, "1");
+      else localStorage.removeItem(PANELS_OPEN);
+    } catch {
+      /* storage blocked: the choice lasts this page only */
+    }
+  },
   hideUndone(): boolean {
     try {
       return localStorage.getItem(HIDE_UNDONE) === "1";

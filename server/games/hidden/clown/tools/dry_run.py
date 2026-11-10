@@ -8,6 +8,7 @@ by week. The model-free way to tune the numbers and to find a week that cannot b
     cd server && .venv/bin/python -m games.hidden.clown.tools.dry_run --weeks 8 --kind charmer --girl dot --plan pratfalls,children
     .venv/bin/python -m games.hidden.clown.tools.dry_run --weeks 12 --plan wants --rest-at 60 --book all --attend --verbose
 
+`--take N` buys a contract off the clerk's slip whenever the house has N gold to spare over the price (the cheapest first);
 `--plan a,b` trains a in the mornings and b in the afternoons; `--plan wants` trains the next booked show's wants (the
 weaker first), else the `--focus` list; `--rest-at N` puts the afternoons to rest when her fatigue reaches N on a Monday.
 """
@@ -22,6 +23,8 @@ from engine import events as ev
 from engine import pending as pend
 from engine.game import TurnInfo
 
+from .. import deck as dk
+from .. import harbour as hb
 from ..game import DAY, OFFICE, ClownGame, make_game
 from ..state import SKILL_TIERS, ClownState, hhmm, tier_of, weekday
 
@@ -68,12 +71,15 @@ def choose_plan(game: ClownGame, st: ClownState, plan: str, focus: list[str], re
         parts = [p.strip() for p in plan.split(",") if p.strip()]
         a, b = parts[0], (parts[1] if len(parts) > 1 else parts[0])
     if rest_at and g.fatigue >= rest_at:
-        b = "rest"
+        if b == "work":             # a job slot keeps earning; the rest takes the training slot
+            a = "rest"
+        else:
+            b = "rest"
     return a, b
 
 
 def run(weeks: int = 8, kind: str = "charmer", girl: str = "dot", plan: str = "pratfalls,children", focus: str = "", rest_at: int = 0,
-        book: str = "all", attend: bool = True, seed: int = 0, verbose: bool = False, content: Path = CONTENT, out=print) -> ClownState:
+        book: str = "all", attend: bool = True, seed: int = 0, verbose: bool = False, content: Path = CONTENT, out=print, take: int = 0, recruit: bool = True) -> ClownState:
     game = make_game(content)
     _, st = game.new_instance({"name": "the proprietor", "kind": kind, "first_girl": girl})
     rng = random.Random(seed)
@@ -85,7 +91,7 @@ def run(weeks: int = 8, kind: str = "charmer", girl: str = "dot", plan: str = "p
     booked_week: list[str] = []
     log_mark = len(st.log)
     out(f"Clown Maker, dry run: {kind}, {girl} first, plan {plan!r}" + (f", rest at {rest_at}" if rest_at else "") + f", book {book}, attend {attend}, seed {seed}.")
-    out(f"Start: ${st.house.money}; {st.active_girl.name if st.active_girl else 'nobody'} on the mats; grid " + ", ".join(f"{k} {v}" for k, v in (st.active_girl.skills.items() if st.active_girl else [])))
+    out(f"Start: {st.house.money} gold; {st.active_girl.name if st.active_girl else 'nobody'} on the mats; grid " + ", ".join(f"{k} {v}" for k, v in (st.active_girl.skills.items() if st.active_girl else [])))
     while st.house.week <= weeks and not st.house.fate:
         g = st.active_girl
         if g is not None and g.status == "active" and ((weekday(st.clock.day) == 0 and st.clock.minute == 540) or not st.plan.mornings):
@@ -106,6 +112,23 @@ def run(weeks: int = 8, kind: str = "charmer", girl: str = "dot", plan: str = "p
                     booked_week.append(f"{h.title} ({free[0].name})")
                 if verbose:
                     out(f"  {hhmm(st.clock.minute)} book {h.title} for {free[0].name}: {r.text}")
+        # the door: a girl asking to be taken on is taken on when there is a room (the talk the referee would read as a yes)
+        if recruit:
+            for x in [x for x in st.girls if x.status == "available"]:
+                if not game._take_on(st, x, "the dry run"):
+                    booked_week.append(f"took on {x.name}")
+        # the shed: the cheapest contract on the slip when the house can spare it
+        if take and st.harbour.hand:
+            cards = game.content.girl_cards()
+            price = lambda c: hb.price_of(c, st, lambda k: dk.dial(st, k))  # noqa: E731
+            slip = sorted((cards[c] for c in st.harbour.hand if c in cards), key=price)
+            if slip and st.house.money >= price(slip[0]) + take:
+                paid = price(slip[0])
+                st, r = game.run_command(st, "take", {"girl": slip[0]["id"]})
+                if r.ok:
+                    booked_week.append(f"took {slip[0]['name']} ({paid} gold)")
+                if verbose:
+                    out(f"  {hhmm(st.clock.minute)} take {slip[0]['name']}: {r.text or r.log_line}")
         to = next_stop(st)
         show = next((x for x in st.shows if not x.result and x.at_abs == to), None)
         st.player.location = show.venue if (show is not None and attend) else OFFICE
@@ -127,9 +150,9 @@ def run(weeks: int = 8, kind: str = "charmer", girl: str = "dot", plan: str = "p
             shows = [x for x in st.shows if x.resolved_turn is not None and x.at_abs // DAY > st.clock.day - 7]
             spent = [ln for ln in st.log[log_mark:] if "is spent" in ln]
             log_mark = len(st.log)
-            out(f"W{before_week:>2} ${h.money:>5} heat {h.heat:>2} ({h.heat_word}) name {h.name:>2} ({h.name_word}) | {g0.name if g0 else '-'} fatigue {g0.fatigue if g0 else 0} ({g0.fatigue_word if g0 else '-'})"
+            out(f"W{before_week:>2} {h.money:>5} gold heat {h.heat:>2} ({h.heat_word}) name {h.name:>2} ({h.name_word}) | {g0.name if g0 else '-'} fatigue {g0.fatigue if g0 else 0} ({g0.fatigue_word if g0 else '-'})"
                 + (f" | gains: {gains}" if gains else " | no gains")
-                + (" | shows: " + "; ".join(f"{x.title}: {x.result}" + (f" ${x.paid}" if x.paid else "") for x in shows) if shows else " | no show")
+                + (" | shows: " + "; ".join(f"{x.title}: {x.result}" + (f" {x.paid} gold" if x.paid else "") for x in shows) if shows else " | no show")
                 + (" | booked: " + "; ".join(booked_week) if booked_week else "")
                 + (" | fired: " + ", ".join(fired_week) if fired_week else "")
                 + (" | SPENT" if spent else ""))
@@ -139,12 +162,14 @@ def run(weeks: int = 8, kind: str = "charmer", girl: str = "dot", plan: str = "p
             week_start = dict(g.skills) if g else {}
     g = st.active_girl
     out("")
-    out(f"End: week {st.house.week}, day {st.clock.day}; ${st.house.money}; heat {st.house.heat} ({st.house.heat_word}); name {st.house.name} ({st.house.name_word})" + (f"; FATE {st.house.fate}" if st.house.fate else ""))
+    out(f"End: week {st.house.week}, day {st.clock.day}; {st.house.money} gold; heat {st.house.heat} ({st.house.heat_word}); name {st.house.name} ({st.house.name_word})" + (f"; FATE {st.house.fate}" if st.house.fate else ""))
     for x in st.girls:
         if x.in_house():
             out(f"  {x.name} ({x.status}): love {x.love} respect {x.respect} fear {x.fear}, fatigue {x.fatigue}; "
                 + ", ".join(f"{k} {v} {tier_of(v, SKILL_TIERS)[0]}" for k, v in x.skills.items()))
     out("  hooks: " + "; ".join(f"{h.id} {h.status}" for h in st.hooks))
+    out(f"  the shed: {st.harbour.ships} boats; on the slip " + ", ".join(st.harbour.hand) + f"; taken " + (", ".join(st.harbour.gone) or "nobody")
+        + "; contract values " + ", ".join(f"{x.name} {game.contract_value_of(st, x)}" for x in st.girls if x.in_house()))
     out("  shows: " + "; ".join(f"{x.title} {x.result} q{x.quality}" for x in st.shows if x.result))
     return st
 
@@ -161,8 +186,10 @@ def main() -> None:
     ap.add_argument("--no-attend", action="store_true")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--take", type=int, default=0, help="buy the cheapest contract on the slip when the house has this much over its price")
+    ap.add_argument("--no-recruit", action="store_true", help="leave the girls who come to the door waiting (default: take them on when a room is free)")
     a = ap.parse_args()
-    run(a.weeks, a.kind, a.girl, a.plan, a.focus, a.rest_at, a.book, not a.no_attend, a.seed, a.verbose)
+    run(a.weeks, a.kind, a.girl, a.plan, a.focus, a.rest_at, a.book, not a.no_attend, a.seed, a.verbose, take=a.take, recruit=not a.no_recruit)
 
 
 if __name__ == "__main__":

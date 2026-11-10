@@ -188,3 +188,58 @@ def weighted(rng: random.Random, req: CheckRequest) -> CheckResult:
 
 
 RESOLVERS: dict[str, Resolver] = {"dice_2d6": dice_2d6, "dice_d20": dice_d20, "threshold": threshold, "weighted": weighted}
+
+
+# ---- part fifteen §2: the attack roll, the damage dice, the saving throw (the fantasy's d20; the check stays for the rest) ----
+class AttackResult(BaseModel):
+    roll: int
+    bonus: int
+    modifiers: list[Modifier] = Field(default_factory=list)
+    total: int
+    ac: int
+    hit: bool
+    crit: bool = False              # a natural 20: hits and doubles the dice
+    fumble: bool = False            # a natural 1: misses
+
+
+class SaveResult(BaseModel):
+    roll: int
+    bonus: int
+    modifiers: list[Modifier] = Field(default_factory=list)
+    total: int
+    dc: int
+    holds: bool
+
+
+def roll_dice(rng: random.Random, dice: str, crit: bool = False) -> tuple[int, list[int]]:
+    """'2d6+3' rolled: (the total, the faces). A crit doubles the dice, not the bonus (SRD). Never below 0."""
+    total, faces = 0, []
+    for part in __import__("re").findall(r"[+-]?\s*\d+(?:d\d+)?", (dice or "0").replace(" ", "")):
+        sign = -1 if part.startswith("-") else 1
+        p = part.lstrip("+-")
+        if "d" in p:
+            n, sides = p.split("d")
+            for _ in range(int(n or 1) * (2 if crit else 1)):
+                f = rng.randint(1, int(sides))
+                faces.append(f)
+                total += sign * f
+        else:
+            total += sign * int(p)
+    return max(0, total), faces
+
+
+def attack_roll(rng: random.Random, bonus: int, ac: int, modifiers: list[Modifier] | None = None) -> AttackResult:
+    """d20 + the attacker's bonus + modifiers against the target's AC; a natural 20 hits and crits, a natural 1 misses."""
+    mods = list(modifiers or [])
+    roll = rng.randint(1, 20)
+    total = roll + bonus + sum(m.value for m in mods)
+    hit = roll == 20 or (roll != 1 and total >= ac)
+    return AttackResult(roll=roll, bonus=bonus, modifiers=mods, total=total, ac=ac, hit=hit, crit=roll == 20, fumble=roll == 1)
+
+
+def save_roll(rng: random.Random, bonus: int, dc: int, modifiers: list[Modifier] | None = None) -> SaveResult:
+    """A saving throw, a check under another name (the owner): d20 + the stat's save bonus against a DC."""
+    mods = list(modifiers or [])
+    roll = rng.randint(1, 20)
+    total = roll + bonus + sum(m.value for m in mods)
+    return SaveResult(roll=roll, bonus=bonus, modifiers=mods, total=total, dc=dc, holds=total >= dc)
