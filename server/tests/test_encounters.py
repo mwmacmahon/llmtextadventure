@@ -42,7 +42,7 @@ def test_the_book_numbers():
 def test_pinned_bodies_are_never_added_to_or_removed(game):
     st = new(game, place="The Old Channel")
     e = en.encounter(game, st, en.Want(band="normal", pinned=[("skeleton", 4)], n=6))
-    assert e.bodies == [("skeleton", 4)] and e.variant in en.VARIANTS and "pinned by the story" in e.reason
+    assert e.bodies == [("skeleton", 4)] and e.variant in (*en.VARIANTS, "feeble") and "pinned by the story" in e.reason
     open_ = en.encounter(game, st, en.Want(band="normal", pinned=[("skeleton", None)], n=6))
     assert {b for b, _ in open_.bodies} == {"skeleton"} and 1 <= sum(n for _, n in open_.bodies) <= en.MAX_BODIES
 
@@ -276,3 +276,16 @@ def test_the_lint_names_a_pinned_content_fight_that_stays_deadly(game):
     from games.fantasy.lint import lint_pinned_fights
     notes = lint_pinned_fights(CONTENT, game, n=20)
     assert any("catacomb_dead" in x and "Rogue" in x for x in notes), notes
+
+
+def test_the_simulated_player_uses_no_consumables(game):
+    """The owner, 11-10: "No using the wand of fireballs or whatever"."""
+    from games.fantasy.state import Count, Item
+    st = new(game, klass="Rogue")
+    st.inventory += [Item(id="wand", name="a wand of fireballs", count=1), Item(id="pot", name="healing potion", count=2),
+                     Item(id="jav", name="javelins", count=4)]
+    st.player.counts.append(Count(id="smoke", name="Smoke pellets", value=3, max=3, refill="never"))
+    base = en.party_base(game, st)
+    names = [i.name.lower() for i in base.inventory]
+    assert not any("wand" in n or "potion" in n or "javelin" in n for n in names) and any("rapier" in n for n in names)
+    assert base.player.count("smoke").value == 0
