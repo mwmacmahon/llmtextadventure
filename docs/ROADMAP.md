@@ -186,7 +186,7 @@ the journal and the story so far. Design: DESIGN.md; GAME_AUTHORING; the world p
   (B137); the pre-check hint on every turn a giver is named (B138); hooks with no player-safe standing line (B136).
 - A serious ruling whose fix says there is nothing to fix (N5); a contradiction ruled when the state is stale (N7-1031).
 - **The save's size and the snapshots (B329, every game; the owner, 11-10: "That size is not acceptable ... needs to be in
-  roadmap"). State: proposed.** A full copy of the save is stored after every turn, and the save itself only grows (the whole
+  roadmap"). State: designed (the owner chose diffs with the last turns whole).** A full copy of the save is stored after every turn, and the save itself only grows (the whole
   log, every fired event, every person's history). Measured 11-10: every game's save is 82 to 121 KB by turn 50; round 4's
   snapshots were 4.3 MB for 50 turns; the simulator's save is 914 KB at week 40; snapshots are 237 MB of the 643 MB database
   (the ledger 196 MB, the rest the stored prompts). A turn changes about 1 KB of a 105 KB save. The engine's time is not the
@@ -204,6 +204,10 @@ the journal and the story so far. Design: DESIGN.md; GAME_AUTHORING; the world p
   N=5 412 KB, N=10 346 KB, N=20 299 KB, against 4.4 MB now (a rough differ that replaces a whole changed list; a finer one
   would do better). N=10 is the choice: about 13 times smaller, a 200-turn game 2 to 3 MB instead of 40 to 80, at no cost a
   player would feel.
+  **The owner's choice (11-10): diffs, with the last turns kept whole.** The shape: the last N turns (N=10) stay full
+  snapshots, so undo, a retell and the call report read them as now; a turn that ages out of that window becomes a diff from
+  the turn before, except every tenth turn, which stays a full keyframe; all compressed. Loading an old turn rebuilds it from
+  its keyframe (at most nine diffs, about 2 ms). Steps 3 and 4 (a bounded save, retention) stay on the list behind it.
 
 ## 8. The fantasy game, Marrowgate
 
