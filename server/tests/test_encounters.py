@@ -321,3 +321,15 @@ def test_the_warden_comes_down_beside_the_player_and_makes_the_quiet_dead_winnab
     assert "maren" in [q.id for q in cbm.party(s2)] and cbm.ensure_block(s2.person("maren")).block == "veteran"
     e = en.encounter(game, s2, en.Want(band="normal", pinned=[("skeleton", 4)], n=40))
     assert e.bodies == [("skeleton", 4)] and e.win >= 60, e.reason
+
+
+def test_the_offer_matched_by_kind_keeps_the_scenes_name(game):
+    """B310 (8eb1928e28b7 T12): the offer's robbers stood in for the bar's sailors and 'Robber 2' was said aloud."""
+    st = new(game, klass="Barbarian")
+    st.offer = {"ids": ["robber_1", "robber_2"], "bodies": [["bandit", 2]], "place": st.player.location, "variant": "standard", "reason": "two bandits"}
+    made, row = game.bring_in(st, "the man with the belaying pin", ref="the man with the belaying pin", named=True)
+    assert len(made) == 1 and made[0].name == "Man with the belaying pin" and made[0].combat.block == "bandit"
+    st2 = new(game, klass="Barbarian")
+    st2.offer = {"ids": ["robber_1", "robber_2"], "bodies": [["bandit", 2]], "place": st2.player.location, "variant": "standard", "reason": "two bandits"}
+    made2, _ = game.bring_in(st2, "robber_1", ref="robber_1")
+    assert len(made2) == 1 and made2[0].id == "robber_1" and "Robber" in made2[0].name     # by its own id: the offer's as it was

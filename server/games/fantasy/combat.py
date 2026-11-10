@@ -383,6 +383,21 @@ def attack_line(who: str, at: str, res: Any, dmg: int | None = None, after: str 
     return head + f", {'critical hit' if res.crit else 'hit'}; {dmg} damage" + (f", {after}" if after else "") + "."
 
 
+def shown_harm(q: Person, harm: str) -> str:
+    """B310 (Gemma, 11-10: 'Robber 2's scimitar' for a broken bottle, 'the man by the pillar's club' for a fist, 'Hazel's arrows'
+    point-blank in a brawl): a weapon the library gave a block is named only when the person's own words carry it (their role,
+    description, name or label); else the blow is a 'blow'. A claw, a grip, a bite stays."""
+    h = (harm or "").strip()
+    words = " ".join([q.role or "", q.description or "", q.name or "", q.called or ""]).lower()
+    root = h.lower().rstrip("s")
+    weaponish = root in WEAPONS or root in WEAPON_WORDS or any(root.endswith(w) for w in ("bow", "bolt", "arrow", "sword", "axe", "club", "mace", "spear", "dagger", "knife"))
+    if not h or not weaponish:
+        return h
+    if root in words or (root.endswith("arrow") and "bow" in words):
+        return h
+    return "blow"
+
+
 def enemy_line(whose: str, res: Any, dmg: int | None = None, after: str = "") -> str:
     """'The skeleton's blade: 9 against AC 16, miss.' / '...: 15 against AC 16... hit; 5 damage, you are hurt.'"""
     head = f"{whose}: {res.total} against AC {res.ac}"
@@ -634,7 +649,7 @@ def resolve(game: Any, s: FantasyState, entry: dict, rng: Any, offset: int, tall
     b = ensure_block(q)
     a = entry["action"]
     kind = a.get("kind", "strike")
-    whose = f"{name_of(q, entry.get('body', 0))}'s {a.get('harm') or ('blow' if kind == 'strike' else kind)}"
+    whose = f"{name_of(q, entry.get('body', 0))}'s {shown_harm(q, a.get('harm') or '') or ('blow' if kind == 'strike' else kind)}"
     data: dict[str, Any] = {"verb": "ENEMY", "who": q.id, "move": kind, "label": whose, "join": q.id, "key": entry["key"]}
     tally.setdefault("acted", []).append(q.id)
     tgt_ally = s.person(entry["target"]) if entry["target"] != "player" else None
@@ -935,9 +950,7 @@ def land(game: Any, s: FantasyState, calls: list[dict], turn: int, offset: int, 
     notes: list[str] = []
     if c is None:
         return notes
-    for call in calls:
-        if call.get("backstop") and call.get("line"):
-            notes.append(call["line"] + " (after the prose)")
+    for call in calls:                       # a backstop's dice line is in the prose now, after it (the pipeline, B310): not again here
         for h in call.get("hits") or []:
             q = s.person(h["pid"])
             if q is None:

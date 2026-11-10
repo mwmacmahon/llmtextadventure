@@ -276,7 +276,7 @@ def _break_contact(s: FantasyState, w: "WorldTurn") -> str:
         p.fighting = []
     if len(row) > 1:
         w.rows.append(row)
-        w.mechanics.append(f"Out of reach: {'; '.join(said)}.")
+        w.mechanics.append(f"Away: {'; '.join(said)}.")                # B310: not "Out of reach: out of reach of ..."
     return "; ".join(said)
 
 

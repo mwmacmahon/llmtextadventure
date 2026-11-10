@@ -78,6 +78,12 @@ def rng_for(iid: str, turn: int, salt: str = ""):
     return _seeded(k[1] if k and k[0] == turn else iid, turn, salt)
 
 
+def dice_salt(iid: str) -> str:
+    """The turn's undo salt alone (D205), for a game's own dice outside rng_for (a class power's roll, B310): '' when none."""
+    k = _DICE_KEY.get(iid)
+    return k[1][len(iid):] if k and k[1] != iid else ""
+
+
 GUARD_MODES = {
     "log": "the prose shows as it is written; rulings are recorded",
     "rewrite": "the prose shows as it is written, then is retold once if the referee rules it out of line",
@@ -916,6 +922,7 @@ class Engine:
             if spec is None:
                 yield {"event": "command", "data": {"ok": False, "text": f"no such command {cid!r}", "mode": None}}
                 return
+            game.dice_salt = dice_salt(iid)                     # D205: a power's own dice follow the undo box (B310)
             state, cmd_result = game.run_command(state, cid, args) if isinstance(game, GameBase) else (state, CommandResult(ok=False, text="no commands"))
             if not cmd_result.ok:
                 log.info("command.refused " + logs.kv(iid=iid, turn=turn, id=cid, why=cmd_result.text))
@@ -958,6 +965,8 @@ class Engine:
             log.info("turn.rewrite " + logs.kv(iid=iid, turn=turn, attempt=replay.attempt, by=replay.by, hint_chars=len(replay.hint)))
             yield {"event": "rewrite", "data": {"turn": turn, "hint": replay.hint, "attempt": replay.attempt, "by": replay.by}}
             adj = replay.adjudication                            # None on the player's rewrite: the assistant reads the turn again (B280)
+            if adj is not None:
+                _hook(game, "aim_blows", state, adj, player_text or "", default=None)    # B310: a swing with no target, in a fight, at the foe
             struck = settle_attack(adj) if adj is not None else []     # B288: the attack is the roll
             trivial = settle_trivial(adj) if adj is not None else []   # B279: a reading stored before the rule settles too
             if adj is not None:
@@ -975,6 +984,7 @@ class Engine:
             try:
                 adj, meta = await self._adjudicate(game, state, iid, player_text,
                                                    retell=replay.hint if replay is not None and replay.by == "player" else None)
+                _hook(game, "aim_blows", state, adj, player_text or "", default=None)   # B310: a swing with no target, in a fight, at the foe
                 struck = settle_attack(adj)                      # B288: a blow with a weapon is the attack roll, not a check too
                 hopeless = settle_hopeless(adj)                  # B225: very high and an edge of -3 or worse is a fail, no roll
                 trivial = settle_trivial(adj)                    # B279: very low with nothing at stake simply happens
@@ -1203,6 +1213,12 @@ class Engine:
                 for b in game.backstop(state, tally_, rng_for(iid, turn, "backstop"), self.target_offset(game, iid)):
                     calls_block["calls"].append(b)
                     ledger("world", {"kind": "backstop", **{k: v for k, v in b["result"].items() if k != "verb"}, "mechanic": b["mechanic"]})
+                    if b.get("mechanic"):
+                        # B300, B310 (Gemma, 11-10, 187ae951f07d T15: two blows of 3 rolled after the prose, 7 hit points to 1,
+                        # and nothing on the page): a blow the prose left out is shown, after it, as the engine's own line
+                        done = StreamDone(text=with_mechanic(done.text, b["mechanic"]), stop_reason=done.stop_reason, model=done.model,
+                                          usage=done.usage, note=done.note)
+                        yield {"event": "mechanic", "data": {"turn": turn, "text": b["mechanic"], "data": {"backstop": True}}}
         except Exception as e:
             ledger("model_call", {"role": "narrator", "error": repr(e)})
             log.exception("step.failed " + logs.kv(iid=iid, turn=turn, step="narrate"))
@@ -1479,7 +1495,7 @@ class Engine:
                     rulings.append({"rule": "repeated_beat", "serious": True, "by": "engine", "what": these, "of_turn": c["of_turn"],
                                     "fix": f"Turn {c['of_turn']} already gave that moment; leave it out of this turn or give them something new."})
                     log.info("engine.ruling " + logs.kv(iid=iid, turn=turn, rule="repeated_beat", serious=True, of_turn=c["of_turn"], words=c["words"]))
-        own_lines = sum(1 for ln in narration.splitlines() if ln.strip().startswith("§")) - sum(1 for c in calls_block.get("calls", []) if c.get("mechanic") and not c.get("backstop"))
+        own_lines = sum(1 for ln in narration.splitlines() if ln.strip().startswith("§")) - sum(1 for c in calls_block.get("calls", []) if c.get("mechanic"))
         own_lines -= len(world.mechanics) if world is not None else 0      # the world's rolls are the engine's too (part four)
         if own_lines > 0:                                # P2: a § line the engine did not write is an invented roll
             rulings.append({"rule": "fake_check", "serious": True, "by": "engine",
@@ -1786,6 +1802,7 @@ class Engine:
                 adj = adj.model_copy(update={"intents": [               # rolled 'Turn Undead, CHA medium' beside Turn Undead's own die)
                     i.model_copy(update={"check": None}) if i.check is not None and asks_for(list(spec.words) + [spec.label], i.check.label) else i
                     for i in adj.intents]})
+            game.dice_salt = dice_salt(iid)                     # D205: a power's own dice follow the undo box (B310)
             after, res = game.run_command(working, spec.id, args)
             label = res.label or spec.label
             if not res.ok:
@@ -1838,6 +1855,7 @@ class Engine:
             ledger("command", {"id": lever.id, "args": lever.args, "mode": lever.mode, "typed": True, "ok": False, "not_completed": True, "text": reason})
             log.info("command.typed.not_completed " + logs.kv(iid=iid, turn=turn, id=lever.id, why=reason))
             return state, {"id": lever.id, "status": "not_completed", "text": f"{lever.label} not completed: {reason}"}
+        game.dice_salt = dice_salt(iid)                     # D205: a power's own dice follow the undo box (B310)
         new_state, res = game.run_command(state, lever.id, lever.args) if isinstance(game, GameBase) else (state, CommandResult(ok=False, text="no commands"))
         if not res.ok:
             ledger("command", {"id": lever.id, "args": lever.args, "mode": lever.mode, "typed": True, "ok": False, "text": res.text})
@@ -2262,15 +2280,24 @@ class Engine:
 
         def handler(call, n: int) -> CallResult:
             if call.verb == "CHECK":
-                return run_check(call, n, stats, resolver, rng, assessments, modifiers, render,
+                out = run_check(call, n, stats, resolver, rng, assessments, modifiers, render,
                                  fallback_stat=getattr(game, "fallback_stat", None), fail_streak=fail_streak,
                                  player=_hook(game, "player_name", state, default="the player"), consequence_for=consequence_for,
                                  lethal_for=lambda d, label: bool(_hook(game, "lethal_stake", state, d, label, default=False)),
                                  offset=offset,
                                  holds_back=lambda target: _hook(game, "holds_back", state, target, default=None),
-                                 note_for=lambda d, label: _hook(game, "check_note", state, d, label, default="") or "",
+                                 # B310: the note sees the hit points this turn's calls already took, so a failure's cost that
+                                 # takes the last one is told as the death now, not a turn later (187ae951f07d T16-T17)
+                                 note_for=lambda d, label: (d.update(hp_taken=int(tally.get("hp", 0))) or
+                                                            _hook(game, "check_note", state, d, label, default="") or ""),
                                  caps=getattr(game, "caps", False),
                                  meets=lambda target, words: _hook(game, "meets_tell", state, target, words, default=None))
+                data = getattr(out, "data", None)
+                if isinstance(data, dict):
+                    data.pop("hp_taken", None)
+                    if isinstance(data.get("harm"), int):
+                        tally["hp"] = int(tally.get("hp", 0)) + data["harm"]        # the enemies' blows after it see it too
+                return out
             if call.verb in ("ENEMY", "HAZARD", "ATTACK", "ALLY"):   # B206 (D178), part fifteen §3: rolled when the prose reaches it
                 out = _hook(game, "world_call", state, call, rng_for(iid, turn, f"world:{call.verb}:{call.ref}:{n}"), offset, tally, default=None)
                 if out is None:

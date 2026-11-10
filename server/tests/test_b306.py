@@ -139,3 +139,17 @@ def test_a_powers_roll_holds_from_preview_to_commit(engine: Engine):
     later.clock.minute += 7
     b, rb = game.run_command(later, "turn_undead", {})
     assert ra.text == rb.text and ra.directive == rb.directive
+
+
+async def test_a_backstop_blow_is_shown_after_the_prose(engine: Engine, monkeypatch):
+    """B300, B310: a blow the prose left out, rolled after it, is on the page as the engine's § line."""
+    game = engine.games["fantasy"]
+    iid = engine.create_instance("fantasy", SHEET)
+    line = "the drowned of the Mire chapels's rotten grip: 17 against AC 16, hit; 3 damage, Aldric is hurt."
+    monkeypatch.setattr(type(game), "backstop", lambda self, state, tally, rng, offset: [
+        {"call": {"verb": "ENEMY", "raw": "ENEMY the_drowned", "ref": "the_drowned"}, "result": {"backstop": True}, "mechanic": line,
+         "backstop": True, "told": ""}])
+    evs = [ev async for ev in engine.run_turn(iid, "I look around the common room.")]
+    shown = [e["data"]["text"] for e in evs if e["event"] == "mechanic"]
+    told = next(r.text for r in engine.store.transcript(iid) if r.role == "narrator" and r.turn == 1)
+    assert line in shown and ("§ " + line) in told

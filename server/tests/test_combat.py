@@ -309,12 +309,14 @@ def test_a_friend_struck_first_does_not_stand_down_at_once(game):
     assert "friend" in st.player.fighting
 
 
-def test_a_backstop_blow_shows_its_dice_on_the_players_row(game):
+def test_a_backstop_blow_carries_its_dice_line_for_the_prose(game):
+    """B310: the pipeline shows a backstop's line in the prose, after it (a § line); the row does not say it again."""
     st, q = _fight(game, 1)
     st.combat.plan = [{"key": "enemy:dead:0", "side": "enemy", "who": "dead", "body": 0, "action": {"kind": "strike"}, "target": "player"}]
     rest = cb.backstop(game, st, _Seq([18, 4]), 2, {"hp": 0})
+    assert rest and "against AC" in rest[0]["mechanic"] and rest[0]["backstop"]
     notes = cb.land(game, st, [b["result"] for b in rest], 1, 2, random.Random(1))
-    assert any("against AC" in n and n.endswith("(after the prose)") for n in notes)
+    assert not any("(after the prose)" in n for n in notes)
 
 
 def test_sneak_attack_is_the_rounds_an_enemy_on_an_ally_or_an_ally_on_them(game):
@@ -687,3 +689,75 @@ def test_an_item_is_never_a_target(game):
                                  intents=[IntentCombat(action="attack", targets=["longsword"], attack_at=["longsword"], weapon="")])
     s, w = game.world_turn(st, hit, "I attack", random.Random(1), 3, 2)
     assert not any(q.name.lower() == "longsword" for q in s.people) and s.player.fighting == []
+
+
+def test_a_failures_cost_that_takes_the_last_hit_point_is_the_death_now(game):
+    """B310 (187ae951f07d T16-T17): a failed flee's 1 hit point took the last; the prose had him down, the next turn crawling
+    out, then the ending. Now the note tells the death this turn."""
+    st, q = _fight(game, 1)
+    st.player.hp = 1
+    data = {"outcome": "failure", "stat": "str", "roll": 7, "hp_taken": 0}
+    note = game.check_note(st, data, "break free and run")
+    assert data.get("kills") and "kills" in note
+    st.player.hp = 9
+    data = {"outcome": "failure", "stat": "str", "roll": 7, "hp_taken": 0}
+    assert not game.check_note(st, data, "break free and run").count("past surviving") and not data.get("kills")
+    st.player.hp = 3
+    data = {"outcome": "failure", "stat": "str", "roll": 7, "hp_taken": 2}      # this turn's blows already took two
+    game.check_note(st, data, "break free and run")
+    assert data.get("kills")
+
+
+def test_an_enemys_weapon_is_named_only_when_their_words_carry_it():
+    assert cb.shown_harm(Person(id="r", name="Robber 2", role="a robber"), "scimitar") == "blow"
+    assert cb.shown_harm(Person(id="m", name="the man by the pillar", role="a rough drinker"), "club") == "blow"
+    assert cb.shown_harm(Person(id="h", name="Hazel", role="a girl with a bow", description="quick with her bow"), "arrows") == "arrows"
+    assert cb.shown_harm(Person(id="d", name="the drowned", role="dead things"), "rotten grip") == "rotten grip"
+    assert cb.shown_harm(Person(id="g", name="Gorm", role="a troll with a club"), "club") == "club"
+
+
+def test_a_new_person_filed_under_someone_elsewheres_id_is_new(game):
+    """B307: 'new person the_drowned', a skeleton in a shroud, in a temple crypt, is not the Mire's drowned band."""
+    st = new(game)
+    mire = st.person("the_drowned").location
+    rows = [Change(kind="new", target="person", value="the_drowned", field="", note="a skeleton in a rotting linen shroud"),
+            Change(kind="move", target="the_drowned", value=st.player.location, field="")]
+    s1, rep, _ = apply_changes(game, st, ChangeReport(changes=rows, log_line="", confidence="high"), present=["player", "the_drowned"], causes=[])
+    assert s1.person("the_drowned").location == mire and "the_drowned" not in s1.player.with_them
+    sk = s1.person("skeleton")
+    assert sk is not None and sk.location == s1.player.location and cb.ensure_block(sk).block == "skeleton"
+    same = [Change(kind="new", target="person", value="the_drowned", field="", note="the drowned dead of the chapels")]
+    s2, _, _ = apply_changes(game, st, ChangeReport(changes=same, log_line="", confidence="high"), present=[], causes=[])
+    assert s2.person("skeleton") is None and len(s2.people) == len(st.people)       # words they share: the same band
+
+
+def test_a_swing_at_no_one_in_a_fight_is_at_the_foe(game):
+    from engine.pipeline import settle_attack
+    from engine.roles import CheckStaked as CheckSpec
+    st, q = _fight(game, 1)
+    adj = AssistantReadingCombat(kind="action", summary="Brin swings.", time_minutes=1, risk="medium",
+                                 intents=[IntentCombat(action="attack the first dead thing", targets=[], weapon="longsword",
+                                                       check=CheckSpec(label="Attack the dead", stat="str", difficulty="medium"))])
+    game.aim_blows(st, adj)
+    settle_attack(adj)
+    assert adj.intents[0].attack_at == ["dead"] and adj.intents[0].check is None
+    calm = new(game)
+    adj2 = AssistantReadingCombat(kind="action", summary="Brin swings.", time_minutes=1, risk="medium",
+                                  intents=[IntentCombat(action="attack the first dead thing", targets=[], weapon="longsword",
+                                                        check=CheckSpec(label="Attack the dead", stat="str", difficulty="medium"))])
+    game.aim_blows(calm, adj2)
+    assert adj2.intents[0].attack_at == [] and adj2.intents[0].check is not None      # no fight, no one to roll against
+
+
+def test_a_plain_run_in_a_fight_is_the_flee_lever(game):
+    from engine.roles import CheckStaked as CheckSpec
+    st, q = _fight(game, 1)
+    adj = AssistantReadingCombat(kind="action", summary="Brin runs for the door.", time_minutes=1, risk="high",
+                                 intents=[IntentCombat(action="shove through the crowd and exit", targets=[],
+                                                       check=CheckSpec(label="shove through the crowd", stat="str", difficulty="medium"))])
+    game.aim_blows(st, adj, "I turn and run for the door, shoving through the crowd")
+    assert [c.id for c in adj.commands] == ["flee"]
+    hold = AssistantReadingCombat(kind="action", summary="Brin braces.", time_minutes=1, risk="high",
+                                  intents=[IntentCombat(action="brace the door", targets=[], check=CheckSpec(label="brace", stat="str", difficulty="medium"))])
+    game.aim_blows(st, hold, "I brace the door with my shoulder")
+    assert hold.commands == []

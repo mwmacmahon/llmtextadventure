@@ -1430,6 +1430,36 @@ class FantasyGame(GameBase):
                                f"and leave {p.name} room to run or yield; never say so outright." if e.band == "impossible" else ""))
         w.rows.append({"kind": "encounter", "hit": hit, "why": "the offer", "reason": e.reason})
 
+    FLEE_PLAIN = ["run", "flee", "escape", "get away", "get out", "retreat", "bolt", "leg it", "make a break"]
+
+    def aim_blows(self, state: FantasyState, adj: Any, player_text: str = "") -> None:
+        """B310 (Gemma, 11-10, adcf1869ec54 T19 and 8eb1928e28b7 T20): a swing with a weapon (or 'attack', or a punch) and a STR
+        or DEX check but no one named, while the player is fighting: it is at the one they fight (the engine's settle_attack then
+        makes it the attack roll). Outside a fight, with no one named, it stays a check: there is no one to roll against."""
+        from . import combat as cb
+        p = state.player
+        foe = next((x for x in p.fighting if (q := state.person(x)) is not None and q.status == "alive"), None)
+        if foe is None:
+            return
+        intents = getattr(adj, "intents", None) or []
+        picked = {c.id for c in getattr(adj, "commands", None) or []}
+        if (state.combat is not None and not picked & {"flee", "yield"} and not any(getattr(i, "attack_at", None) for i in intents)
+                and any(getattr(getattr(i, "check", None), "stat", "") in ("str", "dex") for i in intents)):
+            from engine.pipeline import asks_for
+            from engine.roles import CommandPick
+            if asks_for(self.FLEE_PLAIN, player_text):
+                # B310 (Gemma, 11-10, 187ae951f07d T16, 8eb1928e28b7 T14): "I turn and run for the door" in a fight was a STR check
+                # (a failure's hit point killed the paladin; the fight stayed open); the player's run is the Flee lever
+                adj.commands = list(getattr(adj, "commands", None) or []) + [CommandPick(id="flee")]
+                return
+        for i in getattr(adj, "intents", None) or []:
+            c = getattr(i, "check", None)
+            if (c is None or getattr(c, "stat", "") not in ("str", "dex") or not hasattr(i, "attack_at") or i.attack_at
+                    or getattr(i, "targets", None)):
+                continue
+            if getattr(i, "weapon", "") or (i.action or "").split()[:1] == ["attack"] or cb.UNARMED.search(f"{i.action} {c.label}"):
+                i.targets, i.attack_at = [foe], [foe]
+
     def bring_in(self, s: FantasyState, words: str, *, ref: str = "", band: str = "normal", offset: int = 2, join: bool = True,
                  named: bool = False) -> tuple[list[Person], dict]:
         """Part sixteen §4: the people a hostile in the words is, written in here and met with their blocks (and joined to the
@@ -1451,7 +1481,17 @@ class FantasyGame(GameBase):
                                                             and en.kind_of_words(words) == cb.ENTRIES.get(bodies[0][0], {}).get("kind")):
                 spawned = en.spawn(s, bodies, off.get("variant", "standard"), ids=ids)
                 pick = [ref] if ref in ids and en.count_in(words or ref) == 1 else ids
+                by_kind = ref not in ids and not (word_e and word_e in ents)
+                if by_kind and en.count_in(words) == 1:
+                    pick = ids[:1]
                 made = [q for q in spawned if q.id in pick and s.person(q.id) is None]
+                if by_kind and words:
+                    # B310 (Gemma, 11-10, 8eb1928e28b7 T12-T14): the offer's robbers stood in for the bar's sailors, and 'Robber 2'
+                    # was said aloud. Matched by kind only, the offer gives its numbers; the scene keeps its own name for them
+                    own = re.sub(r"^(the|a|an)\s+", "", " ".join(words.replace("_", " ").split()), flags=re.I)[:40]
+                    for k, q in enumerate(made):
+                        q.name = own[:1].upper() + own[1:] + (f" {k + 1}" if len(made) > 1 else "")
+                        q.called = q.name
                 left = [i for i in ids if i not in {q.id for q in made}]
                 s.offer = {**off, "ids": left} if left else {}
                 row = {"kind": "encounter", "hit": True, "why": f"the offer, by '{ref or words}'", "reason": off.get("reason", "")}
@@ -1518,11 +1558,17 @@ class FantasyGame(GameBase):
                     return (f" The danger is past surviving: it kills {state.player.name}. Write the death straight; this is the end "
                             f"of the story.")
                 data["harm"] = wo.harm(danger, int(data.get("roll") or 0))
+                if data["harm"] >= state.player.hp - int(data.get("hp_taken") or 0):
+                    data.update(kills=True, cause=label)                # B310: the cost takes the last hit point: the death, now
+                    return f" The cost is past surviving: it kills {state.player.name}. Write the death straight; this is the end of the story."
                 return pline + f" It costs {state.player.name}: {wo.STEP_WORDS[danger]} lands on them (the engine counts it). Write it landing."
             n = wo.failure_harm(self, state, data, label)
             if not n:
                 return pline
             data["harm"] = n
+            if n >= state.player.hp - int(data.get("hp_taken") or 0):
+                data.update(kills=True, cause=label)                    # B310 (187ae951f07d T16): a failed flee's 1 took the last
+                return f" The cost is past surviving: it kills {state.player.name}. Write the death straight; this is the end of the story."
             step = wo.TIER_STEP.get(str(data.get("outcome")), "scrape")
             return pline + (f" It costs {state.player.name}: {wo.STEP_WORDS[step]} lands on them in the attempt (the engine counts it). "
                             f"Write it landing.")
@@ -1714,6 +1760,9 @@ class FantasyGame(GameBase):
             return self._sheet_change(s, ch, w)
         p = s.player
         target, field, value, kind = ch.target.strip(), ch.field.strip().lower(), ch.value.strip(), ch.kind
+        remap = getattr(w, "remap", None) or {}
+        if target in remap:                            # B307: this report's own new person, filed under someone else's id
+            target = remap[target]
         is_player = target.lower() in ("player", p.name.lower(), p.name.split(" ")[0].lower() if p.name else "player", "")
         if is_player and target != "player" and any(q.id == target for q in s.people):
             is_player = False             # B45: a person's id written as the id ("wren", Tam's girl) is that person, not the player Wren
@@ -1831,7 +1880,7 @@ class FantasyGame(GameBase):
         if kind == "new" and target.lower() in ("thing", "item", "") and value:
             return self._new_thing(s, value, ch.field, ch.note, w)
         if kind == "new" and target.lower() == "person" and value:
-            self._new_person(s, value, ch.note, w, ch.field)
+            self._new_person(s, value, ch.note or getattr(ch, "title", "") or "", w, ch.field)
             return True
         if kind == "new" and target.lower() == "place" and value:
             self._new_place(s, value, ch.field, w)
@@ -2428,6 +2477,19 @@ class FantasyGame(GameBase):
     def _new_person(self, s: FantasyState, name: str, role: str, w: Writer, where: str = "") -> None:
         p = s.player
         here = not where.strip() or where.strip().lower() in ("player", "here", p.name.lower())
+        same = s.person(slug(name))
+        if (same is not None and here and role.strip() and same.id not in p.with_them and same.id not in p.fighting
+                and not self._same_spot(s, same.location, p.location)
+                and not (_words(role) & _words(" ".join([same.name, same.role, same.called or "", *same.aliases, same.description])))):
+            # B307 (Gemma, 11-10, 4d6f4c683fd3 T8, adcf1869ec54 T19, 187ae951f07d T11): 'new person the_drowned', a skeleton in a
+            # shroud, in a temple crypt: the Mire's drowned band was merged and moved across the city, its drowning grab with it.
+            # An id that is someone elsewhere, with a note that shares nothing with them, is a new person; this report's other
+            # rows for that id go to the new one
+            from .combat import _ROLE_TAIL
+            fresh = re.sub(r"^(a|an|the)\s+", "", _ROLE_TAIL.sub("", " ".join(role.split())), flags=re.I)[:40] or "stranger"
+            w.remap = {**(getattr(w, "remap", None) or {}), same.id: slug(fresh)}
+            w.note(f"new person {name!r} is not {same.id} ({same.name}, elsewhere): filed as {fresh!r}")
+            name, role = fresh[:1].upper() + fresh[1:], role
         q = s.person(slug(name)) or self._same_person(s, name) or self._described(s, name, role, here=here)
         if q is not None:
             if q.name.lower() != name.strip().lower():
@@ -2499,6 +2561,8 @@ class FantasyGame(GameBase):
             s.places_heard_of.append(place)
 
     def apply_present(self, s: FantasyState, present: list[str], w: Writer) -> FantasyState:
+        remap = getattr(w, "remap", None) or {}                  # B307: the report's new person, not the one elsewhere
+        present = list(dict.fromkeys(remap.get(x, x) for x in present))
         with_them = [pid for pid in present if s.person(pid) is not None and s.person(pid).status == "alive"]
         if with_them != s.player.with_them:
             w.note(f"player.with_them: {s.player.with_them} -> {with_them}")
