@@ -83,7 +83,8 @@ Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a shor
 1b. **B329, the save's size and the database** (the owner, 11-10: "That size is not acceptable ... needs to be in roadmap";
    designed, not built; ROADMAP §7). Snapshots as diffs (the last ten turns whole, a full keyframe every twentieth, compressed);
    the `model_call` request by its blob hash (the two that stop the growth outrunning the turns: the owner's bar, "a few gigs
-   is fine as long as it doesn't grow like crazy"); compressed blobs, retention and VACUUM optional. Every game. The fantasy chat
+   is fine as long as it doesn't grow like crazy"); compressed blobs, retention and VACUUM optional. Every game. Low-hanging,
+   an hour each: the snapshot rows compressed (4 times), the request by its hash, the ledger's payloads compressed. The fantasy chat
    knows B329 touches `engine/store.py` and the pipeline's `save_snapshot`.
 2. **The owner's open answers**, bundled into the next directive as they come: the player UI's four questions
    (`notes/DESIGN-player-ui-2026-11-08.md`), magic's placement and its four questions (B91,

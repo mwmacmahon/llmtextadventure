@@ -225,6 +225,11 @@ the journal and the story so far. Design: DESIGN.md; GAME_AUTHORING; the world p
   After them a turn adds about 10 to 50 KB (a compressed diff of about 7 KB and each call's new prompt text), a 200-turn game
   2 to 10 MB, growing with the turns and no faster. Steps 3, 6, 7 and 8 (a bounded save, compressed blobs and prompt diffs,
   retention, VACUUM) are optional, for when the file passes a few gigabytes.
+  **The low-hanging fruit (the owner, 11-10: "if there's super low hanging fruit with db we can put that on roadmap too"),
+  each a few lines in `engine/store.py`, about an hour:** (a) the snapshot rows compressed on write and read back
+  decompressed (240 MB to about 60, before and without the diffs); (b) the `model_call` request by its blob hash (about
+  110 MB); (c) the ledger's payloads compressed (2.2 times). Checked and not worth it today: unreferenced prompt blobs (34,
+  under 1 MB), VACUUM (no free pages), the October games (47 games, 11 MB of ledger; the weight is November's rounds).
 
 ## 8. The fantasy game, Marrowgate
 
