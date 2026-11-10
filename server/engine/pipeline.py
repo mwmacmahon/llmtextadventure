@@ -28,6 +28,7 @@ import asyncio
 import json
 import os
 import re
+import secrets
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -52,7 +53,7 @@ from .narration import (Assessment, CallResult, Mechanic, NarrationDone, Visible
 from .game import ApplyReport, CommandResult, Commands, CommandSpec, Game, GameBase, Rejection, TurnInfo, check_setup
 from . import sheet as sheet_mod
 from .assistant_view import RULES as STAKES_RULES, adjudication_stakes, match_stakes, stakes_blocks
-from .mechanics import RESOLVERS, CheckRequest, CheckResult, outcome_words, rng_for
+from .mechanics import RESOLVERS, CheckRequest, CheckResult, outcome_words, rng_for as _seeded
 from .providers import Msg, StreamDone, TextDelta, get_provider
 from .providers.base import Msg, Usage
 from .roles import (ADJUDICATOR_STAKES, AssistantReading, AssistantReadingStaked, AssistantReadingV2, adjudicator_messages, referee_messages,
@@ -66,6 +67,15 @@ from .tape import PART, Taped, exchange_row
 
 MODEL_CALL_KINDS = {"model_call": None, "adjudication": "assistant", "verdict": "referee"}
 log = logs.get("pipeline")
+
+# The dice key of the turn being played, per instance (the owner, 11-10): the instance id, or the id and the salt of the latest
+# undo that rerolled this turn (Engine.dice_key). Set at run_turn's start; every seeded roll of the turn goes through rng_for.
+_DICE_KEY: dict[str, tuple[int, str]] = {}
+
+
+def rng_for(iid: str, turn: int, salt: str = ""):
+    k = _DICE_KEY.get(iid)
+    return _seeded(k[1] if k and k[0] == turn else iid, turn, salt)
 
 
 GUARD_MODES = {
@@ -108,11 +118,12 @@ class Engine:
         # Runtime settings the UI can change (the guard mode, the progress estimate); persisted beside the store.
         self.settings_path = Path(store.path).parent / "settings.json" if getattr(store, "path", None) else None
         self.settings: dict[str, Any] = {"guard": {"mode": cfg.guard.mode, "max_retells": cfg.guard.max_retells},
-                                         "progress": {"default_chars": cfg.guard.default_chars}}
+                                         "progress": {"default_chars": cfg.guard.default_chars},
+                                         "dice": {"keep_on_undo": False}}     # the owner, 11-10: off, an undo rerolls the undone turns
         if self.settings_path and self.settings_path.exists():
             try:
                 saved = json.loads(self.settings_path.read_text())
-                for k in ("guard", "progress"):
+                for k in ("guard", "progress", "dice"):
                     self.settings[k].update({kk: vv for kk, vv in (saved.get(k) or {}).items() if kk in self.settings[k]})
             except Exception:
                 log.exception("settings.load_failed " + logs.kv(path=str(self.settings_path)))
@@ -194,6 +205,7 @@ class Engine:
         modes, where the mode comes from, the roles' backends as the active profile plays them."""
         return {
             "guard": {**self.settings["guard"], "mode": self.guard_mode()}, "modes": GUARD_MODES, "progress": dict(self.settings["progress"]),
+            "dice": dict(self.settings["dice"]),
             "guard_from": self.guard_source(), "shared_guard": self.settings["guard"]["mode"],
             "profile": self.cfg.profile_label, "profile_guard": self.profile_guard(),
             "dev_pin": bool(self.cfg.server.dev_pin), "dev_mode": bool(self.cfg.server.dev_mode), "difficulties": [{"id": k, "name": v} for k, v in DIFFICULTIES.items()],
@@ -220,6 +232,10 @@ class Engine:
         pr = patch.get("progress") or {}
         if "default_chars" in pr:
             self.settings["progress"]["default_chars"] = max(200, int(pr["default_chars"]))
+            shared = True
+        dc = patch.get("dice") or {}
+        if "keep_on_undo" in dc:
+            self.settings["dice"]["keep_on_undo"] = bool(dc["keep_on_undo"])
             shared = True
         if self.settings_path and shared:
             self.settings_path.parent.mkdir(parents=True, exist_ok=True)
@@ -694,6 +710,20 @@ class Engine:
         log.info("instance.redo " + logs.kv(iid=iid, mark=r["mark"], to_turn=r["from_turn"]))
         return self.store.latest_turn(iid)
 
+    def dice_key(self, iid: str, turn: int) -> str:
+        """What a turn's dice are seeded on (the owner, 11-10, a Settings checkbox, off by default): the instance id, or the
+        id and the `reseed` salt of the latest undo whose turns include this one. An undo row a later undo marked still counts
+        (its turns were undone, whether played again or not); one a redo took back does not. An undo made with the box on
+        carries no salt, so the turn rolls as it last did. A rewrite or an eval replay of the turn finds the same key."""
+        rows = self.store.ledger(iid, undone=True)
+        redos = {r["seq"] for r in rows if r["kind"] == "redo"}
+        salt = None
+        for r in rows:
+            if (r["kind"] == "undo" and r["payload"].get("reseed") and turn in (r["payload"].get("turns") or ())
+                    and r.get("undone") not in redos):
+                salt = r["payload"]["reseed"]
+        return f"{iid}~{salt}" if salt else iid
+
     def undo(self, iid: str, to_turn: int | None = None) -> int:
         """Rewind to `to_turn` (default: one turn back). Turn 0 is the opening. Undo keeps the record (B82): an `undo`
         ledger row at the target turn, and every row after it (snapshots, transcript, ledger) marked undone with that
@@ -713,6 +743,8 @@ class Engine:
         first = next((r["payload"] for r in self.store.ledger(iid, undone=True) if r["kind"] == "difficulty"), None)
         then = kept[-1]["new"] if kept else (first["old"] if first else inst.difficulty)
         payload: dict[str, Any] = {"from_turn": latest, "to_turn": target, "turns": list(range(target + 1, latest + 1))}
+        if not self.settings["dice"]["keep_on_undo"]:
+            payload["reseed"] = secrets.token_hex(4)          # the owner, 11-10: the undone turns roll fresh when played again
         if then != inst.difficulty:
             payload["difficulty"] = {"old": inst.difficulty, "new": then}
         mark = self.store.append_ledger(iid, target, "undo", payload)
@@ -844,6 +876,7 @@ class Engine:
         state: BaseModel = game.load_state(self.store.load_state(iid))
         start = state.model_copy(deep=True)            # the turn's opening state, for what the player sees change (B18)
         turn = self.store.latest_turn(iid) + 1
+        _DICE_KEY[iid] = (turn, self.dice_key(iid, turn))
         over = _hook(game, "ending", state)
         console = command is not None and any(c.id == command[0] and c.mode == "engine" for c in _hook(game, "commands", state, default=[]))
         if over and not console:                      # B50 (D167): a console command (no story, no clock) still runs after the end
@@ -2101,7 +2134,8 @@ class Engine:
         stats = _hook(game, "stats", state, default={})
         resolver = RESOLVERS[getattr(game, "resolver", "dice_d20")]
         # B85 (the owner, 11-08; H4): each check's dice are seeded by the turn and the check's stat and difficulty (and how
-        # many of that kind came before it this turn), so the same attempt after an undo replays its dice, a reworded one of
+        # many of that kind came before it this turn), so the same attempt after an undo replays its dice (when Settings keeps
+        # the dice on undo; off, the default since 11-10, an undo reseeds: dice_key), a reworded one of
         # the same stat and difficulty does too, and a different stat or difficulty rolls fresh. Its consequence roll and
         # its cost choice take the same salt. A fork is a new id and rolls fresh.
         seen_kinds: dict[tuple[str, str], int] = {}

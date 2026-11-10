@@ -88,7 +88,9 @@ async def test_check_is_rolled_and_told_to_narrator(engine: Engine, fake: FakePr
     assert "§ Influence check, medium:" in events[-1]["data"]["text"]
     narrator_call = next(l["payload"] for l in engine.store.ledger(iid, 1) if l["kind"] == "model_call" and l["payload"].get("role") == "narrator")
     assert narrator_call["calls"][0]["result"]["outcome"] == c["outcome"]
-    # replay: same instance+turn -> same roll, even though the roll now happens inside the prose
+    # replay: same instance+turn -> same roll, even though the roll now happens inside the prose (with Settings keeping the
+    # dice on undo; off, the default since 11-10, an undo rerolls: tests/test_undo_dice.py)
+    engine.update_settings({"dice": {"keep_on_undo": True}})
     engine.undo(iid)
     fake.canned["AssistantReading"] = [AssistantReading(
         kind="action", summary="nudge Park calmer", time_minutes=10, risk="low",

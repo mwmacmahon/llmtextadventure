@@ -87,7 +87,8 @@ Gemma turn an edge of +2 arrived with its why. The chosen-death net fires only o
   the About-word bonus is the owner's call. With the edge in, the About-word bonus is the likelier one to go.
 - Noir's keyed check grade fell from 22 of 24 to 19 of 24 with the minutes line (B27); count checks matched in the next
   long rounds.
-- Undo replays the same dice and a different attempt rolls fresh: built (H4, D172, D173).
+- Undo rerolls the undone turns by default; Settings' "Keep the dice on undo" box replays the same dice (H4, D172,
+  D173, D205): built.
 - A retold turn runs the stakes call again; whether greedy decoding returns the same stakes is unverified (A3).
 
 ## 2. Time and pacing

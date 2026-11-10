@@ -6,7 +6,7 @@ import { ProfilePicker } from "./ProfilePicker";
 const ROLE_ORDER = ["narrator", "assistant", "referee", "summarizer"];
 
 /** Settings, one page, opened from the bar everywhere: the game in play's difficulty (when opened from a game), the
- *  narrator guard, the roles and the profile picker, and dev mode. */
+ *  narrator guard, undo's dice, the story log, the roles and the profile picker, and dev mode. */
 export function SettingsPage({ iid }: { iid: string | null }) {
   const [s, setS] = useState<Settings | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -53,6 +53,28 @@ export function SettingsPage({ iid }: { iid: string | null }) {
               : `Changed here, on this server only (the profile ${s.profile} says ${s.profile_guard}); the other servers keep ${s.shared_guard}.`}
           </div>
         )}
+      </section>
+
+      <section className="settings">
+        <h2>Undo</h2>
+        <label className="settings-row">
+          <input
+            type="checkbox"
+            checked={!!s.dice?.keep_on_undo}
+            onChange={async (e) => {
+              try {
+                setS(await api.updateSettings({ dice: { keep_on_undo: e.target.checked } }));
+              } catch (err) {
+                setErr(String(err));
+              }
+            }}
+          />
+          <span>Keep the dice on undo</span>
+        </label>
+        <div className="muted small">
+          Off: a turn played again after an undo rolls new dice. On: it rolls the same dice it rolled before. For every game on
+          this server; a rewrite always keeps its dice.
+        </div>
       </section>
 
       <StoryLog />

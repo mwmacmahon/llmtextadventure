@@ -72,6 +72,7 @@ export type Settings = {
   guard: { mode: string; max_retells: number };
   modes: Record<string, string>;
   progress: { default_chars: number };
+  dice: { keep_on_undo: boolean };                   // on: a turn played again after an undo rolls the same dice
   guard_from: "settings" | "profile" | "this server";
   shared_guard: string;
   profile: string;
@@ -269,7 +270,7 @@ export const api = {
   graveyard: (game?: string) => req(`/api/graveyard${game ? `?game=${encodeURIComponent(game)}` : ""}`).then((r) => j<Gallery>(r)),
   grave: (id: string) => req(`/api/graveyard/${id}`).then((r) => j<GraveCard>(r)),
   settings: () => req("/api/settings").then((r) => j<Settings>(r)),
-  updateSettings: (patch: { guard?: Partial<Settings["guard"]>; progress?: Partial<Settings["progress"]> }) =>
+  updateSettings: (patch: { guard?: Partial<Settings["guard"]>; progress?: Partial<Settings["progress"]>; dice?: Partial<Settings["dice"]> }) =>
     req("/api/settings", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) }).then((r) => j<Settings>(r)),
   profiles: () => req("/api/profiles").then((r) => j<ProfileList>(r)),
   profile: (name: string) => req(`/api/profiles/${encodeURIComponent(name)}`).then((r) => j<ProfileCard>(r)),

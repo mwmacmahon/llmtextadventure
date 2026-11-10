@@ -50,6 +50,7 @@ class RewriteInput(BaseModel):
 class SettingsInput(BaseModel):
     guard: dict[str, Any] | None = None
     progress: dict[str, Any] | None = None
+    dice: dict[str, Any] | None = None     # keep_on_undo (the owner, 11-10)
 
 
 class UndoInput(BaseModel):
