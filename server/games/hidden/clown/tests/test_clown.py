@@ -1571,15 +1571,20 @@ def test_gear_adds_to_a_show_that_wants_it_and_wears_out_and_paid_training_costs
     g = st.active_girl
     x = Show(id="s", hook="rope_walk_birthday", title="A birthday", client="rope_walk_mother", venue="Rope Walk", at_abs=st.now_abs,
              wants=["children", "balloons"], stat="charm", difficulty=1, fee=15, variance=0)
-    q0, _, _ = game._show_quality(st, x, g)
+    kit = game._gear_for(st, g, x)                                          # D214C: her skills lifted for the show
+    assert [it["id"] for it in kit] == ["motley"] and game._geared(st, g, "children", kit) == min(100, g.skills["children"] + 10)
+    g.skills["children"], g.skills["balloons"] = 55, 52                     # sound only with the motley's lift
+    q0, _, n0 = game._show_quality(st, x, g)
     g.gear = {}
     q1, _, _ = game._show_quality(st, x, g)
-    assert q0 == q1 + 1
+    assert q0 > q1 and any("with her gear" in ln for ln in n0)
     g.gear = {"motley": 1}
     st.player.location = "Rope Walk"
     st.shows.append(x.model_copy(update={"girl": g.id}))
     game._resolve_show(st, st.shows[-1], 3)
     assert "motley" not in st.active_girl.gear                              # worn out after its last show
+    y = st.shows[-1]
+    assert not y.paid or any("the fee x1.2" in ln for ln in y.why_numbers)  # the client pays a fifth more for her turned out
     # paid training
     st2 = new(game)
     st2.house.money = 500
@@ -1589,3 +1594,24 @@ def test_gear_adds_to_a_show_that_wants_it_and_wears_out_and_paid_training_costs
     st2 = advance(game, st2, SLOTS["mornings"][1] - st2.clock.minute + 1, 2)
     assert st2.house.money == money - 12 and st2.active_girl.skills["pratfalls"] > before
     assert any("the tutor (x1.5, 12 gold)" in ln for ln in st2.log + st2.tally)
+
+
+def test_a_rival_may_slash_a_costume_in_the_wardrobe_unless_the_house_holds_it(game: ClownGame):
+    """D214C (the owner, 11-10): a week's chance while the house has gear; a d6 and the guard (menace, a girl with nerve, the
+    lock's two) against 6; on a failure one random item is gone, the player told."""
+    st = new(game)
+    st.active_girl.gear = {"motley": 12, "clubs": 12}
+    st.scenario.dials["gear_theft_chance"] = 1.0
+    st.house.upgrades = ["wardrobe_lock"]
+    st.player.stats["menace"] = 3                                           # 3 + 2 + any d6 >= 6: always held
+    game._wardrobe(st)
+    assert len(st.active_girl.gear) == 2 and "seen off" in st.house.alerts[-1]
+    st.house.upgrades, st.player.stats["menace"] = [], -1
+    for g in st.in_house():
+        g.skills["nerve"] = 0
+    lost = 0
+    for w in range(1, 9):                                                   # -1 + a d6 against 6: never held
+        st.house.week, st.active_girl.gear = w, {"motley": 12, "clubs": 12}
+        game._wardrobe(st)
+        lost += 2 - len(st.active_girl.gear)
+    assert lost == 8 and "slashed" in st.house.alerts[-1]

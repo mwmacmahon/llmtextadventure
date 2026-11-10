@@ -737,6 +737,11 @@ class ClownGame(GameBase):
     def gear_list(self, s: ClownState) -> dict[str, dict]:
         return {str(it["id"]): it for it in (self.scenario(s.scenario.id).get("gear") or [])}
 
+    def _geared(self, s: ClownState, g: Girl, k: str, kit: list[dict]) -> int:
+        """D214C: her skill at k for a show, lifted by the gear that serves k (gear_boost a point of the item's bonus)."""
+        lift = sum(int(it.get("bonus", 1)) for it in kit if k in (it.get("skills") or [])) * int(dk.dial(s, "gear_boost"))
+        return min(100, g.skills.get(k, 0) + lift)
+
     def _gear_for(self, s: ClownState, g: Girl, x: Any) -> list[dict]:
         """D213C: the girl's gear that serves this show (an item whose skills meet the client's wants)."""
         items = self.gear_list(s)
@@ -1729,14 +1734,14 @@ class ClownGame(GameBase):
         q = s.person(x.client)
         if g is None:
             return -9, ["nobody went"], ["nobody went"]
-        pts = [TIER_POINTS[g.tier(k)] for k in x.wants] or [0]
+        kit = self._gear_for(s, g, x)                          # D214C: her gear lifts the skills it serves, for the show
+        tiers = {k: tier_of(self._geared(s, g, k, kit), SKILL_TIERS) for k in x.wants}
+        pts = [TIER_POINTS[tiers[k]] for k in x.wants] or [0]
         skill = round(sum(pts) / len(pts))
-        quality = add(skill, "she is " + " and ".join(f"{g.tier(k)} at {self.skill_name(k).lower()}" for k in x.wants),
-                      f"her {' and '.join(self.skill_name(k).lower() for k in x.wants)}: " + ", ".join(g.tier(k) for k in x.wants) + f" ({skill:+d})")
-        kit = self._gear_for(s, g, x)                          # D213C: her gear for what the client wants
-        if kit:
-            bonus = min(int(dk.dial(s, "gear_cap")), sum(int(it.get("bonus", 1)) for it in kit))
-            quality += add(bonus, "she was properly turned out for it", "her gear: " + ", ".join(str(it.get("name")) for it in kit) + f" ({bonus:+d})")
+        quality = add(skill, "she is " + " and ".join(f"{tiers[k]} at {self.skill_name(k).lower()}" for k in x.wants)
+                      + (", properly turned out for it" if kit else ""),
+                      f"her {' and '.join(self.skill_name(k).lower() for k in x.wants)}: " + ", ".join(tiers[k] for k in x.wants) + f" ({skill:+d})"
+                      + (" with her gear: " + ", ".join(str(it.get("name")) for it in kit) if kit else ""))
         stat = s.player.stats.get(x.stat, 0)
         stat_name = STAT_NAMES[x.stat].lower()
         if stat:
@@ -1862,7 +1867,11 @@ class ClownGame(GameBase):
         x.quality, x.why, x.why_numbers, x.result, x.resolved_turn = quality, why, why_n, word, turn
         share = 1.0 if g.graduated else dk.dial(s, "student_pay")
         ff = fatigue_factor(g.fatigue)                   # D211C: tiredness takes from the rewards, not the show
-        x.paid = int(round(x.fee * SHOW_PAY[word] * share * ff))
+        kit = self._gear_for(s, g, x)                    # D214C: the client pays more for a girl properly turned out
+        gp = 1 + dk.dial(s, "gear_pay") * len(kit)
+        x.paid = int(round(x.fee * SHOW_PAY[word] * share * ff * gp))
+        if kit and x.paid:
+            x.why_numbers.append(f"her gear ({len(kit)}): the fee x{gp:g}")
         if ff < 1.0:
             x.why.append("she went in " + g.fatigue_word + ", and it cost the house")
             x.why_numbers.append(f"her fatigue {g.fatigue}: the rewards x{ff:g}")
@@ -1952,10 +1961,40 @@ class ClownGame(GameBase):
                     best[k] = max(best.get(k, 0), v)
         s.house.best = best
 
+    def _guard(self, s: ClownState) -> int:
+        """D214C: the house's guard over the wardrobe: the proprietor's menace, a girl with nerve, the lock (an upgrade's guard)."""
+        lock = sum(int((self._upgrade(s, u) or {}).get("gives", {}).get("guard", 0)) for u in s.house.upgrades)
+        nerve = 1 if any(g.skills.get("nerve", 0) >= 60 for g in s.in_house()) else 0
+        return int(s.player.stats.get("menace", 0)) + nerve + lock
+
+    def _wardrobe(self, s: ClownState) -> None:
+        """D214C (the owner, 11-10: "a rival who comes and slashes a costume in your wardrobe (instant loss of random costume) if
+        you don't succeed in some check"): a week's chance, while the house has gear; a d6 and the guard against 6."""
+        owned = [(g, gid) for g in s.in_house() for gid in g.gear]
+        if not owned:
+            return
+        rng = random.Random(f"wardrobe:{s.player.name}:{s.house.week}")
+        if rng.random() >= dk.dial(s, "gear_theft_chance"):
+            return
+        who = "a man of Brascombe's" if s.flags.get("brascombe_enemy") else "someone from a rival house"
+        roll, guard = rng.randint(1, 6), self._guard(s)
+        if roll + guard >= 6:
+            self._note(s, f"Someone was at the wardrobe in the night and was seen off.", f"The wardrobe: {who}; d6 {roll} + guard {guard} = {roll + guard} against 6: seen off.")
+            s.house.alerts.append(f"Someone got into the yard in the night after the wardrobe and was seen off (d6 {roll} + guard {guard}).")
+            return
+        g, gid = owned[rng.randrange(len(owned))]
+        item = (self.gear_list(s).get(gid) or {}).get("name", gid)
+        g.gear.pop(gid, None)
+        self._note(s, f"{g.name}'s {str(item).lower()} was slashed in the wardrobe in the night.", f"The wardrobe: {who}; d6 {roll} + guard {guard} = {roll + guard} against 6: {g.name}'s {item} lost.")
+        s.house.alerts.append(f"In the night {who} got at the wardrobe: {g.name}'s {str(item).lower()} is slashed and gone (d6 {roll} + guard {guard} against 6). "
+                              f"A lock and a dog, a girl with nerve or a harder proprietor keep the next one out.")
+        s.flags["wardrobe_slashed"] = True
+
     def _week_end(self, s: ClownState, turn: int) -> None:
         h = s.house
         lines: list[str] = []       # words: the narrator's report
         nums: list[str] = []        # the numbers: the player's Last week panel
+        self._wardrobe(s)
         for x in s.girls:
             if x.in_house():
                 x.fatigue = max(0, x.fatigue + FATIGUE_SUNDAY)

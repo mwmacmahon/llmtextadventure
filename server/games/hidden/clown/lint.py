@@ -166,8 +166,8 @@ def lint(content_dir: Path, scenario: dict | None = None, state: dict | None = N
             problems.append(f"upgrade {uid}: gives nothing (rooms or hand)")
         else:
             for k, v in gives.items():
-                if k not in ("rooms", "hand"):
-                    problems.append(f"upgrade {uid}: gives {k!r}, not rooms or hand")
+                if k not in ("rooms", "hand", "guard"):
+                    problems.append(f"upgrade {uid}: gives {k!r}, not rooms, hand or guard")
                 elif not isinstance(v, int) or isinstance(v, bool):
                     problems.append(f"upgrade {uid}: gives {k} {v!r}, not a whole number")
         need = u.get("needs")

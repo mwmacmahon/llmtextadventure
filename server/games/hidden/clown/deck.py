@@ -256,7 +256,9 @@ DIALS: dict[str, float] = {
     "harbour_lift": 1,             # skill points every girl off the boat has more for every week the house has run (her whole grid; D199C)
     "harbour_price_floor": 250,    # no contract opens under this (the 100-gold cards included); the growth runs from it (D199C, C54)
     "harbour_price_cap": 1000,     # the dearest a contract can come; the price rises with the lift in proportion to her grid
-    "gear_cap": 2,
+    "gear_boost": 10,              # D214C: a girl's skill for a show, lifted this much a point of each serving item's bonus
+    "gear_pay": 0.2,               # and the fee this much more for each serving item (the owner: about 20% a costume)
+    "gear_theft_chance": 0.15,     # D214C: a week's chance a rival gets at the wardrobe, while the house has gear
     "gear_price": 1.0,             # the gear's prices times this (the simulator's calibration)
     "gear_wear": 1.0,              # the gear's life in shows times this
     "step_pay": 0.25,              # a client a step harder pays this much more of the fee a step                 # D213C: a girl's gear adds at most this to a show's quality
