@@ -153,3 +153,14 @@ async def test_a_backstop_blow_is_shown_after_the_prose(engine: Engine, monkeypa
     shown = [e["data"]["text"] for e in evs if e["event"] == "mechanic"]
     told = next(r.text for r in engine.store.transcript(iid) if r.role == "narrator" and r.turn == 1)
     assert line in shown and ("§ " + line) in told
+
+
+async def test_a_debug_turn_runs_before_any_model(engine: Engine, monkeypatch):
+    """The test hook (the owner, 11-10 night): 'DEBUG: spawn ...' on a dev server is the engine's, read by no model."""
+    monkeypatch.setenv("TA_DEV_MODE", "on")
+    iid = engine.create_instance("fantasy", SHEET)
+    evs = [ev async for ev in engine.run_turn(iid, "DEBUG: spawn 2 skeletons")]
+    assert not any(e["event"] == "error" for e in evs), evs
+    st = engine.games["fantasy"].load_state(engine.store.load_state(iid))
+    assert len(st.player.fighting) == 2
+    assert any(r["kind"] == "typed_command" for r in engine.store.ledger(iid))

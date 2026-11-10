@@ -29,6 +29,14 @@ through the command line, from the directory `server/` of the checkout, with `TA
    say so.
 4. After the last turn: `TA_URL=<SERVER> .venv/bin/python tools/turn.py finish <id> --title "<TITLE>"`.
 
+**The fantasy's test hook (fight and danger rounds only, when the brief's GOAL says so).** On a dev server a turn that
+opens `DEBUG:` is the engine's, not the story's: it happens at once, and the narrator plays it in a line. Use it to set up
+what the round tests instead of hunting for it: `DEBUG: room` (a bare glass room, nobody else there), `DEBUG: spawn 3
+skeletons minion` (any creature, a count, and a rung: minion, feeble, frail, weak, standard, veteran, elite), `DEBUG: set me
+on fire`, `DEBUG: drown me`, `DEBUG: make me bleed`, `DEBUG: freeze me`, `DEBUG: push me off`, `DEBUG: grab me` (by a foe
+already spawned), `DEBUG: hurt 5`, `DEBUG: heal`, `DEBUG: clear` (no fight, no danger, full hit points). Then play the
+next turns in plain words, as a player would. One DEBUG line a turn; never on a player's server.
+
 Your final message: the instance id, the number of turns played, the two paths `finish` printed, and three sentences on
 how the round went from the player's chair (where you got to, what worked, what the game refused or repeated). Nothing
 else; do not paste the prose.

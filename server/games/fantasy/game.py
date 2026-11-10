@@ -14,6 +14,7 @@ narrator's through the referee, bounded in `apply_change`; the hooks' scripts an
 """
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -237,6 +238,11 @@ MONSTER = re.compile(r"\b(troll|ogre|giant|beast|monster|wolf|wolves|rat|rats|dr
 # part sixteen §4 (b): a person filed by these entries' words is hostile when a fight is on or was offered this turn (a cutthroat
 # in a brawl); on a quiet afternoon a smuggler is a person to talk to
 HOSTILE_ENTRIES = {"bandit", "bandit_captain", "thug", "cultist", "berserker"}
+
+def dev_mode() -> bool:
+    """The server's dev mode, as the config reads it (B232: TA_DEV_MODE=off on a player's server): the debug command's gate."""
+    return os.environ.get("TA_DEV_MODE", "on").strip().lower() not in ("off", "0", "false", "no")
+
 
 class FantasyGame(GameBase):
     name = "fantasy"
@@ -3094,12 +3100,98 @@ class FantasyGame(GameBase):
                 f"people, what kind of person they have chosen to be); what each person sounded like; every lie {n} told and who believes it; "
                 f"debts, grudges and favours owed either way; the texture of the city and the country as narrated.")
 
+    # ---- the test hook (the owner, 11-10 night: "a debug room in the game for these Gemma/sonnet runs - somewhere the player
+    #      can go to fight anything or get hit by anything ... they can shout out whatever they want to happen") ---------------
+    def typed_command(self, state: FantasyState, text: str) -> tuple[str, dict[str, Any]] | None:
+        """A turn opening 'DEBUG:' on a dev-mode server is the debug command, before any model reads it; nothing else is."""
+        t = (text or "").strip()
+        if dev_mode() and t.upper().startswith("DEBUG:"):
+            return "debug", {"text": t.split(":", 1)[1].strip()}
+        return None
+
+    def player_alerts(self, state: FantasyState) -> list[str]:
+        """A peril's WARNING every turn the player is in it (the owner, 11-10 night: "Warning messages every turn")."""
+        p = state.player
+        if p.peril is None or p.fate:
+            return []
+        return ["WARNING: " + wo.PERILS.get(p.peril.kind, {}).get("warn", p.peril.kind)]
+
+    DEBUG_ROOM = "The Glass Cellar"
+
+    def _debug(self, state: FantasyState, words: str) -> tuple[FantasyState, CommandResult]:
+        """The debug command's verbs, one per call: spawn <words> [minion|feeble|frail|weak|standard|veteran|elite], set me on
+        fire, drown me, make me bleed, freeze me, push me off (falling), grab me, hurt N, heal [N], clear, room."""
+        from . import combat as cb
+        from . import encounter as en
+        from .state import CombatState, Condition
+        s = state.model_copy(deep=True)
+        p = s.player
+        w = (words or "").strip()
+        low = w.lower()
+        did = ""
+        if low.startswith("spawn"):
+            what = w[5:].strip() or "a skeleton"
+            variant = next((v for v in en.LADDER if re.search(rf"\b{v}\b", what, re.I)), "standard")
+            what = re.sub(rf"\b({'|'.join(en.LADDER)})\b", "", what, flags=re.I).strip(" ,")
+            dm = re.search(r"\b(\d+)\b", what)
+            what = re.sub(r"\b\d+\b", "", what).strip()
+            entries, _ = en.named_entries(what, en.region_of(s))
+            n = min(12, int(dm.group(1))) if dm else (en.count_in(what) or 2)
+            if variant == "minion" and n < 2:
+                n = 2
+            made = en.spawn(s, [(entries[0], n)], variant)
+            s.people += made
+            p.fighting += [q.id for q in made]
+            if s.combat is None:
+                s.combat = CombatState(round=0)
+            did = f"spawned {n} {entries[0]} ({variant}) in the fight: {', '.join(q.name for q in made)}"
+        elif re.search(r"\b(fire|burn|alight)", low):
+            wo.open_peril(s, "burning"); did = "set on fire"
+        elif re.search(r"\b(drown|underwater|under water|water)", low):
+            wo.open_peril(s, "drowning"); did = "dragged under the water (holding breath)"
+        elif re.search(r"\bbleed", low):
+            wo.open_peril(s, "bleeding"); did = "bleeding badly"
+        elif re.search(r"\b(freez|cold)", low):
+            wo.open_peril(s, "freezing"); did = "freezing"
+        elif re.search(r"\b(fall|push me off)", low):
+            wo.open_peril(s, "falling"); did = "falling"
+        elif re.search(r"\bgrab", low):
+            foe = next((x for x in p.fighting if (q := s.person(x)) is not None and q.status == "alive"), None)
+            if foe is None:
+                return state, CommandResult(ok=False, label="Debug", text="DEBUG: nobody to grab you; spawn something first.")
+            self._land_condition(s, "grappled", foe)
+            did = f"grappled by {s.person(foe).name}"
+        elif (m := re.match(r"hurt\s+(\d+)", low)):
+            p.hp = max(1, p.hp - int(m.group(1))); did = f"hurt to {p.hp}/{p.hp_max}"
+        elif (m := re.match(r"heal(?:\s+(\d+))?", low)):
+            p.hp = min(p.hp_max, p.hp + int(m.group(1))) if m.group(1) else p.hp_max; did = f"healed to {p.hp}/{p.hp_max}"
+        elif low.startswith("clear") or low.startswith("reset"):
+            p.peril, p.fighting, s.combat = None, [], None
+            p.conditions = [c for c in p.conditions if c.name not in ("grappled", "held")]
+            p.hp = p.hp_max; did = "cleared: no fight, no peril, full hit points"
+        elif low.startswith("room"):
+            p.location = self.DEBUG_ROOM
+            if self.DEBUG_ROOM not in s.found_places:
+                s.found_places.append(self.DEBUG_ROOM)
+            did = f"moved to {self.DEBUG_ROOM}, a bare room of glass walls, nobody else here"
+        else:
+            return state, CommandResult(ok=False, label="Debug", text="DEBUG: say one of: spawn <what> [minion..elite], set me on fire, "
+                                        "drown me, make me bleed, freeze me, push me off, grab me, hurt N, heal [N], clear, room.")
+        if p.peril is not None and did and not did.startswith(("spawned", "grappled", "hurt", "healed", "cleared", "moved")):
+            p.shown_notes.append("WARNING: " + wo.PERILS.get(p.peril.kind, {}).get("warn", p.peril.kind))
+        return s, CommandResult(label="Debug", text=f"DEBUG: {did}.", player_line=f"(debug: {w})", summary=f"Debug: {did}.",
+                                directive=f"A test of the game: {p.name} is {did}. Play it in a line or two, plainly, as if it simply "
+                                          f"happened, and stop.", minutes=0, referee_skip=["hp", "peril", "conditions", "location"])
+
     # ---- commands ----------------------------------------------------------------------------------------------------
     def commands(self, state: FantasyState) -> list[CommandSpec]:
         p = state.player
         if self.ending(state) or p.fate in ("dead", "carried"):
             return [CommandSpec(id="journal", label="Journal", mode="engine", typed=False, hint="Read the journal, the quests and the people.")]
         out = []
+        if dev_mode():                                                     # the test hook (the owner, 11-10 night): no button, dev only
+            out.append(CommandSpec(id="debug", label="Debug", mode="narrated", typed=False, params=[],
+                                   hint="DEBUG: spawn 3 skeletons minion | set me on fire | drown me | make me bleed | freeze me | grab me | hurt 5 | heal | clear | room"))
         if state.combat is not None and state.player.fighting:              # part fifteen §7; B287 (the owner, 11-09): typed, no buttons
             out += [CommandSpec(id="flee", label="Flee", mode="narrated", typed=True, decides=True,
                                 hint="Run from the fight: the player turns their back on it and goes (out of reach, out of the place). Every enemy "
@@ -3280,6 +3372,8 @@ class FantasyGame(GameBase):
                                     directive=f"{p.name} cracks a smoke pellet: grey smoke fills the place in a breath, and when it thins {p.name} is gone from the scene, "
                                               f"a few streets or a few rooms away and unseen. Say where they come out, and stop.",
                                     minutes=2, referee_skip=["smoke_pellets"])
+        if command_id == "debug":
+            return self._debug(state, str((args or {}).get("text") or ""))
         if command_id in ("flee", "yield"):                               # part fifteen §7
             from . import combat as cb
             s2, res = cb.run_fight_command(self, state, command_id)
@@ -3606,7 +3700,7 @@ class FantasyGame(GameBase):
             MeterGroup(meters=[Meter(label="Renown", value=p.renown, tier=p.renown_word, tone="info", thresholds=[25, 50, 75]),
                                Meter(label="Heat", value=p.heat, tier=p.heat_word, tone=self.HEAT_TONES.get(p.heat_word, "warn"), thresholds=[20, 50, 80])]),
             *cb.fight_panel(self, s),                       # part fifteen §7: the Fight panel, main column, pinned
-            Commands(title=None, items=[c for c in self.commands(s) if c.id not in ("flee", "yield")]),
+            Commands(title=None, items=[c for c in self.commands(s) if c.id not in ("flee", "yield", "debug")]),
             ListPanel(title="Character", items=sheet, layout="grid"),
             *([ListPanel(title="In your words", items=[Chip(label="", value=p.about.strip())], layout="stack")] if p.about.strip() else []),
             ListPanel(title="Abilities", items=[Chip(label=a.name, value=a.text + (" (now)" if a.while_flag and a.while_flag in p.flags_on else ""))

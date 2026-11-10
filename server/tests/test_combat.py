@@ -853,3 +853,27 @@ def test_a_grab_grapples_and_hurts_and_is_never_a_peril(game):
 def _info(turn, calls):
     from engine.game import TurnInfo
     return TurnInfo(turn=turn, elapsed_minutes=1, rng=random.Random(0), calls=[dict(c) for c in calls])
+
+
+def test_the_debug_command_spawns_and_hurts_on_a_dev_server_only(game, monkeypatch):
+    """The owner, 11-10 night: "a debug room in the game for these Gemma/sonnet runs ... they can shout out whatever they want
+    to happen / spawn"; "Warning messages every turn"."""
+    st = new(game)
+    monkeypatch.setenv("TA_DEV_MODE", "on")
+    assert game.typed_command(st, "DEBUG: spawn 3 skeletons minion") == ("debug", {"text": "spawn 3 skeletons minion"})
+    assert game.typed_command(st, "I spawn a plan") is None
+    s1, r1 = game.run_command(st, "debug", {"text": "spawn 3 skeletons minion"})
+    assert r1.ok and len(s1.player.fighting) == 3 and all(s1.person(x).combat.hp_max <= 2 for x in s1.player.fighting)
+    s2, r2 = game.run_command(s1, "debug", {"text": "grab me"})
+    assert s2.player.has_condition("grappled")
+    s3, r3 = game.run_command(s2, "debug", {"text": "set me on fire"})
+    assert s3.player.peril.kind == "burning" and game.player_alerts(s3)[0].startswith("WARNING: You are on fire!")
+    s4, _ = game.run_command(s3, "debug", {"text": "drown me"})
+    s5, _ = game.run_command(new(game), "debug", {"text": "drown me"})
+    assert s5.player.peril.kind == "holding_breath"
+    s6, _ = game.run_command(s3, "debug", {"text": "clear"})
+    assert s6.player.peril is None and s6.player.fighting == [] and s6.player.hp == s6.player.hp_max
+    s7, _ = game.run_command(st, "debug", {"text": "room"})
+    assert s7.player.location == game.DEBUG_ROOM
+    monkeypatch.setenv("TA_DEV_MODE", "off")                                      # Lilith's server: no such thing
+    assert game.typed_command(st, "DEBUG: spawn a troll") is None and "debug" not in [c.id for c in game.commands(st)]

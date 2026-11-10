@@ -352,6 +352,11 @@ final message lists every fight from the player's chair: did each blow roll, wit
 Each claim is then checked against the ledger before anything is called a bug (a hit the player "never saw" was often
 rolled and shown). The rounds of 11-10 are in INDEX §2 (p16g-catacombs, -streets, -verify, -verify2, -verify3).
 
+A round can set up what it tests with the fantasy's test hook (dev servers only; `TA_DEV_MODE=off` on Lilith's): a turn
+opening `DEBUG:` is the engine's, read by no model (`FantasyGame.typed_command`, `_debug`): `room` (the Glass Cellar),
+`spawn <creature> [count] [rung]`, `set me on fire`, `drown me`, `make me bleed`, `freeze me`, `push me off`, `grab me`,
+`hurt N`, `heal`, `clear`. The player's brief (`tools/PLAYER_BRIEF.md`) lists them for the Opus player.
+
 What a round finds is pinned without a model: `server/tools/replay_fights.py` replays a stored turn through today's
 engine (the state before it, the stored reading, the player's words; the engine's own settling, `aim_blows` and
 `settle_attack`, then the world turn; with `verdict: true` the turn's stored referee rows land after it).
