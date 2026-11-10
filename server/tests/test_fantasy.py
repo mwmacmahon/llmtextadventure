@@ -253,9 +253,10 @@ def test_heat_gold_counts_move_by_rows_bounded(game: FantasyGame):
     s3, rep, _ = apply(game, st, C(kind="add", target="gold", field="count", value="-30"))
     assert s3.item("gold").count == 0 and rep.rejected
     s4, rep, _ = apply(game, st, C(kind="add", target="second_wind", value="-1"), C(kind="add", target="player", field="renown", value="+10"))
-    assert s4.player.count("second_wind").value == 0 and s4.player.renown == 0
+    # B306 (11-10): a power's count is spent only when the power runs by name, never by the referee's row
+    assert s4.player.count("second_wind").value == 1 and s4.player.renown == 0 and any("power" in r.reason for r in rep.rejected)
     s5, rep, _ = apply(game, s4, C(kind="add", target="second_wind", value="+1"))
-    assert s5.player.count("second_wind").value == 0 and any("refill" in r.reason for r in rep.rejected)
+    assert s5.player.count("second_wind").value == 1 and any("refill" in r.reason for r in rep.rejected)
 
 
 def test_rests_refill_what_the_content_says(game: FantasyGame):

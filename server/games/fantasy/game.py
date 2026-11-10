@@ -1471,7 +1471,7 @@ class FantasyGame(GameBase):
             if n is None and sum(c for _, c in e.bodies) < 2 and e.bodies:   # a plural is two at least ('the Hill men')
                 e, hit = self.encounter_for(s, band, pinned=[(e.bodies[0][0], 2)], offset=offset)
             person = cb.is_person(str(cb.ENTRIES.get(e.bodies[0][0], {}).get("kind") or "")) if e.bodies else False
-            own = re.sub(r"^(the|a|an)\s+", "", " ".join(words.split()), flags=re.I)[:40]
+            own = re.sub(r"^(the|a|an)\s+", "", " ".join(words.replace("_", " ").split()), flags=re.I)[:40]   # B308: an id is words
             made = en.spawn(s, e.bodies, e.variant, names=[own[:1].upper() + own[1:]] if named and n == 1 and person else None)
             # a monster is known by its name (the owner: "it can just be an Owlbear"); only a person keeps the player's words
             row = {"kind": "encounter", "hit": hit, "why": f"'{words}'" + (f" ({note})" if note else ""), "reason": e.reason}
@@ -1792,6 +1792,11 @@ class FantasyGame(GameBase):
                 return True
             if n > 0:
                 w.reject(f"player.counts.{c.id}", "rests and the commands refill counts", value)
+                return True
+            if c.id == "spell_slots" or any(cs.id == c.id for cs in self.commands(s)):
+                # B306 (Gemma, 11-10, 4d6f4c683fd3 turn 12): Lay on Hands was not run, the referee spent a point of its pool and no
+                # hit point came back; a power's count moves only when the power runs (its lever skips the referee's own row)
+                w.reject(f"player.counts.{c.id}", "the power's own: it is spent when the power is used by name", value)
                 return True
             n = max(-2, n)
             if c.value + n < 0:

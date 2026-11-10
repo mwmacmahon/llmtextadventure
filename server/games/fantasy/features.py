@@ -62,7 +62,7 @@ def chips(game: Any, s: FantasyState) -> list[CommandSpec]:
         params = []
         if kind == "heal" and f.get("target", "touch") == "touch":
             who = [Option(id="self", label=p.name)] + [Option(id=q.id, label=q.name) for q in _people_here(game, s) if q.status in ("alive", "down")]
-            params = [Param(name="on", label="On", options=who)]
+            params = [Param(name="on", label="On", options=who, default="self")]     # B306: no one named is the player
         if kind == "rider" and f.get("armed_flag") and f["armed_flag"] in p.flags_on:
             continue
         out.append(CommandSpec(id=fid, label=f"{f['name']}{left}", mode="narrated", params=params,

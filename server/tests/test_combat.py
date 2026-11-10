@@ -522,6 +522,14 @@ def test_an_attack_intent_loses_its_str_check_and_keeps_its_attack():
     talk = AssistantReadingCombat(kind="action", summary="Brin talks the troll down.", time_minutes=1, risk="low",
                                   intents=[IntentCombat(action="talk", targets=["gorm"], check=CheckSpec(label="Calm the troll", stat="cha", difficulty="medium"))])
     assert settle_attack(talk) == [] and talk.intents[0].check is not None
+    # B306 (Gemma, 11-10): a blow with a weapon at someone, the reading's attack_at left empty, is a blow all the same
+    bare = AssistantReadingCombat(kind="action", summary="Aldric attacks the closest skeleton.", time_minutes=1, risk="medium",
+                                  intents=[IntentCombat(action="attack", targets=["the_drowned"], weapon="longsword",
+                                                        check=CheckSpec(label="Aldric's longsword at the nearest skeleton", stat="str", difficulty="low"))])
+    assert settle_attack(bare) and bare.intents[0].check is None and bare.intents[0].attack_at == ["the_drowned"]
+    shove = AssistantReadingCombat(kind="action", summary="Aldric shoves the door.", time_minutes=1, risk="low",
+                                   intents=[IntentCombat(action="shove the door", targets=[], check=CheckSpec(label="Shove", stat="str", difficulty="low"))])
+    assert settle_attack(shove) == [] and shove.intents[0].check is not None and shove.intents[0].attack_at == []
 
 
 def test_a_weapon_the_player_named_reads_by_its_plain_word(game):
@@ -606,3 +614,37 @@ def test_a_long_new_place_name_is_cut_at_a_word(game):
     w = Writer(game.authority, ApplyReport(), actor="engine")
     game._new_place(st, "low arch and stair beyond the round chamber of bones", "The Catacombs", w)
     assert any(f.name == "low arch and stair beyond the round" for f in st.found_places)
+
+
+# ---- B308 (Gemma fight round 2, 11-10, 8eb1928e28b7): the blows the engine dropped or misread ----
+def test_a_blow_at_someone_present_joins_them_to_the_fight(game):
+    st = new(game, klass="Barbarian")
+    st.people.append(Person(id="the_wiry_sailor", name="the wiry sailor", role="a sailor", location=st.player.location, met=True))
+    st.player.with_them = ["the_wiry_sailor"]                  # the referee's 'present' put him in the company
+    punch = AssistantReadingCombat(kind="action", summary="Kragga punches the sailor.", time_minutes=1, tempo="fast", risk="medium",
+                                   intents=[IntentCombat(action="attack", targets=["the_wiry_sailor"], attack_at=["the_wiry_sailor"], weapon="fist")])
+    s, w = game.world_turn(st, punch, "I drive my fist into the wiry sailor's mouth", random.Random(1), 10, 2)
+    assert s.player.fighting == ["the_wiry_sailor"] and "the_wiry_sailor" not in s.player.with_them
+    assert any("A FIGHT, round" in d and "with the fist" in d for d in w.directives)
+
+
+def test_a_punch_is_a_fist_whatever_the_player_carries(game):
+    st = new(game, klass="Barbarian")
+    assert cb.player_weapon(st, "fist")[0] == "fist" and cb.player_weapon(st, "a kick")[0] == "fist"
+    assert cb.player_weapon(st, "greataxe")[0] == "greataxe" and cb.player_weapon(st, "")[0] != "fist"
+
+
+def test_a_talk_is_not_a_blow():
+    from engine.pipeline import settle_attack
+    from engine.roles import CheckStaked as CheckSpec
+    adj = AssistantReadingCombat(kind="action", summary="Kragga threatens the man in velvet.", time_minutes=1, risk="medium",
+                                 intents=[IntentCombat(action="intimidate the man in velvet", targets=["the_shadow"], attack_at=["the_shadow"], weapon="greataxe",
+                                                       check=CheckSpec(label="Intimidate the man in velvet", stat="cha", difficulty="medium"))])
+    settle_attack(adj)
+    assert adj.intents[0].attack_at == [] and adj.intents[0].check is not None and adj.intents[0].check.stat == "cha"
+
+
+def test_a_stranger_brought_in_by_an_id_is_named_in_words(game):
+    st = new(game)
+    made, _ = game.bring_in(st, "the_wealthy_stranger", ref="the_wealthy_stranger", named=True)
+    assert made and "_" not in made[0].name

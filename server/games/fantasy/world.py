@@ -368,6 +368,11 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
                 if row:
                     w.rows.append(row)
                 continue                                                    # joined by bring_in
+            if q is not None and q.status == "alive" and q.id in p.with_them and e in aimed:
+                # B308 (Gemma, 11-10, 8eb1928e28b7 turns 10-11): the referee had put the sailors at Kragga's table in her company;
+                # two punches at one rolled nothing (an ally is never fought). A blow the reading aims at them ends the company
+                p.with_them.remove(q.id)
+                w.rows.append({"kind": "turned_on", "who": q.id, "why": "the player struck at them"})
             if q is not None and q.status == "alive" and q.id not in p.with_them and q.id not in p.fighting:
                 p.fighting.append(q.id)
     p.fighting = [x for x in p.fighting if (q := s.person(x)) is not None and q.status == "alive" and game._same_spot(s, q.location, p.location)]

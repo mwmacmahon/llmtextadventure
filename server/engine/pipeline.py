@@ -3296,6 +3296,22 @@ def settle_hopeless(adj: Any) -> list[dict]:
     return out
 
 
+_FILLER = {"a", "an", "the", "my", "his", "her", "their", "on", "of", "to", "at", "with", "own", "i"}
+
+
+def asks_for(words: list[str], text: str) -> bool:
+    """Whether the player's words ask for a typed lever by one of its phrases (B306, Gemma 11-10, 4d6f4c683fd3 turn 12: "I lay
+    my hand on my own wound" missed Lay on Hands' "lay hands", the lever was dropped and the pool spent with no hit point back).
+    A phrase matches when each of its own words (not a filler word) opens a word of the text, a plural taken as its singular:
+    "lay on hands" in "lay my hand on the wound", "turn undead" in "turn the undead"; "smoke pellet" is not in "strike a match"."""
+    have = re.findall(r"[a-z']+", (text or "").lower())
+    for w in words:
+        need = [x[:-1] if len(x) > 3 and x.endswith("s") else x for x in re.findall(r"[a-z']+", (w or "").lower()) if x not in _FILLER]
+        if need and all(any(h.startswith(n) for h in have) for n in need):
+            return True
+    return False
+
+
 def settle_attack(adj: Any) -> list[dict]:
     """B288 (Gemma, 11-09, 2cfb46d7187d turn 6): an intent with `attack_at` is a blow, and the engine's attack roll (against
     the target's armour) decides it. A STR or DEX check the reading also set on that intent is dropped, so one swing is one
@@ -3305,7 +3321,20 @@ def settle_attack(adj: Any) -> list[dict]:
         return out
     for i in getattr(adj, "intents", None) or []:
         c = getattr(i, "check", None)
-        if c is None or not (getattr(i, "attack_at", None) or []) or getattr(c, "stat", "") not in ("str", "dex"):
+        if c is not None and getattr(c, "stat", "") in ("cha", "wis", "int") and (getattr(i, "attack_at", None) or []):
+            # B308 (Gemma, 11-10, 8eb1928e28b7 turn 17): "intimidate the man in velvet", a CHA check, with attack_at the offer's
+            # shadow: the engine brought a Shadow in and rolled a greataxe blow the player never asked for. A talk is not a blow
+            out.append({"attempt": i.action or c.label, "label": c.label, "stat": c.stat, "why": "a talk, not a blow: no attack"})
+            i.attack_at = []
+            continue
+        if c is None or getattr(c, "stat", "") not in ("str", "dex"):
+            continue
+        if (not (getattr(i, "attack_at", None) or []) and hasattr(i, "attack_at") and getattr(i, "targets", None)
+                and (getattr(i, "weapon", "") or (i.action or "").split()[:1] == ["attack"])):
+            # B306 (Gemma, 11-10, 4d6f4c683fd3 turn 11): "attack" at a foe with a longsword, the reading's attack_at empty and a
+            # STR check set instead: the blow rolled as a skill check, a natural 1 cost five hit points no line showed
+            i.attack_at = list(i.targets)
+        if not (getattr(i, "attack_at", None) or []):
             continue
         out.append({"attempt": i.action or c.label, "label": c.label, "stat": c.stat, "why": "the attack roll decides a blow"})
         if getattr(adj, "pivotal", "") == c.label:

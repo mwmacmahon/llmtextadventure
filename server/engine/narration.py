@@ -327,7 +327,10 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
             "Play that in the story; never soften or reverse it, and never mention dice, numbers or how well it rolled."
             + ((note_for(data, label) or "") if note_for else "") + tail)
     causes = [target] if target and res.outcome in ("success", "huge_success", "critical_success") else []
-    return CallResult(text=text, mechanic=render(res), data=data, causes=causes)
+    mechanic = render(res)
+    if isinstance(data.get("harm"), int) and data["harm"] > 0:          # B306 (Gemma, 11-10): a failure's hit points on its own line
+        mechanic += f" It costs {data['harm']} hit point{'s' if data['harm'] != 1 else ''}."
+    return CallResult(text=text, mechanic=mechanic, data=data, causes=causes)
 
 
 NOTHING_SOUGHT = (" A failure gives nothing of what was sought: no name, no fact, no glimpse of what is hidden, no half-success. The scene"

@@ -25,6 +25,9 @@ WEAPONS: dict[str, tuple[str, str]] = {
     "longbow": ("1d8", "ranged"), "light crossbow": ("1d8", "ranged"), "crossbow": ("1d8", "ranged"), "sling": ("1d4", "ranged"),
 }
 FIST = ("1", "melee")
+# a blow with no weapon (B308, Gemma 11-10, 8eb1928e28b7 T5, T10: a punch the reading filed as weapon "" or "fist" rolled the
+# carried greataxe: 10 damage from a fist)
+UNARMED = re.compile(r"\b(fists?|punch\w*|kick\w*|headbutt\w*|elbow\w*|knees?|bare[- ]hand\w*|unarmed|slap\w*)\b", re.I)
 # B288: a weapon the player named for themselves ("EVILSLAYER, a sword"): the plain word reads as the SRD's weapon
 WEAPON_WORDS = {"sword": "longsword", "blade": "shortsword", "axe": "battleaxe", "hammer": "warhammer", "knife": "dagger",
                 "bow": "shortbow", "staff": "quarterstaff", "cudgel": "club", "cleaver": "handaxe"}
@@ -240,6 +243,8 @@ def player_weapon(s: FantasyState, named: str = "") -> tuple[str, str, str]:
     """The weapon the reading names (by word), else the best melee one carried, else the best of any."""
     ws = weapons_carried(s)
     k = (named or "").lower()
+    if k and UNARMED.search(k) and not any(w[0] in k for w in ws):
+        return ("fist", *FIST)
     if k:
         hit = next((w for w in ws if w[0] in k or k in w[0]), None)
         if hit:
@@ -454,7 +459,8 @@ def plan_round(game: Any, s: FantasyState, adj: Any, player_text: str, turn: int
             targets = [p.fighting[0]]
         if targets:
             c.target = targets[0]
-            plan.append({"key": "player", "side": "player", "who": "player", "targets": targets[:3], "weapon": att.get("weapon") or "",
+            weapon = att.get("weapon") or ("fist" if UNARMED.search(player_text or "") else "")     # B308: a punch is a fist
+            plan.append({"key": "player", "side": "player", "who": "player", "targets": targets[:3], "weapon": weapon,
                          "riders": list(att.get("riders") or []), "spare": bool(SPARE.search(player_text or ""))})
     foes = living_enemies(game, s)
     for q in party(s):
