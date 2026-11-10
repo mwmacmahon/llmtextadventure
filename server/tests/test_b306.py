@@ -125,3 +125,17 @@ def test_turn_undead_with_nothing_dead_spends_nothing_and_the_lines_show_numbers
     st.player.hp = 3
     s2, heal = game.run_command(st, "lay_on_hands", {})
     assert s2.player.hp > 3 and "hit points back" in heal.text                           # the § line says how many
+
+
+def test_a_powers_roll_holds_from_preview_to_commit(engine: Engine):
+    """B310: the turn's minutes pass between the lever's preview and its commit; the roll does not move."""
+    game = engine.games["fantasy"]
+    iid = engine.create_instance("fantasy", SHEET)
+    st = game.load_state(engine.store.load_state(iid))
+    q = next(q for q in st.people if q.id == "the_drowned")
+    q.location = st.player.location
+    a, ra = game.run_command(st, "turn_undead", {})
+    later = st.model_copy(deep=True)
+    later.clock.minute += 7
+    b, rb = game.run_command(later, "turn_undead", {})
+    assert ra.text == rb.text and ra.directive == rb.directive

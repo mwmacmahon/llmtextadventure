@@ -666,3 +666,11 @@ def test_a_fist_knocks_down_and_does_not_kill(game):
                                    intents=[IntentCombat(action="punch the old man", targets=["hesk"], attack_at=["hesk"], weapon="fist")])
     s, w = game.world_turn(st, punch, "I punch the old man", random.Random(1), 7, 2)
     assert s.combat is not None and s.combat.plan[0]["weapon"] == "fist" and s.combat.plan[0]["spare"] is True
+
+
+def test_the_weapon_is_not_a_target():
+    from engine.pipeline import settle_attack
+    adj = AssistantReadingCombat(kind="action", summary="Garrick attacks.", time_minutes=1, risk="medium",
+                                 intents=[IntentCombat(action="attack", targets=["the_drowned"], attack_at=["the_drowned", "longsword"], weapon="longsword")])
+    settle_attack(adj)
+    assert adj.intents[0].attack_at == ["the_drowned"]                   # B310

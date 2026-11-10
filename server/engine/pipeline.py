@@ -3324,6 +3324,11 @@ def settle_attack(adj: Any) -> list[dict]:
         return out
     for i in getattr(adj, "intents", None) or []:
         c = getattr(i, "check", None)
+        wpn = (getattr(i, "weapon", "") or "").strip().lower()
+        if wpn and any((t or "").strip().lower() == wpn for t in (getattr(i, "attack_at", None) or [])):
+            # B310 (Gemma, 11-10, 187ae951f07d T14): attack_at ["the_drowned", "longsword"]: the engine brought in a person called
+            # Longsword, who swung a club for two turns. The weapon is not a target
+            i.attack_at = [t for t in i.attack_at if (t or "").strip().lower() != wpn]
         if c is not None and getattr(c, "stat", "") in ("cha", "wis", "int") and (getattr(i, "attack_at", None) or []):
             # B308 (Gemma, 11-10, 8eb1928e28b7 turn 17): "intimidate the man in velvet", a CHA check, with attack_at the offer's
             # shadow: the engine brought a Shadow in and rolled a greataxe blow the player never asked for. A talk is not a blow

@@ -99,7 +99,10 @@ def run(game: Any, state: FantasyState, fid: str, args: dict) -> tuple[FantasySt
     p = s.player
     kind = f.get("kind")
     c = p.count(f["count"]) if f.get("count") else None
-    rng = _r.Random(f"{p.name}:{s.clock.day}:{s.clock.minute}:{fid}")
+    # B310 (Gemma, 11-10, 187ae951f07d T10): seeded by the clock, the preview rolled 18 (the narrator told the dead turned) and
+    # the commit after the prose, the turn's minutes later, rolled 6 (failure, applied). Seeded by the last finished turn and the
+    # count before it is spent, the preview's roll is the commit's
+    rng = _r.Random(f"{p.name}:{p.notes_turn}:{fid}:{c.value if c is not None else ''}")
     name = f["name"]
     if kind == "heal":
         target = str((args or {}).get("on") or "self").lower()
