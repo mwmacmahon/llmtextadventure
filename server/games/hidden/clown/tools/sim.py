@@ -67,9 +67,11 @@ class Strategy:
                                # dined (the prose's "unless"); False: every threat lands
     roster: int = 0            # buy contracts (and the rooms for them) until the house keeps this many girls (0: only `take`)
     margin: int = 60           # what the house keeps in hand when it spends on gear, rooms or a contract for the roster
+    dials: tuple = ()          # the game's dials overridden for the trial, as (key, value) pairs: a grid's `dial.<key>=a,b`
 
     def label(self) -> str:
-        d = {f.name: getattr(self, f.name) for f in fields(self) if getattr(self, f.name) != f.default}
+        d = {f.name: getattr(self, f.name) for f in fields(self) if getattr(self, f.name) != f.default and f.name != "dials"}
+        d.update({f"dial.{k}": v for k, v in self.dials})
         return ", ".join(f"{k}={v}" for k, v in d.items()) or "defaults"
 
 
@@ -103,9 +105,9 @@ def _plot(game: Any, st: Any, strategy: Strategy, seen: dict[str, int], log: dic
         for p in st.hidden.pending:
             if p.live and ((p.tag == "house_fire") or (p.tag == "arrest" and st.flags.get("judge_dined"))):
                 p.resolved, p.resolved_why = True, "stopped: " + ("put out before it caught" if p.tag == "house_fire" else "the Judge's word")
-                log["reckonings"].append(f"averted {p.tag} week {st.house.week}")
                 if p.tag == "arrest":
                     st.flags["licence_revoked"] = False
+                log["averted"] = log.get("averted", 0) + 1
     if st.flags.get("gala_offered") and not st.flags.get("gala_done"):
         st.flags["gala_done"], log["gala"] = True, st.house.week
     if st.house.reckoning and not getattr(st.house, "fate", ""):
@@ -140,10 +142,12 @@ def _invest(game: Any, st: Any, strategy: Strategy) -> dict[str, int]:
             for it in sorted(items, key=lambda it: -int(it.get("bonus", 1))):
                 if str(it["id"]) in g.gear or not (set(it.get("skills") or []) & wanted):
                     continue
-                if st.house.money >= int(it["cost"]) + keep:
+                price = int(round(int(it["cost"]) * dk.dial(st, "gear_price")))
+                if st.house.money >= price + keep:
+                    before = st.house.money
                     _, r = game.run_command(st, "equip", {"girl": g.id, "item": str(it["id"])})
                     if r.ok:
-                        out["gear"] += int(it["cost"])
+                        out["gear"] += before - st.house.money       # what was paid, at the dial's price
     if strategy.roster and len(st.in_house()) < strategy.roster:
         if game._rooms_free(st) <= 0:
             for rid in ROOMS:
@@ -179,6 +183,8 @@ def trial(strategy: Strategy, weeks: int, seed: int, content: Path = CONTENT, ch
     starters = game.content.girls_deck().get("starters") or ["dot"]
     girl = strategy.girl or starters[seed % len(starters)]
     _, st = game.new_instance({"name": f"Proprietor {seed}", "kind": "charmer", "first_girl": girl})
+    for k, v in strategy.dials:                 # the calibration's dials, on this game only
+        st.scenario.dials[k] = v
     before = _fingerprint(game) if check else ""
     rng = random.Random(seed)
     turn = 1
@@ -276,6 +282,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "reckonings": round(sum(len(r.get("reckonings") or []) for r in rows) / len(rows), 2),
             "girls_p50": _pct([r["girls"] for r in rows], .5),
             "gear_p50": _pct([r["spend"]["gear"] for r in rows], .5),
+            "fees_p50": _pct([r["fees"] for r in rows], .5),
             "rooms_contracts_p50": _pct([r["spend"]["rooms"] + r["spend"]["contracts"] for r in rows], .5),
             "curve_p50": [_pct([r["money"][i] for r in rows if len(r["money"]) > i], .5) for i in range(max(len(r["money"]) for r in rows))]}
 
@@ -297,23 +304,31 @@ def grid(spec: list[str]) -> list[Strategy]:
     """"book=all,fit rest_at=40,60" as every combination, the other fields at their defaults."""
     axes: dict[str, list[Any]] = {}
     types = {f.name: f.type for f in fields(Strategy)}
+    dial_axes: dict[str, list[float]] = {}
     for item in spec:
         k, _, vs = item.partition("=")
+        if k.startswith("dial."):
+            dial_axes[k[5:]] = [float(v) for v in vs.split(",")]
+            continue
         if k not in types:
             raise SystemExit(f"no strategy field {k!r}; fields: {', '.join(types)}")
         conv = (lambda v: v.lower() in ("1", "true", "yes")) if types[k] in ("bool", bool) else int if types[k] in ("int", int) else str
         axes[k] = [conv(v) for v in vs.split(",")]
     keys = list(axes)
-    return [replace(Strategy(), **dict(zip(keys, combo))) for combo in itertools.product(*axes.values())] or [Strategy()]
+    base = [replace(Strategy(), **dict(zip(keys, combo))) for combo in itertools.product(*axes.values())] or [Strategy()]
+    if not dial_axes:
+        return base
+    dks = list(dial_axes)
+    return [replace(b, dials=tuple(zip(dks, combo))) for b in base for combo in itertools.product(*dial_axes.values())]
 
 
 def table(results: list[tuple[Strategy, dict[str, Any]]]) -> str:
-    out = ["| strategy | money p10 / p50 / p90 | low p10 | in the red | shows a week | disaster / poor / fine / good / triumph | Name p50 | bought a contract | girls p50 | gear spent p50 | rooms and contracts p50 | the gala (week p50) | reckonings a game |",
-           "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    out = ["| strategy | money p10 / p50 / p90 | low p10 | in the red | shows a week | disaster / poor / fine / good / triumph | Name p50 | bought a contract | girls p50 | fees earned p50 | gear spent p50 | rooms and contracts p50 | the gala (week p50) | reckonings a game |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for s, r in sorted(results, key=lambda x: -x[1]["final_p50"]):
         mix = " / ".join(f"{r['mix'][w]:.2f}" for w in SHOW_WORDS)
         out.append(f"| {s.label()} | {r['final_p10']} / {r['final_p50']} / {r['final_p90']} | {r['low_p10']} | {r['in_red']:.0%} | "
-                   f"{r['shows_per_week']} | {mix} | {r['name_p50']} | {r['took_contract']:.0%} | {r['girls_p50']} | {r['gear_p50']} | {r['rooms_contracts_p50']} | "
+                   f"{r['shows_per_week']} | {mix} | {r['name_p50']} | {r['took_contract']:.0%} | {r['girls_p50']} | {r['fees_p50']} | {r['gear_p50']} | {r['rooms_contracts_p50']} | "
                    f"{r['gala']:.0%}" + (f" (w{r['gala_week_p50']})" if r.get('gala_week_p50') else "") + f" | {r['reckonings']} |")
     return "\n".join(out)
 

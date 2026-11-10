@@ -752,7 +752,7 @@ class ClownGame(GameBase):
         and a quarter more paid a step (D213C). The one home of a show's terms: Book sets them, the board shows them."""
         steps = self._name_steps(s)
         room = min(3, int(info.difficulty) + steps)
-        return room, int(round(int(info.pays) * (1 + 0.25 * (room - int(info.difficulty)))))
+        return room, int(round(int(info.pays) * (1 + dk.dial(s, "step_pay") * (room - int(info.difficulty)))))
 
     def _rent(self, s: ClownState) -> int:
         """The rent every fourth week: the lease's, and the landlord's rise with each of the Name's steps (D213C)."""
@@ -2664,11 +2664,11 @@ class ClownGame(GameBase):
                 return state, CommandResult(ok=False, label="Equip", text="Which? " + ", ".join(str(x["name"]) for x in self.gear_list(s).values()))
             if s.house.name < int(it.get("name_needed", 0) or 0):
                 return state, CommandResult(ok=False, label="Equip", text=f"Nobody sells {it['name'].lower()} to a house nobody has heard of.")
-            cost = int(it["cost"])
+            cost = int(round(int(it["cost"]) * dk.dial(s, "gear_price")))
             if s.house.money < cost:
                 return state, CommandResult(ok=False, label="Equip", text=f"{it['name']} is {cost} gold; the house has {s.house.money}.")
             s.house.money -= cost
-            g.gear[str(it["id"])] = int(it.get("wear", 12))
+            g.gear[str(it["id"])] = max(1, int(round(int(it.get("wear", 12)) * dk.dial(s, "gear_wear"))))
             line = f"{g.name} has {str(it['name']).lower()} ({cost} gold): {it.get('about', '')}."
             self._tally(s, f"Equip: {it['name']} for {g.name}, {cost} gold, {int(it.get('wear', 12))} shows.")
             return s, CommandResult(label="Equip", text=line, log_line=line)
