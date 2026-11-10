@@ -34,7 +34,7 @@ it. *decided*: the owner has ruled, no design yet. *open with the owner*: a ques
 
 | # | Area | State | Design | Left (in one line) |
 |---|---|---|---|---|
-| 1 | The dice, checks and consequences | built; combat (attack rolls, hit points for everyone, rounds) directed 11-09 night, part fifteen | DESIGN.md §7.1a to §7.1c; DESIGN-time-and-attempts | the floor on an engine witness (B217), the fail branch unused (B225), tier-only d20 lines, the two bonuses meeting |
+| 1 | The dice, checks and consequences | built; combat built 11-09 to 11-10 (part fifteen, live on both models); encounters directed 11-10, part sixteen | DESIGN.md §7.1a to §7.1c; DESIGN-time-and-attempts | the floor on an engine witness (B217), the fail branch unused (B225), tier-only d20 lines, the two bonuses meeting |
 | 2 | Time and pacing | built, unseen in long rounds | DESIGN-time-and-attempts §3, §4 | travel floors, the fall's hours, a refused rest, "until when" as buttons, per-campaign pacing, missed events |
 | 3 | Measurement and parity | running | MEASURING.md, TESTING.md | the long rounds after parts four to eight, the eval key rebuild, the stale measure pages |
 | 4 | Profiles and the picker | built | DESIGN-context-modules §6 | the model label from the profile, one server for every game, levels edited in the UI |
@@ -46,12 +46,12 @@ it. *decided*: the owner has ruled, no design yet. *open with the owner*: a ques
 | 10 | The station | built | DESIGN-time-and-attempts §4; station page | the locked-out text, what each project unlocks, the upgrades, the canister, the station's week |
 | 11 | The player UI | slice one built; slice two designed | DESIGN-lobby-and-saves; DESIGN-player-ui | the play page (four questions open), the feedback button, the ending word, dev mode's gaps |
 | 12 | Mods and variants | mods now (B231); idea (variants) | DESIGN-mods | the mods first cut, Super Grimdark Fantasy as a derived game with the R-rated mod, basic and advanced variants |
-| 13 | Magic | designed; the Paladin first directed 11-09 night with combat, part fifteen | DESIGN-magic | placement and four questions; then the spell data, slots, the Cast lever, the level-up screen |
+| 13 | Magic | the Paladin built and playable 11-09 (part fifteen: features as data, Turn Undead at 1); the rest designed | DESIGN-magic | placement and four questions; then the spell data, slots, the Cast lever, the level-up screen |
 | 14 | Models and the box | one model all roles, running | LOCAL_LLM.md; the trials reports | Qwen's return through profiles, hosted narrators, the box's faults |
 | 15 | The clown sim (Clown Maker) | built hidden, in the repo; the hand of bookings (D186C), two Sonnet rounds read (D190C, D191C), gold, the harbour deck of girls built without its model pass (D194C), nothing ends the game (D196C), round 3 read (D197C); the bench at odd jobs, contracts dear, the house bought room by room (D198C) | CLOWN_DESIGN, CLOWN_ROADMAP, the design page | a round on the dear prices and the rooms, the pass at the Take |
 | 16 | Writing for models | running; the sweep proper not run | WRITING_FOR_MODELS.md | the full sweep and its rounds |
 | 17 | Tooling, tests and docs | running | INDEX.md §7 | tests on gitignored content, the docs marked behind, the register's statuses, the phone's pages |
-| 18 | Ideas not yet weighed | idea | the register | the referee review pass, the preference corpus, the station's self-upgrade |
+| 18 | Ideas not yet weighed | idea; X3's count and chain built, its trial on part sixteen's tail | the register | the referee review pass, the preference corpus, the station's self-upgrade |
 
 ## The order (the owner's, as set)
 
@@ -90,7 +90,7 @@ Gemma turn an edge of +2 arrived with its why. The chosen-death net fires only o
 - Undo replays the same dice and a different attempt rolls fresh: built (H4, D172, D173).
 - A retold turn runs the stakes call again; whether greedy decoding returns the same stakes is unverified (A3).
 
-**Combat (the owner, 11-09 night; DESIGN-combat-2026-11-09, designed, not built).** "It's fun to see enemies take damage
+**Combat (the owner, 11-09 night; DESIGN-combat-2026-11-09; built 11-09 to 11-10 as part fifteen, B264 to B291, live on both models; encounters directed 11-10 as part sixteen, §12).** "It's fun to see enemies take damage
 and die." The fantasy's fights move from stat checks to attack rolls against an armour number, damage dice, and saves (a
 check under another name); every person carries a combat block (AC, hit points, attack, damage, weight) with defaults by
 role; a fight is a mode with a round per player turn, each blow rolled where the narrator's call reaches it (the
@@ -100,6 +100,7 @@ the owner's ruling), numbers before bodies before inflation; a fight simulator t
 and are revived after (dead at -10 or by a lethal hazard), the player is dead (the owner, 11-09 night). Five
 questions all answered 11-09 night (numbers and ailments on the Fight panel, allies on their own, SRD, fights pay XP,
 the simulator at 90/70/50 with an all-out character); part fifteen written. Noir and the station keep 2d6 and their own fights.
+- **Encounters (part sixteen, directed 11-10 small hours; DESIGN-combat §12).** The one thing live combat got wrong: the narrator invents hostiles the state does not hold (B274's pale figure, B290's Hill men: four stabs with no roll). The design: a bestiary file with every enemy in the world and its CR (CR's XP the weight, the fight's XP), a generator that takes the desired band (trivial to impossible), what the plot pins, what the model named and where the player is, shortlists by the DMG's thresholds and ranks by the simulator at three variants, off the turn and cached per place; the engine offers the cast in THIS TURN when danger is read; the referee's filing is a resolver; a monster is identified by its name. The simulator's table pinned by a test (B292: it drifted to 42% where the code says 72%).
 - Later: the player downed rather than dead at 0 (the owner, 11-09 night: "a future roadmap item"); death is death until then.
 
 ## 2. Time and pacing
@@ -400,7 +401,7 @@ A referee review pass, a second call over the referee's own report (X1). A prefe
 blind-pair judgements (X2). The station AI upgrading and downgrading itself (B19). Basic and advanced variants (area
 12). Per-campaign pacing numbers (B13). Each needs a measured run before it is kept.
 
-**The adjudicator as a chain of small questions (X3; the owner, 11-09 night; the trial ordered the same night, part thirteen §2 to §5).** The structured call keeps
+**The adjudicator as a chain of small questions (X3; the owner, 11-09 night; §2 the count and §3 the chain built 11-09, d3223ad and ce5e547; the trial, §4 and §5, not yet run (B293), re-ordered 11-10 on the tail of part sixteen).** First number (11-09, two Gemma readiness rounds against Sonnet's key of the same 24 turns): about sixteen defaulted fields a round, in pivotal (5, 6), tempo (4, 3), fiat (4, 4), settled (2, 2); open_to_callers predates the field. The structured call keeps
 growing (intents, checks, stakes, tempo, open_to_callers, and more to come), and weak models fill big schemas badly
 (B213). The idea: one conversation, several messages in turn, each with its own small schema and, before it, only the
 state and the examples that question needs ("the reading" first; then, only if there is an attempt, the check; then

@@ -7,40 +7,29 @@ page, `docs/STATE-2026-11-08.md` ([Where Things Stand](https://claude.ai/artifac
 one are the register, `docs/OPEN-ISSUES.md`. Kept by the design side chat; the owner carries each directive to the
 build chat by hand. Re-cut 2026-11-09 night (the owner: "I don't know what is next").
 
-## Next (2026-11-09 night, at 83ac136; the owner's order)
+## Next (2026-11-10 small hours, at a5219dc; the owner's order)
 
-The owner, 11-09 night: "She's not going to just go play a game two for us, she will probably play hers a while at
-her own pace. Let's go ahead and update her server and I'll make a little side game real quick to smoke test. I can
-play some of the grimdark Gemma one potentially too. That's where I'd probably play more. If you need more Sonnet
-you'll need to run your own trials. I think running a Gemma trial right now regarding the X3 thing is a good idea."
+Her server is at 86e147a (moved 2026-11-10 00:35 UTC: B288, B289; her save and his test game fixed in place). Parts
+fourteen (the introductions, dfc8354) and fifteen (combat and the Paladin, B264 to B291; the Paladin playable and on her
+server since d583e50) have landed. The owner, 11-09 night, on the one thing combat still gets wrong: "good time to
+determine best way forward with care regarding the invented enemies issues. I will take that to table chat."
 
-1. *Done 11-09 17:10 UTC:* **her server moved** to 83ac136 (deploys.log: bbbd735 -> 83ac136), part twelve complete, on
-   the owner's word: part thirteen §1. The owner smoke-tests with a side game; Lilith plays at her own
-   pace and the side chat reads her save when there is new play.
-2. **Now: the introductions** (part fourteen, written 11-09 night by the side chat at the owner's ask: "some kind of
-   introductory paragraph... the world and your character's state within it"; Lilith: nothing told her who, where or
-   what at the start). Each scenario gets an `introduction` shown first at turn 0, before the opening: noir's tells the
-   case so far (Brandt's file, Ada two nights ago, the caller tonight; the 2023 histories show the game always began on
-   the roof, the office visit was only ever the summary's back-story, so nothing is recovered, it is told); the
-   fantasy's the city and "you came in on the evening barge" with the sheet's name, race and class; the station's the
-   station, the five, and what you are. The grimdark game inherits; the mod may patch it.
-3. **Part fifteen written 11-09 night: combat, and the Paladin on it** (DESIGN-combat-2026-11-09 and DESIGN-magic §8,
-   every question answered by the owner the same night): a combat block on every person with hit points, attack rolls
-   and saves beside the check, a combat mode with a round per turn rolled at the narrator's calls and backstopped,
-   enemies die and allies go down, cleave, a Fight panel with numbers and ailments, fights sized by an engine budget
-   (tough but winnable unless fixed), a fight simulator at 90/70/50; features as data with four kinds, the paladin's
-   canned kit with Turn Undead at level 1, the undead placed and a skeleton quest from the Lantern (`the_quiet_dead`).
-   One build, combat first.
-4. **Now: the X3 trial on Gemma** (part thirteen §2 to §5): the defaults-left count built into the call report and the
-   replay scorer; the chain of small questions as a dial on the assistant role; both arms replayed on the box over the
-   Sonnet-keyed turns that exist (her 28, the two 11-08 readiness rounds); the cache verified from prompt_n and cache_n;
-   a report page. No new Sonnet calls. The owner decides on the numbers; nothing adopted on 60/40.
-5. **The owner plays Super Grimdark Fantasy on Gemma** (:8013); the side chat reads those saves as they come. Sonnet
-   rounds, when the side chat needs them, are its own to run.
-6. **Proposed, after the trial: the reading says where and what** (the consolidation of the word lists into fields the
+1. **Now: part sixteen, written 11-10 small hours: encounters, and the X3 trial on its tail** (DESIGN-combat §12). A
+   bestiary file with every enemy in the world and its CR; the generator takes the desired band (trivial, easy, normal,
+   hard, boss, impossible), what the plot pins, what the model named and where the player is, shortlists by the DMG's
+   thresholds and ranks by the simulator (thirty fights a cell, three variants: weak, standard, veteran), off the turn,
+   cached per place; the engine offers the cast in THIS TURN when danger is read, the referee's filing is a resolver, a
+   monster is identified by its name. The calibration table pinned by a test (it drifted: three skeletons 42%, the code
+   says 72%). Last: the chain (part thirteen §3, built off at ce5e547) run on the box against the one call, the
+   defaults-left count per field beside the first number (B293). The owner decides on the numbers; nothing on 60/40.
+2. **The owner plays Super Grimdark Fantasy on Gemma** (:8013, on the LAN) and his tests on her server; the side chat
+   reads those saves as they come (p16's report is in notes/playtests). Sonnet rounds are the side chat's own to run.
+3. **Her server moves** when the owner says, after part sixteen's simulator numbers are in; not before.
+4. **Proposed, after the trial: the reading says where and what** (the consolidation of the word lists into fields the
    adjudicator writes; the trial's numbers say whether the one call can carry more fields or the chain should).
-7. **XP** (B221) when her play warrants it. 8. **The play page on the phone** (DESIGN-player-ui; §6's Timeline and
-   Journal landed first).
+5. **XP** (B221): fights pay by weight since part fifteen; the bestiary makes it CR's XP; quests still the rest.
+6. **The play page on the phone** (DESIGN-player-ui; B282's mobile pass and the Timeline landed first).
+7. **Later, on the roadmap:** the player downed rather than dead; an ally's own free action on a free turn.
 
 ## Waiting on the owner
 
@@ -49,7 +38,16 @@ magic's placement and its four questions (B91, `notes/DESIGN-magic-2026-11-08.md
 B44, B58, B61, B110 to B122, B136); the rescue from death (B143, later); whether noir takes "death is death"; the
 too_far check on the forks (B209); the go for a long-round measure on Gemma (plan A).
 
-## Just landed (11-09, newest first)
+## Just landed (11-10 and 11-09, newest first)
+
+- **Part fifteen, all twelve sections, and the week's fixes** (11-09 to 11-10, 5e9aca1 to a5219dc, B264 to B291): combat blocks
+  with the SRD's numbers, attack and damage and saves, combat mode with the round list on the narrator's directives
+  (B273: 2 calls to 20 backstops before, 15 to 7 after), cleave and sweep, the Fight panel, the budget scaler, the
+  simulator (B276, B278 tuned the Rogue), features as data, the Paladin playable with Turn Undead at 1, the undead and
+  `the_quiet_dead`; then live on Gemma and Sonnet: one swing one roll (B288), typed Flee and Yield (B287, B289), Gorm
+  takes a surrender, `called` for every person (B286), no heat for a monster (B291). Open from it: invented enemies
+  (B290, part sixteen). **Part fourteen** (dfc8354): an introduction at turn 0 in every game. **Part thirteen §2 and
+  §3** (d3223ad, ce5e547): the defaults-left count and the chain as a dial; the trial itself not run (B293).
 
 - **Part twelve, all six sections** (11-09 night, 49501d3 to 83ac136): the Timeline overlay and the Journal (B261); the party line asks nothing of each person and a beat told again is caught
   by the engine (B242); the cards show a content fact clause by clause as it is told, learned facts newest first, a
