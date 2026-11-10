@@ -434,3 +434,15 @@ def test_a_hold_ends_when_the_player_leaves_its_reach(game):
     foe(st3, pid="maud")
     s4, _ = game.world_turn(st3, act("I run my blade at her"), "I run at her and stab", Dice(), 3, 2)
     assert s4.player.fighting == ["maud"]
+
+
+def test_cold_water_opens_freezing_and_no_hazard_rolls_once_in_a_peril(game):
+    """Round 6 (6c793b6930d1): the lake's cold water rolled a CON check every turn, each failure a scrape and 'chilled'. The
+    owner's rule: the save keeps the player out; a failure puts them in the peril; no more checks once in it."""
+    st = new(game)
+    st.player.location = "Reed Island"
+    hz = wo.hazard(game, st, "cold_water")
+    assert hz is not None and (hz.get("fail") or {}).get("peril") == "freezing"
+    wo.open_peril(st, "freezing", turns=0)
+    out = game.world_call(st, call("HAZARD", "cold_water"), Dice(1), 2, {"hp": 0})
+    assert out["data"].get("none") and "no roll" in out["text"]

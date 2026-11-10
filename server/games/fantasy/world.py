@@ -646,6 +646,10 @@ def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tal
             tally.setdefault("hazards", []).append(hz.get("id"))
         if hz is None:
             return {"text": f"No danger called {call.ref!r} is listed here. Play it without a roll.", "data": {"verb": "HAZARD", "name": call.ref, "none": True}}
+        if p.peril is not None:                    # the owner, 11-10 night: the save is to stay out; once in a peril, no more checks
+            what = PERILS.get(p.peril.kind, {}).get("what", p.peril.kind)
+            return {"text": f"{p.name} is already {what}: the danger is that now, no roll for it. Play it, and go on.",
+                    "data": {"verb": "HAZARD", "hazard": hz.get("id"), "none": True}}
         steps = armour_steps(s)
         extra = [Modifier(label=f"armour in {hz.get('when', 'it')}", value=int(hz.get("armour_penalty", 0)) * steps)] if steps and hz.get("armour_penalty") else []
         res = _check(game, s, hz.get("stat", "con"), hz.get("difficulty", "medium"), f"{hz.get('when') or hz.get('id')}", rng, extra, offset)
@@ -667,7 +671,7 @@ def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tal
         if bad.get("peril"):
             spec = PERILS.get(bad["peril"], PERILS["held"])
             data.update(peril=bad["peril"], by=hz.get("when") or "")
-            told.append(f"{p.name} is {spec['what']}, moments from the end unless they get {spec['way']}; end the turn on that moment; what {p.name} does next is the player's to say.")
+            told.append(f"{p.name} is {spec['what']}: {spec.get('hint', spec['way'])}; end the turn on that moment; what {p.name} does next is the player's to say.")
         return {"text": f"The danger reaches {p.name} ({hz.get('when', '')}): " + "; ".join(told or ["it costs them"]) + ". Play it.",
                 "mechanic": line, "data": data}
     return None
