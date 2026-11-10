@@ -285,10 +285,10 @@ def test_the_lint_names_a_pinned_content_fight_that_stays_deadly(game):
     doc["events"] = [e for e in doc["events"] if not str(e["id"]).startswith("maren_")]
     for q in doc.get("people") or []:                  # the ladder's feeble (11-10 night) makes four winnable alone: six, not
         if q.get("id") == "catacomb_dead":
-            q["combat"]["count"] = 6
+            q["combat"]["count"] = 12
     qd.write_text(yaml.safe_dump(doc, sort_keys=False))
     alone = lint_pinned_fights(tmp / "fantasy", game, n=20)
-    assert any("catacomb_dead" in x for x in alone), alone      # six skeletons and no warden: deadly even at feeble
+    assert any("catacomb_dead" in x for x in alone), alone      # twelve skeletons and no warden: deadly even as minions
 
 
 def test_the_simulated_player_uses_no_consumables(game):

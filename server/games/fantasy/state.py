@@ -180,10 +180,12 @@ class Person(BaseModel):
 
 
 class Peril(BaseModel):
-    """A peril state (B102, D176): drowning, freezing, burning, bleeding out, falling, held by something stronger. Each turn
-    the engine stakes `stat` with a penalty a step worse; a failure takes a turn off; none left is death (the fork)."""
+    """A peril state (B102, D176; D217): holding breath (safe moments, CON + 1, at least 2), drowning or freezing (a CON check
+    a moment to take no harm until the first fails, then harm every moment, `failing`), burning or bleeding (harm every moment
+    until put out or bound), falling (lands once), held (no harm of its own). Getting out is an attempt, an action roll."""
     kind: str
     turns_left: int = 2
+    failing: bool = False           # drowning or freezing: a CON check failed; from then on harm every moment, no more checks
     stat: str = "con"
     step: int = 0                   # turns spent in it so far (the penalty is -2 a step, uncapped)
     by: str = ""                    # who or what holds them (Mirren)

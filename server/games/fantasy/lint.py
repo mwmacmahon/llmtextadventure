@@ -148,7 +148,7 @@ def lint_bestiary(content_dir: Path) -> list[str]:
 
 def lint_pinned_fights(content_dir: Path, game=None, n: int = 30) -> list[str]:
     """Part sixteen §2 (advisory, not part of `lint`: it runs the simulator): a content band whose count is pinned and that
-    stays deadly at level 1 even at its feeble variant (the last knob a pinned fight has) for a class (won under 40% by that class alone), so the author
+    stays deadly at level 1 even at its lowest rung (minion for a band, feeble alone: the last knob a pinned fight has) for a class (won under 40% by that class alone), so the author
     knows it is a fight to walk away from (the drowned of the bog chapels killed a level-1 barbarian, 0f734f5c0733)."""
     from games.fantasy import encounter as en
     if game is None:
@@ -177,10 +177,11 @@ def lint_pinned_fights(content_dir: Path, game=None, n: int = 30) -> list[str]:
                                             attitude=2, combat=CombatBlock(**{k: v for k, v in a["combat"].items() if k in CombatBlock.model_fields})))
                     st.player.with_them.append(a["id"])
                 base = en.party_base(game, st)
-                rates.append((klass, en.win_rate(game, base, [(cbk["block"], int(cbk["count"]))], "feeble", n, 2, f"lint:{where}:{pr.get('id')}:{klass}")))
+                low = "minion" if int(cbk["count"]) >= 2 else "feeble"     # the ladder's lowest rung for it (D216)
+                rates.append((klass, en.win_rate(game, base, [(cbk["block"], int(cbk["count"]))], low, n, 2, f"lint:{where}:{pr.get('id')}:{klass}")))
             low = [(k, r) for k, r in rates if r < 40]
             if low:
-                out.append(f"{where}: {pr.get('id')} ({cbk['block']} x{cbk['count']}, pinned{', with ' + ', '.join(a['id'] for a in allies) if allies else ''}) stays deadly at level 1 even feeble for "
+                out.append(f"{where}: {pr.get('id')} ({cbk['block']} x{cbk['count']}, pinned{', with ' + ', '.join(a['id'] for a in allies) if allies else ''}) stays deadly at level 1 even at its lowest rung (minion for a band, feeble alone) for "
                            + ", ".join(f"a {k} ({r:.0f}% won alone)" for k, r in low))
     return out
 

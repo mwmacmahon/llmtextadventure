@@ -128,6 +128,8 @@ def run(game: Any, state: FantasyState, fid: str, args: dict) -> tuple[FantasySt
             amount = int(f.get("amount", 5)) + (p.level if f.get("plus_level") else 0)
         if q is None:
             p.hp = min(p.hp_max, p.hp + amount)
+            if p.peril is not None and p.peril.kind == "bleeding":   # healing binds a wound (the owner, 11-10 night)
+                p.peril = None
             who, said = p.name, f"{amount} hit points back"
         else:
             from .combat import ensure_block

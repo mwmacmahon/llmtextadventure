@@ -157,7 +157,7 @@ AUTHORITY: dict[str, Actor] = {
     "clock": "engine", "player.stats": "engine", "player.abilities": "engine", "player.level": "engine", "player.xp": "engine",
     "player.hp_max": "engine", "player.renown": "engine", "player.name": "engine", "player.race": "engine", "player.klass": "engine",
     "player.gender": "engine", "player.about": "engine", "player.cantrips": "engine", "player.spells": "engine",
-    "player.location": "narrator", "player.hp": "narrator", "player.heat": "narrator", "player.conditions": "narrator",
+    "player.location": "narrator", "player.hp": "narrator", "player.heat": "narrator", "player.conditions": "narrator", "player.peril": "narrator",
     "player.wounds": "narrator", "player.counts": "narrator", "player.carried": "narrator", "player.with_them": "narrator",
     "inventory": "narrator", "people": "narrator", "people.*.wants": "script", "people.*.secret": "script",
     "people.*.description": "script", "people.*.tells": "script", "people.*.tells.*.told": "narrator", "things": "narrator",
@@ -741,8 +741,12 @@ class FantasyGame(GameBase):
         lines.append(f"{p.name}: at {where}; {p.hp_tier}; marks: {', '.join(marks) or 'none'}.")
         lines.append(f"The Watch on {p.name}: {p.heat_word}. What strangers have heard of {p.name}: {p.renown_word}.")
         if p.peril is not None:
-            lines.append(f"{p.name} is {wo.PERILS.get(p.peril.kind, {}).get('what', p.peril.kind)}" + (f" ({p.peril.by})" if p.peril.by else "")
-                         + f": {'one moment' if p.peril.turns_left == 1 else 'moments'} from the end, unless they get {p.peril.way}.")
+            pk = p.peril.kind
+            lines.append(f"{p.name} is {wo.PERILS.get(pk, {}).get('what', pk)}" + (f" ({p.peril.by})" if p.peril.by else "")
+                         + (f": {p.peril.turns_left} moment{'s' if p.peril.turns_left != 1 else ''} of air left" if pk == "holding_breath" else
+                            ": it hurts every moment" if (pk in wo.CHECKED and p.peril.failing) or pk in ("burning", "bleeding") else
+                            ": a CON check a moment until one fails" if pk in wo.CHECKED else "")
+                         + f"; the way out: {wo.PERILS.get(pk, {}).get('hint', p.peril.way)}.")
         foes = wo.present_enemies(self, s)
         if foes:
             lines.append(f"In a fight with {p.name}: " + ", ".join(q.name for q in foes) + ". They act every turn; the engine rolls for them.")
@@ -1559,8 +1563,8 @@ class FantasyGame(GameBase):
         """A line the narrator reads with a check's result: Sneak Attack's step on a blow that lands (B92); what a failure
         costs in a fight or a peril (part four §4: the engine takes the hit points, `data["harm"]`); in a peril, the escape roll
         decides it (one die for one way out)."""
-        pline = wo.peril_by_check(state, data, label)
-        if data.get("kills") or data.get("peril_tick"):    # the peril's own damage this moment is the only cost
+        pline = wo.peril_by_check(state, data, label, game=self)
+        if data.get("kills") or data.get("peril_roll"):    # a way out tried in a peril: the moment runs after the telling
             return pline
         if pline and data.get("outcome") in ("success", "huge_success", "critical_success"):
             return pline
@@ -1835,6 +1839,10 @@ class FantasyGame(GameBase):
                 elif not p.carried and w.set("player.carried", False, True):
                     p.carried = True
             return True
+        if is_player and field == "peril" and kind in ("set", "add"):
+            if not self._peril_row(s, value.lstrip("+-").strip().lower(), value.startswith("-"), w):
+                w.reject("player.peril", "not a peril: drowning, on fire, bleeding, freezing or falling, or none to end it", value)
+            return True
         if is_player and field in ("conditions", "condition", "wounds", "wound") and kind in ("add", "set"):
             if kind == "add" or value[:1] not in "+-":
                 value = value if value[:1] in "+-" else "+" + value
@@ -1984,6 +1992,33 @@ class FantasyGame(GameBase):
                 p.fate_note = "executed"
         return True
 
+    PERIL_WORDS = {"burning": ("on fire", "burning", "aflame", "alight", "ablaze"),
+                   "drowning": ("underwater", "under water", "drowning", "submerged", "holding breath", "holding their breath", "holding_breath"),
+                   "bleeding": ("bleeding", "bleeding out", "bleeding badly"), "freezing": ("freezing", "hypothermia", "frozen"),
+                   "falling": ("falling",)}
+
+    def _peril_row(self, s: FantasyState, name: str, removing: bool, w: Writer) -> bool:
+        """A referee row that names a peril (the owner, 11-10 night: "referee obv needs to be able to change these statuses like
+        any other"): '+on fire' opens burning (with its WARNING); '-burning', or a peril field set to none/out, ends the one
+        the player is in (a rescue the prose shows). False when the words name no peril."""
+        p = s.player
+        kind = next((k for k, ws in self.PERIL_WORDS.items() if name in ws), None)
+        if name in ("none", "out", "free", "safe", "clear", "rescued") and not removing:
+            removing, kind = True, (p.peril.kind if p.peril else None)
+        if kind is None:
+            return False
+        live = p.peril.kind if p.peril else None
+        same = live == kind or (kind == "drowning" and live == "holding_breath")
+        if removing:
+            if live and same and w.set("player.peril", live, None):
+                p.peril = None
+                p.shown_notes.append(f"Out of it: no longer {wo.PERILS.get(live, {}).get('what', live)}")
+            return True
+        if live is None and w.set("player.peril", None, kind):
+            wo.open_peril(s, kind)
+            p.shown_notes.append("WARNING: " + wo.PERILS.get(p.peril.kind, {}).get("warn", kind))
+        return True
+
     def _condition(self, s: FantasyState, value: str, note: str, w: Writer) -> bool:
         """A condition by the table's name (B96, D176): the engine supplies stat, modifier and duration. A lost eye, hand
         or ear is LOST_PIECES'; an injury is a wound; any other phrase is a journal line, never a condition."""
@@ -1991,6 +2026,8 @@ class FantasyGame(GameBase):
         removing = value.startswith("-")
         phrase = value.lstrip("+-").strip()
         name = phrase.lower()
+        if self._peril_row(s, name, removing, w):        # the referee sets and ends perils like any status (the owner, 11-10 night)
+            return True
         if not name:
             return True
         table = cn.load(self.content_dir)
@@ -2113,6 +2150,8 @@ class FantasyGame(GameBase):
                 gain = min(POTION_HP * take, p.hp_max - p.hp)
                 if gain > 0 and not p.fate and w.set("player.hp", p.hp, p.hp + gain):
                     p.hp += gain
+                if p.peril is not None and p.peril.kind == "bleeding" and not p.fate:   # a potion binds the wound too
+                    p.peril = None
             if it.count <= 0 and it.id not in COINS:
                 s.inventory.remove(it)
                 s.lost.append(it)
@@ -2635,10 +2674,10 @@ class FantasyGame(GameBase):
                 if c.get("outcome") in ("success", "huge_success", "critical_success"):
                     p.shown_notes.append(f"Out of it: no longer {wo.PERILS.get(p.peril.kind, {}).get('what', p.peril.kind)}")
                     p.peril = None
-                else:                                       # a failed way out: a moment of grace spent, or (none left) the
-                    p.peril.turns_left = max(0, p.peril.turns_left - 1)   # damage, which the harm loop below lands
-                    p.peril.step += 1
-                    if p.peril.kind == "falling" and c.get("peril_tick"):
+                else:                                       # a failed way out: the moment told with the roll, applied here
+                    ev = c.get("peril_moment") or {}          # (the harm lands in the failed-attempt loop below)
+                    wo.apply_moment(p.peril, ev)
+                    if ev.get("event") == "land":
                         p.peril = None
                 break
         for c in info.calls:                                # part four §4: a failed attempt in a fight or a peril, by its tier
@@ -3030,7 +3069,9 @@ class FantasyGame(GameBase):
         out += [f"Pockets: − {it.name}" for iid, it in was.items() if iid not in now]
         out += [f"Owed: + {d}" for d in a.debts if d not in b.debts]
         if (a.peril and a.peril.kind) != (b.peril and b.peril.kind) or (a.peril and b.peril and a.peril.turns_left != b.peril.turns_left):
-            out.append(f"{a.peril.kind.capitalize()}: {a.peril.turns_left} left" if a.peril else f"{b.peril.kind.capitalize()}: out of it")
+            out.append((("WARNING: " + wo.PERILS.get(a.peril.kind, {}).get("warn", a.peril.kind)) if not b.peril or b.peril.kind != a.peril.kind
+                        else f"{wo.PERIL_LABEL.get(a.peril.kind, a.peril.kind.capitalize())}: {wo.PERILS.get(a.peril.kind, {}).get('hint', '')}") if a.peril
+                       else f"{wo.PERIL_LABEL.get(b.peril.kind, b.peril.kind.capitalize())}: out of it")
         if a.hidden_from_others != b.hidden_from_others:
             out.append("Hidden" if a.hidden_from_others else "Seen: no longer hidden")
         if ("raging" in a.flags_on) != ("raging" in b.flags_on):
@@ -3213,6 +3254,8 @@ class FantasyGame(GameBase):
                 return state, CommandResult(ok=False, label="Lay on Hands", text="Spent; a long rest brings it back.")
             c.value -= 1
             p.hp = min(p.hp_max, p.hp + 5)
+            if p.peril is not None and p.peril.kind == "bleeding":
+                p.peril = None
             return s, CommandResult(label="Lay on Hands", player_line="I lay my hands on the wound.", summary=f"{p.name} lays on hands.",
                                     directive=f"{p.name} lays a hand on the hurt and the oath answers: warmth, the pain easing. A line or two, then stop where they would act.",
                                     minutes=1, referee_skip=["lay_on_hands", "hp"])
@@ -3222,6 +3265,8 @@ class FantasyGame(GameBase):
                 return state, CommandResult(ok=False, label="Second wind", text="Spent; a long rest brings it back.")
             c.value -= 1
             p.hp = min(p.hp_max, p.hp + 5)
+            if p.peril is not None and p.peril.kind == "bleeding":
+                p.peril = None
             return s, CommandResult(label="Second wind", player_line="I grit my teeth and find a second wind.", summary=f"{p.name} catches a second wind.",
                                     directive=f"{p.name} finds a second wind: breath comes back, the hurt dulls, the hands steady. A line or two, then stop where they would act.",
                                     minutes=1, referee_skip=["second_wind", "hp"])
@@ -3541,7 +3586,10 @@ class FantasyGame(GameBase):
         if p.hidden_from_others:
             now.append(Chip(label="", value="Hidden", tone="info"))
         if p.peril is not None:
-            now.append(Chip(label=p.peril.kind.capitalize(), value=f"{p.peril.turns_left} {'turn' if p.peril.turns_left == 1 else 'turns'} left", tone="bad"))
+            pk = p.peril.kind                            # the status names the way out (the owner, 11-10 night)
+            now.append(Chip(label=wo.PERIL_LABEL.get(pk, pk.capitalize()),
+                            value=(f"{p.peril.turns_left} breath{'s' if p.peril.turns_left != 1 else ''} left; " if pk == "holding_breath" else "")
+                                  + wo.PERILS.get(pk, {}).get("hint", ""), tone="bad"))
         if p.gender:
             sheet.append(Chip(label="Gender", value=p.gender))
         sheet += [Chip(label="From your sheet", value=n) for n in p.sheet_notes]

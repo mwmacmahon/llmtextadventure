@@ -554,9 +554,13 @@ How content meets the combat code (`games/fantasy/combat.py`, `encounter.py`; AR
   brings by its own events (`{append: [player.with_them, maren]}`), and the lint counts that ally.
 - **Grabs, holds and perils.** A `grab` grapples and does its `damage`: the player cannot run until they break free or
   the grabber is down; it never opens a peril. A `hold` with a `peril` (the siren's pull under the lake) opens one, as a
-  hazard's `huge_fail` does; a peril's moments are its grace (a failed save spends one), then each failed save hurts
-  (world.DOT: drowning or fire a solid blow, cold or bleeding a scrape, a fall once), never death by itself. Words, a shout or a prayer in a peril are free. Give a peril only where the place has it (water, fire, a drop).
-- **The ladder.** The generator's variants are feeble, frail, weak, standard, veteran and elite (encounter.LADDER); the
+  hazard's `huge_fail` does; the save keeps the player out of a peril. A `drowning` peril starts as holding breath (CON + 1
+  moments, at least 2, safe), then drowning; drowning and freezing take a CON check a moment, no harm until the first fails,
+  then harm every moment with no more checks (world.CHECKED, DOT); burning and bleeding hurt every moment until put out (DEX)
+  or bound; a fall lands once; getting out is an attempt's roll; never death by itself. `burning` only from content (a
+  hazard, a trap): fire damage never opens it. Words, a shout or a prayer in a peril are free. Give a peril only where the place has it (water, fire, a drop).
+- **The ladder.** The generator's variants are minion (a band's bodies at 1 or 2 hit points, light blows), feeble, frail, weak,
+  standard, veteran and elite (encounter.LADDER); the
   player sees only the stronger ones, in the name ("Big skeleton", "Fearsome bandit").
 - **Things.** An item, a weapon or anything carried is never a fight's target; nothing is attackable yet (ROADMAP area 8).
 - **Testing a fight.** `server/tools/fight_sim.py` for the numbers; a fight round and `server/tools/replay_fights.py` for

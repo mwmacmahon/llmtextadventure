@@ -41,8 +41,11 @@ MULTIPLIERS = (1.0, 1.5, 2.0, 2.5, 3.0, 4.0)
 VARIANTS = ("weak", "standard", "veteran")          # the three every candidate is measured at
 # the owner, 11-10 night: "make weak much more weak ... we need more variation levels": the ladder, weakest first; a fight
 # still too hard at weak steps down to frail, then feeble (any fight, not only a pinned one); a boss may go up to elite
-LADDER = ("feeble", "frail", "weak", "standard", "veteran", "elite")
-VARY = {"feeble": (0.35, -3), "frail": (0.5, -2), "weak": (0.7, -1), "standard": (1.0, 0), "veteran": (1.25, 1), "elite": (1.5, 2)}
+LADDER = ("minion", "feeble", "frail", "weak", "standard", "veteran", "elite")
+VARY = {"minion": (0.0, -2), "feeble": (0.35, -3), "frail": (0.5, -2), "weak": (0.7, -1), "standard": (1.0, 0), "veteran": (1.25, 1),
+        "elite": (1.5, 2)}
+# minion (the owner, 11-10 night: "we should have a minion level ... maybe like 1d4 halved, rounding up"): a band's bodies at
+# 1 or 2 hit points each (one blow drops one), their blows light (1d4, attack and DCs -2); for two bodies or more only
 # what the player sees of it (the owner: "Let's not show weak during fight ... we can show huge etc but we want the player to
 # feel strong"): nothing below standard; a word above it, a monster's size or a person's grit
 SHOWN = {"veteran": ("Big", "Tough"), "elite": ("Huge", "Fearsome")}
@@ -258,6 +261,20 @@ def _free_id(s: FantasyState, made: list[Person], stem: str) -> str:
 def vary(b: CombatBlock, variant: str) -> None:
     """The variant's numbers (LADDER): hit points by a factor, attack and every save DC by a step."""
     mult, step = VARY.get(variant, (1.0, 0))
+    if variant == "minion":
+        r = random.Random(f"minion:{b.block}:{b.count}:{b.hp_max}")
+        rolls = [math.ceil(r.randint(1, 4) / 2) for _ in range(max(1, b.count))]
+        b.hp_max = max(rolls)
+        b.damage = "1d4"                              # a minion's blow is a light one, whatever the entry's
+        b.actions = [{k: v for k, v in a.items() if k != "damage"} for a in (b.actions or [])]
+        b.attack = (b.attack or 0) + step
+        b.dc = (b.dc or 12) + step
+        if step and b.actions:
+            b.actions = [{**a, "dc": int(a["dc"]) + step} if a.get("dc") else a for a in b.actions]
+        b.hp = b.hp_max
+        if b.count > 1:
+            b.hps = rolls
+        return
     b.hp_max = max(1, int(round((b.hp_max or 1) * mult)))
     b.attack = (b.attack or 0) + step
     b.dc = (b.dc or 12) + step
@@ -284,28 +301,25 @@ def sim_fight(game: Any, st: FantasyState, rng: random.Random, offset: int, roun
         spent["rage"] = spent.get("rage", 0) + 1
     hp0 = p.hp
     rounds = 0
-    peril: dict | None = None                         # B316: a grab's peril, as played: the turn goes to getting free; a lethal one counts down
+    peril_dc = 12                                     # B316: a hold's peril, as played; the way out's DC
     while rounds < rounds_cap and cb.living_enemies(game, st) and p.hp > 0:
         rounds += 1
         heal = 0
         escaping = False
-        if peril is not None:
+        if p.peril is not None:                       # a peril as played (world.moment, D217): get out, or one moment of it
             escaping = True
-            save = cb.player_block(st)["saves"].get(peril["stat"], 0)
-            if rng.randint(1, 20) + save >= peril["dc"]:
-                peril = None
+            save = cb.player_block(st)["saves"].get(p.peril.stat, 0)
+            if rng.randint(1, 20) + save >= peril_dc:
+                p.peril = None
             else:
-                if peril["turns"] > 0:                    # grace first, then damage over time on each failed save (D214)
-                    peril["turns"] -= 1
-                else:
-                    from .world import DOT, harm
-                    step = DOT.get(peril["kind"], "scrape")
-                    if step:
-                        p.hp = max(0, p.hp - harm(step, rng.randint(1, 20)))
-                    if peril["kind"] == "falling":
-                        peril = None
-                    if p.hp <= 0:
-                        break
+                from .world import apply_moment, moment
+                ev = moment(game, st, p.peril, rng, offset)
+                apply_moment(p.peril, ev)
+                p.hp = max(0, p.hp - int(ev.get("harm") or 0))
+                if ev.get("event") == "land":
+                    p.peril = None
+                if p.hp <= 0:
+                    break
         loh = p.count("lay_on_hands")
         if p.hp * 10 < p.hp_max * 4 and loh is not None and loh.value > 0:
             heal = min(loh.value, p.hp_max - p.hp)
@@ -331,10 +345,10 @@ def sim_fight(game: Any, st: FantasyState, rng: random.Random, offset: int, roun
                 break
             before = {c.id: c.value for c in p.counts}
             r = cb.resolve(game, st, e, rng, offset, tally)
-            if peril is None and (r.get("data") or {}).get("peril"):
-                from .world import PERILS
-                spec = PERILS.get(r["data"]["peril"], PERILS["held"])
-                peril = {"stat": spec["stat"], "dc": int(r["data"].get("dc") or 12), "turns": int(spec["turns"]), "kind": r["data"]["peril"]}
+            if p.peril is None and (r.get("data") or {}).get("peril"):
+                from .world import open_peril
+                open_peril(st, r["data"]["peril"])        # under water: the breath first
+                peril_dc = int(r["data"].get("dc") or 12)
             for c in p.counts:
                 if before.get(c.id, c.value) > c.value and c.id in ("smite", "divine_smite", "holy_power"):
                     spent["smite"] = spent.get("smite", 0) + (before[c.id] - c.value)
@@ -485,8 +499,10 @@ def encounter(game: Any, s: FantasyState, want: Want) -> Encounter:
         ok = [t for t in tried if _low(t[2], want.n) >= target]
         return min(ok, key=lambda t: t[2] - target) if ok else max(tried, key=lambda t: (_low(t[2], want.n), t[2]))
     c, v, w = pick()
-    for down in ("frail", "feeble"):                  # still too hard (by its lower bound): a step down the ladder, any fight
+    for down in ("frail", "feeble", "minion"):        # still too hard (by its lower bound): a step down the ladder, any fight
         if band in ("boss", "impossible") or _low(w, want.n) >= target:
+            break
+        if down == "minion" and sum(k for _, k in c) < 2:
             break
         wf = win_rate(game, base, c, down, want.n, want.offset, f"{seed}:{describe(c)}:{down}", want.actions)
         fights += want.n
