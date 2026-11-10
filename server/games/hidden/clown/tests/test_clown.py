@@ -1180,6 +1180,22 @@ def test_a_booked_show_is_not_paid_before_its_hour(game: ClownGame):
     assert s.house.money == st.house.money + 5                                    # elsewhere money lands as before
 
 
+def test_a_show_is_not_paid_by_the_prose_at_its_hour_either(game: ClownGame):
+    """Round 4 (e330c4c9d9d9, turns 47 and 48): at the show's hour, the referee's "Pardew paid" +20, then the engine's fee:
+    twice. Until the engine plays it, a show here is the engine's to pay; the same at a client's side, a minute after."""
+    st = _offer(game, new(game))
+    st, _ = game.run_command(st, "book", {"booking": "rope_walk_birthday", "girl": "dot"})
+    x = st.shows[0]
+    st.clock.day, st.clock.minute = x.at_abs // DAY, x.at_abs % DAY
+    st.player.location = x.venue
+    money = st.house.money
+    s, rep, _ = _force(game, st, C(kind="add", target="house", field="money", value="+15"))
+    assert s.house.money == money
+    st.clock.minute += 1
+    s, rep, _ = _force(game, st, C(kind="add", target="house", field="money", value="+15"))
+    assert s.house.money == money
+
+
 def test_a_booking_heard_of_after_its_hour_this_week_reads_next_week(game: ClownGame):
     st = _offer(game, new(game))
     h = st.hook("rope_walk_birthday")
@@ -1326,3 +1342,17 @@ async def test_a_lead_lands_only_when_the_clock_moves_and_tells_the_narrator_fir
     assert "ran on to the time the player named" in text and "starts about" not in text
     text = _this_turn_block({"elapsed": 10, "lead": 10, "lead_short": True, "clock_note": "stopped at pending p1", "adjudication": sleep, "directives": []}, "")
     assert "stopped short" in text
+
+
+def test_a_written_girl_at_the_door_filed_as_a_new_person_is_that_girl_and_joins(game: ClownGame):
+    """Round 4 (e330c4c9d9d9, turns 33 to 35): the referee filed Dorothea Vance at the door as a new person, a duplicate;
+    the 'joined' row then went to the duplicate and Dot stayed asking at the door. By name or by the id given, she is Dot."""
+    st = new(game, first_girl="nell_sorley")
+    dot = st.girl("dot")
+    dot.status, dot.location = "available", "The yard"
+    s, rep, _ = apply(game, st, C(kind="new", target="person", value="Dorothea Vance", title="dot"))
+    assert not any(q.name == "Dorothea Vance" for q in s.people) and s.girl("dot").location == s.player.location
+    s, rep, _ = apply(game, s, C(kind="set", target="dot", field="status", value="joined"))
+    assert s.girl("dot").status in ("passive", "active")
+    s2, _, _ = apply(game, st, C(kind="new", target="person", value="dorothea vance"))      # by name alone, any case
+    assert not any(q.name.lower() == "dorothea vance" for q in s2.people)

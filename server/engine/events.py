@@ -641,6 +641,8 @@ def rebase_event(raw: dict, deal_abs: int, minutes_per_day: int = 1440, hook: st
         fb = dict(fb)
         if "after_deal_minutes" in fb:
             t = deal_time(fb.pop("after_deal_minutes"), deal_abs, minutes_per_day, fb.pop("not_before", None), fb.pop("not_after", None))
+            if isinstance(e.get("at"), dict) and "day" in e["at"]:   # never before the event's own first moment (the clown's round 4:
+                t = max(t, int(e["at"]["day"]) * minutes_per_day + int(e["at"].get("minute", 0)))   # a reach at 09:00, its fallback at 03:30)
             after: Any = {"at": _abs_at(t, minutes_per_day)}
             fb["after"] = {"all": [after, trig]} if trig is not None else after
         elif "after" in fb:

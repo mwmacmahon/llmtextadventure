@@ -1272,6 +1272,13 @@ class ClownGame(GameBase):
             if any(x.name.lower() == value.lower() for x in s.people):
                 w.reject("people", f"already listed: {value}", value)
                 return True
+            g = s.girl((ch.title or "").strip().lower()) or next((x for x in s.girls if value.lower() in (x.name.lower(), *[a.lower() for a in x.aliases])), None)
+            if g is not None and g.status != "gone":   # round 4 (t33): the written Dot at the door filed as a new person: a duplicate the
+                place = self._place(s, ch.field) or p.location     # take-on then went to, and she never joined; she is the girl
+                if g.status in ("available", "away") and g.location != place and w.set(f"girls.{g.id}.location", g.location, place):
+                    g.location = place
+                w.note(f"people: {value} is the girl {g.id}, not a new person")
+                return True
             place = self._place(s, ch.field) or p.location
             pid = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")[:24] or f"p{len(s.people) + 1}"
             if s.person(pid) is not None:
@@ -1833,9 +1840,11 @@ class ClownGame(GameBase):
         return hit[0] if len(hit) == 1 else None
 
     def _show_ahead_here(self, s: ClownState) -> Show | None:
-        """A booked show not yet played whose venue the proprietor is at, or whose client is with him, before its hour (C57)."""
+        """A booked show not yet played whose venue the proprietor is at, or whose client is with him (C57): before its hour, and
+        at it, until the engine plays it and pays its fee (round 4 turn 47: the referee's "Pardew paid" at 10:00 sharp, then the
+        engine's fee the next turn, twice)."""
         loc = s.player.location
-        for x in sorted((x for x in s.shows if not x.result and x.at_abs > s.now_abs), key=lambda x: x.at_abs):
+        for x in sorted((x for x in s.shows if not x.result), key=lambda x: x.at_abs):
             q = s.person(x.client)
             if loc == x.venue or (q is not None and q.location == loc):
                 return x

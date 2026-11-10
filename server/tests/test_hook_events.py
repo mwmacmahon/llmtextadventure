@@ -106,6 +106,18 @@ def test_reach_event_is_one_event_with_its_fallback():
     assert e.trigger == {"at": {"day": 1, "minute": 1085}} and e.fallback.after == {"at": {"day": 1, "minute": 1320}}
 
 
+def test_a_fallback_never_comes_before_its_events_own_first_moment():
+    """The clown's round 4 (e330c4c9d9d9, turn 42): a booking dealt at Friday 19:30 reached the house at Saturday 09:00 (its
+    window) and its fallback, 480 minutes after the deal, at 03:30: the clock stopped six hours short in the night."""
+    reach = [{"where": ["The office"], "at": {"after_deal_minutes": 60, "not_before": 540, "not_after": 1080}, "directive": "Pardew asks."},
+             {"fallback": {"after_deal_minutes": 480, "directive": "Word reaches the proprietor."}}]
+    e = ev.Event.model_validate(ev.reach_event("terminus_market", reach, 12 * DAY + 1170))
+    assert e.at == {"day": 13, "minute": 540}
+    assert e.fallback.after == {"at": {"day": 13, "minute": 540}}                      # 09:00, not 03:30
+    late = ev.Event.model_validate(ev.reach_event("t2", [reach[0], {"fallback": {"after_deal_minutes": 1440, "directive": "Word."}}], 12 * DAY + 1170))
+    assert late.fallback.after == {"at": {"day": 13, "minute": 1170}}                  # a later fallback keeps its own time
+
+
 def test_a_time_never_rebased_never_fires():
     e = ev.Event.model_validate({"id": "x", "trigger": {"at": {"after_deal_minutes": 5}}, "directive": "x"})
     assert not _tick([e], _doc(day=9), 1)[0]
