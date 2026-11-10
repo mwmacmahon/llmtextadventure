@@ -639,6 +639,9 @@ async def test_a_turn_through_the_pipeline(engine: Engine):
     assert "clown" in engine.games
     iid = engine.create_instance("clown", dict(SETUP, first_girl="ada_vosk"))     # the setup's choice is a harbour starter; the written three come later
     events = [ev async for ev in engine.run_turn(iid, "I go through to the practice room and watch her for a minute before I say anything.")]
+    if events[-1]["event"] == "command":                                          # D210C: the engine asks before spending the morning
+        assert "would take the rest of the morning" in events[-1]["data"]["text"] and engine.store.latest_turn(iid) == 0
+        events = [ev async for ev in engine.run_turn(iid, "yes")]
     assert events[-1]["event"] == "done", [ev["event"] for ev in events]
     st = engine.games["clown"].load_state(engine.store.load_state(iid))
     assert st.now_abs > 1 * DAY + 540
@@ -1387,3 +1390,66 @@ def test_switch_says_what_it_costs(game: ClownGame):
     assert "plan is cleared" in spec.hint and "loses a point of love" in spec.hint
     _, res = game.run_command(st, "switch", {"girl": "rosalind"})
     assert "set her mornings and afternoons" in res.text and "a point of love lost" in res.text
+
+
+def test_the_simulator_plays_a_seeded_game_by_a_strategy_and_a_grid_is_every_combination():
+    """D210C: the engine alone, no model; a trial is reproducible from its seed; the content cache is unchanged by a run."""
+    from games.hidden.clown.tools import sim
+    a = sim.trial(sim.Strategy(), weeks=2, seed=3, content=CONTENT, check=True)
+    b = sim.trial(sim.Strategy(), weeks=2, seed=3, content=CONTENT)
+    assert a == b and a["weeks"] == 2 and len(a["money"]) == 2 and set(a["results"]) == set(sim.SHOW_WORDS)
+    c = sim.trial(sim.Strategy(work_empty=True, rest_at=0), weeks=2, seed=3, content=CONTENT)
+    assert c["final"] != a["final"]                                         # a policy moves the numbers
+    g = sim.grid(["book=all,fit", "rest_at=40,60", "work_empty=0,1"])
+    assert len(g) == 8 and {s.book for s in g} == {"all", "fit"} and any(s.work_empty for s in g)
+    s = sim.summarize([a, b])
+    assert s["trials"] == 2 and s["final_p50"] == a["final"] and len(s["curve_p50"]) == 2
+
+
+async def test_the_day_is_four_parts_and_only_some_turns_spend_one(engine: Engine):
+    """D210C (the owner, 11-10, "persona style"): going somewhere, an errand, waiting, sleeping or 45 minutes and more spends the
+    part of the day (the clock runs to the next part's start); a talk where they stand costs nothing; four free turns in a
+    row and the next spends it; THIS TURN says which."""
+    from engine.pipeline import _this_turn_block, block_spend, next_block
+    from engine.roles import AssistantReading
+    from games.hidden.clown.game import day_text
+    game = engine.games["clown"]
+    c = game.clock
+    assert next_block(c, 540) == 300 and next_block(c, 600) == 240 and next_block(c, 1200) == 120 and next_block(c, 1380) == 1440 - 1380 + 540
+    talk = AssistantReading(kind="action", summary="asks her how the falls are going", time_minutes=10, risk="low")
+    walk = AssistantReading(kind="action", summary="walks down to the harbour", time_minutes=15, risk="low")
+    long = AssistantReading(kind="action", summary="works with her on the mats", time_minutes=90, risk="low")
+    assert not block_spend(c, talk, 10, 0)[0] and block_spend(c, walk, 15, 0)[0] and block_spend(c, long, 90, 0)[0]
+    assert block_spend(c, talk, 10, 4)[0] and not block_spend(c, talk, 10, 3)[0]
+    iid = engine.create_instance("clown", dict(SETUP, first_girl="ada_vosk"))
+    st = game.load_state(engine.store.load_state(iid))
+    st.hidden.events, st.hidden.pending = [], []
+    res = engine._resolve(game, st, talk.model_copy(), iid, 1, [])
+    assert res["elapsed"] == 0 and res["block_spent"] is False and "this part of the day goes on" in _this_turn_block(res, "")
+    res = engine._resolve(game, st, long.model_copy(), iid, 1, [])
+    assert res["block_spent"] and res["state"].clock.minute == 840                    # the morning spent: the afternoon
+    assert "takes the rest of this part of the day" in _this_turn_block(res, "14:00")
+    assert day_text(1, 600) == "Week 1, Monday morning, 10:00" and day_text(1, 1380).endswith("night, 23:00")
+
+
+async def test_a_turn_that_would_spend_the_part_of_the_day_asks_first_unless_it_plainly_does(engine: Engine):
+    """D210C (the owner, 11-10): "talk to PERSON until NEXT TIME SLOT", asked by the engine, so a word with a merchant does not
+    lose the afternoon by accident; going somewhere, waiting, sleeping and work in the practice room spend it without asking."""
+    from engine.pipeline import BLOCK_YES
+    from engine.roles import AssistantReading
+    game = engine.games["clown"]
+    iid = engine.create_instance("clown", dict(SETUP, first_girl="ada_vosk"))
+    st = game.load_state(engine.store.load_state(iid))
+    long_talk = AssistantReading(kind="action", summary="talks with Mr Dunning about the concert", time_minutes=60, risk="low")
+    ask = engine._block_ask(game, st, long_talk, iid, 1, "I sit down with Mr Dunning and talk the concert through")
+    assert ask.startswith("That would take the rest of the morning") and "until the afternoon" in ask and "Say yes" in ask
+    walk = AssistantReading(kind="action", summary="walks down to the harbour", time_minutes=15, risk="low")
+    assert engine._block_ask(game, st, walk, iid, 1, "I walk down to the harbour") == ""
+    st.player.location = "The practice room"
+    assert engine._block_ask(game, st, long_talk, iid, 1, "I work with her on the mats") == ""
+    st.player.location = "The office"
+    short = AssistantReading(kind="action", summary="asks Mrs Pell about the coal", time_minutes=5, risk="low")
+    assert engine._block_ask(game, st, short, iid, 1, "I ask Mrs Pell about the coal") == ""
+    engine._free_run = lambda iid, turn: 4                                          # four free turns before: the fifth would spend it
+    assert engine._block_ask(game, st, short, iid, 1, "I ask Mrs Pell about the coal").startswith("That would take the rest")
+    assert BLOCK_YES.match("yes") and BLOCK_YES.match("Go on.") and not BLOCK_YES.match("yes, and I ask her name")

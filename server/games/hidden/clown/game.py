@@ -108,8 +108,13 @@ def stamp(s: ClownState, line: str) -> str:
     return f"Day {s.clock.day} {hhmm(s.clock.minute)}. {line}"
 
 
+def part_of_day(minute: int) -> str:
+    """D210C: the part of the day by the clown's blocks (morning from 09:00, afternoon 14:00, evening 19:00, night 22:00)."""
+    return "night" if minute >= 1320 or minute < 540 else "evening" if minute >= 1140 else "afternoon" if minute >= 840 else "morning"
+
+
 def day_text(day: int, minute: int) -> str:
-    return f"Week {week_of(day)}, {WEEKDAYS[weekday(day)]}, {hhmm(minute)}"
+    return f"Week {week_of(day)}, {WEEKDAYS[weekday(day)]} {part_of_day(minute)}, {hhmm(minute)}"
 
 
 def money_word(money: int) -> str:
@@ -143,7 +148,13 @@ class ClownGame(GameBase):
     description = "A house behind the harbour that trains clowns. A week at a time, a stable of girls, private clients, the city. Dev mode only."
     hidden = True
 
-    clock = ClockSpec(path="clock", minutes_per_day=1440, cap_minutes=7 * 1440, turn_cap_minutes=720, scene_mark=0, tasks={   # a Skip may run a week (D205C); a typed turn at most a night
+    # D210C (the owner, 11-10: "times of day blocks with only some things moving it forward, persona style"): the day is a
+    # morning, an afternoon, an evening and a night; going somewhere, an errand, waiting, sleeping or a long scene spends the
+    # part of the day and the clock runs to the next; a talk where they stand, a question, a lever costs nothing. A Skip runs
+    # days (D205C); a typed turn at most a night.
+    clock = ClockSpec(path="clock", minutes_per_day=1440, cap_minutes=7 * 1440, turn_cap_minutes=720, scene_mark=0,
+                      blocks=[540, 840, 1140, 1320], block_names=["morning", "afternoon", "evening", "night"], block_spend_minutes=45, block_free_turns=4,
+                      tasks={
         "talk": TaskRow(least=5, most=20, lost=15),
         "search": TaskRow(least=10, most=30, lost=30),
         "travel": TaskRow(least=5, most=45, lost=15),
@@ -802,8 +813,10 @@ class ClownGame(GameBase):
             f"finished clown is the Graduate command, Sunday only; the engine says whether she is ready.",
             "target_entity only for a listed girl or person the player names or the scene identifies; a stranger has no id, so leave it null.",
             "Stats are exactly the five listed (charm, menace, business, connections, craft); never invent one.",
-            "Time: a word at the desk 2 minutes; a talk 10 to 20; a practice hour with her 45 to 75; a tram ride as the town's list says; a show "
-            "an evening; waiting is however long they wait, and the week ends on Sunday night whatever they do.",
+            "Time runs in parts of the day (morning, afternoon, evening, night), and the engine moves it: give time_minutes as the real length "
+            "of what the player does (a word at the desk 2, a talk 10 to 20, a walk or a tram ride as the town's list says, a practice session "
+            "60 to 120, an evening's outing 180). Going somewhere, an errand, waiting, sleeping, or anything of 45 minutes or more takes the rest "
+            "of the part of the day; a talk where they stand or a question takes none. The week ends on Sunday night whatever they do.",
             "",
             f"Where {p.name} is, who is with them, the money, the attention on the house: the game state block. Read it before ruling something impossible.",
             "Entities (the girls and the people, by id): " + ", ".join(f"{g.id} ({g.name}" + (", not yet in the house; about the town)" if g.status == "away" else ", asking to be taken on; not in the house)" if g.status == "available" else ")") for g in s.girls if g.status != "gone")
@@ -2464,6 +2477,10 @@ class ClownGame(GameBase):
         to = m.group("to").strip()
         to = _SKIP_ALIASES.get(to, to.split()[0] if to.split()[0] in {k for k, _, _ in self._skip_targets(state)} else to)
         return "skip", {"to": to, "confirm": "yes" if m.group("anyway") else "no"}
+
+    def plain_spend(self, state: ClownState, adj: Any) -> bool:
+        """The pipeline's hook (D210C): a turn that plainly spends the part of the day without asking: work in the practice room."""
+        return state.player.location == PRACTICE
 
     def turn_cap_line(self, state: ClownState) -> str:
         """The pipeline's hook (round 6): the player's line when a typed turn meant days and the clock ran a night at most."""

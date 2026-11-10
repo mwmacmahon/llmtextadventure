@@ -109,6 +109,7 @@ class Engine:
         self.store = store
         self.games = games
         self._tapes: dict[str, Any] = {}          # iid -> the running turn's ledger writer, for the tape (engine/tape.py)
+        self._block_pending: dict[str, tuple[int, str, Any]] = {}   # D210C: iid -> (turn, the text, the reading) a "yes" would spend
         self._asides: dict[str, Any] = {}         # iid -> an aside's learned pass still running (B244); a turn waits for it
         self._mods_cache: dict[str, list[dict]] = {}   # iid -> the mods its save was made with (B79)
         self._games_cache: dict[str, Any] = {}           # iid and mod hashes -> the game as that modded save sees it (B79)
@@ -899,6 +900,11 @@ class Engine:
         adj: AssistantReading | None = None
         cmd_result: CommandResult | None = None
         extra_directives: list[str] = []
+        block_confirmed = False
+        pend_b = self._block_pending.pop(iid, None) if command is None and replay is None else None
+        if pend_b is not None and pend_b[0] == turn and BLOCK_YES.match((player_text or "").strip()):   # D210C: the player said yes
+            player_text, adj, block_confirmed = pend_b[1], pend_b[2].model_copy(deep=True), True
+            ledger("block_confirmed", {"text": player_text})
         if command is None:                                  # D205C: a game may read a command in the player's own words ("skip to Wednesday")
             typed = _hook(game, "typed_command", state, own_words(player_text or ""), default=None)
             if typed:
@@ -1025,6 +1031,17 @@ class Engine:
         if adj is not None:
             yield {"event": "adjudication", "data": adj.model_dump(mode="json")}
 
+        # ---- 1d. D210C: a turn that would spend the part of the day, and is not plainly one that does (going somewhere, waiting,
+        #          sleeping, what the game says is plain: the clown's practice room), asks first, in the engine's words; "yes" spends it
+        if command is None and replay is None and not block_confirmed and adj is not None:
+            ask = self._block_ask(game, state, adj, iid, turn, player_text or "")
+            if ask:
+                self._block_pending[iid] = (turn, player_text or "", adj.model_copy(deep=True))
+                self.store.drop_transcript_turn(iid, turn)
+                ledger("block_confirm", {"text": player_text, "ask": ask})
+                self._tapes.pop(iid, None)
+                yield {"event": "command", "data": {"ok": False, "text": ask, "mode": "engine", "label": "Time"}}
+                return
         # ---- 2. resolve -----------------------------------------------------
         res = self._resolve(game, state, adj, iid, turn, extra_directives, through=bool(cmd_result is not None and cmd_result.through))
         state = res["state"]
@@ -1845,6 +1862,7 @@ class Engine:
         clock_note = ""
         elapsed = 0
         turn_capped = False
+        block_spent: bool | None = None
         split: tuple[int, int] | None = None
         clock = getattr(game, "clock", None)
         clock_path = getattr(clock, "path", "clock")
@@ -1889,6 +1907,7 @@ class Engine:
             # B245: in a tense scene (a fight, a peril, someone hostile here, a check at a person here this turn or last, a question
             # to the player waiting, the assistant's "nobody could walk up now") the turn is as short as the assistant says, floor one
             tense = tense_why(game, state, adj, self._last_turn(iid, turn)) if clock and adj.kind == "action" else ""
+            asked_minutes = adj.time_minutes
             if tense and adj.time_minutes < getattr(clock, "fast_minutes", 1):
                 notes.append(f"tense turn ({tense}): {adj.time_minutes} minutes raised to the floor of {clock.fast_minutes}")
                 adj.time_minutes = clock.fast_minutes
@@ -1909,6 +1928,15 @@ class Engine:
                 if why:
                     notes.append(why)
                     adj.time_minutes = kept
+            # D210C, the clown first (the owner, 11-10: "times of day blocks with only some things moving it forward, persona
+            # style"): a game with blocks spends the part of the day on going somewhere, an errand, waiting, sleeping or a long
+            # scene, and the clock runs to the next block; anything else costs nothing, until a run of free turns spends it
+            if clock and getattr(clock, "blocks", None) and adj.kind == "action" and not getattr(adj, "minutes_fixed", False):
+                clk0b = sp.lookup(doc, clock.path)
+                spend, why_b = block_spend(clock, adj, asked_minutes, self._free_run(iid, turn))
+                adj.time_minutes = next_block(clock, int(clk0b["minute"])) if spend else 0
+                block_spent = spend
+                notes.append(f"block: {why_b}")
             # (i) the minutes split at the roll (time doc §3a, D146): with the stakes live, the clock moves now only up to the
             # attempt; each result's own minutes move it when the dice fall. Branches with no minutes (Gemma wrote 0 on every
             # one of 155) leave the turn as before.
@@ -1998,7 +2026,7 @@ class Engine:
         if scene_long:
             notes.append(f"scene marked long: turn {scene_long} of a fight")
         return {"state": new_state, "assessments": assessments, "fired": fired, "expired": expired, "happened": happened,
-                "elapsed": elapsed, "clock_note": clock_note, "turn_capped": turn_capped, "directives": directives, "adjudication": adj, "effect_paths": effect_paths,
+                "elapsed": elapsed, "clock_note": clock_note, "turn_capped": turn_capped, "block_spent": block_spent, "directives": directives, "adjudication": adj, "effect_paths": effect_paths,
                 "split": split, "scene_long": scene_long,
                 "notes": notes, "pending_fired": pending_fired, "pending_lapsed": pending_lapsed, "holds": list(ectx.holds),
                 "fail_streak": self._fail_streak(iid, turn) if assessments else 0,
@@ -2042,6 +2070,36 @@ class Engine:
         others = [q for q in unmet if q.id not in new]           # the newcomer is never held back by being one
         names = sorted({n for q in others for n in (str(q.name).lower(), str(q.name).lower().split(" ")[0]) if len(n) >= 3 and n not in skip})
         return f"{who} came in lately and is still here", names, {q.id for q in others}
+
+    def _block_ask(self, game: Any, state: BaseModel, adj: Any, iid: str, turn: int, text: str) -> str:
+        """D210C: the engine's question when a turn would spend the part of the day and is not plainly one that does; "" when not."""
+        clock = getattr(game, "clock", None)
+        if clock is None or not getattr(clock, "blocks", None) or adj.kind != "action" or getattr(adj, "minutes_fixed", False):
+            return ""
+        spend, _ = block_spend(clock, adj, int(adj.time_minutes), self._free_run(iid, turn))
+        if not spend or task_of(adj) in ("travel", "wait", "sleep") or _hook(game, "plain_spend", state, adj, default=False):
+            return ""
+        clk = sp.lookup(state.model_dump(mode="json"), clock.path)
+        now_part = block_name(clock, int(clk["minute"]))
+        nxt = block_name(clock, (int(clk["minute"]) + next_block(clock, int(clk["minute"]))) % clock.minutes_per_day)
+        what = " ".join(text.split())
+        what = what if len(what) <= 120 else what[:117] + "..."
+        return (f"That would take the rest of the {now_part}: \"{what}\", until the {nxt}. Say yes to spend the {now_part} on it, "
+                f"or do something shorter.")
+
+    def _free_run(self, iid: str, turn: int) -> int:
+        """D210C: how many turns in a row before this one moved no clock (the ledger's clock rows); a command turn ends the run."""
+        n = 0
+        for t in range(turn - 1, max(0, turn - 12), -1):
+            try:
+                rows = self.store.ledger(iid, t)
+            except Exception:  # noqa: BLE001 - a scratch store
+                return n
+            clock = next((r["payload"] for r in rows if r["kind"] == "clock" and "elapsed" in r["payload"]), None)
+            if clock is None or clock.get("elapsed") or any(r["kind"] == "command" for r in rows):
+                return n
+            n += 1
+        return n
 
     def _last_turn(self, iid: str, turn: int) -> dict:
         """Last turn as quiet_why reads it (B248): the people the referee had present, the people checks were rolled at,
@@ -2973,6 +3031,35 @@ def own_words(text: str) -> str:
     return QUOTED.sub(" ", text or "")
 
 
+BLOCK_YES = re.compile(r"^(?:y|yes|yeah|yep|ok|okay|sure|go on|do it|spend it|confirm(?:ed)?)[.!]?$", re.I)   # D210C: the player's yes to
+                                                                                                          # the engine's own question
+
+
+def next_block(clock: Any, minute: int) -> int:
+    """Minutes from `minute` (of the day) to the start of the next block (D210C); the night's next is tomorrow's first."""
+    later = [b for b in clock.blocks if b > minute]
+    return (later[0] - minute) if later else (clock.minutes_per_day - minute + clock.blocks[0])
+
+
+def block_name(clock: Any, minute: int) -> str:
+    names = list(getattr(clock, "block_names", None) or [])
+    i = max((k for k, b in enumerate(clock.blocks) if b <= minute), default=len(clock.blocks) - 1)
+    return names[i] if i < len(names) else ""
+
+
+def block_spend(clock: Any, adj: Any, minutes: int, free_run: int) -> tuple[bool, str]:
+    """D210C: whether a turn spends the part of the day: going somewhere, an errand, waiting or sleeping, anything the assistant
+    put at `block_spend_minutes` or more, or a run of `block_free_turns` free turns before it. Returns (spend, why)."""
+    task = task_of(adj)
+    if task in ("travel", "search", "wait", "sleep"):
+        return True, f"a {task} spends the block"
+    if minutes >= clock.block_spend_minutes:
+        return True, f"{minutes} minutes fill the block"
+    if free_run >= clock.block_free_turns:
+        return True, f"{free_run} free turns before: this one spends the block"
+    return False, f"free ({task}, {minutes} minutes)"
+
+
 def clock_stop(game: Any, doc: dict[str, Any], turn: int, now: int, want: int) -> tuple[int, str]:
     """How far the clock may run from `now` toward `now + want`: it stops where a scheduled event would fire (any time in its
     trigger or fallback, so it fires on time) or a pending the player can see falls due. Returns (minutes, note)."""
@@ -3770,6 +3857,11 @@ def _this_turn_block(res: dict[str, Any], clock_text: str = "") -> str:
             lines.append(f"- The first attempt starts about {res['elapsed']} minutes on; the clock above shows that moment. Open on what happens "
                          "on the way to it, what is seen, said and done, then call the check. Each check's result says how long that attempt "
                          "takes; the turn ends when the last attempt does.")
+    elif res["elapsed"] and res.get("block_spent"):     # D210C: the part of the day is spent
+        lines.append("- This turn takes the rest of this part of the day" + (f"; the clock reads {clock_text} when it ends" if clock_text else "")
+                     + ". Tell what fills it, then stop at the start of the next part of the day; never run past it.")
+    elif res.get("block_spent") is False:                # D210C: nothing here moves the clock
+        lines.append("- No time to speak of passes: this part of the day goes on. Stay in the moment; nothing is cut short or skipped.")
     elif res["elapsed"] and res.get("turn_capped"):     # round 6: "I wait until Thursday" ran a night, the prose said Thursday
         lines.append(f"- Time passes: about {max(1, round(res['elapsed'] / 60))} hours, no more" + (f", to {clock_text}" if clock_text else "")
                      + ". Tell up to that hour and stop; the player is still waiting.")

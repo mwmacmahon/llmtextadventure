@@ -47,11 +47,15 @@ class ClownContent(Content):
     def __init__(self, content_dir: Path):
         super().__init__(content_dir)
         self._cache: dict[str, tuple[float, Any]] = {}
+        self.fast = False               # the simulator (tools/sim.py): the cached data as it is, no file check, no copy; it checks the
+                                        # cache is unchanged after a run, so a caller that mutated content would be caught
 
     def _yaml(self, path: Path) -> Any:
         key = str(path)
-        mt = path.stat().st_mtime
         hit = self._cache.get(key)
+        if self.fast and hit:
+            return hit[1]
+        mt = path.stat().st_mtime
         if hit and hit[0] == mt:
             return copy.deepcopy(hit[1])
         with open(path) as f:
