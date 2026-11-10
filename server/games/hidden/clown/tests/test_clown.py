@@ -1289,3 +1289,20 @@ def test_a_written_girl_at_the_door_filed_as_a_new_person_is_that_girl_and_joins
     assert s.girl("dot").status in ("passive", "active")
     s2, _, _ = apply(game, st, C(kind="new", target="person", value="dorothea vance"))      # by name alone, any case
     assert not any(q.name.lower() == "dorothea vance" for q in s2.people)
+
+
+async def test_a_typed_skip_is_warned_before_any_model_and_anyway_runs_it_through(engine: Engine):
+    """D205C through the pipeline: "skip to Saturday" with the week's callers on the way is the canned list (no model, no
+    clock); "... anyway" runs to Saturday 09:00 past them; any other typed turn keeps to a night."""
+    iid = engine.create_instance("clown", dict(SETUP, first_girl="ada_vosk"))
+    game = engine.games["clown"]
+    st0 = game.load_state(engine.store.load_state(iid))
+    events = [ev async for ev in engine.run_turn(iid, "skip to Saturday")]
+    cmd = next(e for e in events if e["event"] == "command")
+    assert not cmd["data"]["ok"] and "runs past" in cmd["data"]["text"] and not any(e["event"] == "adjudication" for e in events)
+    assert game.load_state(engine.store.load_state(iid)).now_abs == st0.now_abs
+    events = [ev async for ev in engine.run_turn(iid, "skip to Saturday anyway")]
+    assert events[-1]["event"] == "done", [e["event"] for e in events]
+    st = game.load_state(engine.store.load_state(iid))
+    sat = (st0.clock.day + 5 - weekday(st0.clock.day)) * DAY + 540
+    assert st.now_abs == sat
