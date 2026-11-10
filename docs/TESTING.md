@@ -366,7 +366,7 @@ in a round, `{iid, turn, why, verdict?, expect: {...}}`, the expectations being 
 fix; run `check` before a fight round and after any change to combat.py, world.py, encounter.py or the reading's attack
 fields. The win rates are the simulator's (`server/tools/fight_sim.py`, the engine's combat code, hundreds of fights a
 case) and `tests/test_calibration.py` pins a table of them; the pinned-fight lint (`lint_pinned_fights`) names a story's
-fight still too hard at level 1.
+fight still too hard at level 1. The call report (`tools/round_report.py`) opens with a fight table: per fight turn the round's acts the narrator called, those rolled after the prose, the call cap hit, and the player's hit points by source (B328).
 
 ## The narrator's measure (D60)
 

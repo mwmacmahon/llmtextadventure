@@ -372,6 +372,43 @@ def profile_runs(runs: list[list]) -> str:
     return ", ".join(f"{n} ({'turns ' if i == 0 else ''}{a}{'' if a == b else f' to {b}'})" for i, (n, a, b) in enumerate(runs))
 
 
+def fight_table(ledger: list[dict]) -> str:
+    """B328 (the combat review; the record §10): per fight turn, the round's calls the narrator made, the call cap hit, what the
+    backstop rolled after the prose, and the player's hit points by source (a told blow, a backstopped one, a check's cost)."""
+    last: dict[int, dict] = {}
+    for r in ledger:
+        p = r.get("payload") or {}
+        if r["kind"] == "model_call" and p.get("role") == "narrator" and p.get("calls") is not None:
+            last[r["turn"]] = p                              # the telling that stood (a retell replaces the one before)
+    rows = []
+    tot = {"called": 0, "back": 0, "capped": 0, "told": 0, "after": 0, "cost": 0}
+    for t in sorted(last):
+        calls = last[t].get("calls") or []
+        verb = lambda c: (c["call"].get("verb", "") if isinstance(c.get("call"), dict)                     # noqa: E731
+                          else str(c.get("call") or "").strip("<> ").split(" ")[0])
+        fight = [c for c in calls if verb(c) in ("ATTACK", "ALLY", "ENEMY")]
+        if not fight:
+            continue
+        called = [c for c in fight if not c.get("backstop")]
+        back = [c for c in fight if c.get("backstop")]
+        capped = sum(1 for x in (last[t].get("problems") or []) if "call cap" in str(x))
+        harm = lambda cs: sum(int((c.get("result") or {}).get("harm") or 0) for c in cs if (c.get("result") or {}).get("verb") == "ENEMY"   # noqa: E731
+                              or verb(c) == "ENEMY")
+        cost = sum(int((c.get("result") or {}).get("harm") or 0) for c in calls if verb(c) == "CHECK")
+        row = {"called": len(called), "back": len(back), "capped": capped, "told": harm(called), "after": harm(back), "cost": cost}
+        for k in tot:
+            tot[k] += row[k]
+        rows.append(f"<tr><td>{t}</td><td>{row['called']}</td><td>{row['back']}</td><td>{row['capped'] or ''}</td>"
+                    f"<td>{row['told']}</td><td>{row['after']}</td><td>{row['cost'] or ''}</td></tr>")
+    if not rows:
+        return ""
+    share = 100 * tot["called"] // max(1, tot["called"] + tot["back"])
+    return ("<details><summary>Fights: " + f"{len(rows)} fight turns, the narrator called {share}% of the round's acts; the player lost "
+            f"{tot['told']} hit points to told blows, {tot['after']} to blows rolled after the prose, {tot['cost']} to a check's cost</summary>"
+            "<table><tr><th>turn</th><th>called</th><th>after the prose</th><th>cap hit</th><th>hp: told</th><th>hp: after</th><th>hp: a check</th></tr>"
+            + "".join(rows) + "</table></details>")
+
+
 def retell_counts(ledger: list[dict]) -> tuple[int, Counter, list[int]]:
     """The guard's retellings in a round (B78: kept in every report from 11-08): how many, by the rule that sent each back
     (from the earlier telling's serious rulings in the rewrite history), and on which turns. The player's own rewrites
@@ -570,6 +607,7 @@ def build(inst: dict, ledger: list[dict], blobs: dict[str, str], transcript: lis
             + "</dl>"
             f"<div class='stats'>{who}</div>")
     head += render_defaults_totals(dcount, key_name)
+    head += fight_table(ledger)
     for m in mods_applied:                                     # B79: each mod's full text, as the save keeps it
         head += f"<details><summary>Mod: {E(str(m.get('name')))}</summary><pre>{E(str(m.get('text') or ''))}</pre></details>"
     if opening:

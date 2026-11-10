@@ -42,7 +42,8 @@ def test_the_book_numbers():
 def test_pinned_bodies_are_never_added_to_or_removed(game):
     st = new(game, place="The Old Channel")
     e = en.encounter(game, st, en.Want(band="normal", pinned=[("skeleton", 4)], n=6))
-    assert e.bodies == [("skeleton", 4)] and e.variant in (*en.VARIANTS, "feeble") and "pinned by the story" in e.reason
+    assert e.bodies == [("skeleton", 4)] and e.variant in (*en.VARIANTS, "feeble")
+    assert ("pinned by the story" in e.reason) == (e.variant != "standard")      # the note names a variant the pin forced
     open_ = en.encounter(game, st, en.Want(band="normal", pinned=[("skeleton", None)], n=6))
     assert {b for b, _ in open_.bodies} == {"skeleton"} and 1 <= sum(n for _, n in open_.bodies) <= en.MAX_BODIES
 
@@ -110,7 +111,7 @@ def test_the_cache_is_warmed_off_the_turn_and_refreshes_on_level_and_party(game,
     e, hit = game.encounter_for(st, "normal")
     assert hit and e.bodies and "on the turn" not in e.reason
     cold, hit2 = game.encounter_for(st, "hard")                     # a band the cache never drew: inline, ten fights a cell
-    assert not hit2 and "ten fights a cell, on the turn" in cold.reason
+    assert not hit2 and "fights a cell, on the turn" in cold.reason
     st.player.level = 2
     assert game.warm_key(st) == "2||catacombs"                      # the level moved: draw again
     st.player.level = 1
@@ -333,3 +334,14 @@ def test_the_offer_matched_by_kind_keeps_the_scenes_name(game):
     st2.offer = {"ids": ["robber_1", "robber_2"], "bodies": [["bandit", 2]], "place": st2.player.location, "variant": "standard", "reason": "two bandits"}
     made2, _ = game.bring_in(st2, "robber_1", ref="robber_1")
     assert len(made2) == 1 and made2[0].id == "robber_1" and "Robber" in made2[0].name     # by its own id: the offer's as it was
+
+
+def test_the_simulator_plays_the_contents_own_moves_and_their_perils(game):
+    """B316 (the combat review): the drowned's grab with a drowning peril was never simulated (the bestiary entry stood in,
+    and perils did nothing in the simulator): the fight the generator ranked was gentler than the one played."""
+    st = new(game)
+    grab = [{"kind": "strike", "harm": "rotten grip"},
+            {"kind": "grab", "stat": "str", "dc": 12, "peril": "drowning", "harm": "a pull under the chapel water"}]
+    plain = en.win_rate(game, st, [("zombie", 3)], "standard", 120, 2, "t")
+    played = en.win_rate(game, st, [("zombie", 3)], "standard", 120, 2, "t", grab)
+    assert played < plain - 10

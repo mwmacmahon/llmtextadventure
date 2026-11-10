@@ -393,7 +393,7 @@ def shown_harm(q: Person, harm: str) -> str:
     weaponish = root in WEAPONS or root in WEAPON_WORDS or any(root.endswith(w) for w in ("bow", "bolt", "arrow", "sword", "axe", "club", "mace", "spear", "dagger", "knife"))
     if not h or not weaponish:
         return h
-    if root in words or (root.endswith("arrow") and "bow" in words):
+    if root in words or (root.endswith("arrow") and "bow" in words) or any((m or {}).get("harm") == harm for m in (q.moves or [])):
         return h
     return "blow"
 
@@ -510,10 +510,9 @@ def plan_round(game: Any, s: FantasyState, adj: Any, player_text: str, turn: int
     allies = [q for q in party(s) if bodies(q)]
     orders = ally_orders_in(s, player_text, foes)                     # the order is the player's free action: it holds from the next turn
     for o in orders:
-        if True:
-            ally, _, target = str(o).partition(":")                         # "hazel: skeleton" (a flat string keeps the grammar small)
-            if ally.strip() and target.strip():
-                c.orders[ally.strip().lower()] = target.strip().lower()
+        ally, _, target = str(o).partition(":")                             # "hazel: skeleton" (a flat string keeps the grammar small)
+        if ally.strip() and target.strip():
+            c.orders[ally.strip().lower()] = target.strip().lower()
     for q in foes:
         b = ensure_block(q)
         for body in bodies(q):
@@ -612,7 +611,9 @@ def round_lines(game: Any, s: FantasyState) -> list[str]:
 
 def _player_take(game: Any, s: FantasyState, n: int, tally: dict) -> tuple[int, list[str], bool]:
     """Hit points an enemy's roll takes from the player, through the steps (the shield, Rage, Uncanny Dodge, Defence, Shield
-    of Faith) as flat reductions (STEP_DICE). On the running count; the state lands after the prose."""
+    of Faith) as flat reductions (STEP_DICE). On the running count; the state lands after the prose. B324: the shield also
+    adds +2 AC, so it counts twice against a roll (the SRD has the AC only); kept for the owner, since without the cut a
+    level-1 paladin alone wins 47% against three skeletons, not 83%."""
     p = s.player
     notes: list[str] = []
     if s.item("shield") is not None and n >= 6 and not p.effect("damage_taken_step"):
@@ -854,9 +855,9 @@ def resolve_attack(game: Any, s: FantasyState, entry: dict, rng: Any, offset: in
         if part.get("hit") and extra:
             used_rider = True
             from . import features as ft
-            for fid, how in rider_spent:                               # spent only on a hit; a miss costs nothing
-                f = ft.specs(game, p)[fid]
-                (p.count(f["count"]) if how == "count" else p.count("spell_slots")).value -= 1
+            for fid, paid in rider_spent:                              # spent only on a hit; a miss costs nothing (B314: not `how`,
+                f = ft.specs(game, p)[fid]                              # the weapon's, which the cleave below reads)
+                (p.count(f["count"]) if paid == "count" else p.count("spell_slots")).value -= 1
                 p.flags_on = [x for x in p.flags_on if x != (f.get("armed_flag") or f"{fid}_armed")]
                 data["rider_spent"] = fid
         parts.append(part)
@@ -1090,7 +1091,7 @@ def run_fight_command(game: Any, state: FantasyState, command_id: str) -> tuple[
         tally: dict = {"hp": 0}
         lines, told = [], []
         for q in living_enemies(game, s):
-            for body in bodies(q)[:2]:
+            for body in bodies(q)[:2]:                  # B321: at most two of a band reach the one running (the lever's hint says so)
                 b = ensure_block(q)
                 a = next((x for x in b.actions if x.get("kind") in ("strike", "drain")), {"kind": "strike"})
                 r = resolve(game, s, {"key": f"flee:{q.id}:{body}", "side": "enemy", "who": q.id, "body": body, "action": {**a, "kind": "strike"},
@@ -1131,22 +1132,13 @@ def run_fight_command(game: Any, state: FantasyState, command_id: str) -> tuple[
                             player_line="I yield.", summary=f"{p.name} offers to yield.", directive=directive, minutes=1)
 
 
-# ---- §8: scaling (the record §9b, now §12b): the encounter generator sizes a content band -------------------------------------
-# B292: the old budget's calibration drifted with no test to say so; tests/test_combat.py now pins the simulator's table.
-BANDS = {"easy": 1.0, "fair": 2.0, "hard": 3.0, "deadly": 3.75}       # §9b's words, read as the generator's bands (encounter.OLD_BANDS)
-DIFFICULTY = {-2: 0.75, 0: 1.0, 2: 1.25}
-MAX_BODIES = 6
+# ---- §8: scaling (the record §12b): the encounter generator sizes a content band (B325: the old budget is gone) ------------------
 
 
-def budget(level: int, fighters: int, band: str = "hard", shift: int = 0) -> float:
-    """§9b's budget, kept for the pages and the old saves' notes; the generator (games/fantasy/encounter.py) sizes fights now."""
-    return (level + 1) * (1 + fighters * 0.6) * BANDS.get(band or "hard", 1.5) * DIFFICULTY.get(shift, 1.0)
-
-
-def scale(s: FantasyState, q: Person, shift: int = 0, game: Any = None, offset: int | None = None, n: int = 10) -> list[str]:
+def scale(s: FantasyState, q: Person, shift: int = 0, game: Any = None, offset: int | None = None, n: int = 60) -> list[str]:
     """A content band at its first fight (part sixteen §2): its count pinned when the content gave one (only the variant
     moves), else the generator's to size; the band's word read as the generator's (hard is normal, deadly hard). A fixed
-    block keeps its numbers; a person alone is theirs. Ten fights a cell (a cold miss, on the turn). The steps, for the line."""
+    block keeps its numbers; a person alone is theirs. Sixty fights a cell (B315: ten picked on noise; a pinned band has few cells). The steps, for the line."""
     b = ensure_block(q)
     if b.sized or b.fixed:
         return []
@@ -1158,12 +1150,13 @@ def scale(s: FantasyState, q: Person, shift: int = 0, game: Any = None, offset: 
     from . import encounter as en
     off = offset if offset is not None else {-2: 0, 0: 2, 2: 4}.get(shift, 2)
     want = en.Want(band=en.band_of(b.band or "hard"), pinned=[(b.block, b.count if b.count > 1 else None)], place=s.player.location, offset=off, n=n,
+                   actions=[dict(a) for a in (b.actions or [])] or None,
                    seed=f"{s.player.name}:{q.id}:{s.player.level}")
     got = en.encounter(game, s, want)
     count = got.bodies[0][1] if got.bodies else b.count
     b.count = count
     en.vary(b, got.variant)
     b.hps = [b.hp_max or 1] * count if count > 1 else []
-    note = f"{got.reason} (ten fights a cell, on the turn)"
+    note = f"{got.reason} ({n} fights a cell, on the turn)"
     b.notes = [note]
     return [note]

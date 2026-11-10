@@ -3,7 +3,9 @@ standard cases at thirty fights a cell, a fixed seed, Normal difficulty, level 1
 table below. The table is re-recorded on purpose when the numbers change (a bestiary entry, a class file, the combat code),
 never silently: change it in the same commit as the change that moved it, with the date and why.
 
-Recorded 2026-11-10 after the bestiary (B294: SRD numbers; Hazel is a scout) and the generator (B295). The same cases at
+Re-recorded 2026-11-10 evening after B314 (the combat review: Smite now cleaves; the rider loop had reused the weapon's
+`how`): the paladin rows moved, alone vs 3 skeletons 66.7 to 83.3, vs 4 23.3 to 43.3; at 600 fights, seed 1: alone vs
+2/3/4 skeletons 97.8/78.8/35.3, vs the troll 10.8. First recorded 2026-11-10 after the bestiary (B294: SRD numbers; Hazel is a scout) and the generator (B295). The same cases at
 2,000 fights, for the record: paladin alone vs 2/3/4 skeletons 96.8/68.2/20.5; with Hazel 99.8/98.0/87.1; the rogue vs the
 Watch's six guards 0.0; Gorm (fixed) vs the paladin 11.8, the rogue 2.6, the barbarian 1.8. Before the bestiary (11-10,
 2,000 fights): alone 97.0/69.1/19.6; with Hazel 99.5/93.6/65.3; the rogue vs six watchmen 0.5; Gorm 11.0/2.0/2.1.
@@ -26,12 +28,12 @@ pytestmark = pytest.mark.skipif(not (CONTENT / "bestiary.yml").exists(), reason=
 
 RECORDED = "2026-11-10"
 TABLE = [  # (class, allies, enemy, count, win % at 30 fights, seed 0, Normal)
-    ("Paladin", [], "skeleton", 2, 100.0),
-    ("Paladin", [], "skeleton", 3, 66.7),
-    ("Paladin", [], "skeleton", 4, 23.3),
-    ("Paladin", ["hazel"], "skeleton", 2, 100.0),
-    ("Paladin", ["hazel"], "skeleton", 3, 100.0),
-    ("Paladin", ["hazel"], "skeleton", 4, 80.0),
+    ("Paladin", [], "skeleton", 2, 93.3),
+    ("Paladin", [], "skeleton", 3, 83.3),
+    ("Paladin", [], "skeleton", 4, 43.3),
+    ("Paladin", ["hazel"], "skeleton", 2, 96.7),
+    ("Paladin", ["hazel"], "skeleton", 3, 96.7),
+    ("Paladin", ["hazel"], "skeleton", 4, 86.7),
     ("Rogue", [], "guard", 6, 0.0),
     ("Paladin", [], "troll", 1, 13.3),
     ("Rogue", [], "troll", 1, 0.0),

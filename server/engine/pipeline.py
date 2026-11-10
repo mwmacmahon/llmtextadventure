@@ -1061,6 +1061,8 @@ class Engine:
         if hasattr(game, "world_turn") and (adj is None or adj.kind in ("action", "trivial")):
             state, world = game.world_turn(state, adj, player_text or "", rng_for(iid, turn, "world"), turn, self.target_offset(game, iid))
             res["state"] = state
+            if getattr(world, "replaces", None):         # B322: the game's standing lines this turn's world supersedes
+                res["directives"] = [d for d in res["directives"] if not d.startswith(tuple(world.replaces))]
             if world.directives:
                 res["directives"] = list(world.directives) + list(res["directives"])
             if world.blocked:                             # a compulsion won (part four §6): the attempt does not happen, nothing to call
@@ -1179,7 +1181,8 @@ class Engine:
             written = 0
             last_progress = 0
             yield {"event": "progress", "data": _progress("writing", 0, expected)}
-            async for nev in narrate(provider, role, system, messages, handler, max_calls=getattr(game, "max_calls", 3)):
+            cap = _hook(game, "max_calls_now", state, default=None) or getattr(game, "max_calls", 3)   # B313: a fight's round may need more
+            async for nev in narrate(provider, role, system, messages, handler, max_calls=cap):
                 if isinstance(nev, Visible):
                     yield {"event": "text", "data": {"t": nev.text}}
                     written += len(nev.text)
@@ -1297,8 +1300,9 @@ class Engine:
                 skip = list(cmd_result.referee_skip) if cmd_result else []
                 if world is not None and world.skip:          # the engine took these hit points itself (part four): no second count
                     skip += world.skip
-                if any((c.get("result") or {}).get("harm") for c in calls_block.get("calls", [])):
-                    skip.append("hp")
+                if (any((c.get("result") or {}).get("harm") for c in calls_block.get("calls", []))
+                        or _hook(game, "fight_owns_hp", state, default=False)):
+                    skip.append("hp")                         # B326: a fight's hit points are the engine's, whatever the rolls did
                 for lv, out in zip(levers, lever_outcomes):
                     if out["status"] == "applied":
                         skip += lv.preview.referee_skip

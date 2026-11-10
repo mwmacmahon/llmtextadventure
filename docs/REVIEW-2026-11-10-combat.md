@@ -236,3 +236,18 @@ reading set attack_at, and how many rolled an attack.
    the dead code out, word boundaries on ATTACK.
 8. **The minors (B321, B322, B326):** Flee consistent with walking away, the standing fight lines built after the
    plan, the player's fight hit points the engine's always.
+
+## Since this review (built the same evening)
+
+The owner: "let's get them fixed". Built, each with a test: B313 (the call cap sized to the round), B314 (Smite cleaves;
+the calibration table re-recorded), B315 (60 fights a cell for a pinned band, 20 for a cold miss, a lower-bound pick),
+B316 a and b (the content's own moves and a grab's peril in the simulator: three zombies at standard 87% with the
+library's moves, 62% with the drowned's grab), B318 to B320 (the words' head noun, a name is one person, a blow at a body
+brings no one in), B321 (Flee keeps its blows with a destination), B322 (the round supersedes the stale standing lines),
+B323 (every ENEMY call through the person's block), B325 (the dead code named here), B326 (a fight turn skips the
+referee's player hit points), B327 (ATTACK closed at the word's end), B328 (the call report's fight table).
+
+Left for the owner: B317 (the peril's word-list death amends B100) and B324's shield. Removing the shield's second count
+(the SRD's AC only) was measured and reverted: a lone level-1 paladin falls from 83% to 47% against three skeletons. Not
+built yet: B316 (c), the simulated player paying a failed check's cost; B324's merge of the four damage-reduction homes;
+the record's enemy surprise; the reading choosing its targets from the engine's list (the roadmap's longer item).

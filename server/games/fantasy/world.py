@@ -62,6 +62,7 @@ class WorldTurn:
     mechanics: list[str] = field(default_factory=list)       # § lines, shown after the prose
     rows: list[dict] = field(default_factory=list)            # the ledger's
     skip: list[str] = field(default_factory=list)             # referee fields the engine already wrote (hp)
+    replaces: list[str] = field(default_factory=list)         # B322: standing lines (by their opening words) this turn's round supersedes
 
 
 def armour_class(s: FantasyState) -> tuple[int, str]:
@@ -175,6 +176,18 @@ def chose_death(adj: Any) -> bool:
     return not has_check and not (getattr(adj, "fiat", None) or [])
 
 
+AT_THE_BODY = re.compile(r"\b(again|make sure|body|corpse|remains|finish (him|her|it|them) off|stays? down|dead (one|man|woman|robber|thing))\b", re.I)
+
+
+def could_turn_line(name: str, wary: list) -> str:
+    """THIS TURN's line for those here who are not fighting the player but could turn (B208); one home for the turn's
+    standing line and the line written after this turn's round is planned (B322)."""
+    return ("Here, not fighting " + name + " now, but could turn on " + name + ": " + "; ".join(
+        q.name + " (" + ", ".join(str(m.get("kind")) for m in (q.moves or [DEFAULT_STRIKE])) + ")" for q in wary)
+        + ". If the telling has one of them attack, write <<ENEMY <their id> <move>>> at that moment (ids: " + ", ".join(q.id for q in wary)
+        + "); that opens the fight. Otherwise they do not act against " + name + ".")
+
+
 def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: Any, turn: int, offset: int) -> tuple[FantasyState, WorldTurn]:
     s = state.model_copy(deep=True)
     p = s.player
@@ -189,7 +202,9 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
         return s, w
     # -- contact broken (B226): a move to another place, or words that break contact (smoke, a slip away, the boat), end
     #    every hold on the player and its peril; the fight is left, and whoever follows does so by a narrator's call
-    if getattr(adj, "kind", "") == "action" and escape_check(adj) is None and breaks_contact(adj, text, p.location):
+    fleeing = any(getattr(c, "id", "") == "flee" for c in (getattr(adj, "commands", None) or []))
+    if (getattr(adj, "kind", "") == "action" and escape_check(adj) is None and not (fleeing and p.fighting)
+            and breaks_contact(adj, text, p.location)):     # B321: a Flee breaks contact itself, with its free blows
         broken = _break_contact(s, w)
         if broken:
             w.directives.append(f"{p.name} breaks contact: {broken}. Nothing holds {p.name} now; play the getting away. Anyone who "
@@ -365,7 +380,9 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
         struck = list(dict.fromkeys(e for e in struck if not is_item(s, e)))   # B310: a weapon or a thing is never fought; once each
         for e in struck:
             q = s.person(e) or game._same_person(s, e)
-            if q is not None and q.status != "alive" and e in aimed and (q.status == "dead" or s.person(e) is None):
+            if (q is not None and q.status != "alive" and e in aimed and (q.status == "dead" or s.person(e) is None)
+                    and not (s.person(e) is not None and AT_THE_BODY.search(player_text or ""))):
+                # B320 (the combat review): "I stab the dead robber again to make sure he stays down" is at the body, no one new
                 # B311 (Gemma, 11-10, e933e85fb6c2 T3-T5, T9, T12): blows at 'sailor_2' matched the fallen Sailor 1, blows at the
                 # knife-man went to robber_1, dead a turn before: nothing rolled while the prose knocked them out. A blow the
                 # reading aims at someone already dead, or at a fallen one only by likeness, is at another like them
@@ -391,23 +408,19 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
                 p.fighting.append(q.id)
     p.fighting = [x for x in p.fighting if (q := s.person(x)) is not None and q.status == "alive" and game._same_spot(s, q.location, p.location)]
     plan_fight(game, s, adj, player_text, rng, turn, w, offset)
+    if s.combat is not None and s.combat.plan:
+        # B322 (the combat review): the standing lines were written before this turn's round: 'Here, not fighting ... could turn'
+        # named the foes the round list had in the fight, and the part-four 'In a fight with ... write <<ENEMY>>' rode beside it
+        w.replaces += ["Here, not fighting ", "In a fight with "]
+        wary = [q for q in could_turn(game, s) if q.id not in p.fighting]
+        if wary and not p.fate:
+            w.directives.append(could_turn_line(p.name, wary))
     # (B206, D178) the enemies and the hazards act through the narrator's own calls, <<ENEMY>> and <<HAZARD>>, where they fall
     # in the prose (world_call); a hostile the prose left out is rolled after it (backstop). Nothing is rolled here.
     return s, w
 
 
 # ---- the narrator's calls (B206, D178; supersedes part four §4's rolls before the prose) -------------------------------
-
-def _pick_move(q: Person, kind: str, p: Any) -> dict:
-    moves = q.moves or [DEFAULT_STRIKE]
-    if kind:
-        hit = next((m for m in moves if m.get("kind") == kind), None)
-        if hit is not None:
-            return hit
-    return next((m for m in moves if m.get("kind") in ("hold", "grab") and p.peril is None), None) \
-        or next((m for m in moves if m.get("kind") == "song" and not any(c.name == "enthralled" for c in p.conditions)), None) \
-        or next((m for m in moves if m.get("kind") == "strike"), None) or moves[0]
-
 
 def _hp_after(s: FantasyState, tally: dict) -> int:
     return s.player.hp - int(tally.get("hp", 0))
@@ -484,72 +497,35 @@ def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tal
     `data` carries what lands after the prose (harm, a peril, a condition, death). In a fight (part fifteen §3) <<ATTACK>>,
     <<ALLY>> and <<ENEMY>> roll the round's listed actions; an <<ENEMY>> for someone not yet in the fight joins them (B208)."""
     p = s.player
-    if call.verb in ("ATTACK", "ALLY") or (call.verb == "ENEMY" and s.combat is not None):
+    if call.verb in ("ATTACK", "ALLY", "ENEMY"):         # B323: every ENEMY through the round's resolver and the person's own block
         from . import combat as cb
         out = cb.world_call(game, s, call, rng, offset, tally)
         if out is not None:
             return out
         if call.verb == "ENEMY":
             q = s.person(call.ref) or game._same_person(s, call.ref) or _offered(game, s, call.ref, tally)
-            if q is not None and q.status == "alive" and s.combat is not None:
-                cb.size_band(q)
-                if q.id not in p.fighting:
-                    p.fighting.append(q.id)
-                e = {"key": f"enemy:{q.id}:join{len(s.combat.plan)}", "side": "enemy", "who": q.id, "body": (cb.bodies(q) or [0])[0],
-                     "action": cb.pick_action(cb.ensure_block(q), p), "target": "player"}
-                s.combat.plan.append(e)
-                return cb.resolve(game, s, e, rng, offset, tally)
+            if q is None or q.status != "alive":
+                return {"text": f"Nobody by {call.ref!r} is here to act. Play it without a roll.", "data": {"verb": "ENEMY", "who": call.ref, "none": True}}
+            opened = s.combat is None                    # B323: outside a fight the call rolls on a passing round, the person's
+            if opened:                                   # own block; the fight joins after the prose, by the result's `join` (B208)
+                from .state import CombatState
+                s.combat = CombatState(round=0)
+            cb.size_band(q)
+            was_fighting = q.id in p.fighting
+            if not was_fighting:
+                p.fighting.append(q.id)
+            e = {"key": f"enemy:{q.id}:join{len(s.combat.plan)}", "side": "enemy", "who": q.id, "body": (cb.bodies(q) or [0])[0],
+                 "action": cb.pick_action(cb.ensure_block(q), p), "target": "player"}
+            s.combat.plan.append(e)
+            out = cb.resolve(game, s, e, rng, offset, tally)
+            if opened:
+                s.combat = None
+                if not was_fighting:
+                    p.fighting.remove(q.id)
+                out.setdefault("data", {})["join"] = q.id
+            return out
         if call.verb in ("ATTACK", "ALLY"):
             return {"text": "No fight is listed for that this turn. Play it without a roll.", "data": {"verb": call.verb, "none": True}}
-    if call.verb == "ENEMY":
-        q = s.person(call.ref) or game._same_person(s, call.ref) or _offered(game, s, call.ref, tally)
-        if q is None or q.status != "alive":
-            return {"text": f"Nobody by {call.ref!r} is here to act. Play it without a roll.", "data": {"verb": "ENEMY", "who": call.ref, "none": True}}
-        tally.setdefault("acted", []).append(q.id)
-        move = _pick_move(q, call.stat, p)
-        kind, bonus, what = move.get("kind", "strike"), int(move.get("bonus", 2)), move.get("harm") or "blow"
-        data: dict[str, Any] = {"verb": "ENEMY", "who": q.id, "move": kind, "label": f"{q.name}: {what}", "join": q.id}   # B208: this joins the fight
-        if kind == "strike":
-            ac, ac_how = armour_class(s)
-            roll = rng.randint(1, 20)
-            total = roll + bonus
-            hit = roll == 20 or (roll != 1 and total >= ac)
-            data.update(roll=roll, bonus=bonus, ac=ac, hit=hit)
-            if not hit:
-                return {"text": f"{q.name}'s {what}: it misses {p.name}. Play the miss, and go on.",
-                        "mechanic": f"{q.name}'s {what}: {roll} {bonus:+d} = {total} against armour {ac}: a miss.", "data": data}
-            step = move.get("damage", "scrape")
-            if roll == 20 and step != "lethal":
-                step = {"scrape": "solid", "solid": "serious"}.get(step, step)
-            n, notes, kills = _blow(game, s, step, rng, tally)
-            tally["hp"] = int(tally.get("hp", 0)) + n
-            data.update(step=step, harm=n, stepped=True, kills=kills, cause=f"{q.name}'s {what}")
-            told = ("it kills " + p.name + ". Write the death straight; this is the end of the story" if kills
-                    else f"it lands: {STEP_WORDS.get(step, step)}" + (f" ({'; '.join(notes)})" if notes else "") + ". Play it landing")
-            return {"text": f"{q.name}'s {what}: {told}, and go on.",
-                    "mechanic": f"{q.name}'s {what}: {roll} {bonus:+d} = {total} against armour {ac}: a hit, {STEP_WORDS.get(step, step)}" +
-                                (f" ({n})" if not kills else ", fatal") + ".", "data": data}
-        if kind in ("hold", "grab"):
-            res = _check(game, s, move.get("stat", "str"), move.get("difficulty", "medium"), f"break {q.name}'s {kind}", rng, [], offset)
-            data.update(outcome_player=res.outcome, roll=res.roll, total=res.total, target=res.target)
-            line = f"{q.name}'s {kind}: " + game.render_mechanic(s, res)
-            if res.outcome in ("success", "huge_success", "critical_success"):
-                return {"text": f"{q.name} tries to {kind} {p.name} ({what}) and {p.name} keeps clear. Play it, and go on.", "mechanic": line, "data": data}
-            kind_p = move.get("peril") or "held"
-            data.update(peril=kind_p, by=q.name)
-            spec = PERILS.get(kind_p, PERILS["held"])
-            return {"text": f"{q.name} has {p.name} ({what}): {p.name} is {spec['what']} now, moments from the end unless they get {spec['way']}. "
-                            f"Play it, and end the turn on that moment; what {p.name} does next is the player's to say.", "mechanic": line, "data": data}
-        if kind == "song":
-            res = _check(game, s, "wis", move.get("difficulty", "medium"), f"resist {q.name}'s song", rng, [], offset)
-            line = f"{q.name}'s song: " + game.render_mechanic(s, res)
-            data.update(outcome_player=res.outcome)
-            if res.outcome in ("success", "huge_success", "critical_success"):
-                return {"text": f"{q.name} sings; {p.name} hears the pull and keeps their own mind. Play it, and go on.", "mechanic": line, "data": data}
-            data.update(condition="enthralled", by=q.id)
-            return {"text": f"{q.name} sings, and the song has {p.name}: they want to go to {q.name} more than anything, and turning away or "
-                            f"striking at the singer is a fight with their own will. Play it, and go on.", "mechanic": line, "data": data}
-        return None
     if call.verb == "HAZARD":
         hz = hazard(game, s, call.ref)
         if hz is not None:

@@ -237,19 +237,19 @@ its proposed `another_way` flag); a `standing:` line per hook (B136).
 B144 covers the plain words).
 
 **Combat (the combat review, 11-10: docs/REVIEW-2026-11-10-combat.md; the register's B313 to B328).**
-- The narrator's call cap sized to the round in a fight (B313). *not started*
+- The narrator's call cap sized to the round in a fight (B313). *built*
 - The generator measures the fight that is played, well enough to rank: content bands sized off the turn at a few
   hundred fights a cell, chosen by a lower confidence bound; the content's own block simulated; perils, conditions and
-  failure costs in the simulator (B315, B316). *not started*
+  failure costs in the simulator (B315, B316). *built in part: the samples, the lower bound, the content's moves and perils; a failed check's cost in the simulator not yet*
 - The deaths a child would call unfair: the peril word test (B317), the failure cost in a fight and the backstop
   death after an escape (B300). *open with the owner*
 - One resolver for who an enemy is: head-noun matching, a name is one person, a blow at a body is no new enemy (B318,
   B319, B320); later, the reading chooses its targets from the engine's list of who can be fought this turn, with one
-  "someone new" entry. *not started*
+  "someone new" entry. *built in part: the head noun, a name is one person, a blow at a body (B318 to B320); the reading choosing from the engine's list not started*
 - A fight table in the call report (B328), then the record's `combat.prerolled` dial (§3, §10) measured against called
-  rolls on Gemma in blind pairs. *designed*
+  rolls on Gemma in blind pairs. *built in part: the fight table (B328); the dial designed*
 - The debt: one enemy resolver, one damage-reduction table and the shield counted once, the dead code, ATTACK's word
-  boundary (B323, B324, B325, B327); and the minors (B314, B321, B322, B326). *not started*
+  boundary (B323, B324, B325, B327); and the minors (B314, B321, B322, B326). *built in part: B314, B321 to B323, B325 to B327; B324's merge of the four reduction homes not started, its shield the owner's call*
 
 ## 9. Noir, Lowtown
 

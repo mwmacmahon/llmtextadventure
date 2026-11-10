@@ -68,8 +68,12 @@ LOST_PIECES: dict[str, tuple[str, list[str], int]] = {
 }
 LOST_PIECE = re.compile(r"\b(lost|missing|one|ruined|put out|blind in one|cut off)\b.*\b(eye|hand|ear)\b|\b(eye|hand|ear)\b.*\b(lost|gone|cut off|put out)\b", re.I)
 # The hidden flags and the class effects (B92, D175): what a called check's label says the attempt was
-ATTACK = re.compile(r"\b(attack|strike|stab|hit|fight|shoot|cut|slash|swing|kill|throw|hurl|smash|punch|kick|chop|cleave|lunge|"
-                    r"thrust|bash|club|grapple|wrestle|tackle|slit|loose|fire at|ambush)", re.I)
+# B327 (the combat review): closed at the word's end, with its inflections: 'cutpurse' was 'cut', 'hitch' 'hit', 'loosen' 'loose'
+ATTACK = re.compile(r"\b(attack(s|ed|ing)?|strik(e|es|ing)|struck|stab(s|bed|bing)?|hit(s|ting)?|fight(s|ing)?|fought|shoot(s|ing)?|shot|"
+                    r"cut(s|ting)?|slash(es|ed|ing)?|swing(s|ing)?|swung|kill(s|ed|ing)?|throw(s|ing)?|threw|hurl(s|ed|ing)?|"
+                    r"smash(es|ed|ing)?|punch(es|ed|ing)?|kick(s|ed|ing)?|chop(s|ped|ping)?|cleave(s|d)?|cleaving|lunge(s|d)?|lunging|"
+                    r"thrust(s|ing)?|bash(es|ed|ing)?|club(s|bed|bing)?|grappl(e|es|ed|ing)|wrestl(e|es|ed|ing)|tackl(e|es|ed|ing)|"
+                    r"slit(s|ting)?|loose|fire at|ambush(es|ed|ing)?)\b", re.I)
 LOUD = re.compile(r"\b(shout|yell|scream|roar|smash|crash|break down|kick (in|down)|bang|ring|bellow|call out)", re.I)
 HIDE = re.compile(r"\b(hide|hiding|hidden|sneak|slip (away|off|out|past|into|behind)|duck (into|behind|out)|melt into|vanish|"
                   r"keep (out of sight|to the shadows)|unseen|stay out of sight|creep|skulk)", re.I)
@@ -945,10 +949,7 @@ class FantasyGame(GameBase):
                   "goes until the engine says.")
         wary = wo.could_turn(self, s)
         if wary and not p.fate:                          # B208: not in the fight; a call opens it when the fiction does
-            out.append("Here, not fighting " + p.name + " now, but could turn on " + p.name + ": " + "; ".join(
-                q.name + " (" + ", ".join(str(m.get("kind")) for m in (q.moves or [wo.DEFAULT_STRIKE])) + ")" for q in wary)
-                + ". If the telling has one of them attack, write <<ENEMY <their id> <move>>> at that moment (ids: " + ", ".join(q.id for q in wary)
-                + "); that opens the fight. Otherwise they do not act against " + p.name + ".")
+            out.append(wo.could_turn_line(p.name, wary))
         hz = (s.city.hazards or {}).get(p.location) or []
         if hz and not p.fate:
             out.append("Dangers here: " + "; ".join(f"{h.get('when', h.get('id'))} (<<HAZARD {h.get('id')}>>)" for h in hz)
@@ -1391,8 +1392,8 @@ class FantasyGame(GameBase):
         if got and here.get("key") == key and not words and not pinned and offset == 2:
             return en.Encounter(bodies=[tuple(b) for b in got["bodies"]], variant=got["variant"], win=got["win"], band=band,
                                 target=got["target"], reason=got["reason"], region=got.get("region", "")), True
-        e = en.encounter(self, s, en.Want(band=band, words=words, pinned=list(pinned or []), place=place, offset=offset, n=10))
-        e.reason += " (ten fights a cell, on the turn)"
+        e = en.encounter(self, s, en.Want(band=band, words=words, pinned=list(pinned or []), place=place, offset=offset, n=20))
+        e.reason += " (twenty fights a cell, on the turn)"                   # B315: ten picked on noise
         return e, False
 
     def _offer(self, s: FantasyState, adj: Any, w: Any, offset: int) -> None:
@@ -1429,6 +1430,18 @@ class FantasyGame(GameBase):
                             + (f" These are too many to beat. If they come, let the prose show it (their numbers, their ease with steel) "
                                f"and leave {p.name} room to run or yield; never say so outright." if e.band == "impossible" else ""))
         w.rows.append({"kind": "encounter", "hit": hit, "why": "the offer", "reason": e.reason})
+
+    def fight_owns_hp(self, state: FantasyState) -> bool:
+        """B326 (the combat review): a turn with a round planned or a fight on: the player's hit points are the dice's, and a
+        referee row that writes them (17 in the six rounds, '-10 throat crushed') is never counted, even when every roll missed."""
+        return bool(state.combat is not None or state.player.fighting)
+
+    def max_calls_now(self, state: FantasyState) -> int:
+        """B313 (the combat review, 11-10): the narrator's call cap is 3, and a round lists one act for the player, each ally and
+        every enemy body: the fourth call was told "resolve this in the prose, without a roll" and the backstop then rolled
+        the same act. In a fight the cap is the round's acts and two more for checks, at most twelve."""
+        plan = (state.combat.plan if state.combat is not None else None) or []
+        return min(12, max(int(getattr(self, "max_calls", 3) or 3), len(plan) + 2))
 
     FLEE_PLAIN = ["run", "flee", "escape", "get away", "get out", "retreat", "bolt", "leg it", "make a break"]
 
@@ -3038,7 +3051,7 @@ class FantasyGame(GameBase):
         if state.combat is not None and state.player.fighting:              # part fifteen §7; B287 (the owner, 11-09): typed, no buttons
             out += [CommandSpec(id="flee", label="Flee", mode="narrated", typed=True, decides=True,
                                 hint="Run from the fight: the player turns their back on it and goes (out of reach, out of the place). Every enemy "
-                                     "within reach gets one free blow as they go. Not a step back, a dodge, or a move to better ground inside the fight.",
+                                     "within reach gets one free blow as they go (at most two of a band). Not a step back, a dodge, or a move to better ground inside the fight.",
                                 words=["run", "flee", "bolt", "escape", "get away", "get out", "retreat", "make a break", "dash", "sprint", "leg it",
                                        "scramble", "back away", "back off", "withdraw", "out of here", "for the door", "for the stairs"]),
                     CommandSpec(id="yield", label="Yield", mode="narrated", typed=True, decides=True,

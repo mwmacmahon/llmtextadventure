@@ -140,16 +140,10 @@ class AssistantReadingStaked(AssistantReadingV2):
 
 
 # ---- part fifteen §6: the fantasy's attack (the combat record §7); the fantasy's reading only, noir and the station unchanged ----
-class AllyOrder(BaseModel):
-    ally: str = Field(description="The ally's id, as listed.")
-    target: str = Field(description="Who the player tells them to go for, by id.")
-
-
 class AttackSpec(BaseModel):
     targets: list[str] = Field(description="Who the blow is at, by id; two or three only when the words name them all (a sweep).")
     weapon: str = Field(default="", description="The weapon the player strikes with, in a word or two as they carry it; empty for their best.")
     riders: list[str] = Field(default_factory=list, description="Only what the player named that rides on the blow: smite, sneak. Empty otherwise.")
-    ally_orders: list[str] = Field(default_factory=list, description="Orders the player's words give an ally, each as 'ally id: target id' (\"Hazel, the one on the left\" -> \"hazel: skeleton\"); empty otherwise.")
 
 
 _COMBAT_CHECK = ("The check that decides this attempt when its outcome is uncertain and matters: stat, difficulty, label. An escape under "

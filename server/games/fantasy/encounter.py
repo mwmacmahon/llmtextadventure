@@ -24,6 +24,7 @@ unique at veteran), impossible under 10 (never sized down). Difficulty moves eve
 from __future__ import annotations
 
 import random
+import math
 import re
 import time
 from dataclasses import dataclass, field
@@ -107,13 +108,33 @@ def kind_of_words(text: str) -> str:
     return next((k for k, pat in KIND_WORDS if pat.search(text or "")), "")
 
 
+def _low(w: float, n: int) -> float:
+    """A win rate's lower bound: one standard error under the measured rate (in points)."""
+    n = max(1, int(n or 1))
+    return w - 100 * math.sqrt(max(w, 1) / 100 * max(100 - w, 1) / 100 / n)
+
+
+def noun_phrase(text: str) -> str:
+    """B318 (the combat review): the words' own noun, as B309 cut a role: before 'of', 'in', 'with' ... ('the man in the
+    shadows' is a man, not a Shadow; 'the woman with the dog' a woman), after a possessive ('the dead man's brother' is a
+    brother), and 'X of a man' is a man ('a bear of a man')."""
+    t = " ".join((text or "").replace("_", " ").split())
+    if re.search(r"\bof an? (man|woman|boy|girl|fellow|lad|lass)\b", t, re.I):
+        return re.search(r"\bof an? (man|woman|boy|girl|fellow|lad|lass)\b", t, re.I).group(1)
+    t = cb._ROLE_TAIL.sub("", t)
+    if "'s " in t:
+        t = t.rsplit("'s ", 1)[1]
+    return t
+
+
 def named_entries(text: str, region: str) -> tuple[list[str], str]:
     """What the model's words name: an entry (by its words), else the entries of the kind the words say at home here (else
     that kind's anywhere), else a commoner with a note. Returns (entries, note)."""
-    eid = cb.match_entry(text)
+    head = noun_phrase(text)
+    eid = cb.match_entry(head)
     if eid:
         return [eid], ""
-    kind = kind_of_words(text)
+    kind = kind_of_words(head)
     if kind:
         pool = [e for e, x in cb.ENTRIES.items() if x.get("kind") == kind and _at_home(x, region) and not _special(x)]
         pool = pool or [e for e, x in cb.ENTRIES.items() if x.get("kind") == kind and not _special(x)]
@@ -257,9 +278,21 @@ def sim_fight(game: Any, st: FantasyState, rng: random.Random, offset: int, roun
         spent["rage"] = spent.get("rage", 0) + 1
     hp0 = p.hp
     rounds = 0
+    peril: dict | None = None                         # B316: a grab's peril, as played: the turn goes to getting free; a lethal one counts down
     while rounds < rounds_cap and cb.living_enemies(game, st) and p.hp > 0:
         rounds += 1
         heal = 0
+        escaping = False
+        if peril is not None:
+            escaping = True
+            save = cb.player_block(st)["saves"].get(peril["stat"], 0)
+            if rng.randint(1, 20) + save >= peril["dc"]:
+                peril = None
+            else:
+                peril["turns"] -= 1
+                if peril["turns"] <= 0 and peril["lethal"]:
+                    p.hp = 0
+                    break
         loh = p.count("lay_on_hands")
         if p.hp * 10 < p.hp_max * 4 and loh is not None and loh.value > 0:
             heal = min(loh.value, p.hp_max - p.hp)
@@ -276,7 +309,7 @@ def sim_fight(game: Any, st: FantasyState, rng: random.Random, offset: int, roun
         riders = ["smite"] if any((p.count(c) or None) and p.count(c).value > 0 for c in ("smite", "divine_smite", "holy_power")) else []
         adj = AssistantReadingCombat(kind="action", summary="attack", time_minutes=1, risk="high",
                                      intents=[IntentCombat(action="attack", targets=[target], attack_at=[target], weapon=", ".join(["", *riders]) if riders else "")]
-                                     if not heal else [IntentCombat(action="heal")])
+                                     if not (heal or escaping) else [IntentCombat(action="heal" if heal else "struggle free")])
         st.combat.plan = cb.plan_round(game, st, adj, "", rounds, rng)
         tally: dict = {"hp": 0}
         calls = []
@@ -285,6 +318,11 @@ def sim_fight(game: Any, st: FantasyState, rng: random.Random, offset: int, roun
                 break
             before = {c.id: c.value for c in p.counts}
             r = cb.resolve(game, st, e, rng, offset, tally)
+            if peril is None and (r.get("data") or {}).get("peril"):
+                from .world import PERILS
+                spec = PERILS.get(r["data"]["peril"], PERILS["held"])
+                peril = {"stat": spec["stat"], "dc": int(r["data"].get("dc") or 12), "turns": int(spec["turns"]),
+                         "lethal": r["data"]["peril"] != "held"}
             for c in p.counts:
                 if before.get(c.id, c.value) > c.value and c.id in ("smite", "divine_smite", "holy_power"):
                     spent["smite"] = spent.get("smite", 0) + (before[c.id] - c.value)
@@ -309,12 +347,16 @@ def _use(st: FantasyState, cid: str) -> bool:
     return False
 
 
-def win_rate(game: Any, base: FantasyState, cand: list[tuple[str, int]], variant: str, n: int, offset: int, seed: str) -> float:
+def win_rate(game: Any, base: FantasyState, cand: list[tuple[str, int]], variant: str, n: int, offset: int, seed: str,
+             actions: list[dict] | None = None) -> float:
     rng = random.Random(seed)
     won = 0
     for _ in range(n):
         st = base.model_copy(deep=True)
         foes = spawn(st, cand, variant)
+        if actions:                                   # B316: the content's own moves, not the bestiary entry's
+            for f in foes:
+                cb.ensure_block(f).actions = [dict(a) for a in actions]
         st.people += foes
         st.player.fighting = [q.id for q in foes]
         won += sim_fight(game, st, rng, offset)["won"]
@@ -331,6 +373,7 @@ class Want:
     offset: int = 2
     n: int = 30                                                            # fights a cell
     seed: str = ""
+    actions: list[dict] | None = None                                      # B316: the pinned content's own moves (the drowned's grab)
 
 
 @dataclass
@@ -414,7 +457,7 @@ def encounter(game: Any, s: FantasyState, want: Want) -> Encounter:
     fights = 0
     for c in cands:
         for v in variants:
-            w = win_rate(game, base, c, v, want.n, want.offset, f"{seed}:{describe(c)}:{v}")
+            w = win_rate(game, base, c, v, want.n, want.offset, f"{seed}:{describe(c)}:{v}", want.actions)
             fights += want.n
             tried.append((c, v, w))
     pinned_all = bool(want.pinned) and all(n for _, n in want.pinned)
@@ -425,11 +468,13 @@ def encounter(game: Any, s: FantasyState, want: Want) -> Encounter:
             return min(tried, key=lambda t: abs(t[2] - target))
         # the owner, 11-10: "err on the side of enemies being easier ... never pick the enemy set that is too hard if
         # avoidable": the nearest at or above the target; when none reaches it, the easiest measured
-        ok = [t for t in tried if t[2] >= target]
-        return min(ok, key=lambda t: t[2] - target) if ok else max(tried, key=lambda t: t[2])
+        # B315 (the combat review): on ten fights a cell 'at or above' picked lucky cells (three zombies 'veteran' at a measured
+        # 70-80%, truly 52%); a cell counts as at or above only by its lower bound, one standard error under what it measured
+        ok = [t for t in tried if _low(t[2], want.n) >= target]
+        return min(ok, key=lambda t: t[2] - target) if ok else max(tried, key=lambda t: (_low(t[2], want.n), t[2]))
     c, v, w = pick()
     if pinned_all and band not in ("boss", "impossible") and w < target:   # the story's count, and still too hard: the feeble variant
-        wf = win_rate(game, base, c, "feeble", want.n, want.offset, f"{seed}:{describe(c)}:feeble")
+        wf = win_rate(game, base, c, "feeble", want.n, want.offset, f"{seed}:{describe(c)}:feeble", want.actions)
         fights += want.n
         tried.append((c, "feeble", wf))
         c, v, w = pick()
@@ -446,13 +491,13 @@ def encounter(game: Any, s: FantasyState, want: Want) -> Encounter:
             break
         c2 = c[:-1] + [(last[0], n2)]
         for v2 in variants:
-            w2 = win_rate(game, base, c2, v2, want.n, want.offset, f"{seed}:{describe(c2)}:{v2}")
+            w2 = win_rate(game, base, c2, v2, want.n, want.offset, f"{seed}:{describe(c2)}:{v2}", want.actions)
             fights += want.n
             tried.append((c2, v2, w2))
         c, v, w = pick()
     others = [(f"{describe(oc, ov)}", ow) for oc, ov, ow in tried if (oc, ov) != (c, v)]
     alt = min(others, key=lambda t: abs(t[1] - target)) if others else None
-    reason = f"{describe(c, v)}: {w:.0f}% at {band} for level {level}" + (f" (target {target}%)" if True else "")
+    reason = f"{describe(c, v)}: {w:.0f}% at {band} for level {level} (target {target}%)"
     if pinned_all and v in ("weak", "feeble") and w < target - 15:
         reason += f"; pinned by the story, the {v} variant and still off the band"
     elif pinned_all and v != "standard":
@@ -468,7 +513,9 @@ def encounter(game: Any, s: FantasyState, want: Want) -> Encounter:
 # ---- part sixteen §4: who the words bring in ---------------------------------------------------------------------------------
 NUMBER_WORDS = {"a": 1, "an": 1, "one": 1, "two": 2, "a pair of": 2, "both": 2, "three": 3, "four": 4, "five": 5, "six": 6, "a few": 3,
                 "several": 4, "some": 3}
-PLURAL = re.compile(r"\b(men|women|people|folk|dead|\w{3,}s)\b", re.I)
+# B319 (the combat review): '\w{3,}s' made 'hollis', 'Marcus', 'the abbess' and 'the boss' six townsmen; a plural ends in s after
+# anything but s, i or u, and 'the dead' alone is the only bare 'dead' that is many
+PLURAL = re.compile(r"\b(men|women|people|folk|\w{2,}[^siu\W\d_]s)\b", re.I)
 
 
 def count_in(words: str) -> int | None:
@@ -479,6 +526,8 @@ def count_in(words: str) -> int | None:
         if f" {w} " in low and n > 1:
             return n
     head = re.sub(r"\b(of|in|on|at|with|from|by)\b.*$", "", (words or "").strip(), flags=re.I)    # 'man in grey hoods' is one man
+    if re.search(r"\bdead\s*$", head, re.I) and not re.search(r"\b(a|an|one|this|that)\b", head, re.I):   # the drowned dead
+        return None
     return None if PLURAL.search(head) and not re.search(r"\b(this|that|the one|a|an|one)\b", head, re.I) else 1
 
 

@@ -51,8 +51,9 @@ def test_an_enemy_call_rolls_against_armour_and_lands_a_solid_blow(game):
     foe(st, moves=[{"kind": "strike", "bonus": 30, "damage": "solid", "harm": "cleaver"}])
     tally = {"hp": 0, "acted": []}
     out = game.world_call(st, call("ENEMY", "maud", "strike"), Dice(12, 50), 2, tally)
-    assert "cleaver" in out["text"] and "a solid blow" in out["text"] and out["data"]["harm"] in (3, 4, 5) and tally["acted"] == ["maud"]
-    assert "against armour 17" in out["mechanic"]
+    # B323: every ENEMY call goes through the round's resolver and the person's block (her moves as its actions)
+    assert "cleaver" in out["text"] and out["data"]["harm"] in (3, 4, 5) and tally["acted"] == ["maud"]
+    assert "against AC 17" in out["mechanic"] and out["data"]["join"] == "maud"
     after = game.after_turn(st, info_calls(2, [out["data"]]))
     assert after.player.hp == st.player.hp - out["data"]["harm"] and not after.player.fate
     miss = game.world_call(st, call("ENEMY", "maud"), Dice(1), 2, {"hp": 0})

@@ -779,3 +779,54 @@ def test_a_knockout_is_down_after_the_turn_not_dead(game):
     assert out["data"]["hits"] and out["data"]["hits"][0].get("spare")
     cb.land(game, s, [out["data"]], 2, 2, random.Random(1))
     assert q.status == "down"
+
+
+def test_a_smite_kill_with_damage_left_over_cleaves(game):
+    """B314: the rider loop reused the weapon's `how`; after a Smite landed, the cleave test was false."""
+    st, q = _fight(game, 2)
+    tally = {"hp": 0}
+    r = cb.resolve_attack(game, st, {"key": "player", "side": "player", "targets": ["dead"], "riders": ["smite"]},
+                          _Seq([15, 8, 8, 8, 8, 15, 4]), 2, tally)
+    assert r["data"].get("rider_spent") and len(r["data"]["hits"]) == 2 and "carrying through" in r["text"]
+
+
+def test_the_call_cap_holds_a_round(game):
+    """B313: a round of five acts needs more than three calls."""
+    st, q = _fight(game, 3)
+    from games.fantasy.state import CombatState
+    st.combat = CombatState(plan=[{"key": f"k{i}"} for i in range(5)])
+    assert game.max_calls_now(st) == 7 and game.max_calls_now(new(game)) == 3
+
+
+def test_enemies_are_not_minted_from_stray_words(game):
+    """B318, B319, B320 (the combat review)."""
+    from games.fantasy import encounter as en
+    assert en.named_entries("the man in the shadows", "city")[0][0] != "shadow"
+    assert "black_bear" not in en.named_entries("a bear of a man", "city")[0]
+    assert en.count_in("hollis") == 1 and en.count_in("the abbess") == 1 and en.count_in("Marcus the smith") == 1
+    assert en.count_in("the robbers") is None and en.count_in("the drowned dead") is None
+    st = new(game, klass="Barbarian")
+    st.people.append(Person(id="robber_1", name="Robber 1", role="a robber", location=st.player.location, met=True, status="dead",
+                            combat=CombatBlock(block="bandit")))
+    stab = AssistantReadingCombat(kind="action", summary="Stab the body.", time_minutes=1, tempo="fast", risk="low",
+                                  intents=[IntentCombat(action="stab the dead robber", targets=["robber_1"], attack_at=["robber_1"], weapon="dagger")])
+    s, w = game.world_turn(st, stab, "I stab the dead robber again to make sure he stays down", random.Random(1), 4, 2)
+    assert s.player.fighting == [] and len(s.people) == len(st.people)
+
+
+def test_a_flee_with_a_destination_still_takes_its_blows_and_the_round_supersedes_stale_lines(game):
+    """B321: world_turn broke contact before the Flee lever ran; B322: THIS TURN's could-turn line named the round's foes."""
+    from engine.roles import CommandPick
+    st, q = _fight(game, 2)
+    run = AssistantReadingCombat(kind="action", summary="Brin runs out to the docks.", time_minutes=1, tempo="fast", risk="high",
+                                 intents=[IntentCombat(action="run out to the docks", targets=[])], commands=[CommandPick(id="flee")])
+    s, w = game.world_turn(st, run, "I run for it, out to the docks", random.Random(1), 6, 2)
+    assert s.player.fighting == ["dead"]                         # the lever breaks contact after the prose, with its blows
+    st2, q2 = _fight(game, 1)
+    st2.combat = None
+    st2.people.append(Person(id="snag", name="Snag", role="dock thug", location=st2.player.location, met=True, attitude=-2))
+    hit = AssistantReadingCombat(kind="action", summary="Brin attacks.", time_minutes=1, tempo="fast", risk="medium",
+                                 intents=[IntentCombat(action="attack", targets=["dead"], attack_at=["dead"], weapon="longsword")])
+    s2, w2 = game.world_turn(st2, hit, "I attack the dead", random.Random(1), 7, 2)
+    assert "Here, not fighting " in w2.replaces
+    assert not any(d.startswith("Here, not fighting") and "dead" in d.split("(ids:")[-1] for d in w2.directives)
