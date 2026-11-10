@@ -2047,7 +2047,7 @@ class ClownGame(GameBase):
         if eff.get("cancel_show"):
             x = min((x for x in s.shows if not x.result), key=lambda x: x.at_abs, default=None)
             if x is not None:
-                x.result, x.paid, x.why, x.why_numbers = "cancelled", 0, ["the client went elsewhere"], ["called off by the client"]
+                x.result, x.paid, x.quality, x.why, x.why_numbers = "cancelled", 0, 0, ["the client went elsewhere"], ["called off by the client"]
                 x.told, x.resolved_turn = True, 0
                 s.hidden.events = [e for e in s.hidden.events if e.id != f"curtain_{x.deal}"]
                 q = s.person(x.client)
