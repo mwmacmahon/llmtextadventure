@@ -227,3 +227,52 @@ def test_the_offer_is_drawn_where_the_turn_goes_and_the_referee_files_it_by_id(g
     q = s1.person(first)
     assert q is not None and q.combat is not None and q.combat.block == s.offer.get("bodies", [[q.combat.block]])[0][0] or q.combat.block
     assert first in s1.player.fighting and first not in (s1.offer or {}).get("ids", [])
+
+
+# ---- §6: the seam ----------------------------------------------------------------------------------------------------------
+async def test_a_hostile_the_narrator_invents_is_a_person_with_a_block_before_the_next_round(tmp_path, game):
+    """A fake-provider turn: the narrator brings in a cutthroat and a giant rat nobody listed; the referee files them; before the
+    next round each is a person with the entry's block, in the fight, and the next turn's round lists them."""
+    from engine.pipeline import Engine
+    from engine.providers.factory import get_provider
+    from engine.providers.fake import FakeProvider
+    from engine.store import Store
+    cfg = load_config()
+    for r in cfg.roles.values():
+        r.provider = "fake"
+    eng = Engine(cfg, Store(tmp_path / "t.sqlite3"), load_games(cfg.resolve(cfg.server.content_root)))
+    fake = get_provider(cfg.role("narrator"))
+    assert isinstance(fake, FakeProvider)
+    fake.canned.clear()
+    fake.hook = None
+    iid = eng.create_instance("fantasy", {"name": "Brin", "klass": "Paladin", "race": "Human"})
+    g = eng.games["fantasy"]
+    st = g.load_state(eng.store.load_state(iid))
+    st.player.location = "The Old Channel"
+    eng.store.save_snapshot(iid, 0, st.model_dump(mode="json"))
+    walk = AssistantReadingCombat(kind="action", summary="Brin walks the ledge with a lamp.", time_minutes=2, risk="high",
+                                  notes="fight: normal, whatever is down here", intents=[IntentCombat(action="walk the ledge")])
+    fake.canned["AssistantReadingCombatV2"] = [walk]
+    fake.canned["AssistantReadingCombat"] = [walk]
+    fake.canned["ChangeReport"] = [ChangeReport.of(Change(kind="new", target="person", value="the cutthroat", field="", note="a cutthroat with a knife"),
+                                                   Change(kind="new", target="person", value="the rat", field="", note="a giant rat as big as a dog"))]
+    fake.script = lambda system, messages: "A cutthroat drops off the arch with a knife, and behind him a rat the size of a dog."
+    try:
+        _ = [e async for e in eng.play(iid, "I walk the ledge with the lamp held high.")]
+    finally:
+        fake.script = None
+        fake.canned.clear()
+    after = g.load_state(eng.store.load_state(iid))
+    cut, rat = after.person("the_cutthroat"), after.person("the_rat")
+    assert cut is not None and cut.combat is not None and cut.combat.block == "bandit" and "the_cutthroat" in after.player.fighting
+    assert rat is not None and rat.combat.block == "giant_rat" and "the_rat" in after.player.fighting and rat.called == "Giant rat"
+    s2, w2 = g.world_turn(after, AssistantReadingCombat(kind="action", summary="Brin swings at the cutthroat.", time_minutes=1, tempo="fast",
+                                                        risk="high", intents=[IntentCombat(action="swing", attack_at=["the_cutthroat"])]),
+                          "I swing at the cutthroat", random.Random(3), 2, 2)
+    assert any("A FIGHT, round" in d and "the_cutthroat" in d and "the_rat" in d for d in w2.directives)
+
+
+def test_the_lint_names_a_pinned_content_fight_that_stays_deadly(game):
+    from games.fantasy.lint import lint_pinned_fights
+    notes = lint_pinned_fights(CONTENT, game, n=20)
+    assert any("catacomb_dead" in x and "Rogue" in x for x in notes), notes

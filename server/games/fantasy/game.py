@@ -230,6 +230,10 @@ def city_from(sc: dict) -> City:
 
 MONSTER = re.compile(r"\b(troll|ogre|giant|beast|monster|wolf|wolves|rat|rats|drake|dragon|wight|ghost|ghoul|skeleton|dead|siren|spider|bear)\b", re.I)   # B290: not the Watch's business
 
+# part sixteen §4 (b): a person filed by these entries' words is hostile when a fight is on or was offered this turn (a cutthroat
+# in a brawl); on a quiet afternoon a smuggler is a person to talk to
+HOSTILE_ENTRIES = {"bandit", "bandit_captain", "thug", "cultist", "berserker"}
+
 class FantasyGame(GameBase):
     name = "fantasy"
     version = "0.1.0"
@@ -2440,9 +2444,10 @@ class FantasyGame(GameBase):
         from . import encounter as en
         entry = cb.match_entry(f"{role} {name}")
         monster = bool(entry) and not cb.is_person(str(cb.ENTRIES.get(entry, {}).get("kind") or ""))
+        hostile = entry in HOSTILE_ENTRIES and (bool(p.fighting) or s.combat is not None or bool((s.offer or {}).get("fresh")))
         s.people.append(Person(id=nid, name=name.strip()[:40], role=role.strip()[:60], location=loc, seen_at=loc if elsewhere is None else "",
                                met=elsewhere is None, heard_of=True))
-        if (fights or monster) and elsewhere is None:   # part sixteen §4 (b): a hostile the telling showed is the engine's to fight
+        if (fights or monster or hostile) and elsewhere is None:   # part sixteen §4 (b): a hostile the telling showed is the engine's to fight
             q = s.people[-1]
             n = en.count_in(name)
             q.combat = CombatBlock(block=entry or "", count=n or 1, band="normal" if n != 1 else "")

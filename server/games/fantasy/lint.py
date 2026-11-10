@@ -146,6 +146,36 @@ def lint_bestiary(content_dir: Path) -> list[str]:
     return out
 
 
+def lint_pinned_fights(content_dir: Path, game=None, n: int = 30) -> list[str]:
+    """Part sixteen §2 (advisory, not part of `lint`: it runs the simulator): a content band whose count is pinned and that
+    stays deadly at level 1 even at its weak variant for a class (won under 30% by that class alone), so the author
+    knows it is a fight to walk away from (the drowned of the bog chapels killed a level-1 barbarian, 0f734f5c0733)."""
+    from games.fantasy import encounter as en
+    if game is None:
+        from engine.config import load_config
+        from engine.registry import load_games
+        cfg = load_config()
+        game = load_games(cfg.resolve(cfg.server.content_root))["fantasy"]
+    out: list[str] = []
+    city = _load(content_dir / "scenarios" / "marrowgate.yml")
+    docs = [("city", city)] + [(p.stem, _load(p)) for p in sorted((content_dir / "hooks").glob("*.yml"))]
+    for where, doc in docs:
+        for pr in doc.get("people") or []:
+            cbk = (pr or {}).get("combat") or {} if isinstance(pr, dict) else {}
+            if not cbk.get("block") or (cbk.get("count") or 1) <= 1 or cbk.get("fixed"):
+                continue
+            rates = []
+            for klass in ("Paladin", "Rogue", "Barbarian"):
+                st = game.new_instance({"name": "Lint", "klass": klass, "race": "Human", "gender": "", "about": ""})[1]
+                base = en.party_base(game, st)
+                rates.append((klass, en.win_rate(game, base, [(cbk["block"], int(cbk["count"]))], "weak", n, 2, f"lint:{where}:{pr.get('id')}:{klass}")))
+            low = [(k, r) for k, r in rates if r < 30]
+            if low:
+                out.append(f"{where}: {pr.get('id')} ({cbk['block']} x{cbk['count']}, pinned) stays deadly at level 1 even weak for "
+                           + ", ".join(f"a {k} ({r:.0f}% won alone)" for k, r in low))
+    return out
+
+
 def lint(content_dir: Path) -> list[str]:
     problems: list[str] = []
     say = problems.append
