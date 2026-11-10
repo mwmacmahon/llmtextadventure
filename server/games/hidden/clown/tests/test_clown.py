@@ -1268,8 +1268,8 @@ def test_a_skip_past_a_show_or_the_weeks_end_warns_first_and_runs_through_when_c
     assert res.ok and res.through and res.minutes == sunday - st.now_abs
     assert "let the house run itself" in res.directive and "played" in res.directive
     st.hidden.events = [e for e in st.hidden.events if e.fired]
-    s4, res = game.run_command(st, "skip", {"to": "tomorrow"})       # nothing on the way: no warning, the stops as ever
-    assert res.ok and not res.through
+    s4, res = game.run_command(st, "skip", {"to": "tomorrow"})       # nothing on the way: no warning, and it lands where asked
+    assert res.ok and res.through
 
 
 def test_the_skip_targets_are_every_weekdays_morning_the_weeks_end_and_the_show(game: ClownGame):
@@ -1325,3 +1325,16 @@ def test_a_girl_waiting_on_the_slip_gets_a_little_cheaper_and_never_by_talk(game
     s, rep, _ = apply(game, st, C(kind="learned", target="player", value=f"The clerk will let her go for 150."))
     assert hb.price_of(cards[cid], s, dl) == later                      # talk moves nothing
     assert "haggl" not in game.adjudication_rules(st).lower()
+
+
+async def test_a_skip_past_the_weeks_callers_lands_where_asked(engine: Engine):
+    """Round 7 (t5, t7, t28, t31): "skip to Wednesday" stopped at the first caller on Monday 10:00 and the prose told Wednesday.
+    A caller loses nothing (the offer stays open to Sunday): the skip lands on Wednesday morning and the callers are heard there."""
+    iid = engine.create_instance("clown", dict(SETUP, first_girl="ada_vosk"))
+    game = engine.games["clown"]
+    st0 = game.load_state(engine.store.load_state(iid))
+    events = [ev async for ev in engine.run_turn(iid, "skip to Wednesday")]
+    assert events[-1]["event"] == "done", [e["event"] for e in events]
+    st = game.load_state(engine.store.load_state(iid))
+    assert st.now_abs == (st0.clock.day + 2 - weekday(st0.clock.day)) * DAY + 540
+    assert any(h.status == "live" for h in st.hooks if h.kind == "booking")

@@ -2600,7 +2600,8 @@ class ClownGame(GameBase):
                 (" The player let the house run itself meanwhile: " + "; ".join(self._skip_passes(s, t, past=True)) + ". Tell any of it only as "
                  "news the proprietor hears at the end, in a line or two.") if passes else "")
             return s, CommandResult(label="Skip", player_line=f"I let the days run to {low}.", summary=f"{p.name} lets time run to {low}.",
-                                    directive=directive, minutes=max(1, t - s.now_abs), through=bool(passes))
+                                    directive=directive, minutes=max(1, t - s.now_abs), through=True)   # round 7: it lands where asked; a caller on the way
+                                                                                                         # loses nothing (fires at the end, the offer open to Sunday)
         if command_id == "graduate":
             if weekday(s.clock.day) != 6:
                 return state, CommandResult(ok=False, label="Graduate", text="Only on a Sunday: she finishes the week.")
@@ -2840,9 +2841,9 @@ class ClownGame(GameBase):
         heard = sum(1 for x in dk.hand(s) if x.status == "live")
         coming = sum(1 for x in dk.hand(s) if x.status == "dealt")
         panels.append(QuestPanel(title=f"This week's offers ({heard} open to Sunday night" + (f", {coming} still to call" if coming else "") + ")",
-                                 rows=[r for r in rows_all if r.standing == "in hand"], place="main"))   # round 6: "2 of 2: nothing"
+                                 rows=[r for r in rows_all if r.standing in ("in hand", "heard of", "taken up")], place="main"))   # round 7: word by note is an offer too
         panels.append(QuestPanel(title="Booked", rows=sorted((r for r in rows_all if r.standing == "booked"), key=lambda r: r.line), place="main"))
-        panels.append(QuestPanel(title="Played and trouble", rows=[r for r in rows_all if r.standing not in ("in hand", "booked")]))
+        panels.append(QuestPanel(title="Played and trouble", rows=[r for r in rows_all if r.standing not in ("in hand", "heard of", "taken up", "booked")]))
         deck, cards = self.content.girls_deck(), self.content.girl_cards()
         if deck:
             nxt = next((w for w in range(h.week, h.week + 4) if hb.ship_sunday(w)), h.week)
