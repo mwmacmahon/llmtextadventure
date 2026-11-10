@@ -830,3 +830,26 @@ def test_a_flee_with_a_destination_still_takes_its_blows_and_the_round_supersede
     s2, w2 = game.world_turn(st2, hit, "I attack the dead", random.Random(1), 7, 2)
     assert "Here, not fighting " in w2.replaces
     assert not any(d.startswith("Here, not fighting") and "dead" in d.split("(ids:")[-1] for d in w2.directives)
+
+
+def test_a_grab_grapples_and_hurts_and_is_never_a_peril(game):
+    """The owner, 11-10 night: "Most grabs are just ways to immobilize player and do damage right?"."""
+    st, q = _fight(game, 1)
+    q.combat.actions = [{"kind": "grab", "stat": "str", "dc": 12, "peril": "drowning", "harm": "a cold grip", "damage": "1d4"}]
+    e = {"key": "enemy:dead:0", "side": "enemy", "who": "dead", "body": 0, "action": q.combat.actions[0], "target": "player"}
+    out = cb.resolve(game, st, e, _Seq([1, 3]), 2, {"hp": 0})                 # the save fails on a 1, 3 damage
+    assert out["data"]["condition"] == "grappled" and not out["data"].get("peril") and out["data"]["harm"] >= 1
+    after = game.after_turn(st, _info(2, [out["data"]]))
+    assert after.player.peril is None and after.player.has_condition("grappled")
+    s2, res = cb.run_fight_command(game, after, "flee")
+    assert not res.ok and "break free" in res.text                                # held: no running
+    free = game.after_turn(after, _info(3, [{"stat": "str", "outcome": "success", "label": "break free of the grip"}]))
+    assert not free.player.has_condition("grappled")
+    after.person("dead").status = "dead"
+    gone = game.after_turn(after, _info(3, []))
+    assert not gone.player.has_condition("grappled")
+
+
+def _info(turn, calls):
+    from engine.game import TurnInfo
+    return TurnInfo(turn=turn, elapsed_minutes=1, rng=random.Random(0), calls=[dict(c) for c in calls])

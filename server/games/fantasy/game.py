@@ -1336,7 +1336,8 @@ class FantasyGame(GameBase):
         compelled = dict(row.compelled, by=by or row.compelled.get("by", "")) if row.compelled is not None else None
         now = s.clock.day * DAY + s.clock.minute
         s.player.conditions.append(Condition(name=row.name, source="engine", stat=row.stat, words=list(row.words), mod=row.mod, duration=row.duration,
-                                             expires_at=now + row.minutes if row.duration == "minutes" else None, compelled=compelled))
+                                             expires_at=now + row.minutes if row.duration == "minutes" else None, compelled=compelled,
+                                             by=by if row.name == "grappled" else ""))
 
     # ---- part sixteen §3: the encounters, ranked off the turn ------------------------------------------------------------
     WARM_BANDS = ("trivial", "easy", "normal", "hard")
@@ -1559,7 +1560,7 @@ class FantasyGame(GameBase):
         costs in a fight or a peril (part four §4: the engine takes the hit points, `data["harm"]`); in a peril, the escape roll
         decides it (one die for one way out)."""
         pline = wo.peril_by_check(state, data, label)
-        if data.get("kills"):
+        if data.get("kills") or data.get("peril_tick"):    # the peril's own damage this moment is the only cost
             return pline
         if pline and data.get("outcome") in ("success", "huge_success", "critical_success"):
             return pline
@@ -2621,14 +2622,24 @@ class FantasyGame(GameBase):
                 s.flags["cause"] = c.get("death_cause") or f"died trying to {c.get('cause') or c.get('label')}"
                 s.flags["ending"] = f"{p.name} died at {p.location or 'Marrowgate'} on day {s.clock.day}. The fog keeps the rest."
                 return s
+        held = next((c for c in p.conditions if c.name == "grappled"), None)
+        if held is not None and not p.fate:                 # a grab's hold (the owner, 11-10 night): it ends when broken or the grabber is down
+            by = s.person(held.by) if held.by else None
+            freed = any(str(c.get("stat") or "") in ("str", "dex") and c.get("outcome") in ("success", "huge_success", "critical_success")
+                        and wo.ESCAPE.search(str(c.get("label") or "")) for c in info.calls if not c.get("verb"))
+            if freed or (held.by and (by is None or by.status != "alive" or held.by not in p.fighting)):
+                p.conditions = [c for c in p.conditions if c is not held]
+                p.shown_notes.append("Free of the grip" if freed else f"Free: {by.name if by else 'the grip'} lets go")
         for c in info.calls:                                # one die for one way out: the player's escape roll settles the peril
             if c.get("peril_roll") and p.peril is not None and not p.fate:
                 if c.get("outcome") in ("success", "huge_success", "critical_success"):
                     p.shown_notes.append(f"Out of it: no longer {wo.PERILS.get(p.peril.kind, {}).get('what', p.peril.kind)}")
                     p.peril = None
-                else:
-                    p.peril.turns_left -= 1
+                else:                                       # a failed way out: a moment of grace spent, or (none left) the
+                    p.peril.turns_left = max(0, p.peril.turns_left - 1)   # damage, which the harm loop below lands
                     p.peril.step += 1
+                    if p.peril.kind == "falling" and c.get("peril_tick"):
+                        p.peril = None
                 break
         for c in info.calls:                                # part four §4: a failed attempt in a fight or a peril, by its tier
             if c.get("harm") and not c.get("stepped") and p.hp > 0 and not p.fate:

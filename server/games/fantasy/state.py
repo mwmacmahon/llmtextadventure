@@ -77,6 +77,7 @@ class Condition(BaseModel):
     duration: str = ""              # the table's (B96, D176): until_dry, until_warm, until_rest, until_treated, until_freed, minutes, lasting
     expires_at: int | None = None   # a `minutes` condition: the absolute minute (day * 1440 + minute) it clears at
     compelled: dict[str, Any] | None = None     # enthralled's compulsion block, stored for its rules
+    by: str = ""                    # grappled: who holds the player (an id); it ends when they are down, gone, or broken free of
 
 
 class Ability(BaseModel):

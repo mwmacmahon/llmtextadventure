@@ -38,7 +38,14 @@ TARGET = {"trivial": 99, "easy": 90, "normal": 70, "hard": 50, "boss": 40, "impo
 OLD_BANDS = {"easy": "trivial", "fair": "easy", "hard": "normal", "deadly": "hard"}      # §9b's words, as the record §12b reads them
 THRESHOLDS = {1: (25, 50, 75, 100), 2: (50, 100, 150, 200), 3: (75, 150, 225, 400), 4: (125, 250, 375, 500), 5: (250, 500, 750, 1100)}
 MULTIPLIERS = (1.0, 1.5, 2.0, 2.5, 3.0, 4.0)
-VARIANTS = ("weak", "standard", "veteran")          # and "feeble" (hit points -50%, attack and DC -2): a pinned fight's last knob
+VARIANTS = ("weak", "standard", "veteran")          # the three every candidate is measured at
+# the owner, 11-10 night: "make weak much more weak ... we need more variation levels": the ladder, weakest first; a fight
+# still too hard at weak steps down to frail, then feeble (any fight, not only a pinned one); a boss may go up to elite
+LADDER = ("feeble", "frail", "weak", "standard", "veteran", "elite")
+VARY = {"feeble": (0.35, -3), "frail": (0.5, -2), "weak": (0.7, -1), "standard": (1.0, 0), "veteran": (1.25, 1), "elite": (1.5, 2)}
+# what the player sees of it (the owner: "Let's not show weak during fight ... we can show huge etc but we want the player to
+# feel strong"): nothing below standard; a word above it, a monster's size or a person's grit
+SHOWN = {"veteran": ("Big", "Tough"), "elite": ("Huge", "Fearsome")}
 MAX_BODIES = 6
 NUMBER = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}
 KIND_WORDS = [
@@ -224,7 +231,10 @@ def spawn(s: FantasyState, cand: list[tuple[str, int]], variant: str = "standard
         for i in range(n):
             pid = ids[k] if ids and k < len(ids) else _free_id(s, out, re.sub(r"[^a-z0-9]+", "_", noun.lower()).strip("_") or "foe")
             k += 1
-            name = f"{noun} {pid.rsplit('_', 1)[-1]}" if (n > 1 or (ids and len(ids) > 1)) and pid.rsplit("_", 1)[-1].isdigit() else noun
+            shown = SHOWN.get(variant)
+            word = (shown[1] if cb.is_person(str(x.get("kind") or "")) else shown[0]) if shown else ""
+            base_noun = f"{word} {noun[:1].lower() + noun[1:]}" if word else noun
+            name = f"{base_noun} {pid.rsplit('_', 1)[-1]}" if (n > 1 or (ids and len(ids) > 1)) and pid.rsplit("_", 1)[-1].isdigit() else base_noun
             if names and k - 1 < len(names) and names[k - 1]:
                 name = names[k - 1]
             q = Person(id=pid, name=name, role=str(x.get("name") or e), called=name, location=where or s.player.location,
@@ -246,17 +256,13 @@ def _free_id(s: FantasyState, made: list[Person], stem: str) -> str:
 
 
 def vary(b: CombatBlock, variant: str) -> None:
-    if variant == "feeble":                           # pinned fights only, when weak is still too hard (the owner, 11-10: easier)
-        b.hp_max = max(1, int(round((b.hp_max or 1) * 0.5)))
-        b.attack = (b.attack or 0) - 2
-        b.dc = (b.dc or 12) - 2
-    elif variant == "weak":
-        b.hp_max = max(1, int(round((b.hp_max or 1) * 0.75)))
-        b.attack = (b.attack or 0) - 1
-    elif variant == "veteran":
-        b.hp_max = max(1, int(round((b.hp_max or 1) * 1.25)))
-        b.attack = (b.attack or 0) + 1
-        b.dc = (b.dc or 12) + 1
+    """The variant's numbers (LADDER): hit points by a factor, attack and every save DC by a step."""
+    mult, step = VARY.get(variant, (1.0, 0))
+    b.hp_max = max(1, int(round((b.hp_max or 1) * mult)))
+    b.attack = (b.attack or 0) + step
+    b.dc = (b.dc or 12) + step
+    if step and b.actions:
+        b.actions = [{**a, "dc": int(a["dc"]) + step} if a.get("dc") else a for a in b.actions]
     b.hp = b.hp_max
     if b.count > 1:
         b.hps = [b.hp_max] * b.count
@@ -289,10 +295,17 @@ def sim_fight(game: Any, st: FantasyState, rng: random.Random, offset: int, roun
             if rng.randint(1, 20) + save >= peril["dc"]:
                 peril = None
             else:
-                peril["turns"] -= 1
-                if peril["turns"] <= 0 and peril["lethal"]:
-                    p.hp = 0
-                    break
+                if peril["turns"] > 0:                    # grace first, then damage over time on each failed save (D214)
+                    peril["turns"] -= 1
+                else:
+                    from .world import DOT, harm
+                    step = DOT.get(peril["kind"], "scrape")
+                    if step:
+                        p.hp = max(0, p.hp - harm(step, rng.randint(1, 20)))
+                    if peril["kind"] == "falling":
+                        peril = None
+                    if p.hp <= 0:
+                        break
         loh = p.count("lay_on_hands")
         if p.hp * 10 < p.hp_max * 4 and loh is not None and loh.value > 0:
             heal = min(loh.value, p.hp_max - p.hp)
@@ -321,8 +334,7 @@ def sim_fight(game: Any, st: FantasyState, rng: random.Random, offset: int, roun
             if peril is None and (r.get("data") or {}).get("peril"):
                 from .world import PERILS
                 spec = PERILS.get(r["data"]["peril"], PERILS["held"])
-                peril = {"stat": spec["stat"], "dc": int(r["data"].get("dc") or 12), "turns": int(spec["turns"]),
-                         "lethal": r["data"]["peril"] != "held"}
+                peril = {"stat": spec["stat"], "dc": int(r["data"].get("dc") or 12), "turns": int(spec["turns"]), "kind": r["data"]["peril"]}
             for c in p.counts:
                 if before.get(c.id, c.value) > c.value and c.id in ("smite", "divine_smite", "holy_power"):
                     spent["smite"] = spent.get("smite", 0) + (before[c.id] - c.value)
@@ -451,7 +463,7 @@ def encounter(game: Any, s: FantasyState, want: Want) -> Encounter:
     rng = random.Random(seed)
     cands, note = shortlist(Want(band, want.pinned, want.words, want.place, want.offset, want.n), region, members, level, rng)
     target = target_for(band, want.offset)
-    variants = ("veteran",) if band == "boss" else ("standard", "veteran") if band == "impossible" else VARIANTS
+    variants = ("veteran", "elite") if band == "boss" else ("standard", "veteran", "elite") if band == "impossible" else VARIANTS
     base = party_base(game, s)
     tried: list[tuple[list[tuple[str, int]], str, float]] = []
     fights = 0
@@ -473,10 +485,12 @@ def encounter(game: Any, s: FantasyState, want: Want) -> Encounter:
         ok = [t for t in tried if _low(t[2], want.n) >= target]
         return min(ok, key=lambda t: t[2] - target) if ok else max(tried, key=lambda t: (_low(t[2], want.n), t[2]))
     c, v, w = pick()
-    if pinned_all and band not in ("boss", "impossible") and w < target:   # the story's count, and still too hard: the feeble variant
-        wf = win_rate(game, base, c, "feeble", want.n, want.offset, f"{seed}:{describe(c)}:feeble", want.actions)
+    for down in ("frail", "feeble"):                  # still too hard (by its lower bound): a step down the ladder, any fight
+        if band in ("boss", "impossible") or _low(w, want.n) >= target:
+            break
+        wf = win_rate(game, base, c, down, want.n, want.offset, f"{seed}:{describe(c)}:{down}", want.actions)
         fights += want.n
-        tried.append((c, "feeble", wf))
+        tried.append((c, down, wf))
         c, v, w = pick()
     for _ in range(3):                                # the knobs: a body more or fewer, as the simulator points (never a pinned count)
         if pinned_all or abs(w - target) <= 12:
@@ -498,7 +512,7 @@ def encounter(game: Any, s: FantasyState, want: Want) -> Encounter:
     others = [(f"{describe(oc, ov)}", ow) for oc, ov, ow in tried if (oc, ov) != (c, v)]
     alt = min(others, key=lambda t: abs(t[1] - target)) if others else None
     reason = f"{describe(c, v)}: {w:.0f}% at {band} for level {level} (target {target}%)"
-    if pinned_all and v in ("weak", "feeble") and w < target - 15:
+    if pinned_all and v in ("weak", "frail", "feeble") and w < target - 15:
         reason += f"; pinned by the story, the {v} variant and still off the band"
     elif pinned_all and v != "standard":
         reason += f"; pinned by the story, the {v} variant"

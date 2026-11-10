@@ -563,7 +563,7 @@ def pick_action(b: CombatBlock, p: Any, rng: Any = None) -> dict:
     weighted draw: a move's own `weight`, else a strike 3, a drain 2, the rest 1. Without an rng (a call that must not
     change the dice), the first that makes sense."""
     acts = b.actions or [{"kind": "strike"}]
-    held = p.peril is not None
+    held = p.peril is not None or any(x.name in ("grappled", "held") for x in p.conditions)
     sung = any(x.name == "enthralled" for x in p.conditions)
     ok = [a for a in acts if not (a.get("kind") in ("hold", "grab") and held) and not (a.get("kind") == "song" and sung)] or acts
     if rng is None:
@@ -691,7 +691,21 @@ def resolve(game: Any, s: FantasyState, entry: dict, rng: Any, offset: int, tall
     data.update(save=stat, dc=dc, holds=res.holds)
     if res.holds and kind != "breath":
         return {"text": f"{whose}: {p.name} holds against it. Play it, and go on.", "mechanic": line, "data": data}
-    if kind in ("hold", "grab"):
+    if kind == "grab":
+        # the owner, 11-10 night: "Most grabs are just ways to immobilize player and do damage": a grab grapples (no getting
+        # away until broken or the grabber is down) and lands its damage; never a peril, never a countdown to death
+        raw, _ = roll_dice(rng, a.get("damage") or b.damage or "1d4")
+        n, notes, kills = _player_take(game, s, raw, tally)
+        tally["hp"] = int(tally.get("hp", 0)) + n
+        left = p.hp - int(tally["hp"])
+        data.update(harm=n, stepped=True, kills=kills, cause=whose, condition="grappled", by=q.id)
+        if kills:
+            return {"text": f"{whose}: it kills {p.name}. Write the death straight; this is the end of the story.",
+                    "mechanic": line[:-1] + f"; {n} damage, {p.name} is dead.", "data": data}
+        return {"text": f"{whose}: it has {p.name} held fast, {n} damage; {p.name} cannot get away until they break free or "
+                        f"{q.name} goes down. Play it, and go on.",
+                "mechanic": line[:-1] + f"; {n} damage, {p.name} is {hp_word(left, p.hp_max)} and held.", "data": data}
+    if kind == "hold":
         from .world import PERILS
         kind_p = a.get("peril") or "held"
         data.update(peril=kind_p, by=q.name)
@@ -1084,6 +1098,11 @@ def run_fight_command(game: Any, state: FantasyState, command_id: str) -> tuple[
     p = s.player
     if s.combat is None or not p.fighting:
         return state, CommandResult(ok=False, label=command_id.capitalize(), text="There is no fight to leave.")
+    held = next((c for c in p.conditions if c.name == "grappled"), None)
+    if command_id == "flee" and held is not None:            # a grab holds: no running until it is broken (the owner, 11-10 night)
+        who = s.person(held.by).name if held.by and s.person(held.by) else "the grip"
+        return state, CommandResult(ok=False, label="Flee", text=f"Held fast by {who}: break free first (a Strength or Dexterity attempt), "
+                                                                f"or bring them down.")
     if command_id == "flee":
         rng = _r.Random(f"{p.name}:{s.combat.since_turn}:{s.combat.round}:flee")    # B289: the preview's blows are the commit's (the clock moves between)
         tally: dict = {"hp": 0}

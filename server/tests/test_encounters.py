@@ -42,7 +42,7 @@ def test_the_book_numbers():
 def test_pinned_bodies_are_never_added_to_or_removed(game):
     st = new(game, place="The Old Channel")
     e = en.encounter(game, st, en.Want(band="normal", pinned=[("skeleton", 4)], n=6))
-    assert e.bodies == [("skeleton", 4)] and e.variant in (*en.VARIANTS, "feeble")
+    assert e.bodies == [("skeleton", 4)] and e.variant in en.LADDER
     assert ("pinned by the story" in e.reason) == (e.variant != "standard")      # the note names a variant the pin forced
     open_ = en.encounter(game, st, en.Want(band="normal", pinned=[("skeleton", None)], n=6))
     assert {b for b, _ in open_.bodies} == {"skeleton"} and 1 <= sum(n for _, n in open_.bodies) <= en.MAX_BODIES
@@ -283,9 +283,12 @@ def test_the_lint_names_a_pinned_content_fight_that_stays_deadly(game):
     qd = tmp / "fantasy" / "hooks" / "the_quiet_dead.yml"
     doc = yaml.safe_load(qd.read_text())
     doc["events"] = [e for e in doc["events"] if not str(e["id"]).startswith("maren_")]
+    for q in doc.get("people") or []:                  # the ladder's feeble (11-10 night) makes four winnable alone: six, not
+        if q.get("id") == "catacomb_dead":
+            q["combat"]["count"] = 6
     qd.write_text(yaml.safe_dump(doc, sort_keys=False))
     alone = lint_pinned_fights(tmp / "fantasy", game, n=20)
-    assert any("catacomb_dead" in x and "Rogue" in x for x in alone), alone   # without her, four skeletons stay deadly
+    assert any("catacomb_dead" in x for x in alone), alone      # six skeletons and no warden: deadly even at feeble
 
 
 def test_the_simulated_player_uses_no_consumables(game):
@@ -337,11 +340,23 @@ def test_the_offer_matched_by_kind_keeps_the_scenes_name(game):
 
 
 def test_the_simulator_plays_the_contents_own_moves_and_their_perils(game):
-    """B316 (the combat review): the drowned's grab with a drowning peril was never simulated (the bestiary entry stood in,
-    and perils did nothing in the simulator): the fight the generator ranked was gentler than the one played."""
+    """B316 (the combat review): the content's own moves are simulated (not the bestiary entry's), and a hold's peril plays
+    (the turn goes to getting free; the last moment does its worst as hit points, B317). A grab grapples (no peril)."""
     st = new(game)
-    grab = [{"kind": "strike", "harm": "rotten grip"},
-            {"kind": "grab", "stat": "str", "dc": 12, "peril": "drowning", "harm": "a pull under the chapel water"}]
-    plain = en.win_rate(game, st, [("zombie", 3)], "weak", 200, 2, "t")         # 88 and 73 at 300 fights (11-10, after B324)
-    played = en.win_rate(game, st, [("zombie", 3)], "weak", 200, 2, "t", grab)
-    assert played < plain - 8
+    hold = [{"kind": "strike", "harm": "rotten grip"},
+            {"kind": "hold", "stat": "str", "dc": 14, "peril": "drowning", "harm": "a pull under the water", "weight": 3}]
+    plain = en.win_rate(game, st, [("zombie", 3)], "weak", 200, 2, "t")
+    played = en.win_rate(game, st, [("zombie", 3)], "weak", 200, 2, "t", hold)
+    assert played < plain - 5
+
+
+def test_the_ladder_shows_strength_and_never_weakness(game):
+    """The owner, 11-10 night: "Let's not show weak during fight ... we can show huge etc but we want the player to feel
+    strong. And it sounds like we need more variation levels"."""
+    st = new(game)
+    names = {v: en.spawn(st, [("skeleton", 1)], v)[0].name for v in en.LADDER}
+    assert names["feeble"] == names["frail"] == names["weak"] == names["standard"] == "Skeleton"
+    assert names["veteran"] == "Big skeleton" and names["elite"] == "Huge skeleton"
+    assert en.spawn(st, [("bandit", 1)], "elite")[0].name.startswith("Fearsome")
+    hps = [en.spawn(st, [("skeleton", 1)], v)[0].combat.hp_max for v in en.LADDER]
+    assert hps == sorted(hps) and hps[0] < hps[3] / 2                     # each rung weaker below; feeble about a third

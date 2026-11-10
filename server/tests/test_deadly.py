@@ -114,7 +114,9 @@ def test_a_fight_with_two_hostiles_lists_both_and_takes_two_calls(game):
     assert after.player.hp == st.player.hp - a["data"]["harm"] - b["data"]["harm"]
 
 
-def test_a_hold_that_wins_opens_drowning_and_the_countdown_kills(game):
+def test_a_hold_that_wins_opens_drowning_grace_then_damage_over_time(game):
+    """D214 (the owner, 11-10 night: "a countdown and then damage over time. Drowning, freezing, etc - CON saves to avoid it
+    coming to damage"): failed saves spend the grace moments, then each failed save hurts; it never ends by itself."""
     st = new(game)
     foe(st, moves=[{"kind": "hold", "bonus": 4, "difficulty": "very_high", "peril": "drowning", "harm": "cold hands round the ankles"}])
     out = game.world_call(st, call("ENEMY", "maud", "hold"), Dice(2), 2, {"hp": 0})
@@ -124,8 +126,14 @@ def test_a_hold_that_wins_opens_drowning_and_the_countdown_kills(game):
     s3, w3 = game.world_turn(s2, act("I kick for the surface"), "I kick for the surface", Dice(2, 2), 4, 2)
     assert s3.player.peril.turns_left == 1
     s4, w4 = game.world_turn(s3, act("I kick for the surface"), "I kick for the surface", Dice(2, 2), 5, 2)
-    assert s4.player.fate == "dead" and s4.player.hp == 0 and s4.player.peril is None and "DEATH" in w4.directives[0]
-    end = game.after_turn(s4, info(turn=5))
+    assert s4.player.peril.turns_left == 0 and s4.player.hp == s3.player.hp            # the grace spent, no harm yet
+    s5, w5 = game.world_turn(s4, act("I kick for the surface"), "I kick for the surface", Dice(2, 2), 6, 2)
+    assert not s5.player.fate and s5.player.peril is not None and 3 <= s4.player.hp - s5.player.hp <= 5   # a solid blow
+    assert any("it hurts now" in d for d in w5.directives)
+    s4.player.hp = 2                                                     # the damage on the last hit points: the death
+    s6, w6 = game.world_turn(s4, act("I kick for the surface"), "I kick for the surface", Dice(2, 2), 6, 2)
+    assert s6.player.fate == "dead" and s6.player.hp == 0
+    end = game.after_turn(s6, info(turn=6))
     assert end.flags.get("ending") and game.dead(end) and game.cause_of_death(end, {}).startswith("drowned")
 
 
@@ -140,11 +148,13 @@ def test_zero_hit_points_is_death_with_no_roll_and_no_carry(game):
     assert out.player.fate == "dead" and not out.player.carried
 
 
-def test_in_a_peril_an_attempt_that_is_no_escape_ends_it(game):
+def test_in_a_peril_words_are_free_and_never_a_chosen_death(game):
+    """B317 (the owner, 11-10 night: "Shouting should be a free action ... When in doubt never assume it!")."""
     st = new(game)
     wo.open_peril(st, "drowning", by="the lake")
-    s2, w = game.world_turn(st, act("I look at the fish"), "I look at the fish", Dice(20), 3, 2)
-    assert s2.player.fate == "dead"
+    for words in ("I look at the fish", "HAZEL! Help me!", "I pray to the Quiet Flame"):
+        s2, w = game.world_turn(st, act(words), words, Dice(20), 3, 2)
+        assert not s2.player.fate and s2.player.peril.turns_left == st.player.peril.turns_left and "Words cost nothing" in w.directives[0]
 
 
 def test_a_peril_success_with_an_escape_gets_out(game):
@@ -282,10 +292,16 @@ def test_one_die_for_one_way_out(game):
     game.check_note(s2, bad, "hack free of the hands")
     after = game.after_turn(s2, info_calls(3, [bad]))
     assert after.player.peril.turns_left == s2.player.peril.turns_left - 1 and not after.player.fate
-    after.player.peril.turns_left = 1
+    after.player.peril.turns_left = 0
     last = {"outcome": "failure", "roll": 3, "stat": "str"}
-    assert "dies" in game.check_note(after, last, "hack free of the hands")
-    dead = game.after_turn(after, info_calls(4, [last]))
+    note = game.check_note(after, last, "hack free of the hands")              # D214: no grace left, the damage this moment
+    assert "it hurts now" in note and 3 <= last["harm"] <= 5
+    out = game.after_turn(after, info_calls(4, [last]))
+    assert not out.player.fate and out.player.peril is not None and out.player.hp < after.player.hp
+    after.player.hp = 3
+    fatal = {"outcome": "failure", "roll": 3, "stat": "str"}
+    assert "dies" in game.check_note(after, fatal, "hack free of the hands")
+    dead = game.after_turn(after, info_calls(4, [fatal]))
     assert dead.player.fate == "dead" and game.cause_of_death(dead, {}).startswith("drowned")
 
 
@@ -329,7 +345,8 @@ def test_the_engine_writes_a_death_the_last_telling_left_out(game):
     forced pass the engine writes the death: the prose to the death's moment, then one line in the game's voice."""
     st = new(game)
     wo.open_peril(st, "drowning", by="Mirren")
-    s2, w = game.world_turn(st, act("I walk back up the shingle"), "I plant myself on the shingle", Dice(), 3, 2)
+    st.player.peril.turns_left, st.player.hp = 0, 2                     # D214: no grace left, the damage on the last hit points
+    s2, w = game.world_turn(st, act("I fight my way up to the air"), "I fight my way up to the air", Dice(2, 2), 3, 2)
     assert s2.player.fate == "dead"
     prose = "A voice finds you as the last water leaves your ears.\n\nYou wrench free of it with a roar.\n\n§ STR, medium. 13 + 7 = 20 against 12. Huge success."
     out = game.forced_death(s2, prose, w.rows, [])

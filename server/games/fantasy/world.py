@@ -213,11 +213,13 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
     if p.peril is not None:
         pr = p.peril
         from .game import ATTACK
-        if getattr(adj, "kind", "action") == "action" and not (ESCAPE.search(text) or ATTACK.search(text)):
-            _end(game, s, turn, f"{PERILS.get(pr.kind, {}).get('what', pr.kind)}, and no fight left in them", w=w,
-                 cause=f"{PERIL_CAUSE.get(pr.kind, 'died')} at {p.location}")
-            w.skip.append("hp")
-            return s, w
+        if getattr(adj, "kind", "action") != "action" or not (ESCAPE.search(text) or ATTACK.search(text)):
+            # B317 (the owner, 11-10 night: "Shouting should be a free action ... When in doubt never assume it!"): words, a
+            # shout, a prayer are free; the moments do not run, and nothing here is ever read as choosing to die
+            w.directives.append(f"{p.name} is {PERILS.get(pr.kind, {}).get('what', pr.kind)}. Words cost nothing here: the moment does "
+                                f"not run on while {p.name} speaks or calls out. Play it, still {PERILS.get(pr.kind, {}).get('what', pr.kind)}, "
+                                f"and end the turn on that moment; what {p.name} does next is the player's to say.")
+            return _after_peril(game, s, adj, player_text, rng, turn, offset, w, text)
         own = escape_check(adj)
         if own is not None:                       # one die for one way out: the player's own roll decides it (check_note)
             what = PERILS.get(pr.kind, {}).get("what", pr.kind)
@@ -226,8 +228,8 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
                                 f"'{own}' decides it, nothing else: on a success the way out works ({pr.way}); on a failure it is worse"
                                 + (", and with one moment left a failure is the end: write the death." if last else "."))
             return _after_peril(game, s, adj, player_text, rng, turn, offset, w, text)
-        pr.step += 1
-        res = _check(game, s, pr.stat, "medium", f"{pr.kind}: hold on", rng, [Modifier(label=f"{pr.kind}, moment {pr.step}", value=-2 * pr.step)], offset)
+        pr.step += 1                              # the save; its penalty grows each moment, to -4 at most (the owner: kinder)
+        res = _check(game, s, pr.stat, "medium", f"{pr.kind}: hold on", rng, [Modifier(label=f"{pr.kind}, moment {pr.step}", value=-min(4, 2 * pr.step))], offset)
         ok = res.outcome in ("success", "huge_success", "critical_success")
         line = game.render_mechanic(s, res)
         w.mechanics.append(f"{pr.kind.capitalize()}: {line}")
@@ -240,15 +242,18 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
                                 f"It buys one more moment, no more: {p.name} is still {PERILS.get(pr.kind, {}).get('what', pr.kind)}. Play it, and end "
                                 f"the turn on that moment; what {p.name} does next is the player's to say.")
         else:
-            pr.turns_left -= 1
-            if pr.turns_left <= 0:
-                _end(game, s, turn, PERILS.get(pr.kind, {}).get("what", pr.kind), w=w, cause=f"{PERIL_CAUSE.get(pr.kind, 'died')} at {p.location}")
+            if pr.turns_left <= 0 or (pr.kind == "falling"):
+                pr.turns_left = 0
+                told = peril_tick(game, s, pr, int(res.roll or 0), w, turn)
                 w.rows.append({"kind": "peril", "peril": pr.kind, "outcome": res.outcome, "turns_left": 0, "line": line})
-                w.skip.append("hp")
-                return s, w
-            w.directives.append(f"{p.name} has moments left, {PERILS.get(pr.kind, {}).get('what', pr.kind)}, and the engine rolled it: a failure. "
-                                f"It is worse now ({'one moment' if pr.turns_left == 1 else 'a few moments'} left before it is over). Play it, and "
-                                f"end the turn on that moment; what {p.name} does next is the player's to say.")
+                if p.fate:
+                    return s, w
+                w.directives.append(told)
+                return _after_peril(game, s, adj, player_text, rng, turn, offset, w, text)
+            pr.turns_left -= 1
+            w.directives.append(f"{p.name} is {PERILS.get(pr.kind, {}).get('what', pr.kind)}, and the engine rolled it: a failure. "
+                                f"It is worse now ({'no moment' if pr.turns_left == 0 else 'one moment' if pr.turns_left == 1 else 'a few moments'} "
+                                f"left before it starts to hurt). Play it, and end the turn on that moment; what {p.name} does next is the player's to say.")
         w.rows.append({"kind": "peril", "peril": pr.kind, "outcome": res.outcome, "turns_left": pr.turns_left, "line": line})
     return _after_peril(game, s, adj, player_text, rng, turn, offset, w, text)
 
@@ -310,6 +315,37 @@ def escape_check(adj: Any) -> str | None:
     return None
 
 
+# The owner, 11-10 night: "in most cases it should be damage over time not a countdown, or a countdown and then damage over
+# time. Drowning, freezing, etc - CON saves to avoid it coming to damage". A peril's moments are its grace (breath held, the
+# first of the cold): a failed save spends one; with none left, each failed save hurts by the peril's step (a fall lands
+# once and is over; a hold does no harm of its own). It ends only by getting out, contact broken, or the hit points.
+DOT = {"drowning": "solid", "burning": "solid", "freezing": "scrape", "bleeding": "scrape", "falling": "serious", "held": ""}
+
+
+def peril_tick(game: Any, s: FantasyState, pr: Any, roll: int, w: "WorldTurn", turn: int) -> str:
+    """A failed save with no grace left: the peril's damage this turn (a fall's landing ends it). Death only when it takes
+    the last hit point. Returns the directive ('' on a death, which _end has written)."""
+    p = s.player
+    step = DOT.get(pr.kind, "scrape")
+    what = PERILS.get(pr.kind, {}).get("what", pr.kind)
+    if not step:
+        return (f"{p.name} is {what}: no harm of its own, but no getting away until they break free. Play it, and end the turn "
+                f"on that moment; what {p.name} does next is the player's to say.")
+    n, notes = take(game, s, harm(step, roll), f"{pr.kind}")
+    w.skip.append("hp")
+    w.mechanics.append(f"{pr.kind.capitalize()}: {n} hit points" + (f" ({', '.join(notes)})" if notes else ""))
+    if pr.kind == "falling":
+        p.peril = None
+    if p.hp <= 0:
+        _end(game, s, turn, what, w=w, cause=f"{PERIL_CAUSE.get(pr.kind, 'died')} at {p.location}")
+        return ""
+    if p.peril is None:
+        return f"{p.name} lands hard: {STEP_WORDS[step]} ({n} hit points, already counted). Play it, and end the turn there."
+    return (f"{p.name} is still {what}, and it hurts now: {STEP_WORDS[step]} ({n} hit points, already counted). It goes on each "
+            f"moment {p.name} stays in it, until they get {pr.way}. Play it, and end the turn on that moment; what {p.name} does "
+            f"next is the player's to say.")
+
+
 def peril_by_check(s: FantasyState, data: dict, label: str) -> str:
     """check_note's half of a peril (one die, one way out): the player's escape roll decides the peril. A success ends it
     after the prose; a failure takes a moment off, and the last moment's failure kills. Marks `data` for after_turn."""
@@ -323,10 +359,20 @@ def peril_by_check(s: FantasyState, data: dict, label: str) -> str:
     what = PERILS.get(pr.kind, {}).get("what", pr.kind)
     if data.get("outcome") in ("success", "huge_success", "critical_success"):
         return f" That is the way out: {s.player.name} is no longer {what}. Write it working."
-    if pr.turns_left <= 1:
-        data.update(kills=True, cause=f"{what}", death_cause=f"{PERIL_CAUSE.get(pr.kind, 'died')} at {s.player.location or 'Marrowgate'}")
-        return f" That was the last moment: {s.player.name} dies of it, {what}. Write the death straight; this is the end of the story."
-    return f" Still {what}, and worse: one moment left. End the turn on that moment; what {s.player.name} does next is the player's to say."
+    if pr.turns_left <= 0 or pr.kind == "falling":   # no grace left: the peril's damage this moment (the owner: over time)
+        step = DOT.get(pr.kind, "scrape")
+        if not step:
+            data["peril_tick"] = True
+            return f" Still {what}: no harm of its own, and no getting away yet. End the turn on that moment."
+        n = harm(step, int(data.get("roll") or 0))
+        data.update(harm=n, peril_tick=True)
+        if n >= s.player.hp - int(data.get("hp_taken") or 0):
+            data.update(kills=True, cause=f"{what}", death_cause=f"{PERIL_CAUSE.get(pr.kind, 'died')} at {s.player.location or 'Marrowgate'}")
+            return f" It is past surviving: {s.player.name} dies of it, {what}. Write the death straight; this is the end of the story."
+        return (f" Still {what}, and it hurts now: {STEP_WORDS[step]} ({n} hit points, the engine counts it); it goes on each "
+                f"moment until {s.player.name} gets {pr.way}. Write it landing, and end the turn on that moment.")
+    return (f" Still {what}, and worse: {'one moment' if pr.turns_left <= 2 else 'a few moments'} before it starts to hurt. End the turn "
+            f"on that moment; what {s.player.name} does next is the player's to say.")
 
 
 def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: Any, turn: int, offset: int, w: "WorldTurn",
