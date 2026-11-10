@@ -335,7 +335,11 @@ the dev header. Three Sonnet rounds and a Gemma long round played and read; the 
 the boat, reckonings in place of endings, bench odd jobs, dear contracts, the house as the upgrade tree (D194C to D202C); the
 economy curve retuned (D203C); rounds 4 and 5 on Gemma and three engine holes fixed (D204C); time, money and the hand reworked
 by the owner (D205C: only "skip to …" runs days, warned first; no haggling, the slip a little cheaper as she waits; the week's
-offers, any number booked, shows two weeks out). **Left:** round 6 on D205C; the content pass; the C-lines in its own roadmap.
+offers, any number booked, shows two weeks out); rounds 6 and 7 and their fixes (D206C, D207C); a deck heavy in the first tier,
+rebooking a step harder, rest that always pays, Saturday training (D208C); the day in four parts with the engine's confirm, and
+an engine-only simulator with its own design doc, notes/CLOWN_SIMULATOR.md (D210C, D212C); tiredness on a curve with a
+three-day warning (D211C). Live rounds on hold (the owner). **Left:** the simulator's calibration grids; a round on the four-part
+day when live play resumes; the save's growth (C97, every game); the content pass; the C-lines in its own roadmap.
 
 ## 16. Writing for models
 

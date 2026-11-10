@@ -146,6 +146,7 @@ Every playtest also has a transcript `notes/playtests/<date>-<game>-<tag>.md` an
 ## 5. Notes (`notes/`, gitignored, the project's memory)
 
 - `DECISIONS.md`: every decision with why, evidence and alternatives, D1-D119. Newest at the end.
+- `CLOWN_SIMULATOR.md` (gitignored, with the clown's record): the clown's engine-only simulator (D210C, D212C): what it models and what it leaves out, how a trial runs, the strategy and plot policies, the reports, how to calibrate with it, the runs so far (in `notes/sim/`), what next. The code is `server/games/hidden/clown/tools/sim.py`.
 - `ISSUES.md`: the open register at the top ("Open now"), dated fixes below. Groups: noir nerves (NV), local play (P), narrator eval (E/G/L), the narrator's feed (N), time (T), identity (I), the D56 review (R).
 - `STATUS.md`: resume blocks, newest first.
 - `RESEARCH-2026-11-04-late-round-degeneration.md`: the causes behind the eight player's-eye reads (D90): per-turn profiles, the chant measured (Qwen3.8 only, within-turn), nine engine and text faults traced to their lines, the fixes in order, the follow-up experiments.
