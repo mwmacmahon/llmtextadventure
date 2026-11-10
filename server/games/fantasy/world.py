@@ -295,7 +295,7 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
         res = _check(game, s, stat, "medium", "break free of the grip", rng, [], offset)
         line = game.render_mechanic(s, res)
         w.mechanics.append(f"Breaking free: {line}")
-        w.rows.append({"kind": "grapple", "outcome": res.outcome, "line": line})
+        w.rows.append({"kind": "grapple", "outcome": res.outcome, "line": line, "way_by": "words"})
         who = s.person(held.by).name if held.by and s.person(held.by) else "the grip"
         if res.outcome in WON:
             p.conditions = [c for c in p.conditions if c is not held]
@@ -510,6 +510,7 @@ def peril_by_check(s: FantasyState, data: dict, label: str, game: Any = None) ->
     if not way_out(pr, str(data.get("stat") or "").lower(), label):   # round 8: only a check that goes for the way out
         return ""
     data["peril_roll"] = pr.kind
+    data["way_by"] = "mark" if MARKED.match(label or "") else "words"   # the debt review: how often the word lists still decide
     what = PERILS.get(pr.kind, {}).get("what", pr.kind)
     if data.get("outcome") in WON:
         s.flags["escaped"] = True                 # round 10: this turn's WARNING is not shown (after_turn ends the peril, clears the flag)

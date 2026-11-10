@@ -146,6 +146,7 @@ Every playtest also has a transcript `notes/playtests/<date>-<game>-<tag>.md` an
 | `OPEN-ISSUES.md` | 2026-11-10 | the running register of every known open issue, one line each (moved from notes/ISSUES.md "Open now", B25); new issues go here |
 | `WRITING_FOR_MODELS.md` | 2026-11-08 | the style guide for every line a model is handed and for scenario text: dos, don'ts with the day's befores, a checklist; the spec for the plain-language pass (ISSUES W1) |
 | `REVIEW-2026-11-10-combat.md` ([page](https://claude.ai/artifact/MpM4ALbZK6XqWZSX1nte3r)) | 2026-11-10 | a critical review of the combat system (parts fifteen and sixteen and the five Gemma fight rounds' fixes): how it works, its take, good and bad, coverage, the numbers, ranked recommendations with their B lines (B313 to B328; built the same evening but B317, B324's shield and merge, B316 c) |
+| `REVIEW-2026-11-10-perils-debt.md` | 2026-11-10 | the debt review of the night's peril, grab and DEBUG work (rounds 7 to 10): eight concerns (six ways out of one peril, turn-local flags in saved state, 60 hooks, mechanics read from label words, the fallback word lists, a note and a rule disagreeing, two DEBUG signals, large files), five ordered steps; `server/tools/hook_list.py` prints the hook table |
 | `INDEX.md` | this file | |
 
 ## 5. Notes (`notes/`, gitignored, the project's memory)
