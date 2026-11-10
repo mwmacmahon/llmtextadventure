@@ -62,18 +62,21 @@ GRADUATE_SOUND, GRADUATE_FINISHED = 3, 1                                    # th
 DIFFICULTY_WORDS = {0: "an easy room", 1: "an ordinary room", 2: "a demanding room", 3: "a hard room"}
 SHOW_PAY = {"disaster": 0.0, "poor": 0.5, "fine": 1.0, "good": 1.0, "triumph": 1.5}
 
-# C50 (D203C): a later time the player's input names moves the clock before the turn. Read only where the input opens on it
-# (the text's start, a sentence's start, after "then", "come", "on", "by") or after "until"/"till": "she asked me about Tuesday"
-# names no move, and a wrong read would run the clock days.
-_WHEN_ANCHOR = re.compile(r"(?:^|[.!?;]\s+|\b(?:until|till|til)\s+)(?:(?:and\s+)?then,?\s+|later,?\s+|come\s+|on\s+|by\s+)?")
+# C50 (D203C): a later time the player's input names moves the clock before the turn. Read only where a sentence of the
+# input opens on it and the player then acts in it ("Tuesday morning, I walk ...", "Then at three we go ..."): "she asked me
+# about Tuesday" and "Tomorrow she has a lesson" name no move, and a wrong read runs the clock days. A wait or a skip "until"
+# a time is the Skip command's and the assistant's, as before. A closed vocabulary: a phrase it misses is a C-line, not a word
+# added here (the debt review of 11-10).
+_WHEN_ANCHOR = re.compile(r"(?:^|[.!?;]\s+)(?:(?:and\s+)?then,?\s+|later,?\s+|come\s+|on\s+|by\s+)?")
+_PLAYER_ACTS = re.compile(r"[\s,]*(?:i|we)\b")
 _NUMBER_WORDS = {w: i for i, w in enumerate(("one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"), 1)}
 _PARTS = {"first thing": 480, "morning": 540, "midday": 720, "noon": 720, "after lunch": 840, "afternoon": 840, "evening": 1140, "tonight": 1140, "night": 1260}
-_CLOCK = re.compile(r"at\s+(?:(half|quarter)\s+(past|to)\s+)?(\d{1,2}|" + "|".join(_NUMBER_WORDS) + r")(?::(\d\d)|\.(\d\d))?\s*(am|pm|a\.m\.|p\.m\.|o'clock)?\b")
+_CLOCK = re.compile(r"at\s+(?:(half|quarter)\s+(past|to)\s+)?(\d{1,2}|" + "|".join(_NUMBER_WORDS) + r")(?::(\d\d)|\.(\d\d))?\s*(am|pm|a\.m\.|p\.m\.|o'clock)?(?=\W|$)")
 
 
-def _read_when(seg: str, s: ClownState) -> int | None:
+def _read_when(seg: str, s: ClownState) -> tuple[int, str] | None:
     """The day and minute a clause opens on ("tuesday morning, i walk ...", "tomorrow at ten", "at half past eight"), as an
-    absolute minute; None when it opens on no time."""
+    absolute minute, and the rest of the clause; None when it opens on no time."""
     day, minute, part, clock = s.clock.day, None, None, None
     named = False
     rest = seg
@@ -106,20 +109,22 @@ def _read_when(seg: str, s: ClownState) -> int | None:
         if clock.group(1):                                  # half past eight, quarter to nine
             mm = 30 if clock.group(1) == "half" else 15
             if clock.group(2) == "to":
-                h, mm = h - 1, 45
+                h, mm = (h - 1) or 12, 45
         ampm = (clock.group(6) or "").replace(".", "")
         if h > 23 or mm > 59:
             return None
         if ampm == "pm" and h < 12 or (not ampm or ampm == "o'clock") and h < 12 and (
                 (part in ("afternoon", "after lunch", "evening", "tonight", "night")) or 1 <= h <= 6
-                or (day == s.clock.day and h * 60 + mm <= s.clock.minute and part is None)):
+                or (day == s.clock.day and h * 60 + mm <= s.clock.minute < (h + 12) * 60 + mm and part is None)):
             h += 12                                         # at three is the afternoon; at eight when eight this morning has gone
         if ampm == "am" and h == 12:
             h = 0
         minute = h * 60 + mm
     if minute is None:
         minute = _PARTS["morning"]                          # a day named alone: its morning
-    return day * DAY + minute
+    if day == s.clock.day and minute <= s.clock.minute and clock is not None and part is None:
+        day += 1                                            # "at eight" at 21:00 is tomorrow's
+    return day * DAY + minute, rest
 
 
 def named_time(text: str, s: ClownState) -> int | None:
@@ -130,9 +135,10 @@ def named_time(text: str, s: ClownState) -> int | None:
     t = (text or "").lower().replace("\u2019", "'")
     now = s.now_abs
     for m in _WHEN_ANCHOR.finditer(t):
-        at = _read_when(t[m.end():], s)
-        if at is None:
+        read = _read_when(t[m.end():], s)
+        if read is None or not _PLAYER_ACTS.match(read[1]):
             continue
+        at = read[0]
         sunday = s.clock.day + (6 - weekday(s.clock.day))
         cap = sunday * DAY + WEEK_END_MINUTE
         if now >= cap:
@@ -877,8 +883,6 @@ class ClownGame(GameBase):
             "Stats are exactly the five listed (charm, menace, business, connections, craft); never invent one.",
             "Time: a word at the desk 2 minutes; a talk 10 to 20; a practice hour with her 45 to 75; a tram ride as the town's list says; a show "
             "an evening; waiting is however long they wait, and the week ends on Sunday night whatever they do.",
-            "When the input opens on a later time (\"Tuesday morning, I walk down to the harbour\"), the clock is already at that time in the game "
-            "state: time_minutes is the task's own minutes from there, and it is not a Skip.",
             "",
             f"Where {p.name} is, who is with them, the money, the attention on the house: the game state block. Read it before ruling something impossible.",
             "Entities (the girls and the people, by id): " + ", ".join(f"{g.id} ({g.name}" + (", not yet in the house; about the town)" if g.status == "away" else ", asking to be taken on; not in the house)" if g.status == "available" else ")") for g in s.girls if g.status != "gone")
@@ -2529,13 +2533,19 @@ class ClownGame(GameBase):
         s.journal.append(Note(kind="house", text=f"{WEEKDAYS[weekday(rday)]} {_part_word(rmin)} came."))
         self._tally(s, f"The days ran to {WEEKDAYS[weekday(rday)]} {hhmm(rmin)}" + ("" if reached_abs == meant_abs else f", short of {meant}, the time named") + ".",
                     at=f"Day {rday} {hhmm(rmin)}")
-        p = s.player
-        directive = (f"THE CLOCK MOVED: the player meant {meant}. The days ran only as far as the game state's clock says (its Time line: the day "
-                     f"and the hour), and no further: if that is short of {meant}, something stopped them, and THIS TURN says what. Open at the "
-                     f"clock's day and hour, never the one {p.name} meant; the time between passes in a line, built from one thing of the house or "
-                     f"the street that has not been told before, and nothing is done in it that the player did not say. Then play what the player "
-                     f"does from there, or what stopped the days.")
+        directive = f"THE CLOCK MOVED: the player meant {meant}. " + self._days_ran(s, meant, "Then play what the player does from there, unless something stopped the days short of it.")
         return s, directive
+
+    def _days_ran(self, s: ClownState, meant: str, then: str) -> str:
+        """The one rule for days that run in a turn, a Skip's or a time the player named (D197C, C50): the clock's day, never the
+        one meant; a line of passing time from something not told before; nothing done the player did not say."""
+        p = s.player
+        return (f"The days ran only as far as the game state's clock says (its Time line: the day and the hour), and no further: if that is "
+                f"short of {meant}, something stopped them, and THIS TURN says what. Write the time passing up to that day and hour in a line or "
+                f"two, built from one thing of the house or the street that has not been told before (never the tram bell, the gasworks or the "
+                f"plan on the wall again once they have been); name the day the clock names and never the one {p.name} meant; nothing is done in "
+                f"it that the player did not say. If THIS TURN brings someone to the door or word from the town, the days pass in one line and "
+                f"then you play that. What the training did meanwhile is in THIS TURN: say it once, in words, where it fits, or not at all. " + then)
 
     def _skip_targets(self, s: ClownState) -> list[tuple[str, str, int]]:
         """(id, label, absolute minute) for where a Skip may run the clock: tomorrow morning, Saturday morning, Sunday night (the
@@ -2624,13 +2634,7 @@ class ClownGame(GameBase):
             lb, t = targets[to]
             low = lb
             p = s.player
-            directive = (f"{p.name} meant to let the time run to {low}, keeping house: nothing is done that the player did not say. The days ran only as far as "
-                         f"the game state's clock says (its Time line: the day and the hour), and no further: if that is short of {low}, something stopped them, "
-                         f"and THIS TURN says what; write the time passing up to that day and hour in a line or two, built from one thing of the house or the "
-                         f"street that has not been told before (never the tram bell, the gasworks or the plan on the wall again once they have been), name the day "
-                         f"the clock names and never the one {p.name} meant, and stop there. If THIS TURN brings someone to the door or word from the town, the "
-                         f"days pass in one line and then you play that. What the training did meanwhile is in THIS TURN: say it once, in words, where it fits, "
-                         f"or not at all.")
+            directive = f"{p.name} meant to let the time run to {low}, keeping house. " + self._days_ran(s, low, "Stop there.")
             return s, CommandResult(label="Skip", player_line=f"I let the days run to {low}.", summary=f"{p.name} lets time run to {low}.",
                                     directive=directive, minutes=max(1, t - s.now_abs))
         if command_id == "graduate":

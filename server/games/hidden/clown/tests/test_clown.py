@@ -1243,16 +1243,22 @@ def test_a_later_time_named_in_the_input_is_read_and_a_past_or_near_one_is_not(g
     assert named_time("Tomorrow at ten I take the tram to the Judge's.", st) == (mon + 1) * DAY + 600
     assert named_time("I sit with her a while. Then, on Saturday, I go to the market.", st) == (mon + 5) * DAY + 540
     assert named_time("Tonight I go down to the Anchor.", st) == mon * DAY + 1140
-    assert named_time("I wait until Thursday afternoon.", st) == (mon + 3) * DAY + 840
+    assert named_time("I wait until Thursday afternoon.", st) is None              # a wait "until" is the Skip's and the assistant's
+    assert named_time("I ask about the show. Tomorrow she has a lesson.", st) is None   # the player does not act in it
+    assert named_time("Tomorrow, we go down to the quay.", st) == (mon + 1) * DAY + 540
+    assert named_time("At 8 p.m. I go to the Anchor.", st) == mon * DAY + 1200
+    assert named_time("Tomorrow at quarter to one I see the clerk.", st) == (mon + 1) * DAY + 765
     assert named_time("This morning I went to the shed.", st) is None                # already past
     assert named_time("Yesterday was a waste. I go to the shed.", st) is None
     assert named_time("I ask her what she did on Tuesday.", st) is None               # not where the input opens: no move
-    assert named_time("Next week I will think about it.", st) == (mon + 6) * DAY + 1320   # capped at the week's end, Sunday 22:00
+    assert named_time("Next week, I go to the shed.", st) == (mon + 6) * DAY + 1320   # capped at the week's end, Sunday 22:00
     assert named_time("Saturday's show is on my mind; I go to the practice room.", st) is None
     st = _at(game, st, 0, 600)                                              # Monday 10:00
     assert named_time("At three, I go down to the shed.", st) == st.clock.day * DAY + 900       # the afternoon, the same day
     assert named_time("At half past eight I meet Krol.", st) == st.clock.day * DAY + 1230      # eight this morning has gone: the evening
     assert named_time("At 10:30 I go to the shed.", st) is None                    # within a walk's minutes of now: the assistant's
+    st = _at(game, st, 2, 1260)                                             # Wednesday 21:00
+    assert named_time("At eight I take her to the market.", st) == (st.clock.day + 1) * DAY + 480   # tomorrow's eight
     st = _at(game, st, 6, 1080)                                             # Sunday 18:00
     assert named_time("Tomorrow morning I go to the shed.", st) == st.clock.day * DAY + 1320  # nothing past the week's end
     st = _at(game, st, 6, 1300)                                             # Sunday 21:40: the week's end is within a walk
@@ -1295,3 +1301,28 @@ async def test_a_named_time_through_the_pipeline_moves_the_clock_before_the_turn
     prompt = next(r for r in engine.store.ledger(iid) if r["kind"] == "bulletin" or "THE CLOCK MOVED" in str(r["payload"]))
     assert "THE CLOCK MOVED: the player meant Tuesday 14:00" in str(prompt["payload"])
     assert any("came." in n.text for n in st.journal)
+
+
+async def test_a_lead_lands_only_when_the_clock_moves_and_tells_the_narrator_first(engine: Engine):
+    """The debt review of 73fa7e8: the days run only on a turn that moves the clock; a trivial turn still ticks nothing
+    without a lead (B105); a sleep to the named time is the lead itself; THIS TURN names the lead before a split."""
+    from engine.pipeline import _this_turn_block
+    from engine.roles import AssistantReading
+    iid = engine.create_instance("clown", dict(SETUP, first_girl="ada_vosk"))
+    game = engine.games["clown"]
+    st = _at(game, game.load_state(engine.store.load_state(iid)), 0, 1260)  # Monday 21:00
+    now = st.now_abs
+    sleep = AssistantReading(kind="action", summary="sleeps", tempo="slow", time_minutes=600, risk="low")
+    res = engine._resolve(game, st, sleep, iid, 2, [], lead_minutes=720)
+    assert res["elapsed"] == 720 and res["lead"] == 720 and res["state"].now_abs == now + 720     # Tuesday 09:00, not past it
+    clar = AssistantReading(kind="clarify", summary="?", clarify_question="Which?", time_minutes=0, risk="low")
+    res = engine._resolve(game, st, clar, iid, 2, [], lead_minutes=720)
+    assert res["elapsed"] == 0 and not res["lead"]                          # no clock moved: the pipeline writes no days ran
+    triv = AssistantReading(kind="trivial", summary="looks", time_minutes=30, risk="low")
+    st.hidden.pending.append(__import__("engine.pending", fromlist=["Pending"]).Pending(id="p1", what="a knock", due_day=st.clock.day, due_minute=1270, source="script"))
+    res = engine._resolve(game, st, triv, iid, 2, [], lead_minutes=0)
+    assert not res["pending_fired"]                                         # B105: a question moves nothing
+    text = _this_turn_block({"elapsed": 720, "lead": 720, "split": (0, 10), "adjudication": sleep, "directives": []}, "Tue 09:00")
+    assert "ran on to the time the player named" in text and "starts about" not in text
+    text = _this_turn_block({"elapsed": 10, "lead": 10, "lead_short": True, "clock_note": "stopped at pending p1", "adjudication": sleep, "directives": []}, "")
+    assert "stopped short" in text
