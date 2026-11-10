@@ -47,8 +47,17 @@ class ClownContent(Content):
     def __init__(self, content_dir: Path):
         super().__init__(content_dir)
         self._cache: dict[str, tuple[float, Any]] = {}
+        self._lists: dict[str, list[Path]] = {}
         self.fast = False               # the simulator (tools/sim.py): the cached data as it is, no file check, no copy; it checks the
                                         # cache is unchanged after a run, so a caller that mutated content would be caught
+
+    def _files(self, d: Path) -> list[Path]:
+        """The folder's yml files, sorted; listed once in fast mode (the simulator), every call otherwise (a file added in play)."""
+        if self.fast and str(d) in self._lists:
+            return self._lists[str(d)]
+        out = sorted(d.glob("*.yml"))
+        self._lists[str(d)] = out
+        return out
 
     def _yaml(self, path: Path) -> Any:
         key = str(path)
@@ -65,7 +74,7 @@ class ClownContent(Content):
 
     def scenarios(self) -> dict[str, dict]:
         out: dict[str, dict] = {}
-        for p in sorted((self.dir / "scenarios").glob("*.yml")):
+        for p in self._files(self.dir / "scenarios"):
             data = self._yaml(p)
             out[data["id"]] = data
         return out
@@ -75,7 +84,7 @@ class ClownContent(Content):
         d = self.dir / "hooks"
         if not d.is_dir():
             return out
-        for p in sorted(d.glob("*.yml")):
+        for p in self._files(d):
             data = self._yaml(p)
             out[data["id"]] = data
         return out
@@ -90,7 +99,7 @@ class ClownContent(Content):
         d = self.dir / "girls"
         if not d.is_dir():
             return out
-        for p in sorted(d.glob("*.yml")):
+        for p in self._files(d):
             if p.name == "deck.yml":
                 continue
             data = self._yaml(p)
@@ -543,6 +552,9 @@ def reread(data: dict, scenario: dict, content_hooks: dict[str, dict], name: str
             old = q.get("client") or {}
             new = {k: v for k, v in sp_["client"].items() if k in ClientInfo.model_fields}
             new["standing"], new["history"] = old.get("standing", 0), old.get("history", [])
+            for k in ("difficulty", "pays"):          # D212C: a rebooking client's step (D208C) is the save's, never the script's;
+                if isinstance(old.get(k), int) and old[k] > int(new.get(k, 0)):   # the simulator found every load undoing it
+                    new[k] = old[k]
             q["client"] = new
         told = {t.get("id"): bool(t.get("told")) for t in q.get("tells") or []}
         tells = [dict(t) for t in sp_.get("tells") or []]

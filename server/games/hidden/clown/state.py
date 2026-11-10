@@ -288,6 +288,8 @@ class Proprietor(BaseModel):
 
 
 class House(BaseModel):
+    alerts: list[str] = Field(default_factory=list)   # D211C: the player's § lines for the next turn (a worn girl before her show)
+    warned: list[str] = Field(default_factory=list)   # "day:show" warned already (once a day)
     money: int = 200
     heat: int = 0
     name: int = 0

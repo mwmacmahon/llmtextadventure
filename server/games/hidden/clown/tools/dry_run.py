@@ -44,15 +44,20 @@ def tick(game: ClownGame, st: ClownState, to_abs: int, turn: int, rng: random.Ra
     items = pend.load(doc, "hidden.pending")
     pfired = pend.tick(items, to_abs, DAY, turn)
     pend.save(doc, "hidden.pending", items)
-    st = game.load_state(doc)
+    # the simulator (in place): the state as it stands, without the save's re-read of the script (the hooks' templates filled again
+    # on every load, for saves made before a content edit); a quarter of a trial's time and nothing a fresh game needs
+    st = ClownState.model_validate(doc) if getattr(game, "in_place", False) else game.load_state(doc)
     st = game.after_turn(st, TurnInfo(turn=turn, elapsed_minutes=to_abs - since, rng=rng))
     return st, [f.event_id for f in fired] + [f"expired {x.event_id}" for x in expired] + [p.tag or p.what for p in pfired]
 
 
-def next_stop(st: ClownState) -> int:
+LEAN_STOPS = (540, 720, 1020, 1320)      # the simulator's: the morning, the slots' ends, the night (the shows and the pendings add theirs)
+
+
+def next_stop(st: ClownState, stops: tuple[int, ...] = STOPS) -> int:
     now = st.now_abs
     day, minute = st.clock.day, st.clock.minute
-    cands = [day * DAY + m for m in STOPS if m > minute] or [(day + 1) * DAY + STOPS[0]]
+    cands = [day * DAY + m for m in stops if m > minute] or [(day + 1) * DAY + stops[0]]
     cands += [x.at_abs for x in st.shows if not x.result and x.at_abs > now]
     cands += [p.due_abs(DAY) for p in st.hidden.pending if p.live and p.due_abs(DAY) > now]
     return min(cands)

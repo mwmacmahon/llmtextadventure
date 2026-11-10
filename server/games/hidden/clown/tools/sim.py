@@ -31,7 +31,7 @@ from .. import deck as dk
 from .. import harbour as hb
 from ..game import DAY, OFFICE, make_game
 from ..state import weekday
-from .dry_run import CONTENT, choose_plan, next_stop, tick
+from .dry_run import CONTENT, LEAN_STOPS, choose_plan, next_stop, tick
 
 SHOW_WORDS = ("disaster", "poor", "fine", "good", "triumph")
 
@@ -49,20 +49,71 @@ class Strategy:
     recruit: bool = True       # take on a girl who comes to the door
     attend: bool = True        # the proprietor goes to the shows
     girl: str = ""             # the first girl; "" rotates over the starters by trial
+    # the plot, in place of the referee's rows from the prose (D212C)
+    plot: str = "steady"       # rush: the gala's skills trained whenever no show wants else, troubles answered the day they come,
+                               # the Guild's book bought early; steady: the gala's skills after week ten, troubles in two days;
+                               # procrastinate: only the bookings, troubles left until they lapse, no upgrades for the spine
+    trouble: str = "firm"      # soft: pay (Fenn paid off, Hatch paid, Sallis shown round); firm: refuse (sent away, refused, shown out);
+                               # hard: the worst (Dot given up to Fenn, Hatch's men put out, Sallis shown out)
+    brascombe: str = "refuse"  # accept: his money and his cut; refuse: his enmity; ignore: no answer
+    reckoning: str = "bear"    # bear it, or give_up the girl worth least
 
     def label(self) -> str:
         d = {f.name: getattr(self, f.name) for f in fields(self) if getattr(self, f.name) != f.default}
         return ", ".join(f"{k}={v}" for k, v in d.items()) or "defaults"
 
 
+TROUBLE_FLAGS = {          # the flag a choice sets on each trouble; the deck's settle pays its reward rows (money, heat, the axes)
+    "insurance_man": {"soft": "fenn_paid_off", "firm": "fenn_sent_away", "hard": "fenn_given_dot"},
+    "debt_collector": {"soft": "hatch_paid", "firm": "hatch_refused", "hard": "hatch_put_out"},
+    "brascombe_looks": {"soft": "sallis_shown_round", "firm": "sallis_shown_out", "hard": "sallis_shown_out"},
+}
+GALA_SKILLS = ["acrobatics", "mime", "crowd"]     # the gala's gate: best acrobatics 60, mime 60, crowd 50 (the scenario's event)
+PLOT_DELAY = {"rush": 0, "steady": 2 * DAY, "procrastinate": None}
+
+
+def _plot(game: Any, st: Any, strategy: Strategy, seen: dict[str, int], log: dict[str, Any]) -> Any:
+    """The plot's choices the referee would read from the prose, made by the strategy (D212C)."""
+    delay = PLOT_DELAY.get(strategy.plot, 2 * DAY)
+    for h in st.hooks:
+        if h.kind != "trouble" or h.status != "live" or h.hook not in TROUBLE_FLAGS:
+            continue
+        seen.setdefault(h.id, st.now_abs)
+        if delay is not None and st.now_abs - seen[h.id] >= delay:
+            flag = TROUBLE_FLAGS[h.hook].get(strategy.trouble, "")
+            if flag and not st.flags.get(flag):
+                st.flags[flag] = True
+                log["troubles"].append(f"{h.hook}:{flag}")
+    if st.flags.get("brascombe_offered") and not log.get("brascombe"):
+        if strategy.brascombe == "accept":
+            st.flags["brascombe_bought"], log["brascombe"] = True, f"accepted week {st.house.week}"
+        elif strategy.brascombe == "refuse":
+            st.flags["brascombe_enemy"], log["brascombe"] = True, f"refused week {st.house.week}"
+    if st.flags.get("gala_offered") and not st.flags.get("gala_done"):
+        st.flags["gala_done"], log["gala"] = True, st.house.week
+    if st.house.reckoning and not getattr(st.house, "fate", ""):
+        kind = st.house.reckoning
+        if strategy.reckoning == "give_up" and st.in_house():
+            girl = min(st.in_house(), key=lambda g: game.contract_value_of(st, g))
+            st2, r = game.run_command(st, "give_up", {"girl": girl.id})
+        else:
+            st2, r = game.run_command(st, "bear", {})
+        if r.ok:
+            log["reckonings"].append(f"{kind}:{'gave ' + girl.id if strategy.reckoning == 'give_up' and st.in_house() else 'bore it'} week {st.house.week}")
+            st = st2
+    return st
+
+
 def _fingerprint(game: Any) -> str:
     return str(hash(json.dumps({k: v[1] for k, v in sorted(game.content._cache.items())}, sort_keys=True, default=str)))
 
 
-def trial(strategy: Strategy, weeks: int, seed: int, content: Path = CONTENT, check: bool = False) -> dict[str, Any]:
-    """One game played by the strategy for `weeks` weeks. Returns its metrics."""
+def trial(strategy: Strategy, weeks: int, seed: int, content: Path = CONTENT, check: bool = False, in_place: bool = True) -> dict[str, Any]:
+    """One game played by the strategy for `weeks` weeks. Returns its metrics. `in_place`: the game mutates the state it is given
+    (no copy per engine call; the test pins that it plays the same game as with copies)."""
     game = make_game(content)
     game.content.fast = True
+    game.in_place = in_place
     starters = game.content.girls_deck().get("starters") or ["dot"]
     girl = strategy.girl or starters[seed % len(starters)]
     _, st = game.new_instance({"name": f"Proprietor {seed}", "kind": "charmer", "first_girl": girl})
@@ -71,10 +122,16 @@ def trial(strategy: Strategy, weeks: int, seed: int, content: Path = CONTENT, ch
     turn = 1
     money_by_week: list[int] = []
     taken = upgrades = 0
+    seen: dict[str, int] = {}
+    plot_log: dict[str, Any] = {"troubles": [], "reckonings": [], "brascombe": "", "gala": None}
+    upgrades_wanted = [u for u in (strategy.upgrade.split(",") if strategy.upgrade else
+                                   ["guild_book", "box_room", "attic", "hill_cards", "third_storey"] if strategy.plot == "rush"
+                                   else ["box_room", "attic"] if strategy.plot == "steady" else []) if u]
     while st.house.week <= weeks and not st.house.fate:
         g = st.active_girl
         if g is not None and g.status == "active" and ((weekday(st.clock.day) == 0 and st.clock.minute == 540) or not st.plan.mornings):
-            a, b = choose_plan(game, st, strategy.plan, [], strategy.rest_at)
+            gala = strategy.plot == "rush" or (strategy.plot == "steady" and st.house.week > 10)
+            a, b = choose_plan(game, st, strategy.plan, GALA_SKILLS if gala else [], strategy.rest_at)
             if strategy.work_empty and not any(not x.result for x in st.shows if x.girl == g.id) and b != "rest":
                 b = "work"
             st, _ = game.run_command(st, "plan", {"slot": "mornings", "skill": a})
@@ -95,11 +152,13 @@ def trial(strategy: Strategy, weeks: int, seed: int, content: Path = CONTENT, ch
         if strategy.recruit:
             for x in [x for x in st.girls if x.status == "available"]:
                 game._take_on(st, x, "the simulator")
-        if strategy.upgrade:
-            u = game._upgrade(st, strategy.upgrade)
+        for want in upgrades_wanted:
+            u = game._upgrade(st, want)
             if u is not None and u["id"] not in st.house.upgrades and st.house.money >= int(u.get("cost") or 0) + strategy.upgrade_margin:
-                st, r = game.run_command(st, "upgrade", {"upgrade": strategy.upgrade})
+                st, r = game.run_command(st, "upgrade", {"upgrade": want})
                 upgrades += int(r.ok)
+                break
+        st = _plot(game, st, strategy, seen, plot_log)
         if strategy.take and st.harbour.hand:
             cards = game.content.girl_cards()
             price = lambda c: hb.price_of(c, st, lambda k: dk.dial(st, k))  # noqa: E731
@@ -107,7 +166,7 @@ def trial(strategy: Strategy, weeks: int, seed: int, content: Path = CONTENT, ch
             if slip and st.house.money >= price(slip[0]) + strategy.take:
                 st, r = game.run_command(st, "take", {"girl": slip[0]["id"]})
                 taken += int(r.ok)
-        to = next_stop(st)
+        to = next_stop(st, LEAN_STOPS)
         show = next((x for x in st.shows if not x.result and x.at_abs == to), None)
         st.player.location = show.venue if (show is not None and strategy.attend) else OFFICE
         week = st.house.week
@@ -122,7 +181,10 @@ def trial(strategy: Strategy, weeks: int, seed: int, content: Path = CONTENT, ch
             "low": min(money_by_week) if money_by_week else st.house.money, "fate": st.house.fate or "",
             "shows": len(played), "results": {w: sum(1 for x in played if x.result == w) for w in SHOW_WORDS},
             "fees": sum(x.paid for x in played), "name": st.house.name, "heat": st.house.heat, "taken": taken, "upgrades": upgrades,
-            "girls": len(st.in_house()), "quality": round(statistics.mean([x.quality or 0 for x in played]), 2) if played else None}
+            "girls": len(st.in_house()), "quality": round(statistics.mean([x.quality or 0 for x in played]), 2) if played else None,
+            "gala": plot_log["gala"], "brascombe": plot_log["brascombe"], "troubles": plot_log["troubles"], "reckonings": plot_log["reckonings"],
+            "partner": bool(st.flags.get("brascombe_partner")), "licence_revoked": bool(st.flags.get("licence_revoked")),
+            "best": {k: st.house.best.get(k, 0) for k in GALA_SKILLS}}
 
 
 def _pct(xs: list[float], p: float) -> float:
@@ -140,6 +202,10 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "mix": {w: round(res[w] / max(1, shows), 2) for w in SHOW_WORDS},
             "name_p50": _pct([r["name"] for r in rows], .5), "took_contract": round(sum(1 for r in rows if r["taken"]) / len(rows), 2),
             "fate": round(sum(1 for r in rows if r["fate"]) / len(rows), 2),
+            "gala": round(sum(1 for r in rows if r.get("gala")) / len(rows), 2),
+            "gala_week_p50": _pct([r["gala"] for r in rows if r.get("gala")], .5) if any(r.get("gala") for r in rows) else None,
+            "reckonings": round(sum(len(r.get("reckonings") or []) for r in rows) / len(rows), 2),
+            "girls_p50": _pct([r["girls"] for r in rows], .5),
             "curve_p50": [_pct([r["money"][i] for r in rows if len(r["money"]) > i], .5) for i in range(max(len(r["money"]) for r in rows))]}
 
 
@@ -171,12 +237,13 @@ def grid(spec: list[str]) -> list[Strategy]:
 
 
 def table(results: list[tuple[Strategy, dict[str, Any]]]) -> str:
-    out = ["| strategy | money p10 / p50 / p90 | low p10 | in the red | shows a week | disaster / poor / fine / good / triumph | Name p50 | bought a contract |",
-           "|---|---|---|---|---|---|---|---|"]
+    out = ["| strategy | money p10 / p50 / p90 | low p10 | in the red | shows a week | disaster / poor / fine / good / triumph | Name p50 | bought a contract | girls p50 | the gala (week p50) | reckonings a game |",
+           "|---|---|---|---|---|---|---|---|---|---|---|"]
     for s, r in sorted(results, key=lambda x: -x[1]["final_p50"]):
         mix = " / ".join(f"{r['mix'][w]:.2f}" for w in SHOW_WORDS)
         out.append(f"| {s.label()} | {r['final_p10']} / {r['final_p50']} / {r['final_p90']} | {r['low_p10']} | {r['in_red']:.0%} | "
-                   f"{r['shows_per_week']} | {mix} | {r['name_p50']} | {r['took_contract']:.0%} |")
+                   f"{r['shows_per_week']} | {mix} | {r['name_p50']} | {r['took_contract']:.0%} | {r['girls_p50']} | "
+                   f"{r['gala']:.0%}" + (f" (w{r['gala_week_p50']})" if r.get('gala_week_p50') else "") + f" | {r['reckonings']} |")
     return "\n".join(out)
 
 
@@ -184,7 +251,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--trials", type=int, default=200)
     ap.add_argument("--weeks", type=int, default=16)
-    ap.add_argument("--grid", nargs="*", default=[], help="field=v1,v2 ... (book, plan, rest_at, work_empty, take, upgrade, upgrade_margin, recruit, attend, girl)")
+    ap.add_argument("--grid", nargs="*", default=[], help="field=v1,v2 ... (book, plan, rest_at, work_empty, take, upgrade, upgrade_margin, recruit, attend, girl, plot, trouble, brascombe, reckoning)")
     ap.add_argument("--workers", type=int, default=0, help="processes (0: every core)")
     ap.add_argument("--check", action="store_true", help="verify the content cache is unchanged after the first trial")
     ap.add_argument("--out", default="", help="write the table and the median curves as markdown here")

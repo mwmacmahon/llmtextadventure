@@ -308,7 +308,42 @@ def test_the_formula_reads_the_girl_the_proprietor_and_the_room(game: ClownGame)
     assert "what the client likes, done well" in why1 and not any(ch.isdigit() for ln in why1 for ch in ln)   # C3: the narrator's why in words
     g.fatigue = 85
     q2, why2, nums2 = game._show_quality(st, x, g)
-    assert q2 == 1 and "she went in spent (-3)" in nums2 and "she went in spent" in why2
+    assert q2 == 4                                          # D211C: tiredness no longer scores the show; it takes from the rewards
+
+
+def test_tiredness_takes_from_the_rewards_on_a_curve_and_the_player_is_warned_three_days_out(game: ClownGame):
+    """D211C (the owner, 11-10): whole at 50, half at 100, biting past 70; a daily warning from three days before a show when
+    the girl is over 50: the panel at once, the next turn's § line, the narrator's line in words."""
+    from games.hidden.clown.game import fatigue_factor
+    assert [fatigue_factor(f) for f in (0, 50, 60, 70, 80, 90, 100)] == [1.0, 1.0, 0.98, 0.92, 0.82, 0.68, 0.5]
+    st = _offer(game, new(game))
+    st, _ = game.run_command(st, "book", {"booking": "rope_walk_birthday", "girl": "dot"})
+    x = st.shows[0]
+    st.clock.day, st.clock.minute = x.at_abs // DAY - 3, 600
+    st.active_girl.fatigue = 72
+    st = advance(game, st, 5, 4)
+    assert len(st.house.alerts) == 1 and "worn" in st.house.alerts[0] and "x0.9" in st.house.alerts[0]
+    assert game.player_alerts(st) == st.house.alerts
+    assert any(getattr(p, "title", "") == "Before the shows" for p in game.ui(st).panels)
+    assert any(ln.startswith("WORN BEFORE A SHOW") and not any(c.isdigit() for c in ln) for ln in game.turn_directives(st))
+    st = advance(game, st, 5, 5)                            # the same day: shown once, not again
+    assert st.house.alerts == []
+    st = advance(game, st, DAY, 6)                          # the next day: again
+    assert len(st.house.alerts) == 1
+    st.active_girl.fatigue = 40
+    st = advance(game, st, DAY, 7)
+    assert st.house.alerts == []
+    # the rewards: the fee and the Name at 90 fatigue
+    st2 = _offer(game, new(game))
+    st2, _ = game.run_command(st2, "book", {"booking": "rope_walk_birthday", "girl": "dot"})
+    y = st2.shows[0]
+    st2.active_girl.skills["children"], st2.active_girl.skills["balloons"] = 65, 60
+    st2.active_girl.fatigue = 90
+    st2.player.location = "Rope Walk"
+    st2 = advance(game, st2, y.at_abs - st2.now_abs + 1, 8)
+    y = st2.shows[0]
+    from games.hidden.clown.game import SHOW_PAY
+    assert y.paid == int(round(15 * SHOW_PAY[y.result] * 0.68)) and any("the rewards x0.68" in ln for ln in y.why_numbers)
 
 
 # ---- the referee's rows -------------------------------------------------------------------------------------------------
@@ -1453,3 +1488,40 @@ async def test_a_turn_that_would_spend_the_part_of_the_day_asks_first_unless_it_
     engine._free_run = lambda iid, turn: 4                                          # four free turns before: the fifth would spend it
     assert engine._block_ask(game, st, short, iid, 1, "I ask Mrs Pell about the coal").startswith("That would take the rest")
     assert BLOCK_YES.match("yes") and BLOCK_YES.match("Go on.") and not BLOCK_YES.match("yes, and I ask her name")
+
+
+def test_the_simulator_plays_the_plot_by_policy_and_in_place_plays_the_same_game(game: ClownGame):
+    """D212C: the referee's plot rows by policy (troubles answered soft, firm or hard, after a delay by the plot's pace; Brascombe
+    accepted or refused; the gala played when offered; a reckoning borne or a girl given up); in place equals copied play."""
+    from games.hidden.clown.tools import sim
+    a = sim.trial(sim.Strategy(plot="rush"), weeks=3, seed=2, content=CONTENT, in_place=True)
+    b = sim.trial(sim.Strategy(plot="rush"), weeks=3, seed=2, content=CONTENT, in_place=False)
+    assert a == b
+    st = new(game)
+    hooks = game.hooks_content()
+    h = dk.deal(st, hooks["debt_collector"], turn=1, deal_abs=st.now_abs, name="Hal")
+    h.status = "live"
+    log = {"troubles": [], "reckonings": [], "brascombe": "", "gala": None}
+    seen: dict[str, int] = {}
+    sim._plot(game, st, sim.Strategy(plot="procrastinate", trouble="soft"), seen, log)
+    assert not st.flags.get("hatch_paid")                                    # procrastinate: left to lapse
+    sim._plot(game, st, sim.Strategy(plot="rush", trouble="hard"), seen, log)
+    assert st.flags.get("hatch_put_out") and log["troubles"] == ["debt_collector:hatch_put_out"]
+    st.flags["brascombe_offered"] = True
+    sim._plot(game, st, sim.Strategy(brascombe="accept"), seen, log)
+    assert st.flags.get("brascombe_bought") and log["brascombe"].startswith("accepted")
+    st.flags["gala_offered"] = True
+    sim._plot(game, st, sim.Strategy(), seen, log)
+    assert st.flags.get("gala_done") and log["gala"] == st.house.week
+
+
+def test_a_saved_game_keeps_a_rebooking_clients_step_on_load(game: ClownGame):
+    """D212C, found by the simulator: the save's re-read of the script reset every client's difficulty and fee to the card's on
+    each load, so a client who booked again (D208C) was back to the first price the next turn."""
+    st = new(game)
+    hooks = game.hooks_content()
+    dk.deal(st, hooks["sailors_rest"], turn=1, deal_abs=st.now_abs, name="Hal")
+    dk.deal(st, hooks["sailors_rest"], turn=2, deal_abs=st.now_abs, name="Hal")
+    assert st.person("dunning").client.difficulty == 2
+    again = game.load_state(st.model_dump(mode="json"))
+    assert again.person("dunning").client.difficulty == 2 and again.person("dunning").client.pays == 25

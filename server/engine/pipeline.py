@@ -1377,6 +1377,9 @@ class Engine:
             yield {"event": "mechanic", "data": {"turn": turn, "text": out["text"], "data": {"lever": lv.id, "status": out["status"]}}}
             narration_stored = with_mechanic(narration_stored, out["text"])
         capped_line = _hook(game, "turn_cap_line", state, default=None) if res.get("turn_capped") else None   # round 6: a typed wait of days
+        for alert in _hook(game, "player_alerts", state, default=None) or []:   # D211C: the game's own warnings, made at the last turn's end
+            yield {"event": "mechanic", "data": {"turn": turn, "text": alert, "data": {"alert": True}}}
+            narration_stored = with_mechanic(narration_stored, alert)
         for told in [x[len("TOLD "):] for x in report.applied if x.startswith("TOLD ")] + ([capped_line] if capped_line else []):   # C63: what is so
             yield {"event": "mechanic", "data": {"turn": turn, "text": told, "data": {"told": True}}}
             narration_stored = with_mechanic(narration_stored, told)

@@ -63,6 +63,15 @@ GRADUATE_SOUND, GRADUATE_FINISHED = 3, 1                                    # th
 DIFFICULTY_WORDS = {0: "an easy room", 1: "an ordinary room", 2: "a demanding room", 3: "a hard room"}
 SHOW_PAY = {"disaster": 0.0, "poor": 0.5, "fine": 1.0, "good": 1.0, "triumph": 1.5}
 
+
+def fatigue_factor(fatigue: int) -> float:
+    """D211C (the owner, 11-10): a show's rewards (the fee, the Name it brings) by the girl's fatigue as she goes on: whole at 50
+    or under, half at 100, on a curve that bites mostly past 70 (0.98 at 60, 0.92 at 70, 0.82 at 80, 0.68 at 90)."""
+    if fatigue <= 50:
+        return 1.0
+    x = (min(100, fatigue) - 50) / 50
+    return round(1 - 0.5 * x * x, 2)
+
 # D205C (the owner, 11-10): the days run only on the player's plain word ("skip to Wednesday", "fast forward to Saturday",
 # "skip to the show"), read here as the Skip command before the assistant reads the turn; nothing else moves the clock past a
 # night. "anyway" at the end lets it run past what the warning named.
@@ -162,6 +171,8 @@ class ClownGame(GameBase):
         "sleep": TaskRow(least=60, most=720, lost=0),
     })
     resolver = "threshold"
+    in_place = False                 # the simulator (tools/sim.py, D212C): after_turn and run_command work on the state they are given,
+                                     # no copy; never in play, where a refused command must leave the state as it was
     typed_only_commands = ("skip",)  # D205C: the days run only on the player's own "skip to …" (typed_command); never the assistant's pick
     mechanic_numbers = False
     target_offset = 0
@@ -724,9 +735,22 @@ class ClownGame(GameBase):
     def state_for_models(self, state: ClownState) -> str:
         return self.render_bulletin(state, "", engine=True)
 
+    def _worn_before_show(self, s: ClownState) -> list[tuple[Girl, Any, str]]:
+        """D211C: (girl, show, when) for every show in the next three days whose girl is over 50 fatigue."""
+        out = []
+        for x in sorted((x for x in s.shows if not x.result), key=lambda x: x.at_abs):
+            g = s.girl(x.girl)
+            days = x.at_abs // DAY - s.clock.day
+            if g is not None and g.in_house() and 0 <= days <= 3 and g.fatigue > 50:
+                out.append((g, x, "today" if days == 0 else "tomorrow" if days == 1 else f"on {WEEKDAYS[weekday(x.at_abs // DAY)]}"))
+        return out
+
     def turn_directives(self, s: ClownState) -> list[str]:
         p, h = s.player, s.house
         out: list[str] = []
+        for g, x, when in self._worn_before_show(s)[:1]:   # D211C: the house notices, in words
+            out.append(f"WORN BEFORE A SHOW: {g.name} is {g.fatigue_word}, with {x.title} {when}. If it fits the scene, someone in the house "
+                       f"notices it in a line (Mrs Pell, the girl herself); never a number.")
         for x in s.shows:
             if x.result and not x.told:
                 words = SHOW_LINES[x.result]
@@ -1698,10 +1722,6 @@ class ClownGame(GameBase):
             quality += add(-1, "afraid, she could not read the room")
         if g.respect <= -3:
             quality += add(-1, "she did it her own way")
-        if g.fatigue >= 80:
-            quality += add(-3, "she went in spent")
-        elif g.fatigue >= 60:
-            quality += add(-1, "she went in worn")
         for c in g.conditions:
             if c.mod and c.name != "spent" and (c.group == "all" or any(s.scenario.group_of(k) == c.group for k in x.wants)):
                 quality += add(c.mod, c.name)
@@ -1814,7 +1834,11 @@ class ClownGame(GameBase):
         word = self._show_word(quality)
         x.quality, x.why, x.why_numbers, x.result, x.resolved_turn = quality, why, why_n, word, turn
         share = 1.0 if g.graduated else dk.dial(s, "student_pay")
-        x.paid = int(round(x.fee * SHOW_PAY[word] * share))
+        ff = fatigue_factor(g.fatigue)                   # D211C: tiredness takes from the rewards, not the show
+        x.paid = int(round(x.fee * SHOW_PAY[word] * share * ff))
+        if ff < 1.0:
+            x.why.append("she went in " + g.fatigue_word + ", and it cost the house")
+            x.why_numbers.append(f"her fatigue {g.fatigue}: the rewards x{ff:g}")
         if share != 1.0 and x.fee:
             x.why_numbers.append(f"a student's share of the fee (x{share:g})")
         if s.flags.get("brascombe_partner") and x.paid:
@@ -1824,7 +1848,8 @@ class ClownGame(GameBase):
             self._tally(s, f"{x.title}: Brascombe's cut, {cut} gold.")
         s.house.money += x.paid
         g.credibility = max(-3, min(3, g.credibility + SHOW_STANDING[word]))
-        s.house.name = max(0, min(100, s.house.name + SHOW_NAME[word]))
+        name_gain = SHOW_NAME[word] if SHOW_NAME[word] <= 0 else int(round(SHOW_NAME[word] * ff))
+        s.house.name = max(0, min(100, s.house.name + name_gain))
         g.fatigue = min(100, g.fatigue + FATIGUE_SHOW)
         if q is not None and q.client:
             q.client.standing = max(-3, min(3, q.client.standing + SHOW_STANDING[word]))
@@ -2063,11 +2088,12 @@ class ClownGame(GameBase):
             self._note(s, f"{why}: " + ("money came in." if int(row.get("money") or 0) > 0 else "money went out."), f"{why}: " + ", ".join(bits) + ".")
 
     def after_turn(self, state: ClownState, info: TurnInfo) -> ClownState:
-        s = state.model_copy(deep=True)
+        s = state if self.in_place else state.model_copy(deep=True)
         h, p = s.house, s.player
         now = s.now_abs
         s.deck.dealt_this_turn = []
         s.harbour.announce = False
+        h.alerts = []                                    # D211C: shown at this turn's start; new ones below
         s.flags.pop("_report_fresh", None)
         s.flags.pop("_upgrade_fresh", None)
         for x in s.shows:
@@ -2116,6 +2142,7 @@ class ClownGame(GameBase):
         if deck:
             dk.deal_trouble(s, deck, hooks, info.rng, now, info.turn, p.name)
         self._walk_routines(s)
+        self._fatigue_warnings(s)
         self._best(s)
         if s.active and (s.active_girl is None or s.active_girl.status != "active"):
             nxt = next((x for x in s.girls if x.status == "passive"), None)
@@ -2478,6 +2505,21 @@ class ClownGame(GameBase):
         to = _SKIP_ALIASES.get(to, to.split()[0] if to.split()[0] in {k for k, _, _ in self._skip_targets(state)} else to)
         return "skip", {"to": to, "confirm": "yes" if m.group("anyway") else "no"}
 
+    def player_alerts(self, state: ClownState) -> list[str]:
+        """The pipeline's hook (D211C): the warnings the last turn's end made, as § lines."""
+        return list(state.house.alerts)
+
+    def _fatigue_warnings(self, s: ClownState) -> None:
+        """D211C (the owner, 11-10): each day from three days before a show, when the girl booked is over 50 fatigue, the player is
+        told (once a day): the panel, the next turn's § line, and the narrator's block."""
+        for g, x, when in self._worn_before_show(s):
+            key = f"{s.clock.day}:{x.id}"
+            if key in s.house.warned:
+                continue
+            s.house.warned = (s.house.warned + [key])[-40:]
+            s.house.alerts.append(f"{g.name} is {g.fatigue_word} (fatigue {g.fatigue}) and plays {x.title} {when}: as she is, the show "
+                                  f"would bring x{fatigue_factor(g.fatigue):g} of its fee and Name. Rest her to keep it whole.")
+
     def plain_spend(self, state: ClownState, adj: Any) -> bool:
         """The pipeline's hook (D210C): a turn that plainly spends the part of the day without asking: work in the practice room."""
         return state.player.location == PRACTICE
@@ -2545,7 +2587,7 @@ class ClownGame(GameBase):
         return out
 
     def run_command(self, state: ClownState, command_id: str, args: dict[str, Any]) -> tuple[ClownState, CommandResult]:
-        s = state.model_copy(deep=True)
+        s = state if self.in_place else state.model_copy(deep=True)
         if command_id == "plan":
             slot = str(args.get("slot") or "mornings").lower()
             skill = str(args.get("skill") or "").lower().strip()
@@ -2832,6 +2874,11 @@ class ClownGame(GameBase):
             what = "in training" if x.id == s.active else "a graduate" if x.graduated else "not in training"
             booked_x = ("; " + "; ".join(f"booked: {y.title} ({WEEKDAYS[weekday(y.at_abs // DAY)][:3]} {hhmm(y.at_abs % DAY)})" for y in shows_x)) if shows_x else ""
             panels.append(ListPanel(title=f"{x.name} · {what} · {x.fatigue_word} · {x.credibility_word}{booked_x}", items=tiles, layout="grid", pinned=x.id == s.active))
+        worn = self._worn_before_show(s)                 # D211C: the warning where the player sees it at once
+        if worn:
+            panels.append(ListPanel(title="Before the shows", place="main", pinned=True, layout="stack", items=[
+                Chip(label=g_.name, tone="warn", value=f"{g_.fatigue_word} (fatigue {g_.fatigue}) with {x.title} {when}: the show would bring "
+                     f"x{fatigue_factor(g_.fatigue):g} of its fee and Name. Rest her to keep it whole.") for g_, x, when in worn]))
         waiting = [x for x in s.girls if x.status == "available"]
         if waiting:
             free = self._rooms_free(s)
