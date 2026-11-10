@@ -80,6 +80,10 @@ Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a shor
    prose (B224), impossible demands rolled rather than refused (B225), heat not moving on an open crime (B227), no
    check on a player name that is a cast member's (B45). On Gemma she waits for B217. She has no save yet; the Hard
    saves are the owner's Ungdall games (B99).
+1b. **B329, the save's size and the database** (the owner, 11-10: "That size is not acceptable ... needs to be in roadmap";
+   designed, not built; ROADMAP §7). Snapshots as diffs (the last ten turns whole, a full keyframe every tenth, compressed);
+   the `model_call` request by its blob hash; compressed blobs; retention for test games; VACUUM. Every game. The fantasy chat
+   knows B329 touches `engine/store.py` and the pipeline's `save_snapshot`.
 2. **The owner's open answers**, bundled into the next directive as they come: the player UI's four questions
    (`notes/DESIGN-player-ui-2026-11-08.md`), magic's placement and its four questions (B91,
    `notes/DESIGN-magic-2026-11-08.md`), the content questions (B40, B43, B44, B58, B61, B110 to B122, B136), the

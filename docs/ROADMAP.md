@@ -208,6 +208,18 @@ the journal and the story so far. Design: DESIGN.md; GAME_AUTHORING; the world p
   snapshots, so undo, a retell and the call report read them as now; a turn that ages out of that window becomes a diff from
   the turn before, except every tenth turn, which stays a full keyframe; all compressed. Loading an old turn rebuilds it from
   its keyframe (at most nine diffs, about 2 ms). Steps 3 and 4 (a bounded save, retention) stay on the list behind it.
+  **The database (the owner, 11-10: "What about database side of it? That bloat?").** Measured: the file is 643 MB: the
+  snapshots 240 MB, the ledger 211 MB (its `model_call` rows 125 MB, 87% of each the full request, a second copy of a prompt
+  the blob table already holds once; the retold turns' `rewrite` rows 27 MB; the exchanges 28 MB), the prompt blobs 138 MB,
+  the transcripts 45 MB; 176 games, nearly all test rounds. The order, after the snapshots' diffs (240 MB to about 20):
+  5. The `model_call` row names its request by the blob's hash, as the exchange rows do, instead of a copy (about 110 MB);
+     the call report reads it from the blob.
+  6. The prompt blobs compressed (2.3 times), and a prompt kept as a diff from the call before it in the same game where that
+     is smaller (the frozen prefix and most of the block repeat from call to call).
+  7. Retention: a test game archived after its call report is written keeps its transcript and its last save; its ledger's
+     exchanges and requests and the blobs no other game names go. Lilith's games and the owner's own are never pruned.
+  8. The file shrinks only when told: VACUUM after a pruning, or incremental auto-vacuum set on the database.
+  With 1, 2 and 5 the file is about 300 MB of today's 643; with retention most of the rest.
 
 ## 8. The fantasy game, Marrowgate
 
