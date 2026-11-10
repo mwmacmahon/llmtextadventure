@@ -1685,10 +1685,20 @@ def test_the_towns_favours_open_by_stat_and_level_and_are_shown(game: ClownGame)
     fav = {f["id"]: f for f in game.favours(st)}
     assert len(fav) >= 10 and {f["stat"] for f in fav.values()} == {"charm", "menace", "business", "connections", "craft"}
     panel = next(p for p in game.ui(st).panels if getattr(p, "title", "") == "The town's favours")
+    assert not any("Charm 40" in c.label for c in panel.items)                # D219C: nothing known until its person is met
+    assert any("more" in c.label and "fortune teller" in c.value for c in panel.items)
+    st = advance(game, st, 5, 2)
+    assert not st.flags.get("favour_fortune_teller")                          # the points, but not the meeting
+    for f in fav.values():
+        if st.person(f["giver"]) is not None:
+            st.person(f["giver"]).met = True
+    panel = next(p for p in game.ui(st).panels if getattr(p, "title", "") == "The town's favours")
     assert any("Charm 40" in c.label for c in panel.items) and any("Menace 80" in c.label for c in panel.items)
     hand = st.house.hand_size
-    st = advance(game, st, 5, 2)                                             # a charmer (65) has Madame Oriel and the drawing rooms
+    st = advance(game, st, 5, 3)                                             # a charmer (65) has Madame Oriel and the drawing rooms
     assert st.flags.get("favour_fortune_teller") and st.flags.get("favour_hill_drawing_rooms") and st.house.hand_size == hand + 1
+    oriel = next(p for p in game.ui(st).panels if (getattr(p, "title", "") or "").startswith("Madame Oriel's cards"))
+    assert oriel.items and all(c.value.endswith("%") for c in oriel.items)
     assert not st.flags.get("favour_mayoress_circle")
     st.player.points["business"], st.player.points["menace"] = 85, 50
     st = advance(game, st, 5, 3)
@@ -1713,3 +1723,17 @@ def test_the_towns_favours_open_by_stat_and_level_and_are_shown(game: ClownGame)
     assert r.ok and st.hook(offer.id).status == "passed"
     _, r2 = game.run_command(st, "swap", {"booking": offer.id})
     assert not r2.ok
+
+def test_renown_grows_slower_as_the_house_is_known(game):
+    """D219C: a renown gain is scaled by (100 - renown) / renown_slow, the fraction carried; a loss lands whole."""
+    st = new(game)
+    st.house.renown, st.house.renown_xp = 0, 0.0
+    game._add_renown(st, 4)
+    assert st.house.renown == 2                                          # half at nothing
+    st.house.renown, st.house.renown_xp = 50, 0.0
+    game._add_renown(st, 4)
+    assert st.house.renown == 51 and abs(st.house.renown_xp - 0.0) < 1e-9   # a quarter at fifty
+    game._add_renown(st, 2)
+    assert st.house.renown == 51 and st.house.renown_xp > 0              # the fraction carried, not lost
+    game._add_renown(st, -5)
+    assert st.house.renown == 46

@@ -299,6 +299,7 @@ class House(BaseModel):
     warned: list[str] = Field(default_factory=list)   # "day:show" warned already (once a day)
     money: int = 200
     heat: int = 0
+    renown_xp: float = 0.0          # D219C: the part of a point of renown earned toward the next
     renown: int = Field(default=0, validation_alias=AliasChoices("renown", "name"))   # the house's renown: how well the town knows it (a save's "name" read as it)
     week: int = 1
     best: dict[str, int] = Field(default_factory=dict)       # the best of every girl in the house per skill (the spine's gates)

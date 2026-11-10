@@ -190,12 +190,17 @@ def trial(strategy: Strategy, weeks: int, seed: int, content: Path = CONTENT, ch
     _, st = game.new_instance({"name": f"Proprietor {seed}", "kind": "charmer", "first_girl": girl})
     for k, v in strategy.dials:                 # the calibration's dials, on this game only
         st.scenario.dials[k] = v
+    for f in game.favours(st):                  # D219C: the simulator's proprietor knows the town's people (play meets them)
+        q = st.person(str(f.get("giver") or ""))
+        if q is not None:
+            q.met = True
     game.content.challenges()                   # load every file a trial reads, so the check compares like with like
     keys = sorted(game.content._cache)
     before = _fingerprint(game, keys) if check else ""
     rng = random.Random(seed)
     turn = 1
     money_by_week: list[int] = []
+    renown_by_week: list[int] = []
     taken = upgrades = 0
     seen: dict[str, int] = {}
     spend = {"gear": 0, "rooms": 0, "contracts": 0}
@@ -263,10 +268,11 @@ def trial(strategy: Strategy, weeks: int, seed: int, content: Path = CONTENT, ch
         turn += 1
         if st.house.week != week:
             money_by_week.append(st.house.money)
+            renown_by_week.append(st.house.renown)
     if check and _fingerprint(game, keys) != before:
         raise RuntimeError("the content cache changed during a trial: a caller mutates content; fast mode is not safe")
     played = [x for x in st.shows if x.result]
-    return {"seed": seed, "girl": girl, "weeks": len(money_by_week), "money": money_by_week, "final": st.house.money,
+    return {"seed": seed, "girl": girl, "weeks": len(money_by_week), "money": money_by_week, "renown_by_week": renown_by_week, "final": st.house.money,
             "low": min(money_by_week) if money_by_week else st.house.money, "fate": st.house.fate or "",
             "shows": len(played), "results": {w: sum(1 for x in played if x.result == w) for w in SHOW_WORDS},
             "fees": sum(x.paid for x in played), "renown": st.house.renown, "heat": st.house.heat, "taken": taken, "upgrades": upgrades,
@@ -306,6 +312,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "gear_p50": _pct([r["spend"]["gear"] for r in rows], .5),
             "fees_p50": _pct([r["fees"] for r in rows], .5),
             "rooms_contracts_p50": _pct([r["spend"]["rooms"] + r["spend"]["contracts"] for r in rows], .5),
+            "renown_curve_p50": [_pct([r["renown_by_week"][i] for r in rows if len(r.get("renown_by_week") or []) > i], .5) for i in range(max(len(r.get("renown_by_week") or []) for r in rows))],
             "curve_p50": [_pct([r["money"][i] for r in rows if len(r["money"]) > i], .5) for i in range(max(len(r["money"]) for r in rows))]}
 
 
@@ -372,8 +379,10 @@ def main() -> None:
         print(f"{s.label()}: p50 {results[-1][1]['final_p50']} ({time.time() - t0:.0f}s)", flush=True)
     text = table(results)
     curves = "\n".join(f"- {s.label()}: " + ", ".join(str(v) for v in r["curve_p50"]) for s, r in results)
+    renown = "\n".join(f"- {s.label()}: " + ", ".join(f"{v:g}" for v in r.get("renown_curve_p50") or []) for s, r in results)
     report = (f"Clown Maker simulator: {a.trials} trials a strategy, {a.weeks} weeks, {len(results)} strategies, "
-              f"{time.time() - t0:.0f}s.\n\n{text}\n\nThe median money at each week's end:\n\n{curves}\n")
+              f"{time.time() - t0:.0f}s.\n\n{text}\n\nThe median money at each week's end:\n\n{curves}\n"
+              f"\nThe median Renown at each week's end:\n\n{renown}\n")
     print("\n" + report)
     if a.out:
         Path(a.out).parent.mkdir(parents=True, exist_ok=True)

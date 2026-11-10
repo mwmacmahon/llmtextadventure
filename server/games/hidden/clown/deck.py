@@ -269,6 +269,7 @@ DIALS: dict[str, float] = {
     "xp_show": 1,                  # a show the proprietor attends, toward the client's stat
     "xp_challenge": 1,             # a night's challenge held by the proprietor's stat, toward it
     "teach_max": 0.5,              # attended training times 1 + this x the teaching stat's points / 100 (x1.5 at 100)
+    "renown_slow": 200,            # D219C: a renown gain times (100 - renown) / this (half at 0, a quarter at 50; famous near week 40)
     "gear_boost": 10,              # D214C: a girl's skill for a show, lifted this much a point of each serving item's bonus
     "gear_pay": 0.2,               # and the fee this much more for each serving item (the owner: about 20% a costume)
     "gear_theft_chance": 0.15,     # D214C: a week's chance a rival gets at the wardrobe, while the house has gear
@@ -276,7 +277,7 @@ DIALS: dict[str, float] = {
     "gear_wear": 1.0,              # the gear's life in shows times this
     "step_pay": 0.6,               # a client a step harder pays this much more of the fee a step (D216C: was 0.25)                 # D213C: a girl's gear adds at most this to a show's quality
     "tutor_cost": 12, "tutor_gain": 1.5,     # a tutor for a slot: this much gold, and the slot's gain times this
-    "master_cost": 30, "master_gain": 2.0,   # a master: dearer and better; only once the house has a name (master_name)
+    "master_cost": 30, "master_gain": 2.0,   # a master: dearer and better; only from this renown (master_renown)
     "master_renown": 25,
     "renown_step_1": 25,             # D213C: at this renown every client asks a step harder (and pays a quarter more) and the rent rises
     "renown_step_2": 50,             # and again here

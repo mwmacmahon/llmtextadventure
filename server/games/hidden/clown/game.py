@@ -1928,7 +1928,7 @@ class ClownGame(GameBase):
         s.house.money += x.paid
         g.credibility = max(-3, min(3, g.credibility + SHOW_STANDING[word]))
         name_gain = SHOW_RENOWN[word] if SHOW_RENOWN[word] <= 0 else int(round(SHOW_RENOWN[word] * ff))
-        s.house.renown = max(0, min(100, s.house.renown + name_gain))
+        self._add_renown(s, name_gain)
         for it in self._gear_for(s, g, x):                     # D213C: each show wears the gear it used
             g.gear[it["id"]] = g.gear.get(it["id"], 0) - 1
             if g.gear[it["id"]] <= 0:
@@ -2042,10 +2042,6 @@ class ClownGame(GameBase):
             mod, whose = self._check_mod(s, str(c.get("check", "charm")))
             a, b = rng.randint(1, 6), rng.randint(1, 6)
             held = a + b + mod >= int(c.get("target", 8))
-            if not held and self._favour(s, "fortune") and not s.flags.get(f"fortune_week_{s.house.week}"):   # D218C: Madame Oriel
-                s.flags[f"fortune_week_{s.house.week}"] = True
-                a, b = rng.randint(1, 6), rng.randint(1, 6)
-                held = a + b + mod >= int(c.get("target", 8))
             if held and str(c.get("check", "")) in STATS:   # D218C: a challenge met is practice in the stat that met it
                 self._practise(s, str(c["check"]), dk.dial(s, "xp_challenge"), str(c.get("title", "")))
             lost = "" if held else self._challenge_effect(s, c.get("fail") or {}, rng)
@@ -2065,7 +2061,7 @@ class ClownGame(GameBase):
             s.house.money += int(eff["money"])
             out.append("money lost" if int(eff["money"]) < 0 else "money gained")
         if eff.get("renown"):
-            s.house.renown = max(0, min(100, s.house.renown + int(eff["renown"])))
+            self._add_renown(s, int(eff["renown"]))
             out.append("the house's renown the worse for it" if int(eff["renown"]) < 0 else "the house's renown the better")
         girls = s.in_house()
         if eff.get("fatigue") and girls:
@@ -2132,6 +2128,19 @@ class ClownGame(GameBase):
                 s.house.alerts.append(f"{STAT_NAMES[k]} is {p.points[k]} now ({p.stats[k]:+d} on a check)" + (f": {why}" if why else "") + ".")
         return gained
 
+    def _add_renown(self, s: ClownState, n: int) -> None:
+        """D219C (the owner, 11-10: max renown "at week 30 is insane"): the one home of a change to renown. A gain shrinks as the
+        house is better known (times (100 - renown) / renown_slow, the fraction carried), so famous is a late thing; a loss lands
+        whole."""
+        h = s.house
+        if n <= 0:
+            h.renown = max(0, h.renown + n)
+            return
+        h.renown_xp += n * max(0.0, 100 - h.renown) / dk.dial(s, "renown_slow")
+        while h.renown_xp >= 1 and h.renown < 100:
+            h.renown_xp -= 1
+            h.renown += 1
+
     def favours(self, s: ClownState) -> list[dict]:
         return list(self.scenario(s.scenario.id).get("favours") or [])
 
@@ -2145,6 +2154,19 @@ class ClownGame(GameBase):
             return out
         return sum(vals)
 
+    def _knows_giver(self, s: ClownState, f: dict) -> bool:
+        """D219C (the owner: "different npcs and talking to them reveals that info about what you can get from them"): a favour is
+        had from a person; the proprietor must have met them."""
+        q = s.person(str(f.get("giver") or ""))
+        return q is None and not f.get("giver") or bool(q is not None and q.met)
+
+    def _peek(self, s: ClownState) -> list[tuple[str, int]]:
+        """D219C: Madame Oriel's cards: next week's likely offers, each with its chance, by the deck's own weights."""
+        pool = dk.candidates(s, dk.deck_of(self.scenario(s.scenario.id)), self.hooks_content(), s.now_abs + 7 * DAY, 0)
+        total = sum(w for _, w in pool) or 1
+        hooks = self.hooks_content()
+        return [(str((hooks.get(hid) or {}).get("title", hid)), round(100 * w / total)) for hid, w in sorted(pool, key=lambda x: -x[1])[:6]]
+
     def _favour_open_for(self, s: ClownState, tier: str) -> bool:
         return any(s.flags.get(f"favour_{f['id']}") and (f.get("effect") or {}).get("gear_tier") == tier for f in self.favours(s))
 
@@ -2152,7 +2174,7 @@ class ClownGame(GameBase):
         """D218C: a favour opens for good the first time its stat's points reach its need; the player is told."""
         for f in self.favours(s):
             fid = f"favour_{f['id']}"
-            if s.flags.get(fid) or s.player.points.get(str(f.get("stat")), 0) < int(f.get("need", 101)):
+            if s.flags.get(fid) or s.player.points.get(str(f.get("stat")), 0) < int(f.get("need", 101)) or not self._knows_giver(s, f):
                 continue
             s.flags[fid] = True
             hand = int((f.get("effect") or {}).get("hand", 0))
@@ -2340,7 +2362,7 @@ class ClownGame(GameBase):
             s.house.money += int(row["money"])
             bits.append(f"{int(row['money']):+d} gold")
         if row.get("renown"):
-            s.house.renown = max(0, min(100, s.house.renown + int(row["renown"])))
+            self._add_renown(s, int(row["renown"]))
         for k in row.get("flags") or []:   # D213C: a reward row's flags (a bad deed: `bad_deed`), as the content writes them
             s.flags[str(k)] = True
         for pid, step in (row.get("attitude") or {}).items():
@@ -3246,11 +3268,20 @@ class ClownGame(GameBase):
             booked_x = ("; " + "; ".join(f"booked: {y.title} ({WEEKDAYS[weekday(y.at_abs // DAY)][:3]} {hhmm(y.at_abs % DAY)})" for y in shows_x)) if shows_x else ""
             panels.append(ListPanel(title=f"{x.name} · {what} · {x.fatigue_word} · {x.credibility_word}{booked_x}", items=tiles, layout="grid", pinned=x.id == s.active))
         fav = self.favours(s)
-        if fav:                                          # D218C: every favour, open or not, with the stat and level it needs
-            panels.append(ListPanel(title="The town's favours", layout="stack", fold=4, items=[
-                Chip(label=f"{f['name']} · {STAT_NAMES[f['stat']]} {f['need']}" + (" · open" if s.flags.get(f"favour_{f['id']}") else f" · yours {s.player.points.get(f['stat'], 0)}"),
-                     tone="ok" if s.flags.get(f"favour_{f['id']}") else "neutral", value=str(f.get("text", "")))
-                for f in sorted(fav, key=lambda f: (not s.flags.get(f"favour_{f['id']}"), f["stat"], int(f["need"])))]))
+        if fav:                                          # D218C, D219C: the favours of people met, open or not, with stat and level
+            known = [f for f in fav if self._knows_giver(s, f)]
+            unknown = [f for f in fav if not self._knows_giver(s, f)]
+            items = [Chip(label=f"{f['name']} · {STAT_NAMES[f['stat']]} {f['need']}" + (" · open" if s.flags.get(f"favour_{f['id']}") else f" · yours {s.player.points.get(f['stat'], 0)}"),
+                          tone="ok" if s.flags.get(f"favour_{f['id']}") else "neutral", value=str(f.get("text", "")))
+                     for f in sorted(known, key=lambda f: (not s.flags.get(f"favour_{f['id']}"), f["stat"], int(f["need"])))]
+            if unknown:
+                roles = sorted({(s.person(str(f.get('giver'))).role if s.person(str(f.get('giver'))) else "someone") for f in unknown})
+                items.append(Chip(label=f"{len(unknown)} more", tone="info", value="People about the town who could do things for a house like this: "
+                                  + "; ".join(roles) + ". Meet them and they will say what they can do, and what they ask."))
+            panels.append(ListPanel(title="The town's favours", layout="stack", fold=5, items=items))
+        if self._favour(s, "peek"):                      # D219C: Madame Oriel's cards
+            panels.append(ListPanel(title="Madame Oriel's cards: next week", layout="rows", items=[
+                Chip(label=t, value=f"{pc}%") for t, pc in self._peek(s)]))
         worn = self._worn_before_show(s)                 # D211C: the warning where the player sees it at once
         if worn:
             panels.append(ListPanel(title="Before the shows", place="main", pinned=True, layout="stack", items=[
