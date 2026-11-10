@@ -345,6 +345,7 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
     if adj is not None and getattr(adj, "kind", "") == "action":       # B208: the player struck at them
         from .game import ATTACK
         struck: list[str] = []
+        aimed: set[str] = set()                                             # part sixteen §4 (c): the reading's attack targets, its words
         for i in getattr(adj, "intents", None) or []:
             c = getattr(i, "check", None)
             words = " ".join([i.action or "", getattr(c, "label", "") or ""])
@@ -357,10 +358,16 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
                     if q is not None and q.status == "alive" and q.location and not game._same_spot(s, q.location, p.location):
                         q.location = p.location                             # a blow at them says they are here (a stale place, B262)
                 struck += list(getattr(a, "targets", None) or [])
+                aimed |= {str(t) for t in getattr(a, "targets", None) or [] if t}
         if not struck and is_fight(adj) and ATTACK.search(" ".join([player_text or "", text])):
             struck = list(getattr(adj, "entities", None) or [])     # B286: a fast beat with no blow in it (a shout, a question) joins nobody
         for e in struck:
             q = s.person(e) or game._same_person(s, e)
+            if q is None and e in aimed and hasattr(game, "bring_in"):      # §4 (c), B290: a blow at someone only in the telling
+                made, row = game.bring_in(s, e, ref=e, band=str(getattr(adj, "fight_band", "") or "normal"), offset=offset, named=True)
+                if row:
+                    w.rows.append(row)
+                continue                                                    # joined by bring_in
             if q is not None and q.status == "alive" and q.id not in p.with_them and q.id not in p.fighting:
                 p.fighting.append(q.id)
     p.fighting = [x for x in p.fighting if (q := s.person(x)) is not None and q.status == "alive" and game._same_spot(s, q.location, p.location)]
@@ -440,6 +447,17 @@ def plan_fight(game: Any, s: FantasyState, adj: Any, player_text: str, rng: Any,
     w.directives += cb.round_lines(game, s)      # THIS TURN's round list (the game's standing lines are read before the plan exists)
 
 
+def _offered(game: Any, s: FantasyState, ref: str, tally: dict) -> Person | None:
+    """§4 (a): a narrator's call naming an id THIS TURN offered ("robber_2"): the engine writes that one in, with its block.
+    Never a spawn by any other name (no spawn verb for the narrator)."""
+    if not ref or not (s.offer or {}).get("ids") or ref not in s.offer["ids"] or not hasattr(game, "bring_in"):
+        return None
+    made, row = game.bring_in(s, ref, ref=ref, join=False)
+    if row:
+        tally.setdefault("encounters", []).append(row)
+    return next((q for q in made if q.id == ref), None)
+
+
 def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tally: dict) -> dict | None:
     """<<ENEMY who move>> or <<HAZARD name>> (B206): the engine rolls it now and answers inline, as a called check's result;
     `data` carries what lands after the prose (harm, a peril, a condition, death). In a fight (part fifteen §3) <<ATTACK>>,
@@ -451,7 +469,7 @@ def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tal
         if out is not None:
             return out
         if call.verb == "ENEMY":
-            q = s.person(call.ref) or game._same_person(s, call.ref)
+            q = s.person(call.ref) or game._same_person(s, call.ref) or _offered(game, s, call.ref, tally)
             if q is not None and q.status == "alive" and s.combat is not None:
                 cb.size_band(q)
                 if q.id not in p.fighting:
@@ -463,7 +481,7 @@ def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tal
         if call.verb in ("ATTACK", "ALLY"):
             return {"text": "No fight is listed for that this turn. Play it without a roll.", "data": {"verb": call.verb, "none": True}}
     if call.verb == "ENEMY":
-        q = s.person(call.ref) or game._same_person(s, call.ref)
+        q = s.person(call.ref) or game._same_person(s, call.ref) or _offered(game, s, call.ref, tally)
         if q is None or q.status != "alive":
             return {"text": f"Nobody by {call.ref!r} is here to act. Play it without a roll.", "data": {"verb": "ENEMY", "who": call.ref, "none": True}}
         tally.setdefault("acted", []).append(q.id)

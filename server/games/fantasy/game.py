@@ -47,7 +47,7 @@ from . import deck as dk
 from . import sheet as sh
 from .combat import person_hp_word
 from .state import (
-    ATTITUDE_WORDS, COINS, COPPERS, COPPERS_TO_GOLD, HUNTED_AT, STAT_NAMES, STATS, WANTED_AT, Ability, City, Condition, Count,
+    ATTITUDE_WORDS, COINS, COPPERS, COPPERS_TO_GOLD, HUNTED_AT, STAT_NAMES, STATS, WANTED_AT, Ability, City, CombatBlock, Condition, Count,
     FantasyState, FoundPlace, Hidden, Item, Note, Person, Player, find_item, purse_text, tier_of, RENOWN_TIERS, RENOWN_SCALE, HEAT_TIERS,
 )
 
@@ -201,6 +201,11 @@ def part_of_day(minute: int) -> str:
 
 def slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")[:32] or "x"
+
+
+def _cb_match(text: str) -> str | None:
+    from . import combat as cb
+    return cb.match_entry(text)
 
 
 def _words(text: str) -> set[str]:
@@ -1380,10 +1385,90 @@ class FantasyGame(GameBase):
         e.reason += " (ten fights a cell, on the turn)"
         return e, False
 
+    def _offer(self, s: FantasyState, adj: Any, w: Any, offset: int) -> None:
+        """Part sixteen §4 (a): when the reading says a fight may come (a high risk, a danger on a check, or a fight band) and
+        nobody is fighting or ready to, THIS TURN names who it would be, from the cache ("If anyone comes at Corra here, it is
+        three robbers (robber_1 to robber_3)"); the narrator decides whether they come; the engine owns their numbers."""
+        from . import combat as cb
+        from . import encounter as en
+        from . import world as wo2
+        p = s.player
+        if adj is None or getattr(adj, "kind", "") not in ("action", "trivial") or p.fighting or p.fate or s.combat is not None or p.peril is not None:
+            return
+        band = str(getattr(adj, "fight_band", "") or "")
+        danger = any(str(getattr(getattr(i, "check", None), "danger", "none") or "none") not in ("none", "") for i in getattr(adj, "intents", None) or [])
+        if not (band or danger or getattr(adj, "risk", "") == "high") or wo2.could_turn(self, s):
+            return
+        if band in ("boss",):
+            return                                                          # a boss is the content's, never drawn here
+        e, hit = self.encounter_for(s, band or "normal", offset=offset)
+        ids = [q.id for q in en.spawn(s, e.bodies, e.variant)]
+        if not ids:
+            return
+        s.offer = {"place": p.location, "ids": ids, "bodies": [list(b) for b in e.bodies], "variant": e.variant, "band": e.band, "reason": e.reason}
+        who = en.called_plural(e.bodies)
+        span = ids[0] if len(ids) == 1 else f"{ids[0]} to {ids[-1]}"
+        w.directives.append(f"If anyone comes at {p.name} here, it is {who} ({span}); name them and the engine has them."
+                            + (" They cannot be beaten: if they come, show it, and the way out is to run or to yield." if e.band == "impossible" else ""))
+        w.rows.append({"kind": "encounter", "hit": hit, "why": "the offer", "reason": e.reason})
+
+    def bring_in(self, s: FantasyState, words: str, *, ref: str = "", band: str = "normal", offset: int = 2, join: bool = True,
+                 named: bool = False) -> tuple[list[Person], dict]:
+        """Part sixteen §4: the people a hostile in the words is, written in here and met with their blocks (and joined to the
+        fight when `join`). The offer's first, when the words or the id are theirs; else the generator through the matcher:
+        an entry by the words, else the kind the words say, else a commoner; one body for 'the kneeling man', the count the
+        words give ('three robbers'), or the generator's for a plural with none ('the robbers'), six at most. `named`: the
+        words are the player's own name for one stranger, kept as the name. Returns (people, the ledger's encounter row)."""
+        from . import combat as cb
+        from . import encounter as en
+        p = s.player
+        made: list[Person] = []
+        row: dict = {}
+        off = s.offer or {}
+        if off.get("ids") and off.get("place") == p.location:
+            ids, bodies = list(off["ids"]), [tuple(b) for b in off["bodies"]]
+            ents = {e for e, _ in bodies}
+            word_e = cb.match_entry(words) if words else None
+            if ref in ids or (word_e and word_e in ents) or (not word_e and en.kind_of_words(words)
+                                                            and en.kind_of_words(words) == cb.ENTRIES.get(bodies[0][0], {}).get("kind")):
+                spawned = en.spawn(s, bodies, off.get("variant", "standard"), ids=ids)
+                pick = [ref] if ref in ids and en.count_in(words or ref) == 1 else ids
+                made = [q for q in spawned if q.id in pick and s.person(q.id) is None]
+                left = [i for i in ids if i not in {q.id for q in made}]
+                s.offer = {**off, "ids": left} if left else {}
+                row = {"kind": "encounter", "hit": True, "why": f"the offer, by '{ref or words}'", "reason": off.get("reason", "")}
+        if not made and words:
+            region = en.region_of(s)
+            n = en.count_in(words)
+            pool, note = en.named_entries(words, region)
+            members = 1 + len(cb.party(s))
+            if n == 1 and len(pool) > 1:                  # one body of a kind: the entry nearest the band for one
+                thr = en.threshold(en.band_of(band), p.level, members)
+                pool = [min(pool, key=lambda e: abs(en.adjusted_xp([(e, 1)], members) - thr))]
+            pinned = [(pool[0], n)] if len(pool) == 1 else None
+            if pinned:
+                e, hit = self.encounter_for(s, band, pinned=pinned, offset=offset)
+            else:
+                e, hit = self.encounter_for(s, band, words=words, offset=offset)
+            if n is None and sum(c for _, c in e.bodies) < 2 and e.bodies:   # a plural is two at least ('the Hill men')
+                e, hit = self.encounter_for(s, band, pinned=[(e.bodies[0][0], 2)], offset=offset)
+            person = cb.is_person(str(cb.ENTRIES.get(e.bodies[0][0], {}).get("kind") or "")) if e.bodies else False
+            own = re.sub(r"^(the|a|an)\s+", "", " ".join(words.split()), flags=re.I)[:40]
+            made = en.spawn(s, e.bodies, e.variant, names=[own[:1].upper() + own[1:]] if named and n == 1 and person else None)
+            # a monster is known by its name (the owner: "it can just be an Owlbear"); only a person keeps the player's words
+            row = {"kind": "encounter", "hit": hit, "why": f"'{words}'" + (f" ({note})" if note else ""), "reason": e.reason}
+        s.people += made
+        if join:
+            for q in made:
+                if q.id not in p.fighting:
+                    p.fighting.append(q.id)
+        return made, row
+
     def world_turn(self, state: FantasyState, adj: Any, player_text: str, rng: Any, turn: int, offset: int):
         """The engine's own rolls before the narrator writes (part four, D176): a chosen death, a peril's countdown, the
         enemies' moves. Returns (state, WorldTurn)."""
         s, w = wo.world_turn(self, state, adj, player_text, rng, turn, offset)
+        self._offer(s, adj, w, offset)                                      # part sixteen §4 (a): who might come at the player here
         w.directives = [self.unnamed(s, d) for d in w.directives]          # B286: the round list calls them as the player does
         w.mechanics = [self.unnamed(s, m) for m in w.mechanics]
         return s, w
@@ -2329,20 +2414,36 @@ class FantasyGame(GameBase):
         if len(s.people) >= MAX_PEOPLE:
             w.reject("people", "the cast is full", name)
             return
+        if here and (s.offer or {}).get("ids") and (slug(name) in s.offer["ids"] or name.strip() in s.offer["ids"]
+                                                    or (cb_entry := _cb_match(f"{role} {name}"))
+                                                    and cb_entry in {b[0] for b in s.offer.get("bodies") or []}):
+            made, _row = self.bring_in(s, f"{name} {role}".strip(), ref=slug(name) if slug(name) in s.offer["ids"] else name.strip())
+            if made:                                     # part sixteen §4 (b): the offer's, by the ids the engine chose
+                w.note(f"people += {', '.join(q.id for q in made)} (the offer: {', '.join(q.combat.block for q in made)}, in the fight)")
+                return
         elsewhere = self._place(s, where) if where.strip() and where.strip().lower() not in ("player", "here", p.name.lower()) else None
         elsewhere = elsewhere if elsewhere and not self._same_spot(s, elsewhere, p.location) else None
         loc = elsewhere or p.location
         nid = slug(name)
         fights = bool(re.search(r"\bfights?\b(\s*:\s*true)?", role or "", re.I))       # part fifteen §1: an invented enemy
         role = re.sub(r"[,;]?\s*\bfights?\b(\s*:\s*true)?", "", role or "", flags=re.I).strip()
+        from . import combat as cb
+        from . import encounter as en
+        entry = cb.match_entry(f"{role} {name}")
+        monster = bool(entry) and not cb.is_person(str(cb.ENTRIES.get(entry, {}).get("kind") or ""))
         s.people.append(Person(id=nid, name=name.strip()[:40], role=role.strip()[:60], location=loc, seen_at=loc if elsewhere is None else "",
                                met=elsewhere is None, heard_of=True))
-        if fights and elsewhere is None:
-            from .combat import ensure_block
-            ensure_block(s.people[-1])
+        if (fights or monster) and elsewhere is None:   # part sixteen §4 (b): a hostile the telling showed is the engine's to fight
+            q = s.people[-1]
+            n = en.count_in(name)
+            q.combat = CombatBlock(block=entry or "", count=n or 1, band="normal" if n != 1 else "")
+            cb.ensure_block(q)
+            if monster:
+                q.called = str(cb.ENTRIES.get(entry, {}).get("called") or q.called)    # a monster is known by its name
+                q.attitude = min(q.attitude, -2)
             if nid not in p.fighting:
                 p.fighting.append(nid)
-            w.note(f"people.{nid} fights: a {s.people[-1].combat.block} block, in the fight")
+            w.note(f"people.{nid} fights: a {q.combat.block} block{f' x{n}' if n and n > 1 else ' (the generator sizes the band)' if n is None else ''}, in the fight")
         s.journal.append(Note(kind="contact", text=name.strip() + (f": {role.strip()}" if role.strip() else "") + (f" ({loc})" if loc else "")).stamped(s.clock))   # B283: no empty role
         w.note(f"people += {nid} ({name.strip()}, {role.strip()})")
 

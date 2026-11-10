@@ -131,6 +131,7 @@ def _special(x: dict) -> bool:
 
 def located_pool(region: str) -> list[tuple[str, int]]:
     """(entry, weight): at home here 3, anywhere 1; never an entry at home neither here nor anywhere; no uniques."""
+    cb._ensure_loaded()
     out = []
     for e, x in cb.ENTRIES.items():
         if _special(x):
@@ -168,7 +169,7 @@ def party_base(game: Any, s: FantasyState) -> FantasyState:
 
 
 def spawn(s: FantasyState, cand: list[tuple[str, int]], variant: str = "standard", ids: list[str] | None = None,
-          where: str = "") -> list[Person]:
+          where: str = "", names: list[str] | None = None) -> list[Person]:
     """The candidate's bodies as people (one row each), their numbers set by the variant, sized and fixed (the old scaler
     never touches them). Ids from what they are called (robber_1, robber_2) unless given."""
     out: list[Person] = []
@@ -182,6 +183,8 @@ def spawn(s: FantasyState, cand: list[tuple[str, int]], variant: str = "standard
             pid = ids[k] if ids and k < len(ids) else _free_id(s, out, re.sub(r"[^a-z0-9]+", "_", noun.lower()).strip("_") or "foe")
             k += 1
             name = f"{noun} {pid.rsplit('_', 1)[-1]}" if (n > 1 or (ids and len(ids) > 1)) and pid.rsplit("_", 1)[-1].isdigit() else noun
+            if names and k - 1 < len(names) and names[k - 1]:
+                name = names[k - 1]
             q = Person(id=pid, name=name, role=str(x.get("name") or e), called=name, location=where or s.player.location,
                        seen_at=where or s.player.location, met=True, heard_of=True, attitude=-2,
                        combat=CombatBlock(block=e))
@@ -422,3 +425,35 @@ def encounter(game: Any, s: FantasyState, want: Want) -> Encounter:
         reason += "; it cannot be won: the prose shows it, and Flee and Yield are the answer"
     return Encounter(bodies=c, variant=v, win=w, band=band, target=target, reason=reason, region=region,
                      tried=[(describe(oc, ov), ow) for oc, ov, ow in tried], fights=fights, seconds=round(time.time() - t0, 2), note=note)
+
+
+# ---- part sixteen §4: who the words bring in ---------------------------------------------------------------------------------
+NUMBER_WORDS = {"a": 1, "an": 1, "one": 1, "two": 2, "a pair of": 2, "both": 2, "three": 3, "four": 4, "five": 5, "six": 6, "a few": 3,
+                "several": 4, "some": 3}
+PLURAL = re.compile(r"\b(men|women|people|folk|dead|\w{3,}s)\b", re.I)
+
+
+def count_in(words: str) -> int | None:
+    """How many the words say: a number word ('three robbers': 3), a plural with none ('the robbers': None, the generator's to
+    size), else one ('the kneeling man')."""
+    low = " " + (words or "").lower() + " "
+    for w, n in sorted(NUMBER_WORDS.items(), key=lambda t: -len(t[0])):
+        if f" {w} " in low and n > 1:
+            return n
+    head = re.sub(r"\b(of|in|on|at|with|from|by)\b.*$", "", (words or "").strip(), flags=re.I)    # 'man in grey hoods' is one man
+    return None if PLURAL.search(head) and not re.search(r"\b(this|that|the one|a|an|one)\b", head, re.I) else 1
+
+
+def called_plural(cand: list[tuple[str, int]]) -> str:
+    """The offer's words for who would come: what the player calls them ('three robbers', 'a giant spider')."""
+    cb._ensure_loaded()
+    parts = []
+    for e, n in cand:
+        x = cb.ENTRIES.get(e, {})
+        noun = re.sub(r"^(a|an|the)\s+", "", str(x.get("called") or x.get("name") or e), flags=re.I).lower()
+        if n == 1:
+            parts.append(f"{'an' if noun[:1] in 'aeiou' else 'a'} {noun}")
+        else:
+            head, sep, tail = noun.partition(" of ")
+            parts.append(f"{NUMBER.get(n, str(n))} {head}{'' if head.endswith('s') else 's'}{sep}{tail}")
+    return " and ".join(parts)

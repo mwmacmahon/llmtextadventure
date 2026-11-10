@@ -158,3 +158,53 @@ def test_the_pipeline_runs_the_job_after_a_turn_and_takes_it_at_the_next(game, m
         return eng._take_warm(game, "x", st, lambda k, p: store.append_ledger("x", 2, k, p)), store.rows
     s2, rows = asyncio.run(run())
     assert s2.encounters["The Catacombs"]["bands"]["normal"]["bodies"] and rows[0][0] == "encounter_cache" and rows[0][1]["seconds"] >= 0
+
+
+# ---- §4: where the engine asks for one --------------------------------------------------------------------------------------
+from engine.changes import apply_changes  # noqa: E402
+from engine.roles import AssistantReadingCombat, Change, ChangeReport, IntentCombat  # noqa: E402
+
+
+def test_the_offer_names_who_would_come_and_the_narrators_call_brings_them(game):
+    st = new(game, klass="Rogue", place="The Catacombs")
+    look = AssistantReadingCombat(kind="action", summary="Brin creeps down the passage toward the voices.", time_minutes=2, risk="high",
+                                  intents=[IntentCombat(action="Creep toward the voices")])
+    s, w = game.world_turn(st, look, "I creep toward the voices", random.Random(1), 9, 2)
+    line = next(d for d in w.directives if d.startswith("If anyone comes at Brin here"))
+    assert s.offer["ids"] and s.offer["ids"][0] in line and "name them and the engine has them" in line
+    assert w.rows and w.rows[0]["kind"] == "encounter" and w.rows[0]["why"] == "the offer"
+    ref = s.offer["ids"][0]
+    out = game.world_call(s, type("C", (), {"verb": "ENEMY", "ref": ref, "raw": f"ENEMY {ref}", "stat": "", "num": 0, "den": 0})(), random.Random(2), 2, {"hp": 0})
+    q = s.person(ref)
+    assert q is not None and q.combat is not None and q.combat.block == s.offer.get("bodies", [[q.combat.block]])[0][0] or q.combat.block
+    assert out and out["data"].get("verb") == "ENEMY"
+    calm = AssistantReadingCombat(kind="action", summary="Brin orders a drink.", time_minutes=5, risk="none", intents=[IntentCombat(action="order a drink")])
+    st2 = new(game, place="The Drowned Lantern")
+    _, w2 = game.world_turn(st2, calm, "I order a drink", random.Random(1), 2, 2)
+    assert not any(d.startswith("If anyone comes") for d in w2.directives)
+
+
+def test_the_referee_files_a_monster_and_the_engine_fights_it(game):
+    st = new(game, place="The Catacombs")
+    s1, _, _ = apply_changes(game, st, ChangeReport.of(Change(kind="new", target="person", value="the rats", field="", note="a tide of rats from the drain")),
+                             present=[], causes=[])
+    q = s1.person("the_rats")
+    assert q is not None and q.combat.block == "rat_swarm" and "the_rats" in s1.player.fighting and q.called == "Swarm of rats"
+    s2, _, _ = apply_changes(game, st, ChangeReport.of(Change(kind="new", target="person", value="Old Tobin", field="", note="a fisherman mending nets")),
+                             present=[], causes=[])
+    assert "old_tobin" not in s2.player.fighting                    # a person who is not hostile: no fight
+
+
+def test_a_blow_at_someone_only_in_the_telling_is_written_in_and_rolled(game):
+    """B290: the robbers the prose invented (95aa120b8c51 T17): a person with a block before the round, from the matcher."""
+    st = new(game, klass="Rogue", place="The Catacombs")
+    stab = AssistantReadingCombat(kind="action", summary="Brin stabs the kneeling man.", time_minutes=1, tempo="fast", risk="high",
+                                  intents=[IntentCombat(action="Stab the kneeling man in the grey hood", attack_at=["kneeling man in grey hood"], weapon="dagger")])
+    s, w = game.world_turn(st, stab, "I slip up behind the kneeling man and stab him", random.Random(1), 17, 2)
+    q = next(x for x in s.people if x.name == "Kneeling man in grey hood")
+    assert s.player.fighting == [q.id] and q.combat.block == "bandit" and any("A FIGHT, round" in d for d in w.directives)
+    assert any(r.get("kind") == "encounter" for r in w.rows)
+    gang = AssistantReadingCombat(kind="action", summary="Brin goes for the Hill men.", time_minutes=1, tempo="fast", risk="high",
+                                  intents=[IntentCombat(action="Attack the Hill men", attack_at=["the Hill men"], weapon="dagger")])
+    s2, _ = game.world_turn(new(game, klass="Rogue", place="The Catacombs"), gang, "I go for the Hill men", random.Random(1), 20, 2)
+    assert 2 <= len(s2.player.fighting) <= 6 and all(s2.person(x).combat.block == "bandit" for x in s2.player.fighting)
