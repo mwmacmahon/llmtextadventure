@@ -270,6 +270,10 @@ def player_weapon(s: FantasyState, named: str = "") -> tuple[str, str, str]:
         hit = next((w for w in ws if w[0] in k or k in w[0]), None)
         if hit:
             return hit
+    from . import gear
+    held = gear.worn(s).get("weapon")                 # the weapon in hand (gear.py), unless the words name another
+    if held is not None and (k := gear.weapon_of(held)):
+        return next((w for w in ws if w[0] == k), ws[0])
     return next((w for w in ws if w[2] in ("melee", "finesse")), ws[0])
 
 
@@ -605,7 +609,9 @@ def _player_take(game: Any, s: FantasyState, n: int, tally: dict) -> tuple[int, 
     paladin is so op compared to other classes"; it counted twice)."""
     p = s.player
     notes: list[str] = []
-    defence = p.effect("defence") and any(w in it.name.lower() for it in s.inventory for w in ("chain mail", "mail", "plate"))
+    from . import gear
+    body = gear.worn(s).get("body")
+    defence = p.effect("defence") and body is not None and any(w in body.name.lower() for w in ("mail", "plate"))   # worn, not carried
     if ("raging" in p.flags_on and p.effect("damage_taken_step")) or defence:
         m = step_lighter(n)
         if m != n:

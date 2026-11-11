@@ -46,6 +46,7 @@ from . import world as wo
 from . import deck as dk
 from . import sheet as sh
 from . import debug as dbg
+from . import gear
 from .combat import person_hp_word
 from .state import (
     ATTITUDE_WORDS, COINS, COPPERS, COPPERS_TO_GOLD, HUNTED_AT, STAT_NAMES, STATS, WANTED_AT, Ability, City, CombatBlock, Condition, Count,
@@ -451,6 +452,7 @@ class FantasyGame(GameBase):
         if s.item(COPPERS) is None or s.item(COPPERS).id != COPPERS:
             at = next((i + 1 for i, it in enumerate(s.inventory) if it.id == "gold"), len(s.inventory))
             s.inventory.insert(at, Item(id=COPPERS, name="coppers", count=0, note="small change; a hundred to the gold"))
+        gear.settle(s)                                   # what is worn and in hand, once (an older save wears its best)
         return s
 
     def opening(self, state: FantasyState) -> str | None:
@@ -790,6 +792,9 @@ class FantasyGame(GameBase):
         if s.found_places:
             lines.append("Places found in play: " + "; ".join(f.name + (f" (in {f.within})" if f.within else "") for f in s.found_places) + ".")
         lines.append("Pockets: " + ", ".join([purse_text(s.inventory)] + [it.render() + (f" ({it.note})" if it.note else "") for it in s.inventory if it.id not in COINS]) + ".")
+        w = gear.worn(s)                                 # what is worn and in hand (gear.py): the rest is only carried
+        lines.append(f"Wearing: {w['body'].name if 'body' in w else 'no armour'}" + (f" and {w['shield'].name}" if "shield" in w else "")
+                     + f"; in hand: {w['weapon'].name if 'weapon' in w else 'nothing'}.")
         if p.counts:
             lines.append(f"Before a night's sleep {p.name} can still use: " + "; ".join(f"{COUNT_WORDS.get(c.id, c.name.lower())}, {c.value} of {c.max}" for c in p.counts)
                          + " (say it in the world, never as a number).")
@@ -3372,6 +3377,16 @@ class FantasyGame(GameBase):
                                    words=["smoke pellet", "smoke bomb", "pellet"]))
         if p.count("breath"):
             out.append(CommandSpec(id="breath", label="Breath", mode="narrated", hint="Breathe fire, once between long rests.", words=["breath", "breathe fire", "fire breath"]))
+        # the owner, 11-10 late: "Really need an equipped panel somewhere in ui and ability to equip unequip"
+        put_on, take_off = gear.options(state, True), gear.options(state, False)
+        if put_on:
+            out.append(CommandSpec(id="equip", label="Equip", mode="engine", hint="Put on armour or a shield, or take a weapon in hand (one of each).",
+                                   params=[Param(name="item", label="Item", options=[Option(id=i, label=n) for i, n in put_on])],
+                                   words=["put on", "don", "strap on", "wield", "take up", "arm myself with", "buckle on"]))
+        if take_off:
+            out.append(CommandSpec(id="unequip", label="Unequip", mode="engine", hint="Take off armour or a shield, or put a weapon away.",
+                                   params=[Param(name="item", label="Item", options=[Option(id=i, label=n) for i, n in take_off])],
+                                   words=["take off", "doff", "shed", "strip off", "unbuckle", "sheathe", "put away"]))
         out.append(CommandSpec(id="journal", label="Journal", mode="engine", typed=False, hint="Read the journal, the quests and the people."))
         return out
 
@@ -3530,6 +3545,10 @@ class FantasyGame(GameBase):
             return s, CommandResult(label="Breath", player_line="I breathe fire.", summary=f"{p.name} breathes fire.",
                                     directive=f"{p.name} breathes fire: a gout of flame from the throat, the width of a doorway. Say what it catches and what it does, and stop.",
                                     minutes=1, referee_skip=["breath"])
+        if command_id in ("equip", "unequip"):
+            s2, line, ok = gear.change(self, state, str((args or {}).get("item") or ""), command_id == "equip")
+            return s2, CommandResult(ok=ok, label="Equip" if command_id == "equip" else "Unequip", text=line,
+                                     log_line=line if ok else None)
         if command_id == "journal":
             lines: list[str] = []
             clues = [n for n in s.journal if n.kind == "clue"]
@@ -3849,6 +3868,7 @@ class FantasyGame(GameBase):
             *([ListPanel(title="In your words", items=[Chip(label="", value=p.about.strip())], layout="stack")] if p.about.strip() else []),
             ListPanel(title="Abilities", items=[Chip(label=a.name, value=a.text + (" (now)" if a.while_flag and a.while_flag in p.flags_on else ""))
                                                 for a in p.abilities if a.name], layout="stack"),
+            ListPanel(title="Equipped", items=[Chip(label=k, value=v) for k, v in gear.lines(s)], layout="stack"),   # the owner, 11-10 late
             ListPanel(title="Pockets", items=[Chip(label=purse_text(s.inventory), value=""), *pockets], layout="stack"),
         ]
         if p.spells or p.cantrips or p.counts:

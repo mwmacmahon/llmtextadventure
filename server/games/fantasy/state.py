@@ -64,6 +64,7 @@ class Item(BaseModel):
     note: str = ""
     place: str = ""                 # things only: the place it lies in
     held_by: str = ""               # things only: the person (id) who has it
+    equipped: bool = False          # worn (body armour, a shield) or in hand (a weapon): one of each, gear.py
 
     def render(self) -> str:
         if self.id == "gold":
@@ -211,6 +212,7 @@ class Peril(BaseModel):
 
 class Player(BaseModel):
     name: str = ""
+    kit_set: bool = False           # the worn set is written on the items (gear.settle); an older save wears its best until then
     gender: str = ""
     race: str = ""
     klass: str = ""

@@ -552,6 +552,10 @@ How content meets the combat code (`games/fantasy/combat.py`, `encounter.py`; AR
 - **A fight the story pins** (a hook's band of four skeletons) keeps its count; the generator may make it weak or feeble.
   `lint_pinned_fights` names one still under 40% for a lone level-1 character; the answer is a strong ally the quest
   brings by its own events (`{append: [player.with_them, maren]}`), and the lint counts that ally.
+- **Gear.** What the player wears and holds is state (games/fantasy/gear.py): one body armour, one shield and one weapon in hand,
+  each a pocket item with `equipped`. Name body armour as armour ("leather armour", "chain mail", "plate"); a "leather
+  pouch" is no armour. Armour class is 10 + DEX + the worn armour + a worn shield; the Equip and Unequip levers change it,
+  never the prose.
 - **Grabs, holds and perils.** A `grab` grapples and does its `damage`: the player cannot run until they break free or
   the grabber is down; it never opens a peril. Getting loose takes the turn (D222): a turn that goes for it rolls the
   break-free and no blow; a blow only to hurt the grabber is an attack. In a peril, held or in a fight a turn is a moment

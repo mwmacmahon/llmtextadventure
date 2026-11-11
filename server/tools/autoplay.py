@@ -82,6 +82,9 @@ def _state_line(game: str, ui: dict) -> str:
             else:
                 people.append(f"{c['title']} last seen {d.get('Last seen', d.get('Location', d.get('Where', '?')))} {b.get('status') or b.get('attitude', '')}")   # rounds 10, 11: the dead read 'hostile'
         bits.append(" | ".join(people))
+    worn = _panel(ui, "Equipped")
+    if worn:                                # the owner, 11-10 late: an equipped panel
+        bits.append("Equipped: " + "; ".join(f"{i['label']} {i['value']}" for i in worn["items"]))
     pockets = _panel(ui, "Pockets")
     if pockets:                             # round 12: the tester could not see the key, the blade or the ring it took
         bits.append("Pockets: " + "; ".join(i["label"] for i in pockets["items"] if i.get("label")))

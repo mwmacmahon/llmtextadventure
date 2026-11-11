@@ -1083,3 +1083,46 @@ def test_round_15_sleep_passes_a_jobs_arrival_and_rage_is_instant_and_seen(game)
     assert "raging" in b2.player.flags_on and r.text.startswith("Rage")
     n, notes, _ = cb._player_take(game, b2, 14, {"hp": 0})
     assert n == 11 and notes == ["Rage: a step lighter"]
+
+
+def test_gear_one_armour_at_a_time_and_equip_unequip(game):
+    """The owner, 11-10 late: "One armor at a time and yes dex penalties count. Really need an equipped panel somewhere in ui
+    and ability to equip unequip"."""
+    from games.fantasy import gear
+    from games.fantasy.state import Item
+    st = new(game)                                                    # the Fighter: chain mail, a shield, a longsword
+    w = gear.worn(st)
+    assert st.player.kit_set and "mail" in w["body"].name and gear.is_shield(w["shield"]) and gear.weapon_of(w["weapon"]) == "longsword"
+    assert gear.armour_class(st)[0] == 10 + st.player.stats["dex"] + 4 + 2
+    st.inventory.append(Item(id="leather_armour_2", name="leather armour"))
+    st.inventory.append(Item(id="pouch", name="a leather pouch"))
+    assert gear.body_of(st.inventory[-1]) is None                     # a pouch is no armour (it had counted a step in the water)
+    assert gear.armour_steps(st) == 2 + 1                             # worn only: the mail and the shield, not the spare leather
+    s1, r = game.run_command(st, "equip", {"item": "leather_armour_2"})
+    assert r.ok and gear.worn(s1)["body"].id == "leather_armour_2" and "off" in r.text   # one armour at a time: the mail comes off
+    assert gear.armour_class(s1)[0] == 10 + st.player.stats["dex"] + 1 + 2
+    s2, r2 = game.run_command(s1, "unequip", {"item": gear.worn(s1)["shield"].id})
+    assert r2.ok and "shield" not in gear.worn(s2) and gear.armour_class(s2)[0] == 10 + st.player.stats["dex"] + 1
+    weak = new(game)
+    weak.player.stats["dex"] = -1
+    assert gear.armour_class(weak)[0] == 10 - 1 + 4 + 2               # a DEX penalty counts
+    f, _ = _fight(game, 1)
+    off, r3 = game.run_command(f, "unequip", {"item": gear.worn(f)["body"].id})
+    assert r3.ok
+    back, r4 = game.run_command(off, "equip", {"item": next(i for i, _ in gear.options(off, True) if gear.body_of(off.item(i) or Item(id="x", name="x")))})
+    assert not r4.ok and "Not now" in r4.text                          # no buckling on mail mid-fight
+    ids = {c.id for c in game.commands(st)}
+    assert {"equip", "unequip"} <= ids
+    panel = next(x for x in game.ui(st).panels if getattr(x, "title", "") == "Equipped")
+    assert [c.label for c in panel.items][:3] == ["Armour", "Shield", "In hand"]
+    old = new(game).model_dump(mode="json")
+    old["player"]["kit_set"] = False
+    for it in old["inventory"]:
+        it.pop("equipped", None)
+    loaded = game.load_state(old)
+    assert loaded.player.kit_set and "mail" in gear.worn(loaded)["body"].name   # an older save wears its best
+    rog = new(game, klass="Rogue", race="Human")
+    assert cb.player_block(rog)["weapon"] == gear.weapon_of(gear.worn(rog)["weapon"])
+    bow = next(it.id for it in rog.inventory if gear.weapon_of(it) == "shortbow")
+    r5, _ = game.run_command(rog, "equip", {"item": bow})
+    assert cb.player_block(r5)["weapon"] == "shortbow" and cb.player_block(r5, "dagger")["weapon"] == "dagger"   # the words still name another

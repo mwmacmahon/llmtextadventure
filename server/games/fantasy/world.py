@@ -136,7 +136,6 @@ def way_out(pr: Any, stat: str, words: str) -> bool:
 SPEECH = re.compile(r"\b(say|says|said|shout|shouts|shouted|yell|yells|scream|screams|call|calls|called|cry|cries|pray|prays|beg|begs|"
                     r"ask|asks|tell|tells|whisper|curse|swear|sing|plead|answer|speak|talk|help)\b|[\"!]", re.I)
 DEFAULT_STRIKE = {"kind": "strike", "bonus": 2, "damage": "scrape"}   # people with no moves of their own (the directive)
-ARMOUR = (("shield", 2), ("chain mail", 4), ("scale mail", 4), ("mail shirt", 4), ("mail", 4), ("plate", 6), ("leather", 1), ("hide", 1))
 
 
 LEAVE = re.compile(r"\b(row away|swim away|swim (back|for the (shore|boat|skiff))|leave|back away|turn away|turn (the boat|back)|flee|run|"
@@ -156,19 +155,9 @@ class WorldTurn:
 
 
 def armour_class(s: FantasyState) -> tuple[int, str]:
-    """10 + DEX + armour (none 0, leather +1, mail +4, a shield +2), from the pockets (B95)."""
-    p = s.player
-    body, shield = 0, 0
-    for it in s.inventory:
-        n = it.name.lower()
-        if "shield" in n:
-            shield = 2
-            continue
-        for word, v in ARMOUR:
-            if word != "shield" and word in n and ("armour" in n or "armor" in n or "mail" in n or "plate" in n or word in ("leather", "hide")):
-                body = max(body, v)
-    ac = 10 + p.stats.get("dex", 0) + body + shield
-    return ac, f"10 + DEX {p.stats.get('dex', 0):+d}" + (f" + armour {body}" if body else "") + (" + shield 2" if shield else "")
+    """10 + DEX + the worn body armour + a worn shield (gear.py: one armour at a time, the owner, 11-10 late)."""
+    from . import gear
+    return gear.armour_class(s)
 
 
 def harm(step: str, roll: int) -> int:
@@ -790,13 +779,9 @@ def swim_penalty(s: FantasyState, stat: str, label: str) -> int:
 
 
 def armour_steps(s: FantasyState) -> int:
-    """Steps of armour worn, for a hazard's penalty: leather 1, mail 2, plate 3, a shield 1."""
-    n = 0
-    for it in s.inventory:
-        name = it.name.lower()
-        n += 3 if "plate" in name else 2 if "mail" in name else 1 if ("leather" in name or "hide armour" in name) else 0
-        n += 1 if "shield" in name else 0
-    return n
+    """Steps of worn armour, for the water (gear.py; a leather pouch had counted as a step)."""
+    from . import gear
+    return gear.armour_steps(s)
 
 
 def backstop(game: Any, s: FantasyState, acted: list[str], rng: Any, offset: int, tally: dict) -> list[dict]:
