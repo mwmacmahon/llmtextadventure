@@ -2078,7 +2078,9 @@ class FantasyGame(GameBase):
         if it is not None and kind == "add":
             return self._pocket_add(s, it, self._step(value) or 0, ch.note, w)
         if kind == "gone" and it is not None:
-            n = self._step(ch.note) or self._step(value) or (it.count if it.count > 1 else 1)
+            # rounds 13, Gemma pair 3 and 4: one torch dropped took the whole stack; a gone row with no number is one, unless it says all
+            every = re.search(r"\b(all|both|every|the rest|whole|entire)\b", f"{ch.note} {value}", re.I)
+            n = self._step(ch.note) or self._step(value) or (it.count if every else 1)
             return self._pocket_add(s, it, -abs(n), ch.note or "gone", w)
         # ---- things
         if kind == "new" and target.lower() in ("thing", "item", "") and value:

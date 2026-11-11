@@ -1375,3 +1375,14 @@ def test_a_bands_bodies_pay_as_they_fall(game):
     assert one > 0
     cb.land(game, f, [], 3, 2, random.Random(0))
     assert f.combat.weight_won == one                                   # not paid twice
+
+
+def test_one_torch_dropped_is_one(game):
+    """Rounds 13, Gemma pair 3 and 4: a dropped torch took every torch."""
+    st = new(game)
+    tor = next(it for it in st.inventory if "torch" in it.name.lower())
+    n = tor.count
+    s1, _, _ = apply_changes(game, st, ChangeReport.of(Change(kind="gone", target=tor.id, value="", note="dropped in the bog")), present=[], causes=[])
+    assert s1.item(tor.id).count == n - 1
+    s2, _, _ = apply_changes(game, st, ChangeReport.of(Change(kind="gone", target=tor.id, value="", note="all of them soaked")), present=[], causes=[])
+    assert s2.item(tor.id) is None or s2.item(tor.id).count == 0
