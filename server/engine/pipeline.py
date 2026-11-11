@@ -1181,7 +1181,7 @@ class Engine:
             written = 0
             last_progress = 0
             yield {"event": "progress", "data": _progress("writing", 0, expected)}
-            cap = _hook(game, "max_calls_now", state, default=None)        # B313: a fight's round may need more; 0: none (a DEBUG turn)
+            cap = (_hook(game, "turn_limits", state, adj, default=None) or {}).get("calls")   # B313: a fight's round may need more; 0: none (DEBUG)
             if cap is None:
                 cap = getattr(game, "max_calls", 3)
             async for nev in narrate(provider, role, system, messages, handler, max_calls=cap):
@@ -1303,7 +1303,7 @@ class Engine:
                 if world is not None and world.skip:          # the engine took these hit points itself (part four): no second count
                     skip += world.skip
                 if (any((c.get("result") or {}).get("harm") for c in calls_block.get("calls", []))
-                        or _hook(game, "dice_own_hp", state, default=False)):
+                        or (_hook(game, "turn_limits", state, adj, default=None) or {}).get("dice_own_hp")):
                     skip.append("hp")                         # B326: a fight's or a peril's hit points are the engine's, whatever the rolls did
                 for lv, out in zip(levers, lever_outcomes):
                     if out["status"] == "applied":
@@ -1952,7 +1952,7 @@ class Engine:
                 notes.append(f"fast turn: {adj.time_minutes} minutes raised to the floor of {clock.fast_minutes}")
                 adj.time_minutes = clock.fast_minutes
             # round 10 (8085528d0af0 T4): a search while on fire took thirty minutes; a game may cap a pressing turn (a peril's moment)
-            most = _hook(game, "minutes_cap", state, adj, default=None) if clock else None
+            most = (_hook(game, "turn_limits", state, adj, default=None) or {}).get("minutes") if clock else None
             if most is not None and adj.time_minutes > most:
                 notes.append(f"pressing turn: {adj.time_minutes} minutes cut to the game's cap of {most}")
                 adj.time_minutes = most

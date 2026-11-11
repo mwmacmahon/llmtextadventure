@@ -14,7 +14,6 @@ narrator's through the referee, bounded in `apply_change`; the hooks' scripts an
 """
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 from typing import Any
@@ -46,6 +45,7 @@ from . import conditions as cn
 from . import world as wo
 from . import deck as dk
 from . import sheet as sh
+from . import debug as dbg
 from .combat import person_hp_word
 from .state import (
     ATTITUDE_WORDS, COINS, COPPERS, COPPERS_TO_GOLD, HUNTED_AT, STAT_NAMES, STATS, WANTED_AT, Ability, City, CombatBlock, Condition, Count,
@@ -151,6 +151,9 @@ STOP = {"that", "this", "with", "from", "into", "their", "there", "they", "were"
         "when", "where", "which", "while", "just", "them", "then", "than", "over", "under", "told", "says", "your", "like", "want",
         "wants", "played", "playing", "very", "much", "some", "would", "could", "should", "anything", "always", "never", "still"}
 
+# flags that live one turn only, cleared at after_turn's start (the debt review: they had two clears and a dead variable):
+# debug_quiet (the DEBUG turn, round 8), escaped and freed (a way out that worked this turn: its WARNING not shown, round 10)
+TURN_FLAGS = ("debug_quiet", "escaped", "freed")
 THREAD_STANDING = {"open": "taken up", "resolved": "done", "failed": "failed"}   # the player's own jobs, in the hooks' words (B93)
 PERSON_TITLES = {"the", "lord", "brother", "sergeant", "captain", "constable", "master", "old", "mother"}   # "Old Hesk" is Hesk
 
@@ -239,9 +242,7 @@ MONSTER = re.compile(r"\b(troll|ogre|giant|beast|monster|wolf|wolves|rat|rats|dr
 # in a brawl); on a quiet afternoon a smuggler is a person to talk to
 HOSTILE_ENTRIES = {"bandit", "bandit_captain", "thug", "cultist", "berserker"}
 
-def dev_mode() -> bool:
-    """The server's dev mode, as the config reads it (B232: TA_DEV_MODE=off on a player's server): the debug command's gate."""
-    return os.environ.get("TA_DEV_MODE", "on").strip().lower() not in ("off", "0", "false", "no")
+dev_mode = dbg.dev_mode                                  # the debug command's gate (B232), in debug.py
 
 
 class FantasyGame(GameBase):
@@ -666,7 +667,7 @@ class FantasyGame(GameBase):
         q = next((q for q in state.people if q.id == pid), None)
         return q.name if q is not None else None
 
-    def minutes_cap(self, state: FantasyState, adj: Any = None) -> int | None:
+    def _minutes_cap(self, state: FantasyState, adj: Any = None) -> int | None:
         """The pipeline's hook (round 10, 8085528d0af0 T4: a search while on fire took thirty minutes): in a peril, held, or in a
         fight, a turn is a moment, one minute at most; else no cap. Round 11 (56dd55904e70 T11): a walk to the inn's fire while
         freezing took a minute; a move to another place, out of a fight, takes its travel time."""
@@ -1265,11 +1266,34 @@ class FantasyGame(GameBase):
     def render_mechanic(self, state: FantasyState, result: Any) -> str | None:
         line = default_mechanic_line(result, show_numbers=True)
         line = re.sub(r"^[A-Z][a-z]{2}\b", STAT_NAMES.get(result.stat, result.stat.upper()), line, count=1)
+        line = self._with_breakdown(line, result)
         sneak = next((str(m.label) for m in getattr(result, "modifiers", None) or [] if str(getattr(m, "label", "")).startswith("Sneak Attack")), "")
         if sneak:                                        # B222: worth nothing on the sum, so the line names it (it lands as a step)
             why = re.search(r"\((.*?)\)", sneak)
             line = line.rstrip() + f" Sneak Attack{' (' + why.group(1) + ')' if why else ''}."
         return line
+
+    @staticmethod
+    def _short(label: str) -> str:
+        """A modifier's name for the § line: before any bracket, at most eight words (the assistant's edge reasons run to
+        sentences)."""
+        t = re.split(r"\s*[(;]\s*|\s+-\s+", str(label or "").strip(), maxsplit=1)[0].strip().rstrip(".,")
+        words = t.split()
+        return " ".join(words[:8]).rstrip(",") + ("…" if len(words) > 8 else "")
+
+    def _with_breakdown(self, line: str, result: Any) -> str:
+        """The owner, 11-10 night ("Why is the roll modifier bouncing around? Include the numbers still"): the sum names its
+        parts, the stat and each modifier, so 'CHA +2' one turn and '+4' the next shows the reason (the edge, a trait, a
+        condition). Only the player's line: the narrator never sees the numbers."""
+        mods = [m for m in (getattr(result, "modifiers", None) or []) if int(getattr(m, "value", 0) or 0)]
+        if not mods or getattr(result, "roll", None) is None or len(getattr(result, "dice", None) or []) == 2:
+            return line
+        total_mod = int(result.total) - int(result.roll)
+        base = total_mod - sum(int(m.value) for m in mods)
+        parts = [f"{result.stat.upper()} {base:+d}"] + [f"{self._short(m.label)} {int(m.value):+d}" for m in mods]
+        sign = "+" if total_mod >= 0 else "-"
+        old = f"{result.roll} {sign} {abs(total_mod)} = {result.total}"
+        return line.replace(old, f"{result.roll} {sign} {abs(total_mod)} ({', '.join(parts)}) = {result.total}", 1) if old in line else line
 
     def modifiers(self, state: FantasyState, req: CheckRequest, target_entity: str | None) -> list[Modifier]:
         p = state.player
@@ -1289,9 +1313,13 @@ class FantasyGame(GameBase):
             if not a.words or any(w in label for w in a.words):
                 mods.append(Modifier(label=a.name, value=a.mod))
         for c in p.conditions:
+            if c.name == "grappled" and (wo.MARKED.match(req.label) or wo.BREAK_FREE.search(req.label)):
+                continue                                  # round 13 (T13): the grab's -2 counted against breaking that grab
             if c.mod and c.stat in (req.stat, "all") and (not c.words or any(w in label for w in c.words)):
                 mods.append(Modifier(label=c.name, value=c.mod))
         mods += wd.wound_modifiers(p.wounds, req.stat, WOUND_KINDS)          # the wound ladder (B200): minor 0 to ruinous -5
+        if (swim := wo.swim_penalty(state, req.stat, req.label)):
+            mods.append(Modifier(label="armour in the water", value=swim))
         if (req.stat == "str" and ATTACK.search(req.label) and not HEAVY.search(req.label)   # B222: a finesse weapon, the better of STR and DEX
                 and not wo.MARKED.match(req.label)):   # round 10 (T17): 'way out: kick off and claw upward', a swim, took the rapier's finesse
             fw = next((it.name for it in state.inventory if FINESSE.search(it.name)), None)
@@ -1461,13 +1489,19 @@ class FantasyGame(GameBase):
                                f"and leave {p.name} room to run or yield; never say so outright." if e.band == "impossible" else ""))
         w.rows.append({"kind": "encounter", "hit": hit, "why": "the offer", "reason": e.reason})
 
-    def dice_own_hp(self, state: FantasyState) -> bool:
+    def turn_limits(self, state: FantasyState, adj: Any = None) -> dict:
+        """The pipeline's one hook for what a pressing turn allows (the debt review, 11-10 night: three hooks answered it):
+        `calls`, the narrator's call cap (0 on a DEBUG turn); `minutes`, the turn's most (a peril, a grab or a fight: one,
+        unless the player moves on out of a fight); `dice_own_hp`, the player's hit points the dice's, not the referee's."""
+        return {"calls": self._calls_cap(state), "minutes": self._minutes_cap(state, adj), "dice_own_hp": self._dice_own_hp(state)}
+
+    def _dice_own_hp(self, state: FantasyState) -> bool:
         """B326 (the combat review): a turn with a round planned or a fight on: the player's hit points are the dice's, and a
         referee row that writes them (17 in the six rounds, '-10 throat crushed') is never counted, even when every roll missed.
         Round 10 (8085528d0af0 T3): in a peril too: a free shout while burning lost 3 to the referee's reading of the prose."""
         return bool(state.combat is not None or state.player.fighting or state.player.peril is not None)
 
-    def max_calls_now(self, state: FantasyState) -> int:
+    def _calls_cap(self, state: FantasyState) -> int:
         """B313 (the combat review, 11-10): the narrator's call cap is 3, and a round lists one act for the player, each ally and
         every enemy body: the fourth call was told "resolve this in the prose, without a roll" and the backstop then rolled
         the same act. In a fight the cap is the round's acts and two more for checks, at most twelve."""
@@ -1835,6 +1869,36 @@ class FantasyGame(GameBase):
         k = (key or "").strip().lower().replace(" ", "_").removeprefix("player.").removesuffix(".count").removesuffix(".value")
         return next((c for c in s.player.counts if c.id == k or c.name.lower().replace(" ", "_") == k or c.id.rstrip("s") == k.rstrip("s")), None)
 
+    def _hook_meant(self, s: FantasyState, target: str) -> Any:
+        """A hook- id the referee made up for a job the prose offered (round 11, 56dd55904e70 T6: Tam offered his daughter's job
+        before the deck's reach fired; the referee wrote 'hook-wren_return', filed as people.wren and refused): the dealt or
+        live hook it plainly means, by its id, title and people's names (one only, or none). A dealt hook it means is brought
+        in as offered now: its reach fires (the giver asked in person)."""
+        stop = {"hook", "the", "a", "of", "job", "quest", "return", "find", "help", "task"}
+        words = {x for x in re.split(r"[_\-\s]+", target.lower()) if x and x not in stop}
+        if not words:
+            return None
+        content = self.hooks_content()
+        hits = []
+        for h in s.hooks:
+            if h.status not in ("dealt", "live"):
+                continue
+            c = content.get(h.id) or {}
+            names = " ".join([h.id, str(c.get("title") or h.title or "")] + [f"{x.get('id', '')} {x.get('name', '')} " + " ".join(x.get("aliases") or [])
+                                                                          for x in c.get("people") or []]).lower()
+            have = set(re.split(r"[_\-\s,.'']+", names))
+            if words & have:
+                hits.append(h)
+        if len(hits) != 1:
+            return None
+        hk = hits[0]
+        if hk.status == "dealt":
+            now = s.clock.day * DAY + s.clock.minute
+            for e in s.hidden.events:
+                if e.id == f"{hk.id}_reach" and not e.fired:
+                    e.fired, e.fired_at, e.variant = True, now, "trigger"
+        return hk
+
     def apply_change(self, s: FantasyState, ch: Change, w: Writer) -> bool:
         if getattr(w, "setup", False):                 # the sheet pass (B90): the player's own words, no referee bounds
             return self._sheet_change(s, ch, w)
@@ -1856,6 +1920,8 @@ class FantasyGame(GameBase):
             is_player = target.lower() in ("player", p.name.lower()) and not any(q.id == target for q in s.people)
         # ---- a quest turned down (the owner, 11-08: Maud kept on about the rats after the player refused the job)
         hk = s.hook(target.removeprefix("hook-")) if target.startswith("hook-") or s.hook(target) is not None else None
+        if hk is None and target.startswith("hook-") and field == "declined" and kind == "set":
+            hk = self._hook_meant(s, target)                 # the owner, 11-10 night: the deck knows its own job offered early
         if hk is not None and field == "declined" and kind == "set":
             down = value.strip().lower() in ("true", "yes", "1", "declined", "turned down")
             if hk.status in ("done", "failed"):
@@ -2713,8 +2779,8 @@ class FantasyGame(GameBase):
         p = s.player
         now = s.clock.day * DAY + s.clock.minute
         s.deck.dealt_this_turn = []
-        quiet = s.flags.pop("debug_quiet", None)            # (round 8) the DEBUG turn's quiet ends with it
-        s.flags.pop("escaped", None); s.flags.pop("freed", None)
+        for k in TURN_FLAGS:                                # this turn's own flags end with it
+            s.flags.pop(k, None)
         # -- the fall, told: the end, the raise, or back to the story
         if p.fate and p.fate_turn < info.turn:
             if p.fate == "dead":
@@ -2828,8 +2894,6 @@ class FantasyGame(GameBase):
             hid = dk.draw(s, deck, hooks, info.rng, now, info.turn)
             if hid is not None:
                 dk.deal(s, hooks[hid], turn=info.turn, deal_abs=now, name=p.name)
-        s.flags.pop("debug_quiet", None)                    # the DEBUG turn is over (round 8)
-        s.flags.pop("escaped", None); s.flags.pop("freed", None)
         return s
 
     def _hidden_after(self, s: FantasyState, info: TurnInfo) -> None:
@@ -3248,74 +3312,7 @@ class FantasyGame(GameBase):
                        f"attack_at {held.by or who}, no check. Talk, shouts and looks are not tries at getting loose.")
         return out
 
-    DEBUG_ROOM = "The Glass Cellar"
-
-    def _debug(self, state: FantasyState, words: str) -> tuple[FantasyState, CommandResult]:
-        """The debug command's verbs, one per call: spawn <words> [minion|feeble|frail|weak|standard|veteran|elite], set me on
-        fire, drown me, make me bleed, freeze me, push me off (falling), grab me, hurt N, heal [N], clear, room."""
-        from . import combat as cb
-        from . import encounter as en
-        from .state import CombatState, Condition
-        s = state.model_copy(deep=True)
-        p = s.player
-        w = (words or "").strip()
-        low = w.lower()
-        did = ""
-        if low.startswith("spawn"):
-            what = w[5:].strip() or "a skeleton"
-            variant = next((v for v in en.LADDER if re.search(rf"\b{v}\b", what, re.I)), "standard")
-            what = re.sub(rf"\b({'|'.join(en.LADDER)})\b", "", what, flags=re.I).strip(" ,")
-            dm = re.search(r"\b(\d+)\b", what)
-            what = re.sub(r"\b\d+\b", "", what).strip()
-            entries, _ = en.named_entries(what, en.region_of(s))
-            n = min(12, int(dm.group(1))) if dm else (en.count_in(what) or 2)
-            if variant == "minion" and n < 2:
-                n = 2
-            made = en.spawn(s, [(entries[0], n)], variant)
-            s.people += made
-            p.fighting += [q.id for q in made]
-            if s.combat is None:
-                s.combat = CombatState(round=0)
-            did = f"spawned {n} {entries[0]} ({variant}) in the fight: {', '.join(q.name for q in made)}"
-        elif re.search(r"\b(fire|burn|alight)", low):
-            wo.open_peril(s, "burning"); did = "set on fire"
-        elif re.search(r"\b(drown|underwater|under water|water)", low):
-            wo.open_peril(s, "drowning"); did = "dragged under the water (holding breath)"
-        elif re.search(r"\bbleed", low):
-            wo.open_peril(s, "bleeding"); did = "bleeding badly"
-        elif re.search(r"\b(freez|cold)", low):
-            wo.open_peril(s, "freezing"); did = "freezing"
-        elif re.search(r"\b(fall|push me off)", low):
-            wo.open_peril(s, "falling"); did = "falling"
-        elif re.search(r"\bgrab", low):
-            foe = next((x for x in p.fighting if (q := s.person(x)) is not None and q.status == "alive"), None)
-            if foe is None:
-                return state, CommandResult(ok=False, label="Debug", text="DEBUG: nobody to grab you; spawn something first.")
-            self._land_condition(s, "grappled", foe)
-            did = f"grappled by {s.person(foe).name}"
-        elif (m := re.match(r"hurt\s+(\d+)", low)):
-            p.hp = max(1, p.hp - int(m.group(1))); did = f"hurt to {p.hp}/{p.hp_max}"
-        elif (m := re.match(r"heal(?:\s+(\d+))?", low)):
-            p.hp = min(p.hp_max, p.hp + int(m.group(1))) if m.group(1) else p.hp_max; did = f"healed to {p.hp}/{p.hp_max}"
-        elif low.startswith("clear") or low.startswith("reset"):
-            p.peril, p.fighting, s.combat = None, [], None
-            p.conditions = []                             # round 10 (T26): a twisted knee stayed after the clear
-            p.hp = p.hp_max; did = "cleared: no fight, no peril, no conditions, full hit points"
-        elif low.startswith("room"):
-            p.location = self.DEBUG_ROOM
-            from .state import FoundPlace
-            if not any(f.name == self.DEBUG_ROOM for f in s.found_places):
-                s.found_places.append(FoundPlace(name=self.DEBUG_ROOM, within=""))
-            did = f"moved to {self.DEBUG_ROOM}, a bare room of glass walls, nobody else here"
-        else:
-            return state, CommandResult(ok=False, label="Debug", text="DEBUG: say one of: spawn <what> [minion..elite], set me on fire, "
-                                        "drown me, make me bleed, freeze me, push me off, grab me, hurt N, heal [N], clear, room.")
-        s.flags["debug_quiet"] = True                    # round 8: no call acts on the DEBUG turn (after_turn clears it)
-        if p.peril is not None and did and not did.startswith(("spawned", "grappled", "hurt", "healed", "cleared", "moved")):
-            p.shown_notes.append("WARNING: " + wo.PERILS.get(p.peril.kind, {}).get("warn", p.peril.kind))
-        return s, CommandResult(label="Debug", text=f"DEBUG: {did}.", player_line=f"(debug: {w})", summary=f"Debug: {did}.",
-                                directive=f"A test of the game: {p.name} is {did}. Play it in a line or two, plainly, as if it simply "
-                                          f"happened, and stop.", minutes=0, referee_skip=["hp", "peril", "conditions", "location"])
+    DEBUG_ROOM = dbg.ROOM
 
     # ---- commands ----------------------------------------------------------------------------------------------------
     def commands(self, state: FantasyState) -> list[CommandSpec]:
@@ -3510,7 +3507,7 @@ class FantasyGame(GameBase):
                                               f"a few streets or a few rooms away and unseen. Say where they come out, and stop.",
                                     minutes=2, referee_skip=["smoke_pellets"])
         if command_id == "debug":
-            return self._debug(state, str((args or {}).get("text") or ""))
+            return dbg.run(self, state, str((args or {}).get("text") or ""))
         if command_id in ("flee", "yield"):                               # part fifteen §7
             from . import combat as cb
             s2, res = cb.run_fight_command(self, state, command_id)
@@ -3769,7 +3766,7 @@ class FantasyGame(GameBase):
     # ---- UI ----------------------------------------------------------------------------------------------------------
     # The player's view: what the character knows (where a person was last seen, the words for heat and renown), never
     # the state behind it (the Hidden lines, a person's true place, the numbers behind the words). Stage C (D162).
-    HP_TONES = {"fresh": "ok", "scratched": "ok", "hurt": "warn", "bloodied": "bad", "dead": "bad"}
+    HP_TONES = {"fresh": "ok", "scratched": "ok", "hurt": "warn", "bloodied": "bad", "critically wounded": "bad", "dead": "bad"}
     HEAT_TONES = {"nobody": "neutral", "asked about": "warn", "wanted": "bad", "hunted": "bad"}
     WOUND_TONES = {"minor": "warn", "moderate": "warn", "serious": "bad", "grave": "bad", "ruinous": "bad"}
     ATTITUDE_TONES = {"hostile": "bad", "wary": "warn", "neutral": None, "friendly": "ok", "loyal": "ok", "devoted": "info"}

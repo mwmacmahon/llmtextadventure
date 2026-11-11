@@ -106,3 +106,25 @@ Do it when nothing else is in flight on those files (the clown chat shares the t
 3. A Sonnet extract test of a check `aim` with escape and attack values; if it holds, read it before the words (concern 4).
 4. The file splits (concern 8).
 5. Count `way_by` across the next rounds (concern 5) and report it with each round.
+
+## Paid down after the owner's go-ahead (11-10 late)
+
+The owner: "give those a shot too, at least any that are not too huge to implement".
+- **Concern 3, done:** `minutes_cap`, `max_calls_now` and `dice_own_hp` are one hook, `turn_limits(state, adj)`, returning
+  `calls`, `minutes` and `dice_own_hp`.
+- **Concern 7, done:** the world turn reads `flags.debug_quiet` like everything else; the `(debug:` text test is gone.
+- **Concern 2, in part:** the one-turn flags are one list (`TURN_FLAGS`), cleared once at after_turn's start. Before, there
+  were two clears and a dead variable. They still live in saved state between the narration and after_turn. A true turn
+  scratch, kept out of saves, needs the engine to hand one to every hook; that waits for the escape resolver, which removes
+  most of them.
+- **Concern 8, in part:** the DEBUG hook is its own module, `games/fantasy/debug.py` (`run`, `ROOM`, `dev_mode`). The
+  perils split from world.py is not done: it touches every `wo.` reference in game.py and the tests, for no behaviour
+  change, and is best done in a quiet tree.
+- **Also, round 13's hit point words:** they had two homes (`state.hp_tier`, `combat.hp_word`); now one, `state.hp_word`,
+  with the new 'critically wounded' tier.
+- **Concern 1, not started:** the escape resolver, the largest item. It touches the world turn, check_note, after_turn,
+  the alerts and the referee's peril rows. With rounds 8 to 13 as its tests it is a day's careful work, best begun fresh
+  rather than at the end of a long run.
+- **Concern 4, not started:** a check `aim` of escape and attack. It is a schema change, so it waits on a real Sonnet
+  extract (the strict-grammar rule).
+

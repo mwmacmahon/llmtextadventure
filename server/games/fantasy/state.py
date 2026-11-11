@@ -22,7 +22,24 @@ from engine.wounds import Wound
 STATS = ("str", "dex", "con", "int", "wis", "cha")
 STAT_NAMES = {"str": "STR", "dex": "DEX", "con": "CON", "int": "INT", "wis": "WIS", "cha": "CHA"}
 ATTITUDE_WORDS = ["hostile", "hostile", "wary", "neutral", "friendly", "loyal", "devoted"]     # -3 .. 3 (the content README)
-HP_TIERS = ("fresh", "scratched", "hurt", "bloodied", "dead")       # B216: zero is death (B205), the stone's word
+HP_TIERS = ("fresh", "scratched", "hurt", "bloodied", "critically wounded", "dead")   # B216: zero is death (B205), the stone's word
+
+
+def hp_word(hp: int, hp_max: int, dead_word: str = "dead") -> str:
+    """The hit point tiers, for everyone (the player, allies, foes): fresh, scratched (three quarters), hurt (half), bloodied,
+    critically wounded (under a quarter: the owner, 11-10 night, "like critically wounded or something": 1 of 12 had read
+    'bloodied' like 6), and the dead word at 0."""
+    if hp <= 0:
+        return dead_word
+    if hp >= hp_max:
+        return "fresh"
+    if hp * 4 >= hp_max * 3:
+        return "scratched"
+    if hp * 2 >= hp_max:
+        return "hurt"
+    if hp * 4 >= hp_max:
+        return "bloodied"
+    return "critically wounded"
 HEAT_TIERS = ((0, "nobody"), (20, "asked about"), (50, "wanted"), (80, "hunted"))
 RENOWN_TIERS = ((0, "quiet"), (25, "known"), (50, "talked about"), (75, "famous"))   # the deck's tiers: 2 at 25, 3 at 50
 RENOWN_SCALE = 3      # B54 (D167): a reward row's renown is paid three times over (a first quest 9 to 24; "known" after about two)
@@ -265,15 +282,7 @@ class Player(BaseModel):
 
     @property
     def hp_tier(self) -> str:
-        if self.hp <= 0:
-            return "dead"
-        if self.hp >= self.hp_max:
-            return "fresh"
-        if self.hp * 4 >= self.hp_max * 3:
-            return "scratched"
-        if self.hp * 2 >= self.hp_max:
-            return "hurt"
-        return "bloodied"
+        return hp_word(self.hp, self.hp_max)
 
     @property
     def heat_word(self) -> str:

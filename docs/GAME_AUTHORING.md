@@ -555,8 +555,8 @@ How content meets the combat code (`games/fantasy/combat.py`, `encounter.py`; AR
 - **Grabs, holds and perils.** A `grab` grapples and does its `damage`: the player cannot run until they break free or
   the grabber is down; it never opens a peril. Getting loose takes the turn (D222): a turn that goes for it rolls the
   break-free and no blow; a blow only to hurt the grabber is an attack. In a peril, held or in a fight a turn is a moment
-  (at most a minute, the `minutes_cap` hook), any deed but speech costs the moment, and the player's hit points are the
-  dice's (`dice_own_hp`). A `hold` with a `peril` (the siren's pull under the lake) opens one, as a
+  (at most a minute; a move out of a fight keeps its travel time), any deed but speech costs the moment, and the player's
+  hit points are the dice's (the `turn_limits` hook: the call cap, the minutes, the hit points' owner). A `hold` with a `peril` (the siren's pull under the lake) opens one, as a
   hazard's `huge_fail` does; the save keeps the player out of a peril. A `drowning` peril starts as holding breath (CON + 1
   moments, at least 2, safe), then drowning; drowning and freezing take a CON check a moment, no harm until the first fails,
   then harm every moment with no more checks (world.CHECKED, DOT); burning and bleeding hurt every moment until put out (DEX)

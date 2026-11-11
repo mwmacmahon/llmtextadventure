@@ -287,7 +287,8 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
     w = WorldTurn()
     if p.fate or p.hp <= 0 or game.ending(s):
         return s, w
-    if (player_text or "").startswith("(debug:"):       # the test hook's own turn (round 7): it sets things up; nothing acts yet
+    if s.flags.get("debug_quiet"):                      # the test hook's own turn (round 7): it sets things up; nothing acts yet
+                                                        # (one signal, the flag the DEBUG command sets; the debt review)
         return s, w
     text = " ".join([player_text or "", getattr(adj, "summary", "") or ""] + [i.action for i in (getattr(adj, "intents", None) or [])])
     held = next((c for c in p.conditions if c.name == "grappled"), None)
@@ -773,6 +774,19 @@ def hazard(game: Any, s: FantasyState, name: str) -> dict | None:
     rows = (getattr(s.city, "hazards", None) or {}).get(s.player.location) or []
     k = (name or "").strip().lower().replace(" ", "_")
     return next((h for h in rows if h.get("id") == k or k in str(h.get("when", "")).lower().replace(" ", "_")), rows[0] if len(rows) == 1 else None)
+
+
+SWIM_ARMOUR = -2          # a step of armour on a swimming check (the owner, 11-10 night: "Nothing for cold, actually, just swimming")
+SWIM = re.compile(r"\bswim\w*", re.I)
+
+
+def swim_penalty(s: FantasyState, stat: str, label: str) -> int:
+    """Armour in the water: on a STR or DEX check that swims (under water in a peril, or a check whose label swims). Not on
+    the cold's CON check (the owner: cold water's -2 a step had made chain mail -8 against the cold)."""
+    if stat not in ("str", "dex"):
+        return 0
+    wet = s.player.peril is not None and s.player.peril.kind in ("drowning", "holding_breath")
+    return SWIM_ARMOUR * armour_steps(s) if (wet or SWIM.search(label or "")) else 0
 
 
 def armour_steps(s: FantasyState) -> int:

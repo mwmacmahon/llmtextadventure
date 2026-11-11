@@ -56,7 +56,7 @@ def test_the_players_block_from_the_sheet(game):
 
 
 def test_hit_point_words_for_everyone_and_a_band():
-    assert [cb.hp_word(h, 12) for h in (12, 9, 6, 1, 0)] == ["fresh", "scratched", "hurt", "bloodied", "dead"]
+    assert [cb.hp_word(h, 12) for h in (12, 9, 6, 3, 1, 0)] == ["fresh", "scratched", "hurt", "bloodied", "critically wounded", "dead"]
     band = Person(id="dead", name="the catacomb dead", combat=CombatBlock(block="skeleton", count=4, hps=[13, 6, 0, 13]))
     band.combat = cb.block_of(band)
     assert cb.person_hp_word(band) == "one destroyed, one bloodied, two unhurt"
@@ -795,7 +795,7 @@ def test_the_call_cap_holds_a_round(game):
     st, q = _fight(game, 3)
     from games.fantasy.state import CombatState
     st.combat = CombatState(plan=[{"key": f"k{i}"} for i in range(5)])
-    assert game.max_calls_now(st) == 7 and game.max_calls_now(new(game)) == 3
+    assert game._calls_cap(st) == 7 and game._calls_cap(new(game)) == 3
 
 
 def test_enemies_are_not_minted_from_stray_words(game):
@@ -940,10 +940,10 @@ def test_round_10_held_turns_are_one_act_and_a_bare_attack_is_aimed(game, monkey
     bare = AssistantReadingCombat(kind="action", summary="kills it", time_minutes=1, risk="none",
                                   intents=[IntentCombat(action="attack", targets=["dead"], weapon="dagger")])
     game.aim_blows(free, bare, "I drive my dagger up under its jaw to finish it")
-    assert bare.intents[0].attack_at == ["dead"] and game.minutes_cap(free) == 1
+    assert bare.intents[0].attack_at == ["dead"] and game._minutes_cap(free) == 1
     monkeypatch.setenv("TA_DEV_MODE", "on")
     s1, _ = game.run_command(new(game), "debug", {"text": "push me off"})
-    assert game.max_calls_now(s1) == 0 and game.minutes_cap(new(game)) is None
+    assert game._calls_cap(s1) == 0 and game._minutes_cap(new(game)) is None
     s2, _ = game.run_command(st, "debug", {"text": "clear"})
     assert s2.player.conditions == []
 
@@ -976,7 +976,7 @@ def test_round_11_no_blow_without_one_leaving_is_flee_and_a_walk_keeps_its_time(
     walk = AssistantReadingCombat(kind="action", summary="goes to the fire", time_minutes=10, risk="low",
                                   intents=[IntentCombat(action="go to the inn's fire", transition="The Drowned Lantern")])
     cold.player.location = "Lantern Row"
-    assert game.minutes_cap(cold, walk) is None and game.minutes_cap(cold, None) == 1
+    assert game._minutes_cap(cold, walk) is None and game._minutes_cap(cold, None) == 1
     assert wo.out_of_it("burning") == "Out of it: no longer on fire."
 
 
@@ -1009,3 +1009,48 @@ def test_round_13_abilities_show_their_line_smite_arms_at_once_and_the_hidden_ar
     st.player.flags_on.append("smite_armed")
     s3, rep, _ = apply_changes(game, st, ChangeReport.of(Change(kind="add", target="player", field="holy_power", value="-1")), present=[], causes=[])
     assert s3.player.count("holy_power").value == st.player.count("holy_power").value and any("power's own" in r.reason for r in rep.rejected)
+
+
+def test_the_deck_knows_its_own_job_offered_early(game):
+    """The owner, 11-10 night ("Yes": the deck should recognise its own job when the story offers it early). Round 11
+    (56dd55904e70 T6): Tam offered his daughter's job before the reach fired; the referee wrote 'hook-wren_return declined
+    false', filed as people.wren and refused, and the job stayed unheard of for eleven turns."""
+    from engine.game import TurnInfo
+    st = new(game)
+    if st.hook("ferrymans_daughter") is None:
+        pytest.skip("this deal has no Ferryman's Daughter")
+    assert st.hook("ferrymans_daughter").status == "dealt"
+    s1, rep, _ = apply_changes(game, st, ChangeReport.of(Change(kind="set", target="hook-wren_return", field="declined", value="false")),
+                               present=["tam"], causes=[])
+    h = s1.hook("ferrymans_daughter")
+    assert h.taken and not rep.rejected
+    s2 = game.after_turn(s1, TurnInfo(turn=2, elapsed_minutes=1, rng=random.Random(0)))
+    assert s2.hook("ferrymans_daughter").status == "live" and s2.hook("ferrymans_daughter").offered
+    s3, rep3, _ = apply_changes(game, st, ChangeReport.of(Change(kind="set", target="hook-a_new_thing", field="declined", value="false")),
+                                present=[], causes=[])
+    assert s3.hook("ferrymans_daughter").taken is False
+
+
+def test_round_14_the_line_names_its_parts_and_armour_only_swims(game):
+    """The owner, 11-10 late: "Why is the roll modifier bouncing around? Include the numbers still"; "Nothing for cold,
+    actually, just swimming". And round 13 T13: the grab's DEX -2 counted against breaking that grab."""
+    from engine.mechanics import CheckRequest, CheckResult, Modifier
+    from games.fantasy import world as wo
+    st = new(game, klass="Rogue")
+    r = CheckResult(id="n", label="sneak past", stat="dex", difficulty="low", resolver="dice_d20", roll=8, dice=[], total=19, target=8,
+                    margin=11, outcome="huge_success", modifiers=[Modifier(label="Sneak", value=2), Modifier(label="Expertise: Stealth", value=2)])
+    assert "8 + 11 (DEX +7, Sneak +2, Expertise: Stealth +2) = 19 against 8" in game.render_mechanic(st, r)
+    bare = CheckResult(id="n", label="x", stat="cha", difficulty="low", resolver="dice_d20", roll=10, dice=[], total=12, target=8,
+                       margin=4, outcome="success")
+    assert "10 + 2 = 12 against 8" in game.render_mechanic(st, bare)            # nothing but the stat: the line as before
+    f, _ = _fight(game, 1)
+    game._land_condition(f, "grappled", "dead")
+    mods = game.modifiers(f, CheckRequest(id="n", label="way out: twist loose", stat="dex"), None)
+    assert not any(m.label == "grappled" for m in mods)
+    assert any(m.label == "grappled" for m in game.modifiers(f, CheckRequest(id="n", label="pick the lock", stat="dex"), None))
+    paladin = new(game, klass="Paladin")
+    assert wo.armour_steps(paladin) >= 2
+    wo.open_peril(paladin, "holding_breath", turns=0)
+    swim = sum(m.value for m in game.modifiers(paladin, CheckRequest(id="n", label="way out: kick for the surface", stat="str"), None) if m.label == "armour in the water")
+    assert swim == -2 * wo.armour_steps(paladin)
+    assert not any(m.label == "armour in the water" for m in game.modifiers(paladin, CheckRequest(id="n", label="hold on in the cold", stat="con"), None))

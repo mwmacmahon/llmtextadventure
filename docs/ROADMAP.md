@@ -287,11 +287,11 @@ B144 covers the plain words).
 - The peril debt (docs/REVIEW-2026-11-10-perils-debt.md): one escape resolver for every way out of a peril or a grab, a
   turn scratch instead of turn-local flags in saved state, one `turn_limits` hook for the call cap, the minutes and the
   hit points, a check `aim` of escape and attack read before the label's words (after a Sonnet extract test), the DEBUG
-  and perils split out of game.py and world.py, `way_by` counted each round. *open*
-- From the ordinary-play rounds 11 to 13 (B339 to B341), for the owner: the § line nets every modifier into one number
-  (three rounds flagged CHA +2 to +4, DEX +7 to +11 with no reason shown: list them?); a hook offered in the prose before
-  the deck deals it never registers its acceptance (the deck should know its giver); 1 of 12 hit points reads 'bloodied'
-  like 6 (a near-death word?); cold water's armour penalty, -2 a step, makes chain mail -8 against the cold. *open with the owner*
+  and perils split out of game.py and world.py, `way_by` counted each round. *built in part: turn_limits, the DEBUG
+  module and one signal, the turn flags cleared once; the escape resolver, the turn scratch, the aim and the perils split not started*
+- From the ordinary-play rounds 11 to 13 (B339 to B341), the owner's answers (D225, B342): the § line names its parts
+  (the modifiers checked: no glitch but the grab's own −2 on breaking it); 'critically wounded' under a quarter; armour
+  costs swimming only, never the cold; the deck knows its own job offered early. *built*
 - The narrator's invented gear losses never reach the sheet (a burning pack, armour off; B338), a dead foe still listed
   hostile, the § line netting the modifiers into one number (B338). *open*
 

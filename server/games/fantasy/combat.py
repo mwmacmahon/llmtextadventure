@@ -13,7 +13,7 @@ import math
 import re
 from typing import Any
 
-from .state import CombatBlock, FantasyState, Person
+from .state import CombatBlock, FantasyState, Person, hp_word  # hp_word: one home for the tiers, state.py
 
 # ---- the SRD 5.1 numbers --------------------------------------------------------------------------------------------
 # weapon -> (dice, how it is wielded: melee | finesse | ranged | thrown)
@@ -300,17 +300,6 @@ def player_block(s: FantasyState, weapon: str = "") -> dict[str, Any]:
 
 
 # ---- hit point words, for everyone -------------------------------------------------------------------------------------
-def hp_word(hp: int, hp_max: int, dead_word: str = "dead") -> str:
-    """The player's tiers, for everyone: fresh, scratched, hurt, bloodied, down (or dead/destroyed) at 0."""
-    if hp <= 0:
-        return dead_word
-    if hp >= hp_max:
-        return "fresh"
-    if hp * 4 >= hp_max * 3:
-        return "scratched"
-    if hp * 2 >= hp_max:
-        return "hurt"
-    return "bloodied"
 
 
 def _fallen(b: CombatBlock, q: Person | None = None) -> str:
@@ -341,7 +330,7 @@ def band_words(q: Person) -> str:
     for h in b.hps:
         w = hp_word(h, b.hp_max or 1, _fallen(b))
         counts["unhurt" if w == "fresh" else w] = counts.get("unhurt" if w == "fresh" else w, 0) + 1
-    order = ["destroyed", "dead", "bloodied", "hurt", "scratched", "unhurt"]
+    order = ["destroyed", "dead", "critically wounded", "bloodied", "hurt", "scratched", "unhurt"]
     return ", ".join(f"{_NUMS[n] if n < len(_NUMS) else n} {w}" for w in order if (n := counts.get(w, 0)))
 
 

@@ -526,7 +526,7 @@ def test_round_10_the_warning_stays_after_a_failed_way_out_and_a_look_is_a_momen
     good = {"outcome": "success", "stat": "dex", "roll": 18}
     game.check_note(st, good, "way out: beat at the flames")
     assert not game.player_alerts(st)
-    assert game.dice_own_hp(st) and not game.dice_own_hp(new(game))      # T3: the referee took 3 on a free shout
+    assert game._dice_own_hp(st) and not game._dice_own_hp(new(game))      # T3: the referee took 3 on a free shout
     s2 = new(game)
     wo.open_peril(s2, "bleeding", turns=0)
     look = AssistantReading(kind="trivial", summary="looks at the floor", time_minutes=0, risk="none", intents=[Intent(action="look at the floor")])
