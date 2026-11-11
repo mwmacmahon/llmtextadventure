@@ -1581,7 +1581,10 @@ class FantasyGame(GameBase):
                 if fought:
                     i.attack_at = fought
         picked = {c.id for c in getattr(adj, "commands", None) or []}
-        away = [t for i in intents if (t := (getattr(i, "transition", "") or "").strip()) and not self._same_spot(state, t, p.location)]
+        # B364 (Gemma round 23, 59dc9865fc14 T9): "shove a barrel across the gap" carried a transition to the place beyond the gap
+        # and was typed as Flee (a parting bite, 5 of 11): an act with its own check (the shove) is not the player leaving
+        away = [t for i in intents if (t := (getattr(i, "transition", "") or "").strip()) and not self._same_spot(state, t, p.location)
+                and t.lower() != "unknown" and getattr(i, "check", None) is None]
         if away and not picked & {"flee", "yield"} and not any(getattr(i, "attack_at", None) for i in intents):
             # round 11 (56dd55904e70 T32): carried out of the tunnel to the ferry landing mid-fight, the drowned followed and
             # struck there (the fight goes where the player goes). Leaving for another place in a fight is the Flee lever:
@@ -3080,6 +3083,14 @@ class FantasyGame(GameBase):
                     h.prepaid += pool["gold"]
                     pool["gold"] = 0
                     break
+        for t in [t for t in s.threads if t.status == "open" and not t.id.startswith("hook-")]:
+            # B364 (Gemma round 23, 59dc9865fc14 T14 to T32): Hesk's talk opened the thread 'Finding Wren' before Tam's job came in;
+            # both were listed, both closed 'done'. Once a job is live, an open thread that plainly means it (its title, its
+            # people's names: the referee's made-up hook ids are read the same way) is that job
+            h = self._hook_meant(s, t.title)
+            if h is not None and h.status == "live":
+                s.threads.remove(t)
+                s.log.append(f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}. '{t.title}' is {h.title}.")
         for h in s.hooks:                                    # a quest's thread is the engine's: closed by the referee while the
             t = next((t for t in s.threads if t.id == h.thread), None) if h.thread else None    # quest is unsettled, it opens again
             if t is not None and h.status == "live" and t.status != "open":

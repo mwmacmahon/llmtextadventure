@@ -44,7 +44,7 @@ PERILS: dict[str, dict[str, Any]] = {          # stat: the way out's roll (an at
     "drowning": {"stat": "str", "turns": 0, "way": "to the surface and air", "what": "drowning, the breath gone",
                  "warn": "You are drowning! Swim for the surface (a STR check); if something holds you under, break its grip first.",
                  "hint": "swim up (STR)"},
-    "freezing": {"stat": "con", "turns": 0, "way": "to warmth and out of the cold", "what": "the cold closing in, the limbs going",
+    "freezing": {"stat": "con", "turns": 0, "way": "to warmth and out of the cold", "what": "freezing, the cold closing in and the limbs going",
                  "warn": "The cold is getting into you! Get to warmth, shelter or dry clothes, or push on through it (a CON check).",
                  "hint": "warmth or shelter, or push on (CON)"},
     "burning": {"stat": "dex", "turns": 0, "way": "out of the fire", "what": "on fire",

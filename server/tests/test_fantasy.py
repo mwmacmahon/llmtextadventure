@@ -1182,3 +1182,13 @@ def test_a_log_line_the_model_stamped_itself_is_stamped_once():
     assert unstamped("Day 2 06:00. Ungdall rests by the fire.") == "Ungdall rests by the fire."
     assert unstamped("07:50. While prowling Lantern Row, Ungdall loses his rope.") == "While prowling Lantern Row, Ungdall loses his rope."
     assert unstamped("Ungdall waits until 22:00 for the boat.") == "Ungdall waits until 22:00 for the boat."
+
+
+def test_a_jobs_twin_thread_is_the_job_once_it_is_live(game: FantasyGame):
+    """B364 (Gemma round 23, 59dc9865fc14 T14 to T32): Hesk's talk opened 'Finding Wren' before Tam's job came in; both were listed."""
+    from engine.threads import Thread
+    st = new(game)
+    st.threads.append(Thread(id="t14-finding-wren", title="Finding Wren", status="open", opened_turn=14))
+    st.threads.append(Thread(id="t14-a-true-story", title="Oswin wants his shadow back", status="open", opened_turn=14))
+    s1 = _live(game, st, "ferrymans_daughter")
+    assert [t.title for t in s1.threads if t.status == "open" and not t.id.startswith("hook-")] == ["Oswin wants his shadow back"]

@@ -1543,3 +1543,19 @@ def test_a_blow_with_a_carried_weapon_takes_it_in_hand(game):
     _skeletons(st2, 1)
     s, w = wo.world_turn(game, st2, _attack_reading("dead"), "I draw my longsword and hack at the skeleton.", random.Random(2), 1, 2)
     assert gear.weapon_of(gear.worn(s)["weapon"]) == "longsword"
+
+
+def test_a_shove_with_a_transition_is_no_flight(game):
+    """B364 (Gemma round 23, 59dc9865fc14 T9): 'shove a barrel across the gap' with transition 'Unknown' and its own STR check was
+    typed as Flee; a parting bite took 5 of 11."""
+    from engine.roles import AssistantReadingCombat, CheckStaked, IntentCombat
+    st = new(game)
+    _skeletons(st, 1)
+    st.player.fighting = ["dead"]
+    from games.fantasy.state import CombatState
+    st.combat = CombatState(round=1)
+    adj = AssistantReadingCombat(kind="action", summary="blocks the gap", time_minutes=1, risk="medium",
+                                 intents=[IntentCombat(action="block the gap with a barrel", transition="Unknown",
+                                                       check=CheckStaked(label="shove the barrel over the gap", stat="str", difficulty="low"))])
+    game.aim_blows(st, adj, "I shove an empty barrel with my boot so it rolls across the gap in the wall")
+    assert not any(c.id == "flee" for c in adj.commands or [])
