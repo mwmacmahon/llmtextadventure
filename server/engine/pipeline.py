@@ -3521,7 +3521,8 @@ def settle_trivial(adj: Any, calm: bool = False) -> list[dict]:
         return out                                                    # a fight: every roll stands
     for i in intents:
         c = getattr(i, "check", None)
-        mild = calm and c is not None and c.stat in ("cha", "wis", "int") and getattr(c, "complication", None) == "cast_acts"
+        mild = calm and c is not None and getattr(c, "complication", None) == "cast_acts" and (
+            c.stat in ("cha", "wis", "int") or c.difficulty == "low")     # Gemma pair 3: a cask wedged, a trapdoor forced: no cost calm
         if (c is None or int(getattr(c, "edge", 0) or 0) < 0 or getattr(c, "target_entity", None) or getattr(c, "aim", "other") == "secret"
                 or getattr(c, "danger", None) != "none" or (getattr(c, "complication", None) != "none" and not mild)):
             continue
@@ -3530,8 +3531,8 @@ def settle_trivial(adj: Any, calm: bool = False) -> list[dict]:
         # In a calm scene (a game's opt-in `settle_calm`: nobody hostile here, no peril, no fight) a low check with nothing at
         # stake simply works, and a WIS or INT search at medium is taken slowly and found (the table's 'take 20'): twice
         # its minutes, no roll. Gemma marks almost every check's complication 'cast_acts' (someone reacts); in a calm scene that
-        # is no stake for a word, a look or a thought (CHA, WIS, INT), and only there. Hard checks, a check at someone, a secret,
-        # a body's risk (STR, DEX, CON), anything with a danger or another complication stay rolls
+        # is no stake for a word, a look or a thought (CHA, WIS, INT), nor for a low feat of the body (a failure costs nothing out
+        # of a fight or a peril). Hard checks, a check at someone, a secret, anything with a danger or another complication roll
         slow = calm and c.difficulty == "medium" and c.stat in ("wis", "int")
         if not (c.difficulty == "very_low" or (calm and c.difficulty == "low") or slow):
             continue

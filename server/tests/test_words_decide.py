@@ -140,7 +140,9 @@ def test_a_calm_scene_settles_low_checks_and_takes_searches_slowly():
     adj = AssistantReadingStaked(kind="action", summary="asks and searches", time_minutes=20, risk="low", intents=[ask, search])
     out = settle_trivial(adj, calm=True)
     assert len(out) == 2 and ask.check is None and search.check is None and adj.time_minutes == 30
-    for c in [CheckStaked(label="x", stat="dex", difficulty="low", complication="cast_acts"),     # a body's risk
+    shove = IntentStaked(action="force the trapdoor", check=CheckStaked(label="force the trapdoor", stat="str", difficulty="low", complication="cast_acts"))
+    assert settle_trivial(AssistantReadingStaked(kind="action", summary="x", time_minutes=1, risk="low", intents=[shove]), calm=True) and shove.check is None
+    for c in [CheckStaked(label="x", stat="dex", difficulty="medium", complication="cast_acts"),  # a body's feat at medium
               CheckStaked(label="x", stat="cha", difficulty="low", target_entity="maud"),          # someone to win over
               CheckStaked(label="x", stat="cha", difficulty="low", aim="secret"),                  # a secret
               CheckStaked(label="x", stat="wis", difficulty="high"),                               # hard
