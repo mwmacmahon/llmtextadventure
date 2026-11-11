@@ -702,6 +702,10 @@ class FantasyGame(GameBase):
             return "in a peril"
         return ""
 
+    def dangers_here(self, state: FantasyState) -> bool:
+        """The place has a listed danger (cold water, a causeway): a body's feat here is no calm one (B365)."""
+        return bool(wo.hazards_here(state))
+
     def far_from_word(self, state: FantasyState) -> str:
         """B249 (part eleven §1b): place before people. On the water, in the wood or the south, word from the city does not
         reach the player, whoever is there (a siren on Reed Island is no carrier; B247): it waits for a city place. The deck

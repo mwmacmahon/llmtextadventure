@@ -155,6 +155,10 @@ def test_a_calm_scene_settles_low_checks_and_takes_searches_slowly():
     awk = IntentStaked(action="ask Maud for work", check=CheckStaked(label="asking for work", stat="cha", difficulty="low", edge=-1,
                                                                        edge_why="Socially Awkward", complication="cast_acts"))   # B356
     assert settle_trivial(AssistantReadingStaked(kind="action", summary="x", time_minutes=1, risk="low", intents=[awk]), calm=True) and awk.check is None
+    wade = IntentStaked(action="retrieve the ribbon", check=CheckStaked(label="wade to the piling", stat="str", difficulty="low"))
+    ask2 = IntentStaked(action="ask Tam", check=CheckStaked(label="ask Tam", stat="cha", difficulty="low"))
+    out = settle_trivial(AssistantReadingStaked(kind="action", summary="x", time_minutes=1, risk="low", intents=[wade, ask2]), calm=True, body_calm=False)
+    assert wade.check is not None and ask2.check is None and len(out) == 1          # B365: a body's feat where the place has dangers rolls
     j = IntentStaked(action="x", check=CheckStaked(label="x", stat="cha", difficulty="low"))
     assert not settle_trivial(AssistantReadingStaked(kind="action", summary="x", time_minutes=1, risk="low", intents=[j])) and j.check
     k = IntentStaked(action="x", check=CheckStaked(label="x", stat="cha", difficulty="very_low", edge=-1))
@@ -171,7 +175,7 @@ async def test_a_retold_turn_settles_a_trivial_check_its_stored_reading_kept(eng
                                           edge_why="routine", success_gain="He sees who is working in the back."))
     iid = engine.create_instance("fantasy", SHEET)
     fake.canned["AssistantReading"] = [AssistantReadingStaked(kind="action", summary="looks in the kitchen", time_minutes=2, risk="low", intents=[look])]
-    monkeypatch.setattr(pl, "settle_trivial", lambda adj, calm=False: [])   # the reading as stored before the rule
+    monkeypatch.setattr(pl, "settle_trivial", lambda adj, calm=False, body_calm=None: [])   # the reading as stored before the rule
     await play(engine, iid, "I head into the back to see if anyone is there.")
     monkeypatch.undo()
     async for _ in engine.rewrite_turn(iid, "Shorter.", by="referee"):      # the referee's retell keeps the stored reading (B280)

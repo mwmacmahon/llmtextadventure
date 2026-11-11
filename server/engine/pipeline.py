@@ -991,7 +991,10 @@ class Engine:
                 # attacking'; a quick question marked fast), so a calm scene is the game's: nobody hostile, no peril, no one fought
                 # (a blow aimed this turn keeps every roll in settle_trivial itself)
                 calm = bool(getattr(game, "settle_calm", False)) and not _hook(game, "unquiet", state, default="")
-                trivial = settle_trivial(adj, calm=calm)         # B279: very low with nothing at stake simply happens (and, calm, low)
+                # B365 (Gemma round 23, 59dc9865fc14 T21): 'retrieve the ribbon' in the river was settled as routine, and the
+                # cold water then took her under; where the place has dangers, a body's feat keeps its roll
+                body_calm = calm and not _hook(game, "dangers_here", state, default=False)
+                trivial = settle_trivial(adj, calm=calm, body_calm=body_calm)   # B279: very low with nothing at stake simply happens (and, calm, low)
                 ledger("adjudication", {**adj.model_dump(mode="json"), "_call": meta})
                 for h in struck:
                     ledger("precheck", {"kind": "attack", **h})
@@ -3513,7 +3516,7 @@ def settle_attack(adj: Any) -> list[dict]:
     return out
 
 
-def settle_trivial(adj: Any, calm: bool = False) -> list[dict]:
+def settle_trivial(adj: Any, calm: bool = False, body_calm: bool | None = None) -> list[dict]:
     """B279 (the owner, 11-09: "another case of 'this does not need to be a skill check'. I'm just seeing if anyone's around.
     nobody is hiding"): B225's mirror. A check the assistant set at very_low, with no danger and no complication on failure,
     aimed at nobody (no target_entity) and no edge against the player, outside a fight, is settled as works before the
@@ -3528,15 +3531,19 @@ def settle_trivial(adj: Any, calm: bool = False) -> list[dict]:
         return out                                                    # a fight: every roll stands
     for i in intents:
         c = getattr(i, "check", None)
-        mild = calm and c is not None and getattr(c, "complication", None) == "cast_acts" and (
+        if c is not None and body_calm is not None and c.stat not in ("cha", "wis", "int"):
+            calm_here = body_calm                   # B365: a body's feat where the place has dangers keeps its roll
+        else:
+            calm_here = calm
+        mild = calm_here and c is not None and getattr(c, "complication", None) == "cast_acts" and (
             c.stat in ("cha", "wis", "int") or c.difficulty == "low")     # Gemma pair 3: a cask wedged, a trapdoor forced: no cost calm
         # B356 (Gemma pair 5, 36fe6fd5de0a T1; round 20 T1): Gemma reads the player's blurb ('reads tracks better than people') as
         # a standing 'Socially Awkward -1' on every word, and any edge against the player kept the roll; calm, a -1 on a d20
         # against a low target makes nothing uncertain. A -2 or worse (someone or something set against them) still rolls
-        floor = -1 if calm else 0
+        floor = -1 if calm_here else 0
         # B357 (Sonnet pair 5, ffdc529bd55d T13): Sonnet names the person a plain question goes to ('target_entity: oswin'); calm,
         # at low, a question to someone is no one to win over (a medium talk, a secret or an edge against still rolls)
-        aimed = getattr(c, "target_entity", None) and not (calm and getattr(c, "difficulty", "") in ("low", "very_low"))
+        aimed = getattr(c, "target_entity", None) and not (calm_here and getattr(c, "difficulty", "") in ("low", "very_low"))
         if (c is None or int(getattr(c, "edge", 0) or 0) < floor or aimed or getattr(c, "aim", "other") == "secret"
                 or getattr(c, "danger", None) != "none" or (getattr(c, "complication", None) != "none" and not mild)):
             continue
@@ -3547,8 +3554,8 @@ def settle_trivial(adj: Any, calm: bool = False) -> list[dict]:
         # its minutes, no roll. Gemma marks almost every check's complication 'cast_acts' (someone reacts); in a calm scene that
         # is no stake for a word, a look or a thought (CHA, WIS, INT), nor for a low feat of the body (a failure costs nothing out
         # of a fight or a peril). Hard checks, a check at someone, a secret, anything with a danger or another complication roll
-        slow = calm and c.difficulty == "medium" and c.stat in ("wis", "int")
-        if not (c.difficulty == "very_low" or (calm and c.difficulty == "low") or slow):
+        slow = calm_here and c.difficulty == "medium" and c.stat in ("wis", "int")
+        if not (c.difficulty == "very_low" or (calm_here and c.difficulty == "low") or slow):
             continue
         why = (f"taken slowly, with nothing pressing: {c.label}" if slow else
                f"nothing in the way: {(getattr(c, 'edge_why', '') or 'anyone could').strip()}")

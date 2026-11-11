@@ -722,6 +722,11 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
     return s, w
 
 
+# a sentence of the player's that tells what someone is told, not what the player does (B357, B365): "I tell Tam she set these down
+# the way she'd leave them for a swim"
+REPORTED = re.compile(r"^\s*(?:then\s+)?I\s+(?:quietly\s+|softly\s+)?(?:tell|say|ask|explain|warn|whisper|shout|answer|reply|remind)\b", re.I)
+
+
 def walked_in(game: Any, s: FantasyState, adj: Any, player_text: str, rng: Any, turn: int, offset: int, w: "WorldTurn") -> None:
     """A hazard the player's own words walk into ('I cross the causeway at dusk', 'I dive in'), rolled before the prose and told to
     the narrator. Sonnet pair 3 (cbcde13163ea T16, T26): rolled after the prose (the backstop), the causeway dropped the player into
@@ -731,8 +736,11 @@ def walked_in(game: Any, s: FantasyState, adj: Any, player_text: str, rng: Any, 
         return
     # B357 (Sonnet pair 5, ffdc529bd55d T19): "I tell Tam she set these down ... the way she'd leave them for a swim" rolled the cold
     # water as she climbed out: the reading's own acts say what the player does; the words only when the reading has none
+    # B365 (Gemma round 23, 59dc9865fc14 T21): the reading's act was 'retrieve the hair ribbon' while the words lowered her into
+    # the river to swim; the words count again, all but a sentence that opens as reported speech
     acts = [i.action for i in (getattr(adj, "intents", None) or []) if getattr(i, "action", "")]
-    said = re.sub(r"[\"“][^\"”]*[\"”]", " ", " ".join(acts or [player_text or ""])).lower()
+    own = [x for x in re.split(r"(?<=[.!?])\s+", player_text or "") if not REPORTED.match(x)]
+    said = re.sub(r"[\"“][^\"”]*[\"”]", " ", " ".join(acts + own)).lower()
     for hz in hazards_here(s):
         words = [x.lower() for x in hz.get("words") or []]
         if not (words and any(re.search(r"\b" + re.escape(x) + r"\b", said) for x in words)):

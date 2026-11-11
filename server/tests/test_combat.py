@@ -1439,6 +1439,14 @@ def test_a_hazard_word_in_what_the_player_says_is_no_step_in(game):
     dive = AssistantReadingCombat(kind="action", summary="dives", time_minutes=2, tempo="fast", risk="low", intents=[IntentCombat(action="Dive into the river")])
     wo.walked_in(game, st, dive, "I dive in.", random.Random(0), 1, 2, w)
     assert w.mechanics and "Cold water" in w.mechanics[0]
+    w2 = wo.WorldTurn()                                       # B365 (Gemma round 23 T21): the act 'retrieve the ribbon', the words a swim
+    rib = AssistantReadingCombat(kind="action", summary="gets the ribbon", time_minutes=10, tempo="slow", risk="low",
+                                 intents=[IntentCombat(action="retrieve the hair ribbon")])
+    st = new(game)
+    st.player.location = "The river Marrow"
+    wo.walked_in(game, st, rib, "I tie my rope to the thwart, set down the bow, and lower myself into the river to wade and swim over to the ribbon.",
+                 random.Random(0), 1, 2, w2)
+    assert w2.mechanics and "Cold water" in w2.mechanics[0]
 
 
 def test_words_about_not_attacking_join_no_one_wary(game):
@@ -1559,3 +1567,12 @@ def test_a_shove_with_a_transition_is_no_flight(game):
                                                        check=CheckStaked(label="shove the barrel over the gap", stat="str", difficulty="low"))])
     game.aim_blows(st, adj, "I shove an empty barrel with my boot so it rolls across the gap in the wall")
     assert not any(c.id == "flee" for c in adj.commands or [])
+
+
+def test_dangers_here_marks_a_place_with_a_listed_danger(game):
+    """B365: the calm settle keeps a body's roll where the place lists a danger."""
+    st = new(game)
+    st.player.location = "The river Marrow"
+    assert game.dangers_here(st)
+    st.player.location = "The Drowned Lantern"
+    assert not game.dangers_here(st)
