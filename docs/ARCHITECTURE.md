@@ -339,8 +339,10 @@ lies and who believes them, beats in order.
   target; the game's `aim_blows` hook: a swing at no one while fighting is at the foe, a plain run in a fight is Flee);
   `world_turn` joins the struck (an item never, a companion struck leaves the company, a blow at the dead or a fallen one
   by likeness brings in another like them, someone only in the telling is written in by `bring_in`), and `plan_round`
-  lists every act; the narrator calls `<<ATTACK>>`, `<<ALLY>>`, `<<ENEMY>>` inline and plays the § line; what it left
-  out the backstop rolls after the prose and shows as a § line; `after_turn` lands the round (`combat.land`: enemies
+  lists every act; with the game's `prerolled_rounds` (the fantasy's, D233) `combat.preroll` rolls the round in the world
+  turn, the narrator is told each result and writes no calls, and nothing is rolled after the prose; with it off, the
+  narrator calls `<<ATTACK>>`, `<<ALLY>>`, `<<ENEMY>>` inline and the backstop rolls what it left out; a hazard the
+  player's words walk into is rolled before the prose too (`world.walked_in`, D232); `after_turn` lands the round (`combat.land`: enemies
   dead or down if spared, a fist spares; allies down; morale; XP) and a death told this turn ends the story this turn.
   The encounter generator picks every unpinned fight by a win-rate band (the simulator's rank, erring easier), drawn
   off the turn by a background `warm` into `state.encounters`; the offer names who would come, and keeps the scene's

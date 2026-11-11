@@ -552,6 +552,9 @@ How content meets the combat code (`games/fantasy/combat.py`, `encounter.py`; AR
 - **A fight the story pins** (a hook's band of four skeletons) keeps its count; the generator may make it weak or feeble.
   `lint_pinned_fights` names one still under 40% for a lone level-1 character; the answer is a strong ally the quest
   brings by its own events (`{append: [player.with_them, maren]}`), and the lint counts that ally.
+- **Nothing after the prose.** A fight's round and a hazard the player's words walk into are rolled before the prose and
+  told (D232, D233); a friend at hand reaches for the player in a danger, a roll of their own (D231). Content should not
+  rely on the narrator calling a hazard: list the words that walk into it.
 - **Gear.** What the player wears and holds is state (games/fantasy/gear.py): one body armour, one shield and one weapon in hand,
   each a pocket item with `equipped`. Name body armour as armour ("leather armour", "chain mail", "plate"); a "leather
   pouch" is no armour. Armour class is 10 + DEX + the worn armour + a worn shield; the Equip and Unequip levers change it,
