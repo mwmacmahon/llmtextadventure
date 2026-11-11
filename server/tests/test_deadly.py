@@ -66,7 +66,8 @@ def info_calls(turn, calls):
     return TurnInfo(turn=turn, elapsed_minutes=1, rng=random.Random(0), calls=[dict(c) for c in calls])
 
 
-def test_a_hazard_call_lands_a_scrape_and_a_condition(game):
+def test_a_hazard_call_lands_a_scrape_and_a_condition(game, monkeypatch):
+    monkeypatch.setattr(game, "narrator_hazards", True)       # the narrator's call, the setting on (B366), kept as a path
     st = new(game)
     st.player.location = "Lake Ambercold"
     st.city.hazards["Lake Ambercold"] = [{"id": "cold_water", "when": "in the water", "stat": "con", "difficulty": "high", "armour_penalty": -2,
@@ -78,7 +79,8 @@ def test_a_hazard_call_lands_a_scrape_and_a_condition(game):
     assert after.player.has_condition("chilled") and after.player.hp == st.player.hp - out["data"]["harm"]
 
 
-def test_a_lethal_hazard_kills_outright_with_its_cause_on_the_stone(game):
+def test_a_lethal_hazard_kills_outright_with_its_cause_on_the_stone(game, monkeypatch):
+    monkeypatch.setattr(game, "narrator_hazards", True)       # the narrator's call, the setting on (B366), kept as a path
     st = new(game)
     st.player.location = "The Mire"
     st.city.hazards["The Mire"] = [{"id": "sinkhole", "when": "in the sinkhole", "stat": "dex", "difficulty": "very_high",
@@ -451,9 +453,10 @@ def test_a_hold_ends_when_the_player_leaves_its_reach(game):
     assert s4.player.fighting == ["maud"]
 
 
-def test_cold_water_opens_freezing_and_no_hazard_rolls_once_in_a_peril(game):
+def test_cold_water_opens_freezing_and_no_hazard_rolls_once_in_a_peril(game, monkeypatch):
     """Round 6 (6c793b6930d1): the lake's cold water rolled a CON check every turn, each failure a scrape and 'chilled'. The
     owner's rule: the save keeps the player out; a failure puts them in the peril; no more checks once in it."""
+    monkeypatch.setattr(game, "narrator_hazards", True)       # the narrator's call, the setting on (B366), kept as a path
     st = new(game)
     st.player.location = "Reed Island"
     hz = wo.hazard(game, st, "cold_water")
@@ -632,3 +635,24 @@ def test_a_check_after_a_hazard_this_turn_is_the_hazards(game):
     st.flags["hazard_checks"] = [{"label": "cold water", "stat": "con", "outcome": "failure"}]
     said = game.check_settled(st, Call(verb="CHECK", raw="CHECK con medium", stat="con", difficulty="medium"))
     assert "Already rolled this turn" in said and "cold water" in said
+
+
+def test_the_narrators_own_hazard_call_is_not_rolled(game):
+    """B366 (Gemma round 24, b15d253f7efb T14, T22): walking carefully, the narrator dropped him through a floor into the water twice
+    and called the cold. A listed danger is met only by the player's own words (rolled before the prose)."""
+    from engine.brackets import Call
+    st = new(game)
+    st.player.location = "Lake Ambercold"
+    out = game.world_call(st, Call(verb="HAZARD", raw="HAZARD cold_water", ref="cold_water"), Dice(3), 2, {"hp": 0, "acted": []})
+    assert out["data"].get("none") and "own words" in out["text"] and st.player.peril is None
+    assert not any(l.startswith("Dangers here") for l in game.state_lines(st)) if hasattr(game, "state_lines") else True
+
+
+def test_a_failed_con_way_out_is_the_moment_no_second_die(game):
+    """B366 (Gemma round 24, b15d253f7efb T20): 'Getting out: CON ... failure' and the freezing's own CON hold-on both rolled and cost."""
+    st = new(game)
+    wo.open_peril(st, "freezing", turns=0)
+    data = {"outcome": "failure", "stat": "con", "roll": 5}
+    wo.peril_by_check(st, data, "way out: stamp and rub", game=game)
+    ev = data["peril_moment"]
+    assert ev["event"] == "hurt" and ev["line"] == "" and ev["failing"]

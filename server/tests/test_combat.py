@@ -1576,3 +1576,32 @@ def test_dangers_here_marks_a_place_with_a_listed_danger(game):
     assert game.dangers_here(st)
     st.player.location = "The Drowned Lantern"
     assert not game.dangers_here(st)
+
+
+def test_a_reach_for_a_friend_is_never_aimed_at_them(game):
+    """B366 (Gemma round 24, b15d253f7efb T25): 'thrust my hand up toward where the troll stood, hoping he grabs it' was aimed at the
+    friendly troll by B361's rule, and he killed the player. The engine aims words only at the hostile or the fought."""
+    from games.fantasy import world as wo
+    st = new(game)
+    here = st.player.location
+    st.people.append(Person(id="gorm", name="Gorm", role="a grey-hided troll", location=here, met=True, attitude=1,
+                            combat=CombatBlock(block="troll", count=1, fixed=True)))
+    adj = AssistantReadingCombat(kind="action", summary="reaches up", time_minutes=1, tempo="fast", risk="high", entities=["gorm"],
+                                 intents=[IntentCombat(action="thrust a hand up toward the troll", targets=["gorm"])])
+    s, w = wo.world_turn(game, st, adj, "I thrust my hand up toward where the troll stood, hoping he grabs it.", random.Random(1), 25, 2)
+    assert "gorm" not in s.player.fighting and not adj.intents[0].attack_at
+
+
+def test_a_way_out_reaching_for_a_rescuer_joins_no_one(game):
+    """B366 (T25): 'way out: kick for the troll's hand' joined the wary troll to the fight; his fist killed."""
+    from engine.roles import CheckStaked
+    from games.fantasy import world as wo
+    st = new(game)
+    here = st.player.location
+    st.people.append(Person(id="gorm", name="Gorm", role="a grey-hided troll", location=here, met=True, attitude=-1,
+                            combat=CombatBlock(block="troll", count=1, fixed=True)))
+    adj = AssistantReadingCombat(kind="action", summary="kicks up", time_minutes=1, tempo="fast", risk="high", entities=["gorm"],
+                                 intents=[IntentCombat(action="way out: kick for the troll's hand", targets=["gorm"],
+                                                       check=CheckStaked(label="way out: kick for the troll's hand", stat="str", difficulty="medium"))])
+    s, w = wo.world_turn(game, st, adj, "I kick up toward the troll's hand.", random.Random(1), 25, 2)
+    assert "gorm" not in s.player.fighting

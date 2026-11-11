@@ -459,6 +459,11 @@ def blow_named(game: Any, s: FantasyState, words: str) -> Person | None:
         if q.status != "alive" or q.hidden_from_player or q.id in s.player.with_them or not q.location \
                 or not game._same_spot(s, q.location, s.player.location):
             continue
+        if q.id not in s.player.fighting and (q.attitude or 0) > -2:
+            # B366 (Gemma round 24, b15d253f7efb T25): 'thrust my hand up toward where the troll stood, hoping he grabs it' matched
+            # the blow words and was aimed at the friendly troll who had just pulled him out; he turned and killed him. The
+            # engine aims a blow only at the hostile or someone already fought; anyone else needs the reading's own aim (D230)
+            continue
         n = len(said & _words(" ".join([q.name, q.called or "", q.role or "", *q.aliases])))
         if n > score:
             best, score = q, n
@@ -609,7 +614,14 @@ def peril_by_check(s: FantasyState, data: dict, label: str, game: Any = None) ->
         s.flags["escaped"] = True                 # round 10: this turn's WARNING is not shown (after_turn ends the peril, clears the flag)
         return f" That is the way out: {s.player.name} is no longer {what}. Write it working."
     import random as _r                          # the moment, decided now and told with the roll (a death this turn, B300)
-    ev = moment(game, s, pr, _r.Random(f"peril:{pr.kind}:{pr.step}:{s.player.name}:{data.get('roll')}"), 2) if game is not None else {"event": "none", "harm": 0}
+    rnd = _r.Random(f"peril:{pr.kind}:{pr.step}:{s.player.name}:{data.get('roll')}")
+    if game is not None and pr.kind in CHECKED and not pr.failing and str(data.get("stat") or "").lower() == "con":
+        # B366 (Gemma round 24, b15d253f7efb T20): a way out by CON failed, and the moment's own CON 'hold on' rolled again and cost
+        # too: one die for one moment; the way out's CON failing is the hold failing
+        step = DOT[pr.kind]
+        ev = {"event": "hurt", "harm": harm(step, rnd.randint(1, 20)), "step": step, "line": "", "failing": True}
+    else:
+        ev = moment(game, s, pr, rnd, 2) if game is not None else {"event": "none", "harm": 0}
     data["peril_moment"] = ev
     if ev.get("harm"):
         data["harm"] = ev["harm"]
@@ -662,6 +674,11 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
                     # words with none in the reading is the player's attack, at whom the words name here
                     i.attack_at = [named.id]
                     i.targets = [named.id]
+                if c is not None:
+                    # B366 (Gemma round 24, b15d253f7efb T25): 'way out: kick for the troll's hand' (reaching for the troll who was
+                    # pulling him out) joined the wary troll to the fight, and his fist killed. A way out is no blow and joins no one
+                    if MARKED.match(getattr(c, "label", "") or ""):
+                        continue
                 struck += [x for x in [getattr(c, "target_entity", None), *(getattr(i, "targets", None) or [])] if x]
             a = getattr(i, "attack", None)                                  # part fifteen §6: the reading's attack is the door in
             if a is not None:
@@ -746,7 +763,7 @@ def walked_in(game: Any, s: FantasyState, adj: Any, player_text: str, rng: Any, 
         if not (words and any(re.search(r"\b" + re.escape(x) + r"\b", said) for x in words)):
             continue
         from engine.brackets import Call
-        out = world_call(game, s, Call(verb="HAZARD", raw=f"HAZARD {hz.get('id')}", ref=str(hz.get("id"))), rng, offset, {"hp": 0, "acted": []})
+        out = world_call(game, s, Call(verb="HAZARD", raw=f"HAZARD {hz.get('id')}", ref=str(hz.get("id"))), rng, offset, {"hp": 0, "acted": [], "walked": True})
         if out is None or (out.get("data") or {}).get("none"):
             continue
         data = out.get("data") or {}
@@ -919,6 +936,11 @@ def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tal
         hz = hazard(game, s, call.ref)
         if hz is not None and hz.get("id") in (s.flags.get("hazard_rolled") or []):
             return {"text": f"That danger was rolled before this telling; play what it did, no roll.", "data": {"verb": "HAZARD", "hazard": hz.get("id"), "none": True}}
+        if hz is not None and not tally.get("walked") and not getattr(game, "narrator_hazards", False):
+            # B366 (Gemma round 24, b15d253f7efb T14, T22): walking carefully, the narrator dropped him through a floor into the water
+            # twice and called the cold (-5, then -4): a listed danger is met by the player's own words, rolled before the prose
+            return {"text": f"No roll for it: {p.name}'s own words did not take them into it this turn. Keep {p.name} clear of it, "
+                            f"and play the moment without it.", "data": {"verb": "HAZARD", "hazard": hz.get("id"), "none": True}}
         if hz is not None:
             tally.setdefault("hazards", []).append(hz.get("id"))
         if hz is None:

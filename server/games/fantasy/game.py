@@ -271,6 +271,7 @@ class FantasyGame(GameBase):
         "A crude joke to a grieving siren: it fails, no roll; a story half true, from someone she has reason to doubt: open, a check with a -2 edge.",
     ]
     prerolled_rounds = True    # the owner's night brief: a fight's round is rolled before the prose and told (the record's combat.prerolled)
+    narrator_hazards = False   # B366: a listed danger is met only by the player's own words (rolled before the prose); the narrator's call is not rolled
     settle_calm = True         # the owner, 11-10 late: "Too many rolls": a calm scene's low checks with nothing at stake simply work
     sleep_by_command = True    # the owner (11-08 evening): only the Rest command makes a turn a night; "I go sleep at <a far place>" is a move
     target_offset = 2          # B83 (the owner, 11-08): one Hard step on the d20; a +2 character passes medium 55%, not 65%
@@ -997,7 +998,7 @@ class FantasyGame(GameBase):
         if wary and not p.fate:                          # B208: not in the fight; a call opens it when the fiction does
             out.append(wo.could_turn_line(p.name, wary))
         hz = (s.city.hazards or {}).get(p.location) or []
-        if hz and not p.fate:
+        if hz and not p.fate and self.narrator_hazards:
             out.append("Dangers here: " + "; ".join(f"{h.get('when', h.get('id'))} (<<HAZARD {h.get('id')}>>)" for h in hz)
                        + f". When the telling puts {p.name} in one, write its call at that moment and wait for the answer.")
         party = [q for q in (s.person(x) for x in p.with_them) if q is not None and q.status == "alive" and not q.hidden_from_player]
