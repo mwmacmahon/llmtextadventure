@@ -462,12 +462,18 @@ def preroll_check(game: Any, s: FantasyState, adj: Any, label: str, rng: Any, of
     stat = re.sub(r"\s*\(.*?\)\s*$", "", str(c.stat)).strip().lower()
     res = _check(game, s, stat, str(c.difficulty), label, rng, extra, offset)
     data = {"label": label, "stat": stat, "outcome": res.outcome, "roll": res.roll, "total": res.total, "hp_taken": int(s.flags.get("prerolled_hp") or 0)}
+    won = res.outcome in ("success", "huge_success", "critical_success")
+    branch = str(getattr(c, "success_gain" if won else "failure_outcome", "") or "").strip()
+    data["stake"] = {"branch": "success" if won else "failure", "text": branch}
+    if str(getattr(c, "danger", "none") or "none") != "none":
+        data["stake"]["danger"] = str(c.danger)
     note = game.check_note(s, data, label) or ""
     line = game.render_mechanic(s, res) + (f" It costs {data['harm']} hit point{'s' if data['harm'] != 1 else ''}." if data.get("harm") else "")
     w.mechanics.append(line)
     plain = re.sub(r"^\s*way out:\s*", "", label, flags=re.I)
-    w.directives.append(f"{s.player.name} tried {what} ({plain}), and the engine rolled it before this telling: {res.tier_text()}.{note} "
-                        f"Play it as it fell.")
+    tried = f"{s.player.name} tried {what} ({plain}), and the engine rolled it" if what else f"{s.player.name}'s attempt ({plain}) was rolled"
+    w.directives.append(f"{tried} before this telling: {res.tier_text()}." + (f" {branch.rstrip('.')}." if branch and not data.get("kills") else "")
+                        + f"{note} Play that outcome.")
     w.rows.append({"kind": "prerolled_check", "label": label, "outcome": res.outcome, "line": line})
     s.flags.setdefault("prerolled_checks", []).append(data)
     if data.get("harm"):
@@ -642,8 +648,12 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
                         q.location = p.location                             # a blow at them says they are here (a stale place, B262)
                 struck += list(getattr(a, "targets", None) or [])
                 aimed |= {str(t) for t in getattr(a, "targets", None) or [] if t}
-        if not struck and is_fight(adj) and ATTACK.search(" ".join([player_text or "", text])):
-            struck = list(getattr(adj, "entities", None) or [])     # B286: a fast beat with no blow in it (a shout, a question) joins nobody
+        acts = " ".join([player_text or ""] + [i.action or "" for i in (getattr(adj, "intents", None) or [])])
+        if not struck and is_fight(adj) and ATTACK.search(acts):
+            # B286: a fast beat with no blow in it (a shout, a question) joins nobody. B357 (Sonnet pair 5, ffdc529bd55d T7): the
+            # summary's "speaking to it instead of attacking" joined wary Gorm, whose fist took 10 of 11: the player's words and the
+            # reading's acts only, and only the hostile; a wary or friendly person is fought only by a blow aimed at them
+            struck = [e for e in (getattr(adj, "entities", None) or []) if (q := s.person(e)) is None or q.attitude <= -2]
         from .combat import is_item
         struck = list(dict.fromkeys(e for e in struck if not is_item(s, e)))   # B310: a weapon or a thing is never fought; once each
         for e in struck:
@@ -696,7 +706,10 @@ def walked_in(game: Any, s: FantasyState, adj: Any, player_text: str, rng: Any, 
     p = s.player
     if p.fate or p.peril is not None or getattr(adj, "kind", "action") != "action":
         return
-    said = re.sub(r"[\"“][^\"”]*[\"”]", " ", " ".join([player_text or ""] + [i.action for i in (getattr(adj, "intents", None) or [])])).lower()
+    # B357 (Sonnet pair 5, ffdc529bd55d T19): "I tell Tam she set these down ... the way she'd leave them for a swim" rolled the cold
+    # water as she climbed out: the reading's own acts say what the player does; the words only when the reading has none
+    acts = [i.action for i in (getattr(adj, "intents", None) or []) if getattr(i, "action", "")]
+    said = re.sub(r"[\"“][^\"”]*[\"”]", " ", " ".join(acts or [player_text or ""])).lower()
     for hz in hazards_here(s):
         words = [x.lower() for x in hz.get("words") or []]
         if not (words and any(re.search(r"\b" + re.escape(x) + r"\b", said) for x in words)):
@@ -781,13 +794,24 @@ def plan_fight(game: Any, s: FantasyState, adj: Any, player_text: str, rng: Any,
     if first is not None and first.combat is not None and first.combat.block:   # the last kind fought here (a body part's foe, B354)
         s.flags.setdefault("foe_here", {})[p.location] = first.combat.block
     if getattr(game, "prerolled_rounds", False) and s.combat.plan:
+        # B357 (Sonnet pair 5, ffdc529bd55d T31): the reading's own checks this fight turn (backing off, hushing a lamp) were rolled
+        # after the prose: the round, rolled from full hit points, told a blow leaving her 'critically wounded', and the failed
+        # back-off's 2 then killed her. They roll first, and what they cost counts in the round's tally
+        done = {d.get("label") for d in s.flags.get("prerolled_checks") or []}
+        for i in list(getattr(adj, "intents", None) or []):
+            c = getattr(i, "check", None)
+            if c is not None and not getattr(i, "attack_at", None) and c.label not in done and not p.fate:
+                preroll_check(game, s, adj, c.label, rng, offset, w, "")
         # the round rolled before the prose (the record's combat.prerolled dial, built 11-11): the narrator plays what fell
-        lines, told, data, hp = cb.preroll(game, s, rng, offset)
-        s.flags["prerolled"], s.flags["prerolled_hp"] = data, hp
+        before = int(s.flags.get("prerolled_hp") or 0)
+        lines, told, data, hp = cb.preroll(game, s, rng, offset, before)
+        s.flags["prerolled"], s.flags["prerolled_hp"] = data, before + hp
         w.mechanics += lines
         if told:
             # read fresh by a subagent: 'as it fell' invited killing a foe that missed; the call names primed them; a bare count
-            w.directives.append("The blows below are settled. Tell each in this order, with the outcome given, and stop after the last: "
+            first = (f"Tell {p.name}'s attempt above first; the blows below still land as given. "
+                     if any(d.get("label") not in done for d in s.flags.get("prerolled_checks") or []) else "")
+            w.directives.append(first + "The blows below are settled. Tell each in this order, with the outcome given, and stop after the last: "
                                 + " ".join(told) + cb.round_count(game, s))
         return
     w.directives += cb.round_lines(game, s)      # THIS TURN's round list (the game's standing lines are read before the plan exists)

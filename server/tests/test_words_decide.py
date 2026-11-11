@@ -143,13 +143,15 @@ def test_a_calm_scene_settles_low_checks_and_takes_searches_slowly():
     shove = IntentStaked(action="force the trapdoor", check=CheckStaked(label="force the trapdoor", stat="str", difficulty="low", complication="cast_acts"))
     assert settle_trivial(AssistantReadingStaked(kind="action", summary="x", time_minutes=1, risk="low", intents=[shove]), calm=True) and shove.check is None
     for c in [CheckStaked(label="x", stat="dex", difficulty="medium", complication="cast_acts"),  # a body's feat at medium
-              CheckStaked(label="x", stat="cha", difficulty="low", target_entity="maud"),          # someone to win over
+              CheckStaked(label="x", stat="cha", difficulty="medium", target_entity="maud"),       # someone to win over
               CheckStaked(label="x", stat="cha", difficulty="low", aim="secret"),                  # a secret
               CheckStaked(label="x", stat="wis", difficulty="high"),                               # hard
               CheckStaked(label="x", stat="cha", difficulty="medium"),                             # a real talk
               CheckStaked(label="x", stat="cha", difficulty="low", edge=-2, edge_why="she distrusts strangers")]:  # set against them
         i = IntentStaked(action="x", check=c)
         assert not settle_trivial(AssistantReadingStaked(kind="action", summary="x", time_minutes=1, risk="low", intents=[i]), calm=True) and i.check
+    oswin = IntentStaked(action="ask the lamplighter what happened", check=CheckStaked(label="ask him", stat="cha", difficulty="low", target_entity="oswin"))
+    assert settle_trivial(AssistantReadingStaked(kind="action", summary="x", time_minutes=1, risk="low", intents=[oswin]), calm=True) and oswin.check is None  # B357
     awk = IntentStaked(action="ask Maud for work", check=CheckStaked(label="asking for work", stat="cha", difficulty="low", edge=-1,
                                                                        edge_why="Socially Awkward", complication="cast_acts"))   # B356
     assert settle_trivial(AssistantReadingStaked(kind="action", summary="x", time_minutes=1, risk="low", intents=[awk]), calm=True) and awk.check is None

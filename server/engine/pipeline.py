@@ -3527,7 +3527,10 @@ def settle_trivial(adj: Any, calm: bool = False) -> list[dict]:
         # a standing 'Socially Awkward -1' on every word, and any edge against the player kept the roll; calm, a -1 on a d20
         # against a low target makes nothing uncertain. A -2 or worse (someone or something set against them) still rolls
         floor = -1 if calm else 0
-        if (c is None or int(getattr(c, "edge", 0) or 0) < floor or getattr(c, "target_entity", None) or getattr(c, "aim", "other") == "secret"
+        # B357 (Sonnet pair 5, ffdc529bd55d T13): Sonnet names the person a plain question goes to ('target_entity: oswin'); calm,
+        # at low, a question to someone is no one to win over (a medium talk, a secret or an edge against still rolls)
+        aimed = getattr(c, "target_entity", None) and not (calm and getattr(c, "difficulty", "") in ("low", "very_low"))
+        if (c is None or int(getattr(c, "edge", 0) or 0) < floor or aimed or getattr(c, "aim", "other") == "secret"
                 or getattr(c, "danger", None) != "none" or (getattr(c, "complication", None) != "none" and not mild)):
             continue
         # the owner, 11-10 late ("Too many rolls is one of the biggest annoyances"): in rounds 12 to 17, 46 of 112 checks were

@@ -1399,3 +1399,55 @@ def test_a_kill_by_carry_through_is_booked(game):
     o.combat.hp = 1
     cb.land(game, f, [{"verb": "ALLY", "hits": [{"pid": "other_dead", "body": 0, "dmg": 5}]}], 2, 2, random.Random(0))
     assert f.person("other_dead").status != "alive"
+
+
+def test_a_fight_turns_own_check_rolls_before_the_round(game):
+    """B357 (Sonnet pair 5, ffdc529bd55d T31): the back-off's DEX was rolled after the prose, so the round, rolled from full hit points,
+    told a blow leaving her 'critically wounded' and the back-off's 2 then killed her. The turn's own checks roll first and count."""
+    from engine.roles import CheckStaked
+    from games.fantasy import world as wo
+    for seed in range(12):
+        st = new(game)
+        _skeletons(st, 2)
+        adj = _attack_reading("dead")
+        adj.intents.append(IntentCombat(action="back off toward the arch", check=CheckStaked(
+            label="back off toward the arch", stat="dex", difficulty="high", danger="scrape", failure_outcome="She stumbles on the steps.")))
+        s, w = wo.world_turn(game, st, adj, "I swing and back off toward the arch.", random.Random(seed), 1, 2)
+        checks = s.flags.get("prerolled_checks") or []
+        assert [d["label"] for d in checks] == ["back off toward the arch"]
+        assert adj.intents[-1].check is None                                          # the narrator calls nothing for it
+        took = sum(int(d.get("harm") or 0) for d in checks)
+        blows = sum(int(d.get("harm") or 0) for d in s.flags.get("prerolled") or [])
+        assert int(s.flags.get("prerolled_hp") or 0) == took + blows
+        assert any("before this telling" in d for d in w.directives)
+
+
+def test_a_hazard_word_in_what_the_player_says_is_no_step_in(game):
+    """B357 (Sonnet pair 5, T19): 'the way she'd leave them for a swim', said to Tam while climbing back aboard, rolled the cold water."""
+    from engine.roles import IntentStaked
+    from games.fantasy import world as wo
+    st = new(game)
+    st.player.location = "The river Marrow"
+    adj = AssistantReadingCombat(kind="action", summary="talks and dresses", time_minutes=5, tempo="fast", risk="low",
+                                 intents=[IntentCombat(action="Tell Tam the shoes were set down by Wren and the current runs to the lake"),
+                                          IntentCombat(action="Wring out shirt, buckle scale mail back on")])
+    w = wo.WorldTurn()
+    wo.walked_in(game, st, adj, "I tell Tam she set these down herself, the way she'd leave them for a swim.", random.Random(0), 1, 2, w)
+    assert not w.mechanics
+    dive = AssistantReadingCombat(kind="action", summary="dives", time_minutes=2, tempo="fast", risk="low", intents=[IntentCombat(action="Dive into the river")])
+    wo.walked_in(game, st, dive, "I dive in.", random.Random(0), 1, 2, w)
+    assert w.mechanics and "Cold water" in w.mechanics[0]
+
+
+def test_words_about_not_attacking_join_no_one_wary(game):
+    """B357 (Sonnet pair 5, ffdc529bd55d T7): the reading's summary 'speaking to it instead of attacking' joined wary Gorm to a fight
+    and his fist took 10 of 11. Only the player's words and acts count, and only the hostile join without a blow aimed."""
+    from games.fantasy import world as wo
+    st = new(game)
+    st.people.append(Person(id="gorm", name="Gorm", role="troll", location=st.player.location, met=True, attitude=-1,
+                            combat=CombatBlock(block="troll", count=1, fixed=True)))
+    adj = AssistantReadingCombat(kind="action", summary="Ilsa calls quietly to the troll, speaking to it instead of attacking, blades kept low.",
+                                 time_minutes=1, tempo="fast", risk="medium", entities=["gorm"],
+                                 intents=[IntentCombat(action="Speak quietly to the troll, asking if it is hurt or hiding", targets=["gorm"])])
+    s, w = wo.world_turn(game, st, adj, "I keep my blades low and call across the water: 'Are you hurt?'", random.Random(1), 7, 2)
+    assert "gorm" not in s.player.fighting and not s.flags.get("prerolled")

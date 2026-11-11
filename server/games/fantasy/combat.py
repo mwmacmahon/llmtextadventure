@@ -1207,13 +1207,13 @@ def scale(s: FantasyState, q: Person, shift: int = 0, game: Any = None, offset: 
     return [note]
 
 
-def preroll(game: Any, s: FantasyState, rng: Any, offset: int) -> tuple[list[str], list[str], list[dict], int]:
+def preroll(game: Any, s: FantasyState, rng: Any, offset: int, taken: int = 0) -> tuple[list[str], list[str], list[dict], int]:
     """The owner's night brief (11-11: "whatever mechanic is making enemy counts not match up right"): the round rolled before the
     prose, every listed act in order, the player's blow first, until the player falls. Returns (the dice lines, what each did for
     the narrator, the results to land after the prose, the hit points they take from the player). Gemma pair 3 (e72597444d81
     T17): the prose had the drowned give up and fall away, and the grips the narrator never called were rolled after it (the
     backstop), one held. Told before, the prose plays what fell."""
-    tally: dict = {"hp": 0, "acted": []}
+    tally: dict = {"hp": taken, "acted": []}            # `taken`: what the turn's own checks cost first (B357)
     lines, told, data = [], [], []
     for e in list(s.combat.plan if s.combat is not None else []):
         if s.player.fate or s.player.hp - int(tally.get("hp", 0)) <= 0:
@@ -1229,7 +1229,7 @@ def preroll(game: Any, s: FantasyState, rng: Any, offset: int) -> tuple[list[str
         said = re.sub(r"\s*\((Rage|Defence|Uncanny Dodge|Shield of Faith|Sneak Attack)[^)]*\)", "", said)   # the dice line keeps them
         told.append(said.rstrip(" ,.;") + ".")
         data.append(d)
-    return lines, told, data, int(tally.get("hp", 0))
+    return lines, told, data, int(tally.get("hp", 0)) - taken
 
 
 def round_count(game: Any, s: FantasyState) -> str:

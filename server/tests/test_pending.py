@@ -349,6 +349,8 @@ def test_a_named_time_of_day_is_counted_by_the_engine():
     assert pend.at_minutes("7:00", 6 * 60, 1440) == 60
     assert pend.at_minutes("07:00", 7 * 60, 1440) == 1440
     assert pend.at_minutes("first light", 20 * 60 + 41, 1440) == 10 * 60 + 19              # Gemma writes the name, not the clock
+    assert pend.at_minutes("tomorrow 12:00", 9 * 60, 1440) == 27 * 60 and pend.at_minutes("tomorrow at noon", 20 * 60, 1440) == 16 * 60
+    assert pend.at_minutes("tonight", 20 * 60, 1440) == 120
     assert pend.at_minutes("soon", 0, 1440) is None and pend.at_minutes("25:00", 0, 1440) is None
 
 

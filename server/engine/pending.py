@@ -97,18 +97,22 @@ class PendingNew(BaseModel):
 AT = re.compile(r"^\s*(\d{1,2})[:.h](\d{2})\s*$")
 # the shape Gemma writes (B356 replay: at 'first light'): the named times the field's own description gives, read as clock times
 NAMED_TIMES = ((re.compile(r"\b(first light|dawn|daybreak|sunrise|morning)\b", re.I), 7 * 60), (re.compile(r"\b(noon|midday)\b", re.I), 12 * 60),
-               (re.compile(r"\b(dusk|nightfall|sunset|evening)\b", re.I), 19 * 60), (re.compile(r"\bmidnight\b", re.I), 0))
+               (re.compile(r"\b(dusk|nightfall|sunset|evening)\b", re.I), 19 * 60), (re.compile(r"\bmidnight\b", re.I), 0),
+               (re.compile(r"\b(night|tonight)\b", re.I), 22 * 60))
 
 
 def at_minutes(at: str, now_minute: int, minutes_per_day: int) -> int | None:
     """Minutes from now to the next `at` (HH:MM) on the clock, or None when it does not read as one (B356: the referee's own
     count put 'first light' six hours after 20:41, and the night's sleep woke at 02:41)."""
+    later = bool(re.match(r"\s*tomorrow\b", at or "", re.I))          # 'tomorrow 12:00' said at 09:00 is not today's noon
+    at = re.sub(r"^\s*tomorrow\b\s*(at\s+)?", "", at or "", flags=re.I)
     m = AT.match(at or "")
     named = next((v for rx, v in NAMED_TIMES if rx.search(at or "")), None) if not m else None
     if named is None and (not m or int(m.group(1)) > 23 or int(m.group(2)) > 59):
         return None
     to = ((named if named is not None else int(m.group(1)) * 60 + int(m.group(2))) - now_minute) % minutes_per_day
-    return to or minutes_per_day
+    to = to or minutes_per_day
+    return to + minutes_per_day if later and now_minute + to < minutes_per_day else to
 
 
 def clock_text(abs_minutes: int, minutes_per_day: int) -> str:

@@ -245,7 +245,7 @@ soon: anything set in motion that will happen on its own unless something interv
   "Maren is halfway down the stairs toward the boathouse." -> {"kind": "soon", "what": "Maren reaches the boathouse", "who": "maren", "minutes": 3, "hidden": false, "unless": "someone stops her on the stairs"}
   "Tobiah hesitates at the door, the gaff in his hand." -> {"kind": "soon", "what": "Tobiah acts with the gaff", "who": "tobiah", "minutes": 2, "hidden": false, "unless": "someone talks him down"}
   "Tobiah will take her out at first light." -> {"kind": "soon", "what": "Tobiah takes Maren out", "who": "tobiah", "minutes": 0, "at": "07:00", "hidden": false, "unless": "Maren is not at the boat"}
-  at: when the words name a time of day, that clock time as HH:MM (first light or morning 07:00, noon 12:00, dusk 19:00); the engine counts the minutes.
+  at: when the words name a time of day, HH:MM (first light/morning → 07:00, noon → 12:00, dusk → 19:00, night → 22:00), with 'tomorrow ' before it for a later day; minutes stays 0 and the engine counts them.
   hidden: true when the player will not see it happen where they are.
   Someone still on the way is a soon, never a move.
 unseen: a fact that happened where the player cannot perceive it.
