@@ -1292,8 +1292,11 @@ class FantasyGame(GameBase):
         base = total_mod - sum(int(m.value) for m in mods)
         parts = [f"{result.stat.upper()} {base:+d}"] + [f"{self._short(m.label)} {int(m.value):+d}" for m in mods]
         sign = "+" if total_mod >= 0 else "-"
-        old = f"{result.roll} {sign} {abs(total_mod)} = {result.total}"
-        return line.replace(old, f"{result.roll} {sign} {abs(total_mod)} ({', '.join(parts)}) = {result.total}", 1) if old in line else line
+        old = f"{result.roll} {sign} {abs(total_mod)} = {result.total}" if total_mod else f"{result.roll} against {result.target}"
+        new = f"{result.roll} {sign} {abs(total_mod)} ({', '.join(parts)}) = {result.total}" + ("" if total_mod else f" against {result.target}")
+        # round 14 (a5cf93d41879 T20): CON +2 and chilled -2 net to nothing; the line read '11 against 12' and the tester took
+        # the +2 for lost. A sum of nought still names its parts
+        return line.replace(old, new, 1) if old in line else line
 
     def modifiers(self, state: FantasyState, req: CheckRequest, target_entity: str | None) -> list[Modifier]:
         p = state.player
@@ -1872,8 +1875,7 @@ class FantasyGame(GameBase):
     def _hook_meant(self, s: FantasyState, target: str) -> Any:
         """A hook- id the referee made up for a job the prose offered (round 11, 56dd55904e70 T6: Tam offered his daughter's job
         before the deck's reach fired; the referee wrote 'hook-wren_return', filed as people.wren and refused): the dealt or
-        live hook it plainly means, by its id, title and people's names (one only, or none). A dealt hook it means is brought
-        in as offered now: its reach fires (the giver asked in person)."""
+        live hook it plainly means, by its id, title and people's names (one only, or none)."""
         stop = {"hook", "the", "a", "of", "job", "quest", "return", "find", "help", "task"}
         words = {x for x in re.split(r"[_\-\s]+", target.lower()) if x and x not in stop}
         if not words:
@@ -1889,15 +1891,18 @@ class FantasyGame(GameBase):
             have = set(re.split(r"[_\-\s,.'']+", names))
             if words & have:
                 hits.append(h)
-        if len(hits) != 1:
-            return None
-        hk = hits[0]
-        if hk.status == "dealt":
-            now = s.clock.day * DAY + s.clock.minute
-            for e in s.hidden.events:
-                if e.id == f"{hk.id}_reach" and not e.fired:
-                    e.fired, e.fired_at, e.variant = True, now, "trigger"
-        return hk
+        return hits[0] if len(hits) == 1 else None
+
+    def _offered_now(self, s: FantasyState, hk: Any) -> None:
+        """A dealt hook the prose has already put to the player (its giver met before the reach fired): the reach fires now,
+        so the deck brings it in as offered this turn (round 14, a5cf93d41879 T6: the referee's yes to
+        hook-ferrymans_daughter landed, but the hook stayed dealt, unseen, for the rest of the round)."""
+        if hk.status != "dealt":
+            return
+        now = s.clock.day * DAY + s.clock.minute
+        for e in s.hidden.events:
+            if e.id == f"{hk.id}_reach" and not e.fired:
+                e.fired, e.fired_at, e.variant = True, now, "trigger"
 
     def apply_change(self, s: FantasyState, ch: Change, w: Writer) -> bool:
         if getattr(w, "setup", False):                 # the sheet pass (B90): the player's own words, no referee bounds
@@ -1924,6 +1929,7 @@ class FantasyGame(GameBase):
             hk = self._hook_meant(s, target)                 # the owner, 11-10 night: the deck knows its own job offered early
         if hk is not None and field == "declined" and kind == "set":
             down = value.strip().lower() in ("true", "yes", "1", "declined", "turned down")
+            self._offered_now(s, hk)                          # a yes or a no to a job still in the deck: it was put to them
             if hk.status in ("done", "failed"):
                 w.reject(f"hooks.{hk.id}.declined", "the quest is already settled", value)
             elif down != hk.declined and w.set(f"hooks.{hk.id}.declined", hk.declined, down):

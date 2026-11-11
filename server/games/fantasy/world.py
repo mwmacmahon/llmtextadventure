@@ -821,7 +821,9 @@ def backstop(game: Any, s: FantasyState, acted: list[str], rng: Any, offset: int
         if r["data"].get("kills"):
             return out
     # a hazard the player's own attempt walked into (its words), when the prose made no call for it (part four §6, B98)
-    text = str(tally.get("text") or "")
+    # round 14 (a5cf93d41879 T19): "Who's lost something under the water?", said aloud in a tavern, rolled cold water; words
+    # spoken are free (B317), so what is quoted is no attempt to walk into anything
+    text = re.sub(r"[\"“][^\"”]*[\"”]", " ", str(tally.get("text") or ""))
     for hz in (getattr(s.city, "hazards", None) or {}).get(s.player.location) or []:
         if hz.get("id") in tally.get("hazards", []) or not text or any(o["result"].get("kills") for o in out):
             continue

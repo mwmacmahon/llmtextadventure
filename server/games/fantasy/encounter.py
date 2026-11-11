@@ -258,6 +258,25 @@ def _free_id(s: FantasyState, made: list[Person], stem: str) -> str:
     return f"{stem}_{i}"
 
 
+# below weak the blows soften too (round 14, a5cf93d41879 T29: a feeble rat swarm's 2d6 crit did 15 and killed a level-1
+# fighter from 8; the owner, 11-10: "If a grab does 15 points of damage for a lvl 1 fight ... making 'weak' much more weak"):
+# frail halves the dice, feeble also drops a die size
+DAMAGE_STEPS = {"frail": 1, "feeble": 2}
+DIE_DOWN = {20: 12, 12: 10, 10: 8, 8: 6, 6: 4}
+
+
+def soften(dice: str, steps: int) -> str:
+    """'2d6+1' a step lighter: the dice count halved (rounding up); two steps, a die size down as well (never below d4)."""
+    def one(m: re.Match) -> str:
+        n, sides = int(m.group(1) or 1), int(m.group(2))
+        if steps >= 1:
+            n = max(1, math.ceil(n / 2))
+        if steps >= 2:
+            sides = DIE_DOWN.get(sides, sides)
+        return f"{n}d{sides}"
+    return re.sub(r"(\d*)d(\d+)", one, dice or "") if steps else dice
+
+
 def vary(b: CombatBlock, variant: str) -> None:
     """The variant's numbers (LADDER): hit points by a factor, attack and every save DC by a step."""
     mult, step = VARY.get(variant, (1.0, 0))
@@ -276,6 +295,9 @@ def vary(b: CombatBlock, variant: str) -> None:
             b.hps = rolls
         return
     b.hp_max = max(1, int(round((b.hp_max or 1) * mult)))
+    if (soft := DAMAGE_STEPS.get(variant, 0)):
+        b.damage = soften(b.damage or "1d4", soft)
+        b.actions = [{**a, "damage": soften(str(a["damage"]), soft)} if a.get("damage") else a for a in (b.actions or [])]
     b.attack = (b.attack or 0) + step
     b.dc = (b.dc or 12) + step
     if step and b.actions:

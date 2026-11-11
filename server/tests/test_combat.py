@@ -1029,6 +1029,10 @@ def test_the_deck_knows_its_own_job_offered_early(game):
     s3, rep3, _ = apply_changes(game, st, ChangeReport.of(Change(kind="set", target="hook-a_new_thing", field="declined", value="false")),
                                 present=[], causes=[])
     assert s3.hook("ferrymans_daughter").taken is False
+    s4, _, _ = apply_changes(game, st, ChangeReport.of(Change(kind="set", target="hook-ferrymans_daughter", field="declined", value="false")),
+                             present=["tam"], causes=[])                # round 14 (a5cf93d41879 T6): the right id, the hook still dealt
+    s5 = game.after_turn(s4, TurnInfo(turn=2, elapsed_minutes=1, rng=random.Random(0)))
+    assert s5.hook("ferrymans_daughter").status == "live" and s5.hook("ferrymans_daughter").offered and s5.hook("ferrymans_daughter").taken
 
 
 def test_round_14_the_line_names_its_parts_and_armour_only_swims(game):
@@ -1043,6 +1047,9 @@ def test_round_14_the_line_names_its_parts_and_armour_only_swims(game):
     bare = CheckResult(id="n", label="x", stat="cha", difficulty="low", resolver="dice_d20", roll=10, dice=[], total=12, target=8,
                        margin=4, outcome="success")
     assert "10 + 2 = 12 against 8" in game.render_mechanic(st, bare)            # nothing but the stat: the line as before
+    nought = CheckResult(id="n", label="push on", stat="con", difficulty="medium", resolver="dice_d20", roll=11, dice=[], total=11, target=12,
+                         margin=-1, outcome="failure", modifiers=[Modifier(label="chilled", value=-2)])
+    assert "11 + 0 (CON +2, chilled -2) = 11 against 12" in game.render_mechanic(st, nought)   # round 14 T20
     f, _ = _fight(game, 1)
     game._land_condition(f, "grappled", "dead")
     mods = game.modifiers(f, CheckRequest(id="n", label="way out: twist loose", stat="dex"), None)
