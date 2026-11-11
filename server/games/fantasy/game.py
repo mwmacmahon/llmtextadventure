@@ -2527,19 +2527,35 @@ class FantasyGame(GameBase):
             return True
         where = value if (kind == "move" or (kind == "set" and field == "location")) and value in s.places else q.location
         self._know(s, q, w, met=kind != "learned" and self._same_spot(s, where, p.location))
+        in_fight = q.id in p.fighting and q.status == "alive"
         if kind == "move" or (kind == "set" and field == "location"):
             if value in s.places or value == "Unknown":
                 if w.set(f"people.{q.id}.location", q.location, value):
                     q.location = value
+                    if in_fight and not self._same_spot(s, value, p.location):
+                        # Sonnet pair 4 (afafbea34fb2 T12, T13): the referee moved the fleeing rats to the Reedway, the fight pulled
+                        # them back to the player ('the fight goes where the player goes') and one bit: a foe gone elsewhere left it
+                        p.fighting = [x for x in p.fighting if x != q.id]
+                        w.note(f"{q.name} is gone from the fight")
             else:
                 w.reject(f"people.{q.id}.location", "not a listed place", value)
             return True
         if kind == "gone":
             if re.search(r"\b(dead|dies|died|killed?|kills)\b", f"{ch.note} {value}", re.I):
+                if in_fight:                                # a death in a fight is the dice's: the same retold conflict (D230)
+                    from . import combat as cb
+                    word = cb.person_hp_word(q) or "unhurt"
+                    if not w.conflict(f"people.{q.id}.status", f"the dice have {q.name} still standing ({word})", "dead", rule="fight_alive",
+                                      fix=f"{q.name} is still standing ({word}): only a rolled blow puts them down. Write {q.name} still up "
+                                          f"and in the fight; what the rolls did is what happened."):
+                        return True
+                    p.fighting = [x for x in p.fighting if x != q.id]
                 if w.set(f"people.{q.id}.status", q.status, "dead"):
                     q.status = "dead"
             elif w.set(f"people.{q.id}.location", q.location, "Unknown"):
                 q.location = "Unknown"
+                if in_fight:
+                    p.fighting = [x for x in p.fighting if x != q.id]
             return True
         if field == "attitude" and kind in ("set", "add"):
             n = self._step(value)
@@ -3980,7 +3996,8 @@ class FantasyGame(GameBase):
             EntityCards(title="People", cards=[
                 EntityCard(id=q.id, title=q.name if self.name_shown(s, q) else self.called(q),
                            subtitle=(q.role or None) if self.name_shown(s, q) else "not yet named",
-                           badges=[*([Chip(label="attitude", value=q.attitude_word, tone=self.ATTITUDE_TONES.get(q.attitude_word))]
+                           badges=[*([Chip(label="attitude", value="fighting you" if q.id in p.fighting else q.attitude_word,
+                                          tone="bad" if q.id in p.fighting else self.ATTITUDE_TONES.get(q.attitude_word))]
                                      if q.status == "alive" else []),     # rounds 10, 11: a destroyed zombie still read 'hostile'
                                    *([Chip(label="mood", value=q.mood)] if q.mood and q.status == "alive" else []),
                                    *([Chip(label="hit points", value=person_hp_word(q), tone="bad")] if person_hp_word(q) else []),

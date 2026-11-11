@@ -1321,3 +1321,18 @@ async def test_a_prerolled_round_through_the_pipeline(tmp_path):
     full = (hurt.combat.hp_max or 0) * max(1, hurt.combat.count) if hurt is not None else 0
     assert hurt is None or hurt.status != "alive" or sum(hurt.combat.hps) < full or "miss" in narr     # the round's blows landed
     assert "prerolled" not in after.flags
+
+
+def test_a_foe_moved_off_or_gone_leaves_the_fight(game):
+    """Sonnet pair 4 (afafbea34fb2 T12, T13): the referee moved the fleeing rats to the Reedway and the fight pulled them back to bite.
+    A foe in the fight moved elsewhere or gone is out of it; 'gone, dead' for a foe the dice have standing is a retold conflict."""
+    from games.fantasy import world as wo
+    st = new(game)
+    _skeletons(st, 1)
+    st, _ = wo.world_turn(game, st, _attack_reading("dead"), "I strike.", random.Random(2), 1, 2)
+    s1, _, _ = apply_changes(game, st, ChangeReport.of(Change(kind="move", target="dead", value="The Reedway")), present=[], causes=[])
+    assert "dead" not in s1.player.fighting
+    s2, _, _ = apply_changes(game, st, ChangeReport.of(Change(kind="gone", target="dead", value="", note="fled down the passage")), present=[], causes=[])
+    assert "dead" not in s2.player.fighting and s2.person("dead").status == "alive"
+    s3, rep3, _ = apply_changes(game, st, ChangeReport.of(Change(kind="gone", target="dead", value="", note="killed by the blow")), present=[], causes=[])
+    assert s3.person("dead").status == "alive" and rep3.conflicts()
