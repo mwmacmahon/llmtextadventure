@@ -644,7 +644,7 @@ def test_the_narrators_own_hazard_call_is_not_rolled(game):
     st = new(game)
     st.player.location = "Lake Ambercold"
     out = game.world_call(st, Call(verb="HAZARD", raw="HAZARD cold_water", ref="cold_water"), Dice(3), 2, {"hp": 0, "acted": []})
-    assert out["data"].get("none") and "own words" in out["text"] and st.player.peril is None
+    assert out["data"].get("none") and "not in play" in out["text"] and st.player.peril is None
     assert not any(l.startswith("Dangers here") for l in game.state_lines(st)) if hasattr(game, "state_lines") else True
 
 

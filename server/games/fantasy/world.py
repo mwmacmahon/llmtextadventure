@@ -939,8 +939,9 @@ def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tal
         if hz is not None and not tally.get("walked") and not getattr(game, "narrator_hazards", False):
             # B366 (Gemma round 24, b15d253f7efb T14, T22): walking carefully, the narrator dropped him through a floor into the water
             # twice and called the cold (-5, then -4): a listed danger is met by the player's own words, rolled before the prose
-            return {"text": f"No roll for it: {p.name}'s own words did not take them into it this turn. Keep {p.name} clear of it, "
-                            f"and play the moment without it.", "data": {"verb": "HAZARD", "hazard": hz.get("id"), "none": True}}
+            danger = str(hz.get("id") or "danger").replace("_", " ")        # read fresh: name it; say what to do with a fall already told
+            return {"text": f"No roll: the {danger} is not in play. If your telling put {p.name} in it, {p.name} catches the edge instead "
+                            f"and stays clear of it. Go on from there.", "data": {"verb": "HAZARD", "hazard": hz.get("id"), "none": True}}
         if hz is not None:
             tally.setdefault("hazards", []).append(hz.get("id"))
         if hz is None:

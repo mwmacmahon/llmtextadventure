@@ -2004,7 +2004,10 @@ class Engine:
                 clk = sp.lookup(doc, clock.path)
                 now = clk["day"] * clock.minutes_per_day + clk["minute"]
                 if not through:
-                    want, stop_note = clock_stop(game, doc, turn, now, want, asleep=bool(getattr(game, "sleep_by_command", False)) and sleeping(adj))
+                    # B367 (Gemma round 24, b15d253f7efb T10): a short rest taken with the Rest lever was cut at 44 minutes by a job's
+                    # giver walking in, and healed nothing: a job's own events wait for any rest the lever started, as for a sleep
+                    want, stop_note = clock_stop(game, doc, turn, now, want, asleep=bool(getattr(game, "sleep_by_command", False))
+                                                 and (sleeping(adj) or any(getattr(c, "id", "") == "rest" for c in (getattr(adj, "commands", None) or []))))
                     if stop_note:
                         clock_note = (clock_note + "; " if clock_note else "") + stop_note
                 elapsed = want
