@@ -1605,3 +1605,17 @@ def test_a_way_out_reaching_for_a_rescuer_joins_no_one(game):
                                                        check=CheckStaked(label="way out: kick for the troll's hand", stat="str", difficulty="medium"))])
     s, w = wo.world_turn(game, st, adj, "I kick up toward the troll's hand.", random.Random(1), 25, 2)
     assert "gorm" not in s.player.fighting
+
+
+def test_a_cluster_of_rats_is_creatures_not_a_thing(game):
+    """B368 (Gemma round 25, 88f811a693d0 T12 to T16): 'new thing: cluster of giant rats' went into the pockets; the rats were never on
+    the board and the prose killed them freely. Plural creatures are people; a part of one stays a thing."""
+    st = new(game)
+    st.player.location = "The Old Channel"
+    s1, rep, _ = apply_changes(game, st, ChangeReport.of(Change(kind="new", target="thing", value="cluster of giant rats",
+                                                                note="wet fur, black eyes, huddled around debris")), present=[], causes=[])
+    assert not any("rat" in it.name.lower() for it in s1.inventory)
+    q = next((x for x in s1.people if "rat" in x.name.lower()), None)
+    assert q is not None and q.combat is not None and q.id in s1.player.fighting
+    s2, _, _ = apply_changes(game, st, ChangeReport.of(Change(kind="new", target="thing", value="rat skulls")), present=[], causes=[])
+    assert any("skull" in it.name.lower() for it in s2.inventory) or any("skull" in t.name.lower() for t in s2.things)

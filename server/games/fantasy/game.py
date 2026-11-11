@@ -1696,6 +1696,17 @@ class FantasyGame(GameBase):
         return (head + "\n\n" if head else "") + line
 
     @staticmethod
+    def _creatures(value: str) -> bool:
+        """The words' head noun (the last) is a bestiary monster's name in the plural ('a cluster of giant rats', 'two skeletons'),
+        not a part of one ('rat skulls', 'a wolf pelt'), and not a person kind."""
+        from . import combat as cb
+        words = re.findall(r"[a-z]+", (value or "").lower())
+        if not words or not words[-1].endswith("s") or len(words[-1]) < 4:
+            return False
+        eid = cb.match_entry(words[-1])
+        return bool(eid) and not cb.is_person(str(cb.ENTRIES.get(eid, {}).get("kind") or ""))
+
+    @staticmethod
     def _standing_word(s: FantasyState, q: Person) -> str:
         """How the dice leave them, this turn's prerolled blows counted (B362: 'three unhurt' where the round had killed two)."""
         from . import combat as cb
@@ -2428,6 +2439,13 @@ class FantasyGame(GameBase):
     def _new_thing(self, s: FantasyState, value: str, where_: str, note: str, w: Writer) -> bool:
         p = s.player
         where = (where_ or "").strip().lower()
+        if self._creatures(value):
+            # B368 (Gemma round 25, 88f811a693d0 T12 to T16): 'new thing: cluster of giant rats' went into the pockets; the rats were
+            # never on the board, a swing at them never rolled, and the prose killed them freely. Words whose head noun is a
+            # creature in the plural are creatures (the band the prose brought), never a thing
+            w.note(f"new thing {value!r} is creatures: filed as people")
+            self._new_person(s, value.strip(), note or value, w)
+            return True
         if where in ("player", "pockets", "inventory", "", p.name.lower()):
             lying = s.thing(value)
             if lying is not None:                        # a listed thing by that name is that thing moved, never a second
