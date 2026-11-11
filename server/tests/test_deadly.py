@@ -656,3 +656,17 @@ def test_a_failed_con_way_out_is_the_moment_no_second_die(game):
     wo.peril_by_check(st, data, "way out: stamp and rub", game=game)
     ev = data["peril_moment"]
     assert ev["event"] == "hurt" and ev["line"] == "" and ev["failing"]
+
+
+def test_a_failed_con_way_out_by_the_words_is_one_die(game):
+    """B369 (Gemma round 26, cbc52d98825d T22): 'Getting out: CON ... Failure' and 'Freezing: CON ...' on the same die."""
+    st = new(game)
+    wo.open_peril(st, "freezing", turns=0)
+    for text in ("I get to the fire and warm my hands", "I haul myself out of the water and get warm", "I push on through the cold"):
+        reading = AssistantReading(kind="action", summary=text, time_minutes=1, risk="high", tempo="fast", intents=[Intent(action=text)])
+        s2, w = game.world_turn(st, reading, text, Dice(2, 2, 2, 2), 3, 2)
+        if any(m.startswith("Getting out") for m in w.mechanics):
+            assert not any(m.startswith("Freezing: CON") for m in w.mechanics), w.mechanics
+            break
+    else:
+        raise AssertionError("no words went for the way out")

@@ -400,7 +400,10 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
                 w.directives.append(f"{p.name} is {what}, and the engine rolled the way out: a success. It works: {pr.way}, by the "
                                     f"attempt the player made. Play the struggle and the way out.")
                 return _after_peril(game, s, adj, player_text, rng, turn, offset, w, text)
-        told = peril_moment(game, s, pr, rng, w, turn, offset)   # still in it: one moment of it
+        # B369 (Gemma round 26, cbc52d98825d T22): 'Getting out: CON ... Failure' then 'Freezing: CON ...' on the same die: a failed
+        # CON way out is the failed hold of this moment (one die, B366's rule on the word-test path)
+        failed_con = bool(goes) and pr.stat == "con"
+        told = peril_moment(game, s, pr, rng, w, turn, offset, failed_hold=failed_con)   # still in it: one moment of it
         if p.fate:
             return s, w
         w.directives.append(told)
@@ -573,13 +576,17 @@ def moment_words(name: str, pr_kind: str, ev: dict, n: int, way: str) -> str:
             f"{way}. Play it, and end the turn on that moment; what {name} does next is the player's to say.")
 
 
-def peril_moment(game: Any, s: FantasyState, pr: Any, rng: Any, w: "WorldTurn", turn: int, offset: int = 2) -> str:
+def peril_moment(game: Any, s: FantasyState, pr: Any, rng: Any, w: "WorldTurn", turn: int, offset: int = 2, failed_hold: bool = False) -> str:
     """One moment of a peril the player did not get out of, applied: the § lines to w.mechanics, the harm taken now. Returns
     the directive ('' on a death, which _end has written)."""
     p = s.player
     what = PERILS.get(pr.kind, {}).get("what", pr.kind)
     kind = pr.kind
-    ev = moment(game, s, pr, rng, offset)
+    if failed_hold and kind in CHECKED and not pr.failing:
+        step = DOT[kind]
+        ev = {"event": "hurt", "harm": harm(step, rng.randint(1, 20)), "step": step, "line": "", "failing": True}
+    else:
+        ev = moment(game, s, pr, rng, offset)
     apply_moment(pr, ev)
     if ev.get("line"):
         w.mechanics.append(f"{kind.capitalize()}: " + ev["line"])
