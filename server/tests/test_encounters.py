@@ -203,7 +203,8 @@ def test_a_blow_at_someone_only_in_the_telling_is_written_in_and_rolled(game):
                                   intents=[IntentCombat(action="Stab the kneeling man in the grey hood", attack_at=["kneeling man in grey hood"], weapon="dagger")])
     s, w = game.world_turn(st, stab, "I slip up behind the kneeling man and stab him", random.Random(1), 17, 2)
     q = next(x for x in s.people if x.name == "Kneeling man in grey hood")
-    assert s.player.fighting == [q.id] and q.combat.block == "bandit" and any("A FIGHT, round" in d for d in w.directives)
+    assert s.player.fighting == [q.id] and q.combat.block == "bandit" and any("A FIGHT, round" in d or "The blows below are settled" in d
+                                                                             for d in w.directives)     # the round told (called or prerolled)
     assert any(r.get("kind") == "encounter" for r in w.rows)
     gang = AssistantReadingCombat(kind="action", summary="Brin goes for the Hill men.", time_minutes=1, tempo="fast", risk="high",
                                   intents=[IntentCombat(action="Attack the Hill men", attack_at=["the Hill men"], weapon="dagger")])
@@ -231,9 +232,12 @@ def test_the_offer_is_drawn_where_the_turn_goes_and_the_referee_files_it_by_id(g
 
 
 # ---- §6: the seam ----------------------------------------------------------------------------------------------------------
-async def test_a_hostile_the_narrator_invents_is_a_person_with_a_block_before_the_next_round(tmp_path, game):
+async def test_a_hostile_the_narrator_invents_is_a_person_with_a_block_before_the_next_round(tmp_path, game, monkeypatch):
     """A fake-provider turn: the narrator brings in a cutthroat and a giant rat nobody listed; the referee files them; before the
     next round each is a person with the entry's block, in the fight, and the next turn's round lists them."""
+    # the called round (the setting off): the narrator's <<ATTACK>>/<<ENEMY>> calls and the backstop, kept as a path
+    from games.fantasy.game import FantasyGame
+    monkeypatch.setattr(FantasyGame, "prerolled_rounds", False)
     from engine.pipeline import Engine
     from engine.providers.factory import get_provider
     from engine.providers.fake import FakeProvider

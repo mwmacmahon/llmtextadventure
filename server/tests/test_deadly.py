@@ -220,7 +220,10 @@ def test_a_failure_in_a_fight_costs_hit_points(game):
     assert after.player.hp == st.player.hp - data["harm"]
 
 
-async def test_the_pipeline_backstops_a_hostile_the_fake_prose_never_called(engine, fake):
+async def test_the_pipeline_backstops_a_hostile_the_fake_prose_never_called(engine, fake, monkeypatch):
+    # the called round (the setting off): the narrator's <<ATTACK>>/<<ENEMY>> calls and the backstop, kept as a path
+    from games.fantasy.game import FantasyGame
+    monkeypatch.setattr(FantasyGame, "prerolled_rounds", False)
     iid = engine.create_instance("fantasy", SHEET)
     st = state_of(engine, iid)
     q = st.person("maud")
@@ -260,13 +263,22 @@ def test_a_compulsion_check_comes_before_striking_the_singer(game):
     assert not w3.blocked and not w3.mechanics
 
 
-def test_swimming_in_the_lake_with_no_call_is_rolled_after_the_prose(game):
+def test_swimming_in_the_lake_with_no_call_is_rolled_before_the_prose(game):
+    """Sonnet pair 3 (cbcde13163ea T16, T26): the causeway rolled after the prose dropped the player in the bog under a telling that
+    had them safe. A hazard the player's words walk into is rolled before the prose and told; never after it; never twice."""
+    from engine.brackets import Call
     st = new(game)
     st.player.location = "Lake Ambercold"
-    calls = game.backstop(st, {"hp": 0, "acted": [], "text": "I dive into the water after the girl"}, Dice(3, 0), 2)
-    assert [c["call"]["verb"] for c in calls] == ["HAZARD"] and calls[0]["result"]["outcome_player"] in ("failure", "huge_failure", "critical_failure")
-    assert game.backstop(st, {"hp": 0, "acted": [], "hazards": ["cold_water"], "text": "I dive in"}, Dice(3), 2) == []
-
+    dive = AssistantReading(kind="action", summary="dives in", time_minutes=1, risk="high", intents=[Intent(action="dive into the water after the girl")])
+    s1, w = game.world_turn(st, dive, "I dive into the water after the girl", Dice(3, 0), 3, 2)
+    assert any(m.startswith("Cold water:") for m in w.mechanics) and any("danger reaches" in d for d in w.directives)
+    assert s1.player.peril is not None and s1.player.peril.kind in ("freezing", "holding_breath")   # a huge failure is drowning
+    assert game.backstop(s1, {"hp": 0, "acted": [], "text": "I dive into the water"}, Dice(3), 2) == []      # no roll after the prose
+    again = game.world_call(s1, Call(verb="HAZARD", raw="HAZARD cold_water", ref="cold_water"), Dice(3), 2, {"hp": 0, "acted": []})
+    assert again["data"].get("none")
+    said = AssistantReading(kind="action", summary="asks", time_minutes=1, risk="low", intents=[Intent(action="ask about the lake")])
+    s2, w2 = game.world_turn(st, said, 'I ask her "did anyone dive into the water?"', Dice(3), 3, 2)
+    assert not any(m.startswith("Cold water:") for m in w2.mechanics)                                   # speech walks nowhere
 
 
 def test_a_hostile_who_has_not_joined_the_fight_is_never_rolled(game):
@@ -297,8 +309,9 @@ def test_an_attack_on_a_named_person_joins_the_fight_whatever_the_tempo(game):
 def test_swimming_off_reed_island_meets_the_cold_water(game):
     st = new(game)
     st.player.location = "Reed Island"
-    calls = game.backstop(st, {"hp": 0, "acted": [], "text": "I try to swim for the skiff in my gear"}, Dice(3, 0), 2)
-    assert [c["call"]["verb"] for c in calls] == ["HAZARD"]
+    swim = AssistantReading(kind="action", summary="swims", time_minutes=1, risk="high", intents=[Intent(action="swim for the skiff")])
+    _, w = game.world_turn(st, swim, "I try to swim for the skiff in my gear", Dice(3, 0), 3, 2)
+    assert any(m.startswith("Cold water:") for m in w.mechanics)
 
 
 def escape_act(text: str, label: str, stat: str = "str"):

@@ -641,9 +641,40 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
         wary = [q for q in could_turn(game, s) if q.id not in p.fighting]
         if wary and not p.fate:
             w.directives.append(could_turn_line(p.name, wary))
-    # (B206, D178) the enemies and the hazards act through the narrator's own calls, <<ENEMY>> and <<HAZARD>>, where they fall
-    # in the prose (world_call); a hostile the prose left out is rolled after it (backstop). Nothing is rolled here.
+    # (B206, D178) the enemies act through the narrator's own calls, <<ENEMY>>, where they fall in the prose (world_call); a hostile
+    # the prose left out is rolled after it (backstop). A hazard the player's own words walk into is rolled here, before the prose
+    walked_in(game, s, adj, player_text, rng, turn, offset, w)
     return s, w
+
+
+def walked_in(game: Any, s: FantasyState, adj: Any, player_text: str, rng: Any, turn: int, offset: int, w: "WorldTurn") -> None:
+    """A hazard the player's own words walk into ('I cross the causeway at dusk', 'I dive in'), rolled before the prose and told to
+    the narrator. Sonnet pair 3 (cbcde13163ea T16, T26): rolled after the prose (the backstop), the causeway dropped the player into
+    the bog under a telling that had them safe at the ferry shrine, and cost hit points no line told. Words in quotes are speech."""
+    p = s.player
+    if p.fate or p.peril is not None or getattr(adj, "kind", "action") != "action":
+        return
+    said = re.sub(r"[\"“][^\"”]*[\"”]", " ", " ".join([player_text or ""] + [i.action for i in (getattr(adj, "intents", None) or [])])).lower()
+    for hz in (getattr(s.city, "hazards", None) or {}).get(p.location) or []:
+        words = [x.lower() for x in hz.get("words") or []]
+        if not (words and any(re.search(r"\b" + re.escape(x) + r"\b", said) for x in words)):
+            continue
+        from engine.brackets import Call
+        out = world_call(game, s, Call(verb="HAZARD", raw=f"HAZARD {hz.get('id')}", ref=str(hz.get("id"))), rng, offset, {"hp": 0, "acted": []})
+        if out is None or (out.get("data") or {}).get("none"):
+            continue
+        data = out.get("data") or {}
+        s.flags.setdefault("hazard_rolled", []).append(str(hz.get("id")))
+        line = out.get("mechanic", "") + (f" It costs {data['harm']} hit point{'s' if data['harm'] != 1 else ''}." if data.get("harm") else "")
+        w.mechanics.append(line)
+        w.directives.append(out.get("text", ""))
+        w.rows.append({"kind": "hazard", "hazard": hz.get("id"), "outcome": data.get("outcome_player"), "line": line})
+        if data.get("harm"):
+            w.skip.append("hp")
+        land(game, s, [data], turn)
+        if p.fate == "dead":
+            w.rows.append({"kind": "death", "why": str(data.get("death_cause") or data.get("cause") or hz.get("when") or "")})
+        return
 
 
 # ---- the narrator's calls (B206, D178; supersedes part four §4's rolls before the prose) -------------------------------
@@ -704,6 +735,16 @@ def plan_fight(game: Any, s: FantasyState, adj: Any, player_text: str, rng: Any,
         return                                                         # the lever's own line says what happened (one line, not two)
     s.combat.free_turns = 0
     s.combat.plan = cb.plan_round(game, s, adj, player_text, turn, rng)
+    if getattr(game, "prerolled_rounds", False) and s.combat.plan:
+        # the round rolled before the prose (the record's combat.prerolled dial, built 11-11): the narrator plays what fell
+        lines, told, data, hp = cb.preroll(game, s, rng, offset)
+        s.flags["prerolled"], s.flags["prerolled_hp"] = data, hp
+        w.mechanics += lines
+        if told:
+            # read fresh by a subagent: 'as it fell' invited killing a foe that missed; the call names primed them; a bare count
+            w.directives.append("The blows below are settled. Tell each in this order, with the outcome given, and stop after the last: "
+                                + " ".join(told) + cb.round_count(game, s))
+        return
     w.directives += cb.round_lines(game, s)      # THIS TURN's round list (the game's standing lines are read before the plan exists)
 
 
@@ -725,6 +766,8 @@ def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tal
     p = s.player
     if s.flags.get("debug_quiet"):                       # round 8: the DEBUG turn sets things up; nobody acts until the next
         return {"text": "Nobody acts this turn: it only sets the scene. Play it without a roll.", "data": {"verb": call.verb, "none": True}}
+    if call.verb in ("ATTACK", "ALLY", "ENEMY") and s.flags.get("prerolled") is not None:
+        return {"text": "This round was rolled before the telling: play it as told, no roll.", "data": {"verb": call.verb, "none": True}}
     if call.verb in ("ATTACK", "ALLY", "ENEMY"):         # B323: every ENEMY through the round's resolver and the person's own block
         from . import combat as cb
         out = cb.world_call(game, s, call, rng, offset, tally)
@@ -760,6 +803,8 @@ def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tal
             return {"text": "No fight is listed for that this turn. Play it without a roll.", "data": {"verb": call.verb, "none": True}}
     if call.verb == "HAZARD":
         hz = hazard(game, s, call.ref)
+        if hz is not None and hz.get("id") in (s.flags.get("hazard_rolled") or []):
+            return {"text": f"That danger was rolled before this telling; play what it did, no roll.", "data": {"verb": "HAZARD", "hazard": hz.get("id"), "none": True}}
         if hz is not None:
             tally.setdefault("hazards", []).append(hz.get("id"))
         if hz is None:
@@ -843,20 +888,7 @@ def backstop(game: Any, s: FantasyState, acted: list[str], rng: Any, offset: int
                     "backstop": True, "told": r["text"]})
         if r["data"].get("kills"):
             return out
-    # a hazard the player's own attempt walked into (its words), when the prose made no call for it (part four §6, B98)
-    # round 14 (a5cf93d41879 T19): "Who's lost something under the water?", said aloud in a tavern, rolled cold water; words
-    # spoken are free (B317), so what is quoted is no attempt to walk into anything
-    text = re.sub(r"[\"“][^\"”]*[\"”]", " ", str(tally.get("text") or ""))
-    for hz in (getattr(s.city, "hazards", None) or {}).get(s.player.location) or []:
-        if hz.get("id") in tally.get("hazards", []) or not text or any(o["result"].get("kills") for o in out):
-            continue
-        words = [w.lower() for w in hz.get("words") or []]
-        if words and any(re.search(r"\b" + re.escape(w) + r"\b", text.lower()) for w in words):
-            r = world_call(game, s, Call(verb="HAZARD", raw=f"HAZARD {hz.get('id')}", ref=str(hz.get("id"))), rng, offset, tally)
-            if r is not None:
-                r["data"]["backstop"] = True
-                out.append({"call": {"verb": "HAZARD", "raw": f"HAZARD {hz.get('id')}", "ref": hz.get("id")}, "result": r["data"],
-                            "mechanic": r.get("mechanic", ""), "backstop": True, "told": r["text"]})
+    # a hazard the player's own words walk into is rolled before the prose now (walked_in), never after it
     return out
 
 

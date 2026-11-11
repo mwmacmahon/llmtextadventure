@@ -131,7 +131,9 @@ def _calls(results):
     return [r["data"] if "data" in r else r["result"] for r in results]
 
 
-def test_a_fight_is_a_round_a_turn_to_its_end_with_xp(game):
+def test_a_fight_is_a_round_a_turn_to_its_end_with_xp(game, monkeypatch):
+    # the called round (the setting off): the narrator's <<ATTACK>>/<<ENEMY>> calls and the backstop, kept as a path
+    monkeypatch.setattr(game, "prerolled_rounds", False)
     from games.fantasy import world as wo
     st = new(game)
     _skeletons(st, 2)
@@ -187,7 +189,10 @@ def test_the_readings_attack_and_the_rule_reach_the_assistant(game):
     assert schema is AssistantReadingCombat and "In a fight, a blow at someone with a weapon is an attack" in system and "a fight is str" not in system
 
 
-async def test_a_fight_turn_through_the_pipeline(tmp_path):
+async def test_a_fight_turn_through_the_pipeline(tmp_path, monkeypatch):
+    # the called round (the setting off): the narrator's <<ATTACK>>/<<ENEMY>> calls and the backstop, kept as a path
+    from games.fantasy.game import FantasyGame
+    monkeypatch.setattr(FantasyGame, "prerolled_rounds", False)
     from engine.pipeline import Engine
     from engine.providers.factory import get_provider
     from engine.providers.fake import FakeProvider
@@ -623,7 +628,9 @@ def test_a_long_new_place_name_is_cut_at_a_word(game):
 
 
 # ---- B308 (Gemma fight round 2, 11-10, 8eb1928e28b7): the blows the engine dropped or misread ----
-def test_a_blow_at_someone_present_joins_them_to_the_fight(game):
+def test_a_blow_at_someone_present_joins_them_to_the_fight(game, monkeypatch):
+    # the called round (the setting off): the narrator's <<ATTACK>>/<<ENEMY>> calls and the backstop, kept as a path
+    monkeypatch.setattr(game, "prerolled_rounds", False)
     st = new(game, klass="Barbarian")
     st.people.append(Person(id="the_wiry_sailor", name="the wiry sailor", role="a sailor", location=st.player.location, met=True))
     st.player.with_them = ["the_wiry_sailor"]                  # the referee's 'present' put him in the company
@@ -1268,3 +1275,48 @@ def test_a_quick_thread_pays_no_xp(game):
     st.threads.append(Thread(id="t1-find", title="Find the lost ring", opened_turn=1, status="resolved", closed_turn=6))
     s1 = game.after_turn(st, TurnInfo(turn=6, elapsed_minutes=1, rng=random.Random(0)))
     assert s1.player.xp == st.player.xp + 25
+
+
+async def test_a_prerolled_round_through_the_pipeline(tmp_path):
+    """The owner's night brief (11-11): the round is rolled before the prose and told; the narrator's calls are answered 'already
+    rolled'; the blows land after the prose on everyone's hit points; nothing is rolled after the prose."""
+    from engine.pipeline import Engine
+    from engine.providers.factory import get_provider
+    from engine.providers.fake import FakeProvider
+    from engine.store import Store
+    cfg = load_config()
+    for r in cfg.roles.values():
+        r.provider = "fake"
+    eng = Engine(cfg, Store(tmp_path / "t.sqlite3"), load_games(cfg.resolve(cfg.server.content_root)))
+    fake = get_provider(cfg.role("narrator"))
+    assert isinstance(fake, FakeProvider)
+    fake.canned.clear()
+    fake.hook = None
+    iid = eng.create_instance("fantasy", {"name": "Brin", "klass": "Paladin", "race": "Human"})
+    g = eng.games["fantasy"]
+    assert g.prerolled_rounds
+    st = g.load_state(eng.store.load_state(iid))
+    q = _skeletons(st, 2)
+    eng.store.save_snapshot(iid, 0, st.model_dump(mode="json"))
+    fake.canned["AssistantReadingCombatV2"] = [_attack_reading("dead")]
+    seen = []
+
+    def script(system, messages):
+        seen.append(messages[-1].content)
+        return "The bones come apart." if messages[-1].content.startswith("[ENGINE]") else "You step in and swing.\n<<ATTACK dead>>"
+    fake.script = script
+    try:
+        events = [e async for e in eng.play(iid, "I hack at the skeletons with my longsword.")]
+    finally:
+        fake.script = None
+        fake.canned.clear()
+    bulletin = next(r.text for r in eng.store.transcript(iid) if r.turn == 1 and r.role == "bulletin")
+    assert "The blows below are settled" in bulletin and "<<ATTACK" not in bulletin
+    assert any(s.startswith("[ENGINE]") and "rolled before the telling" in s for s in seen), seen
+    narr = next(r.text for r in eng.store.transcript(iid) if r.turn == 1 and r.role == "narrator")
+    assert "longsword at" in narr                                         # the round's dice lines follow the prose
+    after = g.load_state(eng.store.load_state(iid))
+    hurt = after.person("dead")
+    assert after.combat is None or after.combat.round == 1
+    assert hurt is None or hurt.status != "alive" or sum(hurt.combat.hps) < sum(q.combat.hps) or "miss" in narr
+    assert "prerolled" not in after.flags

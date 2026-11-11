@@ -594,12 +594,22 @@ def round_lines(game: Any, s: FantasyState) -> list[str]:
             tn = p.name if e["target"] == "player" else (s.person(e["target"]).name if s.person(e["target"]) else e["target"])
             kind = e["action"].get("kind", "strike")
             rows.append(f"{name_of(q, e['body']) if q else e['who']}: {kind} at {tn}: <<ENEMY {e['who']} {kind}>>")
-    states = [f"{p.name}: {hp_word(p.hp, p.hp_max) if p.hp < p.hp_max else 'unhurt'}"]
+    return [f"A FIGHT, round {c.round + 1}. Every one of these acts once this turn, rolled by the engine when you reach it: "
+            + "; ".join(rows) + ". " + round_states(game, s)]
+
+
+def round_states(game: Any, s: FantasyState, tally: dict | None = None) -> str:
+    """'As they stand: ...' and the count against the player (Sonnet pair 3, T16, T30: the prose had 'eight or nine' and then
+    'a hundred throats' where the sheet had three; the count, said plainly, is what the telling has to work with)."""
+    p = s.player
+    left = p.hp - int((tally or {}).get("hp", 0))
+    states = [f"{p.name}: {hp_word(left, p.hp_max) if left < p.hp_max else 'unhurt'}"]
     for q in party(s) + living_enemies(game, s):
         w = person_hp_word(q)
         states.append(f"{q.name}: {w or 'unhurt'}")
-    return [f"A FIGHT, round {c.round + 1}. Every one of these acts once this turn, rolled by the engine when you reach it: "
-            + "; ".join(rows) + ". As they stand: " + "; ".join(states) + "."]
+    foes = sum(len(bodies(q)) for q in living_enemies(game, s))
+    told = f" Against {p.name}: {_NUMS[foes] if foes < len(_NUMS) else foes} in all." if foes else ""
+    return "As they stand: " + "; ".join(states) + "." + told
 
 
 def _player_take(game: Any, s: FantasyState, n: int, tally: dict) -> tuple[int, list[str], bool]:
@@ -935,10 +945,10 @@ def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tal
 
 def backstop(game: Any, s: FantasyState, rng: Any, offset: int, tally: dict) -> list[dict]:
     """Every listed action the prose did not call, rolled at the end of the turn (the player's own attack included), so each
-    player turn is one full round whatever the narrator did."""
+    player turn is one full round whatever the narrator did. A round rolled before the prose (preroll) leaves nothing here."""
     out: list[dict] = []
     c = s.combat
-    if c is None or not c.plan:
+    if c is None or not c.plan or s.flags.get("prerolled") is not None:
         return out
     done = set(tally.get("acted_keys", []))
     for e in c.plan:
@@ -1185,3 +1195,35 @@ def scale(s: FantasyState, q: Person, shift: int = 0, game: Any = None, offset: 
     note = f"{got.reason} ({n} fights a cell, on the turn)"
     b.notes = [note]
     return [note]
+
+
+def preroll(game: Any, s: FantasyState, rng: Any, offset: int) -> tuple[list[str], list[str], list[dict], int]:
+    """The owner's night brief (11-11: "whatever mechanic is making enemy counts not match up right"): the round rolled before the
+    prose, every listed act in order, the player's blow first, until the player falls. Returns (the dice lines, what each did for
+    the narrator, the results to land after the prose, the hit points they take from the player). Gemma pair 3 (e72597444d81
+    T17): the prose had the drowned give up and fall away, and the grips the narrator never called were rolled after it (the
+    backstop), one held. Told before, the prose plays what fell."""
+    tally: dict = {"hp": 0, "acted": []}
+    lines, told, data = [], [], []
+    for e in list(s.combat.plan if s.combat is not None else []):
+        if s.player.fate or s.player.hp - int(tally.get("hp", 0)) <= 0:
+            break
+        r = resolve(game, s, e, rng, offset, tally)
+        d = r.get("data") or {}
+        if d.get("none"):
+            continue
+        tally.setdefault("acted_keys", []).append(e["key"])
+        if r.get("mechanic"):
+            lines.append(r["mechanic"])
+        said = re.sub(r"\s*Play\b.*$", "", r.get("text", ""), flags=re.S)
+        said = re.sub(r"\s*\((Rage|Defence|Uncanny Dodge|Shield of Faith|Sneak Attack)[^)]*\)", "", said)   # the dice line keeps them
+        told.append(said.rstrip(" ,.;") + ".")
+        data.append(d)
+    return lines, told, data, int(tally.get("hp", 0))
+
+
+def round_count(game: Any, s: FantasyState) -> str:
+    """' Brin faced three foes; bring in no others.' (the prerolled round's line, read fresh: a bare count had read as 'two what?')."""
+    foes = sum(len(bodies(q)) for q in living_enemies(game, s))
+    n = _NUMS[foes] if foes < len(_NUMS) else str(foes)
+    return f" {s.player.name} faced {n} {'foe' if foes == 1 else 'foes'}; bring in no others." if foes else ""

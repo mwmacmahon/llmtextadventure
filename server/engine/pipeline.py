@@ -1133,7 +1133,8 @@ class Engine:
         # ---- 3. narrate -----------------------------------------------------
         role = self.cfg.role("narrator")
         handler = self._call_handler(game, state, iid, turn, res["assessments"], fail_streak=res.get("fail_streak", 0),
-                                     hp_taken=sum(int(getattr(lv.preview, "hp_taken", 0) or 0) for lv in levers if not lv.blocked))
+                                     hp_taken=sum(int(getattr(lv.preview, "hp_taken", 0) or 0) for lv in levers if not lv.blocked)
+                                     + int((_hook(game, "turn_limits", state, adj, default=None) or {}).get("hp_taken") or 0))
         # A narrator configured `checks: told` gets the assessed checks already rolled, in THIS TURN, instead of
         # being asked to stop and call them: a weaker model writes the outcome first and the call after it (or
         # never), so the roll arrives too late to matter. Same seed, same order, so a rewrite rolls the same.

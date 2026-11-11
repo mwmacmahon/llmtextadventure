@@ -155,7 +155,7 @@ STOP = {"that", "this", "with", "from", "into", "their", "there", "they", "were"
 
 # flags that live one turn only, cleared at after_turn's start (the debt review: they had two clears and a dead variable):
 # debug_quiet (the DEBUG turn, round 8), escaped and freed (a way out that worked this turn: its WARNING not shown, round 10)
-TURN_FLAGS = ("debug_quiet", "escaped", "freed", "spent_items")   # spent_items: thrown or shot this turn, the engine's count
+TURN_FLAGS = ("debug_quiet", "escaped", "freed", "spent_items", "hazard_rolled", "prerolled", "prerolled_hp")   # spent_items: thrown or shot this turn, the engine's count
 THREAD_STANDING = {"open": "taken up", "resolved": "done", "failed": "failed"}   # the player's own jobs, in the hooks' words (B93)
 PERSON_TITLES = {"the", "lord", "brother", "sergeant", "captain", "constable", "master", "old", "mother"}   # "Old Hesk" is Hesk
 
@@ -268,6 +268,7 @@ class FantasyGame(GameBase):
         "Gold offered to a siren who has said gold is nothing to her: it fails, no roll.",
         "A crude joke to a grieving siren: it fails, no roll; a story half true, from someone she has reason to doubt: open, a check with a -2 edge.",
     ]
+    prerolled_rounds = True    # the owner's night brief: a fight's round is rolled before the prose and told (the record's combat.prerolled)
     settle_calm = True         # the owner, 11-10 late: "Too many rolls": a calm scene's low checks with nothing at stake simply work
     sleep_by_command = True    # the owner (11-08 evening): only the Rest command makes a turn a night; "I go sleep at <a far place>" is a move
     target_offset = 2          # B83 (the owner, 11-08): one Hard step on the d20; a +2 character passes medium 55%, not 65%
@@ -1322,7 +1323,9 @@ class FantasyGame(GameBase):
             if a.while_flag and a.while_flag not in p.flags_on:
                 continue
             if a.id == "quick_to_make_friends":
-                if stranger:
+                from . import features as ft              # Sonnet and Gemma pair 3: 'Quick to make friends +1' on Turn Undead
+                feature = any(str(f.get("name") or "").lower() in label for f in ft.specs(self, p).values() if f.get("name"))
+                if stranger and not feature:
                     mods.append(Modifier(label=a.name, value=a.mod))
                 continue
             if not a.words or any(w in label for w in a.words):
@@ -1508,7 +1511,8 @@ class FantasyGame(GameBase):
         """The pipeline's one hook for what a pressing turn allows (the debt review, 11-10 night: three hooks answered it):
         `calls`, the narrator's call cap (0 on a DEBUG turn); `minutes`, the turn's most (a peril, a grab or a fight: one,
         unless the player moves on out of a fight); `dice_own_hp`, the player's hit points the dice's, not the referee's."""
-        return {"calls": self._calls_cap(state), "minutes": self._minutes_cap(state, adj), "dice_own_hp": self._dice_own_hp(state)}
+        return {"calls": self._calls_cap(state), "minutes": self._minutes_cap(state, adj), "dice_own_hp": self._dice_own_hp(state),
+                "hp_taken": int(state.flags.get("prerolled_hp") or 0)}     # a round rolled before the prose: its blows count from the start
 
     def _dice_own_hp(self, state: FantasyState) -> bool:
         """B326 (the combat review): a turn with a round planned or a fight on: the player's hit points are the dice's, and a
@@ -1554,6 +1558,11 @@ class FantasyGame(GameBase):
             for i in intents:
                 if getattr(i, "attack_at", None):
                     i.attack_at = []
+            # Gemma pair 3 (e72597444d81 T18): the reading's own STR check freed the player and the world turn's break-free roll,
+            # a second die for the same act, failed and held them: the reading's STR or DEX check is the break-free, marked so
+            mine = next((i.check for i in intents if getattr(i, "check", None) is not None and i.check.stat in ("str", "dex")), None)
+            if mine is not None and not wo.MARKED.match(mine.label or ""):
+                mine.label = f"way out: {mine.label}"
             return
         for i in intents:
             if (getattr(i, "check", None) is None and hasattr(i, "attack_at") and not i.attack_at
@@ -2847,6 +2856,7 @@ class FantasyGame(GameBase):
         p = s.player
         now = s.clock.day * DAY + s.clock.minute
         s.deck.dealt_this_turn = []
+        pre = list(s.flags.get("prerolled") or [])           # the round rolled before the prose, landed below with the calls
         for k in TURN_FLAGS:                                # this turn's own flags end with it
             s.flags.pop(k, None)
         # -- the fall, told: the end, the raise, or back to the story
@@ -2861,9 +2871,10 @@ class FantasyGame(GameBase):
         p.shown_notes, p.turn_notes, p.notes_turn = list(p.turn_notes), [], info.turn
         self._seeds_shown(s, info.prose)                                 # B243: the cards follow the telling
         p.carry_lines = []
-        p.shown_notes += [self.unnamed(s, n) for n in wo.land(self, s, info.calls, info.turn)]     # the world's calls and the backstop (B206)
+        calls = list(info.calls) + pre                                    # the narrator's calls and the round rolled before the prose
+        p.shown_notes += [self.unnamed(s, n) for n in wo.land(self, s, calls, info.turn)]     # the world's calls and the backstop (B206)
         from . import combat as cb                                         # part fifteen §3: the round on everyone's hit points
-        p.shown_notes += [self.unnamed(s, n) for n in cb.land(self, s, info.calls, info.turn, int(getattr(info, "target_offset", 0) or 0), info.rng)]
+        p.shown_notes += [self.unnamed(s, n) for n in cb.land(self, s, calls, info.turn, int(getattr(info, "target_offset", 0) or 0), info.rng)]
         if p.fate == "dead" and p.fate_turn < info.turn:                  # a death the narrator was told inline: it ends this turn
             s.flags["ending"] = f"{p.name} died at {p.location or 'Marrowgate'} on day {s.clock.day}. The fog keeps the rest."
             return s
@@ -2878,7 +2889,8 @@ class FantasyGame(GameBase):
         if held is not None and not p.fate:                 # a grab's hold (the owner, 11-10 night): it ends when broken or the grabber is down
             by = s.person(held.by) if held.by else None
             freed = any(wo.frees_grip(c, str(c.get("label") or "")) for c in info.calls)   # break-free words or the mark only
-            if freed or (held.by and (by is None or by.status != "alive" or held.by not in p.fighting)):
+            turned = by is not None and "turned" in (by.condition or "")     # Sonnet pair 3 (T21): turned, the dead let go
+            if freed or turned or (held.by and (by is None or by.status != "alive" or held.by not in p.fighting)):
                 p.conditions = [c for c in p.conditions if c is not held]
                 p.shown_notes.append("Free of the grip" if freed else f"Free: {by.name if by else 'the grip'} lets go")
         for c in info.calls:                                # one die for one way out: the player's escape roll settles the peril
