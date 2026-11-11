@@ -3070,6 +3070,16 @@ class FantasyGame(GameBase):
         self._absorb_credits(s, pool, info.turn)
         for ln in dk.settle(s, hooks, info.turn, lambda row, why: self._pay(s, row, why, pool, info.turn)):
             s.log.append(f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}. {ln}")
+        if pool["gold"] > 0:
+            # B363 (Sonnet pair 6, 0d3f3c85b4d1 T26-T27): Maud paid five gold in the prose a turn before the job closed, and the close
+            # paid its two again: gold the prose gives while a taken job's giver is here is that job's pay, set against its reward
+            for h in s.hooks:
+                giver = self._same_person(s, h.giver) if h.giver else None
+                if (h.status == "live" and h.taken and giver is not None and giver.status == "alive"
+                        and (giver.id in p.with_them or (giver.location and self._same_spot(s, giver.location, p.location)))):
+                    h.prepaid += pool["gold"]
+                    pool["gold"] = 0
+                    break
         for h in s.hooks:                                    # a quest's thread is the engine's: closed by the referee while the
             t = next((t for t in s.threads if t.id == h.thread), None) if h.thread else None    # quest is unsettled, it opens again
             if t is not None and h.status == "live" and t.status != "open":
@@ -3221,11 +3231,15 @@ class FantasyGame(GameBase):
                 gold = Item(id="gold", name="gold", count=0)
                 s.inventory.append(gold)
             pay = g
-            if g > 0 and pool is not None:
-                counted = min(pool["gold"], g)
-                pool["gold"] -= counted
+            h = next((x for x in s.hooks if why == x.title or why.startswith(f"{x.title}:")), None)
+            if g > 0 and h is not None and h.prepaid > 0:          # B363: what the giver already paid in the prose is this pay
+                counted = min(h.prepaid, g)
+                h.prepaid -= counted
                 pay = g - counted
-                h = next((x for x in s.hooks if why == x.title or why.startswith(f"{x.title}:")), None)
+            if g > 0 and pool is not None:
+                counted = min(pool["gold"], pay)
+                pool["gold"] -= counted
+                pay = pay - counted
                 if h is not None and pay > 0:
                     h.gold_credit, h.credit_until = h.gold_credit + pay, turn + CREDIT_TURNS
             gold.count = max(0, gold.count + pay)

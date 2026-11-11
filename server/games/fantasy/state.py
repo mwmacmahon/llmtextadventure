@@ -354,6 +354,7 @@ class HookState(BaseModel):
     reward: str = ""                # what was paid, for the log
     gold_credit: int = 0            # reward gold the engine paid that the giver's payment in the prose, a turn or two later, repeats
     credit_until: int = 0           # the last turn that credit is held (D165)
+    prepaid: int = 0                # gold its giver paid in the prose while it was taken and before it closed (B363), set against the reward
 
 
 class Hidden(BaseModel):

@@ -467,6 +467,16 @@ def test_reward_gold_the_prose_already_paid_is_paid_once(game: FantasyGame):
     loot = r2.model_copy(deep=True)                                    # gold from someone else is not the reward
     loot.player.with_them = ["hesk"]
     assert game.after_turn(loot, info(turn=3, applied=["inventory.gold.count: 17 -> 20"])).item("gold").count == 20
+    # B363 (Sonnet pair 6, 0d3f3c85b4d1 T26-T27): Maud paid five in the prose a turn BEFORE the job closed; the close paid its two again
+    b1 = _live(game, new(game), "cellar_rats")
+    b1.hook("cellar_rats").taken = True
+    b1.player.with_them = ["maud"]
+    b1.item("gold").count = 20
+    b2 = game.after_turn(b1, info(turn=2, applied=["inventory.gold.count: 15 -> 20"]))
+    assert b2.hook("cellar_rats").status == "live" and b2.hook("cellar_rats").prepaid == 5
+    b2.flags["troll_settled"] = True
+    b3 = game.after_turn(b2, info(turn=3))
+    assert b3.hook("cellar_rats").status == "done" and b3.item("gold").count == 20 and b3.hook("cellar_rats").gold_credit == 0
 
 
 def test_the_referee_writes_the_flag_that_closes_a_quest_and_its_thread_stays_the_engines(game: FantasyGame):
