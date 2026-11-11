@@ -155,6 +155,8 @@ STOP = {"that", "this", "with", "from", "into", "their", "there", "they", "were"
 
 # flags that live one turn only, cleared at after_turn's start (the debt review: they had two clears and a dead variable):
 # debug_quiet (the DEBUG turn, round 8), escaped and freed (a way out that worked this turn: its WARNING not shown, round 10)
+BODY_PART = re.compile(r"(the |its |his |her |their )?(legs?|knees?|arms?|hands?|head|skull|neck|throat|chest|ribs?|back|face|eyes?|"
+                       r"shoulders?|spine|belly|gut|jaw|feet|foot|torso|body)", re.I)
 TURN_FLAGS = ("debug_quiet", "escaped", "freed", "spent_items", "hazard_rolled", "prerolled", "prerolled_hp")   # spent_items: thrown or shot this turn, the engine's count
 THREAD_STANDING = {"open": "taken up", "resolved": "done", "failed": "failed"}   # the player's own jobs, in the hooks' words (B93)
 PERSON_TITLES = {"the", "lord", "brother", "sergeant", "captain", "constable", "master", "old", "mother"}   # "Old Hesk" is Hesk
@@ -1549,6 +1551,13 @@ class FantasyGame(GameBase):
                 # three drowned in and rolled a longsword blow the player never asked for, at foes the story had not shown
                 i.attack_at = []
         foe = next((x for x in p.fighting if (q := state.person(x)) is not None and q.status == "alive"), None)
+        for i in intents:
+            at = list(getattr(i, "attack_at", None) or [])
+            if at and all(BODY_PART.fullmatch((t or "").strip().replace("_", " ")) for t in at):
+                # Gemma pair 4 (3f0270f2d99c T12): attack_at ['legs'] named nothing, and the generator brought in four 'Townsmen' for
+                # two skeletons the prose had: a body part is where the blow lands, on the foe being fought or the last kind here
+                last = (state.flags.get("foe_here") or {}).get(p.location, "")
+                i.attack_at = [foe] if foe else ([last] if last else [])
         if foe is None:
             return
         if wo.breaking_free(state, adj, player_text):

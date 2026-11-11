@@ -165,6 +165,7 @@ class CombatState(BaseModel):
     plan: list[dict] = Field(default_factory=list)         # this round's listed actions (combat.plan_round), rolled by call or backstop
     free_turns: int = 0                                    # turns of free actions only in a row (no NPC acts beyond talking)
     joined_at: dict[str, int] = Field(default_factory=dict)  # id -> their attitude when first counted in the fight (a rise ends theirs)
+    bodies_paid: dict[str, int] = Field(default_factory=dict)  # band id -> bodies already counted for XP (each body as it falls)
 
 
 class Person(BaseModel):

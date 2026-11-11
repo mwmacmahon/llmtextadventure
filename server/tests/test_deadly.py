@@ -564,3 +564,12 @@ def test_a_friend_at_hand_reaches_for_the_player(game):
     hazel.attitude = 0                                                   # a stranger does not dive in
     s3, w3 = game.world_turn(st, look, "I look up at the light", Dice(15), 3, 2)
     assert not any("reaches for" in m for m in w3.mechanics)
+
+
+def test_a_found_place_shares_the_dangers_of_its_place(game):
+    """Gemma pair 3 (T24): a dive in the drowned chapels, found in the Mire, rolled nothing."""
+    from games.fantasy.state import FoundPlace
+    st = new(game)
+    st.found_places.append(FoundPlace(name="the drowned chapels", within="The Mire"))
+    st.player.location = "the drowned chapels"
+    assert [h.get("id") for h in wo.hazards_here(st)] == [h.get("id") for h in (st.city.hazards.get("The Mire") or [])]

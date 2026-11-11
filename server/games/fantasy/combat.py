@@ -820,6 +820,8 @@ def resolve_attack(game: Any, s: FantasyState, entry: dict, rng: Any, offset: in
         pb = player_block(s, entry.get("weapon", ""))
         who, bonus, dice, how = f"{p.name}'s {pb['weapon']}", pb["attack"] - shift, pb["damage"], pb["how"]
         targets = list(entry["targets"])
+        if how in ("ranged", "thrown"):                 # Gemma pair 4 (3f0270f2d99c T17): three crossbow shots in one turn, one bolt spent
+            targets = targets[:1]                       # the sweep is a melee blow's; a shot or a throw has one mark
         tally.setdefault("acted", []).append("player")
         if not _spend_ammo(s, how, pb["weapon"], notes):
             return {"text": f"{p.name} has nothing left to shoot. Play it, and go on.", "mechanic": "; ".join(notes), "data": {"verb": "ATTACK", "who": "player", "key": entry["key"], "hits": []}}
@@ -1002,11 +1004,18 @@ def land(game: Any, s: FantasyState, calls: list[dict], turn: int, offset: int, 
         if b is None or b.hp is None:
             continue
         if q.id in p.fighting:
+            if b.count > 1 and b.hps:                    # Gemma pair 4 (T9): a band's XP came only when every body fell; each body pays as it falls
+                fallen = sum(1 for h in b.hps if h <= 0)
+                new = fallen - c.bodies_paid.get(q.id, 0)
+                if new > 0:
+                    c.weight_won += float(b.xp or derived_xp(b)) * new
+                    c.bodies_paid[q.id] = fallen
             if (b.count > 1 and b.hps and all(h <= 0 for h in b.hps)) or (b.count <= 1 and b.hp <= 0 and q.status == "alive"):
                 word = fallen_word(q, q.id in spared)
                 q.status = "down" if word == "down" else "dead"
                 c.defeated.append(q.id)
-                c.weight_won += float(b.xp or derived_xp(b)) * max(1, b.count)
+                if not (b.count > 1 and b.hps):          # a band's bodies are paid above, one by one
+                    c.weight_won += float(b.xp or derived_xp(b)) * max(1, b.count)
                 notes.append(f"{q.name}: {word}")
             elif b.count <= 1 and q.status == "alive" and not b.fanatic and is_person(b.kind) and 0 < b.hp * 4 <= (b.hp_max or 1):
                 res = save_roll(rng, b.saves.get("wis", 0), 10 + p.level)          # morale: a quarter left

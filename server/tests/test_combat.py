@@ -1336,3 +1336,42 @@ def test_a_foe_moved_off_or_gone_leaves_the_fight(game):
     assert "dead" not in s2.player.fighting and s2.person("dead").status == "alive"
     s3, rep3, _ = apply_changes(game, st, ChangeReport.of(Change(kind="gone", target="dead", value="", note="killed by the blow")), present=[], causes=[])
     assert s3.person("dead").status == "alive" and rep3.conflicts()
+
+
+def test_a_body_part_is_the_foe_and_a_shot_has_one_mark(game):
+    """Gemma pair 4 (3f0270f2d99c): attack_at ['legs'] brought in four 'Townsmen' for two skeletons (T12); three crossbow shots in
+    one turn, one bolt spent (T17)."""
+    from engine.roles import AssistantReadingCombat, IntentCombat
+    f, _ = _fight(game, 1)
+    legs = AssistantReadingCombat(kind="action", summary="hacks", time_minutes=1, risk="high",
+                                  intents=[IntentCombat(action="attack", attack_at=["legs"], weapon="longsword")])
+    game.aim_blows(f, legs, "I hack at its legs")
+    assert legs.intents[0].attack_at == ["dead"]
+    st = new(game)
+    st.flags["foe_here"] = {st.player.location: "skeleton"}
+    lone = AssistantReadingCombat(kind="action", summary="hacks", time_minutes=1, risk="high",
+                                  intents=[IntentCombat(action="attack", attack_at=["legs"], weapon="longsword")])
+    game.aim_blows(st, lone, "I hack at their legs")
+    assert lone.intents[0].attack_at == ["skeleton"]
+    b, _ = _fight(game, 3)
+    from games.fantasy import gear
+    xb = next((it for it in b.inventory if gear.weapon_of(it) in ("light crossbow", "crossbow")), None)
+    if xb is not None:
+        b2, _ = game.run_command(b, "equip", {"item": xb.id})
+        out = cb.resolve_attack(game, b2, {"key": "player", "side": "player", "who": "player", "targets": ["dead", "dead", "dead"], "weapon": "",
+                                           "riders": []}, random.Random(5), 2, {"hp": 0})
+        assert out["mechanic"].count(" against AC ") == 1
+    fighter = new(game, klass="Fighter")
+    assert {c.id: c.mode for c in game.commands(fighter)}.get("second_wind") == "engine"
+
+
+def test_a_bands_bodies_pay_as_they_fall(game):
+    """Gemma pair 4 (T9): a band of three left the fight with two bodies alive and the fallen one paid nothing."""
+    f, q = _fight(game, 3)
+    f.combat.plan = []
+    q.combat.hps = [0] + list(q.combat.hps[1:])
+    cb.land(game, f, [], 2, 2, random.Random(0))
+    one = f.combat.weight_won
+    assert one > 0
+    cb.land(game, f, [], 3, 2, random.Random(0))
+    assert f.combat.weight_won == one                                   # not paid twice

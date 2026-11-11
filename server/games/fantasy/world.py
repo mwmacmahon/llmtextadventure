@@ -655,7 +655,7 @@ def walked_in(game: Any, s: FantasyState, adj: Any, player_text: str, rng: Any, 
     if p.fate or p.peril is not None or getattr(adj, "kind", "action") != "action":
         return
     said = re.sub(r"[\"“][^\"”]*[\"”]", " ", " ".join([player_text or ""] + [i.action for i in (getattr(adj, "intents", None) or [])])).lower()
-    for hz in (getattr(s.city, "hazards", None) or {}).get(p.location) or []:
+    for hz in hazards_here(s):
         words = [x.lower() for x in hz.get("words") or []]
         if not (words and any(re.search(r"\b" + re.escape(x) + r"\b", said) for x in words)):
             continue
@@ -735,6 +735,9 @@ def plan_fight(game: Any, s: FantasyState, adj: Any, player_text: str, rng: Any,
         return                                                         # the lever's own line says what happened (one line, not two)
     s.combat.free_turns = 0
     s.combat.plan = cb.plan_round(game, s, adj, player_text, turn, rng)
+    first = next((q for q in cb.living_enemies(game, s)), None)
+    if first is not None and first.combat is not None and first.combat.block:   # the last kind fought here (a body part's foe, B354)
+        s.flags.setdefault("foe_here", {})[p.location] = first.combat.block
     if getattr(game, "prerolled_rounds", False) and s.combat.plan:
         # the round rolled before the prose (the record's combat.prerolled dial, built 11-11): the narrator plays what fell
         lines, told, data, hp = cb.preroll(game, s, rng, offset)
@@ -842,8 +845,20 @@ def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tal
     return None
 
 
+def hazards_here(s: FantasyState) -> list[dict]:
+    """The dangers where the player is: the place's own, or, for a place found in play, the listed place it lies in (Gemma pair 3,
+    e72597444d81 T24: a dive under the drowned chapels' black water rolled nothing; the chapels are in the Mire)."""
+    table = getattr(s.city, "hazards", None) or {}
+    here = s.player.location
+    rows = table.get(here)
+    if rows is None:
+        within = next((f.within for f in s.found_places if f.name == here and f.within), "")
+        rows = table.get(within) if within else None
+    return list(rows or [])
+
+
 def hazard(game: Any, s: FantasyState, name: str) -> dict | None:
-    rows = (getattr(s.city, "hazards", None) or {}).get(s.player.location) or []
+    rows = hazards_here(s)
     k = (name or "").strip().lower().replace(" ", "_")
     return next((h for h in rows if h.get("id") == k or k in str(h.get("when", "")).lower().replace(" ", "_")), rows[0] if len(rows) == 1 else None)
 
