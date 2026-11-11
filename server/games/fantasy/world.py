@@ -300,6 +300,15 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
     held = next((c for c in p.conditions if c.name == "grappled"), None)
     marked = any(MARKED.match(str(getattr(getattr(i, "check", None), "label", "") or ""))
                  for i in (getattr(adj, "intents", None) or []))
+    if breaking_free(s, adj, player_text) and marked and getattr(game, "prerolled_rounds", False):
+        # the escape resolver: the reading's own marked break-free is rolled before the prose too (landed by frees_grip)
+        mine = next((i.check.label for i in (getattr(adj, "intents", None) or []) if getattr(i, "check", None) is not None
+                     and MARKED.match(i.check.label or "")), None)
+        if mine:
+            preroll_check(game, s, adj, mine, rng, offset, w, "to get loose")
+            if any(frees_grip(d, d.get("label", "")) for d in s.flags.get("prerolled_checks") or []):
+                p.conditions = [c for c in p.conditions if c is not held]
+                w.directives.append(f"{p.name} is free of the grip (the engine rolled it). Play it; {p.name} can move and run again.")
     if breaking_free(s, adj, player_text) and not marked:   # round 8: 'run' is no break; a marked check is the narrator's to call
         # round 7 (f6428fd5c68b T13): "an elbow to its face and I wrench my arms out" was read as a punch, and nothing ended the
         # grab. Words that go for breaking free roll it, STR or DEX (the better); a success ends it
@@ -367,6 +376,11 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
             w.rows.append({"kind": "peril", "peril": pr.kind, "outcome": "ended", "line": "by the way out the words take"})
             w.directives.append(f"{p.name} was {what}; the way {p.name} goes about it ends it, no roll needed. Play it working.")
             return _after_peril(game, s, adj, player_text, rng, turn, offset, w, text)
+        if own is not None and getattr(game, "prerolled_rounds", False):
+            # the escape resolver (the debt review, built 11-11 with the prerolled round): the player's own way out is rolled here,
+            # before the prose, by check_note's same rule, and told; the narrator plays what fell and calls no check for it
+            preroll_check(game, s, adj, own, rng, offset, w, "a way out")
+            return _after_peril(game, s, adj, player_text, rng, turn, offset, w, text)
         if own is not None:                       # one die for one way out: the player's own roll decides it (check_note)
             w.directives.append(f"{p.name} is {what}. The player's own roll for '{own}' decides it, nothing else: on a success the way "
                                 f"out works ({pr.way}); on a failure {p.name} is still in it, and the engine counts the moment.")
@@ -433,6 +447,34 @@ def _break_contact(s: FantasyState, w: "WorldTurn") -> str:
         w.rows.append(row)
         w.mechanics.append(f"Away: {'; '.join(said)}.")                # B310: not "Out of reach: out of reach of ..."
     return "; ".join(said)
+
+
+def preroll_check(game: Any, s: FantasyState, adj: Any, label: str, rng: Any, offset: int, w: "WorldTurn", what: str) -> None:
+    """One of the reading's checks rolled before the prose (a way out of a peril, a break-free), by the game's own check_note,
+    landed after the prose with the turn's calls (flags.prerolled_checks). The intent's check is taken off the narrator's list."""
+    from engine.mechanics import Modifier
+    intent = next((i for i in (getattr(adj, "intents", None) or []) if getattr(i, "check", None) is not None and i.check.label == label), None)
+    if intent is None:
+        return
+    c = intent.check
+    edge = int(getattr(c, "edge", 0) or 0)
+    extra = [Modifier(label=str(getattr(c, "edge_why", "") or "what they bring")[:60], value=edge)] if edge else []
+    stat = re.sub(r"\s*\(.*?\)\s*$", "", str(c.stat)).strip().lower()
+    res = _check(game, s, stat, str(c.difficulty), label, rng, extra, offset)
+    data = {"label": label, "stat": stat, "outcome": res.outcome, "roll": res.roll, "total": res.total, "hp_taken": int(s.flags.get("prerolled_hp") or 0)}
+    note = game.check_note(s, data, label) or ""
+    line = game.render_mechanic(s, res) + (f" It costs {data['harm']} hit point{'s' if data['harm'] != 1 else ''}." if data.get("harm") else "")
+    w.mechanics.append(line)
+    plain = re.sub(r"^\s*way out:\s*", "", label, flags=re.I)
+    w.directives.append(f"{s.player.name} tried {what} ({plain}), and the engine rolled it before this telling: {res.tier_text()}.{note} "
+                        f"Play it as it fell.")
+    w.rows.append({"kind": "prerolled_check", "label": label, "outcome": res.outcome, "line": line})
+    s.flags.setdefault("prerolled_checks", []).append(data)
+    if data.get("harm"):
+        s.flags["prerolled_hp"] = int(s.flags.get("prerolled_hp") or 0) + int(data["harm"])
+    intent.check = None
+    if getattr(adj, "pivotal", "") == label:
+        adj.pivotal = ""
 
 
 def escape_check(adj: Any, pr: Any = None) -> str | None:

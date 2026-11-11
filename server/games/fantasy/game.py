@@ -111,8 +111,6 @@ def number_in(text: str) -> int | None:
     return int(w) if w.isdigit() else NUMBER_WORDS.get(w)
 
 
-FINESSE = re.compile(r"\b(rapier|short ?sword|dagger|scimitar|whip|knife|stiletto)s?\b", re.I)
-HEAVY = re.compile(r"\b(great ?axe|axe|great ?sword|longsword|maul|hammer|mace|club|spear|halberd|pike|flail|morningstar)\b", re.I)
 WOUNDED = re.compile(r"\b(wound\w*|stabb\w*|cut|slash\w*|bleed\w*|bloodied|incapacitat\w*|dead|dying|killed|slain|beaten|unconscious|"
                      r"broken|run through|shot)\b", re.I)
 STEAL = re.compile(r"\b(steal\w*|stole|snatch\w*|pickpocket\w*|lift (a|the|his|her|their)|swip\w+|pinch|filch\w*|rob\w*|"
@@ -157,7 +155,7 @@ STOP = {"that", "this", "with", "from", "into", "their", "there", "they", "were"
 # debug_quiet (the DEBUG turn, round 8), escaped and freed (a way out that worked this turn: its WARNING not shown, round 10)
 BODY_PART = re.compile(r"(the |its |his |her |their )?(legs?|knees?|arms?|hands?|head|skull|neck|throat|chest|ribs?|back|face|eyes?|"
                        r"shoulders?|spine|belly|gut|jaw|feet|foot|torso|body)", re.I)
-TURN_FLAGS = ("debug_quiet", "escaped", "freed", "spent_items", "hazard_rolled", "prerolled", "prerolled_hp")   # spent_items: thrown or shot this turn, the engine's count
+TURN_FLAGS = ("debug_quiet", "escaped", "freed", "spent_items", "hazard_rolled", "prerolled", "prerolled_hp", "prerolled_checks")   # spent_items: thrown or shot this turn, the engine's count
 THREAD_STANDING = {"open": "taken up", "resolved": "done", "failed": "failed"}   # the player's own jobs, in the hooks' words (B93)
 PERSON_TITLES = {"the", "lord", "brother", "sergeant", "captain", "constable", "master", "old", "mother"}   # "Old Hesk" is Hesk
 
@@ -1340,12 +1338,8 @@ class FantasyGame(GameBase):
         mods += wd.wound_modifiers(p.wounds, req.stat, WOUND_KINDS)          # the wound ladder (B200): minor 0 to ruinous -5
         if (swim := wo.swim_penalty(state, req.stat, req.label)):
             mods.append(Modifier(label="armour in the water", value=swim))
-        if (req.stat == "str" and ATTACK.search(req.label) and not HEAVY.search(req.label)   # B222: a finesse weapon, the better of STR and DEX
-                and not wo.MARKED.match(req.label)):   # round 10 (T17): 'way out: kick off and claw upward', a swim, took the rapier's finesse
-            fw = next((it.name for it in state.inventory if FINESSE.search(it.name)), None)
-            gap = int(p.stats.get("dex", 0)) - int(p.stats.get("str", 0))
-            if fw and gap > 0:
-                mods.append(Modifier(label=f"finesse ({fw}): DEX in place of STR", value=gap))
+        # B222's finesse on a STR check is gone (Gemma round 20, 58d04709b885 T7: 'pull the wall stones loose' read 'loose' as a blow
+        # and took the rapier's DEX): since B288 a blow is an attack roll, which picks STR or DEX itself; a STR check is no blow
         if req.stat == "cha":
             if stranger:
                 bonus = {"quiet": 0, "known": 1, "talked about": 2, "famous": 2}[p.renown_word]
@@ -2884,6 +2878,7 @@ class FantasyGame(GameBase):
         now = s.clock.day * DAY + s.clock.minute
         s.deck.dealt_this_turn = []
         pre = list(s.flags.get("prerolled") or [])           # the round rolled before the prose, landed below with the calls
+        pre_checks = list(s.flags.get("prerolled_checks") or [])   # a way out or a break-free rolled before the prose
         for k in TURN_FLAGS:                                # this turn's own flags end with it
             s.flags.pop(k, None)
         # -- the fall, told: the end, the raise, or back to the story
@@ -2905,7 +2900,8 @@ class FantasyGame(GameBase):
         if p.fate == "dead" and p.fate_turn < info.turn:                  # a death the narrator was told inline: it ends this turn
             s.flags["ending"] = f"{p.name} died at {p.location or 'Marrowgate'} on day {s.clock.day}. The fog keeps the rest."
             return s
-        for c in info.calls:                                # B206: a danger the stake named lethal, failed: death now, told inline
+        checks = list(info.calls) + pre_checks
+        for c in checks:                                    # B206: a danger the stake named lethal, failed: death now, told inline
             if c.get("kills") and not c.get("verb") and not p.fate:
                 p.hp, p.peril = 0, None
                 p.fate, p.fate_turn, p.fate_roll = "dead", info.turn - 1, str(c.get("cause") or c.get("label") or "")
@@ -2915,12 +2911,12 @@ class FantasyGame(GameBase):
         held = next((c for c in p.conditions if c.name == "grappled"), None)
         if held is not None and not p.fate:                 # a grab's hold (the owner, 11-10 night): it ends when broken or the grabber is down
             by = s.person(held.by) if held.by else None
-            freed = any(wo.frees_grip(c, str(c.get("label") or "")) for c in info.calls)   # break-free words or the mark only
+            freed = any(wo.frees_grip(c, str(c.get("label") or "")) for c in checks)   # break-free words or the mark only
             turned = by is not None and "turned" in (by.condition or "")     # Sonnet pair 3 (T21): turned, the dead let go
             if freed or turned or (held.by and (by is None or by.status != "alive" or held.by not in p.fighting)):
                 p.conditions = [c for c in p.conditions if c is not held]
                 p.shown_notes.append("Free of the grip" if freed else f"Free: {by.name if by else 'the grip'} lets go")
-        for c in info.calls:                                # one die for one way out: the player's escape roll settles the peril
+        for c in checks:                                    # one die for one way out: the player's escape roll settles the peril
             if c.get("peril_roll") and p.peril is not None and not p.fate:
                 if c.get("outcome") in WON:
                     p.shown_notes.append(wo.out_of_it(p.peril.kind))
@@ -2931,7 +2927,7 @@ class FantasyGame(GameBase):
                     if ev.get("event") == "land":
                         p.peril = None
                 break
-        for c in info.calls:                                # part four §4: a failed attempt in a fight or a peril, by its tier
+        for c in checks:                                    # part four §4: a failed attempt in a fight or a peril, by its tier
             if c.get("harm") and not c.get("stepped") and p.hp > 0 and not p.fate:
                 n, notes = wo.take(self, s, int(c["harm"]), str(c.get("label") or ""))
                 p.shown_notes.append(f"{c.get('label') or 'The attempt'} failed: {n} hit point{"s" if n != 1 else ""}" + (f" ({', '.join(notes)})" if notes else ""))

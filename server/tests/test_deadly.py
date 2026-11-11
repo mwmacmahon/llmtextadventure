@@ -320,9 +320,10 @@ def escape_act(text: str, label: str, stat: str = "str"):
                             intents=[Intent(action=text, check=CheckProposal(label=label, stat=stat, difficulty="high"))])
 
 
-def test_one_die_for_one_way_out(game):
+def test_one_die_for_one_way_out(game, monkeypatch):
     """The readiness round (Sonnet, 11-08): the player's own roll to hack free succeeded while a second, countdown roll
     failed, so the next turn killed a player the prose had on the shore. The player's escape roll now decides the peril."""
+    monkeypatch.setattr(game, "prerolled_rounds", False)     # the called way out (the setting off), kept as a path
     st = new(game)
     wo.open_peril(st, "drowning", by="Mirren", turns=0)                 # drowning already, a CON check failed: harm every moment
     st.player.peril.failing = True
@@ -489,9 +490,10 @@ def test_a_check_that_does_not_go_for_the_way_out_is_no_escape(game):
     assert out["data"].get("none")
 
 
-def test_the_assistant_marks_the_way_out_and_the_engine_counts_it(game):
+def test_the_assistant_marks_the_way_out_and_the_engine_counts_it(game, monkeypatch):
     """The owner, 11-10 night: "Can't assistant help match intents?? I thought that's half the point of it": the note tells
     the reading, a check labelled 'way out:' is the attempt, whatever the words."""
+    monkeypatch.setattr(game, "prerolled_rounds", False)     # the called way out (the setting off), kept as a path
     from engine.pipeline import adjudicator_inputs
     from engine.roles import CheckStaked as CheckSpec
     from engine.roles import AssistantReadingCombat, IntentCombat
@@ -573,3 +575,40 @@ def test_a_found_place_shares_the_dangers_of_its_place(game):
     st.found_places.append(FoundPlace(name="the drowned chapels", within="The Mire"))
     st.player.location = "the drowned chapels"
     assert [h.get("id") for h in wo.hazards_here(st)] == [h.get("id") for h in (st.city.hazards.get("The Mire") or [])]
+
+
+def test_a_way_out_is_rolled_before_the_prose(game):
+    """The escape resolver (11-11, with the prerolled round): the reading's way out is rolled in the world turn by check_note's
+    rule, told, taken off the narrator's checks, and landed after the prose with the calls."""
+    from engine.roles import CheckStaked as CheckSpec
+    from engine.roles import AssistantReadingCombat, IntentCombat
+    st = new(game)
+    wo.open_peril(st, "burning", turns=0)
+    out = AssistantReadingCombat(kind="action", summary="beats at the flames", time_minutes=1, risk="high",
+                                 intents=[IntentCombat(action="beat at the flames", check=CheckSpec(label="way out: beat at the flames", stat="dex", difficulty="medium"))])
+    s1, w = game.world_turn(st, out, "I beat at the flames with my cloak", Dice(18), 3, 2)
+    assert out.intents[0].check is None and any("before this telling" in d for d in w.directives)
+    assert s1.flags.get("prerolled_checks") and s1.flags["prerolled_checks"][0]["peril_roll"] == "burning"
+    after = game.after_turn(s1, info_calls(3, []))
+    assert after.player.peril is None
+    st2 = new(game)
+    wo.open_peril(st2, "burning", turns=0)
+    fail = AssistantReadingCombat(kind="action", summary="beats at the flames", time_minutes=1, risk="high",
+                                  intents=[IntentCombat(action="beat at the flames", check=CheckSpec(label="way out: beat at the flames", stat="dex", difficulty="medium"))])
+    s2, w2 = game.world_turn(st2, fail, "I beat at the flames", Dice(2), 3, 2)
+    after2 = game.after_turn(s2, info_calls(3, []))
+    assert after2.player.peril is not None and after2.player.hp <= st2.player.hp
+
+
+def test_a_marked_break_free_is_rolled_before_the_prose(game):
+    """The escape resolver: a grab's break-free the reading marked is rolled in the world turn, the grip ends there on a success."""
+    from engine.roles import CheckStaked as CheckSpec
+    from engine.roles import AssistantReadingCombat, IntentCombat
+    st = new(game)
+    foe(st, "maud", moves=[{"kind": "strike"}], attitude=-3)
+    st.player.fighting = ["maud"]
+    game._land_condition(st, "grappled", "maud")
+    loose = AssistantReadingCombat(kind="action", summary="twists loose", time_minutes=1, risk="high",
+                                   intents=[IntentCombat(action="twist loose", check=CheckSpec(label="way out: twist loose", stat="dex", difficulty="medium"))])
+    s1, w = game.world_turn(st, loose, "I twist loose of her grip", Dice(19), 3, 2)
+    assert not s1.player.has_condition("grappled") and loose.intents[0].check is None

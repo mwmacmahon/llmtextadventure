@@ -999,11 +999,12 @@ def land(game: Any, s: FantasyState, calls: list[dict], turn: int, offset: int, 
         if call.get("who") and call.get("move"):
             c.last[call["who"]] = call["move"]
     spared = {h["pid"] for call in calls for h in (call.get("hits") or []) if h.get("spare")}
-    for q in list(s.people):
+    struck = {h["pid"] for call in calls for h in (call.get("hits") or [])}   # Gemma round 20 (T11): an ally's carry-through killed a
+    for q in list(s.people):                                                   # swarm not on the fight list; it stayed 'hostile', unpaid
         b = q.combat
         if b is None or b.hp is None:
             continue
-        if q.id in p.fighting:
+        if q.id in p.fighting or (q.id in struck and q.status == "alive" and q.id not in p.with_them):
             if b.count > 1 and b.hps:                    # Gemma pair 4 (T9): a band's XP came only when every body fell; each body pays as it falls
                 fallen = sum(1 for h in b.hps if h <= 0)
                 new = fallen - c.bodies_paid.get(q.id, 0)

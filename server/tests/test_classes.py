@@ -209,7 +209,9 @@ def test_sneak_attack_finesse_and_rage_reach_the_player(game):
     req = CheckRequest(id="n1", label="Surprise strike with shortsword", stat="str", difficulty="low", base=p.stats["str"])
     mods = game.modifiers(st, req, None)
     gap = p.stats["dex"] - p.stats["str"]
-    assert gap > 0 and any(m.label.startswith("finesse (") and m.value == gap for m in mods)
+    assert gap > 0 and not any(m.label.startswith("finesse") for m in mods)          # a blow is an attack roll (B288): no finesse on a check
+    from games.fantasy import combat as cb
+    assert cb.player_block(st, "shortsword")["stat"] == "dex"                         # the attack roll takes the better (SRD finesse)
     assert any(m.label.startswith("Sneak Attack (from hiding)") for m in mods)
     req.modifiers = mods
     res = dice_d20(random.Random(1), req)

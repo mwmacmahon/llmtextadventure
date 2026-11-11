@@ -1386,3 +1386,16 @@ def test_one_torch_dropped_is_one(game):
     assert s1.item(tor.id).count == n - 1
     s2, _, _ = apply_changes(game, st, ChangeReport.of(Change(kind="gone", target=tor.id, value="", note="all of them soaked")), present=[], causes=[])
     assert s2.item(tor.id) is None or s2.item(tor.id).count == 0
+
+
+def test_a_kill_by_carry_through_is_booked(game):
+    """Gemma round 20 (T11): an ally's carry-through killed a swarm not on the fight list; it stayed 'hostile' and paid nothing."""
+    f, q = _fight(game, 1)
+    f.combat.plan = []
+    other = _skeletons(f, 1)
+    other.id = "other_dead"
+    f.people.append(other) if f.person("other_dead") is None else None
+    o = f.person("other_dead")
+    o.combat.hp = 1
+    cb.land(game, f, [{"verb": "ALLY", "hits": [{"pid": "other_dead", "body": 0, "dmg": 5}]}], 2, 2, random.Random(0))
+    assert f.person("other_dead").status != "alive"
