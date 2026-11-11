@@ -670,7 +670,9 @@ def resolve(game: Any, s: FantasyState, entry: dict, rng: Any, offset: int, tall
         data.update(harm=n, stepped=True, kills=kills, cause=whose)
         told = (f"it kills {p.name}. Write the death straight; this is the end of the story" if kills
                 else f"it lands, {n} damage" + (f" ({'; '.join(notes)})" if notes else "") + f"; {p.name} is {word}. Play it landing")
-        return {"text": f"{whose}: {told}, and go on.", "mechanic": enemy_line(whose, res, n, f"{p.name} is {word}"), "data": data}
+        # round 15 (b8e96b0c3c1f T14): Rage took the troll's 14 to 11 and only the narrator was told; the player read no Rage at all
+        return {"text": f"{whose}: {told}, and go on.",
+                "mechanic": enemy_line(whose, res, n, f"{p.name} is {word}" + (f" ({'; '.join(notes)})" if notes else "")), "data": data}
     # a save: grab and hold (a peril), song (a compulsion), drain (a condition and damage), breath (half on a save)
     stat = a.get("stat") or {"hold": "str", "grab": "str", "song": "wis", "drain": "con", "breath": "dex"}.get(kind, "con")
     dc = int(a.get("dc") or b.dc or 12) + shift

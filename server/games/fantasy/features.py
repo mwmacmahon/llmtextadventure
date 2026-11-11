@@ -70,7 +70,10 @@ def chips(game: Any, s: FantasyState) -> list[CommandSpec]:
             continue
         # round 13 (9c6ac4cbe0ae T22): a rider (Divine Smite) clicked took a turn with no blow in it; the narrator wrote a smite
         # that killed a swarm the sheet kept alive. Arming a rider is instant: the engine's reply, no turn; the next blow carries it
-        out.append(CommandSpec(id=fid, label=f"{f['name']}{left}", mode="engine" if kind == "rider" else "narrated", params=params,
+        # round 15 (b8e96b0c3c1f T14): Rage clicked took the turn and the troll's second blow killed the barbarian before he
+        # swung; a feature the class file marks `instant` (Rage, a bonus action) is the engine's at once, like a rider
+        instant = kind == "rider" or bool(f.get("instant"))
+        out.append(CommandSpec(id=fid, label=f"{f['name']}{left}", mode="engine" if instant else "narrated", params=params,
                                enabled=c is None or c.value > 0 or (kind == "rider" and _slots(p) > 0 and f.get("slots")),
                                hint=f.get("hint") or f.get("text") or f["name"], words=list(f.get("words") or [])))
     return out
@@ -215,7 +218,8 @@ def run(game: Any, state: FantasyState, fid: str, args: dict) -> tuple[FantasySt
             p.conditions = [x for x in p.conditions if x.name != f["condition"]]
             p.conditions.append(Condition(name=f["condition"], source="engine", stat=f.get("stat", ""), mod=int(f.get("mod", 0)),
                                           duration="minutes", expires_at=now + int(f.get("minutes", 10))))
-        return s, CommandResult(label=name, player_line=f.get("player_line") or f"I use {name}.", summary=f.get("summary") or f"{p.name} uses {name}.",
+        return s, CommandResult(label=name, text=f"{name}: on until the scene ends." if f.get("instant") else "",
+                                player_line=f.get("player_line") or f"I use {name}.", summary=f.get("summary") or f"{p.name} uses {name}.",
                                 directive=f.get("directive") or f"{p.name} uses {name}. Show it in a line or two, and play whatever else the player asked for this turn.",
                                 minutes=int(f.get("cast_minutes", 0)), referee_skip=[fid])
     return None

@@ -1993,7 +1993,7 @@ class Engine:
                 clk = sp.lookup(doc, clock.path)
                 now = clk["day"] * clock.minutes_per_day + clk["minute"]
                 if not through:
-                    want, stop_note = clock_stop(game, doc, turn, now, want)
+                    want, stop_note = clock_stop(game, doc, turn, now, want, asleep=sleeping(adj))
                     if stop_note:
                         clock_note = (clock_note + "; " if clock_note else "") + stop_note
                 elapsed = want
@@ -3106,12 +3106,16 @@ def block_spend(clock: Any, adj: Any, minutes: int, free_run: int) -> tuple[bool
     return False, f"free ({task}, {minutes} minutes)"
 
 
-def clock_stop(game: Any, doc: dict[str, Any], turn: int, now: int, want: int) -> tuple[int, str]:
+def clock_stop(game: Any, doc: dict[str, Any], turn: int, now: int, want: int, asleep: bool = False) -> tuple[int, str]:
     """How far the clock may run from `now` toward `now + want`: it stops where a scheduled event would fire (any time in its
-    trigger or fallback, so it fires on time) or a pending the player can see falls due. Returns (minutes, note)."""
+    trigger or fallback, so it fires on time) or a pending the player can see falls due. Returns (minutes, note).
+    `asleep` (round 15, b8e96b0c3c1f T8 to T11: three jobs' reaches cut three nights short in an hour or less, the prose
+    sleeping to morning each time): a job's own events (a deck's, `hook` set: the giver coming in downstairs) do not wake
+    the player; the owner's rule, what the player cannot see does not stop the clock. They fire as the sleep ends."""
     clock = game.clock
     note = ""
-    nxt_f = ev.next_firing(_events_of(game, doc), doc, turn, now, now + want, clock.minutes_per_day, clock.path,
+    events = [e for e in _events_of(game, doc) if not (asleep and getattr(e, "hook", None))]
+    nxt_f = ev.next_firing(events, doc, turn, now, now + want, clock.minutes_per_day, clock.path,
                            getattr(game, "pending_path", None) or "hidden.pending",
                            getattr(game, "location_path", "player.location"))
     if nxt_f is not None:
@@ -3552,6 +3556,16 @@ TASK_WORDS: list[tuple[str, re.Pattern]] = [       # D148: the longer kind wins 
                          r"scrambles?|backs? away|wrench(?:es)?)\b", re.I)),
 ]
 TASK_WORDS_FIGHT = dict(TASK_WORDS)["fight"]
+
+
+def sleeping(adj: Any) -> bool:
+    """A turn the player sleeps: the Rest command's long rest, or the reading's words (a clicked Rest's reading is 'fast',
+    which task_of reads as a fight, so the sleep words are read here whatever the tempo)."""
+    if any(getattr(c, "id", "") == "rest" and any(str(a).replace(" ", "").lower() == "kind=long" for a in (getattr(c, "args", None) or []))
+           for c in (getattr(adj, "commands", None) or [])):
+        return True
+    text = " ".join([getattr(adj, "summary", "") or ""] + [getattr(i, "action", "") or "" for i in (getattr(adj, "intents", None) or [])])
+    return bool(dict(TASK_WORDS)["sleep"].search(text))
 
 
 def task_of(adj: Any) -> str:

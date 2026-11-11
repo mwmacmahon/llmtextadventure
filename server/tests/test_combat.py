@@ -1061,3 +1061,25 @@ def test_round_14_the_line_names_its_parts_and_armour_only_swims(game):
     swim = sum(m.value for m in game.modifiers(paladin, CheckRequest(id="n", label="way out: kick for the surface", stat="str"), None) if m.label == "armour in the water")
     assert swim == -2 * wo.armour_steps(paladin)
     assert not any(m.label == "armour in the water" for m in game.modifiers(paladin, CheckRequest(id="n", label="hold on in the cold", stat="con"), None))
+
+
+def test_round_15_sleep_passes_a_jobs_arrival_and_rage_is_instant_and_seen(game):
+    """Round 15 (b8e96b0c3c1f): three jobs' reaches cut three nights short (T8 to T11), the prose sleeping to morning each time;
+    Rage clicked took the turn, and its step on the troll's blow (14 to 11) reached only the narrator."""
+    from engine.pipeline import clock_stop, sleeping
+    from engine.roles import AssistantReading, CommandPick
+    st = new(game)
+    doc = st.model_dump(mode="json")
+    now = st.clock.day * 1440 + st.clock.minute
+    awake, note = clock_stop(game, doc, 1, now, 600)
+    asleep, note2 = clock_stop(game, doc, 1, now, 600, asleep=True)
+    assert "reach" in note and awake < 600 and asleep > awake and "reach" not in note2
+    rest = AssistantReading(kind="action", summary="Hrolf sleeps the night.", tempo="fast", time_minutes=480, risk="low", intents=[])
+    assert sleeping(rest) and sleeping(AssistantReading(kind="action", summary="x", time_minutes=1, risk="low", intents=[],
+                                                        commands=[CommandPick(id="rest", args=["kind=long"])]))
+    b = new(game, klass="Barbarian")
+    assert {c.id: c.mode for c in game.commands(b)}["rage"] == "engine"
+    b2, r = game.run_command(b, "rage", {})
+    assert "raging" in b2.player.flags_on and r.text.startswith("Rage")
+    n, notes, _ = cb._player_take(game, b2, 14, {"hp": 0})
+    assert n == 11 and notes == ["Rage: a step lighter"]
