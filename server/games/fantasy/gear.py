@@ -19,6 +19,8 @@ BODY = (("plate", 6, 3), ("chain mail", 4, 2), ("scale mail", 4, 2), ("mail shir
         ("studded leather", 2, 1), ("leather armour", 1, 1), ("leather armor", 1, 1), ("hide armour", 1, 1), ("hide armor", 1, 1),
         ("padded armour", 1, 1), ("padded armor", 1, 1))
 SHIELD = re.compile(r"\bshield\b", re.I)
+# two hands (the SRD's two-handed and the bows): not with a shield (Sonnet pair 1: a light crossbow and a shield together)
+TWO_HANDED = {"greataxe", "greatsword", "shortbow", "longbow", "light crossbow", "crossbow"}
 SHIELD_AC, SHIELD_STEPS = 2, 1
 
 
@@ -63,12 +65,12 @@ def _defaults(s: FantasyState) -> dict[str, Item]:
     if bodies:
         out["body"] = max(bodies, key=lambda it: body_of(it)[0])
     shields = [it for it in s.inventory if is_shield(it)]
-    if shields:
-        out["shield"] = shields[0]
     arms = [it for it in s.inventory if weapon_of(it)]
     melee = [it for it in arms if WEAPONS[weapon_of(it)][1] in ("melee", "finesse")] or arms
     if melee:
         out["weapon"] = max(melee, key=lambda it: dice_avg(WEAPONS[weapon_of(it)][0]))
+    if shields and not ("weapon" in out and weapon_of(out["weapon"]) in TWO_HANDED):
+        out["shield"] = shields[0]
     return out
 
 
@@ -141,6 +143,10 @@ def change(game: Any, state: FantasyState, item_id: str, on: bool) -> tuple[Fant
     if slot in ("body", "shield") and (s.player.fighting or s.player.peril is not None):
         return state, f"Not now: {'armour takes minutes of buckles' if slot == 'body' else 'there is no time to strap a shield on'}.", False
     was = [x for x in s.inventory if x.equipped and slot_of(x) == slot]
+    if slot == "weapon" and weapon_of(it) in TWO_HANDED:          # two hands: the shield comes off
+        was += [x for x in s.inventory if x.equipped and slot_of(x) == "shield"]
+    if slot == "shield":                                          # a shield arm: a two-handed weapon is put away
+        was += [x for x in s.inventory if x.equipped and slot_of(x) == "weapon" and weapon_of(x) in TWO_HANDED]
     for x in was:
         x.equipped = False
     it.equipped = True

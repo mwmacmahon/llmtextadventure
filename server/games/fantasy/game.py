@@ -1159,9 +1159,13 @@ class FantasyGame(GameBase):
         then the player's own open threads. Never a hook's hidden summary: only its title, giver, places and standing line."""
         hooks = self.hooks_content()
         fired = {e.id for e in s.hidden.events if e.fired}
+        here = set(self.people_here(s)) | set(s.player.with_them)
+        # Sonnet pair 1 (c1ae67c2adbd T2): Maud put the rats job before its reach fired; the referee opened 'Trouble in the cellar',
+        # the deck's 'Rats in the Cellar' came later, and the job was listed twice. A dealt hook whose giver is here is in motion
         out = [Quest(id=h.id, title=h.title, giver=h.giver, places=sorted(x for x in dk.hook_places(hooks.get(h.id) or {}) if x),
                      kind="hook", line=dk.fill(self._standing_line(h.id, hooks), s.player.name))
-               for h in s.hooks if h.status == "live" or (h.status == "dealt" and f"{h.id}_reach" in fired)]
+               for h in s.hooks if h.status == "live" or (h.status == "dealt" and (f"{h.id}_reach" in fired
+                                                                                  or (hooks.get(h.id) or {}).get("giver") in here))]
         names = self.entity_names(s)
         out += [Quest(id=t.id, title=t.title, giver=names.get(t.who, t.who), line=t.about)
                 for t in s.threads if t.status == "open" and not t.id.startswith("hook-")]
@@ -1172,6 +1176,7 @@ class FantasyGame(GameBase):
         h = s.hook(quest.id.removeprefix("hook-"))
         if h is None:
             return super().note_quest(s, quest, note, w)
+        self._offered_now(s, h)                          # the prose has the job in hand: a dealt one comes in as offered
         note = clip_words(" ".join(note.split()), 200)
         if note and note != h.note and w.set(f"hooks.{h.id}.note", h.note, note):
             h.note = note
@@ -1516,6 +1521,8 @@ class FantasyGame(GameBase):
         every enemy body: the fourth call was told "resolve this in the prose, without a roll" and the backstop then rolled
         the same act. In a fight the cap is the round's acts and two more for checks, at most twelve."""
         if state.flags.get("debug_quiet"):              # round 10 (8085528d0af0 T28): the DEBUG turn's fall rolled the catch
+            return 0
+        if state.player.fate:                            # pair G1 (T18): the turn after a death behind the prose rolled STR at 0 hit points
             return 0
         plan = (state.combat.plan if state.combat is not None else None) or []
         return min(12, max(int(getattr(self, "max_calls", 3) or 3), len(plan) + 2))

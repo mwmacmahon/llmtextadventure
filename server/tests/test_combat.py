@@ -1238,3 +1238,22 @@ def test_a_wary_person_does_not_attack_unprovoked(game):
     assert q not in wo.could_turn(game, st)
     q.attitude = -2
     assert q in wo.could_turn(game, st)
+
+
+def test_two_hands_and_a_shield_and_the_deck_merges_a_thread(game):
+    """Sonnet pair 1 (c1ae67c2adbd): a light crossbow held with a shield on (T14); the referee's 'Trouble in the cellar' beside
+    the deck's 'Rats in the Cellar' (T2, T21)."""
+    from games.fantasy import gear
+    from games.fantasy.state import Item
+    st = new(game)                                                       # the Fighter: a light crossbow, a shield, a longsword
+    xb = next((it for it in st.inventory if gear.weapon_of(it) in gear.TWO_HANDED), None)
+    if xb is not None:
+        s1, r = game.run_command(st, "equip", {"item": xb.id})
+        assert r.ok and "shield" not in gear.worn(s1) and "off" in r.text
+        sh = next(it for it in s1.inventory if gear.is_shield(it))
+        s2, r2 = game.run_command(s1, "equip", {"item": sh.id})
+        assert r2.ok and "weapon" not in gear.worn(s2)
+    if st.hook("cellar_rats") is not None:
+        s3, rep, ex = apply_changes(game, st, ChangeReport.of(Change(kind="thread_open", target="", value="Trouble in the cellar: something scratching",
+                                                                      who="maud")), present=["maud"], causes=[])
+        assert not s3.threads and ex.merges and ex.merges[0]["into"] == "cellar_rats"

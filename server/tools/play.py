@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import urllib.error
 import urllib.request
 
 BASE = os.environ.get("TA_URL", "http://127.0.0.1:8010").rstrip("/")
@@ -30,8 +31,12 @@ DEV_HEADERS = {"x-dev": "1", **({"x-dev-pin": os.environ["TA_DEV_PIN"]} if os.en
 def _req(method: str, path: str, body: dict | None = None) -> bytes:
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(BASE + path, data=data, method=method, headers={"content-type": "application/json", **DEV_HEADERS})
-    with urllib.request.urlopen(req, timeout=600) as r:
-        return r.read()
+    try:
+        with urllib.request.urlopen(req, timeout=600) as r:
+            return r.read()
+    except urllib.error.HTTPError as e:            # Sonnet pair 1: a refused name showed a bare traceback, not the reason
+        detail = e.read().decode(errors="replace")[:400]
+        raise SystemExit(f"[REFUSED {e.code}] {detail}") from None
 
 
 def _get(path: str):

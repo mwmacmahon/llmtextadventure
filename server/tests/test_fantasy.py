@@ -426,7 +426,7 @@ def test_a_hook_goes_live_on_its_reach_and_closes_with_its_first_matching_reward
     s1.flags["troll_dead"] = True                                    # both hold: the first row (settled) is paid, once
     s2 = game.after_turn(s1, info(turn=2))
     assert s2.hook("cellar_rats").status == "done" and s2.player.xp == 100 and s2.item("gold").count == 17 and s2.player.renown == 15
-    assert s2.item("brass_whistle") is not None and s2.person("gorm").attitude == 1 and s2.person("maud").attitude == 1
+    assert s2.item("brass_whistle") is None and s2.person("gorm").attitude == 1 and s2.person("maud").attitude == 1   # the whistle by the story only (B349)
     assert next(t for t in s2.threads if t.id == "hook-cellar_rats").status == "resolved"
     assert game.after_turn(s2, info(turn=3)).player.xp == 100
 
