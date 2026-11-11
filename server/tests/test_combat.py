@@ -1451,3 +1451,18 @@ def test_words_about_not_attacking_join_no_one_wary(game):
                                  intents=[IntentCombat(action="Speak quietly to the troll, asking if it is hurt or hiding", targets=["gorm"])])
     s, w = wo.world_turn(game, st, adj, "I keep my blades low and call across the water: 'Are you hurt?'", random.Random(1), 7, 2)
     assert "gorm" not in s.player.fighting and not s.flags.get("prerolled")
+
+
+def test_the_prose_count_of_a_new_band_is_the_sheets(game):
+    """B358 (Gemma pair 4, 3f0270f2d99c T4): the referee's skeleton_1, _2, _3 merged into one ('nothing added'); the sheet fought one
+    where the prose had three. At a fight's start, more bodies of the kind being fought are more bodies of the band. T5: the
+    skeleton was put in the player's company; a foe is never company."""
+    st = new(game)
+    st.player.location = "The Catacombs"
+    rows = [Change(kind="new", target="person", value=f"skeleton_{n}", title="a skeleton") for n in (1, 2, 3)]
+    s1, rep, _ = apply_changes(game, st, ChangeReport.of(*rows), present=[], causes=[])
+    q = s1.person("skeleton_1")
+    assert q is not None and q.id in s1.player.fighting and q.combat.count == 3 and len(q.combat.hps) == 3
+    assert len([x for x in s1.people if x.combat is not None and x.combat.block == "skeleton"]) == 1
+    s2, _, _ = apply_changes(game, s1, ChangeReport.of(Change(kind="set", target="tansy", field="mood", value="calm")), present=["skeleton_1"], causes=[])
+    assert "skeleton_1" not in s2.player.with_them

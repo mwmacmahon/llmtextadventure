@@ -2765,6 +2765,30 @@ class FantasyGame(GameBase):
             w.note(f"people.{q.id}.heard_of: False -> True")
             q.heard_of = True
 
+    def _grows_band(self, s: FantasyState, q: Person, name: str, role: str, w: Writer) -> bool:
+        """The owner's night brief (11-11: "live spawning new monsters from referee based on prose"). Gemma pair 4 (3f0270f2d99c
+        T4): the prose brought three skeletons and the referee reported skeleton_1, _2 and _3; the second and third were merged
+        into the first ('nothing added') and the sheet fought one. At a fight's start (no round rolled past the first), another
+        body of a monster kind already in the fight here, under another name, is one more body of that band (six at most)."""
+        from . import combat as cb
+        p = s.player
+        if (q.combat is None or q.id not in p.fighting or q.status != "alive" or not self._same_spot(s, q.location, p.location)
+                or (s.combat is not None and s.combat.round > 1) or q.name.strip().lower() == name.strip().lower()
+                or slug(name) == q.id or cb.is_person(str(cb.ENTRIES.get(q.combat.block, {}).get("kind") or ""))):
+            return False
+        if cb.match_entry(f"{role} {name}") != q.combat.block:
+            return False
+        b = cb.ensure_block(q)
+        if b.count >= 6:
+            return False
+        if b.count <= 1:
+            b.hps = [b.hp or b.hp_max or 1]
+        b.count += 1
+        b.hps.append(b.hp_max or b.hp or 1)
+        q.combat.fixed = True
+        w.note(f"new person {name.strip()!r}: one more body of {q.id} ({b.count} now; the prose brought them)")
+        return True
+
     def _new_person(self, s: FantasyState, name: str, role: str, w: Writer, where: str = "") -> None:
         p = s.player
         if p.location == self.DEBUG_ROOM:              # nobody but the player and the test's spawns (the owner, 11-10 night)
@@ -2786,6 +2810,8 @@ class FantasyGame(GameBase):
             w.note(f"new person {name!r} is not {same.id} ({same.name}, elsewhere): filed as {fresh!r}")
             name, role = fresh[:1].upper() + fresh[1:], role
         q = s.person(slug(name)) or self._same_person(s, name) or self._described(s, name, role, here=here)
+        if q is not None and here and self._grows_band(s, q, name, role, w):
+            return
         if q is not None:
             if q.name.lower() != name.strip().lower():
                 w.note(f"new person {name.strip()!r} is {q.id} ({q.name}): nothing added")
@@ -2858,7 +2884,9 @@ class FantasyGame(GameBase):
     def apply_present(self, s: FantasyState, present: list[str], w: Writer) -> FantasyState:
         remap = getattr(w, "remap", None) or {}                  # B307: the report's new person, not the one elsewhere
         present = list(dict.fromkeys(remap.get(x, x) for x in present))
-        with_them = [pid for pid in present if s.person(pid) is not None and s.person(pid).status == "alive"]
+        # B358 (Gemma pair 4, 3f0270f2d99c T5): the skeleton being fought was put in the player's company; a foe is never company
+        with_them = [pid for pid in present if (q := s.person(pid)) is not None and q.status == "alive" and pid not in s.player.fighting
+                     and q.attitude > -2]
         if with_them != s.player.with_them:
             w.note(f"player.with_them: {s.player.with_them} -> {with_them}")
             s.player.with_them = with_them
