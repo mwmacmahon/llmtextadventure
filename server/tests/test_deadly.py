@@ -532,3 +532,22 @@ def test_round_10_the_warning_stays_after_a_failed_way_out_and_a_look_is_a_momen
     look = AssistantReading(kind="trivial", summary="looks at the floor", time_minutes=0, risk="none", intents=[Intent(action="look at the floor")])
     s3, w = game.world_turn(s2, look, "I examine the glass floor", Dice(20), 3, 2)
     assert s3.player.hp < s2.player.hp or s3.player.peril.step > s2.player.peril.step
+
+
+def test_a_friend_at_hand_reaches_for_the_player(game):
+    """Gemma pair 2 (afb7d649eb3e T26 to T30): the prose had Tam haul the player out and the engine kept her under; then two
+    friends in the boat did nothing for four turns. A friend with the player rolls to reach them each turn."""
+    from engine.roles import AssistantReading, Intent
+    st = new(game)
+    wo.open_peril(st, "holding_breath", turns=0)
+    hazel = st.person("hazel")
+    hazel.attitude, hazel.location = 2, st.player.location
+    st.player.with_them = ["hazel"]
+    look = AssistantReading(kind="trivial", summary="looks up", time_minutes=1, risk="low", intents=[Intent(action="look up")])
+    s1, w = game.world_turn(st, look, "I look up at the light", Dice(15), 3, 2)
+    assert s1.player.peril is None and any("hauls them clear" in m for m in w.mechanics)
+    s2, w2 = game.world_turn(st, look, "I look up at the light", Dice(2), 3, 2)
+    assert s2.player.peril is not None and any("cannot get a hold" in m for m in w2.mechanics)
+    hazel.attitude = 0                                                   # a stranger does not dive in
+    s3, w3 = game.world_turn(st, look, "I look up at the light", Dice(15), 3, 2)
+    assert not any("reaches for" in m for m in w3.mechanics)

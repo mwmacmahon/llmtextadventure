@@ -373,7 +373,7 @@ def test_level_up_is_refused_until_the_xp_is_there(game: FantasyGame):
 def test_invented_threads_pay_25_xp_two_a_day(game: FantasyGame):
     from engine.threads import Thread
     st = new(game)
-    st.threads += [Thread(id=f"t1-job-{i}", title=f"a job {i}", status="resolved", closed_turn=1) for i in range(3)]
+    st.threads += [Thread(id=f"t1-job-{i}", title=f"a job {i}", status="resolved", opened_turn=1, closed_turn=4) for i in range(3)]   # ran three turns (D231)
     s1 = game.after_turn(st, info())
     assert s1.player.xp == 50 and len(s1.player.paid_threads) == 3
     assert game.after_turn(s1, info()).player.xp == 50

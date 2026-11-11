@@ -98,6 +98,20 @@ def out_of_it(kind: str) -> str:
     return f"Out of it: no longer {PERIL_LABEL.get(kind, kind).lower()}."
 
 
+RESCUABLE = ("drowning", "holding_breath", "falling", "burning", "bleeding")
+
+
+def rescuer(game: Any, s: FantasyState) -> Any:
+    """A friend with the player who could reach them: with them, alive, seen, friendly or better, at the same spot; the first."""
+    p = s.player
+    for x in p.with_them:
+        q = s.person(x)
+        if (q is not None and q.status == "alive" and not q.hidden_from_player and (q.attitude or 0) >= 1 and q.id not in p.fighting
+                and (not q.location or game._same_spot(s, q.location, p.location))):
+            return q
+    return None
+
+
 def breaking_free(s: FantasyState, adj: Any, player_text: str) -> bool:
     """While a grab holds the player, does this turn go for getting loose: the reading marked a check 'way out:' or the
     words (the player's, the summary, the intents) break free. One test for the world turn's roll and aim_blows (D222)."""
@@ -319,6 +333,23 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
         pr = p.peril
         from .game import ATTACK
         what = PERILS.get(pr.kind, {}).get("what", pr.kind)
+        helper = rescuer(game, s) if pr.kind in RESCUABLE else None
+        if helper is not None:
+            # Gemma pair 2 (afb7d649eb3e T26 to T30): the prose had Tam haul the player into the skiff and the engine kept her under;
+            # then Tam and Hazel sat in the boat four turns while she drowned. A friend at hand reaches for the player every turn, a
+            # roll of their own (d20 + 2 against 12); a success ends the danger
+            r = rng.randint(1, 20)
+            ok = r + 2 >= 12
+            line = f"{helper.name} reaches for {p.name}: {r} + 2 = {r + 2} against 12, " + ("hauls them clear." if ok else "cannot get a hold.")
+            w.mechanics.append(line)
+            w.rows.append({"kind": "rescue", "by": helper.id, "peril": pr.kind, "outcome": "success" if ok else "failure", "line": line})
+            if ok:
+                p.peril = None
+                w.mechanics.append(out_of_it(pr.kind))
+                w.directives.append(f"{p.name} was {what}; {helper.name} reached in and got them clear (the engine rolled it). Play the "
+                                    f"rescue, and go on from there.")
+                return _after_peril(game, s, adj, player_text, rng, turn, offset, w, text)
+            w.directives.append(f"{helper.name} reaches for {p.name} and cannot get a hold this moment (the engine rolled it).")
         own = escape_check(adj, pr)
         acting = own is not None or any(getattr(i, "attack_at", None) for i in (getattr(adj, "intents", None) or []))
         if getattr(adj, "kind", "action") not in ("action", "trivial") or (not acting and SPEECH.search(player_text or "") and not way_out(pr, pr.stat, player_text or "")):

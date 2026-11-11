@@ -2939,7 +2939,10 @@ class FantasyGame(GameBase):
             if t.status != "open" and not t.id.startswith("hook-") and t.id not in p.paid_threads and t.status == "resolved":
                 day = str(s.clock.day)
                 p.paid_threads.append(t.id)
-                if p.thread_xp.get(day, 0) < 2:
+                # Gemma pair 2: 'Drink with Hazel' and 'Walk to the Market' opened and closed within a turn, 25 XP each; a thread of
+                # the player's own pays only when it ran three turns or more
+                lasted = (t.closed_turn or info.turn) - (t.opened_turn or info.turn)
+                if lasted >= 3 and p.thread_xp.get(day, 0) < 2:
                     p.thread_xp[day] = p.thread_xp.get(day, 0) + 1
                     p.xp += 25
                     s.log.append(f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}. {t.title}: done (25 XP).")

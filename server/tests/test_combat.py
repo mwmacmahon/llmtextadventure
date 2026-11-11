@@ -1257,3 +1257,14 @@ def test_two_hands_and_a_shield_and_the_deck_merges_a_thread(game):
         s3, rep, ex = apply_changes(game, st, ChangeReport.of(Change(kind="thread_open", target="", value="Trouble in the cellar: something scratching",
                                                                       who="maud")), present=["maud"], causes=[])
         assert not s3.threads and ex.merges and ex.merges[0]["into"] == "cellar_rats"
+
+
+def test_a_quick_thread_pays_no_xp(game):
+    """Gemma pair 2: 'Drink with Hazel' and 'Walk to the Market' opened and closed within a turn, 25 XP each."""
+    from engine.game import TurnInfo
+    from engine.threads import Thread
+    st = new(game)
+    st.threads.append(Thread(id="t5-drink", title="Drink with Hazel", opened_turn=5, status="resolved", closed_turn=5))
+    st.threads.append(Thread(id="t1-find", title="Find the lost ring", opened_turn=1, status="resolved", closed_turn=6))
+    s1 = game.after_turn(st, TurnInfo(turn=6, elapsed_minutes=1, rng=random.Random(0)))
+    assert s1.player.xp == st.player.xp + 25
