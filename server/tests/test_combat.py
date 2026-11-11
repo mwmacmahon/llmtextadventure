@@ -1139,3 +1139,29 @@ def test_round_16_a_night_runs_to_morning(game):
     st.clock.minute = 13 * 60
     _, r2 = game.run_command(st, "rest", {"kind": "long"})
     assert r2.minutes == 480 and to_morning(13 * 60) is None and to_morning(2 * 60) == 5 * 60
+
+
+def test_round_17_flee_cost_counts_first_unarmoured_rage_damage_one_javelin(game):
+    """Round 17 (5d85334fc803): a typed Flee's parting blows landed after the prose, so the causeway the narrator called read the
+    hit points before them and the 'scrape' killed under a telling that had the player clear; a barbarian with no armour had
+    AC 11 (no Unarmored Defense); Rage added nothing to the blows given; one javelin thrown cost two."""
+    from games.fantasy import gear
+    f, _ = _fight(game, 1)
+    s1, res = cb.run_fight_command(game, f, "flee")
+    assert res.hp_taken == f.player.hp - s1.player.hp
+    b = new(game, klass="Barbarian", race="Human")
+    ac, how = gear.armour_class(b)
+    assert ac == 10 + b.player.stats["dex"] + b.player.stats["con"] and "CON" in how
+    b.player.flags_on.append("raging")
+    b.player.fighting = ["dead"]
+    _skeletons(b, 1)
+    from games.fantasy.state import CombatState
+    b.combat = CombatState()
+    out = cb.resolve_attack(game, b, {"key": "player", "side": "player", "who": "player", "targets": ["dead"], "weapon": "", "riders": []},
+                            random.Random(3), 2, {"hp": 0})
+    assert "Rage: +2 damage" in out["mechanic"]
+    b.flags["spent_items"] = ["javelins"]
+    jav = next((it for it in b.inventory if "javelin" in it.name.lower()), None)
+    if jav is not None:
+        s2, rep, _ = apply_changes(game, b, ChangeReport.of(Change(kind="add", target=f"{jav.id}.count", value="-1", note="thrown")), present=[], causes=[])
+        assert s2.item(jav.id).count == jav.count and any("engine spent" in r.reason for r in rep.rejected)

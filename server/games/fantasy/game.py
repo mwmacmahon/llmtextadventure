@@ -154,7 +154,7 @@ STOP = {"that", "this", "with", "from", "into", "their", "there", "they", "were"
 
 # flags that live one turn only, cleared at after_turn's start (the debt review: they had two clears and a dead variable):
 # debug_quiet (the DEBUG turn, round 8), escaped and freed (a way out that worked this turn: its WARNING not shown, round 10)
-TURN_FLAGS = ("debug_quiet", "escaped", "freed")
+TURN_FLAGS = ("debug_quiet", "escaped", "freed", "spent_items")   # spent_items: thrown or shot this turn, the engine's count
 THREAD_STANDING = {"open": "taken up", "resolved": "done", "failed": "failed"}   # the player's own jobs, in the hooks' words (B93)
 PERSON_TITLES = {"the", "lord", "brother", "sergeant", "captain", "constable", "master", "old", "mother"}   # "Old Hesk" is Hesk
 
@@ -2292,6 +2292,9 @@ class FantasyGame(GameBase):
                 it.count += n
             return True
         take = -n
+        if it.id in (s.flags.get("spent_items") or []):    # thrown or shot this turn: the engine counted it (round 17)
+            w.reject(f"inventory.{it.id}.count", "the engine spent it this turn (a throw, a shot)", take)
+            return True
         if take > it.count:
             w.reject(f"inventory.{it.id}.count", f"only {it.count} carried; lost {it.count}", take)
             take = it.count

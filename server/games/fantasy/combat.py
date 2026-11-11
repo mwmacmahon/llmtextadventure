@@ -750,11 +750,13 @@ def _spend_ammo(s: FantasyState, how: str, weapon: str, notes: list[str]) -> boo
             notes.append("no arrows left: no shot")
             return False
         ammo.count -= 1
+        s.flags.setdefault("spent_items", []).append(ammo.id)     # the engine's this turn (the referee's count would be a second)
         notes.append(f"{ammo.name}: {ammo.count} left")
     elif how == "thrown":
         it = next((x for x in s.inventory if weapon in x.name.lower() and x.count > 0), None)
         if it is not None:
             it.count -= 1
+            s.flags.setdefault("spent_items", []).append(it.id)   # round 17 (T12): the referee took a second javelin for the same throw
             s.things.append(Item(id=f"{weapon}_{len(s.things)}", name=f"a thrown {weapon}", place=s.player.location))
             notes.append(f"the {weapon} lies where it fell")
     return True
@@ -814,6 +816,11 @@ def resolve_attack(game: Any, s: FantasyState, entry: dict, rng: Any, offset: in
         rolls = 2 if p.level >= 5 and len(targets) < 2 and (p.klass or "").lower() in ("paladin", "fighter", "ranger", "barbarian", "monk") else 1   # Extra Attack
         if p.has_condition("blessed"):
             bonus += 1
+        if "raging" in p.flags_on and pb["stat"] == "str" and how in ("melee", "finesse"):
+            # round 17 (5d85334fc803): Rage gave a check's +2 and a step off the blows taken, and nothing on the blows given; the
+            # SRD's rage damage, +2 on a Strength melee blow (a thrown or shot one gets none)
+            dice = f"{dice}+2"
+            notes.append("Rage: +2 damage")
     else:
         q = s.person(entry["who"])
         if q is None or not bodies(q):
@@ -1130,7 +1137,7 @@ def run_fight_command(game: Any, state: FantasyState, command_id: str) -> tuple[
         # B311 (e933e85fb6c2 T20): the line said each got one blow and showed none of the rolls
         return s, CommandResult(label="Flee", text="Out of the fight. As you went: " + (" ".join(lines) or "nobody was in reach."), player_line="I run for it.",
                                 summary=f"{p.name} flees the fight.", directive=directive, minutes=1,
-                                referee_skip=["hp"])
+                                referee_skip=["hp"], hp_taken=took)
     takers = [q for q in living_enemies(game, s) if is_person(ensure_block(q).kind) and not ensure_block(q).fanatic]
     refusers = [q for q in living_enemies(game, s) if q not in takers]
     for q in takers:

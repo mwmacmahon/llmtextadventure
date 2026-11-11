@@ -3,7 +3,8 @@ standard cases at thirty fights a cell, a fixed seed, Normal difficulty, level 1
 table below. The table is re-recorded on purpose when the numbers change (a bestiary entry, a class file, the combat code),
 never silently: change it in the same commit as the change that moved it, with the date and why.
 
-Re-recorded 2026-11-10 night after B324 (the owner: the shield's damage cut on attack rolls removed, it counted twice
+Re-recorded 2026-11-10 late after B347 (round 17: the Barbarian's Unarmored Defense, CON to the armour class with no
+armour, and rage's +2 damage on a Strength melee blow): the Barbarian vs the troll 6.7 to 20.0. Before that, re-recorded 2026-11-10 night after B324 (the owner: the shield's damage cut on attack rolls removed, it counted twice
 with its +2 AC): the paladin rows fell, alone vs 3 skeletons 83.3 to 46.7, vs 4 43.3 to 16.7, vs the troll 13.3 to 3.3;
 at 600 fights, seed 1, vs 3 skeletons: paladin 48.2, barbarian 13.7, rogue 8.3. Before that, re-recorded after B314 (the combat review: Smite now cleaves; the rider loop had reused the weapon's
 `how`): the paladin rows moved, alone vs 3 skeletons 66.7 to 83.3, vs 4 23.3 to 43.3; at 600 fights, seed 1: alone vs
@@ -39,7 +40,7 @@ TABLE = [  # (class, allies, enemy, count, win % at 30 fights, seed 0, Normal)
     ("Rogue", [], "guard", 6, 0.0),
     ("Paladin", [], "troll", 1, 3.3),
     ("Rogue", [], "troll", 1, 0.0),
-    ("Barbarian", [], "troll", 1, 6.7),
+    ("Barbarian", [], "troll", 1, 20.0),
 ]
 
 

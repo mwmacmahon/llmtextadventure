@@ -1131,7 +1131,8 @@ class Engine:
 
         # ---- 3. narrate -----------------------------------------------------
         role = self.cfg.role("narrator")
-        handler = self._call_handler(game, state, iid, turn, res["assessments"], fail_streak=res.get("fail_streak", 0))
+        handler = self._call_handler(game, state, iid, turn, res["assessments"], fail_streak=res.get("fail_streak", 0),
+                                     hp_taken=sum(int(getattr(lv.preview, "hp_taken", 0) or 0) for lv in levers if not lv.blocked))
         # A narrator configured `checks: told` gets the assessed checks already rolled, in THIS TURN, instead of
         # being asked to stop and call them: a weaker model writes the outcome first and the call after it (or
         # never), so the roll arrives too late to matter. Same seed, same order, so a rewrite rolls the same.
@@ -2211,7 +2212,8 @@ class Engine:
                 out.append(rows[-1]["payload"].get("calls", []))
         return out
 
-    def _call_handler(self, game: Game, state: BaseModel, iid: str, turn: int, assessments: list[Assessment], fail_streak: int = 0):
+    def _call_handler(self, game: Game, state: BaseModel, iid: str, turn: int, assessments: list[Assessment], fail_streak: int = 0,
+                      hp_taken: int = 0):
         """Turn the narrator's calls into results (DESIGN2 §5): CHECK rolls with the assessment as the floor,
         LOOK asks the game for a record, ODDS is an oracle. Dice are seeded per turn, so a rewrite of the
         same turn rolls the same numbers in the same order."""
@@ -2295,7 +2297,10 @@ class Engine:
                 round_costs.append(row)
             return cons
 
-        tally: dict[str, Any] = {"hp": 0, "acted": []}     # the world's calls this turn (B206): hit points taken so far, who acted
+        # the world's calls this turn (B206): hit points taken so far, who acted. Round 17 (5d85334fc803 T15): a typed Flee's parting
+        # blows land after the prose, so a hazard the narrator called mid-flight read the hit points before them, 'a scrape', and
+        # the scrape killed after the prose under a telling that had the player clear; a lever's own cost counts from the start
+        tally: dict[str, Any] = {"hp": int(hp_taken or 0), "acted": []}
 
         def handler(call, n: int) -> CallResult:
             if call.verb == "CHECK":

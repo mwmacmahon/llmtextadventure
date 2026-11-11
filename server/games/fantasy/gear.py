@@ -97,11 +97,16 @@ def settle(s: FantasyState) -> None:
 def armour_class(s: FantasyState) -> tuple[int, str]:
     """10 + DEX (a penalty too) + the worn body armour + a worn shield."""
     w = worn(s)
-    dex = s.player.stats.get("dex", 0)
+    p = s.player
+    dex = p.stats.get("dex", 0)
     body = body_of(w["body"])[0] if "body" in w else 0
     shield = SHIELD_AC if "shield" in w else 0
-    how = f"10 + DEX {dex:+d}" + (f" + {w['body'].name} {body}" if body else "") + (f" + shield {shield}" if shield else "")
-    return 10 + dex + body + shield, how
+    # the Barbarian's Unarmored Defense (round 17, 5d85334fc803: AC 11 with no armour, three drowned hit six of seven): with no
+    # body armour worn, CON adds to it; the class file's effect `unarmored_con`
+    con = p.stats.get("con", 0) if "body" not in w and p.effect("unarmored_con") else 0
+    how = (f"10 + DEX {dex:+d}" + (f" + CON {con:+d} (unarmoured)" if con else "") + (f" + {w['body'].name} {body}" if body else "")
+           + (f" + shield {shield}" if shield else ""))
+    return 10 + dex + con + body + shield, how
 
 
 def armour_steps(s: FantasyState) -> int:
