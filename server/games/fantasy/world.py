@@ -24,7 +24,7 @@ from typing import Any
 
 from engine.mechanics import WON, CheckRequest, Modifier, dice_d20
 
-from .state import Condition, FantasyState, Peril, Person
+from .state import Condition, FantasyState, Item, Peril, Person
 
 LETHAL = re.compile(r"\b(drown (myself|himself|herself|themselves)|let (the (water|lake|river|sea|cold|fire|dark)|it) (take|have) me|"
                     r"stop breathing|give up and die|kill (myself|himself|herself|themselves)|"
@@ -449,6 +449,22 @@ def _break_contact(s: FantasyState, w: "WorldTurn") -> str:
     return "; ".join(said)
 
 
+def blow_named(game: Any, s: FantasyState, words: str) -> Person | None:
+    """The person here whom a blow's words name (their name, what they are called, their role or aliases), the best match, or
+    None. B361: a blow the reading left unaimed."""
+    from .game import _words
+    said = _words(words)
+    best, score = None, 0
+    for q in s.people:
+        if q.status != "alive" or q.hidden_from_player or q.id in s.player.with_them or not q.location \
+                or not game._same_spot(s, q.location, s.player.location):
+            continue
+        n = len(said & _words(" ".join([q.name, q.called or "", q.role or "", *q.aliases])))
+        if n > score:
+            best, score = q, n
+    return best
+
+
 def preroll_check(game: Any, s: FantasyState, adj: Any, label: str, rng: Any, offset: int, w: "WorldTurn", what: str) -> None:
     """One of the reading's checks rolled before the prose (a way out of a peril, a break-free), by the game's own check_note,
     landed after the prose with the turn's calls (flags.prerolled_checks). The intent's check is taken off the narrator's list."""
@@ -639,6 +655,13 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
             c = getattr(i, "check", None)
             words = " ".join([i.action or "", getattr(c, "label", "") or ""])
             if ATTACK.search(words) and (c is None or getattr(c, "stat", "") in ("str", "dex", "")):
+                named = blow_named(game, s, i.action or "") if c is None and not getattr(i, "attack_at", None) else None
+                if named is not None and hasattr(i, "attack_at"):
+                    # B361 (Sonnet pair 6, 0d3f3c85b4d1 T13): "Strike the bog-black drowned man" read with no attack_at and the
+                    # singer as its target: the singer joined and struck, and the player's swing was never rolled. A blow in the
+                    # words with none in the reading is the player's attack, at whom the words name here
+                    i.attack_at = [named.id]
+                    i.targets = [named.id]
                 struck += [x for x in [getattr(c, "target_entity", None), *(getattr(i, "targets", None) or [])] if x]
             a = getattr(i, "attack", None)                                  # part fifteen §6: the reading's attack is the door in
             if a is not None:
@@ -790,6 +813,20 @@ def plan_fight(game: Any, s: FantasyState, adj: Any, player_text: str, rng: Any,
         return                                                         # the lever's own line says what happened (one line, not two)
     s.combat.free_turns = 0
     s.combat.plan = cb.plan_round(game, s, adj, player_text, turn, rng)
+    mine = next((e for e in s.combat.plan if e.get("side") == "player" and e.get("weapon")), None)
+    if mine is not None:
+        # B362 (Gemma pair 6, 3a1aca374b67 T17-T18): the prose drew the longsword and the blow rolled as the longsword while In hand
+        # still had the crossbow; a blow with a carried weapon takes it in hand (drawing is free)
+        from . import gear
+        item = next((it for it in s.inventory if gear.weapon_of(it) and gear.weapon_of(it) == gear.weapon_of(Item(id="w", name=mine["weapon"]))), None)
+        held = gear.worn(s).get("weapon")
+        if item is not None and (held is None or held.id != item.id):
+            s2, line, ok = gear.change(game, s, item.id, True)
+            if ok:
+                for it in s.inventory:
+                    it.equipped = next((x.equipped for x in s2.inventory if x.id == it.id), it.equipped)
+                s.player.kit_set = True
+                w.mechanics.append(line)
     first = next((q for q in cb.living_enemies(game, s)), None)
     if first is not None and first.combat is not None and first.combat.block:   # the last kind fought here (a body part's foe, B354)
         s.flags.setdefault("foe_here", {})[p.location] = first.combat.block
@@ -887,6 +924,10 @@ def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tal
         res = _check(game, s, hz.get("stat", "con"), hz.get("difficulty", "medium"), f"{hz.get('when') or hz.get('id')}", rng, extra, offset)
         line = f"{hz.get('id', '').replace('_', ' ').capitalize()}: " + game.render_mechanic(s, res)
         data = {"verb": "HAZARD", "hazard": hz.get("id"), "outcome_player": res.outcome, "label": hz.get("when") or hz.get("id")}
+        # B362 (Gemma pair 6, 3a1aca374b67 T12): the narrator's HAZARD cold_water, then its own CHECK con for the same cold (2 hit
+        # points more): the hazard's roll is this turn's roll for it (game.check_settled answers the second)
+        s.flags.setdefault("hazard_checks", []).append({"label": str(hz.get("id") or "the danger").replace("_", " "),
+                                                        "stat": str(hz.get("stat", "con")).lower(), "outcome": res.outcome})
         if res.outcome in WON:
             # B359 (Gemma round 20, 58d04709b885 T23): a huge success was told as a near-drowning off 'weathers it'; the tier is told
             easy = res.outcome in ("huge_success", "critical_success")

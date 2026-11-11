@@ -623,3 +623,12 @@ def test_a_check_rolled_before_the_telling_is_not_rolled_again(game):
     said = game.check_settled(st, Call(verb="CHECK", raw="CHECK con medium", stat="con", difficulty="medium"))
     assert "Already rolled this turn" in said and "stamp feet" in said and "huge failure" in said
     assert game.check_settled(st, Call(verb="CHECK", raw="CHECK wis low", stat="wis", difficulty="low")) == ""
+
+
+def test_a_check_after_a_hazard_this_turn_is_the_hazards(game):
+    """B362 (Gemma pair 6, 3a1aca374b67 T12): HAZARD cold_water, then the narrator's own CHECK con for the same cold cost 2 more."""
+    from engine.brackets import Call
+    st = new(game)
+    st.flags["hazard_checks"] = [{"label": "cold water", "stat": "con", "outcome": "failure"}]
+    said = game.check_settled(st, Call(verb="CHECK", raw="CHECK con medium", stat="con", difficulty="medium"))
+    assert "Already rolled this turn" in said and "cold water" in said

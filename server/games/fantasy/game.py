@@ -157,7 +157,7 @@ BODY_PART = re.compile(r"(the |its |his |her |their )?(legs?|knees?|arms?|hands?
                        r"shoulders?|spine|belly|gut|jaw|feet|foot|torso|body)", re.I)
 # a failed check's cost in the narrator's words (read fresh, 11-11 night: 'a solid blow' on a dark stair invited an attacker)
 COST_WORDS = {"scrape": "a scrape", "solid": "a hard knock", "serious": "a bad injury", "lethal": "a killing hurt"}
-TURN_FLAGS = ("debug_quiet", "escaped", "freed", "spent_items", "hazard_rolled", "prerolled", "prerolled_hp", "prerolled_checks")   # spent_items: thrown or shot this turn, the engine's count
+TURN_FLAGS = ("debug_quiet", "escaped", "freed", "spent_items", "hazard_rolled", "prerolled", "prerolled_hp", "prerolled_checks", "forced_dead", "hazard_checks")   # spent_items: thrown or shot this turn, the engine's count
 THREAD_STANDING = {"open": "taken up", "resolved": "done", "failed": "failed"}   # the player's own jobs, in the hooks' words (B93)
 PERSON_TITLES = {"the", "lord", "brother", "sergeant", "captain", "constable", "master", "old", "mother"}   # "Old Hesk" is Hesk
 
@@ -1688,6 +1688,16 @@ class FantasyGame(GameBase):
         return (head + "\n\n" if head else "") + line
 
     @staticmethod
+    def _standing_word(s: FantasyState, q: Person) -> str:
+        """How the dice leave them, this turn's prerolled blows counted (B362: 'three unhurt' where the round had killed two)."""
+        from . import combat as cb
+        hits = [h for d in s.flags.get("prerolled") or [] for h in (d.get("hits") or []) if h.get("pid") == q.id]
+        if hits and q.combat is not None and q.combat.count > 1:
+            n = len(cb.bodies_now(q, {"hits": hits}))
+            return f"{n} of them" if n else "none"
+        return cb.person_hp_word(q) or "unhurt"
+
+    @staticmethod
     def _dice_fell(s: FantasyState, q: Person) -> bool:
         """B360 (Gemma pair 5, b1896e49a66c T9): the round rolled before the prose killed the rat; the referee's 'dead' was checked
         against the hit points before the round landed, called a conflict and forced, and the kill paid no XP. True when this
@@ -1701,12 +1711,14 @@ class FantasyGame(GameBase):
         """The narrator's CHECK for an attempt the engine rolled before the telling (a way out, a break-free, a fight turn's own
         check): answered, not rolled again (B360)."""
         stat = re.sub(r"\s*\(.*?\)\s*$", "", str(getattr(call, "stat", "") or "")).strip().lower()
-        d = next((d for d in state.flags.get("prerolled_checks") or [] if str(d.get("stat") or "").lower() == stat), None)
+        d = next((d for d in [*(state.flags.get("prerolled_checks") or []), *(state.flags.get("hazard_checks") or [])]
+                  if str(d.get("stat") or "").lower() == stat), None)
         if d is None:
             return ""
         label = re.sub(r"^\s*way out:\s*", "", str(d.get("label") or ""), flags=re.I)
         cost = " Its cost is already counted." if d.get("harm") else ""
-        return (f"Already rolled this turn: {state.player.name}'s {label}, {str(d.get('outcome') or '').replace('_', ' ')}.{cost} "
+        whose = f"the {label}" if d in (state.flags.get("hazard_checks") or []) else f"{state.player.name}'s {label}"
+        return (f"Already rolled this turn: {whose}, {str(d.get('outcome') or '').replace('_', ' ')}.{cost} "
                 f"Write that outcome; do not call the check again.")
 
     def check_note(self, state: FantasyState, data: dict, label: str) -> str:
@@ -2578,13 +2590,14 @@ class FantasyGame(GameBase):
                     w.note(f"{q.name}: the round's dice put them down; landed with the round")
                     return True
                 if in_fight:                                # a death in a fight is the dice's: the same retold conflict (D230)
-                    from . import combat as cb
-                    word = cb.person_hp_word(q) or "unhurt"
+                    word = self._standing_word(s, q)
                     if not w.conflict(f"people.{q.id}.status", f"the dice have {q.name} still standing ({word})", "dead", rule="fight_alive",
                                       fix=f"{q.name} is still standing ({word}): only a rolled blow puts them down. Write {q.name} still up "
                                           f"and in the fight; what the rolls did is what happened."):
                         return True
-                    p.fighting = [x for x in p.fighting if x != q.id]
+                    s.flags.setdefault("forced_dead", []).append(q.id)    # B362: falls after the round lands, and pays
+                    w.note(f"{q.name}: falls after the round lands (the last telling)")
+                    return True
                 if w.set(f"people.{q.id}.status", q.status, "dead"):
                     q.status = "dead"
             elif w.set(f"people.{q.id}.location", q.location, "Unknown"):
@@ -2640,12 +2653,14 @@ class FantasyGame(GameBase):
             if self._dice_fell(s, q):                       # B360: the prerolled round put them down; it lands them (and the XP)
                 w.note(f"{q.name}: the round's dice put them down; landed with the round")
                 return True
-            word = cb.person_hp_word(q) or "unhurt"
+            word = self._standing_word(s, q)
             if w.conflict(f"people.{q.id}.status", f"the dice have {q.name} still standing ({word})", value, rule="fight_alive",
                           fix=f"{q.name} is still standing ({word}): only a rolled blow puts them down. Write {q.name} still up and in the fight; "
                               f"what the rolls did is what happened."):
-                q.status = "dead"
-                s.player.fighting = [x for x in s.player.fighting if x != q.id]
+                # B362 (Gemma pair 6, 3a1aca374b67 T25): forced dead before the round landed, the band's two dice kills and the
+                # forced third paid nothing; they fall after the round lands, and the landing pays each body
+                s.flags.setdefault("forced_dead", []).append(q.id)
+                w.note(f"{q.name}: falls after the round lands (the last telling)")
             return True
         if kind == "set" and field == "status" and fought:
             w.reject(f"people.{q.id}.status", "in a fight the engine counts the blows (part fifteen): no status rows for anyone the round touched", value)
@@ -2940,6 +2955,7 @@ class FantasyGame(GameBase):
         s.deck.dealt_this_turn = []
         pre = list(s.flags.get("prerolled") or [])           # the round rolled before the prose, landed below with the calls
         pre_checks = list(s.flags.get("prerolled_checks") or [])   # a way out or a break-free rolled before the prose
+        forced = list(s.flags.get("forced_dead") or [])            # B362: the guard's last telling killed them; they fall after the round
         for k in TURN_FLAGS:                                # this turn's own flags end with it
             s.flags.pop(k, None)
         # -- the fall, told: the end, the raise, or back to the story
@@ -2957,6 +2973,10 @@ class FantasyGame(GameBase):
         calls = list(info.calls) + pre                                    # the narrator's calls and the round rolled before the prose
         p.shown_notes += [self.unnamed(s, n) for n in wo.land(self, s, calls, info.turn)]     # the world's calls and the backstop (B206)
         from . import combat as cb                                         # part fifteen §3: the round on everyone's hit points
+        if forced:
+            calls = calls + [{"verb": "FORCED", "hits": [{"pid": pid, "body": i, "dmg": 10 ** 6} for pid in forced
+                                                          if (q := s.person(pid)) is not None and q.combat is not None
+                                                          for i in (range(q.combat.count) if q.combat.count > 1 else [0])]}]
         p.shown_notes += [self.unnamed(s, n) for n in cb.land(self, s, calls, info.turn, int(getattr(info, "target_offset", 0) or 0), info.rng)]
         if p.fate == "dead" and p.fate_turn < info.turn:                  # a death the narrator was told inline: it ends this turn
             s.flags["ending"] = f"{p.name} died at {p.location or 'Marrowgate'} on day {s.clock.day}. The fog keeps the rest."

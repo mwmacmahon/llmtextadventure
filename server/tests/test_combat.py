@@ -14,7 +14,7 @@ from engine.config import load_config  # noqa: E402
 from engine.registry import load_games  # noqa: E402
 from engine.roles import Change, ChangeReport  # noqa: E402
 from games.fantasy import combat as cb  # noqa: E402
-from games.fantasy.state import CombatBlock, Person  # noqa: E402
+from games.fantasy.state import CombatBlock, Item, Person  # noqa: E402
 
 CONTENT = Path(__file__).resolve().parents[2] / "notes" / "content" / "fantasy"
 pytestmark = pytest.mark.skipif(not (CONTENT / "scenarios" / "marrowgate.yml").exists(), reason="the fantasy content is not on this machine")
@@ -1186,7 +1186,9 @@ def test_the_last_telling_lets_the_prose_kill_a_foe(game):
     st, _ = wo.world_turn(game, st, _attack_reading("dead"), "I strike.", random.Random(2), 1, 2)
     s1, rep, _ = apply_changes(game, st, ChangeReport.of(Change(kind="set", target="dead", field="status", value="dead")), present=[], causes=[],
                                force=True)
-    assert s1.person("dead").status == "dead" and "dead" not in s1.player.fighting
+    assert s1.flags.get("forced_dead") == ["dead"]                          # B362: falls after the round lands, and pays
+    s2 = game.after_turn(s1, _info(2, []))
+    assert s2.person("dead").status != "alive" and "dead" not in s2.player.fighting
 
 
 def test_take_the_job_is_a_lever(game):
@@ -1481,3 +1483,63 @@ def test_a_death_the_prerolled_round_dealt_is_no_conflict(game):
     st.flags["prerolled"] = [{"verb": "ATTACK", "who": "player", "key": "player", "hits": [{"pid": "dead", "body": 0, "dmg": 1}]}]
     s2, rep2, _ = apply_changes(game, st, ChangeReport.of(Change(kind="set", target="dead", field="status", value="dead")), present=[], causes=[])
     assert rep2.conflicts()
+
+
+def test_an_unaimed_blow_in_the_words_is_the_players_attack(game):
+    """B361 (Sonnet pair 6, 0d3f3c85b4d1 T13): 'Strike the bog-black drowned man' read with no attack_at and the singer as target: the
+    singer joined and struck, the swing never rolled. The blow is the player's, at whom the words name."""
+    from games.fantasy import world as wo
+    st = new(game)
+    here = st.player.location
+    st.people.append(Person(id="the_singer", name="the singer", role="a woman singing to the dead", location=here, met=True))
+    st.people.append(Person(id="the_drowned", name="the drowned man", role="a swollen dead man on the ledge", location=here, met=True,
+                            attitude=-2, combat=CombatBlock(block="zombie", count=1)))
+    adj = AssistantReadingCombat(kind="action", summary="strikes the dead man", time_minutes=1, tempo="fast", risk="high", entities=["the_singer"],
+                                 intents=[IntentCombat(action="Strike the bog-black drowned man on the ledge with the longsword", targets=["the_singer"])])
+    s, w = wo.world_turn(game, st, adj, "I strike the drowned man with my longsword.", random.Random(1), 13, 2)
+    assert "the_drowned" in s.player.fighting and "the_singer" not in s.player.fighting
+    assert any(d.get("verb") == "ATTACK" for d in s.flags.get("prerolled") or [])
+
+
+def test_one_talked_out_of_hostile_stands_down(game):
+    """B361 (T14 to T21): the singer, -2 to -1 and asking a rite, swung for seven turns; one who rises out of hostile stands down."""
+    st = new(game)
+    q = _skeletons(st, 1)
+    st, _ = __import__("games.fantasy.world", fromlist=["x"]).world_turn(game, st, _attack_reading("dead"), "I strike.", random.Random(2), 1, 2)
+    q = st.person("dead")
+    st.combat.joined_at[q.id] = -2
+    q.attitude = -1
+    cb.land(game, st, [], 2, 2, random.Random(0))
+    assert "dead" not in st.player.fighting
+
+
+def test_a_band_forced_dead_on_the_last_telling_pays_each_body(game):
+    """B362 (Gemma pair 6, 3a1aca374b67 T25): the dice killed two of three drowned, the prose all three; forced on the last telling,
+    the band was set dead before the round landed and nothing paid. It falls after the round lands, and each body pays."""
+    from games.fantasy import world as wo
+    st = new(game)
+    _skeletons(st, 3)
+    st, _ = wo.world_turn(game, st, _attack_reading("dead"), "I strike.", random.Random(2), 1, 2)
+    st.flags["prerolled"] = [{"verb": "ATTACK", "who": "player", "key": "player",
+                              "hits": [{"pid": "dead", "body": 0, "dmg": 99}, {"pid": "dead", "body": 1, "dmg": 99}]}]
+    s1, rep, _ = apply_changes(game, st, ChangeReport.of(Change(kind="set", target="dead", field="status", value="dead")),
+                               present=[], causes=[], force=True)
+    assert s1.person("dead").status == "alive" and s1.flags.get("forced_dead") == ["dead"]
+    xp0 = s1.player.xp
+    s2 = game.after_turn(s1, _info(2, []))
+    assert s2.person("dead").status != "alive" and "dead" not in s2.player.fighting
+    assert s2.player.xp > xp0
+
+
+def test_a_blow_with_a_carried_weapon_takes_it_in_hand(game):
+    """B362 (Gemma pair 6, 3a1aca374b67 T17-T18): the blow rolled as the longsword while In hand still had the crossbow."""
+    from games.fantasy import gear
+    from games.fantasy import world as wo
+    st = new(game)
+    st.inventory.append(Item(id="light_crossbow", name="light crossbow"))
+    gear.settle(st)
+    st2, _, ok = gear.change(game, st, "light_crossbow", True)
+    assert ok and gear.weapon_of(gear.worn(st2)["weapon"]) == "light crossbow"
+    _skeletons(st2, 1)
+    s, w = wo.world_turn(game, st2, _attack_reading("dead"), "I draw my longsword and hack at the skeleton.", random.Random(2), 1, 2)
+    assert gear.weapon_of(gear.worn(s)["weapon"]) == "longsword"

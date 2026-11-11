@@ -1037,7 +1037,10 @@ def land(game: Any, s: FantasyState, calls: list[dict], turn: int, offset: int, 
         if q is None:
             continue
         was = c.joined_at.setdefault(q.id, q.attitude or 0)
-        if q.status == "alive" and (q.attitude or 0) >= 1 and (q.attitude or 0) > was:
+        # B361 (Sonnet pair 6, 0d3f3c85b4d1 T14 to T21): the singer, talked down from -2 to -1 and asking a rite, swung every round
+        # for seven turns ('the habit had got ahead of her'); only the hostile attack unprovoked (D230), so one who rises out of
+        # hostile stands down, not only one who turns friendly
+        if q.status == "alive" and (q.attitude or 0) >= -1 and (q.attitude or 0) > was:
             p.fighting.remove(x)
             c.defeated.append(q.id)
             b = ensure_block(q)
