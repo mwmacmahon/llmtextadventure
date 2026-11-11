@@ -339,7 +339,8 @@ def apply_changes(game: Any, state: BaseModel, report: ChangeReport, *, present:
                 w.reject("soon", "the player's own plan is theirs to play, not a timer (B260)", what)
                 continue
             if what:
-                ex.pending_new.append(PendingNew(what=what, who=ch.who or ch.target, in_minutes=ch.minutes, hidden=ch.hidden, unless=ch.note if ch.value else ""))
+                ex.pending_new.append(PendingNew(what=what, who=ch.who or ch.target, in_minutes=ch.minutes, hidden=ch.hidden, unless=ch.note if ch.value else "",
+                                                 at=getattr(ch, "at", "") or ""))
         elif k in ("unseen", "thread_open") and takes_itself_back(ch):
             w.reject(f"{k}", "the row's own note takes it back", ch.value)
         elif k == "unseen":

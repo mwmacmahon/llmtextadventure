@@ -3523,7 +3523,11 @@ def settle_trivial(adj: Any, calm: bool = False) -> list[dict]:
         c = getattr(i, "check", None)
         mild = calm and c is not None and getattr(c, "complication", None) == "cast_acts" and (
             c.stat in ("cha", "wis", "int") or c.difficulty == "low")     # Gemma pair 3: a cask wedged, a trapdoor forced: no cost calm
-        if (c is None or int(getattr(c, "edge", 0) or 0) < 0 or getattr(c, "target_entity", None) or getattr(c, "aim", "other") == "secret"
+        # B356 (Gemma pair 5, 36fe6fd5de0a T1; round 20 T1): Gemma reads the player's blurb ('reads tracks better than people') as
+        # a standing 'Socially Awkward -1' on every word, and any edge against the player kept the roll; calm, a -1 on a d20
+        # against a low target makes nothing uncertain. A -2 or worse (someone or something set against them) still rolls
+        floor = -1 if calm else 0
+        if (c is None or int(getattr(c, "edge", 0) or 0) < floor or getattr(c, "target_entity", None) or getattr(c, "aim", "other") == "secret"
                 or getattr(c, "danger", None) != "none" or (getattr(c, "complication", None) != "none" and not mild)):
             continue
         # the owner, 11-10 late ("Too many rolls is one of the biggest annoyances"): in rounds 12 to 17, 46 of 112 checks were
@@ -3749,6 +3753,9 @@ def land_extras(game: Any, state: BaseModel, log_line: str, report: ApplyReport,
                 report.applied.append(f"settled: {p.id}")
         for new in extras.pending_new:
             new.who = names.get(new.who.strip(), new.who)        # the narrator reads who by name, never by id
+            at = pend.at_minutes(new.at, int(clk["minute"]), clock.minutes_per_day) if new.at else None
+            if at is not None:                                   # B356: a named time of day is the engine's to count
+                new.in_minutes = at
             dup = pend.duplicate_of(pitems, new)
             if dup is not None:
                 report.rejected.append(Rejection(path="pending", reason=f"already in motion as {dup.id}", value=new.what, kind="duplicate"))

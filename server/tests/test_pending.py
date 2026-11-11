@@ -340,3 +340,28 @@ def test_a_fuse_settled_before_it_came_due_has_happened_when_the_reason_says_so(
     assert items[0].happened
     pend.resolve(items, ["p1: stopped: Park held the hatch"], 12)
     assert items[0].stopped
+
+
+def test_a_named_time_of_day_is_counted_by_the_engine():
+    """B356 (Gemma round 20, 58d04709b885 T17): 'at first light' counted as six hours from 20:41 woke the night's sleep at 02:41."""
+    from engine import pending as pend
+    assert pend.at_minutes("07:00", 20 * 60 + 41, 1440) == 10 * 60 + 19
+    assert pend.at_minutes("7:00", 6 * 60, 1440) == 60
+    assert pend.at_minutes("07:00", 7 * 60, 1440) == 1440
+    assert pend.at_minutes("first light", 20 * 60 + 41, 1440) == 10 * 60 + 19              # Gemma writes the name, not the clock
+    assert pend.at_minutes("soon", 0, 1440) is None and pend.at_minutes("25:00", 0, 1440) is None
+
+
+async def test_a_soon_at_a_named_time_is_due_then(engine: Engine, fake: FakeProvider):
+    """B356: the referee names the time ('07:00'); the engine counts the minutes, whatever minutes the row guessed."""
+    iid = engine.create_instance("noir", {})
+    doc = engine.store.load_state(iid)
+    doc["hidden"]["pending"] = []
+    engine.store.save_snapshot(iid, 0, doc)
+    fake.canned["AssistantReading"] = [action("Frank agrees to meet Tobiah.", 5)]
+    FakeProvider.script = lambda system, messages: "Tobiah nods. 'First light, then.'"
+    fake.hook = lambda schema, last: (ChangeReport.of(Change(kind="soon", value="Tobiah takes Frank out", who="tobiah", minutes=360, at="07:00"),
+                                                      log_line="x") if schema is ChangeReport else None)
+    await play(engine, iid, "I tell Tobiah I'll meet him at first light.")
+    items = pend.load(engine.store.load_state(iid), "hidden.pending")
+    assert len(items) == 1 and items[0].due_minute == 7 * 60

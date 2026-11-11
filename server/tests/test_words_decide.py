@@ -146,11 +146,17 @@ def test_a_calm_scene_settles_low_checks_and_takes_searches_slowly():
               CheckStaked(label="x", stat="cha", difficulty="low", target_entity="maud"),          # someone to win over
               CheckStaked(label="x", stat="cha", difficulty="low", aim="secret"),                  # a secret
               CheckStaked(label="x", stat="wis", difficulty="high"),                               # hard
-              CheckStaked(label="x", stat="cha", difficulty="medium")]:                            # a real talk
+              CheckStaked(label="x", stat="cha", difficulty="medium"),                             # a real talk
+              CheckStaked(label="x", stat="cha", difficulty="low", edge=-2, edge_why="she distrusts strangers")]:  # set against them
         i = IntentStaked(action="x", check=c)
         assert not settle_trivial(AssistantReadingStaked(kind="action", summary="x", time_minutes=1, risk="low", intents=[i]), calm=True) and i.check
+    awk = IntentStaked(action="ask Maud for work", check=CheckStaked(label="asking for work", stat="cha", difficulty="low", edge=-1,
+                                                                       edge_why="Socially Awkward", complication="cast_acts"))   # B356
+    assert settle_trivial(AssistantReadingStaked(kind="action", summary="x", time_minutes=1, risk="low", intents=[awk]), calm=True) and awk.check is None
     j = IntentStaked(action="x", check=CheckStaked(label="x", stat="cha", difficulty="low"))
     assert not settle_trivial(AssistantReadingStaked(kind="action", summary="x", time_minutes=1, risk="low", intents=[j])) and j.check
+    k = IntentStaked(action="x", check=CheckStaked(label="x", stat="cha", difficulty="very_low", edge=-1))
+    assert not settle_trivial(AssistantReadingStaked(kind="action", summary="x", time_minutes=1, risk="low", intents=[k])) and k.check   # uncalm: as before
 
 
 async def test_a_retold_turn_settles_a_trivial_check_its_stored_reading_kept(engine, fake, monkeypatch):

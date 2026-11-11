@@ -96,6 +96,7 @@ class SoonRow(BaseModel):
     minutes: int
     hidden: bool
     unless: str
+    at: str = ""          # a named time of day as HH:MM (B356: 'at first light' counted as six hours from 20:41)
 
 
 class UnseenRow(BaseModel):
@@ -157,7 +158,7 @@ def to_change(row: BaseModel) -> Change:
     if k == "thread_close":
         return Change(kind="thread_close", target=d["thread"], note=f"{d['outcome']}: {d['reason']}")
     if k == "soon":
-        return Change(kind="soon", value=d["what"], who=d["who"], minutes=d["minutes"], hidden=d["hidden"], note=d["unless"])
+        return Change(kind="soon", value=d["what"], who=d["who"], minutes=d["minutes"], hidden=d["hidden"], note=d["unless"], at=d.get("at") or "")
     if k == "unseen":
         return Change(kind="unseen", value=d["fact"])
     if k == "resolve":
@@ -243,6 +244,8 @@ soon: anything set in motion that will happen on its own unless something interv
   "Tobiah says he will be back with the boat within the hour." -> {"kind": "soon", "what": "Tobiah returns with the boat", "who": "tobiah", "minutes": 60, "hidden": false, "unless": "the storm keeps him in harbour"}
   "Maren is halfway down the stairs toward the boathouse." -> {"kind": "soon", "what": "Maren reaches the boathouse", "who": "maren", "minutes": 3, "hidden": false, "unless": "someone stops her on the stairs"}
   "Tobiah hesitates at the door, the gaff in his hand." -> {"kind": "soon", "what": "Tobiah acts with the gaff", "who": "tobiah", "minutes": 2, "hidden": false, "unless": "someone talks him down"}
+  "Tobiah will take her out at first light." -> {"kind": "soon", "what": "Tobiah takes Maren out", "who": "tobiah", "minutes": 0, "at": "07:00", "hidden": false, "unless": "Maren is not at the boat"}
+  at: when the words name a time of day, that clock time as HH:MM (first light or morning 07:00, noon 12:00, dusk 19:00); the engine counts the minutes.
   hidden: true when the player will not see it happen where they are.
   Someone still on the way is a soon, never a move.
 unseen: a fact that happened where the player cannot perceive it.

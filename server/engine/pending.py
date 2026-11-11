@@ -91,6 +91,24 @@ class PendingNew(BaseModel):
     in_minutes: int = Field(default=0, description="About how many in-game minutes from now it happens if nothing intervenes. 0 means at once, next turn.")
     hidden: bool = Field(default=False, description="True when the player cannot see it happen where they are.")
     unless: str = Field(default="", description="Plain words for what would stop it: 'Frank leaves the shack', 'the hatch is released'. Empty if nothing would.")
+    at: str = Field(default="", description="A named time of day as HH:MM; when set, it wins over in_minutes (the next such time).")
+
+
+AT = re.compile(r"^\s*(\d{1,2})[:.h](\d{2})\s*$")
+# the shape Gemma writes (B356 replay: at 'first light'): the named times the field's own description gives, read as clock times
+NAMED_TIMES = ((re.compile(r"\b(first light|dawn|daybreak|sunrise|morning)\b", re.I), 7 * 60), (re.compile(r"\b(noon|midday)\b", re.I), 12 * 60),
+               (re.compile(r"\b(dusk|nightfall|sunset|evening)\b", re.I), 19 * 60), (re.compile(r"\bmidnight\b", re.I), 0))
+
+
+def at_minutes(at: str, now_minute: int, minutes_per_day: int) -> int | None:
+    """Minutes from now to the next `at` (HH:MM) on the clock, or None when it does not read as one (B356: the referee's own
+    count put 'first light' six hours after 20:41, and the night's sleep woke at 02:41)."""
+    m = AT.match(at or "")
+    named = next((v for rx, v in NAMED_TIMES if rx.search(at or "")), None) if not m else None
+    if named is None and (not m or int(m.group(1)) > 23 or int(m.group(2)) > 59):
+        return None
+    to = ((named if named is not None else int(m.group(1)) * 60 + int(m.group(2))) - now_minute) % minutes_per_day
+    return to or minutes_per_day
 
 
 def clock_text(abs_minutes: int, minutes_per_day: int) -> str:
