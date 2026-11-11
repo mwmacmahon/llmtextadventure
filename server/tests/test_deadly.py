@@ -212,7 +212,7 @@ def test_a_failure_in_a_fight_costs_hit_points(game):
     foe(st)
     data = {"outcome": "huge_failure", "roll": 4, "stat": "str"}
     note = game.check_note(st, data, "hack at the troll")
-    assert data["harm"] in (3, 4, 5) and "solid blow" in note
+    assert data["harm"] in (3, 4, 5) and "hard knock" in note
     calm = new(game)
     assert game.check_note(calm, {"outcome": "failure", "roll": 4, "stat": "str"}, "lift the barrel") == ""
     from engine.game import TurnInfo
@@ -243,7 +243,7 @@ def test_an_invented_danger_takes_the_step_the_stake_named(game):
     st = new(game, klass="Rogue", race="Human")                     # no shield to take the worst of it
     data = {"outcome": "failure", "roll": 6, "stat": "dex", "stake": {"branch": "failure", "danger": "serious"}}
     note = game.check_note(st, data, "cross the rotten floor")
-    assert 6 <= data["harm"] <= 10 and "serious hit" in note
+    assert 6 <= data["harm"] <= 10 and "bad injury" in note
     after = game.after_turn(st, info_calls(2, [{**data, "label": "cross the rotten floor"}]))
     assert after.player.hp == max(0, st.player.hp - data["harm"])
     void = {"outcome": "failure", "roll": 3, "stat": "dex", "stake": {"branch": "failure", "danger": "lethal"}}
@@ -612,3 +612,14 @@ def test_a_marked_break_free_is_rolled_before_the_prose(game):
                                    intents=[IntentCombat(action="twist loose", check=CheckSpec(label="way out: twist loose", stat="dex", difficulty="medium"))])
     s1, w = game.world_turn(st, loose, "I twist loose of her grip", Dice(19), 3, 2)
     assert not s1.player.has_condition("grappled") and loose.intents[0].check is None
+
+
+def test_a_check_rolled_before_the_telling_is_not_rolled_again(game):
+    """B360 (Gemma pair 5, b1896e49a66c T21): the way out was rolled before the prose (huge failure) and the narrator's own CHECK con
+    for the same climb (a natural 20) landed too; the second is answered 'rolled before this telling'."""
+    from engine.brackets import Call
+    st = new(game)
+    st.flags["prerolled_checks"] = [{"label": "way out: stamp feet and rub calves", "stat": "con", "outcome": "huge_failure"}]
+    said = game.check_settled(st, Call(verb="CHECK", raw="CHECK con medium", stat="con", difficulty="medium"))
+    assert "Already rolled this turn" in said and "stamp feet" in said and "huge failure" in said
+    assert game.check_settled(st, Call(verb="CHECK", raw="CHECK wis low", stat="wis", difficulty="low")) == ""

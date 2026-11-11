@@ -888,7 +888,12 @@ def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tal
         line = f"{hz.get('id', '').replace('_', ' ').capitalize()}: " + game.render_mechanic(s, res)
         data = {"verb": "HAZARD", "hazard": hz.get("id"), "outcome_player": res.outcome, "label": hz.get("when") or hz.get("id")}
         if res.outcome in WON:
-            return {"text": f"{p.name} weathers it ({hz.get('when', '')}). Play it, and go on.", "mechanic": line, "data": data}
+            # B359 (Gemma round 20, 58d04709b885 T23): a huge success was told as a near-drowning off 'weathers it'; the tier is told
+            easy = res.outcome in ("huge_success", "critical_success")
+            what = f"{str(hz.get('id') or 'the danger').replace('_', ' ')}, {hz.get('when', '')}".strip(", ")     # read fresh: name it, no 'it'
+            return {"text": (f"The danger ({what}) never touches {p.name}: no struggle, no harm. Write it as easy, then move on."
+                             if easy else f"{p.name} gets through the danger ({what}) unharmed, with a moment's effort. Play it, and go on."),
+                    "mechanic": line, "data": data}
         bad = hz.get("huge_fail") if res.outcome in ("huge_failure", "critical_failure") and hz.get("huge_fail") else hz.get("fail") or {}
         step = bad.get("hp") or ""
         told = []

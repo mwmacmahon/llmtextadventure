@@ -155,6 +155,8 @@ STOP = {"that", "this", "with", "from", "into", "their", "there", "they", "were"
 # debug_quiet (the DEBUG turn, round 8), escaped and freed (a way out that worked this turn: its WARNING not shown, round 10)
 BODY_PART = re.compile(r"(the |its |his |her |their )?(legs?|knees?|arms?|hands?|head|skull|neck|throat|chest|ribs?|back|face|eyes?|"
                        r"shoulders?|spine|belly|gut|jaw|feet|foot|torso|body)", re.I)
+# a failed check's cost in the narrator's words (read fresh, 11-11 night: 'a solid blow' on a dark stair invited an attacker)
+COST_WORDS = {"scrape": "a scrape", "solid": "a hard knock", "serious": "a bad injury", "lethal": "a killing hurt"}
 TURN_FLAGS = ("debug_quiet", "escaped", "freed", "spent_items", "hazard_rolled", "prerolled", "prerolled_hp", "prerolled_checks")   # spent_items: thrown or shot this turn, the engine's count
 THREAD_STANDING = {"open": "taken up", "resolved": "done", "failed": "failed"}   # the player's own jobs, in the hooks' words (B93)
 PERSON_TITLES = {"the", "lord", "brother", "sergeant", "captain", "constable", "master", "old", "mother"}   # "Old Hesk" is Hesk
@@ -691,6 +693,9 @@ class FantasyGame(GameBase):
         hostile = next((q for q in here if q.attitude <= -2), None)
         if hostile is not None:
             return f"{hostile.name} is here and hostile"
+        fought = next((q for q in here if q.id in p.fighting), None)
+        if fought is not None:                                  # B359: a fight with someone not (yet) hostile is no calm either
+            return f"in a fight with {fought.name}"
         if any(c.name.lower().startswith(("enthralled", "compelled", "entranced")) for c in p.conditions):
             return "under a compulsion"
         if getattr(p, "peril", None):
@@ -1682,6 +1687,28 @@ class FantasyGame(GameBase):
         head = wo.cut_at_death(narration, mech)
         return (head + "\n\n" if head else "") + line
 
+    @staticmethod
+    def _dice_fell(s: FantasyState, q: Person) -> bool:
+        """B360 (Gemma pair 5, b1896e49a66c T9): the round rolled before the prose killed the rat; the referee's 'dead' was checked
+        against the hit points before the round landed, called a conflict and forced, and the kill paid no XP. True when this
+        turn's prerolled blows leave none of them standing."""
+        from . import combat as cb
+        data = s.flags.get("prerolled") or []
+        hits = [h for d in data for h in (d.get("hits") or []) if h.get("pid") == q.id]
+        return bool(hits) and q.combat is not None and not cb.bodies_now(q, {"hits": hits})
+
+    def check_settled(self, state: FantasyState, call: Any) -> str:
+        """The narrator's CHECK for an attempt the engine rolled before the telling (a way out, a break-free, a fight turn's own
+        check): answered, not rolled again (B360)."""
+        stat = re.sub(r"\s*\(.*?\)\s*$", "", str(getattr(call, "stat", "") or "")).strip().lower()
+        d = next((d for d in state.flags.get("prerolled_checks") or [] if str(d.get("stat") or "").lower() == stat), None)
+        if d is None:
+            return ""
+        label = re.sub(r"^\s*way out:\s*", "", str(d.get("label") or ""), flags=re.I)
+        cost = " Its cost is already counted." if d.get("harm") else ""
+        return (f"Already rolled this turn: {state.player.name}'s {label}, {str(d.get('outcome') or '').replace('_', ' ')}.{cost} "
+                f"Write that outcome; do not call the check again.")
+
     def check_note(self, state: FantasyState, data: dict, label: str) -> str:
         """A line the narrator reads with a check's result: Sneak Attack's step on a blow that lands (B92); what a failure
         costs in a fight or a peril (part four §4: the engine takes the hit points, `data["harm"]`); in a peril, the escape roll
@@ -1704,7 +1731,7 @@ class FantasyGame(GameBase):
                 if data["harm"] >= state.player.hp - int(data.get("hp_taken") or 0):
                     data.update(kills=True, cause=label)                # B310: the cost takes the last hit point: the death, now
                     return f" The cost is past surviving: it kills {state.player.name}. Write the death straight; this is the end of the story."
-                return pline + f" It costs {state.player.name}: {wo.STEP_WORDS[danger]} lands on them (the engine counts it). Write it landing."
+                return pline + f" The attempt fails and costs {state.player.name} {COST_WORDS[danger]} (already counted), nothing worse. Show it happen."
             n = wo.failure_harm(self, state, data, label)
             if not n:
                 return pline
@@ -1713,8 +1740,8 @@ class FantasyGame(GameBase):
                 data.update(kills=True, cause=label)                    # B310 (187ae951f07d T16): a failed flee's 1 took the last
                 return f" The cost is past surviving: it kills {state.player.name}. Write the death straight; this is the end of the story."
             step = wo.TIER_STEP.get(str(data.get("outcome")), "scrape")
-            return pline + (f" It costs {state.player.name}: {wo.STEP_WORDS[step]} lands on them in the attempt (the engine counts it). "
-                            f"Write it landing.")
+            return pline + (f" The attempt fails and costs {state.player.name} {COST_WORDS[step]} (already counted), nothing worse. "
+                            f"Show it happen.")
         line = next((m.get("label", "") for m in data.get("modifiers") or [] if str(m.get("label", "")).startswith("Sneak Attack")), "")
         if not line:
             return ""
@@ -2547,6 +2574,9 @@ class FantasyGame(GameBase):
             return True
         if kind == "gone":
             if re.search(r"\b(dead|dies|died|killed?|kills)\b", f"{ch.note} {value}", re.I):
+                if in_fight and self._dice_fell(s, q):      # B360: the prerolled round put them down; it lands them (and the XP)
+                    w.note(f"{q.name}: the round's dice put them down; landed with the round")
+                    return True
                 if in_fight:                                # a death in a fight is the dice's: the same retold conflict (D230)
                     from . import combat as cb
                     word = cb.person_hp_word(q) or "unhurt"
@@ -2607,6 +2637,9 @@ class FantasyGame(GameBase):
             # or drive off a foe the dice left standing (the zombie, the drowned, a swarm), and the sheet kept them alive and acting.
             # A conflict: the guard retells the turn with the foe still up; on its last telling the state follows the prose
             from . import combat as cb
+            if self._dice_fell(s, q):                       # B360: the prerolled round put them down; it lands them (and the XP)
+                w.note(f"{q.name}: the round's dice put them down; landed with the round")
+                return True
             word = cb.person_hp_word(q) or "unhurt"
             if w.conflict(f"people.{q.id}.status", f"the dice have {q.name} still standing ({word})", value, rule="fight_alive",
                           fix=f"{q.name} is still standing ({word}): only a rolled blow puts them down. Write {q.name} still up and in the fight; "

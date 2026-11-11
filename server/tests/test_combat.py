@@ -1466,3 +1466,18 @@ def test_the_prose_count_of_a_new_band_is_the_sheets(game):
     assert len([x for x in s1.people if x.combat is not None and x.combat.block == "skeleton"]) == 1
     s2, _, _ = apply_changes(game, s1, ChangeReport.of(Change(kind="set", target="tansy", field="mood", value="calm")), present=["skeleton_1"], causes=[])
     assert "skeleton_1" not in s2.player.with_them
+
+
+def test_a_death_the_prerolled_round_dealt_is_no_conflict(game):
+    """B360 (Gemma pair 5, b1896e49a66c T9): the prerolled blow killed the rat; the referee's 'dead' was checked against the hit
+    points before the round landed, forced as a conflict, and the kill paid no XP."""
+    st = new(game)
+    q = _skeletons(st, 1)
+    st.player.fighting = ["dead"]
+    cb.ensure_block(q)
+    st.flags["prerolled"] = [{"verb": "ATTACK", "who": "player", "key": "player", "hits": [{"pid": "dead", "body": 0, "dmg": 99}]}]
+    s1, rep, _ = apply_changes(game, st, ChangeReport.of(Change(kind="set", target="dead", field="status", value="dead")), present=[], causes=[])
+    assert not rep.conflicts() and s1.person("dead").status == "alive"          # the round's landing kills them and books the XP
+    st.flags["prerolled"] = [{"verb": "ATTACK", "who": "player", "key": "player", "hits": [{"pid": "dead", "body": 0, "dmg": 1}]}]
+    s2, rep2, _ = apply_changes(game, st, ChangeReport.of(Change(kind="set", target="dead", field="status", value="dead")), present=[], causes=[])
+    assert rep2.conflicts()

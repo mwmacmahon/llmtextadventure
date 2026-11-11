@@ -987,7 +987,10 @@ class Engine:
                 _hook(game, "aim_blows", state, adj, player_text or "", default=None)   # B310: a swing with no target, in a fight, at the foe
                 struck = settle_attack(adj)                      # B288: a blow with a weapon is the attack roll, not a check too
                 hopeless = settle_hopeless(adj)                  # B225: very high and an edge of -3 or worse is a fail, no roll
-                calm = bool(getattr(game, "settle_calm", False)) and not is_fight(adj) and not _hook(game, "unquiet", state, default="")
+                # B359 (Sonnet pair 5, ffdc529bd55d T7): is_fight reads the summary's words and the reading's tempo ('instead of
+                # attacking'; a quick question marked fast), so a calm scene is the game's: nobody hostile, no peril, no one fought
+                # (a blow aimed this turn keeps every roll in settle_trivial itself)
+                calm = bool(getattr(game, "settle_calm", False)) and not _hook(game, "unquiet", state, default="")
                 trivial = settle_trivial(adj, calm=calm)         # B279: very low with nothing at stake simply happens (and, calm, low)
                 ledger("adjudication", {**adj.model_dump(mode="json"), "_call": meta})
                 for h in struck:
@@ -2305,6 +2308,10 @@ class Engine:
         tally: dict[str, Any] = {"hp": int(hp_taken or 0), "acted": []}
 
         def handler(call, n: int) -> CallResult:
+            if call.verb == "CHECK" and (done := _hook(game, "check_settled", state, call, default="")):
+                # B360 (Gemma pair 5, b1896e49a66c T21): a way out rolled before the prose (huge failure) and the narrator's own
+                # CHECK for the same climb (a natural 20) both landed; a check the game rolled before the telling is not rolled twice
+                return CallResult(text="[ENGINE] " + done, data={"verb": "CHECK", "none": True, "stat": call.stat})
             if call.verb == "CHECK":
                 out = run_check(call, n, stats, resolver, rng, assessments, modifiers, render,
                                  fallback_stat=getattr(game, "fallback_stat", None), fail_streak=fail_streak,
