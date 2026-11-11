@@ -3431,8 +3431,10 @@ class FantasyGame(GameBase):
                              f"{p.name} and asks for payment first; out in the open, {p.name} camps somewhere fit for it with whatever they carry for "
                              f"it. Play the settling down in a line or two and the waking. Nothing happens in the night unless something was already "
                              f"coming.")
+                from engine.pipeline import to_morning     # round 16 (6343bc8911d1 T5): eight hours from 18:32 woke the player at 02:32
+                night = to_morning(s.clock.minute)         # the prose said dawn; in the evening or the night the sleep runs to morning
                 return s, CommandResult(label="Rest", player_line="I settle in and sleep the night.", summary=f"{p.name} sleeps the night.",
-                                        directive=directive, minutes=LONG_REST)
+                                        directive=directive, minutes=night if night is not None else LONG_REST)
             directive = (f"{p.name} rests for an hour: a quiet corner, a drink, a wound looked at. Play the hour in a line or two; nothing happens "
                          f"unless something was already coming.")
             return s, CommandResult(label="Rest", player_line="I find somewhere quiet and rest for an hour.", summary=f"{p.name} rests for an hour.",

@@ -491,7 +491,8 @@ def test_a_long_rest_is_judged_where_the_turn_ends(game: FantasyGame):
     st = new(game)
     st.player.location, st.player.hp = "Ferry Landing", 4
     s1, res = game.run_command(st, "rest", {"kind": "long"})
-    assert res.ok and res.minutes == 480 and "Drowned Lantern" not in res.directive + res.text      # no place list (11-08 evening)
+    assert res.ok and res.minutes == 13 * 60 and "Drowned Lantern" not in res.directive + res.text   # no place list (11-08 evening);
+    # from 18:00 the night runs to 07:00 (round 16, D228: eight fixed hours had woken the player at 02:32)
     s1.player.location = "The Drowned Lantern"                        # the turn's own move
     assert game.after_turn(s1, info(minutes=480)).player.hp == s1.player.hp_max
     s1.player.location = "Ferry Landing"

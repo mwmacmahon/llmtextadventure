@@ -1126,3 +1126,16 @@ def test_gear_one_armour_at_a_time_and_equip_unequip(game):
     bow = next(it.id for it in rog.inventory if gear.weapon_of(it) == "shortbow")
     r5, _ = game.run_command(rog, "equip", {"item": bow})
     assert cb.player_block(r5)["weapon"] == "shortbow" and cb.player_block(r5, "dagger")["weapon"] == "dagger"   # the words still name another
+
+
+def test_round_16_a_night_runs_to_morning(game):
+    """Round 16 (6343bc8911d1 T5): the long rest at 18:32 ran eight hours to 02:32 while the prose said dawn (the owner's rule:
+    going to bed in the evening or the night is the night, to morning)."""
+    from engine.pipeline import to_morning
+    st = new(game)
+    st.clock.minute = 18 * 60 + 32
+    _, r = game.run_command(st, "rest", {"kind": "long"})
+    assert r.minutes == 24 * 60 - (18 * 60 + 32) + 7 * 60
+    st.clock.minute = 13 * 60
+    _, r2 = game.run_command(st, "rest", {"kind": "long"})
+    assert r2.minutes == 480 and to_morning(13 * 60) is None and to_morning(2 * 60) == 5 * 60

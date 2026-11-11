@@ -1986,6 +1986,8 @@ class Engine:
             planned = split[0] if split else adj.time_minutes
             if clock and planned > 0:
                 cap = clock.cap_minutes if getattr(adj, "minutes_fixed", False) else (clock.turn_cap_minutes or clock.cap_minutes)
+                if getattr(game, "sleep_by_command", False) and sleeping(adj):   # round 16 (6343bc8911d1 T5): a night's sleep runs to morning, past the turn's cap
+                    cap = max(cap, min(planned, SLEEP_MOST))
                 want = min(planned, cap)
                 if want < adj.time_minutes:
                     clock_note = f"capped from {adj.time_minutes} to {want} minutes"
@@ -1993,7 +1995,7 @@ class Engine:
                 clk = sp.lookup(doc, clock.path)
                 now = clk["day"] * clock.minutes_per_day + clk["minute"]
                 if not through:
-                    want, stop_note = clock_stop(game, doc, turn, now, want, asleep=sleeping(adj))
+                    want, stop_note = clock_stop(game, doc, turn, now, want, asleep=bool(getattr(game, "sleep_by_command", False)) and sleeping(adj))
                     if stop_note:
                         clock_note = (clock_note + "; " if clock_note else "") + stop_note
                 elapsed = want
@@ -3060,6 +3062,15 @@ LIMIT_WORDS = re.compile(r"\d|\b(?:until|till|'til|til|minutes?|mins?|hours?|hrs
 WAIT_FOR = re.compile(r"\b(?:wait|watch|stay|sit)\w*\b.*?\bfor\s+(?!a\s+(?:while|bit)\b)(?!some\s+time\b)\w", re.I)   # "wait for him": the limit is him
 MORNING_MINUTE = 7 * 60
 NIGHT_MINUTE = 19 * 60
+SLEEP_MOST = 16 * 60          # a night's sleep may run past the turn's cap to morning (dusk to seven is twelve hours and more)
+
+
+def to_morning(now_minute: int, minutes_per_day: int = 1440) -> int | None:
+    """Minutes from a clock minute to the next morning (07:00) when it is evening or night (17:00 to 05:00), else None: the
+    owner's rule (11-08 evening), going to bed in the evening or the night is the night, to morning."""
+    if MORNING_MINUTE - 120 <= now_minute < NIGHT_MINUTE - 120:
+        return None
+    return (MORNING_MINUTE - now_minute) % minutes_per_day or minutes_per_day
 UNTIL_ASK = "Until when?"
 UNTIL_NIGHT = re.compile(r"\b(?:until|till|'til|til)\s+(?:the\s+)?(?:nightfall|night|dark|dusk|evening|sundown|sunset)\b", re.I)
 WAIT_SAID = re.compile(r"\b(?:wait|waits|waiting|sleep|sleeps|nap|doze|rest|lie low|hole up|stake ?out|keep watch|bide|kill time|sit tight)\b", re.I)
@@ -3170,7 +3181,7 @@ def until_when(game: Any, state: BaseModel, adj: AssistantReading, text: str) ->
         # the owner (11-08 evening): going to bed in the evening or the night is the night, to morning (the next trigger still
         # wakes them); a sleep by day still asks how long
         to = (MORNING_MINUTE - now) % clock.minutes_per_day or clock.minutes_per_day
-        return adj.model_copy(update={"time_minutes": min(to, clock.cap_minutes)}), ""
+        return adj.model_copy(update={"time_minutes": min(to, max(clock.cap_minutes, SLEEP_MOST))}), ""
     day = MORNING_MINUTE - 120 <= now < NIGHT_MINUTE - 120          # 05:00 to 17:00: the long wait runs to nightfall
     end = "until nightfall" if day else "until morning"
     q = UNTIL_ASK + (f" Until something happens, for about an hour, or {end}?" if task == "wait"
