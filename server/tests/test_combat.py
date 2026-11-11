@@ -1318,5 +1318,6 @@ async def test_a_prerolled_round_through_the_pipeline(tmp_path):
     after = g.load_state(eng.store.load_state(iid))
     hurt = after.person("dead")
     assert after.combat is None or after.combat.round == 1
-    assert hurt is None or hurt.status != "alive" or sum(hurt.combat.hps) < sum(q.combat.hps) or "miss" in narr
+    full = (hurt.combat.hp_max or 0) * max(1, hurt.combat.count) if hurt is not None else 0
+    assert hurt is None or hurt.status != "alive" or sum(hurt.combat.hps) < full or "miss" in narr     # the round's blows landed
     assert "prerolled" not in after.flags
