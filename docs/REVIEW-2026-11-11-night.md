@@ -131,9 +131,10 @@ Every one is logged in notes/DECISIONS.md with its evidence and the alternatives
 
 ## Kept, not dropped
 
-The owner offered to drop a mechanic that will not run reliably (catching fire, for one). None was dropped. The perils
-behaved in the night's rounds once the rescue roll and the before-the-prose hazard were in. The one design that was
-replaced is the called fight round, kept behind its setting.
+The owner offered to drop a mechanic that will not run reliably (catching fire, for one). None was dropped outright. Two
+were reshaped and kept behind settings: the called fight round (now rolled before the prose, `prerolled_rounds`) and the
+narrator's own hazard calls (now off, `narrator_hazards`; the player's own steps into a danger are still rolled). The perils
+behaved in the night's rounds once the rescue roll, the before-the-prose hazard and one die per moment were in.
 
 ## Still open (the register's B348 to B370 'Open' parts)
 
@@ -143,12 +144,15 @@ replaced is the called fight round, kept behind its setting.
   fantasy shows every open one as a job taken up (a siren's parting wish became a quest). Needs a design choice.
 - **The referee's bookkeeping of small things:** a renamed relic, a key handed back, a fare, shoes set down that stay in the
   pockets, a bow knocked away that stays in hand, a companion who stays 'with you' after 'I go alone'.
-- **The narrator's own slips:** a turn undoing the last, a paragraph printed twice, a huge success told as a near-failure.
+- **The narrator's own slips:** a turn undoing the last, a paragraph printed twice, a rest's scene replayed word for word.
+- **Rewards told in the prose:** the narrator names amounts (Maud's five) that differ from the job's content reward (two).
+- **Kills pay at the fight's end:** a band's bodies are counted as each falls, but the XP is paid when the fight ends.
 
 ## Debt from tonight (the debt-review rule)
 
-- **Word lists added:** one, `pending.NAMED_TIMES` (first light, noon, dusk, night, midnight), a format shim for the shape Gemma
-  writes in the referee's new `at` field, not a meaning list. None grew otherwise.
+- **Word tables added:** `pending.NAMED_TIMES` (first light, noon, dusk, night, midnight), a format shim for the shape Gemma
+  writes in the referee's new `at` field; `world.REPORTED` (a sentence opening 'I tell / say / ask ...'), a shape for reported
+  speech; `COST_WORDS` (the cost steps in the narrator's words). No meaning list grew.
 - **Removed:** the finesse-on-STR-check block and its two regexes (FINESSE, HEAVY); `is_fight` from the calm test.
 - **Old rules that argued with the new ones, now reconciled:** the narrator's own CHECK after a check rolled before the telling
   (D236); the fight_alive guard before the prerolled round landed (D236); B286's word fallback joining people to a fight (B357).
