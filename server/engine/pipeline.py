@@ -987,7 +987,8 @@ class Engine:
                 _hook(game, "aim_blows", state, adj, player_text or "", default=None)   # B310: a swing with no target, in a fight, at the foe
                 struck = settle_attack(adj)                      # B288: a blow with a weapon is the attack roll, not a check too
                 hopeless = settle_hopeless(adj)                  # B225: very high and an edge of -3 or worse is a fail, no roll
-                trivial = settle_trivial(adj)                    # B279: very low with nothing at stake simply happens
+                calm = bool(getattr(game, "settle_calm", False)) and not is_fight(adj) and not _hook(game, "unquiet", state, default="")
+                trivial = settle_trivial(adj, calm=calm)         # B279: very low with nothing at stake simply happens (and, calm, low)
                 ledger("adjudication", {**adj.model_dump(mode="json"), "_call": meta})
                 for h in struck:
                     ledger("precheck", {"kind": "attack", **h})
@@ -3504,7 +3505,7 @@ def settle_attack(adj: Any) -> list[dict]:
     return out
 
 
-def settle_trivial(adj: Any) -> list[dict]:
+def settle_trivial(adj: Any, calm: bool = False) -> list[dict]:
     """B279 (the owner, 11-09: "another case of 'this does not need to be a skill check'. I'm just seeing if anyone's around.
     nobody is hiding"): B225's mirror. A check the assistant set at very_low, with no danger and no complication on failure,
     aimed at nobody (no target_entity) and no edge against the player, outside a fight, is settled as works before the
@@ -3519,10 +3520,24 @@ def settle_trivial(adj: Any) -> list[dict]:
         return out                                                    # a fight: every roll stands
     for i in intents:
         c = getattr(i, "check", None)
-        if (c is None or c.difficulty != "very_low" or int(getattr(c, "edge", 0) or 0) < 0 or getattr(c, "target_entity", None)
-                or getattr(c, "danger", None) != "none" or getattr(c, "complication", None) != "none"):
+        mild = calm and c is not None and c.stat in ("cha", "wis", "int") and getattr(c, "complication", None) == "cast_acts"
+        if (c is None or int(getattr(c, "edge", 0) or 0) < 0 or getattr(c, "target_entity", None) or getattr(c, "aim", "other") == "secret"
+                or getattr(c, "danger", None) != "none" or (getattr(c, "complication", None) != "none" and not mild)):
             continue
-        why = f"nothing in the way: {(getattr(c, 'edge_why', '') or 'anyone could').strip()}"
+        # the owner, 11-10 late ("Too many rolls is one of the biggest annoyances"): in rounds 12 to 17, 46 of 112 checks were
+        # CHA low (a question to someone not hostile, failure 'a vague answer') and about 30 WIS looks (failure 'nothing').
+        # In a calm scene (a game's opt-in `settle_calm`: nobody hostile here, no peril, no fight) a low check with nothing at
+        # stake simply works, and a WIS or INT search at medium is taken slowly and found (the table's 'take 20'): twice
+        # its minutes, no roll. Gemma marks almost every check's complication 'cast_acts' (someone reacts); in a calm scene that
+        # is no stake for a word, a look or a thought (CHA, WIS, INT), and only there. Hard checks, a check at someone, a secret,
+        # a body's risk (STR, DEX, CON), anything with a danger or another complication stay rolls
+        slow = calm and c.difficulty == "medium" and c.stat in ("wis", "int")
+        if not (c.difficulty == "very_low" or (calm and c.difficulty == "low") or slow):
+            continue
+        why = (f"taken slowly, with nothing pressing: {c.label}" if slow else
+               f"nothing in the way: {(getattr(c, 'edge_why', '') or 'anyone could').strip()}")
+        if slow:
+            adj.time_minutes = max(int(adj.time_minutes or 0), 2 * max(1, int(getattr(c, "success_minutes", 0) or 0)))
         outcome = str(getattr(c, "success_gain", "") or "") or f"It works: {c.label}."
         adj.fiat = list(adj.fiat or []) + [FiatOutcome(attempt=i.action or c.label, outcome=outcome, settled="works", why=why)]
         out.append({"attempt": i.action or c.label, "label": c.label, "stat": c.stat, "why": why})

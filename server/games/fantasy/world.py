@@ -179,8 +179,11 @@ def could_turn(game: Any, s: FantasyState) -> list[Person]:
     """Hostile or dangerous people here who are not in the fight (B208): THIS TURN lists them so the narrator can open a fight
     with a call when the fiction does."""
     p = s.player
+    # the owner, 11-10 late: round 15's Gorm, wary and miserable, lunged off a failed listen check and killed a level-1 barbarian
+    # before he swung. Only the hostile (-2 or worse) may be set on the player; a wary one turns hostile first (the referee's
+    # attitude row), which gives the player a turn to see it coming
     return [q for q in s.people if q.status == "alive" and not q.hidden_from_player and q.id not in p.fighting and q.location
-            and game._same_spot(s, q.location, p.location) and (q.attitude <= -2 or (q.moves and q.attitude <= -1))]
+            and game._same_spot(s, q.location, p.location) and q.attitude <= -2]
 
 
 def in_fight(game: Any, s: FantasyState) -> bool:
@@ -700,6 +703,10 @@ def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tal
             q = s.person(call.ref) or game._same_person(s, call.ref) or _offered(game, s, call.ref, tally)
             if q is None or q.status != "alive":
                 return {"text": f"Nobody by {call.ref!r} is here to act. Play it without a roll.", "data": {"verb": "ENEMY", "who": call.ref, "none": True}}
+            if q.id not in p.fighting and (q.attitude or 0) > -2:       # spawned foes are written hostile (-2)
+                return {"text": f"{q.name} is not hostile and does not attack unprovoked. If what the player did has turned them, show it "
+                                f"in their face and manner, without a blow; play it without a roll.",
+                        "data": {"verb": "ENEMY", "who": q.id, "none": True}}
             opened = s.combat is None                    # B323: outside a fight the call rolls on a passing round, the person's
             if opened:                                   # own block; the fight joins after the prose, by the result's `join` (B208)
                 from .state import CombatState

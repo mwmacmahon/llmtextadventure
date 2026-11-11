@@ -273,7 +273,7 @@ def test_a_hostile_who_has_not_joined_the_fight_is_never_rolled(game):
     """B208 (D179): Sael offstage, never met, no blow struck, dragged the owner under. Only the fight list is rolled; the
     others are listed as could turn on you, and a narrator's call joins them."""
     st = new(game)
-    sael = foe(st, "maud", moves=[{"kind": "hold", "bonus": 4, "peril": "drowning"}], attitude=-1, joined=False)
+    sael = foe(st, "maud", moves=[{"kind": "hold", "bonus": 4, "peril": "drowning"}], attitude=-2, joined=False)   # D230: hostile, not wary
     assert game.backstop(st, {"hp": 0, "acted": []}, Dice(2), 2) == []
     said = " ".join(game.turn_directives(st))
     assert "could turn on" in said and "In a fight with" not in said

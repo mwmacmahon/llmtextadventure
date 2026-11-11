@@ -127,6 +127,30 @@ def test_a_very_low_check_with_nothing_at_stake_simply_happens():
         assert not settle_trivial(AssistantReadingStaked(kind="action", summary="x", time_minutes=1, risk="low", intents=[i])) and i.check
 
 
+def test_a_calm_scene_settles_low_checks_and_takes_searches_slowly():
+    """The owner, 11-10 late: "Too many rolls is one of the biggest annoyances". In a calm scene (the game's opt-in) a low
+    check with nothing at stake works, a CHA/WIS/INT one even with 'cast_acts', and a WIS or INT search at medium is taken
+    slowly; a body's risk, a check at someone, a secret, a danger or a hard check still roll, and nothing changes uncalm."""
+    from engine.pipeline import settle_trivial
+    from engine.roles import CheckStaked
+    ask = IntentStaked(action="ask Maud about the Mire", check=CheckStaked(label="asking about the Mire", stat="cha", difficulty="low",
+                                                                            complication="cast_acts", success_gain="She tells what she knows."))
+    search = IntentStaked(action="search the mound", check=CheckStaked(label="searching the Barrow", stat="wis", difficulty="medium",
+                                                                        success_minutes=15, success_gain="A seam of stone under the turf."))
+    adj = AssistantReadingStaked(kind="action", summary="asks and searches", time_minutes=20, risk="low", intents=[ask, search])
+    out = settle_trivial(adj, calm=True)
+    assert len(out) == 2 and ask.check is None and search.check is None and adj.time_minutes == 30
+    for c in [CheckStaked(label="x", stat="dex", difficulty="low", complication="cast_acts"),     # a body's risk
+              CheckStaked(label="x", stat="cha", difficulty="low", target_entity="maud"),          # someone to win over
+              CheckStaked(label="x", stat="cha", difficulty="low", aim="secret"),                  # a secret
+              CheckStaked(label="x", stat="wis", difficulty="high"),                               # hard
+              CheckStaked(label="x", stat="cha", difficulty="medium")]:                            # a real talk
+        i = IntentStaked(action="x", check=c)
+        assert not settle_trivial(AssistantReadingStaked(kind="action", summary="x", time_minutes=1, risk="low", intents=[i]), calm=True) and i.check
+    j = IntentStaked(action="x", check=CheckStaked(label="x", stat="cha", difficulty="low"))
+    assert not settle_trivial(AssistantReadingStaked(kind="action", summary="x", time_minutes=1, risk="low", intents=[j])) and j.check
+
+
 async def test_a_retold_turn_settles_a_trivial_check_its_stored_reading_kept(engine, fake, monkeypatch):
     """B279: the owner's reroll of T38 still rolled 'WIS, very low. 3 against 5': a retell replays the stored reading, made
     before the rule. The replay settles it too, once."""
@@ -137,7 +161,7 @@ async def test_a_retold_turn_settles_a_trivial_check_its_stored_reading_kept(eng
                                           edge_why="routine", success_gain="He sees who is working in the back."))
     iid = engine.create_instance("fantasy", SHEET)
     fake.canned["AssistantReading"] = [AssistantReadingStaked(kind="action", summary="looks in the kitchen", time_minutes=2, risk="low", intents=[look])]
-    monkeypatch.setattr(pl, "settle_trivial", lambda adj: [])          # the reading as stored before the rule
+    monkeypatch.setattr(pl, "settle_trivial", lambda adj, calm=False: [])   # the reading as stored before the rule
     await play(engine, iid, "I head into the back to see if anyone is there.")
     monkeypatch.undo()
     async for _ in engine.rewrite_turn(iid, "Shorter.", by="referee"):      # the referee's retell keeps the stored reading (B280)

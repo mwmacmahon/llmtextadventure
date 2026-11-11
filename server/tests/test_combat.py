@@ -173,7 +173,11 @@ def test_the_referee_writes_no_status_for_anyone_the_round_touched(game):
     _skeletons(st, 1)
     st, w = wo.world_turn(game, st, _attack_reading("dead"), "I strike.", random.Random(2), 1, 2)
     s1, rep, _ = apply_changes(game, st, ChangeReport.of(Change(kind="set", target="dead", field="status", value="dead")), present=[], causes=[])
-    assert s1.person("dead").status == "alive" and any("engine counts the blows" in r.reason for r in rep.rejected)
+    assert s1.person("dead").status == "alive"
+    c = [r for r in rep.conflicts() if r.rule == "fight_alive"]          # the owner, 11-10 late: the turn is retold with them up
+    assert c and "still standing" in c[0].fix
+    s2, rep2, _ = apply_changes(game, st, ChangeReport.of(Change(kind="set", target="dead", field="status", value="alive")), present=[], causes=[])
+    assert any("engine counts the blows" in r.reason for r in rep2.rejected)
 
 
 def test_the_readings_attack_and_the_rule_reach_the_assistant(game):
@@ -1165,3 +1169,72 @@ def test_round_17_flee_cost_counts_first_unarmoured_rage_damage_one_javelin(game
     if jav is not None:
         s2, rep, _ = apply_changes(game, b, ChangeReport.of(Change(kind="add", target=f"{jav.id}.count", value="-1", note="thrown")), present=[], causes=[])
         assert s2.item(jav.id).count == jav.count and any("engine spent" in r.reason for r in rep.rejected)
+
+
+def test_the_last_telling_lets_the_prose_kill_a_foe(game):
+    """The guard's last telling (force): the state follows the prose, so sheet and story agree after the retells run out."""
+    from games.fantasy import world as wo
+    st = new(game)
+    _skeletons(st, 1)
+    st, _ = wo.world_turn(game, st, _attack_reading("dead"), "I strike.", random.Random(2), 1, 2)
+    s1, rep, _ = apply_changes(game, st, ChangeReport.of(Change(kind="set", target="dead", field="status", value="dead")), present=[], causes=[],
+                               force=True)
+    assert s1.person("dead").status == "dead" and "dead" not in s1.player.fighting
+
+
+def test_take_the_job_is_a_lever(game):
+    """The owner, 11-10 late: a yes said aloud never reached the quest panel (rounds 11, 13, 14, 17). The Take the job lever lists
+    the jobs heard of, offered or turned down, and one still in the deck whose giver is here; taking it brings it in."""
+    from games.fantasy import deck as dk
+    st = new(game)
+    if st.hook("cellar_rats") is None:
+        pytest.skip("this deal has no rats")
+    spec = next((c for c in game.commands(st) if c.id == "take_job"), None)
+    assert spec is not None and "cellar_rats" in [o.id for o in spec.params[0].options]
+    s1, r = game.run_command(st, "take_job", {"job": "cellar_rats"})
+    assert r.ok and s1.hook("cellar_rats").taken
+    from engine.game import TurnInfo
+    s2 = game.after_turn(s1, TurnInfo(turn=2, elapsed_minutes=1, rng=random.Random(0)))
+    assert dk.standing_of(s2.hook("cellar_rats")) == "taken up"
+    _, bad = game.run_command(st, "take_job", {"job": "no_such"})
+    assert not bad.ok
+
+
+def test_a_purse_taken_is_opened(game):
+    """Round 12 (T20 to T22): purses lifted and counted stayed items, their coins never gold."""
+    st = new(game)
+    g0 = st.item("gold").count
+    s1, rep, _ = apply_changes(game, st, ChangeReport.of(Change(kind="new", target="thing", value="the witness's purse", field="", note="lifted")),
+                               present=[], causes=[])
+    assert 2 <= s1.item("gold").count - g0 <= 7 and s1.item("the witness's purse") is None
+    s2, _, _ = apply_changes(game, st, ChangeReport.of(Change(kind="new", target="thing", value="a leather pouch of herbs", field="", note="")),
+                             present=[], causes=[])
+    assert s2.item("gold").count == g0                                  # a pouch of herbs is no purse
+
+
+def test_a_foe_driven_off_leaves_the_fight_and_no_rest_in_one(game):
+    """Pair G1 (86c23260bece): the swarm fled in the prose (T13), the row was refused, and it bit the player dead during a rest."""
+    from games.fantasy import world as wo
+    st = new(game)
+    _skeletons(st, 1)
+    st, _ = wo.world_turn(game, st, _attack_reading("dead"), "I strike.", random.Random(2), 1, 2)
+    s1, rep, _ = apply_changes(game, st, ChangeReport.of(Change(kind="set", target="dead", field="status", value="gone")), present=[], causes=[])
+    assert s1.person("dead").status == "gone" and "dead" not in s1.player.fighting and not rep.conflicts()
+    _, r = game.run_command(st, "rest", {"kind": "short"})
+    assert not r.ok and "fighting" in r.text
+
+
+def test_a_wary_person_does_not_attack_unprovoked(game):
+    """The owner, 11-10 late, round 15: a wary Gorm lunged off a failed listen check and killed a level-1 barbarian. Only the
+    hostile may be set on the player; a wary one is told to show it in their manner, no blow."""
+    from engine.brackets import Call
+    from games.fantasy import world as wo
+    st = new(game)
+    q = st.person("hesk")
+    q.attitude = -1
+    q.location = st.player.location
+    out = wo.world_call(game, st, Call(verb="ENEMY", raw="ENEMY hesk", ref="hesk"), random.Random(1), 2, {"hp": 0})
+    assert out["data"].get("none") and "not hostile" in out["text"] and "hesk" not in st.player.fighting
+    assert q not in wo.could_turn(game, st)
+    q.attitude = -2
+    assert q in wo.could_turn(game, st)

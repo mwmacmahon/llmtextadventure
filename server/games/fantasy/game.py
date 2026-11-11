@@ -96,6 +96,7 @@ def whole_sentence(text: str, limit: int = 200) -> str | None:
 
 
 CLOCK_TIME = re.compile(r"\b(the (clock|time|hour) (is|reads|shows|says|has crept|creeps|stands at|has reached)[^.]{0,20}?)?\b([01]?\d|2[0-3]):[0-5]\d\b", re.I)
+PURSE = re.compile(r"\b(purses?|coin ?purses?|coin ?pouch(es)?|money ?pouch(es)?|pouch(es)? of coins?|purse of coins?)\b", re.I)
 MONEY = re.compile(r"\b(coins?|gold pieces?|pieces of gold|gp|crowns?|purse|coppers?|pennies|money)\b|^\s*gold\s*$", re.I)
 NUMBER_WORDS = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
                 "twelve": 12, "twenty": 20, "fifty": 50, "hundred": 100}
@@ -267,6 +268,7 @@ class FantasyGame(GameBase):
         "Gold offered to a siren who has said gold is nothing to her: it fails, no roll.",
         "A crude joke to a grieving siren: it fails, no roll; a story half true, from someone she has reason to doubt: open, a check with a -2 edge.",
     ]
+    settle_calm = True         # the owner, 11-10 late: "Too many rolls": a calm scene's low checks with nothing at stake simply work
     sleep_by_command = True    # the owner (11-08 evening): only the Rest command makes a turn a night; "I go sleep at <a far place>" is a move
     target_offset = 2          # B83 (the owner, 11-08): one Hard step on the d20; a +2 character passes medium 55%, not 65%
     authority = AUTHORITY
@@ -1898,6 +1900,18 @@ class FantasyGame(GameBase):
                 hits.append(h)
         return hits[0] if len(hits) == 1 else None
 
+    def _jobs_open(self, s: FantasyState) -> list:
+        """The jobs the player can say yes to: heard of, offered or turned down; and one still in the deck whose giver (the
+        hook's `giver`) is here, the prose ahead of the deal (round 11: Tam asked before his reach fired)."""
+        here = set(self.people_here(s)) | set(s.player.with_them)
+        content = self.hooks_content()
+        out = []
+        for h in s.hooks:
+            stand = dk.standing_of(h)
+            if stand in ("heard of", "offered", "turned down") or (h.status == "dealt" and (content.get(h.id) or {}).get("giver") in here):
+                out.append(h)
+        return out
+
     def _offered_now(self, s: FantasyState, hk: Any) -> None:
         """A dealt hook the prose has already put to the player (its giver met before the reach fired): the reach fires now,
         so the deck brings it in as offered this turn (round 14, a5cf93d41879 T6: the referee's yes to
@@ -2354,6 +2368,16 @@ class FantasyGame(GameBase):
             if held is not None and held.id not in COINS and held.count == 1 and not self._step(note) and not number_in(value):
                 w.note(f"new thing {value!r}: already carried as {held.name!r}, nothing added")     # B246 (a): two passes, one whistle
                 return True
+            if PURSE.search(value) and not number_in(value) and not self._step(note):
+                # round 12 (067eadd5207f T20 to T22): two purses lifted and counted stayed items, their coins never gold. A purse
+                # taken is opened: 1d6+1 gold (a working purse), seeded by the turn and its name so a replay gives the same
+                import random as _r
+                n = _r.Random(f"purse:{s.clock.day}:{s.clock.minute}:{value}").randint(1, 6) + 1
+                gold = s.item("gold")
+                if gold is not None and w.set("inventory.gold.count", gold.count, gold.count + n):
+                    gold.count += n
+                    w.note(f"{value.strip()!r} opened: {n} gold")
+                    return True
             it = s.item(value)
             if it is not None and it.id in COINS and not MONEY.search(value):
                 it = None                                # B223: a gold amulet is a thing, not a gold piece
@@ -2529,8 +2553,31 @@ class FantasyGame(GameBase):
                 w.note(f"people.{q.id}.facts += {f!r}")
             self._mark_told(s, [q], f, w)
             return True
-        if kind == "set" and field == "status" and s.combat is not None and any(e.get("who") == q.id or q.id in (e.get("targets") or [])
-                                                                                 or e.get("target") == q.id for e in s.combat.plan):
+        fought = q.id in s.player.fighting or (s.combat is not None and any(
+            e.get("who") == q.id or q.id in (e.get("targets") or []) or e.get("target") == q.id for e in s.combat.plan))
+        if kind == "set" and field == "status" and fought and q.status == "alive" and value.strip().lower() in ("gone", "missing", "fled"):
+            # round pair G1 (86c23260bece T13): the prose broke the swarm and it fled into the wall; the row was refused, and the swarm
+            # followed the player upstairs and bit her dead during a rest by the fire. A foe the telling drives off is a fair beat
+            # (a morale break): it leaves the fight. Only death needs the dice
+            if w.set(f"people.{q.id}.status", q.status, "gone"):
+                q.status = "gone"
+                q.location = "Unknown"
+                s.player.fighting = [x for x in s.player.fighting if x != q.id]
+                w.note(f"{q.name} breaks and is gone from the fight")
+            return True
+        if kind == "set" and field == "status" and fought and q.status == "alive" and value.strip().lower() in ("dead", "down"):
+            # the owner, 11-10 late ("referee forcing narrator to rewrite with monsters dead"): rounds 10, 11 and 13 had the prose kill
+            # or drive off a foe the dice left standing (the zombie, the drowned, a swarm), and the sheet kept them alive and acting.
+            # A conflict: the guard retells the turn with the foe still up; on its last telling the state follows the prose
+            from . import combat as cb
+            word = cb.person_hp_word(q) or "unhurt"
+            if w.conflict(f"people.{q.id}.status", f"the dice have {q.name} still standing ({word})", value, rule="fight_alive",
+                          fix=f"{q.name} is still standing ({word}): only a rolled blow puts them down. Write {q.name} still up and in the fight; "
+                              f"what the rolls did is what happened."):
+                q.status = "dead"
+                s.player.fighting = [x for x in s.player.fighting if x != q.id]
+            return True
+        if kind == "set" and field == "status" and fought:
             w.reject(f"people.{q.id}.status", "in a fight the engine counts the blows (part fifteen): no status rows for anyone the round touched", value)
             return True
         if kind == "set" and field == "status":
@@ -2874,6 +2921,8 @@ class FantasyGame(GameBase):
         # -- the scene (B92): it ends when the player moves on, rests, or an hour passes; Rage ends with it, Uncanny Dodge comes back
         rested = any(lv.get("id") == "rest" and lv.get("status") != "not_completed" for lv in info.levers)
         if p.location != p.scene_place or rested or now - p.scene_start >= SCENE_MINUTES:
+            if p.location != p.scene_place and p.hidden_from_others and not (p.effect("auto_hide") and HIDE.search(info.player_text or "")):
+                p.hidden_from_others = False            # round 16: hidden at the Barrow, still hidden at Thornhollow and the landing
             if "raging" in p.flags_on:
                 p.flags_on.remove("raging")
                 s.log.append(f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}. {p.name}'s rage burns out.")
@@ -2923,7 +2972,7 @@ class FantasyGame(GameBase):
             label, stat, ok = str(c.get("label") or ""), c.get("stat"), c.get("outcome") in WON
             if stat == "cha" or ATTACK.search(label) or LOUD.search(label):
                 p.hidden_from_others = False
-            elif HIDE.search(label):
+            elif HIDE.search(label) and stat == "dex":     # a hide is Stealth (round 16: 'slip down into the Barrow' had hidden a barbarian)
                 hid_check = True
                 if ok:
                     p.hidden_from_others = True
@@ -3373,13 +3422,22 @@ class FantasyGame(GameBase):
             out.append(CommandSpec(id="lay_on_hands", label="Lay on Hands", mode="narrated", hint="A healing touch: 5 hit points back, once between long rests.",
                                    words=["lay on hands", "lay hands"]))
         if p.count("second_wind") and "second_wind" not in covered:
-            out.append(CommandSpec(id="second_wind", label="Second wind", mode="narrated", hint="Catch a second wind: 5 hit points back, once between long rests.",
+            out.append(CommandSpec(id="second_wind", label="Second wind", mode="engine", hint="Catch a second wind: 5 hit points back, once between long rests.",
                                    words=["second wind"]))
         if p.count("smoke_pellets") and "smoke_pellets" not in covered:
             out.append(CommandSpec(id="smoke_pellets", label="Smoke pellets", mode="narrated", hint="Crack a smoke pellet and vanish from the scene.",
                                    words=["smoke pellet", "smoke bomb", "pellet"]))
         if p.count("breath"):
             out.append(CommandSpec(id="breath", label="Breath", mode="narrated", hint="Breathe fire, once between long rests.", words=["breath", "breathe fire", "fire breath"]))
+        jobs = self._jobs_open(state)
+        if jobs:
+            # the owner, 11-10 late (rounds 11, 13, 14, 17: a yes said aloud that never reached the quest panel, the referee writing
+            # no row): taking a job is a lever the reading can pick, not a row the referee may miss
+            out.append(CommandSpec(id="take_job", label="Take the job", mode="engine", hint="Say yes to a job put to you.",
+                                   params=[Param(name="job", label="Job", options=[Option(id=h.id, label=h.title) for h in jobs])],
+                                   words=["take the job", "take your job", "take the work", "take it on", "i'll do it", "i will do it",
+                                          "i'll take it", "i'll take the", "i accept", "count me in", "you have a deal", "it's a deal", "i'm in",
+                                          "i'll help", "i'll find her", "i'll find him", "i'll clear"]))
         # the owner, 11-10 late: "Really need an equipped panel somewhere in ui and ability to equip unequip"
         put_on, take_off = gear.options(state, True), gear.options(state, False)
         if put_on:
@@ -3423,6 +3481,8 @@ class FantasyGame(GameBase):
         s = state.model_copy(deep=True)
         p = s.player
         if command_id == "rest":
+            if wo.in_fight(self, s):                     # pair G1 (T17): a short rest with a swarm still in the fight; the swarm killed her
+                return state, CommandResult(ok=False, label="Rest", text="Not while something is fighting you: get clear first.")
             kind = (args.get("kind") or "short").lower()
             p.resting = kind
             if kind == "long":
@@ -3519,7 +3579,9 @@ class FantasyGame(GameBase):
             p.hp = min(p.hp_max, p.hp + 5)
             if p.peril is not None and p.peril.kind == "bleeding":
                 p.peril = None
-            return s, CommandResult(label="Second wind", player_line="I grit my teeth and find a second wind.", summary=f"{p.name} catches a second wind.",
+            # pair G1 (86c23260bece T12): Second Wind took the turn and gave the swarm a free bite; a bonus action, instant like Rage
+            return s, CommandResult(label="Second wind", text=f"Second wind: 5 hit points back ({p.hp} of {p.hp_max}).",
+                                    player_line="I grit my teeth and find a second wind.", summary=f"{p.name} catches a second wind.",
                                     directive=f"{p.name} finds a second wind: breath comes back, the hurt dulls, the hands steady. A line or two, then stop where they would act.",
                                     minutes=1, referee_skip=["second_wind", "hp"])
         if command_id == "smoke_pellets":
@@ -3550,6 +3612,14 @@ class FantasyGame(GameBase):
             return s, CommandResult(label="Breath", player_line="I breathe fire.", summary=f"{p.name} breathes fire.",
                                     directive=f"{p.name} breathes fire: a gout of flame from the throat, the width of a doorway. Say what it catches and what it does, and stop.",
                                     minutes=1, referee_skip=["breath"])
+        if command_id == "take_job":
+            hk = s.hook(str((args or {}).get("job") or ""))
+            if hk is None or hk not in self._jobs_open(s):
+                return state, CommandResult(ok=False, label="Take the job", text="No such job is open to you.")
+            self._offered_now(s, hk)
+            hk.declined, hk.taken = False, True
+            dk.restand(hk)
+            return s, CommandResult(label="Take the job", text=f"Taken up: {hk.title}.", log_line=f"{p.name} takes up {hk.title}.")
         if command_id in ("equip", "unequip"):
             s2, line, ok = gear.change(self, state, str((args or {}).get("item") or ""), command_id == "equip")
             return s2, CommandResult(ok=ok, label="Equip" if command_id == "equip" else "Unequip", text=line,
