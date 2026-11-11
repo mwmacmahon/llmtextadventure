@@ -278,7 +278,14 @@ B144 covers the plain words).
   B319, B320); later, the reading chooses its targets from the engine's list of who can be fought this turn, with one
   "someone new" entry. *built in part: the head noun, a name is one person, a blow at a body (B318 to B320); the reading choosing from the engine's list not started*
 - A fight table in the call report (B328), then the record's `combat.prerolled` dial (§3, §10) measured against called
-  rolls on Gemma in blind pairs. *built in part: the fight table (B328); the dial designed*
+  rolls on Gemma in blind pairs. *built: the fight table (B328); the prerolled round on by default (D233, 11-11 night; the
+  called round kept behind `prerolled_rounds`), with a fight turn's own checks rolled first (D235); deleting the called path
+  waits on a week of rounds*
+- The night of 11-11 (docs/REVIEW-2026-11-11-night.md, D230 to D238, B348 to B368): fewer rolls in calm scenes, the prose's
+  count of a band, a forced death that pays, a timer's named time, the narrator's own hazard calls off (`narrator_hazards`).
+  *built; awaiting the owner's review*
+- Threads shown as jobs: the referee's generic threads (a promise, a lie, a question) all show as jobs taken up; telling an
+  asked-of-the-player thread from an agreed one (B358). *open with the owner*
 - The debt: one enemy resolver, one damage-reduction table and the shield counted once, the dead code, ATTACK's word
   boundary (B323, B324, B325, B327); and the minors (B314, B321, B322, B326). *built in part: B314, B321 to B323, B325 to B327; B324's shield counted once (the owner); its merge of the four reduction homes not started*
 - Perils and grabs (D213 to D222, Gemma rounds 7 to 10, B333 to B338): the save keeps the player out, held breath then
@@ -288,7 +295,8 @@ B144 covers the plain words).
   turn scratch instead of turn-local flags in saved state, one `turn_limits` hook for the call cap, the minutes and the
   hit points, a check `aim` of escape and attack read before the label's words (after a Sonnet extract test), the DEBUG
   and perils split out of game.py and world.py, `way_by` counted each round. *built in part: turn_limits, the DEBUG
-  module and one signal, the turn flags cleared once; the escape resolver, the turn scratch, the aim and the perils split not started*
+  module and one signal, the turn flags cleared once; the escape resolver (D234: a way out and a break-free rolled before the
+  prose); the turn scratch, the aim and the perils split not started*
 - From the ordinary-play rounds 11 to 13 (B339 to B341), the owner's answers (D225, B342): the § line names its parts
   (the modifiers checked: no glitch but the grab's own −2 on breaking it); 'critically wounded' under a quarter; armour
   costs swimming only, never the cold; the deck knows its own job offered early. *built*

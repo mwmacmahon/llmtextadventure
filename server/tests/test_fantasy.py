@@ -1192,3 +1192,13 @@ def test_a_jobs_twin_thread_is_the_job_once_it_is_live(game: FantasyGame):
     st.threads.append(Thread(id="t14-a-true-story", title="Oswin wants his shadow back", status="open", opened_turn=14))
     s1 = _live(game, st, "ferrymans_daughter")
     assert [t.title for t in s1.threads if t.status == "open" and not t.id.startswith("hook-")] == ["Oswin wants his shadow back"]
+
+
+def test_a_short_rest_by_the_lever_runs_its_length(game: FantasyGame):
+    """B370 (Gemma round 27, ba203a1ed124 T8, T10): two short rests were cut at 46 and 50 minutes by Tam's scheduled arrival and
+    healed nothing. A short rest by the lever holds the clock; what falls due fires as it ends. A night's sleep still wakes."""
+    from engine.pipeline import clock_stop
+    st = new(game)
+    doc = st.model_dump(mode="json")
+    now = int(doc["clock"]["day"]) * 1440 + int(doc["clock"]["minute"])
+    assert clock_stop(game, doc, 8, now, 60, asleep=True, resting=True) == (60, "")

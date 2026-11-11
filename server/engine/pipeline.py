@@ -2006,8 +2006,10 @@ class Engine:
                 if not through:
                     # B367 (Gemma round 24, b15d253f7efb T10): a short rest taken with the Rest lever was cut at 44 minutes by a job's
                     # giver walking in, and healed nothing: a job's own events wait for any rest the lever started, as for a sleep
+                    lever_rest = bool(getattr(game, "sleep_by_command", False)) and any(getattr(c, "id", "") == "rest" for c in (getattr(adj, "commands", None) or []))
+                    # a short rest by the lever holds the clock (B370); a night's sleep still wakes on the next trigger (the owner, 11-08)
                     want, stop_note = clock_stop(game, doc, turn, now, want, asleep=bool(getattr(game, "sleep_by_command", False))
-                                                 and (sleeping(adj) or any(getattr(c, "id", "") == "rest" for c in (getattr(adj, "commands", None) or []))))
+                                                 and (sleeping(adj) or lever_rest), resting=lever_rest and not sleeping(adj))
                     if stop_note:
                         clock_note = (clock_note + "; " if clock_note else "") + stop_note
                 elapsed = want
@@ -3137,7 +3139,7 @@ def block_spend(clock: Any, adj: Any, minutes: int, free_run: int) -> tuple[bool
     return False, f"free ({task}, {minutes} minutes)"
 
 
-def clock_stop(game: Any, doc: dict[str, Any], turn: int, now: int, want: int, asleep: bool = False) -> tuple[int, str]:
+def clock_stop(game: Any, doc: dict[str, Any], turn: int, now: int, want: int, asleep: bool = False, resting: bool = False) -> tuple[int, str]:
     """How far the clock may run from `now` toward `now + want`: it stops where a scheduled event would fire (any time in its
     trigger or fallback, so it fires on time) or a pending the player can see falls due. Returns (minutes, note).
     `asleep` (round 15, b8e96b0c3c1f T8 to T11: three jobs' reaches cut three nights short in an hour or less, the prose
@@ -3145,6 +3147,11 @@ def clock_stop(game: Any, doc: dict[str, Any], turn: int, now: int, want: int, a
     the player; the owner's rule, what the player cannot see does not stop the clock. They fire as the sleep ends."""
     clock = game.clock
     note = ""
+    if resting:
+        # B370 (Gemma round 27, ba203a1ed124 T8, T10): two short rests taken with the Rest lever were cut at 46 and 50 minutes by
+        # Tam's scheduled arrival and healed nothing (B367 had held only a job's own events): a short rest by the lever runs its
+        # length; what falls due meanwhile fires as it ends (a fight already refuses the rest)
+        return want, ""
     events = [e for e in _events_of(game, doc) if not (asleep and getattr(e, "hook", None))]
     nxt_f = ev.next_firing(events, doc, turn, now, now + want, clock.minutes_per_day, clock.path,
                            getattr(game, "pending_path", None) or "hidden.pending",
