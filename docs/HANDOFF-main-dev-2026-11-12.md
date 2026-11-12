@@ -3,7 +3,7 @@
 For the local Claude Code session that takes over as the project's main developer. Written by the cloud session that
 was the design side chat (10-31 to 11-07) and was asked on 11-12 to take ownership. It could not: it is a cloud
 container with only the tracked files, so it has no `notes/`, no content, no store, no box and no servers. This page
-carries what it read, what it concluded, and where to start. Delete it once its "First week" list is in the queue.
+carries what it read, what it concluded, and where to start. Updated the same evening with the owner's rulings. Delete it once its order of work is in the queue.
 
 ## The mandate, in the owner's words (2026-11-12)
 
@@ -16,6 +16,25 @@ carries what it read, what it concluded, and where to start. Delete it once its 
 
 So: you write the code, run the rounds and decide the order, with the owner ruling on design. The fantasy (Marrowgate)
 first. The clown only as your engine changes touch it. Noir and the station kept green, not worked.
+
+The owner's second message the same evening, after reading this page's first version, sets the terms:
+
+- **You own everything**, code, docs, the registers and the rounds, "until I feel the time is right to go back to a
+  fable / opus split". When that comes, the same chat carries on with a narrower scope, so write things down as if
+  you will hand the building back and keep the managing. Watch the Fable budget: the owner wants it never to run out
+  again, so say when a stretch of rote work could go to a cheaper model or a subagent.
+- **Why you and not the build chat:** "I don't feel like opus was able to understand my concerns with brittleness, in
+  fact it told me I had nothing to worry about more or less. I really want to see fables pass not only on direction
+  but implementation."
+- **Modules into the core:** "I'm hoping the idea of keeping components as optional modules that might be useful for
+  certain weaker/stronger LLMs for example can get better brought into the core design framework."
+- **The testing regime improved**, along the lines of this page's replay corpus and phrase table.
+- **Local NLP tools are allowed:** "it's not crazy to run some local NLP tools or something if we need to beef up
+  engine capabilities." The Mac Mini is to become the game server and the Claude Code server in place of the laptop
+  once the owner is well; it has run 7B models. Not "super slow", but the capability is there.
+- **Hands in the code:** "getting your hands dirty with the code itself will be helpful in giving you a sense of what
+  needs fixing - I don't want a mess of tech debt and nonsense, so keeping track of stuff that needs work is key."
+- **The fantasy's content can be tracked in git.**
 
 ## What the cloud session read, and what it did not
 
@@ -100,13 +119,66 @@ the combat review's B318 to B320 head-noun fixes). Most was not. Re-measure befo
   alive on the owner's "something to come back to" (D240). Every fix now has to be right on two paths or silently
   rot one. Either the called round gets a date to return, or it is cut to a branch.
 
+## Modules as the core frame (the owner's ask, and how it meets the brittleness)
+
+The modules idea was adopted on 11-06 for the narrator's context (`notes/DESIGN-context-modules-2026-11-06.md`: a
+named dial with levels per profile, nothing branching on the model). It stopped there. Meanwhile the fantasy grew the
+same thing without the name: `prerolled_rounds`, `narrator_hazards`, `settle_calm` and `sleep_by_command` are booleans
+on the game class, and each one answers "how much is this model trusted to decide". That question is a profile's, not
+a game's. Sonnet could call its blows inline and keep the drama the combat review praised; Gemma needs the round
+rolled first. Today both get one hard-coded answer, and the other path rots behind a switch.
+
+So make "who decides what" the frame, with every such choice a module with levels in the profile's table, shown on
+the picker's card:
+
+| Module | The question | Levels (weak model → strong model) | Today |
+|---|---|---|---|
+| Fight calls | who places the blows in the telling | round rolled first and told → narrator calls each blow, the rest rolled after | `prerolled_rounds` on the game class |
+| Danger calls | may the narrator bring a listed danger on the player | never → a warned turn first → free | `narrator_hazards` off |
+| Calm settling | which checks are settled without a roll | none → low checks in calm scenes → the assistant's own "it works" | `settle_calm` |
+| Intent reading | how the player's sentence becomes a move and its targets | word patterns only → the assistant's enum and ids with patterns as fallback → the enum alone | patterns and fields mixed, per incident |
+| Consequences | where a failed check's complication comes from | table → stake with table fallback → stake | built on noir; per-kind map designed 11-07 |
+| Narrator context | the eight context modules | per the 11-06 design | mostly unbuilt |
+
+A module is allowed to exist only if it has three things: its levels in one table in config, a slice of the replay
+corpus that runs at each level, and a count in the round report of how often each path fired. A switch with none of
+the three is debt and goes in the register. This is what turns "kept behind a setting" from a hedge into a design:
+the called round either earns a level with its own tests, or it is cut.
+
+It also gives the word patterns an honest home. They are the lowest level of the intent-reading module: the fallback
+for a model that leaves fields empty. Counted per round, they show which ones still fire on Gemma and which never
+do, and the ones that never fire get deleted.
+
+**Local NLP as a level, not a rewrite.** The same module can take a third reader. Candidates, to be measured on the
+phrase table before any is adopted:
+
+- A dependency parse (spaCy's small English model, a few milliseconds a sentence on CPU) for the cases the patterns
+  keep getting wrong by construction: the head noun of a description ("a bear of a man"), negation and contrast
+  ("instead of attacking"), reported speech ("I tell him I'd drown him"), whose weapon a word belongs to ("out of the
+  club's reach"). These are grammar questions, and a parser answers them without a list.
+- One fuzzy matcher (rapidfuzz or similar) behind the single name resolver the register asks for (T7), in place of
+  seven routines with six thresholds.
+- A small local model on the Mac Mini as a second reader of the sentence into the same enum the assistant fills,
+  asked only when the assistant's field and the patterns disagree. A 7B model answering one constrained question is
+  well under a second; a turn is about thirty.
+
+The measure for all of them is the same table: a few hundred real player sentences from the stored rounds with the
+right classification, each reader scored on it. Adopt what wins; do not add a reader that does not beat the one it
+replaces.
+
 ## What I would do, in order (for you to confirm against the code)
 
 1. **Stop the round-fix loop for a few days.** Lilith's server is pinned and working. No new B-fix unless she is
    blocked. Say so to the owner; it is the cost of the rest.
 2. **Bring the debt branch home.** Merge or cherry-pick `docs/DEBT.md`, `docs/REVIEW-2026-11-10-debt.md` and the
    part seventeen text (it is in `notes/` on the Mac, by the commit message) into `2.0`. Re-run its baseline table
-   on today's tree. Mark what was built since. That register is your backlog; this page is not a second one.
+   on today's tree. Mark what was built since. That register is your backlog; this page is not a second one. The owner's rule is that what needs work is
+   tracked: every fix either closes a T-line or adds one, and `tools/debt_report.py` (part seventeen §9, if it was
+   built) prints the baseline at each review.
+2b. **Track the fantasy's content** (the owner, 11-12: yes). Un-ignore `notes/content/fantasy/` (the scenario, the
+   bestiary, the decks; the bestiary is SRD 5.1 under CC-BY-4.0 and already says so). Leave the clown's content, the
+   mods and the rest of `notes/` out. Check the repository's visibility on GitHub before the first push of it. After
+   this the suite runs on any clone, which the Mac Mini move will need.
 3. **Build the regression net before touching structure.** Grow the fight replays from 12 into a corpus: every
    stored fantasy round's readings and referee rows replayed through the engine with no model, asserting state
    outcomes (who is in the fight, hit points, deaths, perils, XP), never English lines. Add a phrase table for the
@@ -121,9 +193,10 @@ the combat review's B318 to B320 head-noun fixes). Most was not. Re-measure befo
    as B356 did; Gemma leaves optional fields at their defaults (B213), so new fields must be required.
 5. **Then the register's step 1 and step 3:** `Blow` and `TurnTally` with one `land`; one `Scene` per turn. These
    remove most of the "two paths disagreed" class the perils review found.
-6. **Decide the switches with the owner.** One paragraph each: what it costs to keep both paths, what is lost by
-   cutting one. My lean: cut the called round to a branch; keep `narrator_hazards` off until D241's "warned turn
-   first" is designed; keep `settle_calm`.
+6. **Turn the switches into modules or cut them** (the frame above). For each of the four booleans: its levels in
+   the profile's table, a corpus slice per level, a count in the round report. The called round is the test case: if
+   its level cannot be made to pass the corpus in a day or two, cut it to a branch and say so to the owner. Danger
+   calls get D241's "warned turn first" as the middle level.
 7. **Only then the open play items** (B377, B379, nothing attacks first, the referee's small things). Several are
    the same seam and may fall out of step 4. "Nothing ever attacks the player first" is a design gap, not a bug: it
    needs the owner.
@@ -146,13 +219,21 @@ with every other branch); add another review document; add a hook without readin
   played round on the new code. Her saves carry the prompt from when they began (the 11-12 deploy had to patch the
   frozen prefix in three saves), so a prompt change needs a save migration.
 
-## Questions for the owner (ask once, early)
+## Questions for the owner
 
-1. A pause on round-by-round fixes for the structural work: agreed, and for how long?
-2. The called fight round: keep behind the switch, or cut to a branch until rolling-before-the-prose is revisited?
-3. Should the game's content (`notes/content/fantasy`, the bestiary, the scenario) be tracked in git? The tests
-   depend on it, and no cloud or second machine can run them without it. The clown's content can stay out.
-4. Who writes the register now? Two chats numbered B-lines in parallel from 11-08. One owner, one counter.
+Answered on 11-12: the fantasy's content is tracked in git; the main dev owns everything, the registers and their
+numbering included.
+
+Still open:
+
+1. A pause on round-by-round fixes while the structural work goes in: agreed, and for how long? (The owner did not
+   object on 11-12, and asked for the implementation pass; confirm the length.)
+2. The called fight round as a module level for a strong narrator, or cut: the owner's D240 said "something to come
+   back to". Bring the cost of each once step 3's corpus exists.
+3. "Nothing ever attacks the player first" (B379): a design gap. When may a hostile start the fight, and how is the
+   player warned?
+4. The Mac Mini move: when it happens, `docs/SERVERS.md` is the contract to rewrite, and Lilith's server moves with
+   its data folder and backups.
 
 ## Practicalities
 
@@ -174,8 +255,11 @@ with every other branch); add another review document; add a hook without readin
 
 ## Opening prompt for the local session
 
-> You are the main developer of this project now. Read `docs/HANDOFF-main-dev-2026-11-12.md` on branch `fable/owner`
-> first, then the documents it lists. The fantasy game is your primary concern; the clown only as your engine changes
-> affect it; noir and the station stay green and are not worked. Before changing any code, re-measure the debt
-> register's baseline on today's tree, run the full suite and the fight replays, and tell me whether you agree with
-> the handoff's assessment and order of work, and where you do not. Then ask me its four questions.
+> You are the main developer of this project now, and you own all of it: code, docs, the registers, the rounds. Read
+> `docs/HANDOFF-main-dev-2026-11-12.md` on branch `fable/owner` first, then the documents it lists. The fantasy game is
+> your primary concern; the clown only as your engine changes affect it; noir and the station stay green and are not
+> worked. Before changing any code: run the full suite and the fight replays, re-measure the debt register's baseline
+> on today's tree, and read `combat.py`, the fantasy `world.py` and the fight path through `pipeline.py` yourself. Then
+> tell me whether you agree with the handoff's assessment, its modules frame and its order of work, and where you do
+> not, and ask me its open questions. I want your pass on the implementation, not only the direction, and I want what
+> needs work kept tracked as you go.
