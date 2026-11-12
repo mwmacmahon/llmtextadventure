@@ -725,6 +725,12 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
                 if row:
                     w.rows.append(row)
                 continue                                                    # joined by bring_in
+            if q is not None and q.status == "gone" and e in aimed and s.person(e) is not None:
+                # B376 (Gemma round 28, 615fa3819ba8 T28): the siren the prose drove off at T15 (gone, location Unknown) came back as
+                # a hand tapping under the planks; the rapier thrust at her rolled nothing and the narrator told a hit. One driven
+                # off whom the reading aims a blow at is back, here, with the hit points she left with
+                q.status, q.location = "alive", p.location
+                w.rows.append({"kind": "came_back", "who": q.id, "why": "the blow aimed at them"})
             if q is not None and q.status == "alive" and q.id in p.with_them and e in aimed:
                 # B308 (Gemma, 11-10, 8eb1928e28b7 turns 10-11): the referee had put the sailors at Kragga's table in her company;
                 # two punches at one rolled nothing (an ally is never fought). A blow the reading aims at them ends the company

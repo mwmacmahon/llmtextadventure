@@ -1213,3 +1213,23 @@ def test_a_thread_someone_asked_for_is_offered_until_a_step_is_noted(game: Fanta
                    Thread(id="t14-lay-the-drowned-man", title="Lay the drowned man to rest", who="the_singer", status="open", note="lifted him onto dry stone")]
     rows = {r.title: r.standing for r in game.quest_rows(st)}
     assert rows["A true story for Mirren"] == "offered" and rows["Finding Wren"] == "taken up" and rows["Lay the drowned man to rest"] == "taken up"
+
+
+def test_the_narrators_fight_rule_and_calls_follow_the_settings(monkeypatch):
+    """B374 (11-12): with the round rolled before the prose, the standing rule and the call list still taught <<ATTACK>>,
+    <<ALLY>> and <<ENEMY>> in a fight (15 to 28 calls a round, each answered 'already rolled'); and <<HAZARD>> while off."""
+    from engine.config import load_config
+    from engine.pipeline import WORLD_PROTOCOL
+    from engine.registry import load_games
+    cfg = load_config()
+    g = load_games(cfg.resolve(cfg.server.content_root))["fantasy"]
+    st = g.new_instance({"name": "Brin", "klass": "Paladin", "race": "Human", "gender": "", "about": ""})[1]
+    rule = next(ln for ln in g.frozen_prefix(st).split("\n") if ln.startswith("- A FIGHT:"))
+    assert "<<" not in rule and "before you write" in rule and "Brin" in rule
+    calls = g.world_protocol()
+    assert "<<ATTACK" not in calls and "<<ALLY" not in calls and "<<HAZARD" not in calls and "<<ENEMY id move>>" in calls
+    monkeypatch.setattr(g, "narrator_hazards", True)
+    assert "<<HAZARD name>>" in g.world_protocol()
+    monkeypatch.setattr(g, "prerolled_rounds", False)
+    assert g.world_protocol() == WORLD_PROTOCOL
+    assert "<<ATTACK id>>" in next(ln for ln in g.frozen_prefix(st).split("\n") if ln.startswith("- A FIGHT:"))

@@ -172,7 +172,7 @@ def test_the_offer_names_who_would_come_and_the_narrators_call_brings_them(game)
                                   intents=[IntentCombat(action="Creep toward the voices")])
     s, w = game.world_turn(st, look, "I creep toward the voices", random.Random(1), 9, 2)
     line = next(d for d in w.directives if d.startswith("If a fight comes here, the"))
-    assert s.offer["ids"] and s.offer["ids"][0] in line and "only inside <<ATTACK>> and <<ENEMY>> calls" in line
+    assert s.offer["ids"] and s.offer["ids"][0] in line and "only inside <<ENEMY>> calls" in line      # B374: no ATTACK call with the round rolled first
     assert w.rows and w.rows[0]["kind"] == "encounter" and w.rows[0]["why"] == "the offer"
     ref = s.offer["ids"][0]
     out = game.world_call(s, type("C", (), {"verb": "ENEMY", "ref": ref, "raw": f"ENEMY {ref}", "stat": "", "num": 0, "den": 0})(), random.Random(2), 2, {"hp": 0})

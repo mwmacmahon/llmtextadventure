@@ -1659,3 +1659,34 @@ def test_gorm_is_a_small_troll_with_his_own_numbers(game):
     assert full.hp == 40 and full.attack == 6
     both = Person(id="x", name="X", role="a troll", combat=CombatBlock(block="troll", hp=20, ac=13))      # hp and ac both given: still filled
     assert cb.ensure_block(both).hp_max == 20 and cb.ensure_block(both).actions
+
+
+def test_a_reading_that_strikes_a_foe_is_not_a_flee(game):
+    """B375 (Gemma round 28, 615fa3819ba8 T22): a kick, a shove at the guard and a question to him, read with Flee: the parting
+    blow hit for 4 and the prose had her slip away. The blow stays; the Flee goes. A plain run still flees."""
+    from engine.roles import CommandPick
+    st, q = _fight(game, 1)
+    adj = AssistantReadingCombat(kind="action", summary="shove", time_minutes=1, tempo="fast", risk="high", intents=[
+        IntentCombat(action="shove the dead into the booth", targets=["dead"], attack_at=["dead"], weapon="hand"),
+        IntentCombat(action="demand who runs the boats", targets=["dead"])], commands=[CommandPick(id="flee")])
+    game.aim_blows(st, adj, "I shove him hard back into his booth and demand: who runs the boats?")
+    assert not any(c.id == "flee" for c in adj.commands) and adj.intents[0].attack_at == ["dead"]
+    talk = AssistantReadingCombat(kind="action", summary="go", time_minutes=1, tempo="fast", risk="high", intents=[
+        IntentCombat(action="shout at the dead and run for the stairs", targets=["dead"])], commands=[CommandPick(id="flee")])
+    game.aim_blows(st, talk, "I shout at them and run for the stairs.")
+    assert any(c.id == "flee" for c in talk.commands)
+
+
+def test_a_blow_at_a_foe_driven_off_brings_them_back(game):
+    """B376 (Gemma round 28, 615fa3819ba8 T28): the siren driven off at T15 (gone, Unknown) came back under the planks; the
+    thrust at her rolled nothing and the narrator told a hit. A blow aimed at one driven off is a blow at them, here."""
+    from games.fantasy import world as wo
+    st = new(game)
+    q = _skeletons(st, 1)
+    cb.size_band(q)
+    cb.ensure_block(q).hp -= 3
+    q.status, q.location = "gone", "Unknown"
+    s, w = wo.world_turn(game, st, _attack_reading("dead"), "I thrust down through the planks at it.", random.Random(3), 1, 2)
+    back = s.person("dead")
+    assert back.status == "alive" and back.location == s.player.location and "dead" in s.player.fighting
+    assert any(e.get("side") == "player" for e in s.combat.plan) and back.combat.hp < back.combat.hp_max

@@ -1183,7 +1183,8 @@ class Engine:
         calls_block: dict[str, Any] = {}
         try:
             # the narrator may stop to roll or look up (<<CHECK>>, <<LOOK>>) and writes notes ([[…]]) the player never sees (DESIGN2 §4b, §5)
-            system = system + "\n\n" + NARRATOR_PROTOCOL + (WORLD_PROTOCOL if hasattr(game, "world_call") else "")
+            calls = game.world_protocol() if hasattr(game, "world_protocol") else WORLD_PROTOCOL if hasattr(game, "world_call") else ""
+            system = system + "\n\n" + NARRATOR_PROTOCOL + calls
             if not role.stop_sequences:
                 role = role.model_copy(update={"stop_sequences": list(STOP_SEQUENCES)})
             expected = self.expected_chars(iid)

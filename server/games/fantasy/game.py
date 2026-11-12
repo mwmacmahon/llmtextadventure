@@ -473,8 +473,33 @@ class FantasyGame(GameBase):
         return with_introduction(sc, sc.get("opening_text"), fill)
 
     # ---- the frozen prefix -------------------------------------------------------------------------------------------
+    # B374 (11-12): with the round rolled before the prose, the standing rule and the call list still taught <<ATTACK>>, <<ALLY>>
+    # and <<ENEMY>> calls in a fight (and <<HAZARD>> with the narrator's dangers off): 15 to 28 calls a round, Sonnet's too,
+    # each answered "already rolled", each a stop. Both follow the settings now.
+    FIGHT_PREROLLED = ("- A FIGHT: one exchange a turn. The engine rolls every blow of the turn before you write, and THIS TURN tells you "
+                       "what each one did, in order. Play each as given, where it landed and what it did to them, in the world's words, "
+                       "not the numbers. Add no wound or healing of your own. Stop where {name} chooses next.")
+
+    def world_protocol(self) -> str:
+        """The calls the narrator may write for the world (engine.pipeline.WORLD_PROTOCOL when the round is called)."""
+        from engine.pipeline import WORLD_PROTOCOL
+        if not self.prerolled_rounds:
+            return WORLD_PROTOCOL
+        # read fresh (11-12): the move named from the list, one call per attacker, the strike played and the turn stopped
+        out = ("\n  <<ENEMY id move>>  when no fight is under way and someone attacks the player (one THIS TURN offers, or one it says "
+               "could turn on the player): write the call on its own line at the moment they strike and stop, as for a check, with a "
+               "move THIS TURN lists for them, such as <<ENEMY robber_1 attack>>; one call for each attacker who strikes. The engine "
+               "rolls it and tells you what happened; play that, and stop where the player chooses next. Once a fight is under way, "
+               "every blow is rolled before you write and THIS TURN tells it; those take no call.")
+        if self.narrator_hazards:
+            out += ("\n  <<HAZARD name>>  when THIS TURN lists dangers here: at the moment one reaches the player, write the call on its "
+                    "own line and stop, such as <<HAZARD cold_water>>. The engine rolls it and tells you what happened; play that and go on.")
+        return out
+
     def fill_prefix(self, p: Player) -> str:
         text = self.content.prefix()
+        if self.prerolled_rounds:
+            text = re.sub(r"(?m)^- A FIGHT:.*$", lambda _m: self.FIGHT_PREROLLED, text, count=1)
         race, klass = p.race.lower(), p.klass.lower()
         if race[:1] in "aeiou":
             text = text.replace("a {race}", "an {race}")       # "an elf mage" (D158: the article follows the race)
@@ -1518,7 +1543,7 @@ class FantasyGame(GameBase):
         plural = len(ids) > 1
         w.directives.append(f"If a fight comes here, the {'attackers are' if plural else 'attacker is'} {who}. In the story "
                             f"{'they are' if plural else 'it is'} just {re.sub(r'^(a|an|one|two|three|four|five|six) ', '', who)}; only inside "
-                            f"<<ATTACK>> and <<ENEMY>> calls {'are they' if plural else 'is it'} {span}."
+                            f"{'<<ENEMY>>' if self.prerolled_rounds else '<<ATTACK>> and <<ENEMY>>'} calls {'are they' if plural else 'is it'} {span}."
                             + (f" These are too many to beat. If they come, let the prose show it (their numbers, their ease with steel) "
                                f"and leave {p.name} room to run or yield; never say so outright." if e.band == "impossible" else ""))
         w.rows.append({"kind": "encounter", "hit": hit, "why": "the offer", "reason": e.reason})
@@ -1596,6 +1621,16 @@ class FantasyGame(GameBase):
                 if fought:
                     i.attack_at = fought
         picked = {c.id for c in getattr(adj, "commands", None) or []}
+        if "flee" in picked:
+            from engine.pipeline import asks_for
+            blow = any(set(getattr(i, "attack_at", None) or []) & set(p.fighting) for i in intents)
+            at_foe = any(set(getattr(i, "targets", None) or []) & set(p.fighting) for i in intents)
+            if blow or (at_foe and not asks_for(self.FLEE_PLAIN, player_text)):   # 'who runs the boats' opens 'run': a blow decides
+                # B375 (Gemma round 28, 615fa3819ba8 T22): "kick the cudgel off the bridge, shove him back into his booth, demand who
+                # runs the boats" was read as a kick, a shove at the guard, a question to him, and Flee: the parting blow hit for 4
+                # and the prose had her slip away. A blow at a foe it fights is not leaving; nor is a word to one, unless the words say run
+                adj.commands = [c for c in adj.commands if c.id != "flee"]
+                picked.discard("flee")
         # B364 (Gemma round 23, 59dc9865fc14 T9): "shove a barrel across the gap" carried a transition to the place beyond the gap
         # and was typed as Flee (a parting bite, 5 of 11): an act with its own check (the shove) is not the player leaving
         away = [t for i in intents if (t := (getattr(i, "transition", "") or "").strip()) and not self._same_spot(state, t, p.location)
