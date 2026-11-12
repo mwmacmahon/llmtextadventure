@@ -1690,3 +1690,19 @@ def test_a_blow_at_a_foe_driven_off_brings_them_back(game):
     back = s.person("dead")
     assert back.status == "alive" and back.location == s.player.location and "dead" in s.player.fighting
     assert any(e.get("side") == "player" for e in s.combat.plan) and back.combat.hp < back.combat.hp_max
+
+
+def test_a_step_back_the_reading_settles_is_no_blow(game):
+    """B378 (Gemma round 29, 21c3df8f3565 T25): 'step back and maintain guard', attack_at the thug with the shield, settled by the
+    reading's own fiat; 'club' (his) passed for a blow word and the blow killed him. A shove the reading does not settle stays a blow."""
+    from engine.roles import FiatOutcome
+    st, q = _fight(game, 1)
+    adj = AssistantReadingCombat(kind="action", summary="back", time_minutes=1, tempo="slow", risk="none", intents=[
+        IntentCombat(action="step back and maintain guard", targets=["dead"], attack_at=["dead"], weapon="shield")],
+        fiat=[FiatOutcome(attempt="step back and maintain guard", outcome="Oren steps back, shield up.")])
+    game.aim_blows(st, adj, "I step back out of the club's reach, keeping my shield up and my eyes on him.")
+    assert adj.intents[0].attack_at == []
+    shove = AssistantReadingCombat(kind="action", summary="shove", time_minutes=1, tempo="fast", risk="high", intents=[
+        IntentCombat(action="shove the dead into the booth", targets=["dead"], attack_at=["dead"], weapon="hand")])
+    game.aim_blows(st, shove, "I shove him into the booth.")
+    assert shove.intents[0].attack_at == ["dead"]

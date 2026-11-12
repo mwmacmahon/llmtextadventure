@@ -1589,6 +1589,15 @@ class FantasyGame(GameBase):
                 # round 11 (56dd55904e70 T30): 'retreat from the gallery', no weapon, attack_at the drowned: the engine brought
                 # three drowned in and rolled a longsword blow the player never asked for, at foes the story had not shown
                 i.attack_at = []
+        settled = {(getattr(f, "attempt", "") or "").strip().lower() for f in getattr(adj, "fiat", None) or []}
+        for i in intents:
+            if (getattr(i, "attack_at", None) and (i.action or "").strip().lower() in settled
+                    and not (ATTACK.search(i.action or "") or cb.UNARMED.search(i.action or ""))):
+                # B378 (Gemma round 29, 21c3df8f3565 T25): "I step back out of the club's reach, keeping my shield up" was read as
+                # 'step back and maintain guard', attack_at the thug with the shield, and settled as working by the reading's own
+                # fiat; 'club' (his) passed for a blow word, the blow rolled and killed him. An attempt the reading settles as simply
+                # working, with no blow in its own words, is not a blow
+                i.attack_at = []
         foe = next((x for x in p.fighting if (q := state.person(x)) is not None and q.status == "alive"), None)
         for i in intents:
             at = list(getattr(i, "attack_at", None) or [])
@@ -1614,6 +1623,7 @@ class FantasyGame(GameBase):
             return
         for i in intents:
             if (getattr(i, "check", None) is None and hasattr(i, "attack_at") and not i.attack_at
+                    and (i.action or "").strip().lower() not in settled                           # B378: settled is no blow
                     and (getattr(i, "weapon", "") or (i.action or "").split()[:1] == ["attack"])):
                 # round 10 (8085528d0af0 T34): 'attack' with a dagger at the zombie, targets set, no check and attack_at empty:
                 # no roll, and the narrator killed it in prose. A blow at someone the player fights is the attack
