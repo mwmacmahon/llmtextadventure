@@ -291,6 +291,14 @@ B144 covers the plain words).
   player, allies, then enemies as they joined). The called round and its backstop stay in the code behind `prerolled_rounds`.
   *open with the owner: to revisit; options in D240*
 - Gorm weakened to a small troll of his own numbers (B371, the owner 11-11). *built (content)*
+- The narrator's own danger calls, back in moderation (D241, the owner 11-11: "exciting to story in moderation, but obviously
+  ran into issues ... would be interested to find a way to fix"). Off today (`narrator_hazards`, D238) after two unasked
+  dunkings in one round (Gemma round 24, -5 and -4 while walking carefully). Ways to bring them back: a warned turn first (the
+  call only announces it, a § WARNING; it rolls next turn unless the player's action avoids it); the danger as the cost of a
+  failed risky check there, never of a careful step; a cap (once a scene, never twice running, never under a set share of hit
+  points). *open: designed as options, not started*
+- A successful back-off or talk-down in a fight still takes that turn's enemy blows (the round is rolled whole, D233; Sonnet
+  pair 6 T14, the fresh-eyes read of D235's line). Flee is the only move that cuts the round short. *open with the owner*
 - The debt: one enemy resolver, one damage-reduction table and the shield counted once, the dead code, ATTACK's word
   boundary (B323, B324, B325, B327); and the minors (B314, B321, B322, B326). *built in part: B314, B321 to B323, B325 to B327; B324's shield counted once (the owner); its merge of the four reduction homes not started*
 - Perils and grabs (D213 to D222, Gemma rounds 7 to 10, B333 to B338): the save keeps the player out, held breath then
