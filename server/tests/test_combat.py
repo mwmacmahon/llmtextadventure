@@ -1424,6 +1424,33 @@ def test_a_fight_turns_own_check_rolls_before_the_round(game):
         assert any("before this telling" in d for d in w.directives)
 
 
+def test_a_won_check_aimed_at_a_foe_spares_its_blows(game):
+    """D242 (the owner, 11-12): a back-off, a shove or a talk-down rolled first and won costs the foe it was aimed at its blows
+    this round (Sonnet pair 6: a singer talked down swung the same turn); a lost one leaves the round as it was."""
+    from engine.roles import CheckStaked
+    from games.fantasy import world as wo
+    seen = set()
+    for seed in range(30):
+        st = new(game)
+        _skeletons(st, 2)
+        st.player.fighting = ["dead"]
+        adj = AssistantReadingCombat(kind="action", summary="back off", time_minutes=1, tempo="fast", risk="high", intents=[IntentCombat(
+            action="back off up the steps away from the dead", targets=["dead"], check=CheckStaked(
+                label="back off up the steps", stat="dex", difficulty="medium", target_entity="dead", danger="scrape",
+                failure_outcome="She stumbles on the steps."))])
+        s, w = wo.world_turn(game, st, adj, "I back off up the steps away from them.", random.Random(seed), 1, 2)
+        d = (s.flags.get("prerolled_checks") or [])[0]
+        won = d["outcome"] in ("success", "huge_success", "critical_success")
+        struck = [e for e in s.combat.plan if e.get("side") == "enemy"]
+        assert (not struck) == won, (seed, d["outcome"])
+        if won:
+            assert any("this round: " in m and "No blow from" in m for m in w.mechanics)
+            assert any("nothing comes from the catacomb dead this round" in x for x in w.directives)
+            assert not any(x.get("who") == "dead" for x in s.flags.get("prerolled") or [])
+        seen.add(won)
+    assert seen == {True, False}
+
+
 def test_a_hazard_word_in_what_the_player_says_is_no_step_in(game):
     """B357 (Sonnet pair 5, T19): 'the way she'd leave them for a swim', said to Tam while climbing back aboard, rolled the cold water."""
     from engine.roles import IntentStaked

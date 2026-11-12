@@ -489,6 +489,7 @@ def preroll_check(game: Any, s: FantasyState, adj: Any, label: str, rng: Any, of
     won = res.outcome in ("success", "huge_success", "critical_success")
     branch = str(getattr(c, "success_gain" if won else "failure_outcome", "") or "").strip()
     data["stake"] = {"branch": "success" if won else "failure", "text": branch}
+    data["at"] = list(dict.fromkeys(x for x in [getattr(c, "target_entity", None), *(getattr(intent, "targets", None) or [])] if x))
     if str(getattr(c, "danger", "none") or "none") != "none":
         data["stake"]["danger"] = str(c.danger)
     note = game.check_note(s, data, label) or ""
@@ -871,17 +872,29 @@ def plan_fight(game: Any, s: FantasyState, adj: Any, player_text: str, rng: Any,
             c = getattr(i, "check", None)
             if c is not None and not getattr(i, "attack_at", None) and c.label not in done and not p.fate:
                 preroll_check(game, s, adj, c.label, rng, offset, w, "")
+        # D242 (the owner, 11-12: "yes"): a won check aimed at a foe (a back-off, a shove, a talk-down) costs that foe its blows this
+        # round; rolled first, the round had still struck (Sonnet pair 6: a singer talked down swung the same turn)
+        spared = list(dict.fromkeys(x for d in s.flags.get("prerolled_checks") or [] if d.get("outcome") in WON
+                                    for x in d.get("at") or [] if x in p.fighting))
+        if spared:
+            s.combat.plan = [e for e in s.combat.plan if not (e.get("side") == "enemy" and e.get("who") in spared)]
+        held = [q.name for x in spared if (q := s.person(x)) is not None and q.status == "alive"]
+        w.mechanics += [f"No blow from {n} this round: {p.name}'s attempt worked." for n in held]
         # the round rolled before the prose (the record's combat.prerolled dial, built 11-11): the narrator plays what fell
         before = int(s.flags.get("prerolled_hp") or 0)
         lines, told, data, hp = cb.preroll(game, s, rng, offset, before)
         s.flags["prerolled"], s.flags["prerolled_hp"] = data, before + hp
         w.mechanics += lines
+        # read fresh (11-12): 'No blow comes from the singer' read as the singer about to strike; a pursuit was left open
+        spare = " ".join(f"Because {p.name}'s attempt worked, nothing comes from {n} this round: no blow, no grab, no chase." for n in held)
         if told:
             # read fresh by a subagent: 'as it fell' invited killing a foe that missed; the call names primed them; a bare count
-            first = (f"Tell {p.name}'s attempt above first; the blows below still land as given. "
+            first = (f"Tell {p.name}'s attempt above first; the blows below still happen as given. "
                      if any(d.get("label") not in done for d in s.flags.get("prerolled_checks") or []) else "")
             w.directives.append(first + "The blows below are settled. Tell each in this order, with the outcome given, and stop after the last: "
-                                + " ".join(told) + cb.round_count(game, s))
+                                + " ".join(told) + cb.round_count(game, s) + (" " + spare if spare else ""))
+        elif spare:
+            w.directives.append(f"{spare} Nobody else strikes this round. Stop where {p.name} chooses next.")
         return
     w.directives += cb.round_lines(game, s)      # THIS TURN's round list (the game's standing lines are read before the plan exists)
 

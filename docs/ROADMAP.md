@@ -298,7 +298,8 @@ B144 covers the plain words).
   failed risky check there, never of a careful step; a cap (once a scene, never twice running, never under a set share of hit
   points). *open: designed as options, not started*
 - A successful back-off or talk-down in a fight still takes that turn's enemy blows (the round is rolled whole, D233; Sonnet
-  pair 6 T14, the fresh-eyes read of D235's line). Flee is the only move that cuts the round short. *open with the owner*
+  pair 6 T14, the fresh-eyes read of D235's line). Flee is the only move that cuts the round short. *built (D242, B373, the
+  owner 11-12): a won check aimed at a foe costs that foe its blows that round; not yet seen in a played round*
 - The debt: one enemy resolver, one damage-reduction table and the shield counted once, the dead code, ATTACK's word
   boundary (B323, B324, B325, B327); and the minors (B314, B321, B322, B326). *built in part: B314, B321 to B323, B325 to B327; B324's shield counted once (the owner); its merge of the four reduction homes not started*
 - Perils and grabs (D213 to D222, Gemma rounds 7 to 10, B333 to B338): the save keeps the player out, held breath then
