@@ -1619,3 +1619,16 @@ def test_a_cluster_of_rats_is_creatures_not_a_thing(game):
     assert q is not None and q.combat is not None and q.id in s1.player.fighting
     s2, _, _ = apply_changes(game, st, ChangeReport.of(Change(kind="new", target="thing", value="rat skulls")), present=[], causes=[])
     assert any("skull" in it.name.lower() for it in s2.inventory) or any("skull" in t.name.lower() for t in s2.things)
+
+
+def test_gorm_is_a_small_troll_with_his_own_numbers(game):
+    """B371 (the owner, 11-11: "Weaken"): the full troll killed two level-1 players (round 15, Sonnet pair 5). Gorm's content block
+    carries his own numbers over the library's; the library troll (his cousin at the bridge) is unchanged."""
+    row = next(x for x in game.hooks_content()["cellar_rats"]["people"] if x.get("id") == "gorm")
+    b = cb.block_of(Person(id="gorm", name="Gorm", role="A small troll", combat=CombatBlock(**row["combat"])))
+    assert (b.hp, b.hp_max, b.attack, b.damage, b.regen, b.xp, b.ac) == (24, 24, 4, "1d6+2", 2, 150, 14)
+    assert b.fixed and cb.is_person(b.kind) and not b.fanatic
+    full = cb.block_of(Person(id="hobb", name="Hobb", role="a troll", combat=CombatBlock(block="troll", fixed=True)))
+    assert full.hp == 40 and full.attack == 6
+    both = Person(id="x", name="X", role="a troll", combat=CombatBlock(block="troll", hp=20, ac=13))      # hp and ac both given: still filled
+    assert cb.ensure_block(both).hp_max == 20 and cb.ensure_block(both).actions

@@ -1202,3 +1202,14 @@ def test_a_short_rest_by_the_lever_runs_its_length(game: FantasyGame):
     doc = st.model_dump(mode="json")
     now = int(doc["clock"]["day"]) * 1440 + int(doc["clock"]["minute"])
     assert clock_stop(game, doc, 8, now, 60, asleep=True, resting=True) == (60, "")
+
+
+def test_a_thread_someone_asked_for_is_offered_until_a_step_is_noted(game: FantasyGame):
+    """B372 (the owner, 11-11): the siren's parting wish stood as a job 'taken up' (Sonnet pair 5, ffdc529bd55d T26)."""
+    from engine.threads import Thread
+    st = new(game)
+    st.threads += [Thread(id="t26-a-true-story-for", title="A true story for Mirren", who="mirren", status="open"),
+                   Thread(id="t14-finding-wren", title="Finding Wren", who="", status="open"),
+                   Thread(id="t14-lay-the-drowned-man", title="Lay the drowned man to rest", who="the_singer", status="open", note="lifted him onto dry stone")]
+    rows = {r.title: r.standing for r in game.quest_rows(st)}
+    assert rows["A true story for Mirren"] == "offered" and rows["Finding Wren"] == "taken up" and rows["Lay the drowned man to rest"] == "taken up"

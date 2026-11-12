@@ -1212,11 +1212,21 @@ class FantasyGame(GameBase):
                          standing=dk.standing_of(h), giver=self.unnamed(s, h.giver), tone=dk.STANDING_TONES.get(dk.standing_of(h), "info"))  # type: ignore[arg-type]
                 for h in s.hooks if h.status != "dealt"]                 # B290: names as the player knows them (Maud, 'the troll Gorm')
         names = self.entity_names(s)
-        rows += [QuestRow(title=t.title, line=self.unnamed(s, quest_line(t.about, t.note)), standing=THREAD_STANDING.get(t.status, t.status),
+        rows += [QuestRow(title=t.title, line=self.unnamed(s, quest_line(t.about, t.note)), standing=self._thread_standing(s, t),
                           giver="" if t.who.strip().lower() in ("player", "you", s.player.name.lower()) else self.unnamed(s, names.get(t.who, t.who)),   # B224.24
                           tone="ok" if t.status == "resolved" else "bad" if t.status == "failed" else "info")
                  for t in s.threads if not t.id.startswith("hook-")]
         return rows
+
+    @staticmethod
+    def _thread_standing(s: FantasyState, t: Any) -> str:
+        """B372 (the owner, 11-11: a request never agreed to "offered instead ... sounds reasonable"): Sonnet pair 5's siren's parting
+        wish ('come back with a true story', who: mirren) stood as a job 'taken up'. An open thread someone else asked for (its
+        `who` is another person) is offered until the referee notes a step on it; the player's own (no one named) is taken up."""
+        asked = t.who.strip().lower() not in ("", "player", "you", s.player.name.lower())
+        if t.status == "open" and asked and not (t.note or "").strip():
+            return "offered"
+        return THREAD_STANDING.get(t.status, t.status)
 
     def quests_maybe_settled(self, s: FantasyState, applied: list[str], log_line: str) -> list[dict]:
         """B259 (Lilith's save: the rats led off with Gorm's whistle, the referee's note "cellar quiet", no ending flag set;

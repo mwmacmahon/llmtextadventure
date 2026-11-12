@@ -33,6 +33,17 @@ the count is the rules', not only Gemma's. The calm-scene rule (1 below) was wid
 rolls left: a plain question to a named person (Sonnet names whoever is asked) and Gemma's standing 'Socially Awkward -1' read
 from the player's own blurb.
 
+## The owner's answers (11-11 morning, D240)
+
+1. **Rolling before the prose:** "something to come back to at some point". It stays on for now and is on the ROADMAP to
+   revisit; the old way let the narrator place each blow, with the unwritten ones rolled after. The order today is fixed: the
+   turn's other checks, the player's blow, each ally, then each enemy as they joined (no initiative).
+2. **Gorm:** "Weaken". Built (B371): hp 24, +4, 1d6+2, regenerates 2; a level-1 class wins 32 to 85% of 200 simulated fights,
+   against 0 to 10% before.
+3. **Threads shown as jobs:** "Unsure, but that sounds reasonable". Built, provisional (B372): a thread someone else asked for is
+   offered until a step is noted.
+4. **The called fight round:** kept, not deleted (it is the thing answer 1 is about).
+
 ## The decisions, each with how to undo it
 
 Every one is logged in notes/DECISIONS.md with its evidence and the alternatives, and in OPEN-ISSUES.md (B348 to B370).
@@ -157,4 +168,4 @@ behaved in the night's rounds once the rescue roll, the before-the-prose hazard 
 - **Old rules that argued with the new ones, now reconciled:** the narrator's own CHECK after a check rolled before the telling
   (D236); the fight_alive guard before the prerolled round landed (D236); B286's word fallback joining people to a fight (B357).
 - **Still duplicated:** the called round (`prerolled_rounds = False`) and its backstop are kept behind the setting with their
-  tests. If the prerolled round holds through the next week of rounds, deleting the called path is the next debt cut.
+  tests. Kept on the owner's word (D240): rolling before the prose is to be revisited.

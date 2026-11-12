@@ -213,8 +213,8 @@ def block_of(q: Person) -> CombatBlock:
 
 def ensure_block(q: Person) -> CombatBlock:
     """The block on the person, filled and stored, so the engine's hit points have a home."""
-    if q.combat is None or q.combat.hp is None or q.combat.ac is None:
-        q.combat = block_of(q)
+    if q.combat is None or q.combat.hp is None or q.combat.ac is None or q.combat.hp_max is None:
+        q.combat = block_of(q)      # hp_max too: a content block that gave both hp and ac was never filled (no hp_max, no moves)
     return q.combat
 
 
