@@ -225,13 +225,11 @@ def proficiency(level: int) -> int:
 
 def weapons_carried(s: FantasyState) -> list[tuple[str, str, str]]:
     """(weapon name, dice, how) for every weapon in the pockets, best first; a fist when there is none."""
+    from . import gear
     out = []
     for it in s.inventory:
-        n = it.name.lower()
-        hit = next((w for w in sorted(WEAPONS, key=len, reverse=True) if w in n or w + "s" in n or w.rstrip("e") + "es" in n), None)
-        if hit is None:
-            hit = next((WEAPON_WORDS[w] for w in WEAPON_WORDS if re.search(rf"\b{w}s?\b", n)), None)
-        if hit and not (it.count == 0):
+        hit = gear.weapon_of(it)                         # one reader of what weapon a thing is (its name, else its note: B399)
+        if hit:
             out.append((hit, *WEAPONS[hit]))
     out.sort(key=lambda w: -dice_avg(w[1]))
     return out or [("fist", *FIST)]
@@ -266,11 +264,15 @@ def player_weapon(s: FantasyState, named: str = "") -> tuple[str, str, str]:
     k = (named or "").lower()
     if k and UNARMED.search(k) and not any(w[0] in k for w in ws):
         return ("fist", *FIST)
+    from . import gear
     if k:
         hit = next((w for w in ws if w[0] in k or k in w[0]), None)
         if hit:
             return hit
-    from . import gear
+        # B399: the reading named the weapon by the name the player gave it ("EVILSLAYER II"): that thing's own kind
+        own = next((gear.weapon_of(it) for it in s.inventory if it.name and (it.name.lower() in k or k in it.name.lower()) and gear.weapon_of(it)), "")
+        if own:
+            return next((w for w in ws if w[0] == own), ws[0])
     held = gear.worn(s).get("weapon")                 # the weapon in hand (gear.py), unless the words name another
     if held is not None and (k := gear.weapon_of(held)):
         return next((w for w in ws if w[0] == k), ws[0])
@@ -1123,8 +1125,11 @@ def run_fight_command(game: Any, state: FantasyState, command_id: str) -> tuple[
     from engine.game import CommandResult
     s = state.model_copy(deep=True)
     p = s.player
-    if s.combat is None or not p.fighting:
+    if not p.fighting:
         return state, CommandResult(ok=False, label=command_id.capitalize(), text="There is no fight to leave.")
+    if s.combat is None:                                    # B400: someone is fought and no round has been planned yet
+        from .state import CombatState
+        s.combat = CombatState(round=0)
     held = next((c for c in p.conditions if c.name == "grappled"), None)
     if command_id == "flee" and held is not None:            # a grab holds: no running until it is broken (the owner, 11-10 night)
         who = s.person(held.by).name if held.by and s.person(held.by) else "the grip"

@@ -39,13 +39,18 @@ def is_shield(it: Item) -> bool:
 def weapon_of(it: Item) -> str:
     """The weapon kind of an item ('longsword'), or ''."""
     from .combat import WEAPON_WORDS, WEAPONS
-    n = it.name.lower()
     if it.count == 0:
         return ""
-    hit = next((w for w in sorted(WEAPONS, key=len, reverse=True) if w in n or w + "s" in n or w.rstrip("e") + "es" in n), None)
-    if hit is None:
-        hit = next((WEAPON_WORDS[w] for w in WEAPON_WORDS if re.search(rf"\b{w}s?\b", n)), None)
-    return hit or ""
+    # B399 (the paladin round on Lilith's server, 680bf5e01dac): the sheet's "My sword is called EVILSLAYER II" was filed as an
+    # item named 'EVILSLAYER II' with the note 'a sword, ...': no weapon word in the name, so it was no weapon, and every
+    # swing of it was rolled as a javelin. A thing with its own name is the weapon its note says it is
+    for n in (it.name.lower(), (it.note or "").lower()):
+        hit = next((w for w in sorted(WEAPONS, key=len, reverse=True) if w in n or w + "s" in n or w.rstrip("e") + "es" in n), None)
+        if hit is None:
+            hit = next((WEAPON_WORDS[w] for w in WEAPON_WORDS if re.search(rf"\b{w}s?\b", n)), None)
+        if hit:
+            return hit
+    return ""
 
 
 def slot_of(it: Item) -> str:

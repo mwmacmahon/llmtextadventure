@@ -3670,7 +3670,10 @@ class FantasyGame(GameBase):
         if dev_mode():                                                     # the test hook (the owner, 11-10 night): no button, dev only
             out.append(CommandSpec(id="debug", label="Debug", mode="narrated", typed=False, params=[],
                                    hint="DEBUG: spawn 3 skeletons minion | set me on fire | drown me | make me bleed | freeze me | grab me | hurt 5 | heal | clear | room"))
-        if state.combat is not None and state.player.fighting:              # part fifteen §7; B287 (the owner, 11-09): typed, no buttons
+        # B400 (the paladin round, 680bf5e01dac T14): with a foe still fought and no round yet planned (combat None: the turn after
+        # a Flee, the troll at the trap door again) the levers were not offered, so the Flee the reading had answered was dropped
+        # and the troll's round ran on him as he went upstairs. The levers are there whenever someone is fought
+        if state.player.fighting:                                           # part fifteen §7; B287 (the owner, 11-09): typed, no buttons
             out += [CommandSpec(id="flee", label="Flee", mode="narrated", typed=True, decides=True,
                                 hint="Run from the fight: the player turns their back on it and goes (out of reach, out of the place). Every enemy "
                                      "within reach gets one free blow as they go (at most two of a band). Not a step back, a dodge, or a move to better ground inside the fight."),

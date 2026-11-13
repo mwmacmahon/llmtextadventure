@@ -1828,3 +1828,25 @@ def test_a_yield_with_a_blow_in_the_turn_is_no_yield(game):
         IntentCombat(action="Give up the fight", targets=["dead"], leaving=False)])
     game.aim_blows(st, give, "All right, all right, you win. I'm done fighting.")
     assert [c.id for c in give.commands] == ["yield"]
+
+
+def test_a_named_sword_is_the_weapon_its_note_says(game):
+    """B399 (the paladin round on Lilith's server, 680bf5e01dac): "My sword is called EVILSLAYER II" was filed as an item named
+    'EVILSLAYER II', note 'a sword, ...': no weapon by its name, and every swing of it was rolled as a javelin."""
+    from games.fantasy import gear
+    st = new(game)
+    st.inventory = [i for i in st.inventory if not gear.weapon_of(i)]
+    st.inventory += [Item(id="javelins", name="javelins", count=5), Item(id="evilslayer_ii", name="EVILSLAYER II", note="a sword, replacement for the first, which fell in a lake")]
+    assert gear.weapon_of(st.item("evilslayer_ii")) == "longsword" and gear.slot_of(st.item("evilslayer_ii")) == "weapon"
+    assert cb.player_weapon(st, "EVILSLAYER II")[0] == "longsword" and cb.player_weapon(st, "")[0] == "longsword"
+    assert cb.player_weapon(st, "javelin")[0] == "javelin"
+
+
+def test_the_fight_levers_are_there_whenever_someone_is_fought(game):
+    """B400 (the paladin round, T14): a foe fought and no round planned yet (combat None): Flee was not offered, so the reading's
+    Flee was dropped and the foe's round ran."""
+    st, _q = _fight(game, 1)
+    st.combat = None
+    assert {"flee", "yield"} <= {c.id for c in game.commands(st)}
+    s1, res = cb.run_fight_command(game, st, "flee")
+    assert res.ok is not False and s1.player.fighting == [] and s1.combat is None and res.text.startswith("Out of the fight.")
