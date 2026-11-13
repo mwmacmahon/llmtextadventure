@@ -401,7 +401,7 @@ def test_the_fight_panel_shows_everyone_with_numbers_and_the_chips(game):
     assert second.text == "5 / 13" and second.tier == "bloodied"
     assert not any(c.id in ("flee", "yield") for p in panels if getattr(p, "type", "") == "commands" for c in p.items)   # B287: no buttons
     typed = {c.id: c for c in game.commands(st)}
-    assert typed["flee"].typed and not typed["flee"].words and typed["yield"].typed and "surrender" in typed["yield"].words   # B388: no word list on Flee
+    assert typed["flee"].typed and not typed["flee"].words and typed["yield"].typed and not typed["yield"].words   # B388, B395: no word list on Flee or Yield
 
 
 def test_flee_ends_the_fight_with_a_free_blow_from_each_and_yield_is_taken_by_people_only(game):
@@ -478,10 +478,16 @@ def test_a_fast_shout_with_no_blow_joins_nobody_to_a_fight(game):
                                   intents=[IntentCombat(action="Warn Hazel loudly, then quietly ask the troll if it is a troll", targets=["hazel", "gorm"])])
     s, w = game.world_turn(st, talk, "I shout back to the girl \"Careful! This is probably a troll!\" Then: \"Umm, troll, right?\"", random.Random(1), 6, 2)
     assert s.player.fighting == [] and s.combat is None and not any("A FIGHT" in d for d in w.directives)
-    swing = AssistantReadingCombat(kind="action", summary="Brin swings at the troll.", time_minutes=1, tempo="fast", risk="high", entities=["gorm"],
+    # B393: blow words alone ("Swing at the troll", no attack_at) no longer join one who is neither hostile nor fought (the
+    # wary troll): the reading's own aim does, as a guided model gives it
+    words = AssistantReadingCombat(kind="action", summary="Brin swings at the troll.", time_minutes=1, tempo="fast", risk="high", entities=["gorm"],
                                    intents=[IntentCombat(action="Swing at the troll", targets=["gorm"])])
-    s2, _ = game.world_turn(st, swing, "I swing my sword at the troll", random.Random(1), 6, 2)
-    assert s2.player.fighting == ["gorm"]
+    s2, _ = game.world_turn(st.model_copy(deep=True), words, "I swing my sword at the troll", random.Random(1), 6, 2)
+    assert s2.player.fighting == []
+    swing = AssistantReadingCombat(kind="action", summary="Brin swings at the troll.", time_minutes=1, tempo="fast", risk="high", entities=["gorm"],
+                                   intents=[IntentCombat(action="Swing at the troll", targets=["gorm"], attack_at=["gorm"], weapon="longsword")])
+    s2, w2 = game.world_turn(st, swing, "I swing my sword at the troll", random.Random(1), 6, 2)
+    assert s2.player.fighting == ["gorm"] and {"kind": "joined", "who": "gorm", "by": "attack_at", "attitude": s2.person("gorm").attitude} in w2.rows
 
 
 def test_engine_lines_call_the_unnamed_what_the_player_calls_them(game):
@@ -1786,3 +1792,39 @@ def test_a_blow_word_in_an_attempts_words_joins_no_friend(game):
         IntentCombat(action="Cut off the cutpurse and strike him down.", targets=["cutpurse"])])
     s, _w = wo.world_turn(game, st.model_copy(deep=True), foe, "I cut him off and strike him down.", random.Random(1), 3, 2)
     assert "maud" not in s.player.fighting
+
+
+def test_the_parting_blow_calls_the_foe_what_the_player_does(game):
+    """B394 (the Sonnet smoke, 85ca44771923 T6): "Gorm's fist: 23 against AC 17" on the Flee line, where every other line says Troll."""
+    from games.fantasy.state import CombatState
+    st = new(game)
+    q = _troll(st)
+    st.player.fighting, st.combat = [q.id], CombatState()
+    _s, res = cb.run_fight_command(game, st, "flee")
+    assert "Troll" in res.text and "Gorm" not in res.text and "Gorm" not in res.directive
+
+
+def test_the_engine_says_when_a_fight_opens_and_only_then(game):
+    """D245 (the owner, 11-12): a 'Combat begins' line of the engine's own on the turn a fight opens, naming the foes as the
+    player knows them; not on the fight's later turns."""
+    st = new(game)
+    _troll(st)
+    swing = AssistantReadingCombat(kind="action", summary="Brin swings at the troll.", time_minutes=1, tempo="fast", risk="high", intents=[
+        IntentCombat(action="Swing at the troll", targets=["gorm"], attack_at=["gorm"], weapon="longsword")])
+    s1, w1 = game.world_turn(st, swing, "I swing my sword at the troll", random.Random(1), 6, 2)
+    assert w1.mechanics and w1.mechanics[0] == "Combat begins: Troll." and {"kind": "combat_begins", "who": ["gorm"]} in w1.rows
+    s2, w2 = game.world_turn(s1, swing, "I swing again", random.Random(2), 7, 2)
+    assert not any(m.startswith("Combat begins") for m in w2.mechanics)
+
+
+def test_a_yield_with_a_blow_in_the_turn_is_no_yield(game):
+    """B395: '"Yield!" I shout at him, and press the attack' read with the Yield lever and a blow."""
+    from engine.roles import CommandPick
+    st, _q = _fight(game, 1)
+    adj = AssistantReadingCombat(kind="action", summary="press", time_minutes=1, risk="high", commands=[CommandPick(id="yield")], intents=[
+        IntentCombat(action="Press the attack", targets=["dead"], attack_at=["dead"], weapon="longsword", leaving=False)])
+    assert game.aim_blows(st, adj, '"Yield!" I shout at him, and press the attack.') == ["yield_dropped_blow"] and adj.commands == []
+    give = AssistantReadingCombat(kind="action", summary="give up", time_minutes=1, risk="high", commands=[CommandPick(id="yield")], intents=[
+        IntentCombat(action="Give up the fight", targets=["dead"], leaving=False)])
+    game.aim_blows(st, give, "All right, all right, you win. I'm done fighting.")
+    assert [c.id for c in give.commands] == ["yield"]

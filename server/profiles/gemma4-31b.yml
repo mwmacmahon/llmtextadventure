@@ -5,7 +5,12 @@
 # free VRAM (Gemma's KV is heavier than the Qwen hybrids'); thinking off everywhere; sampling the server's defaults,
 # so the one change against the anchors is the model (the card's 1.0 / 0.95 / 64 is a later ladder, not this run).
 model: gemma-4-31B-it-uncensored-heretic-Q5_K_M.gguf
-server: {ctx: auto, ckpt: 2048, kv: q8_0, think_budget: -1}
+# B382 (11-13): `ctx: auto` never sized anything here: llama.cpp's --fit gives up when the layers are pinned to the GPU
+# ("n_gpu_layers already set by user to 999, abort"), so the server took 49,152 tokens a slot, 31.7 GB of the card's 32.6 with
+# the weights. Any other use of the card (a Sunshine session, 0.8 GB) and the load failed at the last 1.3 GB, and the unit
+# restarted in a loop (20 times on 11-13; the two outages of 11-12 night were the same after an idle sleep). A fixed
+# 40,960 a slot leaves about 1.6 GB; the largest narrator prompt in the store is about 20,000 tokens.
+server: {ctx: 122880, ckpt: 2048, kv: q8_0, think_budget: -1}
 roles: {}
 dials:
   stakes: live          # B94 (D176): every profile names it

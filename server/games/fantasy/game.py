@@ -1667,6 +1667,12 @@ class FantasyGame(GameBase):
                     i.attack_at = fought
                     did.append("attack_with_no_roll_aimed")
         picked = {c.id for c in getattr(adj, "commands", None) or []}
+        if "yield" in picked and any(getattr(i, "attack_at", None) for i in intents):
+            # B395: '"Yield!" I shout at him, and press the attack' read with the Yield lever and a blow (1 of 21 on Gemma): a
+            # turn with a blow in it is not the player giving up
+            adj.commands = [c for c in adj.commands if c.id != "yield"]
+            picked.discard("yield")
+            did.append("yield_dropped_blow")
         if any(getattr(i, "leaving", None) is not None for i in intents):
             # D255 (the owner, 11-13: "anytime we are doing too many hard assumptions that the referee / assistant got something
             # hard right I get nervous"; "what if they said they're running at the enemy? Or running to help an ally"). A reading
@@ -1860,7 +1866,9 @@ class FantasyGame(GameBase):
                     data.update(kills=True, cause=label)
                     return (f" The danger is past surviving: it kills {state.player.name}. Write the death straight; this is the end "
                             f"of the story.")
-                data["harm"] = wo.harm(danger, int(data.get("roll") or 0))
+                import random as _r
+                data["harm"] = wo.harm(danger, _r.Random(f"harm:{state.player.name}:{state.clock.model_dump_json()}:{label}:{data.get('roll')}").randint(0, 5999))
+                data["harm_dice"] = wo.harm_dice(danger, data["harm"])
                 if data["harm"] >= state.player.hp - int(data.get("hp_taken") or 0):
                     data.update(kills=True, cause=label)                # B310: the cost takes the last hit point: the death, now
                     return f" The cost is past surviving: it kills {state.player.name}. Write the death straight; this is the end of the story."
@@ -3671,9 +3679,9 @@ class FantasyGame(GameBase):
                     # reading had answered it leaving; whether the player leaves is aim_blows' to settle, not a list's
                     CommandSpec(id="yield", label="Yield", mode="narrated", typed=True, decides=True,
                                 hint="Give up the fight: the player surrenders, begs for mercy, or throws down their weapon. People may take it "
-                                     "(the fight ends); the dead, beasts and fanatics do not. Not a parley offered mid-swing or a bluff.",
-                                words=["yield", "surrender", "give up", "i give", "mercy", "quarter", "throw down", "drop my", "lay down", "enough",
-                                       "don't kill", "spare me", "beg"])]
+                                     "(the fight ends); the dead, beasts and fanatics do not. Not a parley offered mid-swing or a bluff.")]
+            # no `words` on Yield either (B395): on 42 Gemma readings the model's own lever kept 14 of 21 yields with 1 wrong,
+            # and the word list struck 3 of the 14 ("All right, all right, you win. I'm done fighting") and stopped none
         out += [CommandSpec(id="rest", label="Rest", mode="narrated", params=[Param(name="kind", label="Rest", options=[Option(id="short", label="Short (an hour)"), Option(id="long", label="Long (the night)")], default="short")],
                            hint="Rest: an hour (some hit points back) or the night (all of them, and what a night refills), here or close by with nothing "
                                 "in the way. Not when the player names a place farther off to sleep: that is a move there, not a rest.",

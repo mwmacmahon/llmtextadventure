@@ -331,7 +331,9 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
     causes = [target] if target and res.outcome in WON else []
     mechanic = render(res)
     if isinstance(data.get("harm"), int) and data["harm"] > 0:          # B306 (Gemma, 11-10): a failure's hit points on its own line
-        mechanic += f" It costs {data['harm']} hit point{'s' if data['harm'] != 1 else ''}."
+        dice = str(data.get("harm_dice") or "")        # the owner, 11-13: a cost is shown as its dice ("1d6+4: 3+4 = 7")
+        mechanic += (f" It costs {dice} = {data['harm']} hit point{'s' if data['harm'] != 1 else ''}." if dice and "+" in dice else
+                     f" It costs {data['harm']} hit point{'s' if data['harm'] != 1 else ''}" + (f" ({dice.split(':')[0]})." if dice else "."))
     return CallResult(text=text, mechanic=mechanic, data=data, causes=causes)
 
 

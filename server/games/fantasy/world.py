@@ -168,9 +168,30 @@ def armour_class(s: FantasyState) -> tuple[int, str]:
     return gear.armour_class(s)
 
 
+# The owner, 11-13: "damage should be done in terms of dice rolls". A step's harm is a die and a bonus, in the step's old
+# range but for the serious one's floor (5 to 10, was 6 to 10): a scrape 1d2, a solid blow 1d3+2, a serious hit 1d6+4
+HARM_DICE = {"scrape": (2, 0), "solid": (3, 2), "serious": (6, 4)}
+
+
 def harm(step: str, roll: int) -> int:
-    lo, hi = STEPS.get(step, STEPS["scrape"])
-    return lo + (roll % (hi - lo + 1))
+    """The step's die, its face taken from `roll` (any integer the caller rolled for it), plus the step's bonus."""
+    sides, bonus = HARM_DICE.get(step, HARM_DICE["scrape"])
+    return (roll % sides) + 1 + bonus
+
+
+def harm_dice(step: str, n: int) -> str:
+    """How a step's harm of `n` was rolled, for the engine's line: '1d6+4: 3+4', '1d2: 2'."""
+    sides, bonus = HARM_DICE.get(step, HARM_DICE["scrape"])
+    return f"1d{sides}+{bonus}: {n - bonus}+{bonus}" if bonus else f"1d{sides}: {n}"
+
+
+def cost_line(data: dict) -> str:
+    """' It costs 1d6+4: 3+4 = 7 hit points.' (or ' It costs 7 hit points.' when no die is recorded), '' for no harm."""
+    n = data.get("harm")
+    if not n:
+        return ""
+    dice = str(data.get("harm_dice") or "")
+    return f" It costs {dice + ' = ' if dice and '+' in dice else ''}{n} hit point{'s' if n != 1 else ''}" + (f" ({dice.split(':')[0]})." if dice and "+" not in dice else ".")
 
 
 def present_enemies(game: Any, s: FantasyState) -> list[Person]:
@@ -472,7 +493,7 @@ def preroll_check(game: Any, s: FantasyState, adj: Any, label: str, rng: Any, of
     if str(getattr(c, "danger", "none") or "none") != "none":
         data["stake"]["danger"] = str(c.danger)
     note = game.check_note(s, data, label) or ""
-    line = game.render_mechanic(s, res) + (f" It costs {data['harm']} hit point{'s' if data['harm'] != 1 else ''}." if data.get("harm") else "")
+    line = game.render_mechanic(s, res) + cost_line(data)
     w.mechanics.append(line)
     plain = re.sub(r"^\s*way out:\s*", "", label, flags=re.I)
     tried = f"{s.player.name} tried {what} ({plain}), and the engine rolled it" if what else f"{s.player.name}'s attempt ({plain}) was rolled"
@@ -645,10 +666,11 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
                                     f"they drift toward {who} instead. Call no check for it. Play that, and end the turn on that moment; what "
                                     f"{p.name} does next is the player's to say.")
     # -- who the player is fighting (B95): the turn's attack targets join; the gone, the dead and the far leave
-    from engine.pipeline import is_fight
+    in_one = bool(p.fighting) or s.combat is not None                   # D245: a fight that opens this turn is announced
     if adj is not None and getattr(adj, "kind", "") == "action":       # B208: the player struck at them
         from .game import ATTACK
         struck: list[str] = []
+        by: dict[str, str] = {}                                             # B393: what named each one struck (the ledger's `joined` row)
         aimed: set[str] = set()                                             # part sixteen §4 (c): the reading's attack targets, its words
         for i in getattr(adj, "intents", None) or []:
             c = getattr(i, "check", None)
@@ -666,16 +688,19 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
                     # pulling him out) joined the wary troll to the fight, and his fist killed. A way out is no blow and joins no one
                     if MARKED.match(getattr(c, "label", "") or ""):
                         continue
-                # B390 (Gemma round 31, 020cbcbdd931 T11): "Collect payment for killing the rats from Maud" has a blow word
-                # ('killing') and Maud as its target: the friendly innkeeper joined a fight and swung her club. A blow word in
-                # an attempt's own words, with nothing in the reading that is a blow (attack_at empty, no check aimed at them,
-                # no one the words strike at: B361 above), joins only someone already fought or already hostile; anyone else
-                # is fought by a blow aimed at them. A STR or DEX check with the blow word is the older shape of a blow, and joins
-                # ("swing the greataxe at Maud", strike Maud STR); so does a blow word in the player's own words ("I swing my
-                # sword at the troll", read with no attack_at): the reading's paraphrase alone ('for killing the rats') does not
-                said_blow = bool(ATTACK.search(player_text or ""))
-                struck += [x for x in [getattr(c, "target_entity", None), *(getattr(i, "targets", None) or [])]
-                           if x and (c is not None or said_blow or (q := s.person(x)) is None or q.id in p.fighting or q.attitude <= -2)]
+                # B390, B393 (D230's rule, kept here too): a blow word in an attempt's words is not a blow. It joins someone
+                # already fought or already hostile, and the one a STR or DEX check is itself aimed at (the older shape of a blow:
+                # "swing the greataxe at Maud", strike Maud STR, target Maud). Anyone else is fought by a blow the reading aims
+                # at them (attack_at). Counted on 775 raw readings (11-13): 54 joins by attack_at; 5 by blow words, all one turn
+                # and all wrong ("I kick off the channel floor and thrust my hand up ... hoping he grabs it" joined the wary troll,
+                # B366 again); round 31 T11, "Collect payment for killing the rats from Maud", joined the friendly innkeeper. On
+                # 290 guided readings a blow word in the player's own words with no attack_at was a real weapon blow 0 times of 36
+                aim = getattr(c, "target_entity", None)
+                more = [x for x in dict.fromkeys([aim, *(getattr(i, "targets", None) or [])])
+                        if x and ((c is not None and x == aim) or (q := s.person(x)) is None or q.id in p.fighting or q.attitude <= -2)]
+                for x in more:
+                    by.setdefault(x, "blow word, check aimed" if (c is not None and x == aim) else "blow word, hostile or fought")
+                struck += more
             a = getattr(i, "attack", None)                                  # part fifteen §6: the reading's attack is the door in
             if a is not None:
                 for t in getattr(a, "targets", None) or []:
@@ -684,12 +709,10 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
                         q.location = p.location                             # a blow at them says they are here (a stale place, B262)
                 struck += list(getattr(a, "targets", None) or [])
                 aimed |= {str(t) for t in getattr(a, "targets", None) or [] if t}
-        acts = " ".join([player_text or ""] + [i.action or "" for i in (getattr(adj, "intents", None) or [])])
-        if not struck and is_fight(adj) and ATTACK.search(acts):
-            # B286: a fast beat with no blow in it (a shout, a question) joins nobody. B357 (Sonnet pair 5, ffdc529bd55d T7): the
-            # summary's "speaking to it instead of attacking" joined wary Gorm, whose fist took 10 of 11: the player's words and the
-            # reading's acts only, and only the hostile; a wary or friendly person is fought only by a blow aimed at them
-            struck = [e for e in (getattr(adj, "entities", None) or []) if (q := s.person(e)) is None or q.attitude <= -2]
+                by.update({str(t): "attack_at" for t in getattr(a, "targets", None) or [] if t})
+        # B393: there was a fallback here (a fight beat with a blow word and no one struck joined the hostile the reading
+        # named, B286, B357). It fired on 0 of 1,199 stored turns and 0 of 775 raw readings, and is gone: the hostile join by a
+        # blow aimed at them, by the words that name them (above), or by their own blow (a narrator's <<ENEMY>> call)
         from .combat import is_item
         struck = list(dict.fromkeys(e for e in struck if not is_item(s, e)))   # B310: a weapon or a thing is never fought; once each
         for e in struck:
@@ -726,8 +749,15 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
                 w.rows.append({"kind": "turned_on", "who": q.id, "why": "the player struck at them"})
             if q is not None and q.status == "alive" and q.id not in p.with_them and q.id not in p.fighting:
                 p.fighting.append(q.id)
+                w.rows.append({"kind": "joined", "who": q.id, "by": by.get(e, "?"), "attitude": q.attitude})
     p.fighting = [x for x in p.fighting if (q := s.person(x)) is not None and q.status == "alive" and game._same_spot(s, q.location, p.location)]
     plan_fight(game, s, adj, player_text, rng, turn, w, offset)
+    if not in_one and s.combat is not None and p.fighting:
+        # D245 (the owner, 11-12: "for good measure it wouldn't hurt to add a 'Combat begins!' message"): the engine's own line
+        # when a fight opens, first among the turn's § lines, naming the foes as the player knows them
+        foes = list(dict.fromkeys(game.shown_name(s, q) for x in p.fighting if (q := s.person(x)) is not None))
+        w.mechanics.insert(0, "Combat begins: " + ", ".join(foes) + ".")
+        w.rows.append({"kind": "combat_begins", "who": list(p.fighting)})
     if s.combat is not None and s.combat.plan:
         # B322 (the combat review): the standing lines were written before this turn's round: 'Here, not fighting ... could turn'
         # named the foes the round list had in the fight, and the part-four 'In a fight with ... write <<ENEMY>>' rode beside it
@@ -770,7 +800,7 @@ def walked_in(game: Any, s: FantasyState, adj: Any, player_text: str, rng: Any, 
             continue
         data = out.get("data") or {}
         s.flags.setdefault("hazard_rolled", []).append(str(hz.get("id")))
-        line = out.get("mechanic", "") + (f" It costs {data['harm']} hit point{'s' if data['harm'] != 1 else ''}." if data.get("harm") else "")
+        line = out.get("mechanic", "") + cost_line(data)
         w.mechanics.append(line)
         w.directives.append(out.get("text", ""))
         w.rows.append({"kind": "hazard", "hazard": hz.get("id"), "outcome": data.get("outcome_player"), "line": line})
@@ -1122,7 +1152,12 @@ def failure_harm(game: Any, s: FantasyState, data: dict, label: str) -> int:
     if not (ATTACK.search(label) or data.get("stat") in ("str", "dex", "con") or MARKED.match(label) or BREAK_FREE.search(label)
             or (pr is not None and way_out(pr, str(data.get("stat") or "").lower(), label))):
         return 0
-    return harm(step, int(data.get("roll") or 0))
+    # its own die, not the check's (a natural 1 was always the same 7): seeded by the moment so a replay rolls it again the same
+    import random as _r
+    die = _r.Random(f"harm:{s.player.name}:{s.clock.model_dump_json()}:{label}:{data.get('roll')}").randint(0, 5999)
+    n = harm(step, die)
+    data["harm_dice"] = harm_dice(step, n)
+    return n
 
 
 DEATH_OPENERS = [(r"water|drown|lake|river|under|sea|siren", "The water closes."), (r"fire|burn|flame", "The fire takes the rest."),

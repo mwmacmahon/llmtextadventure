@@ -669,3 +669,26 @@ def test_a_failed_con_way_out_by_the_words_is_one_die(game):
             break
     else:
         raise AssertionError("no words went for the way out")
+
+
+def test_a_failures_cost_is_a_die_of_its_own_shown_on_the_line(game):
+    """The owner, 11-13: "damage should be done in terms of dice rolls". A step's harm is a die and a bonus (a scrape 1d2, a solid
+    blow 1d3+2, a serious hit 1d6+4), rolled apart from the check's d20 (a natural 1 was always the same 7), and the line shows it."""
+    from games.fantasy import world as wo
+    assert {wo.harm("scrape", r) for r in range(12)} == {1, 2}
+    assert {wo.harm("solid", r) for r in range(12)} == {3, 4, 5}
+    assert {wo.harm("serious", r) for r in range(12)} == {5, 6, 7, 8, 9, 10}
+    assert wo.cost_line({"harm": 7, "harm_dice": wo.harm_dice("serious", 7)}) == " It costs 1d6+4: 3+4 = 7 hit points."
+    assert wo.cost_line({"harm": 1, "harm_dice": wo.harm_dice("scrape", 1)}) == " It costs 1 hit point (1d2)."
+    assert wo.cost_line({"harm": 0}) == "" and wo.cost_line({"harm": 3}) == " It costs 3 hit points."
+    from games.fantasy.state import Person
+    st = new(game)
+    st.people.append(Person(id="rat", name="Rat", role="rat", location=st.player.location, met=True, attitude=-3))
+    st.player.fighting = ["rat"]
+    seen = set()
+    for minute in range(40):                      # the same natural 1 at different moments: not one fixed number
+        st.clock.minute = 600 + minute
+        data = {"outcome": "critical_failure", "stat": "str", "roll": 1}
+        seen.add(wo.failure_harm(game, st, data, "Stomp the rat"))
+        assert data["harm_dice"].startswith("1d6+4: ")
+    assert len(seen) > 2 and seen <= {5, 6, 7, 8, 9, 10}

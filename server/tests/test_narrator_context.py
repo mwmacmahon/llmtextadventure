@@ -280,3 +280,18 @@ async def test_a_split_referee_asks_three_smaller_questions_over_one_cached_prom
     one, _, none = await extract_referee(Stub(), role.model_copy(update={"split": False}), "sys", [Msg("user", "state and prose")])
     assert none == {} and len(seen) == 4
     assert merge_parts([])[0].changes == []
+
+
+def test_a_past_tellings_time_closer_is_not_shown_to_the_narrator_again():
+    """B398 (the owner, 11-13): "The clock in the hall strikes five minutes to eight." closed turn after turn; each copy in
+    the window taught the next. A last paragraph that is one short line telling the time is left out of the history."""
+    from engine.context import history_turn, without_time_closer
+    told = "You push open the tavern door and scan the dim room.\n\nThe clock in the hall strikes seven-fifty."
+    assert without_time_closer(told) == "You push open the tavern door and scan the dim room."
+    assert history_turn("I go in.", told)[-1].content == "You push open the tavern door and scan the dim room."
+    for kept in ("The clock in the hall strikes seven-fifty.",                                              # the whole telling: kept
+                 "You wait.\n\nBy the time the bells chime the hour you have counted nine men in and none out, and your legs ache from it all.\n\nMaud nods.",
+                 "You wait.\n\n\"The clock strikes six,\" she says.",                                       # speech
+                 "You wait by the door until the clock strikes six and the room empties around you."):      # inside a paragraph
+        assert without_time_closer(kept) == kept
+    assert without_time_closer("He leaves.\n\nThe clock reads 00:34.") == "He leaves."

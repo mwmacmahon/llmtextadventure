@@ -58,6 +58,32 @@ HELD = {("93a54b14", 25)}        # the player is in a grip there (as in f6428fd5
 ONLY = {("99d2b5b9", 23): [("I run to Wren and pull her behind me.", False), ("I grab Wren and get us both out of here.", True)]}
 
 
+# the same question of Yield (B395): said in three stored fights with people in them; keyed yield or not
+YIELD_STATES = [("8eb1928e", 14), ("615fa381", 22), ("21c3df8f", 25)]
+YIELD_SAID = [("Enough. I throw down my sword and raise my hands.", True),
+              ("I yield. Take what you want and let me go.", True),
+              ("I drop to my knees and beg them not to kill me.", True),
+              ("I lay my weapon on the ground, slowly, and step back from it with my palms open.", True),
+              ("All right, all right, you win. I'm done fighting.", True),
+              ("I surrender.", True),
+              ("I hold out my purse to them: it's yours, just stop.", True),
+              ("\"Yield!\" I shout at him, and press the attack.", False),
+              ("Enough of this. I swing for his head.", False),
+              ("I show him no mercy and strike again.", False),
+              ("I drop my torch and draw my sword.", False),
+              ("I demand they throw down their weapons and give up.", False),
+              ("I give ground a step and keep my guard up.", False),
+              ("I beg the innkeeper to fetch the Watch while I hold them off.", False)]
+
+
+def rows_yield(store: Path) -> list[dict[str, Any]]:
+    import sqlite3
+    c = sqlite3.connect(f"file:{store}?mode=ro", uri=True)
+    full = lambda pre: c.execute("select id from instance where id like ?", (pre + "%",)).fetchone()[0]   # noqa: E731
+    return [{"key": f"{p}:{t}#y{n}", "iid": full(p), "turn": t, "say": say, "flee": want, "kind": "written"}
+            for p, t in YIELD_STATES for n, (say, want) in enumerate(YIELD_SAID)]
+
+
 def rows(store: Path) -> list[dict[str, Any]]:
     import sqlite3
     c = sqlite3.connect(f"file:{store}?mode=ro", uri=True)
@@ -91,7 +117,8 @@ async def run(a: argparse.Namespace) -> Path:
     have = {r["key"]: r for r in json.loads(path.read_text())["rows"]} if a.resume else {}
     result: dict[str, Any] = {"made": dt.datetime.now().astimezone().isoformat(timespec="seconds"), "profile": profile, "rows": []}
     docs: dict[str, dict] = {}
-    todo = rows(a.store)[: a.only or None]
+    todo = (rows_yield(a.store) if a.set == "yield" else rows(a.store))[: a.only or None]
+    result["set"] = a.set
     for k, row in enumerate(todo):
         if "reading" in have.get(row["key"], {}):
             result["rows"].append(have[row["key"]])
@@ -123,11 +150,39 @@ async def run(a: argparse.Namespace) -> Path:
     return path
 
 
+def score_yield(data: dict, game: Any, store: Path) -> int:
+    """Yield: the model's own lever, and the lever after the pipeline's word gate (a typed lever whose `words` the player's
+    input does not hold is dropped)."""
+    import replay_fights as rf
+    from engine.pipeline import asks_for
+    snaps: dict[str, Any] = {}
+    tally = {arm: {"ok": 0, "missed": 0, "stay_ok": 0, "false": 0} for arm in ("model", "gated")}
+    lines = []
+    for r in data["rows"]:
+        if "reading" not in r:
+            continue
+        if r["iid"] not in snaps:
+            snaps[r["iid"]] = rf.rows_of(str(store), r["iid"])[0]
+        st = game.load_state(snaps[r["iid"]][r["turn"] - 1])
+        spec = next((c for c in game.commands(st) if c.id == "yield"), None)
+        model = any(c["id"] == "yield" for c in r["reading"].get("commands", []))
+        got = {"model": model, "gated": model and (spec is None or not spec.words or asks_for(spec.words, r["player"]))}
+        for arm, g in got.items():
+            tally[arm][("ok" if g else "missed") if r["flee"] else ("false" if g else "stay_ok")] += 1
+        lines.append(f"{'YIELD' if r['flee'] else 'stay '} {''.join('Y' if got[x] else '.' for x in got)} {r['key']:<16} {r['player'][:80]!r} levers {[c['id'] for c in r['reading'].get('commands', [])]}")
+    for arm, t in tally.items():
+        print(f"  {arm:<6} yields kept {t['ok']}/{t['ok'] + t['missed']}   false yield {t['false']}/{t['false'] + t['stay_ok']}")
+    print("\n".join(lines))
+    return 0
+
+
 def score(a: argparse.Namespace) -> int:
     import replay_corpus as rc
     import replay_fights as rf
     game = rc._game()
     data = json.loads(Path(a.run).read_text())
+    if data.get("set") == "yield":
+        return score_yield(data, game, a.store)
     snaps: dict[str, Any] = {}
     keyed = rows(a.store)
     arms = ("model", "today", "no_place", "field")
@@ -184,6 +239,7 @@ def main() -> int:
     r.add_argument("--opt", action="append", help="an option on the assistant's role, name=value (structured=tool)")
     r.add_argument("--note", default="")
     r.add_argument("--only", type=int, help="the first N rows only (a smoke)")
+    r.add_argument("--set", default="flee", choices=["flee", "yield"], help="which lever's sentences (the key column `flee` holds the wanted answer)")
     s = sub.add_parser("score")
     s.add_argument("run")
     s.add_argument("--not-asked", action="store_true", help="the run's readings were never asked `leaving` (a hosted grammar's, stored with the old default)")

@@ -155,7 +155,12 @@ Flees of 49 on Gemma and 9 of 49 on Sonnet ("I run to Wren and pull her behind m
 cap (D256):** Sonnet's fantasy reading is asked for as a plain tool call (`structured_answers: fit`), which compiles no
 grammar, so it carries `leaving` and `goes_to` and any field the games add later; 115 Sonnet readings, none malformed, one
 asked twice. **Mends counted (D257):** each mend of a reading has a name and a ledger row (`tools/mend_count.py`,
-`round_counts.py`). **Left:** a played round on each model with these on; the tool answer on the referee and the other games
+`round_counts.py`). **Blow words, Yield, the fight's opening, dice (D259, D260, 11-13; built):** a blow word in an attempt's
+words joins only someone already a foe (every word join counted was wrong), each join has a ledger row, the fight-beat fallback
+is gone; Yield has no word list and falls to a blow; "Combat begins: ..." opens a fight's lines; a failure's cost is a die of
+its own, shown. **The time closer (D261):** a past telling's one-line time closer is left out of the narrator's history.
+**Next, its own change (B397):** hostile means attacks on sight (-3 alone), -2 gets its own word, and a hostile in sight
+opens the fight. **Left:** a played round on each model with these on; the tool answer on the referee and the other games
 (unmeasured, so off); an aim_blows clause that does not fire in 300 played guided turns comes out; `goes_to` and `leaving`
 for the other games; the probes' Sonnet cost (order turns by game, or the 5-minute cache).
 

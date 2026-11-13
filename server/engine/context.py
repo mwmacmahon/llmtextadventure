@@ -83,6 +83,27 @@ def soften_mechanic(m: str) -> str:
     return f"{head.group(1).strip()}: {outcome_words(tier.replace(' ', '_'))}."
 
 
+# R12, B398 (the owner, 11-13, a Gemma game: '"The clock in the hall strikes five minutes to eight." every single turn ... maybe
+# the game just has too many examples in its bad history'): a telling that ends on a one-line paragraph giving the time is
+# copied forward: 9 of that game's 39 tellings closed so, and each copy in the window is one more example (31 of 50 in a
+# station round, D114). The line is taken out of a past telling as the narrator is shown it; what the player read is as it was
+_TIME_NOUN = re.compile(r"\b(clock|bells?|chimes?|hour|watch)\b", re.I)
+_TIME_VERB = re.compile(r"\b(strikes?|struck|chim(?:e|es|ed|ing)|toll(?:s|ed|ing)?|reads?|rings?|rang|crept|creeps|marks?|shows?|ticks?)\b", re.I)
+
+
+def without_time_closer(prose: str) -> str:
+    """`prose` without a last paragraph that is one short sentence telling the time ("The clock in the hall strikes six.").
+    Only a paragraph of its own, at the very end, with more telling before it; a time told inside a paragraph stays."""
+    paras = [p for p in prose.rstrip().split("\n\n")]
+    if len(paras) < 2:
+        return prose
+    last = paras[-1].strip()
+    if (len(last.split()) <= 22 and len(re.findall(r"[.!?]+(?:\s|$)", last)) <= 1 and '"' not in last and "“" not in last
+            and _TIME_NOUN.search(last) and _TIME_VERB.search(last)):
+        return "\n\n".join(paras[:-1]).rstrip()
+    return prose
+
+
 def history_turn(player: str, narration: str, recorded: dict | None = None) -> list[Msg]:
     """One past turn as the narrator should remember it. The engine's § lines are never in the narrator's
     voice: a check it called comes back as the exchange that happened (its prose up to the call, the call,
@@ -102,6 +123,8 @@ def history_turn(player: str, narration: str, recorded: dict | None = None) -> l
         out += [Msg(e["role"], e["text"]) for e in exchange if e["text"].strip()]
     else:
         out.append(Msg("assistant", prose))
+    if out[-1].role == "assistant":                          # the turn's last words of telling: no time line to copy forward
+        out[-1] = Msg("assistant", without_time_closer(out[-1].content) or out[-1].content)
     return out
 
 

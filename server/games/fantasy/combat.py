@@ -1158,7 +1158,9 @@ def run_fight_command(game: Any, state: FantasyState, command_id: str) -> tuple[
                      + ("; ".join(told) or "none lands") + ". " + (f"It kills {p.name}: write the death straight." if dead else
                      f"Play the getting away and where {p.name} ends up, and stop."))
         # B311 (e933e85fb6c2 T20): the line said each got one blow and showed none of the rolls
-        return s, CommandResult(label="Flee", text="Out of the fight. As you went: " + (" ".join(lines) or "nobody was in reach."), player_line="I run for it.",
+        # B394 (the Sonnet smoke, 85ca44771923 T6): this line and its directive said "Gorm's fist" where every other line says "Troll"
+        directive = game.unnamed(s, directive)
+        return s, CommandResult(label="Flee", text=game.unnamed(s, "Out of the fight. As you went: " + (" ".join(lines) or "nobody was in reach.")), player_line="I run for it.",
                                 summary=f"{p.name} flees the fight.", directive=directive, minutes=1,
                                 referee_skip=["hp"], hp_taken=took)
     takers = [q for q in living_enemies(game, s) if is_person(ensure_block(q).kind) and not ensure_block(q).fanatic]
