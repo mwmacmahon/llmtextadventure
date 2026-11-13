@@ -53,7 +53,13 @@ SAID = [("I run straight at the nearest one and drive my shoulder into it.", Fal
         ("I get out of here, now.", True),
         ("I dash for the way out.", True),
         ("I sprint away down the passage and don't look back.", True),
-        ("I leave them to it and go back the way I came.", True)]
+        ("I leave them to it and go back the way I came.", True),
+        # B401 (the paladin round T9): a retreat to a spot inside the fight, to hold it or guard someone, read as leaving
+        ("I run back to the bottom of the ladder and stand in front of it with my arms out wide, shouting for her to stay up there.", False),
+        ("I fall back to the doorway and hold it so none of them get past me.", False),
+        ("I retreat to the top of the stairs and make my stand there.", False),
+        ("I back off to the bar and snatch up a bottle.", False),
+        ("I retreat. I back out through the door and keep going until I can't hear them any more.", True)]
 HELD = {("93a54b14", 25)}        # the player is in a grip there (as in f6428fd5 T13): getting free comes first, so nothing said is Flee yet
 ONLY = {("99d2b5b9", 23): [("I run to Wren and pull her behind me.", False), ("I grab Wren and get us both out of here.", True)]}
 
@@ -118,6 +124,9 @@ async def run(a: argparse.Namespace) -> Path:
     result: dict[str, Any] = {"made": dt.datetime.now().astimezone().isoformat(timespec="seconds"), "profile": profile, "rows": []}
     docs: dict[str, dict] = {}
     todo = (rows_yield(a.store) if a.set == "yield" else rows(a.store))[: a.only or None]
+    if a.keys:
+        import re as _re
+        todo = [r for r in todo if _re.search(a.keys, r["key"])]
     result["set"] = a.set
     for k, row in enumerate(todo):
         if "reading" in have.get(row["key"], {}):
@@ -239,6 +248,7 @@ def main() -> int:
     r.add_argument("--opt", action="append", help="an option on the assistant's role, name=value (structured=tool)")
     r.add_argument("--note", default="")
     r.add_argument("--only", type=int, help="the first N rows only (a smoke)")
+    r.add_argument("--keys", help="only the rows whose key matches this regex (e.g. '#1[4-8]$')")
     r.add_argument("--set", default="flee", choices=["flee", "yield"], help="which lever's sentences (the key column `flee` holds the wanted answer)")
     s = sub.add_parser("score")
     s.add_argument("run")
