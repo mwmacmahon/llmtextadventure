@@ -666,7 +666,16 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
                     # pulling him out) joined the wary troll to the fight, and his fist killed. A way out is no blow and joins no one
                     if MARKED.match(getattr(c, "label", "") or ""):
                         continue
-                struck += [x for x in [getattr(c, "target_entity", None), *(getattr(i, "targets", None) or [])] if x]
+                # B390 (Gemma round 31, 020cbcbdd931 T11): "Collect payment for killing the rats from Maud" has a blow word
+                # ('killing') and Maud as its target: the friendly innkeeper joined a fight and swung her club. A blow word in
+                # an attempt's own words, with nothing in the reading that is a blow (attack_at empty, no check aimed at them,
+                # no one the words strike at: B361 above), joins only someone already fought or already hostile; anyone else
+                # is fought by a blow aimed at them. A STR or DEX check with the blow word is the older shape of a blow, and joins
+                # ("swing the greataxe at Maud", strike Maud STR); so does a blow word in the player's own words ("I swing my
+                # sword at the troll", read with no attack_at): the reading's paraphrase alone ('for killing the rats') does not
+                said_blow = bool(ATTACK.search(player_text or ""))
+                struck += [x for x in [getattr(c, "target_entity", None), *(getattr(i, "targets", None) or [])]
+                           if x and (c is not None or said_blow or (q := s.person(x)) is None or q.id in p.fighting or q.attitude <= -2)]
             a = getattr(i, "attack", None)                                  # part fifteen §6: the reading's attack is the door in
             if a is not None:
                 for t in getattr(a, "targets", None) or []:

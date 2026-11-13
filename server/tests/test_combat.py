@@ -1769,3 +1769,20 @@ def test_a_flee_the_reading_answered_is_not_dropped_for_its_words(game):
     st, _q = _fight(game, 1)
     flee = next(c for c in game.commands(st) if c.id == "flee")
     assert flee.typed and not flee.words
+
+
+def test_a_blow_word_in_an_attempts_words_joins_no_friend(game):
+    """B390 (Gemma round 31, 020cbcbdd931 T11): "Collect payment for killing the rats from Maud" joined the friendly innkeeper to
+    a fight and rolled her club. A blow word with no blow in the reading joins only the hostile or the already fought."""
+    from games.fantasy import world as wo
+    st = new(game)
+    st.people.append(Person(id="maud", name="Maud Tallow", role="innkeeper", location=st.player.location, met=True, attitude=1))
+    st.people.append(Person(id="cutpurse", name="Cutpurse", role="thief", location=st.player.location, met=True, attitude=-2))
+    paid = AssistantReadingCombat(kind="action", summary="collect", time_minutes=5, risk="low", intents=[
+        IntentCombat(action="Collect payment for killing the rats from Maud.", targets=["maud"])])
+    s, _w = wo.world_turn(game, st.model_copy(deep=True), paid, "I collect from Maud.", random.Random(1), 3, 2)
+    assert s.player.fighting == [] and s.combat is None
+    foe = AssistantReadingCombat(kind="action", summary="stop him", time_minutes=1, tempo="fast", risk="high", intents=[
+        IntentCombat(action="Cut off the cutpurse and strike him down.", targets=["cutpurse"])])
+    s, _w = wo.world_turn(game, st.model_copy(deep=True), foe, "I cut him off and strike him down.", random.Random(1), 3, 2)
+    assert "maud" not in s.player.fighting
