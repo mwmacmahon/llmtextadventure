@@ -94,6 +94,13 @@ def check(exp: dict, lines: list[str], rows: list[dict], before: dict, after: di
     return bad
 
 
+DOWN = re.compile(r"connection attempts failed|ConnectError|503|RemoteProtocolError|ReadTimeout|Loading model|disconnected", re.I)
+
+
+class BoxDown(Exception):
+    pass
+
+
 def play_one(sc: dict, store: Any, keep: bool) -> dict:
     from play import _post, _req, _stream
     view = _post("/api/instances", {"game": sc.get("game", "fantasy"), "setup": sc.get("setup") or {}, "mods": []})
@@ -110,6 +117,9 @@ def play_one(sc: dict, store: Any, keep: bool) -> dict:
             rec["failed"].append(f"step {n}: the server refused it: {e}")
             break
         errors = [str(e["data"].get("message")) for e in events if e["event"] == "error"]
+        if any(DOWN.search(x) for x in errors):               # the model server went away mid-scene (B382): not the game's fault
+            _req("DELETE", f"/api/instances/{iid}")
+            raise BoxDown("; ".join(errors))
         turn = store.latest_turn(iid)
         rows = store.ledger(iid, turn)
         after = store.load_state(iid)
@@ -148,7 +158,17 @@ def run(a: argparse.Namespace) -> int:
     tally: Counter = Counter()
     for sc in scs:
         for k in range(a.repeat):
-            rec = play_one(sc, store, a.keep)
+            for attempt in (1, 2, 3):
+                try:
+                    rec = play_one(sc, store, a.keep)
+                    break
+                except BoxDown as e:                          # wait for the model server to come back, and play the scene again
+                    print(f"  the model server dropped out ({str(e)[:70]}); waiting two minutes, then playing {sc['id']} again", flush=True)
+                    result.setdefault("outages", []).append({"scenario": sc["id"], "at": dt.datetime.now().isoformat(timespec="seconds")})
+                    import time
+                    time.sleep(120)
+            else:
+                rec = {"id": sc["id"], "iid": "", "steps": [], "failed": ["the model server was down three times"], "passed": False}
             result["plays"].append(rec)
             tally[(sc["id"], rec["passed"])] += 1
             path.write_text(json.dumps(result, indent=1, ensure_ascii=False))
