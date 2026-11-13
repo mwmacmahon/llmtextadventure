@@ -11,7 +11,9 @@ stored fights ("I run at it", "I bolt the door", "I walk out"). Each row carries
     .venv/bin/python tools/flee_probe.py score FILE
 
 `score` needs no model: for each reading it says whether Flee is on the turn (a) as the model read it, (b) after today's
-aim_blows, (c) after aim_blows with the run-word rule off, (d) with the destination rule off too, against the key.
+aim_blows, (c) after aim_blows with the destination rule off, (d) by the reading's `leaving` alone, against the key.
+(The run-word rule this probe measured, 9 wrong Flees of 49 on Gemma and on Sonnet, is gone: runs before 11-13 midday
+were scored with arms for it.)
 Runs are kept under notes/eval/probes/ (gitignored).
 """
 from __future__ import annotations
@@ -79,13 +81,17 @@ async def run(a: argparse.Namespace) -> Path:
     games = load_games(cfg.resolve(cfg.server.content_root))
     game = games["fantasy"]
     profile = os.environ.get("TA_PROFILE", "") or (cfg.profile_name or "")
+    for kv in a.opt or []:                       # an option on the assistant's role, as the reading probe's variants set them
+        o, _, val = kv.partition("=")
+        cur = getattr(cfg.roles["assistant"], o)
+        setattr(cfg.roles["assistant"], o, (val.lower() == "true") if isinstance(cur, bool) else type(cur)(val))
     src = Store(a.store)
     OUT.mkdir(parents=True, exist_ok=True)
-    path = Path(a.resume) if a.resume else OUT / f"flee_{dt.datetime.now():%Y%m%d-%H%M}_{profile}.json"
+    path = Path(a.resume) if a.resume else OUT / f"flee_{dt.datetime.now():%Y%m%d-%H%M}_{profile}{('_' + a.note) if a.note else ''}.json"
     have = {r["key"]: r for r in json.loads(path.read_text())["rows"]} if a.resume else {}
     result: dict[str, Any] = {"made": dt.datetime.now().astimezone().isoformat(timespec="seconds"), "profile": profile, "rows": []}
     docs: dict[str, dict] = {}
-    todo = rows(a.store)
+    todo = rows(a.store)[: a.only or None]
     for k, row in enumerate(todo):
         if "reading" in have.get(row["key"], {}):
             result["rows"].append(have[row["key"]])
@@ -124,7 +130,7 @@ def score(a: argparse.Namespace) -> int:
     data = json.loads(Path(a.run).read_text())
     snaps: dict[str, Any] = {}
     keyed = rows(a.store)
-    arms = ("model", "today", "no_words", "no_rules", "field")
+    arms = ("model", "today", "no_place", "field")
     tally = {arm: {"flee_ok": 0, "flee_missed": 0, "stay_ok": 0, "false_flee": 0} for arm in arms}
     lines: list[str] = []
     n = 0
@@ -138,23 +144,22 @@ def score(a: argparse.Namespace) -> int:
         key = next((x["flee"] for x in keyed if x["key"] == r["key"]), r["flee"])       # today's key, for a run made before a key was mended
         for arm in arms:
             st = game.load_state(snaps[r["iid"]][r["turn"] - 1])
-            adj = game.adjudication_schema_staked.model_validate(r["reading"])
+            rd = r["reading"]
+            if a.not_asked:                 # a run stored before `leaving` could be None: a hosted grammar's reading never held it
+                rd = {**rd, "intents": [{k: v for k, v in i.items() if k != "leaving"} for i in rd.get("intents", [])]}
+            adj = game.adjudication_schema_staked.model_validate(rd)
             if arm == "field":             # the reading's own yes/no (leaving), no engine rule: the lever, or a leaving attempt with no blow
                 got[arm] = any(c.id == "flee" for c in adj.commands) or (
                     any(getattr(i, "leaving", False) for i in adj.intents) and not any(i.attack_at for i in adj.intents))
                 tally[arm][("flee_ok" if got[arm] else "flee_missed") if key else ("false_flee" if got[arm] else "stay_ok")] += 1
                 continue
             if arm != "model":
-                words, elsewhere = game.FLEE_PLAIN, game.elsewhere
                 try:
-                    if arm in ("no_words", "no_rules"):
-                        type(game).FLEE_PLAIN = []
-                    if arm == "no_rules":
+                    if arm == "no_place":
                         game.elsewhere = lambda *_: ""          # type: ignore[method-assign]
                     game.aim_blows(st, adj, r["player"])
                 finally:
-                    type(game).FLEE_PLAIN = words
-                    if arm == "no_rules":
+                    if arm == "no_place":
                         del game.elsewhere
             got[arm] = any(c.id == "flee" for c in adj.commands)
             tally[arm][("flee_ok" if got[arm] else "flee_missed") if key else ("false_flee" if got[arm] else "stay_ok")] += 1
@@ -176,8 +181,12 @@ def main() -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run")
     r.add_argument("--resume")
+    r.add_argument("--opt", action="append", help="an option on the assistant's role, name=value (structured=tool)")
+    r.add_argument("--note", default="")
+    r.add_argument("--only", type=int, help="the first N rows only (a smoke)")
     s = sub.add_parser("score")
     s.add_argument("run")
+    s.add_argument("--not-asked", action="store_true", help="the run's readings were never asked `leaving` (a hosted grammar's, stored with the old default)")
     for sp in (r, s):
         sp.add_argument("--store", type=Path, default=ROOT / "data" / "textadventure.sqlite3")
     a = ap.parse_args()

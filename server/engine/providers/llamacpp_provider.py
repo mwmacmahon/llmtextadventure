@@ -109,7 +109,7 @@ def inline_schema(js: dict) -> dict:
                 if isinstance(v, dict) and v.get("local_only"):
                     after = v.get("after")
                     local.append(k)
-                    props[k] = {kk: vv for kk, vv in v.items() if kk not in ("local_only", "after")}
+                    props[k] = required_shape({kk: vv for kk, vv in v.items() if kk not in ("local_only", "after")})
                     if after in props:
                         order = [x for x in props if x != k]
                         order.insert(order.index(after) + 1, k)
@@ -127,6 +127,17 @@ def inline_schema(js: dict) -> dict:
         return out
 
     return walk(js, frozenset())
+
+
+def required_shape(prop: dict) -> dict:
+    """A field that is optional in the model class only so that 'never asked' can be told from an answer (`bool | None`):
+    where it is asked, null is not an answer, so the null branch comes off and the one type left is the field's."""
+    opts = prop.get("anyOf")
+    if isinstance(opts, list):
+        kept = [o for o in opts if not (isinstance(o, dict) and o.get("type") == "null")]
+        if len(kept) == 1 and len(kept) < len(opts):
+            return {**{k: v for k, v in prop.items() if k not in ("anyOf", "default")}, **kept[0]}
+    return prop
 
 
 def schema_guide(js: dict) -> str:

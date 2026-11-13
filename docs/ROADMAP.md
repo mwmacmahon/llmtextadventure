@@ -148,12 +148,16 @@ old label). **Left:** one server for every game, so the rounds and the fantasy s
 engine's settling rewrote 5 of 50 fight readings against 30 of 50; on the hand-keyed set the referee's forbidden rows fell
 from 11 to 5. **The move (D253, 11-13):** a plain `goes_to` field asked of local models only (Sonnet's strict tool refuses one more
 field), one reader for both shapes, and only another place the game knows counts as leaving; Gemma names a destination
-on 25 of 28 turns that moved (0 before). **Leaving a fight (D255, 11-13; built, local models):** a required yes or no on each
-attempt, `leaving`, decides Flee on a reading that was asked it; no run word and no place takes part (the run-word rule made
-9 wrong Flees of 49 on Gemma and its list struck 5 right ones; `leaving` kept 27 of 27 with 0 wrong once the engine checks
-the grip itself; `tools/flee_probe.py`). **Left:** the hosted path still has the run-word rules, unmeasured (a Sonnet flee
-probe, about a dollar, or a non-strict tool that can carry the field); the aim_blows clauses the guide makes idle, counted and
-removed; `goes_to` and `leaving` for the other games.
+on 25 of 28 turns that moved (0 before). **Leaving a fight (D255, D256, 11-13; built, both models):** a required yes or no on each
+attempt, `leaving`, decides Flee; no run word and no place takes part. The run-word rules are deleted: they made 9 wrong
+Flees of 49 on Gemma and 9 of 49 on Sonnet ("I run to Wren and pull her behind me") and struck right ones; `leaving` kept
+27 of 27 with 0 wrong on each model once the engine checks the grip itself (`tools/flee_probe.py`). **The grammar's size
+cap (D256):** Sonnet's fantasy reading is asked for as a plain tool call (`structured_answers: fit`), which compiles no
+grammar, so it carries `leaving` and `goes_to` and any field the games add later; 115 Sonnet readings, none malformed, one
+asked twice. **Mends counted (D257):** each mend of a reading has a name and a ledger row (`tools/mend_count.py`,
+`round_counts.py`). **Left:** a played round on each model with these on; the tool answer on the referee and the other games
+(unmeasured, so off); an aim_blows clause that does not fire in 300 played guided turns comes out; `goes_to` and `leaving`
+for the other games; the probes' Sonnet cost (order turns by game, or the 5-minute cache).
 
 **Telling length (D246, 11-12; built, on for `sonnet`).** A word budget by the kind of turn (quick, talk, passage, plain,
 rolled), in THIS TURN's last line and on each resume after a roll (`engine/telling.py`; levels off / standard / short).

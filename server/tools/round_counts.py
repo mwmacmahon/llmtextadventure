@@ -154,7 +154,9 @@ def counts(iid: str) -> dict:
             "formula_late": f"{sum(1 for t in both if t > len(turns) // 2)}/{len(turns) - len(turns) // 2}",
             "formula_turns": {"open": opens, "close": closes},
             "telling": telling, "telling_level": (tell[0].get("level") if tell else ""),
-            "telling_over": f"{over}/{len(tell)}" if tell else ""}
+            "telling_over": f"{over}/{len(tell)}" if tell else "",
+            # D257: each mend the engine made to a reading (aim_blows), by name: {mend: turns}
+            "mends": dict(Counter(m for r in ledger if r["kind"] == "mend" for m in r["payload"].get("what") or []).most_common())}
 
 
 COLS = [("turns", "turns"), ("ending", "ending"), ("retells", "retells"), ("forced", "FORCED"), ("rulings_n", "rulings"), ("rejected_n", "rejected"),
@@ -196,6 +198,8 @@ def main() -> None:
             print(f"\n{c['game']} {c['iid']}: rulings {c['rulings']}; rejected {c['rejected']}; invented {c['invented']}; outcomes {c['outcomes']}; kinds {c['kinds']}")
             if c.get("telling"):
                 print("  telling (kind: turns, budget median, written median): " + "; ".join(f"{k}: {n}, {b}, {w}" for k, (n, b, w) in c["telling"].items()))
+            if c.get("mends"):
+                print("  mends of the reading (name: turns): " + "; ".join(f"{k}: {n}" for k, n in c["mends"].items()))
             for s in c["repeats"][:3]:
                 print(f"  repeat: {s[:120]}")
 

@@ -77,6 +77,10 @@ MODULES: dict[str, dict[str, Any]] = {
     "field_guide": {"label": "Field guide", "cuts": "what a local model is told about the fields of its answers (the assistant's reading, the referee's rows)",
                     "levels": {"off": "the field names only, as the grammar gives them",
                                "on": "each field's own description written into the system text, as a hosted model gets with the tool"}},
+    "structured_answers": {"label": "Structured answers", "cuts": "how a hosted model is held to the shape of the assistant's reading",
+                           "levels": {"grammar": "constrained decoding: exact, but capped in size (no field can be added to the fantasy's reading)",
+                                      "tool": "a plain tool call, validated here and asked again once if it does not fit: no cap, so the fields asked of a local model (leaving, goes_to) are asked too",
+                                      "fit": "the tool call only where the answer carries fields the grammar cannot hold (the fantasy's reading); the grammar everywhere else"}},
     "directive_economy": {"label": "Directive economy", "cuts": "the size of this turn's directions to the narrator",
                           "levels": {"dials": "set by the checks and stakes dials"}},
 }
@@ -140,6 +144,8 @@ class Profile(BaseModel):
                 ov["checks"] = self.dials.checks
         if role in ("assistant", "referee") and self.modules.get("field_guide"):
             ov["field_guide"] = self.modules["field_guide"] == "on"
+        if role == "assistant" and self.modules.get("structured_answers"):
+            ov["structured"] = self.modules["structured_answers"]
         if role == "narrator" and self.modules.get("telling_length"):
             ov["telling"] = self.modules["telling_length"]
         if role == "assistant" and self.dials.game_notes is not None:

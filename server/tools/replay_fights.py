@@ -56,8 +56,9 @@ def rows_of(src: str, iid: str):
     return snaps, ledger, trans
 
 
-def replay(game, snaps, ledger, trans, iid: str, t: int):
-    """(state after, world, reading after the settling, player words, state before) for turn t, or None."""
+def replay(game, snaps, ledger, trans, iid: str, t: int, leaving: list | None = None):
+    """(state after, world, reading after the settling, player words, state before) for turn t, or None. `leaving`: the
+    answer a model asked `leaving` gave on each attempt (D255), laid on a reading stored before the question was asked."""
     before = snaps.get(t - 1)
     adjrow = next((p for tt, k, p in ledger if tt == t and k == "adjudication"), None)
     said = next((x for tt, r, x in trans if tt == t and r == "player"), "")
@@ -73,6 +74,11 @@ def replay(game, snaps, ledger, trans, iid: str, t: int):
             continue
     if adj is None:
         return None
+    for i, yes in zip(adj.intents, leaving or []):
+        i.leaving = yes
+    if leaving is not None:
+        for i in adj.intents[len(leaving):]:
+            i.leaving = False
     if hasattr(game, "aim_blows"):
         game.aim_blows(st, adj, said)
     settle_attack(adj)
@@ -122,7 +128,7 @@ def check(a) -> int:
         iid, t, exp = c["iid"], int(c["turn"]), c.get("expect") or {}
         if iid not in cache:
             cache[iid] = rows_of(a.store, iid)
-        r = replay(game, *cache[iid], iid, t)
+        r = replay(game, *cache[iid], iid, t, leaving=c.get("leaving"))
         if r is None:
             print(f"SKIP {iid} T{t}: no stored state or reading ({c.get('why', '')})")
             continue
@@ -158,6 +164,8 @@ def check(a) -> int:
             bad.append(f"attack_at {adj.intents[0].attack_at if adj.intents else []}, not {exp['attack_at']}")
         if exp.get("flee") and "flee" not in [x.id for x in adj.commands]:
             bad.append("no Flee")
+        if exp.get("no_flee") and "flee" in [x.id for x in adj.commands]:
+            bad.append("a Flee")
         fails += bool(bad)
         print(f"{'FAIL' if bad else 'PASS'} {iid} T{t}: {c.get('why', '')}" + (f" -- {'; '.join(bad)}" if bad else ""))
     print(f"{len(cases) - fails} of {len(cases)} pass")

@@ -760,18 +760,22 @@ def test_a_swing_at_no_one_in_a_fight_is_at_the_foe(game):
     assert adj2.intents[0].attack_at == [] and adj2.intents[0].check is not None      # no fight, no one to roll against
 
 
-def test_a_plain_run_in_a_fight_is_the_flee_lever(game):
+def test_run_words_alone_do_not_make_a_flee(game):
+    """B310's rule, taken out (D255): "I turn and run for the door" read as a STR check became Flee by its words, and so did "I
+    run straight at the nearest one and drive my shoulder into it" (9 wrong Flees of 49 on Gemma, 9 of 49 on Sonnet). A
+    reading that was never asked `leaving` flees by the model's own lever, and by nothing in the player's words."""
     from engine.roles import CheckStaked as CheckSpec
+    from engine.roles import CommandPick
     st, q = _fight(game, 1)
-    adj = AssistantReadingCombat(kind="action", summary="Brin runs for the door.", time_minutes=1, risk="high",
-                                 intents=[IntentCombat(action="shove through the crowd and exit", targets=[],
-                                                       check=CheckSpec(label="shove through the crowd", stat="str", difficulty="medium"))])
-    game.aim_blows(st, adj, "I turn and run for the door, shoving through the crowd")
-    assert [c.id for c in adj.commands] == ["flee"]
-    hold = AssistantReadingCombat(kind="action", summary="Brin braces.", time_minutes=1, risk="high",
-                                  intents=[IntentCombat(action="brace the door", targets=[], check=CheckSpec(label="brace", stat="str", difficulty="medium"))])
-    game.aim_blows(st, hold, "I brace the door with my shoulder")
-    assert hold.commands == []
+    for said in ("I turn and run for the door, shoving through the crowd", "I run straight at the nearest one and drive my shoulder into it."):
+        adj = AssistantReadingCombat(kind="action", summary="Brin runs.", time_minutes=1, risk="high",
+                                     intents=[IntentCombat(action="shove through", targets=[],
+                                                           check=CheckSpec(label="shove through", stat="str", difficulty="medium"))])
+        assert game.aim_blows(st, adj, said) == [] and adj.commands == []
+    lever = AssistantReadingCombat(kind="action", summary="Brin goes.", time_minutes=1, risk="high", commands=[CommandPick(id="flee")],
+                                   intents=[IntentCombat(action="sprint away down the passage", targets=["dead"])])
+    game.aim_blows(st, lever, "I sprint away down the passage and don't look back.")       # no listed run word: the lever stands
+    assert [c.id for c in lever.commands] == ["flee"]
 
 
 def test_a_knockout_is_down_after_the_turn_not_dead(game):
@@ -1750,9 +1754,9 @@ def test_a_reading_asked_whether_the_player_leaves_decides_flee_by_that_answer_a
     assert read("break free of the grip to flee upstairs", True, "I flee upstairs.", held, lever=True) == []
     quiet = new(game)
     assert read("leave the inn", True, "I leave the inn.", quiet, check=False) == []
-    # never asked: the stored and the hosted reading, as before
+    # never asked: the stored and the hosted reading keep the model's own lever (test_run_words_alone_do_not_make_a_flee)
     old = AssistantReadingCombat(kind="action", summary="run", time_minutes=1, risk="high", intents=[
         IntentCombat(action="shove through the crowd and exit", targets=[], check=CheckSpec(label="shove through", stat="str", difficulty="medium"))])
-    assert "leaving" not in old.intents[0].model_fields_set
-    game.aim_blows(st, old, "I turn and run for the door, shoving through the crowd")
-    assert [c.id for c in old.commands] == ["flee"]
+    assert old.intents[0].leaving is None
+    again = AssistantReadingCombat.model_validate(old.model_dump(mode="json"))          # stored and read back: still never asked
+    assert again.intents[0].leaving is None

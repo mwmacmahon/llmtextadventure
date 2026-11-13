@@ -17,3 +17,6 @@ dials:
 # D246 (the owner and Lilith, 11-12: the tellings ran about twice too long): a word budget by the kind of turn (engine/telling.py)
 modules:
   telling_length: short
+  # D256: the fantasy's reading is at the edge of the grammar's size (one more field is refused), so there it is asked for
+  # as a plain tool call, which also carries `leaving` and `goes_to`; every other answer keeps the grammar
+  structured_answers: fit

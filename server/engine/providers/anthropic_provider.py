@@ -8,6 +8,7 @@ Cache strategy (see notes/DESIGN.md §5):
 """
 from __future__ import annotations
 
+import json
 from typing import Any,  AsyncIterator, TypeVar
 
 import anthropic
@@ -59,6 +60,23 @@ def _usage(u) -> Usage:
         cache_read_input_tokens=getattr(u, "cache_read_input_tokens", 0) or 0,
         cache_creation_input_tokens=getattr(u, "cache_creation_input_tokens", 0) or 0,
     )
+
+
+ANSWER_TOOL = "answer"
+ANSWER_BY_TOOL = "\n\nGive your answer by calling the `answer` tool once, with every field filled as its description says. Write nothing outside the call."
+
+
+def local_marks_off(js: Any) -> Any:
+    """The schema with the local-only fields kept and their marks (`local_only`, `after`) taken off: for an answer that is
+    not held by a grammar (D256), which has no size cap to stay under."""
+    if isinstance(js, list):
+        return [local_marks_off(x) for x in js]
+    if not isinstance(js, dict):
+        return js
+    if js.get("local_only"):
+        from .llamacpp_provider import required_shape
+        js = required_shape({k: v for k, v in js.items() if k not in ("local_only", "after")})
+    return {k: local_marks_off(v) for k, v in js.items()}
 
 
 def without_local(js: Any) -> Any:
@@ -136,7 +154,56 @@ class AnthropicProvider:
             note=note,
         )
 
+    async def _extract_by_tool(self, role: RoleConfig, system: str, messages: list[Msg], schema: type[T]) -> tuple[T, Usage]:
+        """D256: the structured answer as a plain tool call (role.structured == "tool"): no grammar is compiled, so the
+        schema's size is not capped and the fields asked of a local model only are asked here too. Nothing forces the call
+        (this model refuses a forced tool_choice) or the shape, so the answer is validated and asked for once more if it
+        is missing or does not fit."""
+        kw = self._common(role, system + ANSWER_BY_TOOL)
+        kw["messages"] = _to_api_messages(messages, role.cache_ttl)
+        kw["tools"] = [{"name": ANSWER_TOOL, "description": "Give your answer. Call this once, with every field.",
+                        "input_schema": transform_schema(local_marks_off(TypeAdapter(schema).json_schema()))}]
+        kw["tool_choice"] = {"type": "auto", "disable_parallel_tool_use": True}
+        seen = dict(provider=self.name, model=role.model, schema=schema.__name__, system=system + ANSWER_BY_TOOL, messages=messages)
+        total: Usage | None = None
+        err = "no attempt"
+        for _attempt in (1, 2):
+            try:
+                resp = await self.client.messages.create(timeout=role.timeout_seconds, **kw)
+            except Exception as e:
+                record(**seen, error=f"{type(e).__name__}: {e}"[:500])
+                raise
+            usage = _usage(resp.usage)
+            if total is not None:
+                usage.input_tokens += total.input_tokens
+                usage.output_tokens += total.output_tokens
+                usage.cache_read_input_tokens += total.cache_read_input_tokens
+                usage.cache_creation_input_tokens += total.cache_creation_input_tokens
+            total = usage
+            call = next((b for b in resp.content if getattr(b, "type", "") == "tool_use" and b.name == ANSWER_TOOL), None)
+            text = json.dumps(call.input, ensure_ascii=False) if call is not None else "".join(getattr(b, "text", "") for b in resp.content if getattr(b, "type", "") == "text")
+            err = ("structured extraction refused" if resp.stop_reason == "refusal"
+                   else f"structured extraction truncated at max_tokens={role.max_tokens}" if resp.stop_reason == "max_tokens"
+                   else "the answer tool was not called" if call is None else None)
+            parsed = None
+            if not err:
+                try:
+                    parsed = schema.model_validate(call.input)
+                except Exception as e:
+                    err = f"{type(e).__name__}: {e}"[:500]
+            record(**seen, content=text, stop_reason=resp.stop_reason, error=err)
+            if parsed is not None:
+                total.extra["model"] = getattr(resp, "model", None) or role.model
+                total.extra["structured"] = "tool"
+                return parsed, total
+            if resp.stop_reason == "refusal":
+                break
+        raise RuntimeError(err)
+
     async def extract(self, role: RoleConfig, system: str, messages: list[Msg], schema: type[T]) -> tuple[T, Usage]:
+        how = getattr(role, "structured", "grammar")
+        if how == "tool" or (how == "fit" and '"local_only"' in json.dumps(TypeAdapter(schema).json_schema())):
+            return await self._extract_by_tool(role, system, messages, schema)
         kw = self._common(role, system)
         kw["messages"] = _to_api_messages(messages, role.cache_ttl)
         seen = dict(provider=self.name, model=role.model, schema=schema.__name__, system=system, messages=messages)

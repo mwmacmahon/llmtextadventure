@@ -53,6 +53,12 @@ class RoleConfig(BaseModel):
     # model is sent them with the tool; a local model saw only the grammar (the bare field names) and whatever the rules
     # text happened to say. Set by a profile's field_guide module.
     field_guide: bool = False
+    # D256: how a hosted model is held to a structured answer. "grammar": constrained decoding (output_config.format), exact
+    # but capped in size (the fantasy's staked reading is at the cap: one more field is refused). "tool": a plain tool the
+    # model is told to call, no grammar and so no cap; the answer is validated here and asked for again once if it fails.
+    # "fit": the tool only for a schema that carries fields the grammar cannot hold (those marked local_only: the fantasy's
+    # reading), the grammar for every other, so a game that never needed more is sent what it always was.
+    structured: Literal["grammar", "tool", "fit"] = "grammar"
     # llamacpp only (engine/providers/llamacpp_provider.py): the server, the slot this role is pinned to so its
     # cache stays resident beside the other roles', whether the model may think, sampling temperature, auth.
     base_url: str = Field(default_factory=lambda: os.environ.get("TA_LLAMA_URL", "http://127.0.0.1:8080"))

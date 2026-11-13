@@ -1592,9 +1592,15 @@ class FantasyGame(GameBase):
         plan = (state.combat.plan if state.combat is not None else None) or []
         return min(12, max(int(getattr(self, "max_calls", 3) or 3), len(plan) + 2))
 
-    FLEE_PLAIN = ["run", "flee", "escape", "get away", "get out", "retreat", "bolt", "leg it", "make a break"]
+    def aim_blows(self, state: FantasyState, adj: Any, player_text: str = "") -> list[str]:
+        """The reading's blows and Flee, mended where the model's reading and the fight's state disagree (_aim_blows). Returns
+        the name of each mend that changed the reading, for the ledger (kind `mend`): a mend that stops firing on a model's
+        readings is one to take out, and one that fires often is the reading's fault to fix at its cause."""
+        did: list[str] = []
+        self._aim_blows(state, adj, player_text, did)
+        return did
 
-    def aim_blows(self, state: FantasyState, adj: Any, player_text: str = "") -> None:
+    def _aim_blows(self, state: FantasyState, adj: Any, player_text: str, did: list[str]) -> None:
         """B310 (Gemma, 11-10, adcf1869ec54 T19 and 8eb1928e28b7 T20): a swing with a weapon (or 'attack', or a punch) and a STR
         or DEX check but no one named, while the player is fighting: it is at the one they fight (the engine's settle_attack then
         makes it the attack roll). Outside a fight, with no one named, it stays a check: there is no one to roll against."""
@@ -1609,6 +1615,7 @@ class FantasyGame(GameBase):
                 # round 11 (56dd55904e70 T30): 'retreat from the gallery', no weapon, attack_at the drowned: the engine brought
                 # three drowned in and rolled a longsword blow the player never asked for, at foes the story had not shown
                 i.attack_at = []
+                did.append("blow_without_weapon_or_words")
         settled = {(getattr(f, "attempt", "") or "").strip().lower() for f in getattr(adj, "fiat", None) or []}
         for i in intents:
             if (getattr(i, "attack_at", None) and (i.action or "").strip().lower() in settled
@@ -1618,6 +1625,7 @@ class FantasyGame(GameBase):
                 # fiat; 'club' (his) passed for a blow word, the blow rolled and killed him. An attempt the reading settles as simply
                 # working, with no blow in its own words, is not a blow
                 i.attack_at = []
+                did.append("blow_on_a_settled_attempt")
         foe = next((x for x in p.fighting if (q := state.person(x)) is not None and q.status == "alive"), None)
         for i in intents:
             at = list(getattr(i, "attack_at", None) or [])
@@ -1626,6 +1634,7 @@ class FantasyGame(GameBase):
                 # two skeletons the prose had: a body part is where the blow lands, on the foe being fought or the last kind here
                 last = (state.flags.get("foe_here") or {}).get(p.location, "")
                 i.attack_at = [foe] if foe else ([last] if last else [])
+                did.append("blow_at_a_body_part")
         if foe is None:
             return
         if wo.breaking_free(state, adj, player_text):
@@ -1635,12 +1644,16 @@ class FantasyGame(GameBase):
             for i in intents:
                 if getattr(i, "attack_at", None):
                     i.attack_at = []
+                    did.append("blow_while_breaking_free")
             # Gemma pair 3 (e72597444d81 T18): the reading's own STR check freed the player and the world turn's break-free roll,
             # a second die for the same act, failed and held them: the reading's STR or DEX check is the break-free, marked so
             mine = next((i.check for i in intents if getattr(i, "check", None) is not None and i.check.stat in ("str", "dex")), None)
             if mine is not None and not wo.MARKED.match(mine.label or ""):
                 mine.label = f"way out: {mine.label}"
-            if any("leaving" in getattr(i, "model_fields_set", ()) for i in intents):       # D255: held, getting free comes first
+                did.append("break_free_check_marked")
+            if any(getattr(i, "leaving", None) is not None for i in intents):       # D255: held, getting free comes first
+                if any(c.id == "flee" for c in getattr(adj, "commands", None) or []):
+                    did.append("flee_dropped_while_held")
                 adj.commands = [c for c in getattr(adj, "commands", None) or [] if c.id != "flee"]
             return
         for i in intents:
@@ -1652,11 +1665,12 @@ class FantasyGame(GameBase):
                 fought = [t for t in (getattr(i, "targets", None) or []) if t in p.fighting]
                 if fought:
                     i.attack_at = fought
+                    did.append("attack_with_no_roll_aimed")
         picked = {c.id for c in getattr(adj, "commands", None) or []}
-        if any("leaving" in getattr(i, "model_fields_set", ()) for i in intents):
+        if any(getattr(i, "leaving", None) is not None for i in intents):
             # D255 (the owner, 11-13: "anytime we are doing too many hard assumptions that the referee / assistant got something
             # hard right I get nervous"; "what if they said they're running at the enemy? Or running to help an ally"). A reading
-            # that was asked `leaving` on each attempt (a local model's: the field is required there) answers Flee by that one
+            # that was asked `leaving` on each attempt (not None: required of a local model, and of a hosted one answering by tool) answers Flee by that one
             # yes or no, and no word list or place decides it. On 76 Gemma readings of stored fights (tools/flee_probe.py): the
             # run words made 9 to 11 wrong Flees of 49 ("I run straight at the nearest one", "I bolt the door behind me") and
             # struck 5 right ones ("sprint", "dash", "walk out" are not on the list); `leaving` kept 27 of 27 real runs, and its
@@ -1669,20 +1683,19 @@ class FantasyGame(GameBase):
                         and any(getattr(i, "leaving", False) for i in intents)
                         and not any(getattr(i, "attack_at", None) for i in intents))
             if goes != ("flee" in picked):
+                did.append("flee_by_leaving" if goes else "flee_dropped_not_leaving")
                 adj.commands = [c for c in getattr(adj, "commands", None) or [] if c.id != "flee"] + ([CommandPick(id="flee")] if goes else [])
             if goes:
                 return
-        else:               # a reading never asked (a hosted model's, a stored one): the rules as they stood, not measured there
-            if "flee" in picked:
-                from engine.pipeline import asks_for
-                blow = any(set(getattr(i, "attack_at", None) or []) & set(p.fighting) for i in intents)
-                at_foe = any(set(getattr(i, "targets", None) or []) & set(p.fighting) for i in intents)
-                if blow or (at_foe and not asks_for(self.FLEE_PLAIN, player_text)):   # 'who runs the boats' opens 'run': a blow decides
-                    # B375 (Gemma round 28, 615fa3819ba8 T22): "kick the cudgel off the bridge, shove him back into his booth, demand who
-                    # runs the boats" was read as a kick, a shove at the guard, a question to him, and Flee: the parting blow hit for 4
-                    # and the prose had her slip away. A blow at a foe it fights is not leaving; nor is a word to one, unless the words say run
-                    adj.commands = [c for c in adj.commands if c.id != "flee"]
-                    picked.discard("flee")
+        else:
+            # A reading never asked `leaving` (a hosted model held by a grammar; a stored one): the model's own Flee lever
+            # stands, less a turn with a blow at a foe it fights (B375: a blow is not leaving). The run words are gone from
+            # here too (D255): on 76 Sonnet readings they made 9 wrong Flees of 49 ("I run to Wren and pull her behind me",
+            # "I run straight at the nearest one") and struck right ones, where Sonnet's lever alone kept 22 of 27 with none wrong
+            if "flee" in picked and any(set(getattr(i, "attack_at", None) or []) & set(p.fighting) for i in intents):
+                adj.commands = [c for c in adj.commands if c.id != "flee"]
+                picked.discard("flee")
+                did.append("flee_dropped_blow")
             # B364 (Gemma round 23, 59dc9865fc14 T9): "shove a barrel across the gap" carried a transition to the place beyond the gap
             # and was typed as Flee (a parting bite, 5 of 11): an act with its own check (the shove) is not the player leaving
             away = [t for i in intents if (t := self.elsewhere(state, i)) and getattr(i, "check", None) is None]
@@ -1692,16 +1705,8 @@ class FantasyGame(GameBase):
                 # each foe in reach gets its blow, and the fight is over
                 from engine.roles import CommandPick
                 adj.commands = list(getattr(adj, "commands", None) or []) + [CommandPick(id="flee")]
+                did.append("flee_by_destination")
                 return
-            if (state.combat is not None and not picked & {"flee", "yield"} and not any(getattr(i, "attack_at", None) for i in intents)
-                    and any(getattr(getattr(i, "check", None), "stat", "") in ("str", "dex") for i in intents)):
-                from engine.pipeline import asks_for
-                from engine.roles import CommandPick
-                if asks_for(self.FLEE_PLAIN, player_text):
-                    # B310 (Gemma, 11-10, 187ae951f07d T16, 8eb1928e28b7 T14): "I turn and run for the door" in a fight was a STR check
-                    # (a failure's hit point killed the paladin; the fight stayed open); the player's run is the Flee lever
-                    adj.commands = list(getattr(adj, "commands", None) or []) + [CommandPick(id="flee")]
-                    return
         for i in getattr(adj, "intents", None) or []:
             c = getattr(i, "check", None)
             if (c is None or getattr(c, "stat", "") not in ("str", "dex") or not hasattr(i, "attack_at") or i.attack_at
@@ -1709,6 +1714,7 @@ class FantasyGame(GameBase):
                 continue
             if getattr(i, "weapon", "") or (i.action or "").split()[:1] == ["attack"] or cb.UNARMED.search(f"{i.action} {c.label}"):
                 i.targets, i.attack_at = [foe], [foe]
+                did.append("swing_with_no_target_aimed")
 
     def bring_in(self, s: FantasyState, words: str, *, ref: str = "", band: str = "normal", offset: int = 2, join: bool = True,
                  named: bool = False) -> tuple[list[Person], dict]:

@@ -984,7 +984,9 @@ class Engine:
             try:
                 adj, meta = await self._adjudicate(game, state, iid, player_text,
                                                    retell=replay.hint if replay is not None and replay.by == "player" else None)
-                _hook(game, "aim_blows", state, adj, player_text or "", default=None)   # B310: a swing with no target, in a fight, at the foe
+                mends = _hook(game, "aim_blows", state, adj, player_text or "", default=None) or []   # B310: a swing with no target, in a fight, at the foe
+                if mends:
+                    ledger("mend", {"by": "aim_blows", "what": list(mends)})        # D257: each mend of a reading is counted
                 struck = settle_attack(adj)                      # B288: a blow with a weapon is the attack roll, not a check too
                 hopeless = settle_hopeless(adj)                  # B225: very high and an edge of -3 or worse is a fail, no roll
                 # B359 (Sonnet pair 5, ffdc529bd55d T7): is_fight reads the summary's words and the reading's tempo ('instead of
