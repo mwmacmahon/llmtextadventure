@@ -190,10 +190,35 @@ _WEAPON = ("With attack_at: the weapon as they carry it, in a word or two; 'fist
            "and nothing rides.")
 
 
+_GOES_TO = ("Where the player is when this attempt is done, if it takes them out of this scene to another place: the place's name as "
+            "the Places list has it (\"The Drowned Lantern\"), or a few words for a place that is not listed (\"the cellar under the "
+            "inn\"). Empty when they stay in the scene, even if they move about inside it (a step back, up onto the stairs, behind a "
+            "pillar, into the shallows).")
+# D253: asked of a local model only, and written straight after `action`. Sonnet's strict tool refused the reading with one more
+# field ("the compiled grammar is too large", 11-13, as B272 found) and fills `transition`'s 'move:' itself; Gemma filled
+# `transition` on 0 of 431 stored turns and `goes_to` on 6 of 6 that moved. `destination` reads either.
+_LOCAL_AFTER_ACTION = {"local_only": True, "after": "action"}
+
+
+def destination(intent: object) -> str:
+    """Where an intent takes the player, in the reading's own words, or '': its `goes_to`; else its `transition` when that is
+    a move ('move:<place> via:<exit>') or a bare place. One reader for the fantasy's five uses (the arrival's length, contact
+    broken, leaving a fight, a pressing turn's minutes, where an encounter is drawn), which each parsed `transition` their own
+    way, two of them taking 'take:lantern' for a place."""
+    g = str(getattr(intent, "goes_to", "") or "").strip()
+    if g:
+        return g
+    t = str(getattr(intent, "transition", "") or "").strip()
+    if t.startswith("move:"):
+        return t.split("move:", 1)[1].split(" via:", 1)[0].strip()
+    return "" if ":" in t else t
+
+
 class IntentCombatV2(_Blow, IntentV2):
     check: CheckProposal | None = Field(default=None, description=_COMBAT_CHECK)
     attack_at: list[str] = Field(default_factory=list, description=_ATTACK_AT)
     weapon: str = Field(default="", description=_WEAPON)
+    goes_to: str = Field(default="", description=_GOES_TO, json_schema_extra=_LOCAL_AFTER_ACTION)
 
     @field_validator("weapon", mode="before")
     @classmethod
@@ -232,6 +257,7 @@ class IntentCombat(_Blow, IntentStaked):
     check: CheckStaked | None = Field(default=None, description="The check that decides this attempt when its outcome is uncertain and matters: stat, difficulty, label, then both futures (STAKES). An escape under threat, a forced or hurried physical feat, a lock, a hidden search, an attempt to get something out of someone who may refuse, and anything in a fight that is not a blow with a weapon has one; a blow with a weapon is an attack instead, with no check. Null for anything routine with nothing in the scene pressing on the player, hurt or not.")
     attack_at: list[str] = Field(default_factory=list, description=_ATTACK_AT)
     weapon: str = Field(default="", description=_WEAPON)
+    goes_to: str = Field(default="", description=_GOES_TO, json_schema_extra=_LOCAL_AFTER_ACTION)
 
     @field_validator("weapon", mode="before")
     @classmethod

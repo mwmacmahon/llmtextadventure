@@ -8,10 +8,10 @@ the world turn left, never from words:
 - fight: a round was rolled before the prose: room grows with each blow and each of the turn's own rolled checks, to a cap
   above the engine's, so a crowd's round is not squeezed into a duel's length.
 
-- arrival: the reading's move (an intent's `transition`, 'move:<place>') is to a place the player has not been: the first
+- arrival: the reading's move (engine.roles.destination: `goes_to`, or `transition`'s 'move:') is to a place the player has not been: the first
   sight of it needs what it is, who is here and the ways on. Measured in the store (11-11 on): Sonnet filled the move on 20
   of 127 turns, 14 of them first arrivals, at a median of 361 words against 299 for a turn that stays put. Gemma never fills
-  `transition` (0 of 431 turns, 80 of which moved), so on Gemma this kind never fires until the move is a field it must fill.
+  `transition` (0 of 431 turns, 80 of which moved); it is asked `goes_to` instead (D253: 6 of 6 turns that moved).
 
 LEVELS holds the numbers per level. Only `fight` rests on a trial (the engine's rolled turns, 11-12: nothing lost at 80 + 35 a
 roll); `death`, `peril` and `arrival` are first guesses, to be measured on stored turns.
@@ -67,15 +67,12 @@ def _norm(x: Any) -> str:
 
 
 def new_place(state: Any, adj: Any) -> str:
-    """The place the reading's move goes to when the player has not been there, else ''. The field only ('move:<place>
-    via:<exit>'); no words are read."""
+    """The place the reading's move goes to when the player has not been there, else ''. The reading's own field (engine.roles.destination); no words are read."""
     p = state.player
     here, seen = _norm(p.location), {_norm(k) for k in (p.visited or {})}
+    from engine.roles import destination
     for i in getattr(adj, "intents", None) or []:
-        t = str(getattr(i, "transition", "") or "")
-        if not t.startswith("move:"):
-            continue
-        dest = _norm(t.split("move:", 1)[1].split(" via:", 1)[0])
+        dest = _norm(destination(i))
         if dest and dest not in ("unknown", here) and dest not in seen:
             return dest
     return ""

@@ -1233,3 +1233,24 @@ def test_the_narrators_fight_rule_and_calls_follow_the_settings(monkeypatch):
     monkeypatch.setattr(g, "prerolled_rounds", False)
     assert g.world_protocol() == WORLD_PROTOCOL
     assert "<<ATTACK id>>" in next(ln for ln in g.frozen_prefix(st).split("\n") if ln.startswith("- A FIGHT:"))
+
+
+def test_only_another_place_the_game_knows_is_elsewhere(game: FantasyGame):
+    """D253: a destination leaves a fight only when it is another place the game knows. 6f607706727b T17 and 09196b219219 T15
+    (Sonnet): 'drop:horn lantern' and 'take:...shovel' were read as places and each foe got a parting blow. Gemma names
+    spots inside the scene ("the bottom of the cellar steps")."""
+    from engine.roles import IntentCombat
+    from games.fantasy.state import FoundPlace
+    st = new(game)
+    here = st.player.location
+    other = next(pl for pl in st.places if pl not in (here, "Unknown"))
+    assert game.elsewhere(st, IntentCombat(action="go", goes_to=other)) == other
+    assert game.elsewhere(st, IntentCombat(action="go", transition=f"move:{other} via:door")) == other
+    for stay in (IntentCombat(action="x", goes_to=here), IntentCombat(action="x", goes_to="the bottom of the cellar steps"),
+                 IntentCombat(action="x", transition="drop:horn lantern"), IntentCombat(action="x", transition="self"),
+                 IntentCombat(action="x", goes_to="Unknown"), IntentCombat(action="x")):
+        assert game.elsewhere(st, stay) == "", stay
+    st.found_places.append(FoundPlace(name="the flooded cellar", within=here))
+    assert game.elsewhere(st, IntentCombat(action="x", goes_to="the flooded cellar")) == ""          # a spot inside here
+    st.found_places.append(FoundPlace(name="The Bilge", within=other))
+    assert game.elsewhere(st, IntentCombat(action="x", goes_to="the bilge")) == "The Bilge"           # a place found in play

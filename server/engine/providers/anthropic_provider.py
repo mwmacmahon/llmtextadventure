@@ -8,7 +8,7 @@ Cache strategy (see notes/DESIGN.md §5):
 """
 from __future__ import annotations
 
-from typing import AsyncIterator, TypeVar
+from typing import Any,  AsyncIterator, TypeVar
 
 import anthropic
 from anthropic.lib._parse._transform import transform_schema
@@ -59,6 +59,24 @@ def _usage(u) -> Usage:
         cache_read_input_tokens=getattr(u, "cache_read_input_tokens", 0) or 0,
         cache_creation_input_tokens=getattr(u, "cache_creation_input_tokens", 0) or 0,
     )
+
+
+def without_local(js: Any) -> Any:
+    """The schema without the fields asked of a local model only (`local_only`, D253): the staked reading is at the edge of
+    the strict tool's grammar, and one more field is refused. The model class keeps the field at its default."""
+    if isinstance(js, list):
+        return [without_local(x) for x in js]
+    if not isinstance(js, dict):
+        return js
+    out = {k: without_local(v) for k, v in js.items()}
+    props = out.get("properties")
+    if isinstance(props, dict):
+        gone = [k for k, v in props.items() if isinstance(v, dict) and v.get("local_only")]
+        for k in gone:
+            props.pop(k)
+        if gone and isinstance(out.get("required"), list):
+            out["required"] = [k for k in out["required"] if k not in gone]
+    return out
 
 
 class AnthropicProvider:
@@ -124,7 +142,7 @@ class AnthropicProvider:
         seen = dict(provider=self.name, model=role.model, schema=schema.__name__, system=system, messages=messages)
         # what messages.parse does, done here so the raw reply is kept when it does not parse (a reply that looped
         # until max_tokens raised inside the SDK and left nothing to read, 2026-10-31, ISSUES A1)
-        fmt = {"type": "json_schema", "schema": all_required(transform_schema(TypeAdapter(schema).json_schema()))}
+        fmt = {"type": "json_schema", "schema": all_required(transform_schema(without_local(TypeAdapter(schema).json_schema())))}
         kw["output_config"] = {**kw.get("output_config", {}), "format": fmt}
         try:
             resp = await self.client.messages.create(timeout=role.timeout_seconds, **kw)

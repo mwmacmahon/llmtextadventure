@@ -101,6 +101,21 @@ def inline_schema(js: dict) -> dict:
             return walk(merged, seen | {name})
         out = {k: walk(v, seen) for k, v in node.items() if k not in ("$defs", "definitions")}
         if out.get("type") == "object" and "properties" in out:
+            # D253: a field marked for local models (`local_only`) is required here and written where it says (`after`), since a
+            # grammar-constrained model writes the fields in this order; the marks themselves never reach the server
+            props, local = out["properties"], []
+            for k in list(props):
+                v = props[k]
+                if isinstance(v, dict) and v.get("local_only"):
+                    after = v.get("after")
+                    local.append(k)
+                    props[k] = {kk: vv for kk, vv in v.items() if kk not in ("local_only", "after")}
+                    if after in props:
+                        order = [x for x in props if x != k]
+                        order.insert(order.index(after) + 1, k)
+                        out["properties"] = props = {x: props[x] for x in order}
+            if local:
+                out["required"] = list(out.get("required", [])) + [k for k in local if k not in out.get("required", [])]
             out.setdefault("additionalProperties", False)
             req = list(out.get("required", []))
             named = REQUIRED_BY_NAME.get(str(out.get("title") or ""), ())

@@ -146,7 +146,10 @@ old label). **Left:** one server for every game, so the rounds and the fantasy s
 **Field guide (D249, 11-13; built, on for `gemma4-31b`).** A local model is told what each field of its answer means
 (the schema's descriptions in the system text; a hosted model gets them with the tool). On 100 stored Gemma turns the
 engine's settling rewrote 5 of 50 fight readings against 30 of 50; on the hand-keyed set the referee's forbidden rows fell
-from 11 to 5. **Left:** the move still goes unfilled; the aim_blows clauses the guide makes idle, counted and removed.
+from 11 to 5. **The move (D253, 11-13):** a plain `goes_to` field asked of local models only (Sonnet's strict tool refuses one more
+field), one reader for both shapes, and only another place the game knows counts as leaving; Gemma names a destination
+on 25 of 28 turns that moved (0 before). **Left:** the aim_blows clauses the guide makes idle, counted and removed; Flee
+by the destination where it is still by the words; `goes_to` for the other games.
 
 **Telling length (D246, 11-12; built, on for `sonnet`).** A word budget by the kind of turn (quick, talk, passage, plain,
 rolled), in THIS TURN's last line and on each resume after a roll (`engine/telling.py`; levels off / standard / short).

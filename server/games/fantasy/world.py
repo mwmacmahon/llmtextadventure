@@ -306,7 +306,7 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
     #    every hold on the player and its peril; the fight is left, and whoever follows does so by a narrator's call
     fleeing = any(getattr(c, "id", "") == "flee" for c in (getattr(adj, "commands", None) or []))
     if (getattr(adj, "kind", "") == "action" and escape_check(adj) is None and not (fleeing and p.fighting)
-            and breaks_contact(adj, text, p.location)):     # B321: a Flee breaks contact itself, with its free blows
+            and breaks_contact(adj, text, p.location, game, s)):     # B321: a Flee breaks contact itself, with its free blows
         broken = _break_contact(s, w)
         if broken:
             w.directives.append(f"{p.name} breaks contact: {broken}. Nothing holds {p.name} now; play the getting away. Anyone who "
@@ -389,15 +389,20 @@ BREAK = re.compile(r"\b(smoke( pellet| bomb)?|slip (away|off|out|free)|vanish|di
 HOLDING = ("grappled", "held", "restrained", "pinned")
 
 
-def breaks_contact(adj: Any, text: str, here: str) -> bool:
-    """B226: the turn takes the player out of reach: a move to another place (an intent's transition), or words that break
-    contact (smoke, a slip away, into the boat, rowing off), with no blow in them."""
+def breaks_contact(adj: Any, text: str, here: str, game: Any = None, s: Any = None) -> bool:
+    """B226: the turn takes the player out of reach: a move to another place the game knows (game.elsewhere, D253: a spot
+    inside the scene breaks nothing), or words that break contact (smoke, a slip away, into the boat, rowing off), with no
+    blow in them."""
+    from engine.roles import destination
+
     from .game import ATTACK
     if ATTACK.search(text):
         return False
     for i in getattr(adj, "intents", None) or []:
-        t = str(getattr(i, "transition", "") or "")
-        dest = t.split("move:", 1)[1].split(" via:", 1)[0].strip() if t.startswith("move:") else t.strip()
+        if game is not None and s is not None:
+            dest = game.elsewhere(s, i)
+        else:
+            dest = destination(i)
         if dest and ":" not in dest and here and dest.lower() != here.lower() and not dest.lower().startswith("the boat"):
             return True
     return bool(BREAK.search(text))         # backing away or running in reach is an attempt the fight can answer, not a break

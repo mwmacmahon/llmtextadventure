@@ -709,8 +709,7 @@ class FantasyGame(GameBase):
         p = state.player
         if not (p.peril is not None or any(c.name == "grappled" for c in p.conditions) or p.fighting):
             return None
-        moving = any((t := (getattr(i, "transition", "") or "").strip()) and not self._same_spot(state, t, p.location)
-                     for i in (getattr(adj, "intents", None) or []))
+        moving = any(self.elsewhere(state, i) for i in (getattr(adj, "intents", None) or []))
         return None if moving and not p.fighting else 1
 
     def unquiet(self, state: FantasyState) -> str:
@@ -1533,8 +1532,8 @@ class FantasyGame(GameBase):
             return
         if band in ("boss",):
             return                                                          # a boss is the content's, never drawn here
-        dest = next((self._place(s, str(getattr(i, "transition", "") or "").removeprefix("move:").split(" via:", 1)[0].strip())
-                     for i in getattr(adj, "intents", None) or [] if str(getattr(i, "transition", "") or "").strip()), None) or p.location
+        from engine.roles import destination
+        dest = next((self._place(s, destination(i)) for i in getattr(adj, "intents", None) or [] if destination(i)), None) or p.location
         e, hit = self.encounter_for(s, band or "normal", offset=offset, place=dest)   # where the turn is heading
         ids = [q.id for q in en.spawn(s, e.bodies, e.variant)]
         if not ids:
@@ -1549,6 +1548,20 @@ class FantasyGame(GameBase):
                             + (f" These are too many to beat. If they come, let the prose show it (their numbers, their ease with steel) "
                                f"and leave {p.name} room to run or yield; never say so outright." if e.band == "impossible" else ""))
         w.rows.append({"kind": "encounter", "hit": hit, "why": "the offer", "reason": e.reason})
+
+    def elsewhere(self, state: FantasyState, intent: Any) -> str:
+        """The place an intent takes the player to when it is another place the game knows (a listed place, a found one),
+        else ''. A spot that is no place of its own ("the bottom of the cellar steps", "the bank of the pool": Gemma named
+        such a spot on 7 of 72 stored turns that stayed put, D253) is a position in the scene, and leaves nothing: not a
+        fight, not a grip. One test for a pressing turn's minutes, leaving a fight, and contact broken."""
+        from engine.roles import destination
+        dest = destination(intent)
+        if not dest or dest.strip().lower() == "unknown":
+            return ""
+        k = dest.strip().lower().removeprefix("the ")
+        found = next((f.name for f in state.found_places if f.name.strip().lower().removeprefix("the ") == k), None)   # a place found in play
+        place = found or self._place(state, dest)
+        return place if place and not self._same_spot(state, place, state.player.location) else ""
 
     def telling_kind(self, state: FantasyState, adj: Any, res: dict, level: str) -> dict | None:
         """The fantasy's own kinds of turn for the telling's length (games/fantasy/telling.py, D247): death, peril, fight."""
@@ -1650,8 +1663,7 @@ class FantasyGame(GameBase):
                 picked.discard("flee")
         # B364 (Gemma round 23, 59dc9865fc14 T9): "shove a barrel across the gap" carried a transition to the place beyond the gap
         # and was typed as Flee (a parting bite, 5 of 11): an act with its own check (the shove) is not the player leaving
-        away = [t for i in intents if (t := (getattr(i, "transition", "") or "").strip()) and not self._same_spot(state, t, p.location)
-                and t.lower() != "unknown" and getattr(i, "check", None) is None]
+        away = [t for i in intents if (t := self.elsewhere(state, i)) and getattr(i, "check", None) is None]
         if away and not picked & {"flee", "yield"} and not any(getattr(i, "attack_at", None) for i in intents):
             # round 11 (56dd55904e70 T32): carried out of the tunnel to the ferry landing mid-fight, the drowned followed and
             # struck there (the fight goes where the player goes). Leaving for another place in a fight is the Flee lever:
