@@ -3665,9 +3665,10 @@ class FantasyGame(GameBase):
         if state.combat is not None and state.player.fighting:              # part fifteen §7; B287 (the owner, 11-09): typed, no buttons
             out += [CommandSpec(id="flee", label="Flee", mode="narrated", typed=True, decides=True,
                                 hint="Run from the fight: the player turns their back on it and goes (out of reach, out of the place). Every enemy "
-                                     "within reach gets one free blow as they go (at most two of a band). Not a step back, a dodge, or a move to better ground inside the fight.",
-                                words=["run", "flee", "bolt", "escape", "get away", "get out", "retreat", "make a break", "dash", "sprint", "leg it",
-                                       "scramble", "back away", "back off", "withdraw", "out of here", "for the door", "for the stairs"]),
+                                     "within reach gets one free blow as they go (at most two of a band). Not a step back, a dodge, or a move to better ground inside the fight."),
+                    # no `words` on Flee (D255, B388): the pipeline drops a typed lever whose words the player's input does not
+                    # hold, and that list ("run", "dash", "for the door", ...) struck "I've had enough, I walk out" after the
+                    # reading had answered it leaving; whether the player leaves is aim_blows' to settle, not a list's
                     CommandSpec(id="yield", label="Yield", mode="narrated", typed=True, decides=True,
                                 hint="Give up the fight: the player surrenders, begs for mercy, or throws down their weapon. People may take it "
                                      "(the fight ends); the dead, beasts and fanatics do not. Not a parley offered mid-swing or a bluff.",

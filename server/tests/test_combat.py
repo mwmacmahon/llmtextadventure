@@ -401,7 +401,7 @@ def test_the_fight_panel_shows_everyone_with_numbers_and_the_chips(game):
     assert second.text == "5 / 13" and second.tier == "bloodied"
     assert not any(c.id in ("flee", "yield") for p in panels if getattr(p, "type", "") == "commands" for c in p.items)   # B287: no buttons
     typed = {c.id: c for c in game.commands(st)}
-    assert typed["flee"].typed and "run" in typed["flee"].words and typed["yield"].typed and "surrender" in typed["yield"].words
+    assert typed["flee"].typed and not typed["flee"].words and typed["yield"].typed and "surrender" in typed["yield"].words   # B388: no word list on Flee
 
 
 def test_flee_ends_the_fight_with_a_free_blow_from_each_and_yield_is_taken_by_people_only(game):
@@ -1760,3 +1760,12 @@ def test_a_reading_asked_whether_the_player_leaves_decides_flee_by_that_answer_a
     assert old.intents[0].leaving is None
     again = AssistantReadingCombat.model_validate(old.model_dump(mode="json"))          # stored and read back: still never asked
     assert again.intents[0].leaving is None
+
+
+def test_a_flee_the_reading_answered_is_not_dropped_for_its_words(game):
+    """B388: the pipeline drops a typed lever whose word list the player's input does not hold ("I strike a match" is not
+    Smoke). Flee had such a list, and "I've had enough, I walk out" lost the Flee its own `leaving` answer had put on. Flee
+    carries no word list: whether the player leaves is the reading's answer (aim_blows), never a list's."""
+    st, _q = _fight(game, 1)
+    flee = next(c for c in game.commands(st) if c.id == "flee")
+    assert flee.typed and not flee.words
