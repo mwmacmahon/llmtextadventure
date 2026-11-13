@@ -198,6 +198,12 @@ _GOES_TO = ("Where the player is when this attempt is done, if it takes them out
 # field ("the compiled grammar is too large", 11-13, as B272 found) and fills `transition`'s 'move:' itself; Gemma filled
 # `transition` on 0 of 431 stored turns and `goes_to` on 6 of 6 that moved. `destination` reads either.
 _LOCAL_AFTER_ACTION = {"local_only": True, "after": "action"}
+_LEAVING = ("true when this attempt is the player getting away from a fight they are in: turning from those they fight and going, "
+            "in any words (running, walking out, leaving, slipping off, going back the way they came) and wherever to, a listed "
+            "place or not. false for everything else: no fight on; a move inside the fight (a step back, round behind a foe, "
+            "across the room, onto the stairs to hold them); running AT someone or to someone's side; a blow; and getting free "
+            "of a grip that holds them, which comes first and is its own attempt.")
+_LOCAL_AFTER_LEAVING = {"local_only": True, "after": "leaving"}
 
 
 def destination(intent: object) -> str:
@@ -218,7 +224,8 @@ class IntentCombatV2(_Blow, IntentV2):
     check: CheckProposal | None = Field(default=None, description=_COMBAT_CHECK)
     attack_at: list[str] = Field(default_factory=list, description=_ATTACK_AT)
     weapon: str = Field(default="", description=_WEAPON)
-    goes_to: str = Field(default="", description=_GOES_TO, json_schema_extra=_LOCAL_AFTER_ACTION)
+    leaving: bool = Field(default=False, description=_LEAVING, json_schema_extra=_LOCAL_AFTER_ACTION)
+    goes_to: str = Field(default="", description=_GOES_TO, json_schema_extra=_LOCAL_AFTER_LEAVING)
 
     @field_validator("weapon", mode="before")
     @classmethod
@@ -257,7 +264,8 @@ class IntentCombat(_Blow, IntentStaked):
     check: CheckStaked | None = Field(default=None, description="The check that decides this attempt when its outcome is uncertain and matters: stat, difficulty, label, then both futures (STAKES). An escape under threat, a forced or hurried physical feat, a lock, a hidden search, an attempt to get something out of someone who may refuse, and anything in a fight that is not a blow with a weapon has one; a blow with a weapon is an attack instead, with no check. Null for anything routine with nothing in the scene pressing on the player, hurt or not.")
     attack_at: list[str] = Field(default_factory=list, description=_ATTACK_AT)
     weapon: str = Field(default="", description=_WEAPON)
-    goes_to: str = Field(default="", description=_GOES_TO, json_schema_extra=_LOCAL_AFTER_ACTION)
+    leaving: bool = Field(default=False, description=_LEAVING, json_schema_extra=_LOCAL_AFTER_ACTION)
+    goes_to: str = Field(default="", description=_GOES_TO, json_schema_extra=_LOCAL_AFTER_LEAVING)
 
     @field_validator("weapon", mode="before")
     @classmethod

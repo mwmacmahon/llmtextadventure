@@ -44,10 +44,12 @@ def test_a_local_only_field_is_asked_of_a_local_model_and_kept_from_a_hosted_one
     for schema in (AssistantReadingCombat, AssistantReadingCombatV2):
         it = inline_schema(schema.model_json_schema())["properties"]["intents"]["items"]
         names = list(it["properties"])
-        assert names.index("goes_to") == names.index("action") + 1 and "goes_to" in it["required"]      # written right after the attempt
+        assert names.index("leaving") == names.index("action") + 1 and "leaving" in it["required"]      # D255: the yes or no, straight after the attempt
+        assert names.index("goes_to") == names.index("leaving") + 1 and "goes_to" in it["required"]     # then where to
         assert "local_only" not in str(it) and "'after'" not in str(it)                                 # the marks never reach the server
         hosted = without_local(TypeAdapter(schema).json_schema())
         assert "goes_to" not in str(hosted) and "transition" in str(hosted)
+        assert "'leaving':" not in str(hosted)                                                         # the hosted tool is as it was
     assert "intents[].goes_to" in schema_guide(AssistantReadingCombat.model_json_schema())
 
 

@@ -1720,3 +1720,39 @@ def test_the_rolled_round_says_who_is_still_standing(game):
     assert q.name in line and "does not fall or run" in line and "only a blow given above" in line
     assert cb.standing_after(game, st, [{"hits": [{"pid": q.id, "body": 0, "dmg": 999}]}]) == ""      # down: nobody to name
     assert cb.standing_after(game, st, [{"kills": True}]) == ""                                       # the player fell
+
+
+def test_a_reading_asked_whether_the_player_leaves_decides_flee_by_that_answer_alone(game):
+    """D255 (the owner, 11-13: "what if they said they're running at the enemy? Or running to help an ally"): a reading that
+    carries `leaving` (a local model's; the field is required there) answers Flee by it, and no run word or place does. A
+    run AT the foe is no Flee; a walk out with no run word is; a blow in the turn is not leaving; held, getting free comes
+    first; a lever picked against a 'no' is dropped. A reading never asked keeps the rules it had."""
+    from engine.roles import CheckStaked as CheckSpec
+    from engine.roles import CommandPick
+    from games.fantasy.state import Condition
+
+    def read(action, leaving, text, st, check=True, at=(), lever=False):
+        adj = AssistantReadingCombat(kind="action", summary=action, time_minutes=1, risk="high", commands=[CommandPick(id="flee")] if lever else [],
+                                     intents=[IntentCombat(action=action, leaving=leaving, targets=[], attack_at=list(at), weapon="longsword" if at else "",
+                                                           check=CheckSpec(label=action, stat="str", difficulty="medium") if check and not at else None)])
+        game.aim_blows(st, adj, text)
+        return [c.id for c in adj.commands]
+
+    st, _q = _fight(game, 1)
+    assert read("drive a shoulder into the nearest one", False, "I run straight at the nearest one and drive my shoulder into it.", st) == []
+    assert read("bolt the door", False, "I bolt the door behind me so no more of them can come in.", st) == []
+    assert read("walk out", True, "I've had enough of this. I turn my back on them and walk out.", st, check=False) == ["flee"]
+    assert read("sprint away down the passage", True, "I sprint away down the passage and don't look back.", st, lever=True) == ["flee"]
+    assert read("cut at the dead and go", True, "I cut at it and go.", st, at=["dead"]) == []
+    assert read("shove the dead back", False, "I shove it back and hold the doorway.", st, lever=True) == []
+    held, _q = _fight(game, 1)
+    held.player.conditions.append(Condition(name="grappled"))
+    assert read("break free of the grip to flee upstairs", True, "I flee upstairs.", held, lever=True) == []
+    quiet = new(game)
+    assert read("leave the inn", True, "I leave the inn.", quiet, check=False) == []
+    # never asked: the stored and the hosted reading, as before
+    old = AssistantReadingCombat(kind="action", summary="run", time_minutes=1, risk="high", intents=[
+        IntentCombat(action="shove through the crowd and exit", targets=[], check=CheckSpec(label="shove through", stat="str", difficulty="medium"))])
+    assert "leaving" not in old.intents[0].model_fields_set
+    game.aim_blows(st, old, "I turn and run for the door, shoving through the crowd")
+    assert [c.id for c in old.commands] == ["flee"]

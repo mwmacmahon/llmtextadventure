@@ -1640,6 +1640,8 @@ class FantasyGame(GameBase):
             mine = next((i.check for i in intents if getattr(i, "check", None) is not None and i.check.stat in ("str", "dex")), None)
             if mine is not None and not wo.MARKED.match(mine.label or ""):
                 mine.label = f"way out: {mine.label}"
+            if any("leaving" in getattr(i, "model_fields_set", ()) for i in intents):       # D255: held, getting free comes first
+                adj.commands = [c for c in getattr(adj, "commands", None) or [] if c.id != "flee"]
             return
         for i in intents:
             if (getattr(i, "check", None) is None and hasattr(i, "attack_at") and not i.attack_at
@@ -1651,35 +1653,55 @@ class FantasyGame(GameBase):
                 if fought:
                     i.attack_at = fought
         picked = {c.id for c in getattr(adj, "commands", None) or []}
-        if "flee" in picked:
-            from engine.pipeline import asks_for
-            blow = any(set(getattr(i, "attack_at", None) or []) & set(p.fighting) for i in intents)
-            at_foe = any(set(getattr(i, "targets", None) or []) & set(p.fighting) for i in intents)
-            if blow or (at_foe and not asks_for(self.FLEE_PLAIN, player_text)):   # 'who runs the boats' opens 'run': a blow decides
-                # B375 (Gemma round 28, 615fa3819ba8 T22): "kick the cudgel off the bridge, shove him back into his booth, demand who
-                # runs the boats" was read as a kick, a shove at the guard, a question to him, and Flee: the parting blow hit for 4
-                # and the prose had her slip away. A blow at a foe it fights is not leaving; nor is a word to one, unless the words say run
-                adj.commands = [c for c in adj.commands if c.id != "flee"]
-                picked.discard("flee")
-        # B364 (Gemma round 23, 59dc9865fc14 T9): "shove a barrel across the gap" carried a transition to the place beyond the gap
-        # and was typed as Flee (a parting bite, 5 of 11): an act with its own check (the shove) is not the player leaving
-        away = [t for i in intents if (t := self.elsewhere(state, i)) and getattr(i, "check", None) is None]
-        if away and not picked & {"flee", "yield"} and not any(getattr(i, "attack_at", None) for i in intents):
-            # round 11 (56dd55904e70 T32): carried out of the tunnel to the ferry landing mid-fight, the drowned followed and
-            # struck there (the fight goes where the player goes). Leaving for another place in a fight is the Flee lever:
-            # each foe in reach gets its blow, and the fight is over
+        if any("leaving" in getattr(i, "model_fields_set", ()) for i in intents):
+            # D255 (the owner, 11-13: "anytime we are doing too many hard assumptions that the referee / assistant got something
+            # hard right I get nervous"; "what if they said they're running at the enemy? Or running to help an ally"). A reading
+            # that was asked `leaving` on each attempt (a local model's: the field is required there) answers Flee by that one
+            # yes or no, and no word list or place decides it. On 76 Gemma readings of stored fights (tools/flee_probe.py): the
+            # run words made 9 to 11 wrong Flees of 49 ("I run straight at the nearest one", "I bolt the door behind me") and
+            # struck 5 right ones ("sprint", "dash", "walk out" are not on the list); `leaving` kept 27 of 27 real runs, and its
+            # 6 wrong of 49 were all a player in a grip, which the engine knows: held, getting free comes first, and its check
+            # stands. A blow in the turn is not leaving. A wrong no costs a turn of the fight; a wrong yes ends it with blows
             from engine.roles import CommandPick
-            adj.commands = list(getattr(adj, "commands", None) or []) + [CommandPick(id="flee")]
-            return
-        if (state.combat is not None and not picked & {"flee", "yield"} and not any(getattr(i, "attack_at", None) for i in intents)
-                and any(getattr(getattr(i, "check", None), "stat", "") in ("str", "dex") for i in intents)):
-            from engine.pipeline import asks_for
-            from engine.roles import CommandPick
-            if asks_for(self.FLEE_PLAIN, player_text):
-                # B310 (Gemma, 11-10, 187ae951f07d T16, 8eb1928e28b7 T14): "I turn and run for the door" in a fight was a STR check
-                # (a failure's hit point killed the paladin; the fight stayed open); the player's run is the Flee lever
+            from .world import HOLDING
+            held = (p.peril is not None and p.peril.kind == "held") or any(c.name.lower().startswith(HOLDING) for c in p.conditions)
+            goes = bool((state.combat is not None or p.fighting) and "yield" not in picked and not held
+                        and any(getattr(i, "leaving", False) for i in intents)
+                        and not any(getattr(i, "attack_at", None) for i in intents))
+            if goes != ("flee" in picked):
+                adj.commands = [c for c in getattr(adj, "commands", None) or [] if c.id != "flee"] + ([CommandPick(id="flee")] if goes else [])
+            if goes:
+                return
+        else:               # a reading never asked (a hosted model's, a stored one): the rules as they stood, not measured there
+            if "flee" in picked:
+                from engine.pipeline import asks_for
+                blow = any(set(getattr(i, "attack_at", None) or []) & set(p.fighting) for i in intents)
+                at_foe = any(set(getattr(i, "targets", None) or []) & set(p.fighting) for i in intents)
+                if blow or (at_foe and not asks_for(self.FLEE_PLAIN, player_text)):   # 'who runs the boats' opens 'run': a blow decides
+                    # B375 (Gemma round 28, 615fa3819ba8 T22): "kick the cudgel off the bridge, shove him back into his booth, demand who
+                    # runs the boats" was read as a kick, a shove at the guard, a question to him, and Flee: the parting blow hit for 4
+                    # and the prose had her slip away. A blow at a foe it fights is not leaving; nor is a word to one, unless the words say run
+                    adj.commands = [c for c in adj.commands if c.id != "flee"]
+                    picked.discard("flee")
+            # B364 (Gemma round 23, 59dc9865fc14 T9): "shove a barrel across the gap" carried a transition to the place beyond the gap
+            # and was typed as Flee (a parting bite, 5 of 11): an act with its own check (the shove) is not the player leaving
+            away = [t for i in intents if (t := self.elsewhere(state, i)) and getattr(i, "check", None) is None]
+            if away and not picked & {"flee", "yield"} and not any(getattr(i, "attack_at", None) for i in intents):
+                # round 11 (56dd55904e70 T32): carried out of the tunnel to the ferry landing mid-fight, the drowned followed and
+                # struck there (the fight goes where the player goes). Leaving for another place in a fight is the Flee lever:
+                # each foe in reach gets its blow, and the fight is over
+                from engine.roles import CommandPick
                 adj.commands = list(getattr(adj, "commands", None) or []) + [CommandPick(id="flee")]
                 return
+            if (state.combat is not None and not picked & {"flee", "yield"} and not any(getattr(i, "attack_at", None) for i in intents)
+                    and any(getattr(getattr(i, "check", None), "stat", "") in ("str", "dex") for i in intents)):
+                from engine.pipeline import asks_for
+                from engine.roles import CommandPick
+                if asks_for(self.FLEE_PLAIN, player_text):
+                    # B310 (Gemma, 11-10, 187ae951f07d T16, 8eb1928e28b7 T14): "I turn and run for the door" in a fight was a STR check
+                    # (a failure's hit point killed the paladin; the fight stayed open); the player's run is the Flee lever
+                    adj.commands = list(getattr(adj, "commands", None) or []) + [CommandPick(id="flee")]
+                    return
         for i in getattr(adj, "intents", None) or []:
             c = getattr(i, "check", None)
             if (c is None or getattr(c, "stat", "") not in ("str", "dex") or not hasattr(i, "attack_at") or i.attack_at
