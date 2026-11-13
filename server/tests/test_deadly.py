@@ -1,4 +1,4 @@
-"""The world hits back (part four, D176): enemies roll every turn, perils count down, a chosen death lands, failures cost."""
+"""The world hits back (part four, D176): enemies roll every turn, perils count down, failures cost."""
 from __future__ import annotations
 
 import random
@@ -198,15 +198,18 @@ def test_a_peril_success_with_an_escape_gets_out(game):
     assert s2.player.peril is None and not s2.player.fate
 
 
-def test_a_chosen_death_lands(game):
-    st = new(game)
-    s2, w = game.world_turn(st, act("I drown myself"), "I stop fighting and let the water take me", Dice(), 3, 2)
-    assert s2.player.fate == "dead" and "DEATH" in w.directives[0] and game.cause_of_death(s2, {}).startswith("chose to die")
-    st2 = new(game)
-    hazel = st2.person("hazel")
-    hazel.attitude, hazel.location = 3, st2.player.location
-    st2.player.with_them = ["hazel"]
-    assert game.world_turn(st2, act("I drown myself"), "I drown myself", Dice(), 3, 2)[0].player.fate == "dead"     # B205: no carry
+def test_no_words_choose_death(game):
+    """B380, D244 (the owner, 11-12): the chosen death is gone. Words that wish for the end, and blows worded like them, kill
+    no one; the dangers themselves do (hit points, a peril's moments)."""
+    for words in ("I drown myself", "I stop fighting and let the water take me", "I end it with one clean thrust through her ribs",
+                  "I've had enough of this. I end it: sword through the throat"):
+        st = new(game)
+        foe(st)
+        s2, w = game.world_turn(st, act(words), words, Dice(1, 1, 1, 1), 3, 2)
+        assert s2.player.fate != "dead" or s2.player.hp <= 0 and not any(r.get("why") == "by their own choice" for r in w.rows), words
+        assert not any(r.get("why") == "by their own choice" for r in w.rows), words
+    s3, w3 = game.world_turn(new(game), act("I drown myself"), "I drown myself", Dice(), 3, 2)      # nobody here: nobody dies
+    assert not s3.player.fate and not any(r.get("kind") == "death" for r in w3.rows)
 
 
 def test_a_failure_in_a_fight_costs_hit_points(game):
@@ -358,13 +361,15 @@ def test_a_blow_in_a_peril_is_no_giving_up(game):
 
 def test_a_death_shows_its_line(game):
     st = new(game)
-    s2, w = game.world_turn(st, act("I drown myself"), "I drown myself", Dice(), 3, 2)
-    assert any("dies" in m for m in w.mechanics)
+    st.player.hp = 1
+    wo.open_peril(st, "burning")                      # a peril's moment takes the last hit point
+    s2, w = game.world_turn(st, act("I look at the flames"), "I look at the flames", Dice(), 3, 2)
+    assert s2.player.fate == "dead" and any("dies" in m for m in w.mechanics)
 
 
 def test_a_surrender_is_not_a_chosen_death(game):
     """B214 (5528fb9033ac turn 17): 'stop fighting the hands' was read as a wish to die and killed the player before the
-    assistant's cha check ran. A chosen death needs the wish in the words, and the assistant's read as a second witness."""
+    assistant's cha check ran. (The chosen death itself was removed, D244.)"""
     from engine.roles import CheckProposal
     st = new(game)
     wo.open_peril(st, "held", by="Mirren")
@@ -375,13 +380,7 @@ def test_a_surrender_is_not_a_chosen_death(game):
                                          check=CheckProposal(label="talk Mirren into letting go", stat="cha", difficulty="medium", edge=1))])
     s2, w = game.world_turn(st, a, text, Dice(15), 3, 2)
     assert not s2.player.fate and not any(r.get("kind") == "death" for r in w.rows)
-    assert not wo.LETHAL.search("I stop fighting and stop struggling; I stop resisting")
-    # the wish in the words, with nothing else read, still lands; with a check, only when the summary names the death
-    assert game.world_turn(new(game), act("I let the water take me"), "I let the water take me", Dice(), 3, 2)[0].player.fate == "dead"
-    b = a.model_copy(update={"summary": "Kragga lets the water take her and drowns."})
-    assert game.world_turn(new(game), b, "I let the water take me", Dice(), 3, 2)[0].player.fate == "dead"
-    c = a.model_copy(update={"summary": "Kragga tries to bargain."})
-    assert not game.world_turn(new(game), c, "I let the water take me", Dice(), 3, 2)[0].player.fate
+
 
 
 def test_the_engine_writes_a_death_the_last_telling_left_out(game):

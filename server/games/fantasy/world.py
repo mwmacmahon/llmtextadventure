@@ -3,8 +3,6 @@
 The owner (11-08 evening): "This game needs to feel MUCH more deadly or it's no fun." Thirty-six turns, 15 of 15 hit points
 after a lake in mail, a killed siren, three turns dragged by the legs and a chosen drowning that landed as a condition.
 
-- **A chosen death lands** (B100): the player's words choose death ("I drown myself", "let the water take me") and death
-  comes, unless someone present and devoted carries them; in a peril, an attempt that is no escape ends the countdown.
 - **Perils** (B102): drowning, freezing, burning, bleeding out, falling, held. Each turn the engine stakes the kind's stat
   with a penalty a step worse (-2, -4, -6, uncapped); a failure takes a turn off; none left is death (the fork).
 - **Enemies act every turn** (B95, B103): each hostile present (or anyone the player is fighting) rolls its move: a strike
@@ -26,10 +24,6 @@ from engine.mechanics import WON, CheckRequest, Modifier, dice_d20
 
 from .state import Condition, FantasyState, Item, Peril, Person
 
-LETHAL = re.compile(r"\b(drown (myself|himself|herself|themselves)|let (the (water|lake|river|sea|cold|fire|dark)|it) (take|have) me|"
-                    r"stop breathing|give up and die|kill (myself|himself|herself|themselves)|"
-                    r"end (it|my life)|let (myself|go and) (drown|sink|die)|i (want to|choose to|let myself) die|"
-                    r"breathe (the|in the) water|open my mouth (and|to) (breathe|let the water))", re.I)
 STEPS = {"scrape": (1, 2), "solid": (3, 5), "serious": (6, 10)}
 STEP_WORDS = {"scrape": "a scrape", "solid": "a solid blow", "serious": "a serious hit", "lethal": "a killing blow"}
 TIER_STEP = {"failure": "scrape", "huge_failure": "solid", "critical_failure": "serious"}
@@ -260,21 +254,6 @@ def _check(game: Any, s: FantasyState, stat: str, difficulty: str, label: str, r
     return dice_d20(rng, req)
 
 
-DEATH_WORDS = re.compile(r"\b(die|dies|dying|death|drown|drowns|drowning|suicide|end (it|their life|his life|her life)|kill (himself|herself|themselves))\b", re.I)
-
-
-def chose_death(adj: Any) -> bool:
-    """The assistant's read is the second witness to a chosen death (B214): it fires only when the reading has no check and
-    no fiat for the attempt, or names the death in its summary. "Stop fighting" is also how a player yields, and a
-    surrender is a parley (a cha attempt against the one holding them)."""
-    if adj is None:
-        return True
-    if DEATH_WORDS.search(getattr(adj, "summary", "") or ""):
-        return True
-    has_check = any(getattr(i, "check", None) is not None for i in getattr(adj, "intents", None) or [])
-    return not has_check and not (getattr(adj, "fiat", None) or [])
-
-
 AT_THE_BODY = re.compile(r"\b(again|make sure|body|corpse|remains|finish (him|her|it|them) off|stays? down|dead (one|man|woman|robber|thing))\b", re.I)
 
 
@@ -323,11 +302,6 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
             w.directives.append(f"{p.name} breaks free of {who} (the engine rolled it: a success). Play it; {p.name} can move and run again.")
         else:
             w.directives.append(f"{p.name} fights {who}'s grip and fails (the engine rolled it): still held, no running. Play it.")
-    # -- a chosen death (B100 (b)): no roll stands between a player and the end they chose
-    if LETHAL.search(player_text or "") and chose_death(adj):
-        _end(game, s, turn, "by their own choice", w=w, cause=f"chose to die at {p.location}")
-        w.skip.append("hp")
-        return s, w
     # -- contact broken (B226): a move to another place, or words that break contact (smoke, a slip away, the boat), end
     #    every hold on the player and its peril; the fight is left, and whoever follows does so by a narrator's call
     fleeing = any(getattr(c, "id", "") == "flee" for c in (getattr(adj, "commands", None) or []))
@@ -337,7 +311,7 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
         if broken:
             w.directives.append(f"{p.name} breaks contact: {broken}. Nothing holds {p.name} now; play the getting away. Anyone who "
                                 f"comes after {p.name} does so in the prose, by an <<ENEMY>> call.")
-    # -- a peril: the countdown (B102), and the chosen end inside one (B100 (a))
+    # -- a peril: the countdown (B102)
     if p.peril is not None:
         pr = p.peril
         from .game import ATTACK
@@ -363,7 +337,7 @@ def world_turn(game: Any, state: FantasyState, adj: Any, player_text: str, rng: 
         acting = own is not None or any(getattr(i, "attack_at", None) for i in (getattr(adj, "intents", None) or []))
         if getattr(adj, "kind", "action") not in ("action", "trivial") or (not acting and SPEECH.search(player_text or "") and not way_out(pr, pr.stat, player_text or "")):
             # B317 (the owner, 11-10 night: "Shouting should be a free action ... When in doubt never assume it!"): words, a
-            # shout, a prayer are free; the moments do not run, and nothing here is ever read as choosing to die
+            # shout, a prayer are free; the moments do not run
             w.directives.append(f"{p.name} is {what}. Words cost nothing here: the moment does not run on while {p.name} speaks or "
                                 f"calls out. Play it, still {what}, and end the turn on that moment; what {p.name} does next is the player's to say.")
             return _after_peril(game, s, adj, player_text, rng, turn, offset, w, text)
