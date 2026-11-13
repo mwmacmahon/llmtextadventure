@@ -1149,7 +1149,10 @@ def failure_harm(game: Any, s: FantasyState, data: dict, label: str) -> int:
     if not hot:
         return 0
     pr = s.player.peril                           # an attack, a physical check, or a way out (no longer the old wide ESCAPE list)
-    if not (ATTACK.search(label) or data.get("stat") in ("str", "dex", "con") or MARKED.match(label) or BREAK_FREE.search(label)
+    # B389 (the owner, 11-13: a failed side move in a fight costs no hit points): a plain physical check costs only in a
+    # peril or under a hazard; in a fight alone the foes' own round is the cost
+    hazard = pr is not None or bool(getattr(s.player, "exposed", None))
+    if not (ATTACK.search(label) or (hazard and data.get("stat") in ("str", "dex", "con")) or MARKED.match(label) or BREAK_FREE.search(label)
             or (pr is not None and way_out(pr, str(data.get("stat") or "").lower(), label))):
         return 0
     # its own die, not the check's (a natural 1 was always the same 7): seeded by the moment so a replay rolls it again the same

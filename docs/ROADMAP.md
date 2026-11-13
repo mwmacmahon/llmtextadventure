@@ -482,6 +482,8 @@ what the store knows (did the player move, is a blow's target a person, how ofte
   this page is re-cut.
 - A save's cost counts only live calls (B131); a "spent including undone" figure if wanted.
 - Long rounds on the phone: the light page is the answer (B15).
+- **The narrator's message rewritten by hand (B406, the owner 11-13, wanted, not urgent).** A debug option: edit the
+  telling, and the referee runs on the edited text as canon, with no rewrite or retell. A testing tool for the referee.
 
 ## 18. Ideas not yet weighed
 

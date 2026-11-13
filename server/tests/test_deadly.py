@@ -216,12 +216,14 @@ def test_a_failure_in_a_fight_costs_hit_points(game):
     st = new(game)
     foe(st)
     data = {"outcome": "huge_failure", "roll": 4, "stat": "str"}
-    note = game.check_note(st, data, "hack at the troll")
+    note = game.check_note(st, data, "strike at the troll")
     assert data["harm"] in (3, 4, 5) and "hard knock" in note
     calm = new(game)
     assert game.check_note(calm, {"outcome": "failure", "roll": 4, "stat": "str"}, "lift the barrel") == ""
+    side = {"outcome": "huge_failure", "roll": 1, "stat": "str"}                  # B389: a side move in a fight costs nothing
+    assert game.check_note(st, side, "stamp down on the rat") == "" and "harm" not in side
     from engine.game import TurnInfo
-    after = game.after_turn(st, TurnInfo(turn=2, elapsed_minutes=1, rng=random.Random(0), calls=[{**data, "label": "hack at the troll"}]))
+    after = game.after_turn(st, TurnInfo(turn=2, elapsed_minutes=1, rng=random.Random(0), calls=[{**data, "label": "strike at the troll"}]))
     assert after.player.hp == st.player.hp - data["harm"]
 
 
@@ -689,6 +691,6 @@ def test_a_failures_cost_is_a_die_of_its_own_shown_on_the_line(game):
     for minute in range(40):                      # the same natural 1 at different moments: not one fixed number
         st.clock.minute = 600 + minute
         data = {"outcome": "critical_failure", "stat": "str", "roll": 1}
-        seen.add(wo.failure_harm(game, st, data, "Stomp the rat"))
+        seen.add(wo.failure_harm(game, st, data, "Strike the rat"))
         assert data["harm_dice"].startswith("1d6+4: ")
     assert len(seen) > 2 and seen <= {5, 6, 7, 8, 9, 10}
