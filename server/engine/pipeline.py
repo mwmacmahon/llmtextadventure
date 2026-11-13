@@ -1062,7 +1062,7 @@ class Engine:
         # ---- 2. resolve -----------------------------------------------------
         res = self._resolve(game, state, adj, iid, turn, extra_directives, through=bool(cmd_result is not None and cmd_result.through))
         state = res["state"]
-        # ---- 2b. the world acts (part four, D176): the game's own rolls before the prose (a chosen death, a peril's
+        # ---- 2b. the world acts (part four, D176): the game's own rolls before the prose (a peril's
         #          countdown, the enemies' moves); the narrator is told each in THIS TURN, the § lines follow the prose
         world = None
         if hasattr(game, "world_turn") and (adj is None or adj.kind in ("action", "trivial")):
@@ -1153,6 +1153,9 @@ class Engine:
                              "outcome": str(r.data.get("outcome", "")).replace("_", " "), "mechanic": r.mechanic, "data": r.data,
                              "call": {"verb": "CHECK", "raw": f"CHECK {a.stat} {diff}", "stat": a.stat, "difficulty": a.difficulty, "target": a.target}})
             res["told"] = told
+        from . import telling
+        own = _hook(game, "telling_kind", state, adj, res, role.telling, default=None) if role.telling != "off" else None   # D247
+        res["telling"] = telling.budget(role.telling, res, len(world.mechanics) if world is not None else 0, own)   # D246
         scene_text = _hook(game, "scene_block", state, adj, "narrator", default="")
         coming = _pending_block(game, state, "narrator")
         bulletin = (((scene_text + "\n\n") if scene_text else "") + game.render_bulletin(state, player_text)
@@ -1194,7 +1197,7 @@ class Engine:
             cap = (_hook(game, "turn_limits", state, adj, default=None) or {}).get("calls")   # B313: a fight's round may need more; 0: none (DEBUG)
             if cap is None:
                 cap = getattr(game, "max_calls", 3)
-            async for nev in narrate(provider, role, system, messages, handler, max_calls=cap):
+            async for nev in narrate(provider, role, system, messages, handler, max_calls=cap, telling=res.get("telling")):
                 if isinstance(nev, Visible):
                     yield {"event": "text", "data": {"t": nev.text}}
                     written += len(nev.text)
@@ -1260,9 +1263,14 @@ class Engine:
             },
         })
 
+        if res.get("telling"):                     # D246: the budget and what was first written, for the round's count
+            from . import telling as _tl
+            res["telling"]["written"] = _tl.words(narration)
+            self.store.append_ledger(iid, turn, "telling", dict(res["telling"]))
         if replay is not None and replay.stop_after_narration:
             yield {"event": "narrated", "data": {"turn": turn, "text": narration, "model": done.model, "seconds": round(elapsed, 2),
-                                                 "usage": asdict(done.usage), "directives": res["directives"], "bulletin": bulletin, **calls_block}}
+                                                 "usage": asdict(done.usage), "directives": res["directives"], "bulletin": bulletin,
+                                                 "telling": res.get("telling"), **calls_block}}
             self._tapes.pop(iid, None)
             return
 
@@ -4025,4 +4033,7 @@ def _this_turn_block(res: dict[str, Any], clock_text: str = "") -> str:
         lines.append("- Nothing scripted is due. The world does not wait: anyone with a reason to act acts, a threat that was closing in arrives, "
                      "time spent costs something. Narrate what the player perceives and, in an [[unseen: …]] line, what is happening beyond it; "
                      "end on the moment the player acts next.")
+    if res.get("telling"):                                     # D246: the last line, nearest the writing
+        from . import telling
+        lines.append("- " + telling.line(res["telling"], res.get("player_name", "")))
     return "\n".join(lines)

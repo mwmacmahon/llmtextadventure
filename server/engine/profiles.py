@@ -70,6 +70,10 @@ MODULES: dict[str, dict[str, Any]] = {
                      "levels": {}},
     "pull": {"label": "Pull", "cuts": "what the narrator may ask for mid-prose",
              "levels": {"light": "a person, a thing or a place; not a clue or a thread"}},
+    "telling_length": {"label": "Telling length", "cuts": "how long the narrator's telling of a turn runs",
+                       "levels": {"off": "no budget; the game's own length rule stands",
+                                  "standard": "a word budget by the kind of turn: 80 quick, 170 plain, 200 talk, 45 more a roll",
+                                  "short": "a word budget by the kind of turn: 40 quick, 80 plain, 120 talk, 35 more a roll"}},
     "directive_economy": {"label": "Directive economy", "cuts": "the size of this turn's directions to the narrator",
                           "levels": {"dials": "set by the checks and stakes dials"}},
 }
@@ -131,6 +135,8 @@ class Profile(BaseModel):
                 ov["stakes"] = self.dials.stakes
             if self.dials.checks is not None:
                 ov["checks"] = self.dials.checks
+        if role == "narrator" and self.modules.get("telling_length"):
+            ov["telling"] = self.modules["telling_length"]
         if role == "assistant" and self.dials.game_notes is not None:
             ov["game_notes"] = self.dials.game_notes
         return ov

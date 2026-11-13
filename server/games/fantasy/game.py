@@ -1548,6 +1548,11 @@ class FantasyGame(GameBase):
                                f"and leave {p.name} room to run or yield; never say so outright." if e.band == "impossible" else ""))
         w.rows.append({"kind": "encounter", "hit": hit, "why": "the offer", "reason": e.reason})
 
+    def telling_kind(self, state: FantasyState, adj: Any, res: dict, level: str) -> dict | None:
+        """The fantasy's own kinds of turn for the telling's length (games/fantasy/telling.py, D247): death, peril, fight."""
+        from . import telling
+        return telling.kind(state, adj, res, level)
+
     def turn_limits(self, state: FantasyState, adj: Any = None) -> dict:
         """The pipeline's one hook for what a pressing turn allows (the debt review, 11-10 night: three hooks answered it):
         `calls`, the narrator's call cap (0 on a DEBUG turn); `minutes`, the turn's most (a peril, a grab or a fight: one,
@@ -1732,7 +1737,7 @@ class FantasyGame(GameBase):
         return made, row
 
     def world_turn(self, state: FantasyState, adj: Any, player_text: str, rng: Any, turn: int, offset: int):
-        """The engine's own rolls before the narrator writes (part four, D176): a chosen death, a peril's countdown, the
+        """The engine's own rolls before the narrator writes (part four, D176): a peril's countdown, the
         enemies' moves. Returns (state, WorldTurn)."""
         s, w = wo.world_turn(self, state, adj, player_text, rng, turn, offset)
         self._offer(s, adj, w, offset)                                      # part sixteen §4 (a): who might come at the player here
@@ -3460,7 +3465,7 @@ class FantasyGame(GameBase):
         return state.player.fate == "dead"
 
     def cause_of_death(self, state: FantasyState, info: dict[str, Any]) -> str | None:
-        if state.flags.get("cause"):                   # the world's (B205, B206): a move, a hazard, a peril, a chosen end
+        if state.flags.get("cause"):                   # the world's (B205, B206): a move, a hazard, a peril
             return str(state.flags["cause"])
         if state.player.fate_roll == "an execution":
             return "executed: " + str(info.get("cause") or "death by the headsman").removeprefix("death by ")

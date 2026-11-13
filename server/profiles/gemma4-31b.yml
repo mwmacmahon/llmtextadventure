@@ -9,3 +9,7 @@ server: {ctx: auto, ckpt: 2048, kv: q8_0, think_budget: -1}
 roles: {}
 dials:
   stakes: live          # B94 (D176): every profile names it
+# D246 (11-12): the telling's word budget by the kind of turn (engine/telling.py). Trial on 20 stored turns: median 162 words to
+# 135, nothing settled lost (an Opus reader); fight turns a third shorter.
+modules:
+  telling_length: short

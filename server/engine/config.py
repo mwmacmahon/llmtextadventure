@@ -45,6 +45,9 @@ class RoleConfig(BaseModel):
     # assistant only (the owner, 11-10 night: "Assistant judging should probably be toggleable like other module type stuff, so it
     # might be turned on for sonnet but not for a local model"): the game's own notes to the reading (a peril's way out to mark,
     # D220); off: the engine's own word test alone
+    # narrator: the telling's length (engine/telling.py, D246): a word budget by the kind of turn, in THIS TURN and on each
+    # resume after a roll. "off": no line (the frozen prompt's own rule stands). Set by a profile's telling_length module.
+    telling: Literal["off", "standard", "short"] = "off"
     game_notes: bool = True
     # llamacpp only (engine/providers/llamacpp_provider.py): the server, the slot this role is pinned to so its
     # cache stays resident beside the other roles', whether the model may think, sampling temperature, auth.

@@ -108,7 +108,7 @@ def _add(usage: Usage, more: Usage) -> None:
 
 
 async def narrate(provider: Provider, role: RoleConfig, system: str, messages: list[Msg], handler: CallHandler,
-                  *, max_calls: int = 3) -> AsyncIterator[Visible | Mechanic | NarrationDone]:
+                  *, max_calls: int = 3, telling: dict | None = None) -> AsyncIterator[Visible | Mechanic | NarrationDone]:
     msgs = list(messages)
     filt = StreamFilter()
     prose = ""
@@ -197,7 +197,9 @@ async def narrate(provider: Provider, role: RoleConfig, system: str, messages: l
         cut = piece.rfind("<<")
         exchange.append({"role": "assistant", "text": (extract(piece[:cut])[0] + "\n" if cut > 0 else "") + piece[cut:].strip() + CLOSE_CALL})
         exchange.append({"role": "user", "text": result.text})
-        msgs = msgs + [Msg("assistant", piece + CLOSE_CALL), Msg("user", result.text + "\n\n" + CONTINUE)]
+        from .telling import left, words
+        still = left(telling, words(prose))         # D246: the words of this turn still to spend
+        msgs = msgs + [Msg("assistant", piece + CLOSE_CALL), Msg("user", result.text + "\n\n" + CONTINUE + (" " + still if still else ""))]
         if requests > max_calls + 2:               # a model that only calls never ends on its own
             problems.append("too many continuation requests; narration cut")
             stop_reason = "cut"

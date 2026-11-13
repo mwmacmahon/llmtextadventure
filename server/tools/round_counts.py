@@ -4,7 +4,7 @@
 
 Per round: turns, the ending, retells and FORCED turns, rulings by rule, rejections by reason, errors, the clock
 covered, the meter's range, the narrator's pace (seconds and words a turn), what it invented (new people, places,
-things), threads opened, checks and their outcomes, and repetition (sentences of eight words or more that appear in
+things), threads opened, checks and their outcomes, the telling's length against its budget by the kind of turn (D246), and repetition (sentences of eight words or more that appear in
 more than one turn). The same numbers for every round, so rounds on different models or rules can be laid side by side.
 """
 from __future__ import annotations
@@ -132,6 +132,13 @@ def counts(iid: str) -> dict:
     repeated = {s: ts for s, ts in sentences.items() if len(ts) > 1}
     narr = [r["payload"] for r in ledger if r["kind"] == "model_call" and r["payload"].get("role") == "narrator"]
     model = Counter(p.get("model") for p in narr).most_common(1)
+    # D246: the telling's length against its budget, by the kind of turn: {kind: [turns, median budget, median written]}
+    tell = [r["payload"] for r in ledger if r["kind"] == "telling" and r["payload"].get("written") is not None]
+    by_kind: dict[str, list[dict]] = {}
+    for p in tell:
+        by_kind.setdefault(str(p.get("kind")), []).append(p)
+    telling = {k: [len(v), int(st.median(x["words"] for x in v)), int(st.median(x["written"] for x in v))] for k, v in sorted(by_kind.items())}
+    over = sum(1 for p in tell if p["written"] > 1.5 * p["words"])
     return {"iid": iid, "game": inst["game"], "title": inst.get("title") or "", "model": (model[0][0] if model else "?"),
             "turns": len(turns), "ending": inst.get("ending") or "", "kinds": dict(kinds), "retells": retells, "forced": forced,
             "rulings": dict(rulings), "rulings_n": sum(rulings.values()), "rejected": dict(rejected), "rejected_n": sum(rejected.values()),
@@ -145,13 +152,16 @@ def counts(iid: str) -> dict:
             # B5 (D145): the formula, over the round and over its second half (the late turns the reads hear it in)
             "formula_open": len(opens), "formula_close": len(closes), "formula_both": len(both),
             "formula_late": f"{sum(1 for t in both if t > len(turns) // 2)}/{len(turns) - len(turns) // 2}",
-            "formula_turns": {"open": opens, "close": closes}}
+            "formula_turns": {"open": opens, "close": closes},
+            "telling": telling, "telling_level": (tell[0].get("level") if tell else ""),
+            "telling_over": f"{over}/{len(tell)}" if tell else ""}
 
 
 COLS = [("turns", "turns"), ("ending", "ending"), ("retells", "retells"), ("forced", "FORCED"), ("rulings_n", "rulings"), ("rejected_n", "rejected"),
         ("errors", "errors"), ("minutes", "clock min"), ("meter", "meter lo-hi (last)"), ("sec_median", "s/turn med"), ("words_median", "words med"),
         ("invented_n", "invented"), ("threads", "threads"), ("checks", "checks"), ("repeated_sentences", "repeated sent."), ("turns_with_repeat", "turns w/ repeat"),
-        ("formula_open", "opener names place"), ("formula_close", "closer names clock"), ("formula_late", "both, late half")]
+        ("formula_open", "opener names place"), ("formula_close", "closer names clock"), ("formula_late", "both, late half"),
+        ("telling_level", "length level"), ("telling_over", "over 1.5x budget")]
 
 
 def md_table(rows: list[dict]) -> str:
@@ -184,6 +194,8 @@ def main() -> None:
         print(md_table(rows))
         for c in rows:
             print(f"\n{c['game']} {c['iid']}: rulings {c['rulings']}; rejected {c['rejected']}; invented {c['invented']}; outcomes {c['outcomes']}; kinds {c['kinds']}")
+            if c.get("telling"):
+                print("  telling (kind: turns, budget median, written median): " + "; ".join(f"{k}: {n}, {b}, {w}" for k, (n, b, w) in c["telling"].items()))
             for s in c["repeats"][:3]:
                 print(f"  repeat: {s[:120]}")
 

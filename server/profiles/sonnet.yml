@@ -14,3 +14,6 @@ dials:
   stakes: live
   checks: called
   guard: rewrite
+# D246 (the owner and Lilith, 11-12: the tellings ran about twice too long): a word budget by the kind of turn (engine/telling.py)
+modules:
+  telling_length: short

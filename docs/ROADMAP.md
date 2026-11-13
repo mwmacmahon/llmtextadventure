@@ -143,6 +143,14 @@ the box's helper; the stamp on every turn's rows and in the call report. Design:
 old label). **Left:** one server for every game, so the rounds and the fantasy share a save list
 (B77); module levels edited in the UI as an override layer; the cost per profile on the card for a local model.
 
+**Telling length (D246, 11-12; built, on for `sonnet`).** A word budget by the kind of turn (quick, talk, passage, plain,
+rolled), in THIS TURN's last line and on each resume after a roll (`engine/telling.py`; levels off / standard / short).
+Trial on 17 stored Sonnet turns: median 307 words to 199, no settled result lost, narrator time down a third.
+A game names its own kinds through one hook (D247): the fantasy has death, peril and fight; `short` is on for
+`gemma4-31b` too (median 162 to 135, nothing lost). **Left:** more fantasy kinds (an arrival, a level, a night's rest), death
+and peril trialled; the `telling` ledger rows in the round report; a Short / Standard choice for the player in Settings; the resume
+line's answer sentence trialled (a spoken question after a called check was still cut once); Gemma and the other games (off).
+
 ## 5. The narrator's context
 
 The narrator's prompt as modules, each a level a profile names: the bulletin as named sections with items; the focus
@@ -418,7 +426,9 @@ by the owner (D205C: only "skip to …" runs days, warned first; no haggling, th
 offers, any number booked, shows two weeks out); rounds 6 and 7 and their fixes (D206C, D207C); a deck heavy in the first tier,
 rebooking a step harder, rest that always pays, Saturday training (D208C); the day in four parts with the engine's confirm, and
 an engine-only simulator with its own design doc, notes/CLOWN_SIMULATOR.md (D210C, D212C); tiredness on a curve with a
-three-day warning (D211C). Live rounds on hold (the owner). **Left:** the simulator's calibration grids; a round on the four-part
+three-day warning (D211C). Live rounds on hold (the owner). **High priority (the owner, 11-12): the telling's length for the
+clown (C105; the engine's budget, D246, already reaches it on the `sonnet` profile; its own kinds of turn, a cold read and a
+trial are left).** **Left:** the simulator's calibration grids; a round on the four-part
 day when live play resumes; the save's growth (C97, every game); the content pass; the C-lines in its own roadmap.
 
 ## 16. Writing for models
