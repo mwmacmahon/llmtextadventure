@@ -1,6 +1,7 @@
 """The telling's length (D246, engine/telling.py): a budget by the kind of turn, its line, and what is left on a resume."""
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 from engine import profiles, telling
@@ -128,3 +129,26 @@ async def test_a_played_fight_round_takes_the_fantasys_fight_budget(engine, fake
     await play(engine, iid, "I swing at Maud.")
     row = next(x["payload"] for x in engine.store.ledger(iid, 1) if x["kind"] == "telling")
     assert row["kind"] == "fight" and row["own"] and row["rolls"] >= 1 and row["words"] == 80 + 35 * row["rolls"]
+
+
+async def test_a_check_rolled_before_the_prose_is_not_left_for_the_narrator_to_call(engine, fake):
+    """B383: a fight turn's own check, rolled by the world turn, stayed among the checks to call: THIS TURN asked for the call
+    and said it was rolled, and the referee was told it was never called (a check_skipped retell on every success)."""
+    from engine.roles import CheckProposal
+    from test_fantasy import SHEET, play, reading, state_of
+    iid = engine.create_instance("fantasy", dict(SHEET))
+    st = state_of(engine, iid)
+    q = st.person("maud")
+    q.location, q.attitude = st.player.location, -3
+    st.player.fighting = ["maud"]
+    engine.store.save_snapshot(iid, 0, st.model_dump(mode="json"))
+    r = reading("I shove Maud back with my shield.", 1)
+    r.intents = [type(r.intents[0])(action="shove Maud back with the shield", targets=["maud"],
+                                    check=CheckProposal(label="Shield shove", stat="str", difficulty="medium"))]
+    fake.canned["AssistantReading"] = [r]
+    evs = await play(engine, iid, "I shove Maud back with my shield.")
+    bulletin = next(e["data"]["text"] for e in evs if e["event"] == "bulletin")
+    this_turn = bulletin[bulletin.index("THIS TURN"):]
+    assert "was rolled before this telling" in this_turn and "Assessed check" not in this_turn and "<<CHECK str" not in this_turn
+    mech = next(json.loads(x.text) for x in engine.store.transcript(iid, roles=["mechanics"]) if x.turn == 1)
+    assert not mech.get("assessed_not_called")

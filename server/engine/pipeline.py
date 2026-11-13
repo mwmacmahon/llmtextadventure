@@ -1074,6 +1074,14 @@ class Engine:
                 res["directives"] = list(world.directives) + list(res["directives"])
             if world.blocked:                             # a compulsion won (part four §6): the attempt does not happen, nothing to call
                 res["assessments"] = []
+            # B383 (Gemma round 30, 99d2b5b91e22 T6, T19, T26; and 16 retells in the store from 11-11 on): a check the world turn
+            # rolled before the prose (a fight turn's own check, a way out) stayed on the list of checks for the narrator to call.
+            # THIS TURN then said both "write <<CHECK ...>> and wait" and "was rolled before this telling"; the narrator's call was
+            # answered 'already rolled'; and the referee was told the check was never called and ruled check_skipped whenever the
+            # prose played its success: a retell, and a FORCED turn when the retells ran out. A check already rolled is not to call.
+            rolled_first = {str(d.get("label") or "") for d in (getattr(state, "flags", None) or {}).get("prerolled_checks") or []}
+            if rolled_first:
+                res["assessments"] = [a for a in res["assessments"] if a.label not in rolled_first]
             for row in world.rows:
                 ledger("world", row)
         for f in res["fired"]:
