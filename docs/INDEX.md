@@ -209,7 +209,8 @@ Every playtest also has a transcript `notes/playtests/<date>-<game>-<tag>.md` an
 | `server/tools/round_report.py` | a page of every model call in a played game |
 | `server/tools/round_read.py` | a played round as a light page a phone can open: the turn.py transcript, each turn's input and prose, mechanics folded |
 | `server/tools/round_profile.py` | one line a turn of a played round: the narrator's context, output, requests, retells, reasoning and force-closes, the meter, and the chant measures refrain % and copy % (D90) |
-| `server/tools/round_counts.py` | the long-round counts (retells, FORCED, rulings, rejections, clock, meter, pace, invention, repetition) for one or more instances, as a table (D87) |
+| `server/tools/round_counts.py` | the long-round counts (retells, FORCED, rulings, rejections, clock, meter, pace, invention, repetition, and since D246 the telling's length against its budget by the kind of turn) for one or more instances, as a table (D87) |
+| `server/tools/replay_corpus.py` | the replay corpus (D248): every stored fantasy turn through today's engine with no model, the outcome kept as data; `record` a baseline, `check` prints each turn a change moved, `stats` what it covers; baseline in `notes/eval/corpus/` (908 turns, 11-12) |
 | `server/tools/llm.py` | `use <profile>` swaps the box's model; `show`, `status` |
 | `server/tools/local_smoke.py` | three roles against a local server, cache check |
 | `server/tools/play.py` | play by hand in the terminal |

@@ -444,6 +444,12 @@ model-facing line, measured by rounds of its own; the fail-forward echo when a g
 The call report per round, the living pages regenerated in the same commit, the index, the register, the decisions
 log. Design: INDEX.md; the memory rules.
 
+**Built 11-12 (D248): the replay corpus.** `tools/replay_corpus.py` runs every stored fantasy turn through today's engine
+with no model and keeps what the engine did as data (who is fought, hit points, perils, deaths, who was brought in, the
+rows' kinds and outcomes); `check` prints each turn a change moves. The first baseline: 908 turns of 50 games, 18 seconds a
+pass. Run with the suite before a commit that touches the fantasy's engine. **Left on it:** the second half of the turn
+(the landing after the prose, the referee's rows); the phrase table for the word patterns; the other games.
+
 **Running.** **Left.**
 - Nineteen test files load the gitignored `notes/content`, so a fresh clone cannot run them (R5-1031).
 - The docs marked behind in INDEX §4 (ARCHITECTURE, GAME_AUTHORING's lines, LOCAL_LLM's next-model section) and §7's

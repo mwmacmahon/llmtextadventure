@@ -3,7 +3,9 @@
 How this project tests the models that read and judge the story (the assistant and the referee): what the pieces are,
 what they are called, how to write a test, how to run one, how to read the result, and the problems found so far with
 the decisions taken on them. The game's deterministic code has its own offline suite (`server/tests`, `pytest`); that
-suite needs no model and is not what this document is about. Live play with a player (a Claude Code subagent through
+suite needs no model and is not what this document is about. Beside it, `server/tools/replay_corpus.py` replays every stored fantasy turn
+through today's engine, also with no model, and reports each turn whose outcome a code change moved (D248; `record`, `check`,
+`stats`; the baseline lives in `notes/eval/corpus/`). Live play with a player (a Claude Code subagent through
 `tools/turn.py`, D84; reports in `notes/playtests/`) is the third kind of test and is covered at the end.
 
 All test data lives in `notes/eval/`, which is gitignored: it holds recorded play, hand judgements and model output, and
