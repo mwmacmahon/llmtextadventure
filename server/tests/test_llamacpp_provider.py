@@ -208,7 +208,7 @@ def test_config_local_yml_loads_through_ta_config(monkeypatch):
     monkeypatch.delenv("TA_PROVIDER", raising=False)
     monkeypatch.setenv("TA_CONFIG", "config.llamacpp.yml")
     cfg = load_config()
-    assert cfg.role("narrator").provider == "llamacpp" and cfg.role("referee").slot == 2 and cfg.role("summarizer").slot == 0
+    assert cfg.role("narrator").provider == "llamacpp" and cfg.role("referee").slot == 2 and cfg.role("summarizer").slot == 3 and cfg.side_slot == 3   # B405: the summary on the side slot
 
 
 async def test_prepare_posts_to_the_yield_helper_once_a_minute(monkeypatch):

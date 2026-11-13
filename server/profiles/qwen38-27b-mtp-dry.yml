@@ -4,7 +4,7 @@
 # server block); the game is started with TA_PROFILE=qwen38-27b-mtp-dry so only the request changes. Measure: the
 # refrain and copy columns of tools/round_profile.py over a 50-turn station round against 515e54c89a0a.
 model: Huihui-Qwen3.8-27B-abliterated-UD-Q5_K_XL.gguf
-server: {ctx: 98304, ckpt: 2048, kv: q8_0, think_budget: 512, extra: "--spec-type draft-mtp --spec-draft-n-max 3"}
+server: {ctx: 122880, ckpt: 2048, kv: q8_0, think_budget: 512, extra: "--spec-type draft-mtp --spec-draft-n-max 3 --parallel 4"}
 roles:
   narrator: {thinking: true, thinking_budget: 512, reasoning_effort: low, think_after_call: true, dry_multiplier: 0.8, dry_base: 1.75, dry_allowed_length: 2, dry_penalty_last_n: 2048, dry_sequence_breakers: ["\n", ":", "\"", "*", "<<", ">>", "[[", "]]"]}
 dials:

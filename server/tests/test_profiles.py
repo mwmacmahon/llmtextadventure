@@ -111,3 +111,43 @@ def test_load_config_checks_every_repo_profile_and_asks_the_box_once(monkeypatch
     _write(tmp_path, "broken", "model: a.gguf\nroles: {referee: {no_such: 1}}\n")
     with pytest.raises(ValueError, match="not role settings"):
         load_config()
+
+
+def test_no_two_kinds_of_prompt_share_a_slot_on_the_local_server():
+    """B405 (the owner, 11-13: "this absolutely should never ever have happened ... the lesson was not properly integrated"): a
+    llama-server slot holds one prompt, and a second kind of prompt on it throws the first one's cache away on every call. The
+    three roles that speak every turn each have a slot of their own; every other call (the summary, the quest check, the beat
+    check, an aside, the sheet pass) goes to the side slot, which is nobody's; and the profiles in use ask the server for it."""
+    import yaml
+    from pathlib import Path
+    from engine.config import Config
+    root = Path(__file__).resolve().parents[1]
+    raw = yaml.safe_load((root / "config.llamacpp.yml").read_text())
+    cfg = Config.model_validate(raw)
+    turn_roles = {n: cfg.roles[n].slot for n in ("narrator", "assistant", "referee")}
+    assert None not in turn_roles.values() and len(set(turn_roles.values())) == 3, turn_roles
+    assert cfg.side_slot is not None and cfg.side_slot not in turn_roles.values()
+    for name, role in cfg.roles.items():
+        if name not in turn_roles and role.slot is not None:
+            assert role.slot == cfg.side_slot, f"{name} is on slot {role.slot}: a turn role's slot, or one nobody asked the server for"
+    for prof in ("gemma4-31b", "qwen38-27b-mtp", "qwen38-27b-mtp-dry"):          # the profiles played on: the server has the side slot
+        server = yaml.safe_load((root / "profiles" / f"{prof}.yml").read_text())["server"]
+        assert f"--parallel {cfg.side_slot + 1}" in str(server.get("extra", "")), prof
+
+
+def test_side_calls_never_run_on_a_turn_roles_slot():
+    """B405: the engine's own side calls take their role's settings and the side slot."""
+    import inspect
+    from types import SimpleNamespace
+    from engine import pipeline
+    from engine.config import RoleConfig
+    eng = pipeline.Engine.__new__(pipeline.Engine)
+    roles = {"assistant": RoleConfig(model="m", slot=1), "referee": RoleConfig(model="m", slot=2), "summarizer": RoleConfig(model="m", slot=3)}
+    eng.cfg = SimpleNamespace(side_slot=3, role=lambda n: roles[n])
+    assert [eng._side_role(n).slot for n in ("assistant", "referee", "summarizer")] == [3, 3, 3]
+    eng.cfg = SimpleNamespace(side_slot=None, role=lambda n: roles[n])                 # a hosted setup: no slots, nothing moved
+    assert eng._side_role("referee").slot == 2
+    src = inspect.getsource(pipeline.Engine)
+    for fn in ("_quest_check", "_beat_check", "_summarize"):                           # each of these asks for the side role
+        body = src[src.index(f"async def {fn}("):][:900]
+        assert "_side_role(" in body, fn

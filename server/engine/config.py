@@ -191,6 +191,11 @@ class Config(BaseModel):
     consequences: ConsequenceConfig = Field(default_factory=ConsequenceConfig)
     guard: GuardConfig = Field(default_factory=GuardConfig)
     roles: dict[str, RoleConfig]
+    # A local server only (B405; the owner's rule: one model, every role in turn, no cache lost): the slot for every call that
+    # is not a role's own turn-by-turn prompt (the quest check, the beat check, an aside, the sheet pass, the summary). A slot
+    # holds one prompt; a second kind of prompt on a role's slot throws the role's cache away, every time. None: no side slot
+    # (a hosted provider has no slots).
+    side_slot: int | None = None
     context: ContextConfig = Field(default_factory=ContextConfig)
     pricing: dict[str, Pricing] = Field(default_factory=dict)
 
@@ -283,10 +288,13 @@ def read_config(path: Path) -> Config:
     # role overrides never undo it (Config.role lays these over last).
     forced = os.environ.get("TA_PROVIDER")
     if forced:
-        for i, (name, r) in enumerate(cfg.roles.items()):
+        turn_roles = ("narrator", "assistant", "referee")
+        if forced == "llamacpp" and cfg.side_slot is None:
+            cfg.side_slot = len(turn_roles)                      # B405: the slot after the three turn roles' is the side slot
+        for name, r in cfg.roles.items():
             r.provider = forced  # type: ignore[assignment]
-            if forced == "llamacpp" and r.slot is None:
-                r.slot = i
+            if forced == "llamacpp" and r.slot is None:          # a turn role its own slot; every other role the side slot
+                r.slot = turn_roles.index(name) if name in turn_roles else cfg.side_slot
             cfg._forced[name] = {"provider": forced, **({"slot": r.slot} if forced == "llamacpp" else {})}
     # TA_STAKES=off|shadow|live sets the narrator's stakes dial (D109) for one server, so a shadow round needs no edit to
     # the shared config (D111: 5c, the stakes in shadow on Gemma rounds); it wins over a profile's stakes dial too

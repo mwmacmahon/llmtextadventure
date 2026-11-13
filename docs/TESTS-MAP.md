@@ -77,7 +77,8 @@ of the Qwen long rounds, about 1% on Gemma.
 play tests"). The whole game with a free player. Brief the player to be odd and to try the look-alikes: on 11-13 a 20-turn
 comedy round found four faults that 233 probe readings had not. `finish` writes the transcript and the call report
 (`tools/round_report.py`: every model call, what it saw and answered); `tools/round_counts.py <iid>` gives the round's
-numbers (retells, refused rows, the telling's length, mends, repeats).
+numbers (retells, refused rows, the telling's length, mends, repeats, and the prompt cache lost by role: on a local model anything
+but a few of the narrator's is a fault to find, B405).
 
 **13. Reads** (`tools/READER_BRIEF.md`, `tools/ROUND_COMPARE_BRIEF.md`; TESTING.md "A player's-eye read"). An Opus reader
 reads a round as a player (narration only), or two rounds blind. The only measure of whether it is good to play.

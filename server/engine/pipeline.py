@@ -371,7 +371,7 @@ class Engine:
             return nothing
         fields = str(_hook(game, "sheet_fields", built, default="") or "")
         ledger = lambda kind, payload: self.store.append_ledger(iid, 0, kind, payload)  # noqa: E731
-        role = self.cfg.role("assistant")
+        role = self._side_role("assistant")              # B405: not the reading's own prompt, so not on its slot
         self._tapes[iid] = ledger
         t0 = time.monotonic()
         try:
@@ -435,7 +435,7 @@ class Engine:
             return {"ok": False, "text": "Ask a question after the ?."}
         told = [r for r in self.store.transcript(iid, roles=["narrator"]) if r.turn <= turn]
         last = told[-1].text.split("\n§ ")[0] if told else ""
-        role = self.cfg.role("assistant")
+        role = self._side_role("assistant")              # B405
         provider = self._provider(role, iid, "ask")
         system = self.ASK_SYSTEM.replace("{name}", name)
         records = _hook(game, "people_records", state, default=[]) or []
@@ -1771,6 +1771,15 @@ class Engine:
         ledger("turn_failed", {"step": step, "error": f"{type(e).__name__}: {e}"[:500]})
         self._tapes.pop(iid, None)
 
+    def _side_role(self, name: str) -> Any:
+        """The settings of role `name` for a call that is not that role's own turn-by-turn prompt: on a local server it runs on
+        the side slot (Config.side_slot), never on the role's own. B405 (the owner, 11-13: "this absolutely should never ever
+        have happened"): the quest check ran on the referee's slot every turn a job was open, and each threw the other's cache
+        away (28% of the referee's calls began from nothing); the summary did the same to the narrator."""
+        role = self.cfg.role(name)
+        side = getattr(self.cfg, "side_slot", None)
+        return role.model_copy(update={"slot": side}) if (side is not None and role.slot is not None) else role
+
     def _provider(self, role: Any, iid: str | None, step: str) -> Any:
         """The role's provider; during a live turn, wrapped so every call it makes goes on the turn's tape."""
         provider = self.providers.get(step) or get_provider(role)
@@ -2379,7 +2388,7 @@ class Engine:
         return handler
 
     async def _summarize(self, game: Game, state: BaseModel, plan, iid: str | None = None) -> tuple[str, dict]:
-        role = self.cfg.role("summarizer")
+        role = self._side_role("summarizer")             # B405: it ran on the narrator's slot every sixth turn
         provider = self._provider(role, iid, "summarizer")
         # B212 (D179): the state block as it stood at the last folded turn, never the latest: the summary covers those turns only
         try:
@@ -2404,7 +2413,7 @@ class Engine:
 
     async def _quest_check(self, game: Game, iid: str, player_text: str, narration: str, q: dict) -> tuple[str, str, dict]:
         """B259: one short question to the referee's model: did this telling settle the quest, and by which ending?"""
-        role = self.cfg.role("referee")
+        role = self._side_role("referee")                # B405: its own small prompt, on the side slot
         provider = self._provider(role, iid, "referee")
         names = list(q["endings"]) + ["none"]
         schema = create_model("QuestCheck", why=(str, ...), ending=(Literal[tuple(names)], ...))   # type: ignore[valid-type]  # the reason first
@@ -2416,7 +2425,7 @@ class Engine:
 
     async def _beat_check(self, iid: str, c: dict, narration: str) -> tuple[bool, str, dict]:
         """B242 (K3): one short question to the referee's model about a beat the engine thinks is told again."""
-        role = self.cfg.role("referee")
+        role = self._side_role("referee")                # B405: its own small prompt, on the side slot
         provider = self._provider(role, iid, "referee")
         schema = create_model("BeatCheck", why=(str, ...), repeated=(bool, ...))    # the reason first
         system, msgs = beat_check_messages(c, narration)

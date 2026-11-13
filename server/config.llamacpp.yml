@@ -34,6 +34,10 @@ consequences:
     huge_failure: [35, 12]
     critical_failure: [50, 20]
 
+# B405 (the owner's rule: one model, every role in turn, no cache lost): the slot for every call that is not a role's own
+# turn-by-turn prompt (the quest check, the beat check, an aside, the sheet pass, the summary). The server must have it:
+# the profile's server block asks for four slots.
+side_slot: 3
 roles:
   narrator:
     provider: llamacpp
@@ -74,7 +78,7 @@ roles:
   summarizer:
     provider: llamacpp
     model: qwen3.5-27b
-    slot: 0                     # shares the narrator's slot: it runs only every six turns, between narrations
+    slot: 3                     # the side slot (B405): it shared the narrator's, and threw its cache away every sixth turn
     max_tokens: 1024
     temperature: 0.3
     top_p: 0.8

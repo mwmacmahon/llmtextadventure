@@ -155,6 +155,9 @@ def counts(iid: str) -> dict:
             "formula_turns": {"open": opens, "close": closes},
             "telling": telling, "telling_level": (tell[0].get("level") if tell else ""),
             "telling_over": f"{over}/{len(tell)}" if tell else "",
+            # B405: the prompt cache, by role, from turn 2 on: "calls that began from nothing / calls" (a local model's ledger
+            # usage: cache_read 0). The owner's rule is no cache lost: anything but a few of the narrator's is a fault to find
+            "cache_lost": _cache_lost(ledger),
             # D257: each mend the engine made to a reading (aim_blows), by name: {mend: turns}
             "mends": dict(Counter(m for r in ledger if r["kind"] == "mend" for m in r["payload"].get("what") or []).most_common())}
 
@@ -180,6 +183,29 @@ def md_table(rows: list[dict]) -> str:
     return "\n".join(out)
 
 
+def _cache_lost(ledger: list[dict]) -> dict[str, str]:
+    """{role: 'lost/calls'} for a local model's calls from turn 2 on (B405); empty when no call reports a cache at all."""
+    out: dict[str, list[int]] = {}
+    any_cache = False
+    for r in ledger:
+        if r["kind"] not in ("adjudication", "verdict", "model_call", "quest_check") or int(r.get("turn") or 0) < 2:
+            continue
+        p = r["payload"]
+        call = p.get("_call") or p
+        if call.get("provider") != "llamacpp" or call.get("replayed"):
+            continue
+        role = {"adjudication": "assistant", "verdict": "referee", "quest_check": "quest check"}.get(r["kind"]) or str(p.get("role") or "?")
+        u = call.get("usage") or {}
+        fresh, cached = int(u.get("input_tokens") or 0), int(u.get("cache_read_input_tokens") or 0)
+        if fresh + cached == 0:
+            continue
+        any_cache = any_cache or cached > 0
+        t = out.setdefault(role, [0, 0])
+        t[1] += 1
+        t[0] += cached == 0
+    return {k: f"{a}/{b}" for k, (a, b) in out.items()} if any_cache else {}
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("iids", nargs="+"); ap.add_argument("--json", type=Path); ap.add_argument("--md", action="store_true")
@@ -198,6 +224,8 @@ def main() -> None:
             print(f"\n{c['game']} {c['iid']}: rulings {c['rulings']}; rejected {c['rejected']}; invented {c['invented']}; outcomes {c['outcomes']}; kinds {c['kinds']}")
             if c.get("telling"):
                 print("  telling (kind: turns, budget median, written median): " + "; ".join(f"{k}: {n}, {b}, {w}" for k, (n, b, w) in c["telling"].items()))
+            if c.get("cache_lost"):
+                print("  prompt cache lost entirely (role: calls from nothing / calls, turn 2 on): " + "; ".join(f"{k}: {v}" for k, v in c["cache_lost"].items()))
             if c.get("mends"):
                 print("  mends of the reading (name: turns): " + "; ".join(f"{k}: {n}" for k, n in c["mends"].items()))
             for s in c["repeats"][:3]:

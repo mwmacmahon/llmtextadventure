@@ -10,7 +10,9 @@ model: gemma-4-31B-it-uncensored-heretic-Q5_K_M.gguf
 # the weights. Any other use of the card (a Sunshine session, 0.8 GB) and the load failed at the last 1.3 GB, and the unit
 # restarted in a loop (20 times on 11-13; the two outages of 11-12 night were the same after an idle sleep). A fixed
 # 40,960 a slot leaves about 1.6 GB; the largest narrator prompt in the store is about 20,000 tokens.
-server: {ctx: 122880, ckpt: 2048, kv: q8_0, think_budget: -1}
+# B405 (11-13): four slots, one a role and one for the side calls, 30,720 tokens each (122,880 in all, as before: 1.6 GB of
+# the card spare; 131,072 left 0.8 GB, too near B382's edge). The largest narrator prompt in the store is about 20,000.
+server: {ctx: 122880, ckpt: 2048, kv: q8_0, think_budget: -1, extra: "--parallel 4"}
 # The owner, 11-13: a telling asked for again comes out nearly the same. A retell the player asks for is sampled hotter
 # (the server's default is 0.8); change the number here.
 roles:

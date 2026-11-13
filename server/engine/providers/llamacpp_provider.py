@@ -46,6 +46,7 @@ PREPARE_EVERY = 60.0        # seconds between calls to the yield helper
 _last_prepare = 0.0
 SLOT_EVERY = 30.0           # seconds a slot size read from /props is trusted (the model can be swapped under us)
 _slot: dict[str, tuple[float, int | None]] = {}
+_slots: dict[str, int | None] = {}     # how many slots the server at a base URL has (from /props), for the side slot's check
 
 
 def _structured(prop: dict) -> bool:
@@ -273,7 +274,14 @@ class LlamaCppProvider:
             if role.reasoning_effort:
                 body["chat_template_kwargs"]["reasoning_effort"] = role.reasoning_effort
         if role.slot is not None:
-            body["id_slot"] = role.slot
+            have = _slots.get(role.base_url.rstrip("/"))
+            if have is not None and role.slot >= have:
+                # B405: a role asked for a slot the server does not have (a profile started with three slots and a side slot
+                # of 3). The call still runs, on whatever slot the server picks, and that slot's cache is lost: say so loudly
+                log.error("llamacpp.slot_missing wanted=%s server_slots=%s model=%s: the server needs --parallel %s (the profile's "
+                          "server block); this call will throw another role's cache away", role.slot, have, role.model, role.slot + 1)
+            else:
+                body["id_slot"] = role.slot
         if role.stop_sequences:
             body["stop"] = list(role.stop_sequences)
         for key in ("temperature", "top_p", "top_k", "min_p", "repeat_penalty", "presence_penalty", "repeat_last_n",
@@ -298,6 +306,7 @@ class LlamaCppProvider:
                 r = await client.get("/props", timeout=5)
                 if r.status_code == 200:
                     n = int(((r.json().get("default_generation_settings") or {}).get("n_ctx")) or 0) or None
+                    _slots[base] = int(r.json().get("total_slots") or 0) or None
         except Exception as e:  # noqa: BLE001 - a missing size is no reason to fail a turn
             log.warning("llamacpp.props failed url=%s err=%s", base, e)
         _slot[base] = (now, n)
