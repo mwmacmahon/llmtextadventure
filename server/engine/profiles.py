@@ -55,6 +55,9 @@ REFRESH_EVERY = 60.0
 # The context modules (DESIGN-context-modules §2): what each cuts, and the levels that exist today, each with what it
 # does. A module not yet built has no level to name; the card shows it as "not yet". Nothing branches on a level yet:
 # a profile records them, the card shows them, and each module honours its level as it is built.
+# Every module here has an entry in docs/LEVERS.md (its levels, which profile sets what, the decision that made it, what was
+# measured, where it helped and where it did not): read the entry before changing one, and add or update it in the same commit
+# (tests/test_levers_doc.py fails when a module or a role dial has no entry).
 MODULES: dict[str, dict[str, Any]] = {
     "window": {"label": "Window", "cuts": "turns kept verbatim, the slide step, the token budget",
                "levels": {"full": "12 to 17 turns verbatim, sliding by 6; a token budget trims by slide steps"}},
@@ -81,6 +84,9 @@ MODULES: dict[str, dict[str, Any]] = {
                            "levels": {"grammar": "constrained decoding: exact, but capped in size (no field can be added to the fantasy's reading)",
                                       "tool": "a plain tool call, validated here and asked again once if it does not fit: no cap, so the fields asked of a local model (leaving, goes_to) are asked too",
                                       "fit": "the tool call only where the answer carries fields the grammar cannot hold (the fantasy's reading); the grammar everywhere else"}},
+    "reading_steps": {"label": "Reading steps", "cuts": "how many messages the assistant's reading takes",
+                      "levels": {"one": "one form with everything in it (the check, its stakes, the settled attempts)",
+                                 "two": "a short first form; the checks and their stakes asked in a second message, only on a turn that needs one (D267, a trial)"}},
     "directive_economy": {"label": "Directive economy", "cuts": "the size of this turn's directions to the narrator",
                           "levels": {"dials": "set by the checks and stakes dials"}},
 }
@@ -144,6 +150,8 @@ class Profile(BaseModel):
                 ov["checks"] = self.dials.checks
         if role in ("assistant", "referee") and self.modules.get("field_guide"):
             ov["field_guide"] = self.modules["field_guide"] == "on"
+        if role == "assistant" and self.modules.get("reading_steps"):
+            ov["lean"] = self.modules["reading_steps"] == "two"
         if role == "assistant" and self.modules.get("structured_answers"):
             ov["structured"] = self.modules["structured_answers"]
         if role == "narrator" and self.modules.get("telling_length"):

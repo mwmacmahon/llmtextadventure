@@ -175,6 +175,13 @@ def block_of(q: Person) -> CombatBlock:
     role words. A band's bodies' hit points are filled at its first fight (`size`), not here."""
     _ensure_loaded()
     own = q.combat or CombatBlock()
+    if q.combat is None:
+        # B392 (round 31 T16): "three men in stained leather" filed with no fight on had no block, and the blow that came later
+        # met one body. A person whose own name says how many they are is that many when their block is first made
+        from .encounter import count_in
+        n = count_in(q.name or "")
+        if n and n > 1:                          # a number in the name only: a plural with none ("Jenks") says nothing
+            own = CombatBlock(count=n, band="normal")
     eid = entry_id(own.block) if own.block else _role_block(q)
     base = dict(BLOCKS.get(eid) or BLOCKS.get("commoner") or {})
     data = dict(base)
@@ -1027,6 +1034,7 @@ def land(game: Any, s: FantasyState, calls: list[dict], turn: int, offset: int, 
                     c.defeated.append(q.id)
                     c.weight_won += float(b.xp or derived_xp(b))
                     q.mood = "yielded"
+                    q.attitude = max(q.attitude, -2)           # B397: beaten and giving up: no longer one who attacks on sight
                     notes.append(f"{q.name} yields ({save_line('wis', 'their nerve', res)})")
         elif q.id in p.with_them and q.status == "alive" and (b.hp or 0) <= 0:
             # B288: the SRD's massive damage (what is left over reaches their full hit points), and never by a blow the prose
@@ -1155,6 +1163,8 @@ def run_fight_command(game: Any, state: FantasyState, command_id: str) -> tuple[
         if won and p.hp > 0:
             p.xp += won
             lines.append(f"Downed before you ran: {won} XP.")
+        from .world import left_behind
+        left_behind(s, p.fighting)                             # B397: the hostile fled from do not open the fight again at once
         p.fighting, s.combat = [], None
         dead = p.hp <= 0
         if dead:
@@ -1172,6 +1182,7 @@ def run_fight_command(game: Any, state: FantasyState, command_id: str) -> tuple[
     refusers = [q for q in living_enemies(game, s) if q not in takers]
     for q in takers:
         q.mood = "accepted a yield"
+        q.attitude = max(q.attitude, -2)                       # B397: they have what they wanted; no longer one who attacks on sight
     p.fighting = [q.id for q in refusers]
     if not p.fighting:
         s.combat = None

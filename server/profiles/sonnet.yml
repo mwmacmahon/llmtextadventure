@@ -1,3 +1,4 @@
+# What each module and dial below is, why it exists and what it measured: docs/LEVERS.md.
 # The hosted play (Stage 3): every role on Claude Sonnet 5.5 through Anthropic, as config.yml has them, the stakes live (B94) and
 # the checks called, as config.yml has them. The fantasy plays on it. No model file and no server block: nothing is loaded
 # on the GPU box, so switching to it is immediate. The guard is rewrite, as on every server (the owner, 11-08, B78: the

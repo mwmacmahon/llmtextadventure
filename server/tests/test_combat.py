@@ -1255,7 +1255,9 @@ def test_a_wary_person_does_not_attack_unprovoked(game):
     out = wo.world_call(game, st, Call(verb="ENEMY", raw="ENEMY hesk", ref="hesk"), random.Random(1), 2, {"hp": 0})
     assert out["data"].get("none") and "not hostile" in out["text"] and "hesk" not in st.player.fighting
     assert q not in wo.could_turn(game, st)
-    q.attitude = -2
+    q.attitude = -2                                   # B397: angry is set against the player and strikes no first blow
+    assert q not in wo.could_turn(game, st)
+    q.attitude = -3
     assert q in wo.could_turn(game, st)
 
 

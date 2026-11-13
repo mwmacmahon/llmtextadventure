@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import asdict
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, create_model
 
@@ -145,6 +145,148 @@ async def chain_adjudication(provider: Any, role: Any, system: str, msgs: list[M
     if staked and checks is not None:
         merged["fiat"] = [f.model_dump() for f in checks.fiat]
         merged["pivotal"] = checks.pivotal
+    out = schema.model_validate(merged)
+    total = Usage()
+    for r in rows:
+        u = r.pop("_usage")
+        total.input_tokens += u.input_tokens
+        total.output_tokens += u.output_tokens
+        total.cache_read_input_tokens += u.cache_read_input_tokens
+        total.cache_creation_input_tokens += u.cache_creation_input_tokens
+        total.extra = {**total.extra, **u.extra}
+    total.extra["chain"] = rows
+    return out, total
+
+
+# ---- D267: the lean chain (the owner, 11-13). X3 above was slower than the one call because its first message kept most of
+# the form and it sent three. Here the first message is only what a turn with no roll needs; the check, its edge and both its
+# futures are asked in one second message, and only when an attempt is marked for it. The system prompt is the same text in
+# both messages (a local model that cannot rewind inside a message loses its whole cache to one changed line): the first
+# form's field guide is in it, the second form's rides in the second message.
+LEAN_NOTE = ("HOW YOU ANSWER. You answer in two steps, and this first answer is the reading only. It has no check field: where the "
+             "rules above give an attempt a check, mark that attempt settle=check, and the engine's next message asks you for the "
+             "check itself (its stat, difficulty, edge and both futures). Where the rules above speak of fiat, mark the attempt "
+             "settle=works or settle=fails. Write no stat, no difficulty, no outcome and no why of a works or a fails anywhere in "
+             "this first answer. In the second answer, fiat holds only attempts the engine's message lists.")
+_SETTLE = ("How this attempt is decided, the first of these that fits. A blow (attack_at set), a shot included: works; the engine "
+           "rolls it, and you do not say whether it lands. Only a listed command: works, even if you think it cannot go through. "
+           "The player's words plainly miss, and no roll could save it: fails. Uncertain and it matters (a search for something "
+           "hidden, a wary stranger, anything done under threat, getting away from a fight): check; you are asked for the check "
+           "next. Otherwise works: routine with nothing pressing, or the words plainly give what is asked.")
+
+
+class LeanIntent(BaseModel):
+    action: str = Field(description="One concrete thing the player is trying to do, in a short sentence.")
+    leaving: bool
+    goes_to: str
+    targets: list[str] = Field(description="Ids of the people this attempt is done to or with (spoken to, shown, searched, followed, struck). Not people only mentioned. Empty when nobody.")
+    settle: Literal["check", "works", "fails"] = Field(description=_SETTLE)
+    attack_at: list[str]
+    weapon: str
+
+
+def lean_models(schema: type) -> tuple[type[BaseModel], type[BaseModel]]:
+    """The two forms for a reading of `schema`: (the first answer, the checks). An intent's blow and leaving fields are asked
+    only of a schema that has them (the fantasy's); the check is the schema's own (staked or not)."""
+    intent_model = schema.model_fields["intents"].annotation.__args__[0]
+    # `settle` is not last (D267): with it last, Gemma closed the list after the first attempt on 15 of 24 turns that had two or
+    # three (the blow among them); an attempt that ends on attack_at and weapon, as the one form's does, kept all 24
+    names = ["action", "leaving", "goes_to", "targets", "settle", "attack_at", "weapon"]
+    fields: dict[str, Any] = {}
+    for n in names:
+        lf = LeanIntent.model_fields[n]
+        if n in ("action", "targets", "settle"):
+            fields[n] = (lf.annotation, Field(description=lf.description))
+        elif n in intent_model.model_fields:
+            fields[n] = (lf.annotation, Field(description=intent_model.model_fields[n].description))
+    intent = create_model("LeanIntent", **fields)                                                      # type: ignore[call-overload]
+    reading = create_model(                                                                            # type: ignore[call-overload]
+        "LeanReading",
+        **_fields(schema, ["kind", "summary", "clarify_question", "time_minutes", "tempo"]),
+        intents=(list[intent], Field(description="The concrete attempts, usually one, at most three: what each tries, whom it concerns, and how it is decided. A blow and anything else tried beside it are separate attempts.")),
+        **_fields(schema, ["risk", "notes", "commands", "focus", "open_to_callers", "carried"]),     # focus stays: it is what the narrator's state is to be cut by
+    )
+    check_model = next(a for a in intent_model.model_fields["check"].annotation.__args__ if a is not type(None))
+
+    class LeanCheck(BaseModel):
+        intent: int = Field(description="The attempt's number: the number at the start of its line in the engine's message.")
+        check: check_model | None = Field(default=None, description="Its check, whole: label, stat, difficulty, the edge and why, and both futures, filled. null only if, on a second look, the player's words settle the attempt with no roll (then write it under fiat).")   # type: ignore[valid-type]
+
+    class LeanChecks(BaseModel):
+        checks: list[LeanCheck] = Field(default_factory=list, description="One row for each attempt marked check, in order.")
+        fiat: list[FiatOutcome] = Field(default_factory=list, description="One row for each attempt marked fails, and for any attempt marked check that the words settle after all: the attempt, how it comes out, and why.")
+        pivotal: str = Field(default="", description="The label of the check this input turns on, copied from its check; empty when there is none.")
+
+    return reading, LeanChecks
+
+
+def lean_system(system: str, role: Any, reading_model: type[BaseModel], checks_model: type[BaseModel]) -> str:
+    """The one system text of both messages: the rules, the note on the two steps, and both forms' field guides (the second
+    form's too: in the second message it would be read again on every turn with a check, here it is cached with the rest)."""
+    from .providers.llamacpp_provider import schema_guide
+    if not getattr(role, "field_guide", False):
+        return system + "\n\n" + LEAN_NOTE
+    first = schema_guide(reading_model.model_json_schema()).replace("FIELDS. What each field of your answer means.", "FIELDS OF THE FIRST ANSWER, the reading.", 1)
+    second = schema_guide(checks_model.model_json_schema()).split("\n", 1)[1]
+    return (system + "\n\n" + LEAN_NOTE + "\n\n" + first + "\n\nFIELDS OF THE SECOND ANSWER, the checks. Only when the engine asks for it, "
+            "after a reading that marked an attempt check or fails.\n" + second)
+
+
+def lean_ask(reading: Any) -> str:
+    """The second message: which attempts it is about and what to write for each."""
+    marked = [f"{n}. {i.action} (marked {i.settle})" for n, i in enumerate(reading.intents, 1) if i.settle in ("check", "fails")]
+    return ("NOW THE SECOND ANSWER, the checks. Your reading marked these attempts, by number:\n" + "\n".join(marked) +
+            "\nFor each attempt marked check, one row in `checks`: its number, and its check as the rules give it: the label, the "
+            "stat, the difficulty, the edge and why, then both of its futures. For each attempt marked fails, one row in `fiat`: "
+            "the attempt, how it comes out, and why the words settle it. If none is marked fails, `fiat` is empty. The other "
+            "attempts of your reading are done; write nothing for them.")
+
+
+async def lean_adjudication(provider: Any, role: Any, system: str, msgs: list[Msg], schema: type) -> tuple[Any, Usage]:
+    """The reading in two steps, merged into `schema`. usage.extra["chain"] has one row a message (step, input, cache, output,
+    seconds), so a run can see that the second message read only its own increment."""
+    reading_model, checks_model = lean_models(schema)
+    sys_text = lean_system(system, role, reading_model, checks_model)
+    plain = role.model_copy(update={"field_guide": False})          # the guide is placed here, never appended per schema
+    rows: list[dict] = []
+
+    async def ask(step: str, conv: list[Msg], model: type[BaseModel]) -> tuple[Any, str]:
+        t0 = time.monotonic()
+        out, u = await provider.extract(plain, sys_text, conv, model)
+        raw = u.extra.pop("raw", None) or out.model_dump_json()
+        d = asdict(u)
+        rows.append({"step": step, "input": d.get("input_tokens", 0), "cache": d.get("cache_read_input_tokens", 0),
+                     "output": d.get("output_tokens", 0), "seconds": round(time.monotonic() - t0, 2), "_usage": u})
+        return out, raw
+
+    reading, raw = await ask("reading", list(msgs), reading_model)
+    if reading.kind == "action" and not reading.intents:
+        again, raw2 = await ask("reading_again", [*msgs, Msg("assistant", raw), Msg("user",
+                                "That reading has kind=action and an empty intents list, which the rules forbid: add every attempt the "
+                                "input makes, each as an intent. Return the complete reading again.")], reading_model)
+        if again.intents:
+            reading, raw = again, raw2
+    checks = None
+    if reading.kind == "action" and any(i.settle in ("check", "fails") for i in reading.intents):
+        checks, _ = await ask("checks", [*msgs, Msg("assistant", raw), Msg("user", lean_ask(reading))], checks_model)
+    # ---- the merge: the one reading the engine already uses
+    by_check = {c.intent - 1: c.check for c in (checks.checks if checks else []) if c.check is not None}   # the message numbers from 1
+    intents, fiat = [], [f.model_dump() for f in (checks.fiat if checks else [])]
+    for n, it in enumerate(reading.intents):
+        d = it.model_dump()
+        how = d.pop("settle")
+        ck = by_check.get(n)
+        if ck is not None:
+            d["check"] = ck.model_dump()
+        elif how == "works" and not d.get("attack_at") and not d.get("leaving"):
+            # an attempt the reading settled with no roll: the narrator is told so, in the attempt's own words and no more
+            fiat.append({"attempt": it.action, "outcome": "It works as the player means it.", "settled": "works", "why": ""})
+        intents.append(d)
+    merged = reading.model_dump()
+    merged["intents"] = intents
+    if "fiat" in schema.model_fields:
+        merged["fiat"] = fiat[:4]
+        merged["pivotal"] = (checks.pivotal if checks else "") or next((c["check"]["label"] for c in intents if c.get("check")), "")
     out = schema.model_validate(merged)
     total = Usage()
     for r in rows:

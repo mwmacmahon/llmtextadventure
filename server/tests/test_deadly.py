@@ -292,7 +292,7 @@ def test_a_hostile_who_has_not_joined_the_fight_is_never_rolled(game):
     """B208 (D179): Sael offstage, never met, no blow struck, dragged the owner under. Only the fight list is rolled; the
     others are listed as could turn on you, and a narrator's call joins them."""
     st = new(game)
-    sael = foe(st, "maud", moves=[{"kind": "hold", "bonus": 4, "peril": "drowning"}], attitude=-2, joined=False)   # D230: hostile, not wary
+    sael = foe(st, "maud", moves=[{"kind": "hold", "bonus": 4, "peril": "drowning"}], attitude=-3, joined=False)   # D230, B397: hostile, not wary or angry
     assert game.backstop(st, {"hp": 0, "acted": []}, Dice(2), 2) == []
     said = " ".join(game.turn_directives(st))
     assert "could turn on" in said and "In a fight with" not in said
@@ -694,3 +694,87 @@ def test_a_failures_cost_is_a_die_of_its_own_shown_on_the_line(game):
         seen.add(wo.failure_harm(game, st, data, "Strike the rat"))
         assert data["harm_dice"].startswith("1d6+4: ")
     assert len(seen) > 2 and seen <= {5, 6, 7, 8, 9, 10}
+
+
+# ---- B397, B392 (the owner, 11-13: hostile is "actually triggerhappy or attack on sight enemies") -----------------------
+def test_hostile_is_minus_three_alone_and_angry_has_its_own_word(game):
+    st = new(game)
+    q = st.person("maud")
+    q.attitude = -3
+    assert q.attitude_word == "hostile"
+    q.attitude = -2
+    assert q.attitude_word == "angry"
+    assert "<hostile|angry|wary|" in game.referee_rules(st) and "attack" in game.referee_rules(st).split("<hostile|angry|wary|", 1)[1][:400]
+
+
+def test_a_hostile_in_sight_opens_the_fight_and_an_angry_one_does_not(game):
+    st = new(game)
+    foe(st, "maud", attitude=-3, joined=False).met = True
+    s2, w = game.world_turn(st, act("I ask her what she wants"), "I ask her what she wants.", Dice(10), 3, 2)
+    assert s2.player.fighting == ["maud"] and s2.combat is not None
+    assert any(r["kind"] == "joined" and r["by"] == "hostile, in sight" for r in w.rows) and w.mechanics[0].startswith("Combat begins:")
+    # angry: set against the player, no first blow
+    st = new(game)
+    foe(st, "maud", attitude=-2, joined=False).met = True
+    s3, w3 = game.world_turn(st, act("I ask her what she wants"), "I ask her what she wants.", Dice(10), 3, 2)
+    assert s3.player.fighting == [] and s3.combat is None
+    out = game.world_call(st, call("ENEMY", "maud", "strike"), Dice(2), 2, {"hp": 0, "acted": []})
+    assert out["data"].get("none") and "maud" not in st.player.fighting
+    # the player is going somewhere else: whether she follows is the telling's
+    st = new(game)
+    foe(st, "maud", attitude=-3, joined=False).met = True
+    from engine.roles import AssistantReadingCombat, IntentCombat
+    away = AssistantReadingCombat(kind="action", summary="leaves", time_minutes=5, risk="low", tempo="slow",
+                                  intents=[IntentCombat(action="walk out to the ferry", goes_to="Ferry Landing")])
+    s4, _ = game.world_turn(st, away, "I walk out to the ferry.", Dice(10), 3, 2)
+    assert s4.player.fighting == []
+    # one the player has not seen opens nothing
+    st = new(game)
+    foe(st, "maud", attitude=-3, joined=False).met = False
+    s5, _ = game.world_turn(st, act("I look around"), "I look around.", Dice(10), 3, 2)
+    assert s5.player.fighting == []
+
+
+def test_a_spawned_foe_is_hostile_and_an_old_saves_spawned_foe_becomes_so(game):
+    from games.fantasy.encounter import spawn
+    st = new(game)
+    made = spawn(st, [("giant_rat", 2)], "standard")
+    assert made and all(m.attitude == -3 for m in made)
+    st.people += made
+    made[0].attitude = -2                                   # as every spawned foe was written before B397
+    st.person("maud").attitude = -2                         # one of the script's people keeps her own number
+    data = st.model_dump(mode="json")
+    data["flags"].pop("b397", None)
+    back = game.load_state(data)
+    assert back.person(made[0].id).attitude == -3 and back.person("maud").attitude == -2 and back.flags.get("b397")
+    back.person(made[0].id).attitude = -2                   # after it, a -2 is the referee's "angry" and is left alone
+    assert game.load_state(back.model_dump(mode="json")).person(made[0].id).attitude == -2
+
+
+def test_a_group_filed_with_no_fight_is_that_many_when_its_block_is_made(game):
+    from games.fantasy import combat as cb
+    from games.fantasy.state import Person
+    q = Person(id="three_men", name="Three men in stained leather", role="thugs", location="x", met=True)
+    assert cb.block_of(q).count == 3
+    assert cb.block_of(Person(id="jenks", name="Jenks", role="a thug", location="x", met=True)).count == 1
+    assert cb.block_of(Person(id="leader", name="Thug Leader", role="leader of three thugs", location="x", met=True)).count == 1
+
+
+def test_a_hostile_fled_from_or_yielded_to_does_not_open_the_fight_again(game):
+    from games.fantasy import combat as cb
+    st = new(game)
+    foe(st, "maud", attitude=-3).met = True
+    s2, _ = cb.run_fight_command(game, st, "flee")
+    assert s2.player.fighting == [] and s2.flags["left_behind"]["who"] == ["maud"]
+    s3, _ = game.world_turn(s2, act("I catch my breath"), "I catch my breath.", Dice(10), 3, 2)        # the state still has them in one place
+    assert s3.player.fighting == []
+    s3.player.location = "Ferry Landing"
+    s3.person("maud").location = "Ferry Landing"                                                    # she is met again somewhere else
+    s4, _ = game.world_turn(s3, act("I catch my breath"), "I catch my breath.", Dice(10), 3, 2)
+    assert s4.player.fighting == ["maud"]
+    st = new(game)
+    foe(st, "maud", attitude=-3).met = True
+    s5, _ = cb.run_fight_command(game, st, "yield")
+    assert s5.player.fighting == [] and s5.person("maud").attitude == -2
+    s6, _ = game.world_turn(s5, act("I hand over my purse"), "I hand over my purse.", Dice(10), 3, 2)
+    assert s6.player.fighting == []

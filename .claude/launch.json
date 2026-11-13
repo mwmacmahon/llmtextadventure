@@ -365,6 +365,44 @@
         "8016"
       ],
       "port": 8016
+    },
+    {
+      "name": "api-local-gemma-lean",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "TA_PROFILE=gemma4-31b-lean",
+        "TA_CONFIG=config.llamacpp.yml",
+        "TA_LLAMA_URL=http://192.168.0.215:8280",
+        "TA_LLAMA_PREPARE_URL=http://192.168.0.215:8281/free-comfy",
+        "server/.venv/bin/uvicorn",
+        "app:app",
+        "--app-dir",
+        "server",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8017"
+      ],
+      "port": 8017
+    },
+    {
+      "name": "api-local-gemma-trial",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "TA_PROFILE=gemma4-31b",
+        "TA_CONFIG=config.llamacpp.yml",
+        "TA_LLAMA_URL=http://192.168.0.215:8280",
+        "TA_LLAMA_PREPARE_URL=http://192.168.0.215:8281/free-comfy",
+        "server/.venv/bin/uvicorn",
+        "app:app",
+        "--app-dir",
+        "server",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8018"
+      ],
+      "port": 8018
     }
   ]
 }

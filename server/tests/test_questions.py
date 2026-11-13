@@ -413,7 +413,7 @@ def test_the_boats_party_is_here_though_filed_elsewhere(engine):
 async def test_a_slow_turn_in_a_tense_scene_takes_what_the_assistant_said(engine, fake):
     iid = engine.create_instance("fantasy", SHEET)
     st = state_of(engine, iid)
-    st.person("maud").attitude = -3                                   # someone hostile here
+    st.person("maud").attitude = -2                                   # someone angry here (B397: a hostile would open a fight)
     engine.store.save_snapshot(iid, 0, st.model_dump(mode="json"))
     m0 = st.clock.day * 1440 + st.clock.minute
     fake.canned["AssistantReading"] = [reading("I say the price again, quietly, with Maud's knife out.", 2)]

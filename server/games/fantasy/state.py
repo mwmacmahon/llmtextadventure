@@ -21,7 +21,9 @@ from engine.wounds import Wound
 
 STATS = ("str", "dex", "con", "int", "wis", "cha")
 STAT_NAMES = {"str": "STR", "dex": "DEX", "con": "CON", "int": "INT", "wis": "WIS", "cha": "CHA"}
-ATTITUDE_WORDS = ["hostile", "hostile", "wary", "neutral", "friendly", "loyal", "devoted"]     # -3 .. 3 (the content README)
+# B397 (the owner, 11-13: "hostile needs to be disambiguated ... saving it for actually triggerhappy or attack on sight enemies"):
+# -3 alone is hostile, and it means attacks on sight; -2 is angry: set against the player, may be fought, strikes no first blow
+ATTITUDE_WORDS = ["hostile", "angry", "wary", "neutral", "friendly", "loyal", "devoted"]     # -3 .. 3 (the content README)
 HP_TIERS = ("fresh", "scratched", "hurt", "bloodied", "critically wounded", "dead")   # B216: zero is death (B205), the stone's word
 
 
@@ -177,7 +179,7 @@ class Person(BaseModel):
     aliases: list[str] = Field(default_factory=list)
     location: str = ""
     seen_at: str = ""
-    attitude: int = 0               # -3..3: hostile, hostile, wary, neutral, friendly, loyal, devoted
+    attitude: int = 0               # -3..3: hostile (attacks on sight), angry, wary, neutral, friendly, loyal, devoted
     mood: str = ""
     condition: str = ""
     status: str = "alive"           # alive, dead, missing, gone, unknown

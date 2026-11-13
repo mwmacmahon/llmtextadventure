@@ -209,10 +209,10 @@ def could_turn(game: Any, s: FantasyState) -> list[Person]:
     with a call when the fiction does."""
     p = s.player
     # the owner, 11-10 late: round 15's Gorm, wary and miserable, lunged off a failed listen check and killed a level-1 barbarian
-    # before he swung. Only the hostile (-2 or worse) may be set on the player; a wary one turns hostile first (the referee's
+    # before he swung. Only the hostile (-3; B397) may be set on the player; a wary or an angry one turns hostile first (the referee's
     # attitude row), which gives the player a turn to see it coming
     return [q for q in s.people if q.status == "alive" and not q.hidden_from_player and q.id not in p.fighting and q.location
-            and game._same_spot(s, q.location, p.location) and q.attitude <= -2]
+            and game._same_spot(s, q.location, p.location) and q.attitude <= -3]       # B397: the angry (-2) strike no first blow
 
 
 def in_fight(game: Any, s: FantasyState) -> bool:
@@ -429,6 +429,21 @@ def breaks_contact(adj: Any, text: str, here: str, game: Any = None, s: Any = No
     return bool(BREAK.search(text))         # backing away or running in reach is an attempt the fight can answer, not a break
 
 
+def left_behind(s: FantasyState, ids: list[str]) -> None:
+    """B397: the foes the player got away from, and where. A hostile opens a fight on sight, and whether the player's place
+    changed after a flight is the referee's to file, which is the hard part of a reading: while the state still has the
+    player in the place they fled, those foes do not open the fight again (the telling may bring them, by a call)."""
+    s.flags["left_behind"] = {"who": list(ids), "at": s.player.location}
+
+
+def still_left_behind(s: FantasyState, pid: str) -> bool:
+    lb = s.flags.get("left_behind") or {}
+    if lb and lb.get("at") != s.player.location:
+        s.flags.pop("left_behind", None)                 # the player is somewhere else now: coming back is walking in on them
+        return False
+    return pid in (lb.get("who") or [])
+
+
 def _break_contact(s: FantasyState, w: "WorldTurn") -> str:
     p = s.player
     said: list[str] = []
@@ -444,6 +459,7 @@ def _break_contact(s: FantasyState, w: "WorldTurn") -> str:
         said.append("out of the grip")
     if p.fighting:
         row["left"] = list(p.fighting)
+        left_behind(s, p.fighting)
         said.append("out of reach of " + ", ".join((s.person(x).name if s.person(x) else x) for x in p.fighting))
         p.fighting = []
     if len(row) > 1:
@@ -750,6 +766,18 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
             if q is not None and q.status == "alive" and q.id not in p.with_them and q.id not in p.fighting:
                 p.fighting.append(q.id)
                 w.rows.append({"kind": "joined", "who": q.id, "by": by.get(e, "?"), "attitude": q.attitude})
+    # B397, D245's other half (the owner, 11-12: "a hostile can start a fight anytime"; 11-13: hostile is "attack on sight"): a
+    # hostile who stood here, seen, when the last turn ended is in the fight now, whatever the player does, unless the player
+    # is going somewhere else this turn (then it is the telling's to say whether they follow)
+    if adj is not None and getattr(adj, "kind", "") == "action" and not p.fate:
+        from engine.roles import destination
+        going = any(destination(i) or getattr(i, "leaving", False) for i in getattr(adj, "intents", None) or [])
+        if not going and not any(r.get("kind") == "contact_broken" for r in w.rows):     # nor one the player just got clear of
+            for q in s.people:
+                if (q.attitude <= -3 and q.status == "alive" and q.met and not q.hidden_from_player and q.id not in p.fighting
+                        and q.id not in p.with_them and not still_left_behind(s, q.id) and q.location and game._same_spot(s, q.location, p.location)):
+                    p.fighting.append(q.id)
+                    w.rows.append({"kind": "joined", "who": q.id, "by": "hostile, in sight", "attitude": q.attitude})
     p.fighting = [x for x in p.fighting if (q := s.person(x)) is not None and q.status == "alive" and game._same_spot(s, q.location, p.location)]
     plan_fight(game, s, adj, player_text, rng, turn, w, offset)
     if not in_one and s.combat is not None and p.fighting:
@@ -954,7 +982,7 @@ def world_call(game: Any, s: FantasyState, call: Any, rng: Any, offset: int, tal
             q = s.person(call.ref) or game._same_person(s, call.ref) or _offered(game, s, call.ref, tally)
             if q is None or q.status != "alive":
                 return {"text": f"Nobody by {call.ref!r} is here to act. Play it without a roll.", "data": {"verb": "ENEMY", "who": call.ref, "none": True}}
-            if q.id not in p.fighting and (q.attitude or 0) > -2:       # spawned foes are written hostile (-2)
+            if q.id not in p.fighting and (q.attitude or 0) > -3:       # B397: only the hostile (-3; spawned foes are) strike first
                 return {"text": f"{q.name} is not hostile and does not attack unprovoked. If what the player did has turned them, show it "
                                 f"in their face and manner, without a blow; play it without a roll.",
                         "data": {"verb": "ENEMY", "who": q.id, "none": True}}

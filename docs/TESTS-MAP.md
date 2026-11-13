@@ -17,6 +17,7 @@ All commands run from `server/` with its venv. "The box" is the local model (Gem
 | 5 | The staged suite | scripted scenes played live, the engine's doing keyed | the box (or Sonnet) | yes | 10 min for 13 scenes on the box, free | `server/tests/staged/*.yml`, runs in `notes/eval/staged/` |
 | 6 | The reading probe | the assistant's reading of stored turns, under variants | the box or Sonnet | no (counts) | 25 min for 100 turns; about 7 cents a reading on Sonnet | `notes/eval/probes/reading_*.json` |
 | 7 | The flee and yield probes | the reading and the rule on keyed sentences said in stored fights | the box or Sonnet | yes | 20 min for 96 readings; about 7 cents each on Sonnet | `notes/eval/probes/flee_*.json` |
+| 7b | The referee probe | the referee's rows on stored turns, under a change of its wording | the box or Sonnet | no (counts, rows listed) | 12 min for 30 turns | `notes/eval/probes/referee_*.json` |
 | 8 | The mend count | which of the engine's mends of a reading still fire | none (reads probe runs) | no (counts) | 1 min, free | reads `notes/eval/probes/` |
 | 9 | The keyed test sets | the assistant and the referee against a hand-judged key | the box or Sonnet | yes | by the set | `notes/eval/sets/`, runs in `notes/eval/runs/` |
 | 10 | The narrator's measure | a narrator variant on stored turns: rubric, blind pairs | the box or Sonnet | rubric and pairs | by the corpus | `notes/eval/narrator/` |
@@ -56,6 +57,11 @@ reading and nothing after it.
 Keyed sentences (real runs, look-alikes: "I run at it", "I bolt the door", "I walk out") said in stored fights; the score
 shows the model's own lever, the engine's rule on top, and the rule's parts off. It stops after `aim_blows`: on 11-13 it
 reported 27 of 27 for a path the lever preview then cut (B388). A probe's number is a claim about the step it covers.
+
+**7b. The referee probe** (`tools/referee_probe.py run [--prose REGEX] [--rows REGEX] [--swap FILE]`, `score [--show]`). Stored
+turns filed again by the referee as it is told today and, with `--swap` (find and replace pairs on its system text), as it was
+told before: new-person rows and how many carry a number, attitude rows by word. Picks turns by the telling's words or the
+stored rows. It counts and lists; a reader judges. A wording with few stored cases (hostile against angry) it cannot settle.
 
 **8. The mend count** (`tools/mend_count.py --probe FILE ...`). Each mend `aim_blows` makes to a reading has a name; this
 counts them over raw readings (probe runs; the store keeps a reading after its mends). A mend that never fires on today's
@@ -102,6 +108,7 @@ in). The staged suite is built on them; a player in a round may use them too. Th
 
 ## Rules that hold for all of them
 
+- A trial of a module or a dial ends with its entry in [LEVERS.md](LEVERS.md) updated: what was measured, where it helped, where it did not.
 - Every result is kept (the paths above; all under `notes/eval/`, gitignored), with what was run and on which build.
 - A count from a model is noise below a clear margin: no decision on a 60/40 lead; repeat, or widen the set.
 - Paid calls are named with their cost first, and the real cost is read from the usage afterwards.

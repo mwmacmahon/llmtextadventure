@@ -2530,6 +2530,10 @@ async def extract_adjudication(provider: Any, role: Any, system: str, msgs: list
     """The adjudicator's call as the engine makes it, live and in the replay harness: the extract, one
     retry when an action comes back with no intents, and checks recovered from the wrong field."""
     retry: str | None = None
+    if getattr(role, "lean", False) and issubclass(schema, AssistantReadingV2):      # D267: the reading in two steps (off by default)
+        from .chain import lean_adjudication
+        adj, usage = await lean_adjudication(provider, role, system, msgs, schema)
+        return without_repeats(adj), usage, None, recover_misplaced_checks(without_repeats(adj), stats)
     if getattr(role, "chain", False) and issubclass(schema, AssistantReadingV2):     # part thirteen §3: the chain dial (off by default)
         from .chain import chain_adjudication
         adj, usage = await chain_adjudication(provider, role, system, msgs, schema)

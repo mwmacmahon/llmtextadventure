@@ -135,6 +135,8 @@ readiness rounds of 11-08 night ran once (B145). 640 tests pass.
 
 ## 4. Profiles and the picker
 
+Every module and dial, with its history and what it measured: [LEVERS.md](LEVERS.md).
+
 A profile is the whole configuration of a play: provider and model per role, sampler and thinking, the dials, the
 module levels; one file in `server/profiles/`; the card in Settings with the cost of a hosted turn; the switch through
 the box's helper; the stamp on every turn's rows and in the call report. Design: DESIGN-context-modules §6; D169.
@@ -428,6 +430,11 @@ D98, D101.
   deprecated template flag (L2), a structured call truncated with thinking on (L4), a thinking narrator writing calls
   that do not exist (N6).
 - The eval and trials reports kept current when a model changes (INDEX §2).
+- **Qwen against Gemma as writers (the owner, 11-13: on the roadmap, not yet).** With the narrator's history curated (D263)
+  Qwen3.8 can be played again without the chant, so the two can be compared on the writing itself: blind round pairs read
+  by Opus readers for a preference, and a judgement of creativity (invention, variety, voice) beside the faults. The old
+  trials and their tools are the start: the narrator's measure (rubric and blind pairs, TESTS-MAP 10), the reads (13), and
+  the human judging page with its checkboxes of good and bad things a telling did. Waits for the owner's word.
 
 ## 15. The clown sim
 

@@ -241,7 +241,7 @@ def spawn(s: FantasyState, cand: list[tuple[str, int]], variant: str = "standard
             if names and k - 1 < len(names) and names[k - 1]:
                 name = names[k - 1]
             q = Person(id=pid, name=name, role=str(x.get("name") or e), called=name, location=where or s.player.location,
-                       seen_at=where or s.player.location, met=True, heard_of=True, attitude=-2,
+                       seen_at=where or s.player.location, met=True, heard_of=True, attitude=-3,     # B397: a spawned foe attacks on sight
                        combat=CombatBlock(block=e))
             b = cb.ensure_block(q)
             vary(b, variant)

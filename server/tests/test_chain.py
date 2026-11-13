@@ -100,3 +100,86 @@ async def test_no_attempt_no_second_message(setup):
     system, msgs, schema = adjudicator_inputs(game, state, [], "what time is it?", stakes=True)
     adj, *_ = await extract_adjudication(p, role, system, msgs, schema, {})
     assert calls == ["ChainReading"] and adj.kind == "trivial"
+
+
+# ---- D267: the lean chain ---------------------------------------------------------------------------------------
+class _Scripted:
+    """A provider that answers each message from a list and keeps what it was sent."""
+    name = "scripted"
+
+    def __init__(self, answers):
+        self.answers, self.seen = list(answers), []
+
+    async def extract(self, role, system, msgs, schema):
+        from engine.providers.base import Usage
+        self.seen.append((role, system, list(msgs), schema))
+        raw = self.answers.pop(0)
+        u = Usage(input_tokens=10, output_tokens=5)
+        u.extra["raw"] = __import__("json").dumps(raw, separators=(",", ":"))
+        return schema.model_validate(raw), u
+
+
+def _lean_reading(*intents, **more):
+    return {"kind": "action", "summary": "s", "time_minutes": 5, "tempo": "slow", "risk": "low", "commands": [], "focus": {}, "open_to_callers": True,
+            "carried": [], "intents": [{"leaving": False, "goes_to": "", "targets": [], "attack_at": [], "weapon": "", **i} for i in intents], **more}
+
+
+@pytest.mark.asyncio
+async def test_lean_no_roll_is_one_message_with_a_small_form():
+    from engine.chain import lean_adjudication, lean_models
+    from engine.config import RoleConfig
+    from engine.roles import AssistantReadingCombat
+    role = RoleConfig(provider="fake", model="m", lean=True, field_guide=True)
+    p = _Scripted([_lean_reading({"action": "Walk to the inn.", "goes_to": "The Drowned Lantern", "settle": "works"},
+                                 {"action": "Cut at the rat.", "attack_at": ["rat"], "weapon": "longsword", "settle": "works"},
+                                 notes="fight: easy, rats")])
+    adj, usage = await lean_adjudication(p, role, "RULES", [], AssistantReadingCombat)
+    assert len(p.seen) == 1 and isinstance(adj, AssistantReadingCombat)
+    first = p.seen[0][3]
+    assert set(first.model_fields) == {"kind", "summary", "clarify_question", "time_minutes", "tempo", "intents", "risk", "notes",
+                                       "commands", "focus", "open_to_callers", "carried"}
+    assert list(lean_models(AssistantReadingCombat)[0].model_fields["intents"].annotation.__args__[0].model_fields) == [
+        "action", "leaving", "goes_to", "targets", "settle", "attack_at", "weapon"]
+    assert p.seen[0][0].field_guide is False and "FIELDS OF THE FIRST ANSWER" in p.seen[0][1] and "FIELDS OF THE SECOND ANSWER" in p.seen[0][1]
+    assert adj.intents[0].goes_to == "The Drowned Lantern" and adj.intents[0].leaving is False and adj.intents[0].check is None
+    assert adj.intents[1].attack.targets == ["rat"] and adj.fight_band == "easy"
+    # the walk is told as settled, in its own words and no more; the blow is the engine's roll and gets no line
+    assert [(f.attempt, f.settled, f.outcome) for f in adj.fiat] == [("Walk to the inn.", "works", "It works as the player means it.")]
+    assert [r["step"] for r in usage.extra["chain"]] == ["reading"] and "raw" not in usage.extra
+
+
+@pytest.mark.asyncio
+async def test_lean_a_check_is_asked_in_a_second_message_on_the_same_system():
+    from engine.chain import lean_adjudication
+    from engine.config import RoleConfig
+    from engine.roles import AssistantReadingCombat
+    role = RoleConfig(provider="fake", model="m", lean=True, field_guide=True)
+    check = {"label": "Search for the stair", "stat": "wis", "difficulty": "medium", "edge": 1, "edge_why": "the torch",
+             "success_gain": "She finds it.", "success_minutes": 5, "failure_outcome": "Nothing shows.", "failure_minutes": 10,
+             "complication": "none", "complication_what": "", "danger": "none"}
+    p = _Scripted([_lean_reading({"action": "Show Hazel the thing.", "settle": "works"}, {"action": "Search the ruin.", "settle": "check"},
+                                 {"action": "Offer her a button for it.", "settle": "fails"}),
+                   {"checks": [{"intent": 2, "check": check}],
+                    "fiat": [{"attempt": "Offer her a button", "outcome": "She laughs.", "settled": "fails", "why": "a button is worth nothing to her"}],
+                    "pivotal": "Search for the stair"}])
+    adj, usage = await lean_adjudication(p, role, "RULES", [], AssistantReadingCombat)
+    assert len(p.seen) == 2 and p.seen[0][1] == p.seen[1][1]                    # one system text: the cached prefix holds
+    sent = p.seen[1][2]
+    assert sent[-2].role == "assistant" and sent[-2].content.startswith('{"kind":"action"')       # the answer as it was written
+    assert "2. Search the ruin. (marked check)" in sent[-1].content and "3. Offer her a button for it. (marked fails)" in sent[-1].content
+    assert "Show Hazel" not in sent[-1].content
+    assert adj.intents[1].check.label == "Search for the stair" and adj.intents[1].check.failure_outcome == "Nothing shows."
+    assert adj.intents[0].check is None and adj.intents[2].check is None and adj.pivotal == "Search for the stair"
+    assert [(f.settled, f.attempt) for f in adj.fiat] == [("fails", "Offer her a button"), ("works", "Show Hazel the thing.")]
+    assert [r["step"] for r in usage.extra["chain"]] == ["reading", "checks"] and usage.input_tokens == 20
+
+
+@pytest.mark.asyncio
+async def test_lean_off_is_the_one_call_and_the_dial_routes(setup):
+    from engine.roles import AssistantReadingCombat
+    from engine.config import RoleConfig
+    p = _Scripted([_lean_reading({"action": "Wait.", "settle": "works"})])
+    role = RoleConfig(provider="fake", model="m", lean=True)
+    adj, usage, retry, recovered = await extract_adjudication(p, role, "RULES", [], AssistantReadingCombat, {})
+    assert p.seen[0][3].__name__ == "LeanReading" and adj.intents[0].action == "Wait." and "FIELDS OF" not in p.seen[0][1]
+    assert RoleConfig(provider="fake", model="m").lean is False

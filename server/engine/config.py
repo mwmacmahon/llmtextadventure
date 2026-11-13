@@ -18,6 +18,8 @@ REPO_DIR = SERVER_DIR.parent
 load_dotenv(REPO_DIR / ".env")
 
 
+# The dials below are tracked in docs/LEVERS.md with their history and measurements: read a dial's entry before changing it,
+# and add or update the entry in the same commit as a new or changed dial (tests/test_levers_doc.py checks every one is there).
 class RoleConfig(BaseModel):
     provider: Literal["anthropic", "fake", "llamacpp"] = "anthropic"
     model: str
@@ -42,6 +44,10 @@ class RoleConfig(BaseModel):
     # reading, then the checks, then the stakes; engine/chain.py) instead of one structured call. Off by default, as the
     # referee's `split`; off, the code path is the one call exactly.
     chain: bool = False
+    # assistant only (D267, the owner 11-13: "lean chained reading - yes, please give it a shot"): the reading in two steps on one
+    # conversation (engine/chain.py lean_adjudication): a short first form with no check in it, then, only when an attempt is
+    # marked for a check or as failing on its words, a second message for the checks and their stakes. Off by default.
+    lean: bool = False
     # assistant only (the owner, 11-10 night: "Assistant judging should probably be toggleable like other module type stuff, so it
     # might be turned on for sonnet but not for a local model"): the game's own notes to the reading (a peril's way out to mark,
     # D220); off: the engine's own word test alone

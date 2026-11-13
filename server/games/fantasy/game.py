@@ -452,7 +452,16 @@ class FantasyGame(GameBase):
         if sc:
             name = (data.get("player") or {}).get("name", "")
             data = dk.reread(data, sc, self.hooks_content(), name)
-        return self._purse(FantasyState.model_validate(data))
+        st = self._purse(FantasyState.model_validate(data))
+        if not st.flags.get("b397"):
+            # B397: before it, -2 was "hostile" too and every spawned foe was written -2. A foe the engine or the telling brought
+            # in (not one of the script's people, who keep the number their file gives) is hostile as it is now meant: -3
+            script = {str(q.get("id")) for q in (sc or {}).get("people") or []} | {str(q.get("id")) for h in self.hooks_content().values() for q in h.get("people") or []}
+            for q in st.people:
+                if q.attitude == -2 and q.combat is not None and q.id not in script:
+                    q.attitude = -3
+            st.flags["b397"] = 1
+        return st
 
     @staticmethod
     def _purse(s: FantasyState) -> FantasyState:
@@ -719,7 +728,7 @@ class FantasyGame(GameBase):
         here = [q for q in s.people if q.status == "alive" and not q.hidden_from_player and q.location and self._same_spot(s, q.location, p.location)]
         hostile = next((q for q in here if q.attitude <= -2), None)
         if hostile is not None:
-            return f"{hostile.name} is here and hostile"
+            return f"{hostile.name} is here and {hostile.attitude_word}"
         fought = next((q for q in here if q.id in p.fighting), None)
         if fought is not None:                                  # B359: a fight with someone not (yet) hostile is no calm either
             return f"in a fight with {fought.name}"
@@ -1143,8 +1152,9 @@ class FantasyGame(GameBase):
             "- add <pocket id>.count ±n; new thing value=<name> field=player: a thing the player took, bought or was given (one row per thing), named as "
             "they would name it, note=what it looks like; new thing value=<name> field=<place>: something left lying that could matter again; gone <thing>; "
             "move <thing> <place or person id>.",
-            "- set <person id>.attitude <hostile|wary|neutral|friendly|loyal|devoted> (or a number -3 to 3): only when the player did something to them "
-            "this turn that changes how they treat the player. A tense talk is no change.",
+            "- set <person id>.attitude <hostile|angry|wary|neutral|friendly|loyal|devoted> (or a number -3 to 3): only when the player did something to them "
+            "this turn that changes how they treat the player. A tense talk is no change. hostile is only for one who will now attack "
+            f"{p.name} on sight; angry is one set against {p.name} who will not strike the first blow.",
             f"- set player.conditions +<name> / -<name>: a condition on {p.name}. Conditions are only these names: "
             + ", ".join([*cn.load(self.content_dir), "lost an eye", "lost a hand", "lost an ear"]) + ". Write the name alone; the game knows "
             f"what each one does and how long it lasts. For enthralled or grappled, the note says who holds {p.name}. -<name> when the prose "
@@ -1164,7 +1174,9 @@ class FantasyGame(GameBase):
             "a fact the player learned and may need again (a name, a place, a time, a price, what a thing is), only when new; not "
             "what happened this turn (that is the log line).",
             "- new person value=name, field=<place>, note=role: anyone the prose names who is not listed (at most two a turn). An alias of a listed "
-            "person is that person: use their id. If the prose shows someone not in the state attacking the player, file a new person "
+            "person is that person: use their id. Several the prose shows together as one lot (three men in stained leather, a pack of rats) are "
+            "one row, and its value is the prose's words for them with their number (\"Three men in stained leather\"), never one of them "
+            "alone; ones THIS TURN offered are filed by their own ids instead, as below. If the prose shows someone not in the state attacking the player, file a new person "
             "row whose role is the prose's words for them. If they are ones THIS TURN offered, file each one who actually appeared, by "
             "its id (robber_1); file none who did not.",
             "present: the listed people in the scene with the player when the prose ends; someone only talked about is not present.",
@@ -2748,7 +2760,7 @@ class FantasyGame(GameBase):
                 aim = {"hostile": -3, "angry": -2, "wary": -1, "suspicious": -1, "neutral": 0, "friendly": 1, "warm": 1, "loyal": 2,
                        "devoted": 3}.get(word)
                 if aim is None:
-                    w.reject(f"people.{q.id}.attitude", "attitude is hostile, wary, neutral, friendly, loyal or devoted (or -3 to 3)", value)
+                    w.reject(f"people.{q.id}.attitude", "attitude is hostile, angry, wary, neutral, friendly, loyal or devoted (or -3 to 3)", value)
                     return True
                 n = aim - q.attitude
             elif kind == "set" and not value.startswith(("+", "-")):
@@ -3031,7 +3043,7 @@ class FantasyGame(GameBase):
             cb.ensure_block(q)
             if monster:
                 q.called = str(cb.ENTRIES.get(entry, {}).get("called") or q.called)    # a monster is known by its name
-                q.attitude = min(q.attitude, -2)
+                q.attitude = min(q.attitude, -3)                                       # B397: a monster in a fight attacks on sight
             if nid not in p.fighting:
                 p.fighting.append(nid)
             w.note(f"people.{nid} fights: a {q.combat.block} block{f' x{n}' if n and n > 1 else ' (the generator sizes the band)' if n is None else ''}, in the fight")
@@ -4157,7 +4169,7 @@ class FantasyGame(GameBase):
     HP_TONES = {"fresh": "ok", "scratched": "ok", "hurt": "warn", "bloodied": "bad", "critically wounded": "bad", "dead": "bad"}
     HEAT_TONES = {"nobody": "neutral", "asked about": "warn", "wanted": "bad", "hunted": "bad"}
     WOUND_TONES = {"minor": "warn", "moderate": "warn", "serious": "bad", "grave": "bad", "ruinous": "bad"}
-    ATTITUDE_TONES = {"hostile": "bad", "wary": "warn", "neutral": None, "friendly": "ok", "loyal": "ok", "devoted": "info"}
+    ATTITUDE_TONES = {"hostile": "bad", "angry": "bad", "wary": "warn", "neutral": None, "friendly": "ok", "loyal": "ok", "devoted": "info"}
 
     def _places_panel(self, s: FantasyState) -> list[Chip]:
         """B87 (D175): the places the character has been to or heard of, each with how far and how from the city file's

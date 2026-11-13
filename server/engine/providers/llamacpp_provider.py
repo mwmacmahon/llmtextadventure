@@ -69,7 +69,8 @@ REQUIRED_BY_NAME: dict[str, tuple[str, ...]] = {"CheckProposal": _CHECK_FIELDS, 
                                                 "AssistantReadingV2": ("open_to_callers",), "AssistantReadingStaked": ("open_to_callers",),
                                                 # part thirteen §3: the chain's own schemas, every field the one call's grammar names
                                                 "ChainReading": ("open_to_callers", "tempo"), "ChainIntent": ("targets", "transition"),
-                                                "ChainChecks": ("pivotal",), "ChainStake": ("success_gain", "success_minutes", "failure_outcome",
+                                                "ChainChecks": ("pivotal",), "LeanChecks": ("pivotal",),
+                                                "LeanReading": ("open_to_callers", "tempo"), "ChainStake": ("success_gain", "success_minutes", "failure_outcome",
                                                                                             "failure_minutes", "complication", "complication_what", "danger")}
 
 
@@ -448,6 +449,8 @@ class LlamaCppProvider:
         record(**seen)
         usage = _usage(data.get("usage"), data.get("timings"))
         usage.extra["model"] = data.get("model") or role.model
+        if getattr(role, "lean", False):
+            usage.extra["raw"] = content                     # D267: the next message of a chain sends the answer back as written
         if role.thinking:
             # the server's budget message ends the reasoning when it had to close the block (llama-game.sh sets it)
             usage.extra["thinking"] = {"reasoning_chars": len(reasoning), "forced_close": BUDGET_MARK in reasoning[-400:], "retried": retried}
