@@ -748,7 +748,15 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
                 w.rows.append({"kind": "encounter", "why": f"another like {q.name} ({q.status})", "reason": f"the blow aimed at {e}"})
                 continue
             if q is None and e in aimed and hasattr(game, "bring_in"):      # §4 (c), B290: a blow at someone only in the telling
-                made, row = game.bring_in(s, e, ref=e, band=str(getattr(adj, "fight_band", "") or "normal"), offset=offset, named=True)
+                # round 32 T4 (906e3e1f1a93): the telling had twelve rats, the blow was at "rat", the reading's own note said
+                # "fight: trivial, a swarm of rats", and one rat came. When the reading's note on the fight names more than one
+                # of the kind the blow is at, they are who comes in (the generator sizes them by the band, six at most)
+                from .encounter import count_in
+                lot = str(getattr(adj, "fight_band_why", "") or "")
+                kin = any(len(x) > 2 and re.search(rf"\b{re.escape(x.rstrip('s'))}", lot, re.I) for x in re.findall(r"[A-Za-z]+", e.replace("_", " ")))
+                group = bool(lot) and kin and count_in(lot) != 1
+                made, row = game.bring_in(s, e, ref=e, band=str(getattr(adj, "fight_band", "") or "normal"), offset=offset,
+                                          named=not group, many=group)       # the blow's own words find the kind; the note only says "more than one"
                 if row:
                     w.rows.append(row)
                 continue                                                    # joined by bring_in

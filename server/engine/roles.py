@@ -331,16 +331,54 @@ Rules:
 - Be terse. The fields are the output; do not write prose."""
 
 
-def adjudicator_messages(rules: str, state_text: str, recent: list[Msg], player_text: str, commands_text: str = "", extra: str = "") -> tuple[str, list[Msg]]:
+# B405, cause 1 (the owner, 11-13: "this seems like a no brainer to try upfront, and it'll save sonnet costs too"): the system
+# text is the cached prefix, and a game's rules had lists in them that change as the game goes (the people by id, the places
+# found, the commands on offer, the flags and which quests they close). One changed line re-reads the whole prompt on a model
+# that cannot rewind inside a message, and rewrites the cache on a hosted one. With a role's `stable_system` on, the lines a
+# game names as this turn's (its `turn_lines` hook) and the command list are lifted out of the system text into the message.
+LISTS_HEAD = "[LISTS FOR THIS TURN: part of the rules. What may be named, not who or what is in the scene]"
+LISTS_NOTE = ("The lists these rules call 'listed' or 'given' (the people by id, the places, the engine commands on offer) change from "
+              "turn to turn and are not written here: they open the message, under LISTS FOR THIS TURN, and are part of these rules. "
+              "They say what may be named, not who is present; the game state says that.")
+LISTS_NOTE_REFEREE = ("The lists these rules call 'listed', 'the rules list' or 'marked below' (the targets by id, the gated places, the "
+                      "places, the flags you may set) change from turn to turn and are not written here: they open the message, under "
+                      "LISTS FOR THIS TURN, and the instructions in them are part of these rules. They say what may be named, not who "
+                      "is present; the game state says that.")
+
+
+def lift_turn_lines(rules: str, turn_lines: list[str] | None) -> tuple[str, list[str]]:
+    """The rules without the lines the game names as this turn's, and those lines in the order the rules had them."""
+    mine = set(turn_lines or [])
+    if not mine:
+        return rules, []
+    kept, lifted = [], []
+    for line in rules.split("\n"):
+        (lifted if line in mine else kept).append(line)
+    return "\n".join(kept), lifted
+
+
+def adjudicator_messages(rules: str, state_text: str, recent: list[Msg], player_text: str, commands_text: str = "", extra: str = "",
+                         turn_lines: list[str] | None = None, stable: bool = False) -> tuple[str, list[Msg]]:
     """The system text is meant to be stable across turns (it is the cached prefix): rules and the
-    command list only. Everything that moves goes in the [GAME STATE] block of the user message."""
+    command list only. Everything that moves goes in the [GAME STATE] block of the user message. With `stable`, the
+    lines of the rules that change by the turn and the command list go in the message too (B405)."""
+    lists: list[str] = []
+    if stable:
+        rules, lists = lift_turn_lines(rules, turn_lines)
     system = ADJUDICATOR_INSTRUCTIONS + "\n\nGAME RULES FOR ADJUDICATION\n" + rules.strip()
-    if commands_text.strip():
+    if stable:
+        system += "\n\n" + LISTS_NOTE
+        if commands_text.strip():
+            lists += ["ENGINE COMMANDS (list each one the input plainly asks for under `commands`, in order)", *commands_text.strip().split("\n")]
+        else:
+            lists += ["ENGINE COMMANDS: none this turn."]
+    elif commands_text.strip():
         system += "\n\nENGINE COMMANDS (list each one the input plainly asks for under `commands`, in order)\n" + commands_text.strip()
     msgs: list[Msg] = []
-    for m in recent[-4:]:
+    for m in recent[-12:]:               # two turns, or up to six with a stepped window (RoleConfig.recent_step)
         msgs.append(m)
-    msgs.append(Msg("user", f"[GAME STATE]\n{state_text.strip()}\n\n{extra}[PLAYER INPUT TO ADJUDICATE]\n{player_text.strip()}"))
+    head = (LISTS_HEAD + "\n" + "\n".join(lists) + "\n\n") if stable else ""
+    msgs.append(Msg("user", f"{head}[GAME STATE]\n{state_text.strip()}\n\n{extra}[PLAYER INPUT TO ADJUDICATE]\n{player_text.strip()}"))
     return system, msgs
 
 
@@ -421,11 +459,15 @@ def earlier_turns_block(recent: list[tuple[int, str, str]]) -> str:
 
 def referee_messages(rules: str, state_text: str, directives: list[str], player_text: str, narration: str,
                      levers: list[str] | None = None, recent: list[tuple[int, str, str]] | None = None,
-                     hints: list[str] | None = None) -> tuple[str, list[Msg]]:
-    system = REFEREE_INSTRUCTIONS + "\n\nGAME RULES FOR THE REFEREE\n" + rules.strip()
+                     hints: list[str] | None = None, turn_lines: list[str] | None = None, stable: bool = False) -> tuple[str, list[Msg]]:
+    lists: list[str] = []
+    if stable:                                  # B405: the rules' lines that change by the turn go in the message
+        rules, lists = lift_turn_lines(rules, turn_lines)
+    system = REFEREE_INSTRUCTIONS + "\n\nGAME RULES FOR THE REFEREE\n" + rules.strip() + (("\n\n" + LISTS_NOTE_REFEREE) if stable else "")
     d = "\n".join(f"- {x}" for x in directives) if directives else "- (none)"
     lv = ("\n\n[LEVERS THE ENGINE APPLIES AFTER YOUR REPORT, UNLESS NOT COMPLETED]\n" + "\n".join(f"- {x}" for x in levers)) if levers else ""
-    user = (earlier_turns_block(recent or []) + f"[GAME STATE BEFORE THIS TURN]\n{state_text.strip()}\n\n[DIRECTIVES THE NARRATOR WAS GIVEN]\n{d}{lv}\n\n"
+    user = (earlier_turns_block(recent or []) + ((LISTS_HEAD + "\n" + "\n".join(lists) + "\n\n") if stable and lists else "")
+            + f"[GAME STATE BEFORE THIS TURN]\n{state_text.strip()}\n\n[DIRECTIVES THE NARRATOR WAS GIVEN]\n{d}{lv}\n\n"
             f"[PLAYER INPUT]\n{player_text.strip()}\n\n[NARRATION AND THE NARRATOR'S NOTES]\n{narration.strip()}")
     if hints:                                   # B93's pre-check: quests in motion this turn's words may concern
         user += "\n\n[QUESTS THIS TURN MAY CONCERN]\n" + "\n".join(f"- {h}" for h in hints)

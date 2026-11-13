@@ -1791,14 +1791,14 @@ class Engine:
     async def _adjudicate(self, game: Game, state: BaseModel, iid: str, player_text: str, retell: str | None = None) -> tuple[AssistantReading, dict]:
         role = self.cfg.role("assistant")
         provider = self._provider(role, iid, "assistant")
-        recent = _recent_prose(self.store, iid, turns=2)
+        recent = _recent_prose(self.store, iid, turns=2, step=getattr(role, "recent_step", 0))
         nrole = self.cfg.role("narrator")
         hits = [h for h in [prechecks.question(player_text)] if h is not None]
         notes = [h.line for h in hits]
         if retell is not None:                                  # B280: the player's rewrite reads the turn again, with what they said of it
             notes.append(f"The player asked for this turn again, and said: \"{retell.strip()}\"" if retell.strip() else "The player asked for this turn again.")
         system, msgs, schema = adjudicator_inputs(game, state, recent, player_text, stakes=nrole.stakes != "off" and nrole.checks == "called",
-                                                  notes=notes, game_notes=role.game_notes)
+                                                  notes=notes, game_notes=role.game_notes, stable=getattr(role, "stable_system", False))
         for m in mods_mod.parsed(self._mods(iid)):              # B79: the assistant's rules text by section, per save
             system = mods_mod.patch_sections(system, (m.get("rules") or {}).get("assistant"))[0]
         t0 = time.monotonic()
@@ -2439,7 +2439,8 @@ class Engine:
         role = self.cfg.role("referee")
         provider = self._provider(role, iid, "referee")
         recent = _earlier_turns(self.store, iid, role.recent_turns) if iid else []
-        system, msgs = referee_inputs(game, state, directives, player_text, narration, adj, levers, recent=recent)
+        system, msgs = referee_inputs(game, state, directives, player_text, narration, adj, levers, recent=recent,
+                                      stable=getattr(role, "stable_system", False))
         applied = self._mods(iid)
         if applied:                                               # B79: the referee's rules text by section; a ruling switched off
             system = mods_mod.strip_rulings(system, mods_mod.rulings_off(applied))
@@ -2796,7 +2797,7 @@ def words_decide(game: Game) -> str:
 
 
 def adjudicator_inputs(game: Game, state: BaseModel, recent: list[Msg], player_text: str, stakes: bool = False,
-                       notes: list[str] | None = None, game_notes: bool = True) -> tuple[str, list[Msg], type]:
+                       notes: list[str] | None = None, game_notes: bool = True, stable: bool = False) -> tuple[str, list[Msg], type]:
     """Everything the adjudicator is sent, built from a state and an input alone, so a stored turn can be
     replayed outside the pipeline (tools/eval_replay.py) and get exactly what the live turn got. `stakes` (the
     narrator's dial on, D115): each assessed check carries both its futures, the system text gains the STAKES rules
@@ -2809,7 +2810,8 @@ def adjudicator_inputs(game: Game, state: BaseModel, recent: list[Msg], player_t
         schema = getattr(game, "adjudication_schema_staked", AssistantReadingStaked)      # the fantasy's carries the attack (part fifteen)
         _, fresh = game.new_instance({})
         extra = stakes_blocks(game, state, fresh)
-    system, msgs = adjudicator_messages(rules, state_text, recent, player_text, _commands_text(_hook(game, "commands", state, default=[])), extra=extra)
+    system, msgs = adjudicator_messages(rules, state_text, recent, player_text, _commands_text(_hook(game, "commands", state, default=[])), extra=extra,
+                                        turn_lines=_hook(game, "turn_lines", state, default=None), stable=stable)
     system += "\n\n" + words_decide(game)          # B207, B211 (D179): the words decide first; the edge on every check
     if game_notes:                                                  # the assistant role's game_notes (on by default)
         notes = list(notes or []) + list(_hook(game, "assistant_notes", state, default=None) or [])   # a game's own word to the reading
@@ -2827,11 +2829,12 @@ def adjudicator_inputs(game: Game, state: BaseModel, recent: list[Msg], player_t
 
 def referee_inputs(game: Game, state: BaseModel, directives: list[str], player_text: str, narration: str,
                    adj: AssistantReading | None = None, levers: list[str] | None = None,
-                   recent: list[tuple[int, str, str]] | None = None) -> tuple[str, list[Msg]]:
+                   recent: list[tuple[int, str, str]] | None = None, stable: bool = False) -> tuple[str, list[Msg]]:
     """Everything the referee is sent (see adjudicator_inputs). `recent`: the TRIAL earlier turns (D59)."""
     rules = _hook(game, "referee_rules", state, default="")
     return referee_messages(rules, _engine_state_text(game, state, adj), directives, player_text, tier_only_view(narration), levers=levers, recent=recent,
-                            hints=quest_hints(game, state, player_text, narration))
+                            hints=quest_hints(game, state, player_text, narration),
+                            turn_lines=_hook(game, "turn_lines", state, default=None), stable=stable)
 
 
 def quest_hints(game: Game, state: BaseModel, player_text: str, narration: str) -> list[str]:
@@ -3788,6 +3791,8 @@ def _parse_command_args(spec: Any, raw: list[str]) -> tuple[dict[str, str], str]
     args: dict[str, str] = {}
     for p in spec.params:
         v = given.get(p.name, "") or getattr(p, "default", "")
+        if not v and len(p.options) == 1:   # round 32 T2 (906e3e1f1a93): "I take the job", one job on offer, and the command
+            v = p.options[0].id             # was refused with "Which Job? (Rats in the Cellar)": one choice needs no asking
         hit = next((o.id for o in p.options if o.id == v), None) or \
             next((o.id for o in p.options if o.id.lower() == v.lower() or o.label.lower() == v.lower()), None)
         if hit is None:
@@ -3900,12 +3905,19 @@ def _clock_text(game: Any, doc: dict) -> str:
     return f"Day {clk['day']} {clk['minute'] // 60:02d}:{clk['minute'] % 60:02d}. "
 
 
-def _recent_prose(store: Store, iid: str, turns: int) -> list[Msg]:
+def recent_count(done: int, turns: int, step: int) -> int:
+    """How many past turns the reading is shown after `done` finished ones: `turns`, or with a step (B405, cause 3) `turns`
+    growing by one a turn for `step` turns and then back, so the same turns stay at the front between the steps."""
+    return turns if step <= 1 else turns + (max(0, done - turns) % step)
+
+
+def _recent_prose(store: Store, iid: str, turns: int, step: int = 0) -> list[Msg]:
     rows = store.transcript(iid, roles=["player", "narrator"])
     by_turn: dict[int, dict[str, str]] = {}
     for r in rows:
         by_turn.setdefault(r.turn, {})[r.role] = r.text
-    done = sorted(t for t, p in by_turn.items() if "player" in p and "narrator" in p)[-turns:]
+    done = sorted(t for t, p in by_turn.items() if "player" in p and "narrator" in p)
+    done = done[-recent_count(len(done), turns, step):]
     out: list[Msg] = []
     for t in done:
         out.append(Msg("user", f"[PLAYER]\n{by_turn[t]['player']}"))

@@ -27,6 +27,19 @@ What a step may expect (all optional; a step with none only has to finish withou
   check: true|false         a check was rolled this turn (a § line with "against" that is no attack)
   hp_lost_at_most: <n>      the player lost no more hit points than this over the turn
   place: <name>             the player is here after the turn
+  quest: {id: status}       a quest's status after the turn (dealt, live, done, failed), or a list of statuses it may have
+  command: {id: true|false} the engine ran that command this turn and it went through (or was refused)
+  has / lacks: [ids]        things in the pockets after the turn (a count above nought), or not
+  count: {id: n}            a pocket count after the turn, exactly
+  count_change: {id: n}     how far a pocket count moved over the turn (torches: -1); "down" or "up" or "same" for a direction
+  paid: true|false          the purse (gold and coppers together) is lighter after the turn
+  minutes: [lo, hi]         the game's clock moved this many minutes over the turn
+  attitude: {id: word}      a person's attitude word after the turn (hostile, angry, wary, neutral, friendly, loyal, devoted)
+  attitude_change: {id: down|up|same|not_down|not_up}
+  people_added: n           how many people the turn filed; people_added_at_most: n
+  hp_full: true             the player is at full hit points after the turn
+Each scenario may name an `area` (fight, quests, pockets, places, talk, time, people); `--area` plays one, and the table
+ends with the passes by area, so what kind of play the suite reaches is on the page.
 """
 from __future__ import annotations
 
@@ -89,6 +102,66 @@ def check(exp: dict, lines: list[str], rows: list[dict], before: dict, after: di
         lost = int((before.get("player") or {}).get("hp") or 0) - int((after.get("player") or {}).get("hp") or 0)
         if lost > int(exp["hp_lost_at_most"]):
             bad.append(f"hp: lost {lost}, more than {exp['hp_lost_at_most']}")
+    def pockets(st: dict) -> dict[str, int]:
+        return {str(i.get("id")): int(i.get("count") or 0) for i in st.get("inventory") or []}
+
+    def purse(st: dict) -> int:
+        pk = pockets(st)
+        return pk.get("gold", 0) * 100 + pk.get("coppers", 0)
+
+    def minute(st: dict) -> int:
+        c = st.get("clock") or {}
+        return int(c.get("day") or 0) * 1440 + int(c.get("minute") or 0)
+
+    def att(st: dict) -> dict[str, int]:
+        return {str(q.get("id")): int(q.get("attitude") or 0) for q in st.get("people") or []}
+
+    WORDS = ["hostile", "angry", "wary", "neutral", "friendly", "loyal", "devoted"]
+    pb, pa = pockets(before), pockets(after)
+    for qid, want in (exp.get("quest") or {}).items():
+        got = next((str(h.get("status")) for h in after.get("hooks") or [] if h.get("id") == qid), "absent")
+        if got not in ([want] if isinstance(want, str) else list(want)):
+            bad.append(f"quest {qid}: {got}, not {want}")
+    for cid, want in (exp.get("command") or {}).items():
+        got = cmds.get(cid)
+        if got is None or bool(got.get("ok", True)) != bool(want):
+            bad.append(f"command {cid}: {'not run' if got is None else 'ok=' + str(got.get('ok', True))}, wanted ok={want}" + (f" ({got.get('text')})" if got and got.get("text") else ""))
+    for iid_ in exp.get("has") or []:
+        if pa.get(iid_, 0) <= 0:
+            bad.append(f"has: {iid_} is not in the pockets")
+    for iid_ in exp.get("lacks") or []:
+        if pa.get(iid_, 0) > 0:
+            bad.append(f"lacks: {iid_} is still in the pockets ({pa[iid_]})")
+    for iid_, n in (exp.get("count") or {}).items():
+        if pa.get(iid_, 0) != int(n):
+            bad.append(f"count {iid_}: {pa.get(iid_, 0)}, not {n}")
+    for iid_, want in (exp.get("count_change") or {}).items():
+        d = pa.get(iid_, 0) - pb.get(iid_, 0)
+        ok = {"down": d < 0, "up": d > 0, "same": d == 0}.get(str(want), None)
+        if (ok is False) or (ok is None and d != int(want)):
+            bad.append(f"count_change {iid_}: {pb.get(iid_, 0)} to {pa.get(iid_, 0)}, wanted {want}")
+    if "paid" in exp and (purse(after) < purse(before)) != bool(exp["paid"]):
+        bad.append(f"paid: the purse went {purse(before)} to {purse(after)} coppers, wanted paid={exp['paid']}")
+    if "minutes" in exp:
+        d = minute(after) - minute(before)
+        lo, hi = exp["minutes"]
+        if not (int(lo) <= d <= int(hi)):
+            bad.append(f"minutes: {d}, not {lo} to {hi}")
+    for qid, want in (exp.get("attitude") or {}).items():
+        got = WORDS[max(-3, min(3, att(after).get(qid, 0))) + 3]
+        if got != want:
+            bad.append(f"attitude {qid}: {got}, not {want}")
+    for qid, want in (exp.get("attitude_change") or {}).items():
+        d = att(after).get(qid, 0) - att(before).get(qid, 0)
+        if not {"down": d < 0, "up": d > 0, "same": d == 0, "not_down": d >= 0, "not_up": d <= 0}[str(want)]:
+            bad.append(f"attitude_change {qid}: {att(before).get(qid, 0)} to {att(after).get(qid, 0)}, wanted {want}")
+    added = len(after.get("people") or []) - len(before.get("people") or [])
+    if "people_added" in exp and added != int(exp["people_added"]):
+        bad.append(f"people_added: {added}, not {exp['people_added']}")
+    if "people_added_at_most" in exp and added > int(exp["people_added_at_most"]):
+        bad.append(f"people_added: {added}, more than {exp['people_added_at_most']}")
+    if exp.get("hp_full") and int((after.get("player") or {}).get("hp") or 0) < int((after.get("player") or {}).get("hp_max") or 0):
+        bad.append(f"hp_full: {(after.get('player') or {}).get('hp')} of {(after.get('player') or {}).get('hp_max')}")
     if "place" in exp and str((after.get("player") or {}).get("location") or "").lower() != str(exp["place"]).lower():
         bad.append(f"place: {(after.get('player') or {}).get('location')!r}, not {exp['place']!r}")
     return bad
@@ -145,7 +218,8 @@ def run(a: argparse.Namespace) -> int:
     from play import _get
     cfg = load_config()
     store = Store(a.store or cfg.resolve(cfg.server.data_dir) / "textadventure.sqlite3")
-    scs = [s for s in load(a.file) if not a.only or s["id"] in a.only.split(",")]
+    scs = [s for s in load(a.file) if (not a.only or s["id"] in a.only.split(","))
+           and (not getattr(a, "area", None) or str(s.get("area") or "fight") in a.area.split(","))]
     build = ""
     try:
         build = str(_get("/api/build").get("build") or "")
@@ -180,6 +254,12 @@ def run(a: argparse.Namespace) -> int:
         ok = tally[(sc["id"], True)]
         print(f"{ok}/{a.repeat}  {sc['id']:<28} {sc.get('why', '')[:110]}")
     won = sum(1 for sc in scs if tally[(sc["id"], True)] == a.repeat)
+    areas: dict[str, list[int]] = {}
+    for sc in scs:
+        t = areas.setdefault(str(sc.get("area") or "fight"), [0, 0])
+        t[0] += sum(1 for p in result["plays"] if p["id"] == sc["id"] and p["passed"])
+        t[1] += a.repeat
+    print("\nby area (plays passed of plays): " + "; ".join(f"{k} {v[0]}/{v[1]}" for k, v in sorted(areas.items())))
     print(f"\n{won} of {len(scs)} scenarios passed every play; written {path}")
     return 0 if won == len(scs) else 1
 
@@ -190,6 +270,7 @@ def main() -> int:
     r = sub.add_parser("run")
     r.add_argument("file", nargs="?", type=Path, default=DEFAULT)
     r.add_argument("--only")
+    r.add_argument("--area", help="play only the scenarios of these areas (fight,quests,pockets,places,talk,time,people)")
     r.add_argument("--repeat", type=int, default=1)
     r.add_argument("--keep", action="store_true", help="keep the games that passed too")
     r.add_argument("--note", default="")

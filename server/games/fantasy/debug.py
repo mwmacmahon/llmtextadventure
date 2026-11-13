@@ -32,8 +32,11 @@ def run(game: Any, state: FantasyState, words: str) -> tuple[FantasyState, Comma
     w = (words or "").strip()
     low = w.lower()
     did = ""
-    if low.startswith("spawn"):
+    placed = low.startswith("place")          # B397: `place <words> [angry]` puts them here and in no fight: a hostile opens it itself
+    if low.startswith("spawn") or placed:
         what = w[5:].strip() or "a skeleton"
+        angry = placed and bool(re.search(r"\bangry\b", what, re.I))
+        what = re.sub(r"\bangry\b", "", what, flags=re.I).strip(" ,")
         variant = next((v for v in en.LADDER if re.search(rf"\b{v}\b", what, re.I)), "standard")
         what = re.sub(rf"\b({'|'.join(en.LADDER)})\b", "", what, flags=re.I).strip(" ,")
         dm = re.search(r"\b(\d+)\b", what)
@@ -44,10 +47,15 @@ def run(game: Any, state: FantasyState, words: str) -> tuple[FantasyState, Comma
             n = 2
         made = en.spawn(s, [(entries[0], n)], variant)
         s.people += made
-        p.fighting += [q.id for q in made]
-        if s.combat is None:
-            s.combat = CombatState(round=0)
-        did = f"spawned {n} {entries[0]} ({variant}) in the fight: {', '.join(q.name for q in made)}"
+        if placed:
+            for q in made:
+                q.attitude = -2 if angry else -3
+            did = f"placed {n} {entries[0]} ({variant}), {'angry' if angry else 'hostile'}, in no fight: {', '.join(q.name for q in made)}"
+        else:
+            p.fighting += [q.id for q in made]
+            if s.combat is None:
+                s.combat = CombatState(round=0)
+            did = f"spawned {n} {entries[0]} ({variant}) in the fight: {', '.join(q.name for q in made)}"
     elif re.search(r"\b(fire|burn|alight)", low):
         wo.open_peril(s, "burning"); did = "set on fire"
     elif re.search(r"\b(drown|underwater|under water|water)", low):
@@ -79,10 +87,10 @@ def run(game: Any, state: FantasyState, words: str) -> tuple[FantasyState, Comma
             s.found_places.append(FoundPlace(name=ROOM, within=""))
         did = f"moved to {ROOM}, a bare room of glass walls, nobody else here"
     else:
-        return state, CommandResult(ok=False, label="Debug", text="DEBUG: say one of: spawn <what> [minion..elite], set me on fire, "
+        return state, CommandResult(ok=False, label="Debug", text="DEBUG: say one of: spawn <what> [minion..elite], place <what> [angry] (here, in no fight), set me on fire, "
                                     "drown me, make me bleed, freeze me, push me off, grab me, hurt N, heal [N], clear, room.")
     s.flags["debug_quiet"] = True                    # round 8: no call acts on the DEBUG turn (after_turn clears it)
-    if p.peril is not None and did and not did.startswith(("spawned", "grappled", "hurt", "healed", "cleared", "moved")):
+    if p.peril is not None and did and not did.startswith(("spawned", "placed", "grappled", "hurt", "healed", "cleared", "moved")):
         p.shown_notes.append("WARNING: " + wo.PERILS.get(p.peril.kind, {}).get("warn", p.peril.kind))
     return s, CommandResult(label="Debug", text=f"DEBUG: {did}.", player_line=f"(debug: {w})", summary=f"Debug: {did}.",
                             directive=f"A test of the game: {p.name} is {did}. Play it in a line or two, plainly, as if it simply "

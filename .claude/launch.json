@@ -367,10 +367,10 @@
       "port": 8016
     },
     {
-      "name": "api-local-gemma-lean",
+      "name": "api-local-gemma-stable",
       "runtimeExecutable": "env",
       "runtimeArgs": [
-        "TA_PROFILE=gemma4-31b-lean",
+        "TA_PROFILE=gemma4-31b-stable",
         "TA_CONFIG=config.llamacpp.yml",
         "TA_LLAMA_URL=http://192.168.0.215:8280",
         "TA_LLAMA_PREPARE_URL=http://192.168.0.215:8281/free-comfy",

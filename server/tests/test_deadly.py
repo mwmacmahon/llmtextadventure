@@ -778,3 +778,21 @@ def test_a_hostile_fled_from_or_yielded_to_does_not_open_the_fight_again(game):
     assert s5.player.fighting == [] and s5.person("maud").attitude == -2
     s6, _ = game.world_turn(s5, act("I hand over my purse"), "I hand over my purse.", Dice(10), 3, 2)
     assert s6.player.fighting == []
+
+
+def test_a_blow_at_one_of_a_lot_the_reading_noted_brings_the_lot(game):
+    """Round 32 T4: twelve rats in the telling, a blow at 'rat', the reading's note 'fight: trivial, a swarm of rats': one rat came."""
+    from engine.roles import AssistantReadingCombat, IntentCombat
+    st = new(game)
+    adj = AssistantReadingCombat(kind="action", summary="attacks a rat", time_minutes=1, risk="medium", tempo="fast", notes="fight: trivial, a swarm of rats",
+                                 intents=[IntentCombat(action="Attack a rat with a greataxe.", attack_at=["rat"], weapon="greataxe")])
+    s2, w = game.world_turn(st, adj, "I bring my greataxe down on the nearest of the twelve rats.", Dice(10), 3, 2)
+    foes = [s2.person(x) for x in s2.player.fighting]
+    assert foes and sum(max(1, q.combat.count) for q in foes) > 1, [(q.name, q.combat.count) for q in foes]
+    assert all("rat" in (q.combat.block or "") for q in foes), [q.combat.block for q in foes]        # rats, not whoever the note's words matched
+    # one foe, and a note about one: one comes
+    st = new(game)
+    one = AssistantReadingCombat(kind="action", summary="attacks", time_minutes=1, risk="medium", tempo="fast", notes="fight: easy, a lone cutpurse",
+                                 intents=[IntentCombat(action="Stab the cutpurse.", attack_at=["cutpurse"], weapon="dagger")])
+    s3, _ = game.world_turn(st, one, "I stab the cutpurse.", Dice(10), 3, 2)
+    assert sum(max(1, s3.person(x).combat.count) for x in s3.player.fighting) == 1

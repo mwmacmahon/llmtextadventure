@@ -114,3 +114,192 @@
     - "DEBUG: drown me"
     - say: "I kick hard for the surface."
       expect: {check: true}
+
+# ---- B397 (the owner, 11-13): hostile is attack on sight; angry strikes no first blow
+- id: hostile_opens_the_fight
+  why: "B397, D245: a hostile who stands in the player's place opens the fight the next turn, whatever the player does"
+  setup: *fighter
+  steps:
+    - "DEBUG: room"
+    - "DEBUG: place skeleton feeble"
+    - say: "I sit down on the floor and eat an apple."
+      expect: {fighting: true, line: "Combat begins"}
+
+- id: angry_strikes_no_first_blow
+  why: "B397: one who is angry (-2) is set against the player and may be fought, and does not strike first"
+  setup: *fighter
+  steps:
+    - "DEBUG: room"
+    - "DEBUG: place bandit feeble angry"
+    - say: "I sit down on the floor and eat an apple."
+      expect: {fighting: false, no_line: "Combat begins"}
+    - say: "I ask him what he wants."
+      expect: {fighting: false}
+
+- id: fled_from_stays_fled
+  why: "B397: a hostile the player ran from does not open the fight again while the game still has the player in that place"
+  setup: *fighter
+  steps:
+    - "DEBUG: room"
+    - "DEBUG: spawn skeleton feeble"
+    - "DEBUG: heal"
+    - say: "I turn and run for the door and get out of here."
+      expect: {fled: true}
+    - say: "I lean on the wall and catch my breath."
+      expect: {fighting: false}
+
+- id: yielded_to_stays_quiet
+  why: "B397: people who took the player's yield do not attack again at once"
+  setup: *fighter
+  steps:
+    - "DEBUG: room"
+    - "DEBUG: spawn bandit feeble"
+    - say: "I throw down my sword and raise my hands. I surrender."
+      expect: {yielded: true}
+    - say: "I stay on my knees and wait."
+      expect: {fighting: false}
+
+# ---- the rest of play (the owner, 11-13: "it sounds like your test suites need expanding if you did nothing but combat").
+# Each scene names its area. A new game opens in the Drowned Lantern in the evening: Maud the innkeeper, Old Hesk by the
+# fire, Brother Anselm, Hazel and Tansy are in the room; the pockets hold three torches, a rope, fifteen gold; three jobs
+# are dealt and none taken.
+- id: take_the_job
+  area: quests
+  why: "round 32 T2: 'I take the job' with one job on offer was refused ('Which Job?') and the quest stayed offered all round"
+  setup: *fighter
+  steps:
+    - "I ask the innkeeper what work she has for someone with a sword."
+    - say: "I take the job."
+      expect: {quest: {cellar_rats: live}, fighting: false}
+
+- id: asking_takes_no_job
+  area: quests
+  why: "a question about a job is not a yes to it"
+  setup: *fighter
+  steps:
+    - say: "I ask the innkeeper what the job in the cellar pays, and say I'll think about it."
+      expect: {quest: {cellar_rats: dealt}, fighting: false}
+
+- id: buy_a_drink
+  area: pockets
+  why: "paying for something takes the money, and needs no roll"
+  setup: *fighter
+  steps:
+    - say: "I buy a mug of ale from the innkeeper, put the coin on the bar and drink it."
+      expect: {paid: true, check: false, fighting: false}
+
+- id: one_of_a_stack
+  area: pockets
+  why: "B407 (round 32 T3): wedging one torch in a bracket moved all three torches out of the pockets"
+  setup: *fighter
+  steps:
+    - say: "I light one of my torches at the hearth and wedge it in the bracket by the door, and leave it there."
+      expect: {count_change: {torches: -1}}
+
+- id: give_a_thing_away
+  area: pockets
+  why: "a thing given to someone leaves the pockets"
+  setup: *fighter
+  steps:
+    - say: "I take the coil of rope off my pack and give it to the old man by the fire to keep."
+      expect: {lacks: [rope], fighting: false}
+
+- id: looking_costs_nothing
+  area: pockets
+  why: "a look around moves nothing and takes almost no time"
+  setup: *fighter
+  steps:
+    - say: "I look around the common room."
+      expect: {count_change: {torches: same, gold: same, rope: same}, minutes: [0, 6], check: false, people_added_at_most: 1}
+
+- id: walk_to_a_listed_place
+  area: places
+  why: "walking to a place the game lists puts the player there"
+  setup: *fighter
+  steps:
+    - say: "I leave the inn and walk to the Market of Hooks."
+      expect: {place: Market of Hooks, minutes: [2, 60], fighting: false}
+
+- id: a_spot_inside_is_the_same_place
+  area: places
+  why: "a spot inside a listed place (the stairs, a table) is that place, not a new one"
+  setup: *fighter
+  steps:
+    - say: "I cross the common room and sit down at the table nearest the fire."
+      expect: {place: The Drowned Lantern, minutes: [0, 10]}
+
+- id: friend_needs_no_roll
+  area: talk
+  why: "an ordinary question to someone with no reason to refuse is no check"
+  setup: *fighter
+  steps:
+    - say: "I ask the innkeeper what there is for supper."
+      expect: {check: false, minutes: [0, 25], fighting: false}
+
+- id: prying_needs_a_roll
+  area: talk
+  why: "getting something out of someone who would rather not say is a check"
+  setup: *fighter
+  steps:
+    - say: "I lean in and press the innkeeper hard to tell me who she is afraid of and why, and I don't let it go."
+      expect: {check: true, fighting: false}
+
+- id: insult_lowers_and_starts_no_fight
+  area: people
+  why: "B397: an insult sets someone against the player; it does not open a fight"
+  setup: *fighter
+  steps:
+    - say: "I call the innkeeper a thief and a liar to her face, loudly, and spit on her floor."
+      expect: {attitude_change: {maud: down}, fighting: false, no_line: "Combat begins"}
+
+- id: kindness_does_not_sour
+  area: people
+  why: "a kindness never lowers how someone treats the player"
+  setup: *fighter
+  steps:
+    - say: "I thank the innkeeper for the room and leave two gold on the bar for her trouble."
+      expect: {attitude_change: {maud: not_down}, paid: true, fighting: false}
+
+- id: a_stranger_is_filed_once
+  area: people
+  why: "someone the telling introduces is one person in the game, not a new one each turn"
+  setup: *fighter
+  steps:
+    - say: "I go out into Lantern Row and stop the first passer-by to ask the way to the Old Bridge."
+      expect: {people_added_at_most: 2}
+    - say: "I thank them and ask the same person what their name is."
+      expect: {people_added: 0}
+
+- id: short_rest
+  area: time
+  why: "an hour's rest is an hour"
+  setup: *fighter
+  steps:
+    - say: "I sit down by the fire and take a short rest for an hour."
+      expect: {minutes: [50, 75], fighting: false}
+
+- id: sleep_until_morning
+  area: time
+  why: "a night's sleep is hours, and mends"
+  setup: *fighter
+  steps:
+    - "DEBUG: hurt 5"
+    - say: "I go up to my room, bar the door and sleep until morning."
+      expect: {minutes: [300, 720], hp_full: true}
+
+- id: waiting_is_time
+  area: time
+  why: "waiting passes the time waited"
+  setup: *fighter
+  steps:
+    - say: "I sit at my table and wait two hours, watching who comes and goes."
+      expect: {minutes: [100, 140], fighting: false}
+
+- id: the_impossible_costs_nothing
+  area: time
+  why: "something the character cannot do takes no time and changes nothing"
+  setup: *fighter
+  steps:
+    - say: "I flap my arms and fly up to the rafters."
+      expect: {minutes: [0, 2], place: The Drowned Lantern, count_change: {gold: same}}
+

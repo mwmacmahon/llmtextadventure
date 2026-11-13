@@ -14,7 +14,7 @@ All commands run from `server/` with its venv. "The box" is the local model (Gem
 | 2 | Fight cases | one stored fight turn each, through the engine | none | yes | 5 s, free | `notes/eval/fight_cases.yml` |
 | 3 | The replay corpus | every stored fantasy turn through the engine's first half | none | against a baseline | 20 s, free | `notes/eval/corpus/fantasy_*.json` |
 | 4 | The whole-turn replay | stored turns through the whole pipeline on their stored model answers | none | against a baseline | 10 min, free | `notes/eval/corpus/turns_*.json` |
-| 5 | The staged suite | scripted scenes played live, the engine's doing keyed | the box (or Sonnet) | yes | 10 min for 13 scenes on the box, free | `server/tests/staged/*.yml`, runs in `notes/eval/staged/` |
+| 5 | The staged suite | scripted scenes played live, the engine's doing keyed | the box (or Sonnet) | yes | 13 min for 17 scenes on the box, free | `server/tests/staged/*.yml`, runs in `notes/eval/staged/` |
 | 6 | The reading probe | the assistant's reading of stored turns, under variants | the box or Sonnet | no (counts) | 25 min for 100 turns; about 7 cents a reading on Sonnet | `notes/eval/probes/reading_*.json` |
 | 7 | The flee and yield probes | the reading and the rule on keyed sentences said in stored fights | the box or Sonnet | yes | 20 min for 96 readings; about 7 cents each on Sonnet | `notes/eval/probes/flee_*.json` |
 | 7b | The referee probe | the referee's rows on stored turns, under a change of its wording | the box or Sonnet | no (counts, rows listed) | 12 min for 30 turns | `notes/eval/probes/referee_*.json` |
@@ -102,7 +102,7 @@ reads a round as a player (narration only), or two rounds blind. The only measur
 ## Staging a moment: the debug commands
 
 A turn that opens `DEBUG:` on a dev server is the engine's (one verb a turn; `server/games/fantasy/debug.py`):
-`spawn <words> [minion|feeble|frail|weak|standard|veteran|elite]`, `grab me`, `set me on fire`, `drown me`, `make me bleed`,
+`spawn <words> [minion|feeble|frail|weak|standard|veteran|elite]`, `place <words> [angry]` (here, hostile or angry, in no fight), `grab me`, `set me on fire`, `drown me`, `make me bleed`,
 `freeze me`, `push me off`, `hurt N`, `heal [N]`, `clear`, `room` (the Glass Cellar: nobody there but what the test brings
 in). The staged suite is built on them; a player in a round may use them too. They are refused on a player's server.
 

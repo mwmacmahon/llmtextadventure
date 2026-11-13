@@ -48,6 +48,15 @@ class RoleConfig(BaseModel):
     # conversation (engine/chain.py lean_adjudication): a short first form with no check in it, then, only when an attempt is
     # marked for a check or as failing on its words, a second message for the checks and their stakes. Off by default.
     lean: bool = False
+    # assistant and referee (B405, cause 1): the lines of a game's rules that change by the turn (its `turn_lines`: people by id,
+    # places, flags) and the command list are written in the message, not the system text, so the cached prefix holds for the
+    # whole game. Off by default until measured on each model.
+    stable_system: bool = False
+    # assistant (B405, cause 3; the owner, 11-13: "keep adding and then shift window all at once"): the turns of story the
+    # reading is shown. 0: the last two, sliding one a turn, so everything after the system text is new each turn. N: two, then
+    # one more each turn up to N+1, then back to two: between the steps the prompt only grows, and a model that resumes from
+    # the start of a message reads only the newest turn.
+    recent_step: int = 0
     # assistant only (the owner, 11-10 night: "Assistant judging should probably be toggleable like other module type stuff, so it
     # might be turned on for sonnet but not for a local model"): the game's own notes to the reading (a peril's way out to mark,
     # D220); off: the engine's own word test alone

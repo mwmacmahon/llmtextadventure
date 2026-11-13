@@ -13,7 +13,16 @@ model: gemma-4-31B-it-uncensored-heretic-Q5_K_M.gguf
 # 40,960 a slot left about 1.6 GB (three slots then; four of 30,720 since B405, below); the largest narrator prompt in the store is about 20,000 tokens.
 # B405 (11-13): four slots, one a role and one for the side calls, 30,720 tokens each (122,880 in all, as before: 1.6 GB of
 # the card spare; 131,072 left 0.8 GB, too near B382's edge). The largest narrator prompt in the store is about 20,000.
-server: {ctx: 122880, ckpt: 2048, kv: q8_0, think_budget: -1, extra: "--parallel 4"}
+# 11-13 evening (the owner: "worth looking into this soon"): two server flags, both measured on this box.
+# --kv-unified: the four slots draw on one pool of 122,880 tokens instead of a fixed 30,720 each, so the narrator's prompt can
+#   grow past a quarter (the others use far less); the card held 30.8 GB with it against 31.4 without; each role's cache
+#   still holds turn to turn (an eight-turn game: the narrator cached on 7 of 7).
+# --cache-ram 0: the server's copy of a slot's old prompt into system RAM before every call that does not continue it (2 to 3
+#   GB a time, never read back by a game with a slot a role) is off: 60 stored readings, prompt cold, 11.4 s to 10.3.
+# Not known: what the server does when the four slots together pass the pool (today they hold about 46,000).
+# ckpt (a checkpoint every N tokens) is for the hybrid models; on Gemma 512 against 2,048 changed nothing: it resumes only
+# from the start of a message.
+server: {ctx: 122880, ckpt: 2048, kv: q8_0, think_budget: -1, extra: "--parallel 4 --cache-ram 0 --kv-unified"}
 # The owner, 11-13: a telling asked for again comes out nearly the same. A retell the player asks for is sampled hotter
 # (the narrator's own is 0.7, in config.llamacpp.yml); change the number here.
 roles:

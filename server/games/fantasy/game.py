@@ -1099,8 +1099,8 @@ class FantasyGame(GameBase):
             "A short rest is an hour; sleep is six to eight hours; waiting is however long they wait.",
             "",
             f"What {p.name} carries, what they have left to cast and use, how hurt they are and where they are: the game state block. Read it before ruling something impossible.",
-            "Entities (people, by id): " + ", ".join(f"{q.id} ({q.name}, {q.role})" for q in s.people) + ".",
-            "Places: " + ", ".join(s.places) + ".",
+            self._entities_line(s),
+            self._places_line(s),
             "There are no systems in this game; leave `systems` empty.",
         ]
         return "\n".join(lines)
@@ -1116,19 +1116,28 @@ class FantasyGame(GameBase):
             out.append(f"{pl} opens by the clock, midnight to five; the engine sets its flag, never write it.")
         return out
 
-    def referee_rules(self, state: FantasyState) -> str:
-        s, p = state, state.player
+    def _targets_line(self, s: FantasyState) -> str:
+        p = s.player
         pockets = ", ".join(it.id for it in s.inventory)
         counts = ", ".join(c.id for c in p.counts)
-        lines = [
-            f"Targets: player ({p.name}); people by id: " + ", ".join(f"{q.id} = {q.name}" + (f" (also {', '.join(q.aliases[:3])})" if q.aliases else "") for q in s.people)
-            + f"; pockets by id as the game state lists them ({pockets})" + (f"; counts by id ({counts})" if counts else "") + ".",
-            *self._gate_lines(s),
+        return (f"Targets: player ({p.name}); people by id: " + ", ".join(f"{q.id} = {q.name}" + (f" (also {', '.join(q.aliases[:3])})" if q.aliases else "") for q in s.people)
+                + f"; pockets by id as the game state lists them ({pockets})" + (f"; counts by id ({counts})" if counts else "") + ".")
+
+    def _ref_places_line(self, s: FantasyState) -> str:
+        p = s.player
+        return (
             "Places: " + ", ".join(s.places) + ". A move or a location value is one of these. A spot inside a listed place (a table, the stairs, the cellar) "
             "is that place. A room inside one, and a place the prose introduces that lies inside none of them (a clearing in the wood, a house on the Hill), "
             "are new: new place value=<its name> field=<the listed place it is in or near>, then the move. "
             f"new place value=<a listed place>: the prose names a listed place {p.name} has not been to (a boatman offering passage to "
-            "the lake): the game marks it heard of.",
+            "the lake): the game marks it heard of.")
+
+    def referee_rules(self, state: FantasyState) -> str:
+        s, p = state, state.player
+        lines = [
+            self._targets_line(s),
+            *self._gate_lines(s),
+            self._ref_places_line(s),
             "Rows this game records:",
             "- move player <place>; move <person id> <place>: where they are when the prose ends. Someone still on the way has not arrived: a soon row "
             "with the minutes, and the move on the turn they get there. move player Unknown: the prose had the player leave and did not show them arriving.",
@@ -1195,12 +1204,31 @@ class FantasyGame(GameBase):
             "",
             "Flags you may set (flag <name> value=true) when the narration clearly establishes them:",
         ]
+        lines += self._flag_lines(s)
+        return "\n".join(lines)
+
+    # B405, cause 1: the lines of the two rules texts that change as the game goes, each built in one place so `turn_lines` can
+    # name them exactly (a role with stable_system on is sent them in the message, and its system text holds for the game)
+    @staticmethod
+    def _entities_line(s: FantasyState) -> str:
+        return "Entities (people, by id): " + ", ".join(f"{q.id} ({q.name}, {q.role})" for q in s.people) + "."
+
+    @staticmethod
+    def _places_line(s: FantasyState) -> str:
+        return "Places: " + ", ".join(s.places) + "."
+
+    def _flag_lines(self, s: FantasyState) -> list[str]:
         closes = self._quest_flags(s)
+        out = []
         for k, v in s.city.narrator_flags.items():
             if k in ("wanted_by_the_watch", "visited_greywood", "visited_mire", "night_market_open"):
                 continue                                             # the engine's and the clock's
-            lines.append(f"- {k}: {v}" + (f" (closes the quest {closes[k]}; write it when that happens)" if k in closes else ""))
-        return "\n".join(lines)
+            out.append(f"- {k}: {v}" + (f" (closes the quest {closes[k]}; write it when that happens)" if k in closes else ""))
+        return out
+
+    def turn_lines(self, s: FantasyState) -> list[str]:
+        return [self._entities_line(s), self._places_line(s), self._targets_line(s), *self._gate_lines(s), self._ref_places_line(s),
+                "Flags you may set (flag <name> value=true) when the narration clearly establishes them:", *self._flag_lines(s)]
 
     # ---- quests (B93, D175): one record per job, one row shape ---------------------------------------------------------
     def quests_in_motion(self, s: FantasyState) -> list[Quest]:
@@ -1735,7 +1763,7 @@ class FantasyGame(GameBase):
                 did.append("swing_with_no_target_aimed")
 
     def bring_in(self, s: FantasyState, words: str, *, ref: str = "", band: str = "normal", offset: int = 2, join: bool = True,
-                 named: bool = False) -> tuple[list[Person], dict]:
+                 named: bool = False, many: bool = False) -> tuple[list[Person], dict]:
         """Part sixteen §4: the people a hostile in the words is, written in here and met with their blocks (and joined to the
         fight when `join`). The offer's first, when the words or the id are theirs; else the generator through the matcher:
         an entry by the words, else the kind the words say, else a commoner; one body for 'the kneeling man', the count the
@@ -1771,7 +1799,7 @@ class FantasyGame(GameBase):
                 row = {"kind": "encounter", "hit": True, "why": f"the offer, by '{ref or words}'", "reason": off.get("reason", "")}
         if not made and words:
             region = en.region_of(s)
-            n = en.count_in(words)
+            n = None if many and en.count_in(words) == 1 else en.count_in(words)    # B409: one of a lot the reading noted: the lot comes
             pool, note = en.named_entries(words, region)
             members = 1 + len(cb.party(s))
             if n == 1 and len(pool) > 1:                  # one body of a kind: the entry nearest the band for one

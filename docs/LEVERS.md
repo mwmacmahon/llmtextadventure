@@ -659,6 +659,34 @@ sampler is `config.llamacpp.yml`'s line, because the `gemma4-31b` profile sets n
 - **Helped / did not:** the owner's rule is one local model for every role. Gemma is the working local model,
   "provisional, not adopted" (D101).
 
+### `stable_system`
+
+- **Levels:** `false` (the game's rules are written whole into the system text, lists and all), `true` (the lines a game
+  names as this turn's, its `turn_lines`, and the engine's command list are written in the message under LISTS FOR THIS
+  TURN; the system text says where they are). Assistant and referee.
+- **Set in:** no profile yet. Default false.
+- **Why it exists:** B405 cause 1 (2026-11-13; the owner: "a no brainer to try upfront, and it'll save sonnet costs
+  too"). The system text is the cached prefix; the fantasy's rules had the people by id, the places, the commands on
+  offer and the flags in them. A changed line re-reads the whole prompt on Gemma, which cannot rewind inside a message,
+  and rewrites the cache on Sonnet.
+- **Measured:** offline, three stored games (20, 25 and 49 turns): the assistant's system text changed on 10, 10 and 10
+  turns and the referee's on 5, 6 and 17; with it on, 0 on every one. `tests/test_stable_system.py` holds that. On a
+  model: being measured (the reading probe, the referee probe, a played round's cache line).
+- **Helped / did not:** not yet known whether readings or rows move with the lists in the message. Noir and the station
+  name no `turn_lines` yet: on them it moves only the command list.
+
+### `recent_step`
+
+- **Levels:** `0` (the reading is shown the last two turns of story, sliding one a turn), `N` (two turns, then one more
+  each turn for N turns, then back to two). Assistant only.
+- **Set in:** no played profile yet; `gemma4-31b-stable` (the trial) sets 3. Default 0.
+- **Why it exists:** B405 cause 3 (2026-11-13; the owner: "keep adding and then shift window all at once"). With a
+  sliding window everything after the system text is new each turn, about 5,500 tokens on Gemma, which resumes only from
+  the start of a message. Between steps the prompt only grows, as the narrator's does.
+- **Measured:** being measured (an eight-turn game's cache by turn; the reading probe for whether readings move when
+  the reading sees up to four past turns).
+- **Helped / did not:** not yet known.
+
 ### `slot`
 
 - **Levels:** an integer or unset. The llama-server slot a role is pinned to, so its cache stays beside the others'.

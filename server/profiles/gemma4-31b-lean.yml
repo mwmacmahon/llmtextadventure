@@ -12,7 +12,7 @@ model: gemma-4-31B-it-uncensored-heretic-Q5_K_M.gguf
 # 40,960 a slot left about 1.6 GB (three slots then; four of 30,720 since B405, below); the largest narrator prompt in the store is about 20,000 tokens.
 # B405 (11-13): four slots, one a role and one for the side calls, 30,720 tokens each (122,880 in all, as before: 1.6 GB of
 # the card spare; 131,072 left 0.8 GB, too near B382's edge). The largest narrator prompt in the store is about 20,000.
-server: {ctx: 122880, ckpt: 2048, kv: q8_0, think_budget: -1, extra: "--parallel 4"}
+server: {ctx: 122880, ckpt: 2048, kv: q8_0, think_budget: -1, extra: "--parallel 4 --cache-ram 0 --kv-unified"}
 # The owner, 11-13: a telling asked for again comes out nearly the same. A retell the player asks for is sampled hotter
 # (the narrator's own is 0.7, in config.llamacpp.yml); change the number here.
 roles:

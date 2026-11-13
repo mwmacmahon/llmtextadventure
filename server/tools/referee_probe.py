@@ -7,7 +7,7 @@ the live path's own call is made (`pipeline.referee_inputs`, `extract_referee`).
 measure a new line against it.
 
     TA_PROFILE=gemma4-31b TA_CONFIG=config.llamacpp.yml TA_LLAMA_URL=http://host:8280 \\
-      .venv/bin/python tools/referee_probe.py run [--n 40] [--prose REGEX] [--rows REGEX] [--swap FILE] [--note words]
+      .venv/bin/python tools/referee_probe.py run [--n 40] [--prose REGEX] [--rows REGEX] [--swap FILE] [--opt k=v] [--note words]
     .venv/bin/python tools/referee_probe.py score <run file>
 
 --prose picks turns whose telling matches (a number and a plural: a group shown); --rows picks turns whose stored rows match
@@ -68,6 +68,8 @@ async def run(a: argparse.Namespace) -> Path:
     result = {"made": dt.datetime.now().astimezone().isoformat(timespec="seconds"), "profile": profile, "swaps": swaps,
               "picked": {"prose": a.prose, "rows": a.rows}, "turns": []}
     role = cfg.role("referee")
+    opted = role.model_copy(update={k: (v.lower() == "true") if isinstance(getattr(role, k), bool) else type(getattr(role, k))(v)
+                                    for k, v in (kv.split("=", 1) for kv in a.opt or [])}) if a.opt else None
     provider = get_provider(role)
     print(f"{len(recs)} turns, profile {profile}, arms {['now'] + (['swapped'] if swaps else [])}")
     for k, rec in enumerate(recs):
@@ -76,8 +78,12 @@ async def run(a: argparse.Namespace) -> Path:
         system, msgs = referee_inputs(game, state, rec["directives"], rec["player_text"], rec["narration"], adj, levers=rec.get("levers") or [],
                                       recent=er._earlier_of(rec, role.recent_turns))
         row = {"key": f"{rec['iid']}:{rec['turn']}", "stored": rec["expected"]["changes"], "arms": {}}
-        for arm in ["now"] + (["swapped"] if swaps else []):
-            text = system
+        for arm in ["now"] + (["swapped"] if swaps else []) + (["opt"] if opted else []):
+            text, sent, who = system, msgs, role
+            if arm == "opt":                         # the referee with role options changed (--opt stable_system=true)
+                who = opted
+                text, sent = referee_inputs(game, state, rec["directives"], rec["player_text"], rec["narration"], adj, levers=rec.get("levers") or [],
+                                            recent=er._earlier_of(rec, who.recent_turns), stable=getattr(who, "stable_system", False))
             if arm == "swapped":
                 for find, put in swaps:
                     find, put = find.replace("{name}", state.player.name), put.replace("{name}", state.player.name)
@@ -86,7 +92,7 @@ async def run(a: argparse.Namespace) -> Path:
                     text = text.replace(find, put)
             t0 = time.monotonic()
             try:
-                delta, usage, _parts = await extract_referee(provider, role, text, msgs, referee_ids(state, rec.get("levers") or []))
+                delta, usage, _parts = await extract_referee(provider, who, text, sent, referee_ids(state, rec.get("levers") or []))
                 row["arms"][arm] = {"changes": [c.model_dump(mode="json") for c in delta.changes], "seconds": round(time.monotonic() - t0, 1)}
             except Exception as e:  # noqa: BLE001  (counted, not fatal)
                 row["arms"][arm] = {"error": f"{type(e).__name__}: {e}"[:300]}
@@ -127,6 +133,7 @@ if __name__ == "__main__":
     r.add_argument("--prose", default="")
     r.add_argument("--rows", default="")
     r.add_argument("--swap", default="")
+    r.add_argument("--opt", action="append", help="a referee role option for a third arm, `opt`: stable_system=true")
     r.add_argument("--note", default="")
     sc = sub.add_parser("score")
     sc.add_argument("path")

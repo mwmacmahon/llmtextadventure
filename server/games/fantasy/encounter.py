@@ -577,6 +577,10 @@ def count_in(words: str) -> int | None:
     for w, n in sorted(NUMBER_WORDS.items(), key=lambda t: -len(t[0])):
         if f" {w} " in low and n > 1:
             return n
+    if re.search(r"\b(pair|couple|brace) of\b", low):
+        return 2
+    if re.search(r"\b(swarm|pack|band|gang|mob|crowd|knot|group|horde|host|nest|handful|bunch|troop|flock) of\b", low):
+        return None                                   # round 32: 'a swarm of rats' read as one rat ('a ... ' is one); a lot is the generator's to size
     head = re.sub(r"\b(of|in|on|at|with|from|by)\b.*$", "", (words or "").strip(), flags=re.I)    # 'man in grey hoods' is one man
     if re.search(r"\bdead\s*$", head, re.I) and not re.search(r"\b(a|an|one|this|that)\b", head, re.I):   # the drowned dead
         return None
