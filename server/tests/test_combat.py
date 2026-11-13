@@ -1706,3 +1706,17 @@ def test_a_step_back_the_reading_settles_is_no_blow(game):
         IntentCombat(action="shove the dead into the booth", targets=["dead"], attack_at=["dead"], weapon="hand")])
     game.aim_blows(st, shove, "I shove him into the booth.")
     assert shove.intents[0].attack_at == ["dead"]
+
+
+def test_the_rolled_round_says_who_is_still_standing(game):
+    """D251: ten of Gemma's retells (11-11 on) were a foe the dice left standing written dead in the prose."""
+    from games.fantasy import combat as cb
+    from test_deadly import foe
+    st = new(game)
+    q = foe(st)
+    b = cb.ensure_block(q)
+    hurt = [{"hits": [{"pid": q.id, "body": 0, "dmg": max(1, (b.hp or 2) - 1)}]}]
+    line = cb.standing_after(game, st, hurt)
+    assert q.name in line and "does not fall or run" in line and "only a blow given above" in line
+    assert cb.standing_after(game, st, [{"hits": [{"pid": q.id, "body": 0, "dmg": 999}]}]) == ""      # down: nobody to name
+    assert cb.standing_after(game, st, [{"kills": True}]) == ""                                       # the player fell

@@ -143,6 +143,11 @@ the box's helper; the stamp on every turn's rows and in the call report. Design:
 old label). **Left:** one server for every game, so the rounds and the fantasy share a save list
 (B77); module levels edited in the UI as an override layer; the cost per profile on the card for a local model.
 
+**Field guide (D249, 11-13; built, on for `gemma4-31b`).** A local model is told what each field of its answer means
+(the schema's descriptions in the system text; a hosted model gets them with the tool). On 100 stored Gemma turns the
+engine's settling rewrote 5 of 50 fight readings against 30 of 50; on the hand-keyed set the referee's forbidden rows fell
+from 11 to 5. **Left:** the move still goes unfilled; the aim_blows clauses the guide makes idle, counted and removed.
+
 **Telling length (D246, 11-12; built, on for `sonnet`).** A word budget by the kind of turn (quick, talk, passage, plain,
 rolled), in THIS TURN's last line and on each resume after a roll (`engine/telling.py`; levels off / standard / short).
 Trial on 17 stored Sonnet turns: median 307 words to 199, no settled result lost, narrator time down a third.
@@ -447,8 +452,11 @@ log. Design: INDEX.md; the memory rules.
 **Built 11-12 (D248): the replay corpus.** `tools/replay_corpus.py` runs every stored fantasy turn through today's engine
 with no model and keeps what the engine did as data (who is fought, hit points, perils, deaths, who was brought in, the
 rows' kinds and outcomes); `check` prints each turn a change moves. The first baseline: 908 turns of 50 games, 18 seconds a
-pass. Run with the suite before a commit that touches the fantasy's engine. **Left on it:** the second half of the turn
-(the landing after the prose, the referee's rows); the phrase table for the word patterns; the other games.
+pass. Run with the suite before a commit that touches the fantasy's engine. **Built 11-13 (D252): the whole-turn replay.** `tools/replay_turns.py` feeds each stored turn's own reading,
+prose and referee rows back through the whole pipeline; 551 turns, all clean. **Also 11-13 (D249): the reading probe**,
+`tools/reading_probe.py`: stored turns read again by the assistant under variants of its prompt or schema, scored against
+what the store knows (did the player move, is a blow's target a person, how often the engine rewrites the reading).
+**Left on it:** the phrase table for the word patterns; a plain destination field for the move; the other games.
 
 **Running.** **Left.**
 - Nineteen test files load the gitignored `notes/content`, so a fresh clone cannot run them (R5-1031).

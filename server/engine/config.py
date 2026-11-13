@@ -49,6 +49,10 @@ class RoleConfig(BaseModel):
     # resume after a roll. "off": no line (the frozen prompt's own rule stands). Set by a profile's telling_length module.
     telling: Literal["off", "standard", "short"] = "off"
     game_notes: bool = True
+    # llamacpp only (D249): the schema's own field descriptions written into the system text as a FIELDS section. A hosted
+    # model is sent them with the tool; a local model saw only the grammar (the bare field names) and whatever the rules
+    # text happened to say. Set by a profile's field_guide module.
+    field_guide: bool = False
     # llamacpp only (engine/providers/llamacpp_provider.py): the server, the slot this role is pinned to so its
     # cache stays resident beside the other roles', whether the model may think, sampling temperature, auth.
     base_url: str = Field(default_factory=lambda: os.environ.get("TA_LLAMA_URL", "http://127.0.0.1:8080"))

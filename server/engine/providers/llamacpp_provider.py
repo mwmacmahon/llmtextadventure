@@ -114,6 +114,41 @@ def inline_schema(js: dict) -> dict:
     return walk(js, frozenset())
 
 
+def schema_guide(js: dict) -> str:
+    """The schema's field descriptions as a FIELDS section for the system text (D249): one line a described field, nested
+    fields by their path ('intents[].check.label'). A hosted model gets these with the tool definition; llama.cpp turns the
+    schema into a grammar and the descriptions never reach the model, so until this a local model knew a field by its name
+    alone (the fantasy's `attack_at`, the format of `transition`). An enum's values are listed. Stable for a schema, so it
+    stays in the cached prefix."""
+    js = inline_schema(js)
+    lines: list[str] = []
+
+    def walk(node: dict, path: str) -> None:
+        for name, v in (node.get("properties") or {}).items():
+            here = f"{path}.{name}" if path else name
+            alts = [a for a in (v.get("anyOf") or []) if isinstance(a, dict) and a.get("type") != "null"]
+            body = alts[0] if len(alts) == 1 else v
+            desc = " ".join(str(v.get("description") or body.get("description") or "").split())
+            enum = body.get("enum") or (body.get("items") or {}).get("enum")
+            if enum and desc:
+                desc += " One of: " + ", ".join(str(e) for e in enum) + "."
+            elif enum:
+                desc = "One of: " + ", ".join(str(e) for e in enum) + "."
+            item = body.get("items") if body.get("type") == "array" else None
+            if desc:
+                lines.append(f"- {here}{'[]' if item is not None else ''}: {desc}")
+            if isinstance(item, dict) and item.get("properties"):
+                walk(item, here + "[]")
+            elif body.get("properties"):
+                walk(body, here)
+
+    walk(js, "")
+    if not lines:
+        return ""
+    return ("FIELDS. What each field of your answer means. Fill every field by its own line here; a field left at its empty "
+            "value is read as \"nothing of that kind in this input\".\n" + "\n".join(lines))
+
+
 def _usage(d: dict | None, timings: dict | None) -> Usage:
     d = d or {}
     t = timings or {}
@@ -274,6 +309,9 @@ class LlamaCppProvider:
 
     async def extract(self, role: RoleConfig, system: str, messages: list[Msg], schema: type[T]) -> tuple[T, Usage]:
         await self.prepare()
+        if getattr(role, "field_guide", False):                 # D249: the descriptions a hosted model gets with the tool
+            guide = schema_guide(schema.model_json_schema())
+            system = system + ("\n\n" + guide if guide else "")
         body = self._body(role, system, messages)
         body["response_format"] = {"type": "json_schema", "json_schema": {"name": schema.__name__, "schema": inline_schema(schema.model_json_schema())}}
         retried = False

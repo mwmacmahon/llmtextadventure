@@ -74,6 +74,9 @@ MODULES: dict[str, dict[str, Any]] = {
                        "levels": {"off": "no budget; the game's own length rule stands",
                                   "standard": "a word budget by the kind of turn: 80 quick, 170 plain, 200 talk, 45 more a roll",
                                   "short": "a word budget by the kind of turn: 40 quick, 80 plain, 120 talk, 35 more a roll"}},
+    "field_guide": {"label": "Field guide", "cuts": "what a local model is told about the fields of its answers (the assistant's reading, the referee's rows)",
+                    "levels": {"off": "the field names only, as the grammar gives them",
+                               "on": "each field's own description written into the system text, as a hosted model gets with the tool"}},
     "directive_economy": {"label": "Directive economy", "cuts": "the size of this turn's directions to the narrator",
                           "levels": {"dials": "set by the checks and stakes dials"}},
 }
@@ -135,6 +138,8 @@ class Profile(BaseModel):
                 ov["stakes"] = self.dials.stakes
             if self.dials.checks is not None:
                 ov["checks"] = self.dials.checks
+        if role in ("assistant", "referee") and self.modules.get("field_guide"):
+            ov["field_guide"] = self.modules["field_guide"] == "on"
         if role == "narrator" and self.modules.get("telling_length"):
             ov["telling"] = self.modules["telling_length"]
         if role == "assistant" and self.dials.game_notes is not None:

@@ -211,6 +211,8 @@ Every playtest also has a transcript `notes/playtests/<date>-<game>-<tag>.md` an
 | `server/tools/round_profile.py` | one line a turn of a played round: the narrator's context, output, requests, retells, reasoning and force-closes, the meter, and the chant measures refrain % and copy % (D90) |
 | `server/tools/round_counts.py` | the long-round counts (retells, FORCED, rulings, rejections, clock, meter, pace, invention, repetition, and since D246 the telling's length against its budget by the kind of turn) for one or more instances, as a table (D87) |
 | `server/tools/replay_corpus.py` | the replay corpus (D248): every stored fantasy turn through today's engine with no model, the outcome kept as data; `record` a baseline, `check` prints each turn a change moved, `stats` what it covers; baseline in `notes/eval/corpus/` (908 turns, 11-12) |
+| `server/tools/replay_turns.py` | the whole-turn replay (D252): a stored turn through the whole pipeline on its own stored answers (reading, prose, referee rows), no model; `record`, `check`; baseline in `notes/eval/corpus/` (551 turns, 11-13) |
+| `server/tools/reading_probe.py` | the reading probe (D249): stored turns read again by the assistant under variants (`field_guide=true`), scored without a key; runs in `notes/eval/probes/`; resumes after a box failure |
 | `server/tools/llm.py` | `use <profile>` swaps the box's model; `show`, `status` |
 | `server/tools/local_smoke.py` | three roles against a local server, cache check |
 | `server/tools/play.py` | play by hand in the terminal |

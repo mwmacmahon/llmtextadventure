@@ -872,7 +872,9 @@ def plan_fight(game: Any, s: FantasyState, adj: Any, player_text: str, rng: Any,
             first = (f"Tell {p.name}'s attempt above first; the blows below still happen as given. "
                      if any(d.get("label") not in done for d in s.flags.get("prerolled_checks") or []) else "")
             w.directives.append(first + "The blows below are settled. Tell each in this order, with the outcome given, and stop after the last: "
-                                + " ".join(told) + cb.round_count(game, s) + (" " + spare if spare else ""))
+                                + " ".join(told) + cb.round_count(game, s)
+                                + (cb.standing_after(game, s, data) if getattr(game, "standing_line", True) else "")
+                                + (" " + spare if spare else ""))
         elif spare:
             w.directives.append(f"{spare} Nobody else strikes this round. Stop where {p.name} chooses next.")
         return

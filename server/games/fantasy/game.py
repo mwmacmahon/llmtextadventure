@@ -273,6 +273,8 @@ class FantasyGame(GameBase):
     prerolled_rounds = True    # the owner's night brief: a fight's round is rolled before the prose and told (the record's combat.prerolled)
     narrator_hazards = False   # B366: a listed danger is met only by the player's own words (rolled before the prose); the narrator's call is not rolled
     settle_calm = True         # the owner, 11-10 late: "Too many rolls": a calm scene's low checks with nothing at stake simply work
+    # D251: the rolled round's line ends with who is still on their feet (the experiment's switch: TA_STANDING=off)
+    standing_line = __import__("os").environ.get("TA_STANDING", "on") != "off"
     sleep_by_command = True    # the owner (11-08 evening): only the Rest command makes a turn a night; "I go sleep at <a far place>" is a move
     target_offset = 2          # B83 (the owner, 11-08): one Hard step on the d20; a +2 character passes medium 55%, not 65%
     authority = AUTHORITY

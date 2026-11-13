@@ -1240,3 +1240,33 @@ def round_count(game: Any, s: FantasyState) -> str:
     foes = sum(len(bodies(q)) for q in living_enemies(game, s))
     n = _NUMS[foes] if foes < len(_NUMS) else str(foes)
     return f" {s.player.name} faced {n} {'foe' if foes == 1 else 'foes'}; bring in no others." if foes else ""
+
+
+def standing_after(game: Any, s: FantasyState, data: list[dict]) -> str:
+    """' Still on their feet when this turn ends: Gorm (hurt), the second skeleton (bloodied). None of them falls or runs this
+    turn.' (D251). The store, 11-11 on: ten of Gemma's retells were a foe the dice left standing written dead in the prose
+    (Gorm twice, three townsmen, a swarm twice); the round's line gave each blow's outcome and never said who was left. Read
+    from the round's own results, before they land. '' when nobody is left, or the player fell."""
+    if s.player.fate or any(d.get("kills") for d in data):
+        return ""
+    taken: dict[tuple[str, int], int] = {}
+    spared: set[tuple[str, int]] = set()
+    for d in data:
+        for h in d.get("hits") or []:
+            k = (str(h.get("pid")), int(h.get("body", 0)))
+            taken[k] = taken.get(k, 0) + int(h.get("dmg") or 0)
+    left: list[str] = []
+    for q in living_enemies(game, s):
+        b = ensure_block(q)
+        for body in bodies(q):
+            base = (b.hps[body] if b.count > 1 and body < len(b.hps) else b.hp) or 0
+            hp = base - taken.get((q.id, body), 0)
+            if hp > 0:
+                w = hp_word(hp, b.hp_max or 1)
+                left.append(f"{name_of(q, body)} ({'unhurt' if w == 'fresh' else w})")
+    if not left:
+        return ""
+    one = len(left) == 1
+    return (f" Still on {'its' if one else 'their'} feet when this turn ends: {', '.join(left)}. "
+            f"{'It does not fall or run' if one else 'None of them falls or runs'} this turn: only a blow given above puts anyone down.")
+

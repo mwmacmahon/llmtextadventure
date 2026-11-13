@@ -39,3 +39,30 @@ def test_a_different_outcome_shows_as_the_fields_that_moved(game):
     moved = {d.split(":", 1)[0] for d in rc.diff(blow, talk)}
     assert "intents" in moved and moved <= set(blow)
     assert rc.diff({"hp": 9}, {"hp": 7}) == ["hp: 9 -> 7"]
+
+
+def test_the_whole_turn_print_is_data_and_its_diff_names_the_person(game):
+    """tools/replay_turns.py (D252): the state a turn left, and a change shown by field and by person."""
+    import replay_turns as rt
+    st = new(game)
+    a = rt.state_print(st.model_dump(mode="json"))
+    assert json.loads(json.dumps(a)) == a and a["hp"] == st.player.hp and "maud" in a["people"]
+    st.person("maud").status = "dead"
+    st.player.hp -= 3
+    d = rt.diff(a, rt.state_print(st.model_dump(mode="json")))
+    assert any(x.startswith("people.maud:") for x in d) and any(x.startswith("hp:") for x in d) and len(d) == 2
+
+
+async def test_a_stored_turn_goes_through_the_whole_pipeline_on_its_own_answers(engine, fake):
+    """A played turn, exported, replays through today's pipeline with no model: the same reading, prose and report in, the
+    same state out, twice."""
+    import replay_turns as rt
+    from test_fantasy import SHEET, play
+    iid = engine.create_instance("fantasy", dict(SHEET))
+    await play(engine, iid, "I look around the common room")
+    doc = engine.store.export_instance(iid)
+    cfg, games = rt._cfg()
+    one = await rt.one_turn(cfg, games, doc, 1)
+    two = await rt.one_turn(cfg, games, doc, 1)
+    assert one == two and one["_turn_saved"] and "_crash" not in one and one["_left"] == [0, 0]
+    assert one["place"] == engine.games["fantasy"].load_state(engine.store.load_state(iid)).player.location

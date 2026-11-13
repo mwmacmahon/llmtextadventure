@@ -11,5 +11,9 @@ dials:
   stakes: live          # B94 (D176): every profile names it
 # D246 (11-12): the telling's word budget by the kind of turn (engine/telling.py). Trial on 20 stored turns: median 162 words to
 # 135, nothing settled lost (an Opus reader); fight turns a third shorter.
+# D249 (11-13): the schema's field descriptions written into the assistant's and the referee's system text. A hosted model
+# gets them with the tool; this model saw the field names only. On 100 stored fantasy turns the engine's settling rewrote 5
+# of 50 fight readings against 30 of 50; on the hand-keyed set the referee's forbidden rows fell from 11 to 5.
 modules:
   telling_length: short
+  field_guide: "on"

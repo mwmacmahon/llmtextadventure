@@ -179,10 +179,12 @@ def no_weapon_none(v: object) -> object:
     return ", ".join(parts) if any(parts[1:]) else parts[0]
 
 
-_ATTACK_AT = ("A blow the player strikes at someone, with a weapon or a fist, in a fight or to start one: whom it is at, by the person's "
-              "id only, never the weapon or a thing (the weapon goes in weapon); two or three ids only when the words name them all. A "
-              "blow is never a check: no check and no difficulty. Set it whenever the words strike a blow, even when they also run, grab "
-              "or shout (\"I run at him and swing\" is a blow). Empty when the words strike no blow: talking, threatening, waiting, hiding.")
+_ATTACK_AT = ("A blow the player strikes at someone, with a weapon or a fist, in a fight or to start one: whom it is at. Use the person's "
+              "id when they are listed; for a foe the scene has shown who is not listed, a word or two for them (\"skeleton\", \"the "
+              "rats\"). Never the weapon, a thing or a part of the body (the weapon goes in weapon). Two or three only when the words "
+              "name them all. A blow is never a check: no check and no difficulty. Set it whenever the words strike a blow, even when "
+              "they also run, grab or shout (\"I run at him and swing\" is a blow). Empty when the words strike no blow: talking, "
+              "threatening, waiting, hiding, taking aim without loosing.")
 _WEAPON = ("With attack_at: the weapon as they carry it, in a word or two; 'fist' only when the words say punch, kick, fist or bare hands. "
            "Then after a comma anything the player named that rides on the blow (\"longsword, smite\"). Empty when they name no weapon "
            "and nothing rides.")
