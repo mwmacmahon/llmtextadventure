@@ -96,7 +96,9 @@ def instances(store: Path, since: str = "") -> list[tuple[str, str, str]]:
     prof = {}
     for iid, p in c.execute("select instance_id, payload_json from ledger where kind='profile' order by seq"):
         prof[iid] = json.loads(p).get("name") or ""
-    return [(i, cr, prof.get(i, "")) for i, cr in c.execute("select id, created from instance where game='fantasy' order by created") if cr >= since]
+    # the owner, 11-13: a game with "private" in its title is never read, by this or any tool that walks the store
+    return [(i, cr, prof.get(i, "")) for i, cr, title in c.execute("select id, created, title from instance where game='fantasy' order by created")
+            if cr >= since and "private" not in (title or "").lower()]
 
 
 def replay_all(store: Path, since: str = "", only: set[str] | None = None) -> dict[str, dict[str, Any]]:

@@ -283,15 +283,33 @@ async def test_a_split_referee_asks_three_smaller_questions_over_one_cached_prom
 
 
 def test_a_past_tellings_time_closer_is_not_shown_to_the_narrator_again():
-    """B398 (the owner, 11-13): "The clock in the hall strikes five minutes to eight." closed turn after turn; each copy in
+    """B398 (the owner, 11-13): the same one-line clock sentence closed turn after turn; each copy in
     the window taught the next. A last paragraph that is one short line telling the time is left out of the history."""
     from engine.context import history_turn, without_time_closer
-    told = "You push open the tavern door and scan the dim room.\n\nThe clock in the hall strikes seven-fifty."
+    told = "You push open the tavern door and scan the dim room.\n\nThe clock on the wall strikes nine."
     assert without_time_closer(told) == "You push open the tavern door and scan the dim room."
     assert history_turn("I go in.", told)[-1].content == "You push open the tavern door and scan the dim room."
-    for kept in ("The clock in the hall strikes seven-fifty.",                                              # the whole telling: kept
+    for kept in ("The clock on the wall strikes nine.",                                              # the whole telling: kept
                  "You wait.\n\nBy the time the bells chime the hour you have counted nine men in and none out, and your legs ache from it all.\n\nMaud nods.",
                  "You wait.\n\n\"The clock strikes six,\" she says.",                                       # speech
                  "You wait by the door until the clock strikes six and the room empties around you."):      # inside a paragraph
         assert without_time_closer(kept) == kept
     assert without_time_closer("He leaves.\n\nThe clock reads 00:34.") == "He leaves."
+
+
+def test_a_past_tellings_echo_is_left_out_of_the_history_when_the_setting_asks():
+    """D263: with history 'echo', a sentence of a past telling that mostly says again what the tellings before it said is not
+    shown to the narrator (the refrain it would copy forward); a telling with nothing repeated is shown whole; speech and short
+    sentences stay; 'closers' (the default) leaves echoes alone."""
+    from engine.context import history_turn, without_echo, word_runs
+    first = "The rain is on your face and the street is empty behind you. Rosa wipes a glass."
+    later = "You climb the stairs. The rain is on your face and the street is empty behind you. A door stands open."
+    seen = word_runs(first)
+    assert without_echo(later, seen) == "You climb the stairs. A door stands open."
+    assert without_echo("She nods once. \"The rain is on your face and the street is empty behind you,\" she says.", seen).count("she says") == 1
+    assert without_echo("A cart rattles past the bakery and is gone.", seen) == "A cart rattles past the bakery and is gone."
+    only = "The rain is on your face and the street is empty behind you."
+    assert without_echo(only, seen) == only                         # all of it an echo: the telling is kept, never emptied
+    assert history_turn("I go up.", later, None, "echo", seen)[-1].content == "You climb the stairs. A door stands open."
+    assert history_turn("I go up.", later, None, "closers", seen)[-1].content == later
+    assert history_turn("I go up.", later + "\n\nThe clock reads 00:34.", None, "off", seen)[-1].content.endswith("00:34.")

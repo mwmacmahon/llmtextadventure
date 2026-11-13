@@ -83,7 +83,7 @@ def soften_mechanic(m: str) -> str:
     return f"{head.group(1).strip()}: {outcome_words(tier.replace(' ', '_'))}."
 
 
-# R12, B398 (the owner, 11-13, a Gemma game: '"The clock in the hall strikes five minutes to eight." every single turn ... maybe
+# R12, B398 (the owner, 11-13, a Gemma game: 'the same one-line clock sentence every single turn ... maybe
 # the game just has too many examples in its bad history'): a telling that ends on a one-line paragraph giving the time is
 # copied forward: 9 of that game's 39 tellings closed so, and each copy in the window is one more example (31 of 50 in a
 # station round, D114). The line is taken out of a past telling as the narrator is shown it; what the player read is as it was
@@ -92,7 +92,7 @@ _TIME_VERB = re.compile(r"\b(strikes?|struck|chim(?:e|es|ed|ing)|toll(?:s|ed|ing
 
 
 def without_time_closer(prose: str) -> str:
-    """`prose` without a last paragraph that is one short sentence telling the time ("The clock in the hall strikes six.").
+    """`prose` without a last paragraph that is one short sentence telling the time ("The clock on the wall strikes nine.").
     Only a paragraph of its own, at the very end, with more telling before it; a time told inside a paragraph stays."""
     paras = [p for p in prose.rstrip().split("\n\n")]
     if len(paras) < 2:
@@ -104,7 +104,45 @@ def without_time_closer(prose: str) -> str:
     return prose
 
 
-def history_turn(player: str, narration: str, recorded: dict | None = None) -> list[Msg]:
+# D263: the echo. A telling's sentence is an echo when most of its five-word runs already stand in the tellings before it.
+# Left in the history, each echo is one more example of the refrain; a model that copies its own turns builds a chant of them
+# (the Qwen long rounds: 13 to 18% of a late telling's five-word runs were in the six tellings before it; Gemma 1%).
+ECHO_N, ECHO_BACK, ECHO_SHARE, ECHO_MIN_WORDS = 5, 12, 0.5, 7
+
+
+def _plain_words(text: str) -> list[str]:
+    return re.findall(r"[a-z']+", re.sub(r"[\"“][^\"”]*[\"”]", " ", text).lower())
+
+
+def word_runs(text: str, n: int = ECHO_N) -> set[tuple[str, ...]]:
+    """The five-word runs of a telling's prose, speech and § lines left out."""
+    prose = "\n".join(l for l in (text or "").split("\n") if not l.strip().startswith(MECHANIC_PREFIX))
+    w = _plain_words(prose)
+    return {tuple(w[i:i + n]) for i in range(len(w) - n + 1)}
+
+
+def without_echo(prose: str, seen: set[tuple[str, ...]]) -> str:
+    """`prose` without the sentences that mostly repeat `seen` (the word runs of the tellings before it). A sentence of
+    speech, a short one, and the telling's last surviving sentence stay; a paragraph left empty goes."""
+    if not seen:
+        return prose
+    kept_paras: list[str] = []
+    for para in prose.split("\n\n"):
+        kept: list[str] = []
+        for sent in re.split(r"(?<=[.!?])\s+", para.strip()):
+            w = _plain_words(sent)
+            runs = {tuple(w[i:i + ECHO_N]) for i in range(len(w) - ECHO_N + 1)}
+            if len(w) >= ECHO_MIN_WORDS and runs and len(runs & seen) / len(runs) >= ECHO_SHARE:
+                continue
+            if sent.strip():
+                kept.append(sent)
+        if kept:
+            kept_paras.append(" ".join(kept))
+    return "\n\n".join(kept_paras) if kept_paras else prose
+
+
+def history_turn(player: str, narration: str, recorded: dict | None = None, level: str = "closers",
+                 seen: set[tuple[str, ...]] | None = None) -> list[Msg]:
     """One past turn as the narrator should remember it. The engine's § lines are never in the narrator's
     voice: a check it called comes back as the exchange that happened (its prose up to the call, the call,
     the engine's answer as a user message, the continuation); any other § line (a roll it was told, a
@@ -123,8 +161,12 @@ def history_turn(player: str, narration: str, recorded: dict | None = None) -> l
         out += [Msg(e["role"], e["text"]) for e in exchange if e["text"].strip()]
     else:
         out.append(Msg("assistant", prose))
+    if level == "off":
+        return out
     if out[-1].role == "assistant":                          # the turn's last words of telling: no time line to copy forward
         out[-1] = Msg("assistant", without_time_closer(out[-1].content) or out[-1].content)
+    if level == "echo" and seen:
+        out = [Msg(m.role, without_echo(m.content, seen)) if m.role == "assistant" else m for m in out]
     return out
 
 
@@ -140,7 +182,8 @@ def _merge(msgs: list[Msg]) -> list[Msg]:
 
 
 def build_messages(store: Store, instance_id: str, window_turns: int, bulletin: str, player_text: str, slide: int = 1,
-                   exchanges: dict[int, dict] | None = None, max_tokens: int | None = None, fixed_chars: int = 0) -> BuiltContext:
+                   exchanges: dict[int, dict] | None = None, max_tokens: int | None = None, fixed_chars: int = 0,
+                   history: str = "closers") -> BuiltContext:
     """`max_tokens`: the budget for the whole request; `fixed_chars`: what the request carries besides these
     messages (the system prompt, a reminder appended to the last message)."""
     rows = store.transcript(instance_id, roles=["player", "narrator", "system_note"])
@@ -151,11 +194,11 @@ def build_messages(store: Store, instance_id: str, window_turns: int, bulletin: 
     completed = sorted(t for t, parts in turns.items() if "player" in parts and "narrator" in parts)
     start = window_start(len(completed), window_turns, slide)
     base = start
-    msgs = _window_messages(rows, turns, completed[start:], bulletin, player_text, exchanges)
+    msgs = _window_messages(rows, turns, completed[start:], bulletin, player_text, exchanges, history, completed)
     est = estimate_tokens(fixed_chars + sum(len(m.content) for m in msgs))
     while max_tokens and est > max_tokens and start < len(completed) - 1:
         start = min(start + max(1, slide), len(completed) - 1)
-        msgs = _window_messages(rows, turns, completed[start:], bulletin, player_text, exchanges)
+        msgs = _window_messages(rows, turns, completed[start:], bulletin, player_text, exchanges, history, completed)
         est = estimate_tokens(fixed_chars + sum(len(m.content) for m in msgs))
     window = completed[start:]
     summary = _latest_summary(rows, before_turn=window[0] if window else None)
@@ -172,16 +215,24 @@ def build_messages(store: Store, instance_id: str, window_turns: int, bulletin: 
 
 
 def _window_messages(rows: list[TranscriptRow], turns: dict[int, dict[str, str]], window: list[int], bulletin: str,
-                     player_text: str, exchanges: dict[int, dict] | None) -> list[Msg]:
+                     player_text: str, exchanges: dict[int, dict] | None, history: str = "closers",
+                     completed: list[int] | None = None) -> list[Msg]:
     msgs: list[Msg] = []
     # The most recent summary (if any) that precedes the window goes first.
     summary = _latest_summary(rows, before_turn=window[0] if window else None)
     if summary:
         msgs.append(Msg("user", f"[STORY SO FAR]\n{summary.text}"))
         msgs.append(Msg("assistant", "Understood. I will continue the story from here."))
+    order = completed or window
+    runs = {t: word_runs(turns[t]["narrator"]) for t in order} if history == "echo" else {}
     for t in window:
         parts = turns[t]
-        msgs.extend(history_turn(parts["player"], parts["narrator"], (exchanges or {}).get(t)))
+        # a telling's echo is judged against the tellings before it in the game (not only those in the window), so what a
+        # past turn is shown as never changes while it is in the window: the prefix stays byte for byte, and the cache holds
+        at = order.index(t) if t in order else -1
+        before = order[max(0, at - ECHO_BACK):at] if (runs and at >= 0) else []
+        seen = set().union(*(runs[b] for b in before)) if before else set()
+        msgs.extend(history_turn(parts["player"], parts["narrator"], (exchanges or {}).get(t), history, seen))
     msgs.append(Msg("user", compose_user_message(bulletin, player_text)))
     return _merge(msgs)
 

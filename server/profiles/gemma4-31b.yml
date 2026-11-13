@@ -11,7 +11,10 @@ model: gemma-4-31B-it-uncensored-heretic-Q5_K_M.gguf
 # restarted in a loop (20 times on 11-13; the two outages of 11-12 night were the same after an idle sleep). A fixed
 # 40,960 a slot leaves about 1.6 GB; the largest narrator prompt in the store is about 20,000 tokens.
 server: {ctx: 122880, ckpt: 2048, kv: q8_0, think_budget: -1}
-roles: {}
+# The owner, 11-13: a telling asked for again comes out nearly the same. A retell the player asks for is sampled hotter
+# (the server's default is 0.8); change the number here.
+roles:
+  narrator: {retell_temperature: 1.15}
 dials:
   stakes: live          # B94 (D176): every profile names it
 # D246 (11-12): the telling's word budget by the kind of turn (engine/telling.py). Trial on 20 stored turns: median 162 words to

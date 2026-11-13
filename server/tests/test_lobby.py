@@ -391,3 +391,30 @@ def test_a_derived_games_content_root_is_another_games():
             continue
         assert base != g.name and base in games, g.name
         assert Path(g.content_dir).resolve() == (root / base).resolve() and Path(g.content_dir).is_dir(), g.name
+
+
+def test_a_deleted_game_leaves_none_of_its_prompt_texts(engine: Engine):
+    """B403 (the owner, 11-13): deleting a game removed its turns and its ledger and left every prompt it had sent in `blob`.
+    A prompt text goes with the last game whose calls name it; one another game still names stays."""
+    a = engine.create_instance("noir", {})
+    b = engine.create_instance("noir", {})
+    st = engine.store
+    only_a, shared = st.put_blob("a prompt only the first game sent"), st.put_blob("a system prompt both games sent")
+    st.append_ledger(a, 1, "exchange", {"role": "narrator", "system": shared, "messages": [{"role": "user", "content": only_a}]})
+    st.append_ledger(b, 1, "exchange", {"role": "narrator", "system": shared, "messages": []})
+    engine.store.delete_instance(a)
+    assert st.blobs([only_a, shared]) == {shared: "a system prompt both games sent"}
+    engine.store.delete_instance(b)
+    assert st.blobs([only_a, shared]) == {}
+
+
+def test_a_deleted_games_lines_leave_the_log(tmp_path: Path):
+    """B403: the log's lines about a deleted game go with it (its creation line carries the sheet), in place; other games' stay."""
+    from engine import logs
+    f = tmp_path / "server.log"
+    f.write_text("t INFO ta instance.create iid=aaa111 setup={'about': 'private'}\n"
+                 "t INFO ta turn.start iid=bbb222 turn=1\n"
+                 "t INFO ta step iid=aaa111 step=narrate\n")
+    (tmp_path / "server.log.1").write_text("t INFO ta turn.done iid=aaa111\n")
+    assert logs.forget(tmp_path, "aaa111") == 3
+    assert f.read_text() == "t INFO ta turn.start iid=bbb222 turn=1\n" and (tmp_path / "server.log.1").read_text() == ""

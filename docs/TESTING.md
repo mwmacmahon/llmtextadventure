@@ -13,6 +13,10 @@ it grows with every run. The tools that make and read it are in the repository (
 `server/tools/eval_report.py`). The history of each decision is in `notes/DECISIONS.md` (D41 to D44).
 
 
+**Start with [TESTS-MAP.md](TESTS-MAP.md):** every kind of test, corpus and measure in one table (what it checks, whether it
+needs a model, its cost, its data, its command), and which to run for which change. This file holds the detail of the
+older kinds.
+
 ## The pieces and their names
 
 | Piece | What it is | Where | Named |

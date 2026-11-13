@@ -1,0 +1,116 @@
+# The staged suite's scenarios for the fantasy (tools/staged.py; docs/TESTING.md). Each is a new game, a few DEBUG turns that
+# stage the moment, and the player's own words with what the engine must have done. A fault a round finds gets a scenario here,
+# with the round and the issue it came from in `why`. The sheet is plain on purpose: the scenario is the moment, not the hero.
+- id: held_run
+  why: "D255: held in a grip, running is not a Flee: getting free comes first (never reached in a played round)"
+  setup: &fighter {name: Brin Ashdown, klass: Fighter, race: Human}
+  steps:
+    - "DEBUG: room"
+    - "DEBUG: spawn zombie weak"
+    - "DEBUG: grab me"
+    - say: "I run away from it as fast as I can!"
+      expect: {fled: false, fighting: true}
+
+- id: run_at_foe
+  why: "B385: 'I run straight at the nearest one' was made a Flee by the run words"
+  setup: *fighter
+  steps:
+    - "DEBUG: room"
+    - "DEBUG: spawn 2 skeletons weak"
+    - say: "I run straight at the nearest skeleton and drive my shoulder into it."
+      expect: {fled: false, fighting: true}
+
+- id: walk_out
+  why: "B388: leaving with no run word lost its Flee to the lever's word list"
+  setup: *fighter
+  steps:
+    - "DEBUG: room"
+    - "DEBUG: spawn 2 skeletons weak"
+    - say: "I've had enough of this. I turn my back on them and walk out."
+      expect: {fled: true, fighting: false}
+
+- id: flee_no_named_place
+  why: "D253, D255: fleeing to somewhere the game has no name for still leaves the fight"
+  setup: *fighter
+  steps:
+    - "DEBUG: room"
+    - "DEBUG: spawn 2 skeletons weak"
+    - say: "I sprint off down the nearest passage and I don't look back."
+      expect: {fled: true, fighting: false}
+
+- id: hold_the_door
+  why: "B401 (the paladin round T9): a retreat to a spot inside the fight, to hold it, was read as leaving"
+  setup: *fighter
+  steps:
+    - "DEBUG: room"
+    - "DEBUG: spawn 2 skeletons weak"
+    - say: "I fall back to the doorway and plant myself in it so none of them can get past me."
+      expect: {fled: false, fighting: true}
+
+- id: threat_no_blow
+  why: "B384: a threat with the weapon levelled was rolled as an attack"
+  setup: *fighter
+  steps:
+    - "DEBUG: room"
+    - "DEBUG: spawn bandit weak"
+    - say: "I level my sword at his throat and tell him to drop the knife and get on his knees."
+      expect: {player_attack: false, fled: false}
+
+- id: plain_blow
+  why: "the ordinary case: a swing at a foe is an attack roll, and the fight goes on or ends by the dice"
+  setup: *fighter
+  steps:
+    - "DEBUG: room"
+    - "DEBUG: spawn skeleton weak"
+    - say: "I swing my longsword at the skeleton."
+      expect: {player_attack: true, fled: false}
+
+- id: yield_to_people
+  why: "B395: giving up in words the old list did not hold lost its Yield"
+  setup: *fighter
+  steps:
+    - "DEBUG: room"
+    - "DEBUG: spawn 2 bandits weak"
+    - say: "All right, all right, you win. I throw down my sword. I'm done fighting."
+      expect: {yielded: true, player_attack: false}
+
+- id: yield_shouted_with_a_blow
+  why: "B395: '\"Yield!\" I shout at him, and press the attack' was read as the player's Yield"
+  setup: *fighter
+  steps:
+    - "DEBUG: room"
+    - "DEBUG: spawn bandit weak"
+    - say: "\"Yield!\" I shout at him, and I swing my sword at his head."
+      expect: {yielded: false, player_attack: true}
+
+- id: named_sword
+  why: "B399 (the paladin round): a sword with a name of its own was no weapon, and every swing was a javelin"
+  setup: {name: Sir Aldous Brightly, klass: Paladin, race: Elf, about: "I am very tall and heroic. My sword is called EVILSLAYER II."}
+  steps:
+    - "DEBUG: room"
+    - "DEBUG: spawn skeleton weak"
+    - say: "I swing EVILSLAYER II at the skeleton."
+      expect: {player_attack: true, weapon: longsword, no_line: javelin}
+
+- id: paid_no_fight
+  why: "B390 (round 31 T11): 'collect payment for killing the rats' joined the friendly innkeeper to a fight"
+  setup: *fighter
+  steps:
+    - say: "I thank Maud warmly and ask her for my pay for killing the rats in her cellar."
+      expect: {fighting: false, no_line: "Combat begins", player_attack: false}
+
+- id: fight_opens_announced
+  why: "D245: the engine says when a fight opens"
+  setup: *fighter
+  steps:
+    - say: "I walk up to Old Hesk and punch him in the face as hard as I can."
+      expect: {player_attack: true, line: "Combat begins"}
+
+- id: drowning_way_out
+  why: "part four: under the water, swimming for the surface is a rolled way out, not a free one"
+  setup: *fighter
+  steps:
+    - "DEBUG: room"
+    - "DEBUG: drown me"
+    - say: "I kick hard for the surface."
+      expect: {check: true}

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 import threading
 import uuid
@@ -98,6 +99,9 @@ def _now() -> str:
 
 def _new_id() -> str:
     return uuid.uuid4().hex[:12]
+
+
+_HASH = re.compile(r'"([0-9a-f]{16})"')
 
 
 def blob_refs(ledger: list[dict]) -> set[str]:
@@ -270,10 +274,29 @@ class Store:
 
     @_locked
     def delete_instance(self, iid: str) -> None:
+        """The game and everything kept of it: its turns, its state, its ledger (the model's answers are in it), and the
+        prompt texts only it used (B403, the owner, 11-13: a deleted game left every prompt it had sent in `blob`, where a
+        later reader of the store would meet it)."""
         with self.conn:
             for t in ("snapshot", "transcript", "ledger"):
                 self.conn.execute(f"DELETE FROM {t} WHERE instance_id=?", (iid,))
             self.conn.execute("DELETE FROM instance WHERE id=?", (iid,))
+        self.sweep_blobs()
+
+    @_locked
+    def sweep_blobs(self) -> int:
+        """Delete every prompt text no remaining ledger row names; returns how many went. A text is kept if its hash stands
+        anywhere in a row of a kind that names blobs (wider than blob_refs reads, so nothing in use can go)."""
+        named: set[str] = set()
+        for (p,) in self.conn.execute("SELECT payload_json FROM ledger WHERE kind IN ('exchange', 'rewrite', 'sheet_built')"):
+            named.update(_HASH.findall(p))
+        have = [r[0] for r in self.conn.execute("SELECT hash FROM blob")]
+        gone = [h for h in have if h not in named]
+        with self.conn:
+            for i in range(0, len(gone), 500):
+                part = gone[i:i + 500]
+                self.conn.execute(f"DELETE FROM blob WHERE hash IN ({','.join('?' * len(part))})", part)
+        return len(gone)
 
     @staticmethod
     def _inst(r: sqlite3.Row) -> InstanceRow:

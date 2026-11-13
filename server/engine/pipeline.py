@@ -1148,6 +1148,9 @@ class Engine:
 
         # ---- 3. narrate -----------------------------------------------------
         role = self.cfg.role("narrator")
+        if replay is not None and replay.by == "player" and role.retell_temperature is not None:
+            role = role.model_copy(update={"temperature": role.retell_temperature})     # another telling, told with more play in it
+            ledger("retell_sampling", {"temperature": role.retell_temperature})
         handler = self._call_handler(game, state, iid, turn, res["assessments"], fail_streak=res.get("fail_streak", 0),
                                      hp_taken=sum(int(getattr(lv.preview, "hp_taken", 0) or 0) for lv in levers if not lv.blocked)
                                      + int((_hook(game, "turn_limits", state, adj, default=None) or {}).get("hp_taken") or 0))
@@ -1182,7 +1185,8 @@ class Engine:
             budget = min(budget or slot, slot - role.max_tokens - SLOT_MARGIN)
         ctx = build_messages(self.store, iid, self.cfg.context.window_turns, bulletin, player_text,
                              slide=self.cfg.context.window_slide, exchanges=self._exchanges(iid),
-                             max_tokens=budget, fixed_chars=len(system) + len(NARRATOR_PROTOCOL) + len(reminder or "") + 4)
+                             max_tokens=budget, fixed_chars=len(system) + len(NARRATOR_PROTOCOL) + len(reminder or "") + 4,
+                             history=self.cfg.context.history)
         if ctx.trimmed_turns or ctx.over_budget:
             log.warning("narrator.window_trimmed " + logs.kv(iid=iid, turn=turn, trimmed=len(ctx.trimmed_turns), kept=ctx.window_turns,
                                                               est_tokens=ctx.est_tokens, budget=budget, slot=slot, over=ctx.over_budget or None))

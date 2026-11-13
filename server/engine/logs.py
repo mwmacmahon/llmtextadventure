@@ -37,6 +37,27 @@ def setup_logging(log_dir: Path, level: str = "INFO", console: bool = True) -> l
     return root
 
 
+def forget(log_dir: Path, iid: str) -> int:
+    """Take every line about one game out of the server's log files (B403: the owner, 11-13, "any stuff sent / logged ... is what
+    I want purged"): a deleted game leaves no line here either (its creation line carries the sheet, a refused row its reason).
+    Each file is rewritten in place, so a handler holding it open goes on appending. Returns the lines removed."""
+    gone = 0
+    mark = f"iid={iid}"
+    for f in sorted(Path(log_dir).glob("server.log*")):
+        try:
+            lines = f.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
+        except OSError:
+            continue
+        kept = [ln for ln in lines if mark not in ln]
+        if len(kept) != len(lines):
+            gone += len(lines) - len(kept)
+            with open(f, "r+", encoding="utf-8") as fh:
+                fh.seek(0)
+                fh.writelines(kept)
+                fh.truncate()
+    return gone
+
+
 def get(name: str) -> logging.Logger:
     return logging.getLogger(f"{ROOT}.{name}")
 

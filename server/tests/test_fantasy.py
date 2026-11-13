@@ -1254,3 +1254,15 @@ def test_only_another_place_the_game_knows_is_elsewhere(game: FantasyGame):
     assert game.elsewhere(st, IntentCombat(action="x", goes_to="the flooded cellar")) == ""          # a spot inside here
     st.found_places.append(FoundPlace(name="The Bilge", within=other))
     assert game.elsewhere(st, IntentCombat(action="x", goes_to="the bilge")) == "The Bilge"           # a place found in play
+
+
+async def test_a_telling_the_player_asks_for_again_is_sampled_hotter(engine: Engine, fake: FakeProvider):
+    """The owner, 11-13: "each retelling tends to be very very similar". A narrator role with `retell_temperature` tells a
+    player-asked retell at that temperature (a ledger row says so); the first telling keeps the role's own."""
+    engine.cfg.roles["narrator"] = engine.cfg.roles["narrator"].model_copy(update={"retell_temperature": 1.15})
+    iid = engine.create_instance("fantasy", SHEET)
+    await play(engine, iid, "I look around the room.")
+    assert "retell_sampling" not in [r["kind"] for r in engine.store.ledger(iid)]
+    [e async for e in engine.play(iid, rewrite=True, hint="")]
+    rows = [r["payload"] for r in engine.store.ledger(iid) if r["kind"] == "retell_sampling"]
+    assert rows == [{"temperature": 1.15}]

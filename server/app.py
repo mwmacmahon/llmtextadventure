@@ -247,7 +247,8 @@ def set_difficulty(iid: str, body: DifficultyInput):
 def delete_instance(iid: str):
     _exists(iid)
     engine.delete(iid)
-    log.info("instance.delete " + logs.kv(iid=iid))
+    lines = logs.forget(cfg.resolve(cfg.server.log_dir), iid)       # B403: a deleted game leaves no line in the log either
+    log.info("instance.delete " + logs.kv(lines_forgotten=lines))
     return {"ok": True}
 
 

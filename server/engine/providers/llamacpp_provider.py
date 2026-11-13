@@ -140,6 +140,58 @@ def required_shape(prop: dict) -> dict:
     return prop
 
 
+GBNF_BASE = r'''
+string ::= "\"" char* "\""
+char ::= [^"\\\x7F\x00-\x1F] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F])
+integer ::= "-"? ("0" | [1-9] [0-9]{0,15})
+number ::= integer ("." [0-9]{1,8})?
+boolean ::= "true" | "false"
+null ::= "null"
+'''
+
+
+def tight_grammar(js: dict) -> str:
+    """A GBNF grammar for an inlined schema (inline_schema's output) that allows no whitespace between the JSON's tokens
+    (D264). The shapes the game's schemas use: objects with their properties in order (the first one required; an optional
+    one may be left out), strings, enums, integers, numbers, booleans, null, arrays (with maxItems), anyOf. Anything else
+    raises ValueError, and the caller falls back to the server's own grammar."""
+    rules: dict[str, str] = {}
+
+    def lit(text: str) -> str:
+        return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+    def rule(node: dict, name: str) -> str:
+        if "anyOf" in node:
+            return "(" + " | ".join(rule(o, f"{name}-{i}") for i, o in enumerate(node["anyOf"])) + ")"
+        if "enum" in node:
+            return "(" + " | ".join(lit(json.dumps(v, ensure_ascii=False)) for v in node["enum"]) + ")"
+        if "const" in node:
+            return lit(json.dumps(node["const"], ensure_ascii=False))
+        t = node.get("type")
+        if t in ("string", "integer", "number", "boolean", "null"):
+            return t
+        if t == "array":
+            item = rule(node.get("items") or {"type": "string"}, name + "-item")
+            most = node.get("maxItems")
+            more = f'("," {item}){{0,{int(most) - 1}}}' if most else f'("," {item})*'
+            return f'("[" ({item} {more})? "]")' if most != 0 else '"[]"'
+        if t == "object" and node.get("properties"):
+            props, req = node["properties"], set(node.get("required") or [])
+            keys = list(props)
+            if keys[0] not in req:
+                raise ValueError(f"{name}: the first property is optional")
+            parts = []
+            for i, k in enumerate(keys):
+                kv = f'{lit(json.dumps(k) + ":")} {rule(props[k], f"{name}-{k}")}'
+                parts.append(kv if i == 0 else (f'"," {kv}' if k in req else f'("," {kv})?'))
+            rules[name] = '"{" ' + " ".join(parts) + ' "}"'
+            return name
+        raise ValueError(f"{name}: a shape the tight grammar does not write ({t or sorted(node)[:3]})")
+
+    rules["root"] = rule(js, "obj")
+    return "\n".join(f"{k} ::= {v}" for k, v in rules.items()) + GBNF_BASE
+
+
 def schema_guide(js: dict) -> str:
     """The schema's field descriptions as a FIELDS section for the system text (D249): one line a described field, nested
     fields by their path ('intents[].check.label'). A hosted model gets these with the tool definition; llama.cpp turns the
@@ -339,7 +391,17 @@ class LlamaCppProvider:
             guide = schema_guide(schema.model_json_schema())
             system = system + ("\n\n" + guide if guide else "")
         body = self._body(role, system, messages)
-        body["response_format"] = {"type": "json_schema", "json_schema": {"name": schema.__name__, "schema": inline_schema(schema.model_json_schema())}}
+        inlined = inline_schema(schema.model_json_schema())
+        tight = None
+        if getattr(role, "tight_json", False):
+            try:
+                tight = tight_grammar(inlined)
+            except ValueError as e:
+                log.warning("llamacpp.tight_json fell back role=%s schema=%s why=%s", role.model, schema.__name__, e)
+        if tight:
+            body["grammar"] = tight                          # D264: the same answer, no padding between its tokens
+        else:
+            body["response_format"] = {"type": "json_schema", "json_schema": {"name": schema.__name__, "schema": inlined}}
         retried = False
         async with self._client(role) as client:
             r = await client.post("/v1/chat/completions", json=body)

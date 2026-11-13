@@ -53,6 +53,10 @@ class RoleConfig(BaseModel):
     # model is sent them with the tool; a local model saw only the grammar (the bare field names) and whatever the rules
     # text happened to say. Set by a profile's field_guide module.
     field_guide: bool = False
+    # A local model only (D264): the structured answer's grammar written here, with no whitespace between the JSON's tokens.
+    # llama.cpp's own grammar for a schema lets the model pad (newlines, indentation): 27 to 30% of the characters of Gemma's
+    # readings. Off: the server's grammar from the schema, as before.
+    tight_json: bool = False
     # D256: how a hosted model is held to a structured answer. "grammar": constrained decoding (output_config.format), exact
     # but capped in size (the fantasy's staked reading is at the cap: one more field is refused). "tool": a plain tool the
     # model is told to call, no grammar and so no cap; the answer is validated here and asked for again once if it fails.
@@ -94,6 +98,10 @@ class RoleConfig(BaseModel):
     # "focused3", the same with the rulings folded into the time pass. Both ARCHIVED 2026-10-30, not helping (D45)
     split: bool | Literal["focused", "focused3"] = False
     temperature: float | None = None
+    # narrator only (the owner, 11-13: asked for another telling, "each retelling tends to be very very similar"): the sampling
+    # temperature for a telling the player asked to hear again. Unset: the same as any telling. A local model's setting; the
+    # hosted provider sends no temperature (its newest models refuse one).
+    retell_temperature: float | None = None
     top_p: float | None = None          # the rest of the sampler; unset means the server's command-line defaults
     top_k: int | None = None
     min_p: float | None = None
@@ -133,6 +141,12 @@ class ServerConfig(BaseModel):
 class ContextConfig(BaseModel):
     window_turns: int = 12      # minimum number of past turns kept verbatim
     window_slide: int = 6       # the window start moves in steps of this many turns (cache stability)
+    # D263: what of its own past tellings the narrator is shown. "off": as written. "closers": less a one-line time closer
+    # (D261). "echo": that, and less every sentence that mostly says again what an earlier telling said (the refrain a model
+    # copies forward: "and the rain is on your face and the"). The player's transcript is never changed.
+    # Tried and not kept (D263): judging a sentence against the tellings after it too, so every copy of a refrain goes: on
+    # 20 late Qwen turns the echo was 18.6% against "echo"'s 18.2% (27% as written), and it moves the cached prefix.
+    history: Literal["off", "closers", "echo"] = "closers"
 
 
 class Pricing(BaseModel):

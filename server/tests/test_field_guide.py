@@ -59,3 +59,20 @@ def test_one_reader_for_where_an_intent_goes():
     assert destination(IntentCombat(action="x", transition="move:the_hill via:gate")) == "the_hill"
     assert destination(IntentCombat(action="x", transition="take:lantern")) == ""           # was read as a place by two of five readers
     assert destination(IntentCombat(action="x", transition="drop:horn lantern")) == "" and destination(IntentCombat(action="x")) == ""
+
+
+def test_the_tight_grammar_writes_the_schema_with_no_room_for_padding():
+    """D264: a GBNF grammar for a local model's structured answer with no whitespace between the JSON's tokens: the properties
+    in order, an optional one in brackets, enums as their quoted words, a bounded list, a nullable field."""
+    from engine.providers.llamacpp_provider import inline_schema, tight_grammar
+    from engine.roles import ChangeReport
+    for schema in (AssistantReadingCombat, ChangeReport):
+        g = tight_grammar(inline_schema(schema.model_json_schema()))
+        assert g.startswith("obj") or "root ::= obj" in g
+        assert "space" not in g and " ws " not in g and '"\\"kind\\":"' in g
+    g = tight_grammar({"type": "object", "properties": {"a": {"type": "string"}, "b": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+                                                         "c": {"type": "array", "items": {"enum": ["x", "y"]}, "maxItems": 3}}, "required": ["a", "c"]})
+    assert 'obj ::= "{" "\\"a\\":" string ("," "\\"b\\":" (integer | null))? "," "\\"c\\":" ("[" (("\\"x\\"" | "\\"y\\"") ("," ("\\"x\\"" | "\\"y\\"")){0,2})? "]") "}"' in g
+    import pytest
+    with pytest.raises(ValueError):
+        tight_grammar({"type": "object", "properties": {"a": {"type": "string"}}, "required": []})
