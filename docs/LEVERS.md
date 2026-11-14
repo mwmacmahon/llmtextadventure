@@ -935,6 +935,8 @@ rounds stays on and may lose its switch; one that has not goes with its code. Al
 | `not_today` | a booked show at a place the turn concerns, more than an hour and a half off, is named to the narrator as not played today, with its day and hour | before it: a show told in full two days early and again on its day (round 4, 2026-11-14) |
 | `skip_anchor` | each telling of days let run is given a different thing of the house to open on (the kitchen, the cashbox, the weather, what was trained), from what the engine knows | before it: ten skips in one round opened on the same blur of days (round 4, the reader); not yet played |
 | `unheard_kept` | a week's offer whose caller has not come yet is not closed on Sunday night | before it: an offer made the morning after it closed, accepted, and never booked (round 5) |
+| `worn_mornings` | the house's word to the narrator that a girl is worn before a show is given in the mornings only | before it: on six turns of 60, twice running (round 6, the reader); not yet played |
+| `her_floor` | a show gone to is the girl's: the proprietor watches unless the player's words put them on the floor | before it: three of four shows told as the proprietor covering for her (rounds 5 and 6, the readers); not yet played |
 | `axis_note` | the referee is told when the player's character dealt directly with someone of the house, and asked for the three standings | before it: 6 standing rows in 57 turns over 20 such attempts, then 9 in 55 of which 7 were love up; with it (round 4, 55 turns): 15 rows (love up 8 and down 2, fear up 4, respect up 1), which the reader found matched how each was treated |
 
 The reading in two steps with the game's kinds of attempt is the profile module `reading_steps` (§2); the lever phrase

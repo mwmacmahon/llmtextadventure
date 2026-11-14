@@ -2118,4 +2118,7 @@ def test_round_five_a_contract_named_in_the_reading_is_the_one_bought():
         Option(id="liesl_wark", label="Liesl Wark, 23, off a ship; 250 gold"), Option(id="winnie_dace", label="Winnie Dace, 16, the harbour; 250 gold")])])
     assert _parse_command_args(take, [], set(), set(), "The proprietor buys Winnie Dace's contract.") == ({"girl": "winnie_dace"}, "")
     assert _parse_command_args(take, [], set(), set(), "The proprietor buys a contract.")[1].startswith("Which contract?")
+    book = SimpleNamespace(params=[Param(must_name=True, name="booking", label="booking", default="sorrel", options=[
+        Option(id="sorrel", label="The Widow Sorrel's fourteenth"), Option(id="bargemans_arms", label="A free-and-easy at the Bargeman's Arms (no girl free that day)")])])
+    assert _parse_command_args(book, [], set(), set(), "The proprietor books Dorothea for the free-and-easy at the Bargeman's Arms.") == ({"booking": "bargemans_arms"}, "")
     assert _parse_command_args(take, [], set(), set(), "He weighs Liesl Wark against Winnie Dace.")[1].startswith("Which contract?")

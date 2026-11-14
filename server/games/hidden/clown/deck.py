@@ -532,7 +532,8 @@ def deal_week(state: ClownState, deck: dict, content_hooks: dict[str, dict], rng
         # round 5 (11-14, turns 43 to 47): a week let run whole passed a card whose caller had not yet come; the caller came the
         # next morning with an offer already closed, the player said yes, and nothing could be booked. A card nobody has heard
         # of is not passed: it stays in hand for the week that starts, and its caller still comes
-        if sw.on("unheard_kept") and any(e.id == f"{other.id}_reach" and not e.fired for e in state.hidden.events):
+        # (round 6, turns 32 and 33: the caller's word came inside the very skip that closed the week; heard, and closed the turn after)
+        if sw.on("unheard_kept") and any(e.id == f"{other.id}_reach" and (not e.fired or (e.fired_turn is not None and e.fired_turn >= turn - 1)) for e in state.hidden.events):
             continue
         other.status, other.closed_turn = "passed", turn
         state.hidden.events = [e for e in state.hidden.events if not (e.id == f"{other.id}_reach" and not e.fired)]

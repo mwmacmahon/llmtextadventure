@@ -997,7 +997,9 @@ class ClownGame(GameBase):
         for t in h.tells[:2]:                           # D215C: a night's challenge, settled by the engine; the narrator plays it
             out.append(("night", f"IN THE NIGHT (settled, told now): {t}. Tell it in a line or two where it fits, as what {p.name} finds or hears; "
                        f"never undo what happened."))
-        for g, x, when in self._worn_before_show(s)[:1]:   # D211C: the house notices, in words
+        # the reader of round 6 (11-14): Mrs Pell's word that the girl is worn came on six turns, twice running. The house says it
+        # in the morning; the panel and the player's own line carry it the rest of the day (switch worn_mornings)
+        for g, x, when in (self._worn_before_show(s)[:1] if (s.clock.minute < 840 or not sw.on("worn_mornings")) else []):   # D211C: the house notices, in words
             out.append(("worn", f"WORN BEFORE A SHOW: {g.name} is {g.fatigue_word}, with {x.title} {when}. If it fits the scene, someone in the house "
                        f"notices it in a line (Mrs Pell, the girl herself); never a number."))
         for x in s.shows:
@@ -1011,7 +1013,10 @@ class ClownGame(GameBase):
                 if x.attended:
                     out.append(("show", f"THE SHOW, as it went: {x.title} at {x.venue}: {words}. Why: {why} {paid} Write the show from the first routine to the "
                                f"client's face at the end, in the fiction's words, showing the why and never saying it, and stop where {p.name} would next decide. "
-                               f"No number but the money."))
+                               f"No number but the money."
+                               + (f" The floor is hers: {p.name} watches from where the player's words put them and does not step in, speak for her or "
+                                  f"cover for her unless the player's words this turn say so; what goes well or badly is seen in her and in the room."
+                                  if sw.on("her_floor") else "")))
                 else:
                     out.append(("show_word", f"Word of the show: {x.title} at {x.venue}, which {p.name} did not attend: {words}. Why: {why} {paid} Fold it in where it fits, "
                                f"in a line or two (what the girl says when she comes in, what Mrs Pell heard, the client's note); do not stage the show."))
@@ -3211,7 +3216,7 @@ class ClownGame(GameBase):
             f"{g.name} at table in the evenings" if g is not None else "") if x]
         n = int(s.flags.get("_skips_told") or 0)
         s.flags["_skips_told"] = n + 1
-        opener = f" Open the line on {anchors[n % len(anchors)]}." if sw.on("skip_anchor") else ""
+        opener = f" The line's first words are about {anchors[n % len(anchors)]}; the days going by come after that, in the same sentence." if sw.on("skip_anchor") else ""
         return (f"The days ran only as far as the game state's clock says (its Time line: the day and the hour), and no further: if that is "
                 f"short of {meant}, something stopped them, and THIS TURN says what. Write the time passing up to that day and hour in a line or "
                 f"two, in new words: no sentence, image or sound from an earlier telling of days passing comes back.{opener} Name the day THIS TURN's clock "
@@ -3534,7 +3539,7 @@ class ClownGame(GameBase):
             to = s.girl(x.girl) if x.girl else None
             hk = s.hook(x.deal or x.hook)
             if hk is not None:                                               # the referee's note on the card said "Ada assigned" to the round's end
-                hk.note = f"{g.name} was sold on; " + (f"{to.name} goes." if to else "nobody is set to go: whoever is in training on the day goes.")
+                hk.note = f"{g.name}, who was to go, was sold on."       # who goes now is the Booked line's own (round 6: the note went stale on a new Book)
         if hers:
             tail += " Her bookings stay with the house: " + "; ".join(f"{x.title} ({(s.girl(x.girl).name + ' goes') if x.girl and s.girl(x.girl) else 'nobody set to go yet'})" for x in hers) + "."
         if s.active and s.active_girl is not None and s.active_girl.id != g.id and s.plan.set_week and g.id == state.active:

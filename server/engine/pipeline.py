@@ -3901,7 +3901,8 @@ def _parse_command_args(spec: Any, raw: list[str], named: set[str] | None = None
                 # reading has an id for. The option whose own name stands in the reading's attempts is the one meant: a name
                 # looked up, not a meaning guessed (a name is the part of an option's label before its first comma or bracket)
                 low = words.lower()
-                byname = [o.id for o in p.options if (nm := re.split(r"[,(]", o.label, maxsplit=1)[0].strip().lower()) and len(nm) >= 4 and nm in low]
+                # (round 6, turn 42: "the free-and-easy at the Bargeman's Arms" against the card's "A free-and-easy at ...": the article is not the name)
+                byname = [o.id for o in p.options if (nm := re.sub(r"^(?:a|an|the)\s+", "", re.split(r"[,(]", o.label, maxsplit=1)[0].strip().lower())) and len(nm) >= 4 and nm in low]
                 if len(byname) == 1:
                     said = byname
             if len(p.options) > 1 and len(said) != 1:

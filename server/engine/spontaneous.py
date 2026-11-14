@@ -93,7 +93,9 @@ def roll(items: list[Spontaneous], doc: dict, rng: random.Random, elapsed_minute
         # C115 (the reader, 11-14): a cooldown in game minutes means nothing to a turn that runs days, so the same street
         # texture fired on skip after skip and the narrator wrote it again each time. A happening that changes nothing and
         # brings nobody (pure texture) also waits a number of TURNS, when the game asks for it (`texture_gap_turns`).
-        if texture_gap_turns and not it.effects and not it.who and it.last_fired_turn is not None and turn - it.last_fired_turn < texture_gap_turns:
+        # Round 6 (11-14): the same child at the gate, asking the same thing, four times in 60 turns: a caller who changes
+        # nothing waits the same turns as any other texture.
+        if texture_gap_turns and not it.effects and it.last_fired_turn is not None and turn - it.last_fired_turn < texture_gap_turns:
             continue
         if rng.random() >= per_turn_chance(it.chance_per_hour, elapsed_minutes):
             continue
