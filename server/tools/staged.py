@@ -244,6 +244,13 @@ def check_any(exp: dict, rows: list[dict], before: dict, after: dict) -> list[st
             bad.append(f"reading settled attempts: {len(fiat)}, wanted {rd['settled']}")
         if "commands" in rd and cmd != sorted(rd["commands"]):
             bad.append(f"reading commands: {cmd}, wanted {sorted(rd['commands'])}")
+        said = list(adj.get("attempt_kinds") or [])            # a game's own kinds of attempt (the two-step reading)
+        for k in ([rd["kinds_has"]] if isinstance(rd.get("kinds_has"), str) else rd.get("kinds_has") or []):
+            if k not in said:
+                bad.append(f"reading kinds: {said}, wanted {k}")
+        for k in ([rd["kinds_lack"]] if isinstance(rd.get("kinds_lack"), str) else rd.get("kinds_lack") or []):
+            if k in said:
+                bad.append(f"reading kinds: {said}, wanted no {k}")
         if "check_at" in rd and rd["check_at"] not in [c.get("target_entity") for c in checks]:
             bad.append(f"reading: no check at {rd['check_at']} ({[c.get('target_entity') for c in checks]})")
         if "no_check_at" in rd and rd["no_check_at"] in [c.get("target_entity") for c in checks]:

@@ -116,6 +116,7 @@ class Engine:
         self.store = store
         self.games = games
         self._tapes: dict[str, Any] = {}          # iid -> the running turn's ledger writer, for the tape (engine/tape.py)
+        self._lever_ask: dict[str, tuple[str, str]] = {}            # D279: iid -> (the lever's label, the question) of a lever that needs a choice named
         self._block_pending: dict[str, tuple[int, str, Any]] = {}   # D210C: iid -> (turn, the text, the reading) a "yes" would spend
         self._asides: dict[str, Any] = {}         # iid -> an aside's learned pass still running (B244); a turn waits for it
         self._mods_cache: dict[str, list[dict]] = {}   # iid -> the mods its save was made with (B79)
@@ -909,7 +910,7 @@ class Engine:
         extra_directives: list[str] = []
         block_confirmed = False
         pend_b = self._block_pending.pop(iid, None) if command is None and replay is None else None
-        if pend_b is not None and pend_b[0] == turn and BLOCK_YES.match((player_text or "").strip()):   # D210C: the player said yes
+        if pend_b is not None and pend_b[0] == turn and BLOCK_YES.search((player_text or "").strip()):   # D210C: the player said yes
             player_text, adj, block_confirmed = pend_b[1], pend_b[2].model_copy(deep=True), True
             ledger("block_confirmed", {"text": player_text})
         if command is None:                                  # D205C: a game may read a command in the player's own words ("skip to Wednesday")
@@ -1037,6 +1038,16 @@ class Engine:
         if command is None and adj is not None and adj.kind != "clarify" and adj.commands:
             adj, levers = self._preview_levers(game, state, adj, iid, turn, ledger, player_text or "")
             extra_directives.extend(lv.directive for lv in levers)
+            # D279: a lever the reading picked that cannot run until the player says which (who is sold, which contract) is asked
+            # in the engine's own words when the game says so, with no telling: round 4 of the hidden game (11-14) asked the
+            # narrator to put "Which contract?" in character twice, and twice it told the contract as bought and paid
+            lask = self._lever_ask.pop(iid, None)
+            if lask and adj.kind == "clarify" and getattr(game, "lever_ask_plain", False) and replay is None:
+                self.store.drop_transcript_turn(iid, turn)
+                ledger("lever_ask", {"text": player_text, "lever": lask[0], "ask": lask[1]})
+                self._tapes.pop(iid, None)
+                yield {"event": "command", "data": {"ok": False, "text": f"{lask[1]} Say it again with that named; nothing is done yet.", "mode": "engine", "label": lask[0]}}
+                return
         if replay is not None and replay.by not in ("eval", "owner"):
             who = "the referee" if replay.by == "referee" else "the player"
             if replay.hint:
@@ -1882,10 +1893,12 @@ class Engine:
                     continue
             named = ({x for i in adj.intents for x in (getattr(i, "targets", None) or [])} | set(getattr(getattr(adj, "focus", None), "people", None) or [])
                      | set(getattr(adj, "entities", None) or []))
-            args, problem = _parse_command_args(spec, pick.args, named)
+            people = {x for i in adj.intents for x in (getattr(i, "targets", None) or [])} | set(getattr(getattr(adj, "focus", None), "people", None) or [])
+            args, problem = _parse_command_args(spec, pick.args, named, people)
             if problem:
                 ledger("command", {"id": spec.id, "args": args, "mode": spec.mode, "typed": True, "ok": False, "text": problem})
                 log.info("command.typed.refused " + logs.kv(iid=iid, turn=turn, id=spec.id, kind="clarify", why=problem))
+                self._lever_ask[iid] = (spec.label, problem)
                 return adj.model_copy(update={"kind": "clarify", "clarify_question": problem, "time_minutes": 0,
                                               "intents": [i.model_copy(update={"check": None}) for i in adj.intents],
                                               "commands": []}), []
@@ -3226,7 +3239,8 @@ def own_words(text: str) -> str:
     return QUOTED.sub(" ", text or "")
 
 
-BLOCK_YES = re.compile(r"^(?:y|yes|yeah|yep|ok|okay|sure|go on|do it|spend it|confirm(?:ed)?)[.!]?$", re.I)   # D210C: the player's yes to
+BLOCK_YES = re.compile(r"(?:^|[.!?]\s+)(?:y|yes|yeah|yep|ok|okay|sure|go on|do it|spend it|confirm(?:ed)?)"                # D210C: the player's yes to
+                       r"(?:[,.! ]+(?:i(?:'ll| will| do)?[, ]+)?(?:spend|take|use) (?:it|the (?:whole |rest of the )?\w+)(?: on (?:it|that|this))?)?[.!]?$", re.I)
                                                                                                           # the engine's own question
 
 
@@ -3857,7 +3871,7 @@ def _commands_text(specs: list[Any]) -> str:
     return "\n".join(lines)
 
 
-def _parse_command_args(spec: Any, raw: list[str], named: set[str] | None = None) -> tuple[dict[str, str], str]:
+def _parse_command_args(spec: Any, raw: list[str], named: set[str] | None = None, people: set[str] | None = None) -> tuple[dict[str, str], str]:
     """'name=value' pairs -> validated args. Values match an option id exactly, else an id or
     label case-insensitively. Returns (args, problem): a non-empty problem is the question to ask."""
     given: dict[str, str] = {}
@@ -3871,11 +3885,14 @@ def _parse_command_args(spec: Any, raw: list[str], named: set[str] | None = None
     args: dict[str, str] = {}
     for p in spec.params:
         v = given.get(p.name, "")
-        if not v and getattr(p, "must_name", False) and named is not None and len(p.options) > 1:
+        if not v and getattr(p, "must_name", False) and named is not None:
             said = [o.id for o in p.options if o.id in named]      # the reading's own ids: its targets and focus
-            if len(said) != 1:
+            others = sorted(x for x in (people or ()) if x not in {o.id for o in p.options})
+            if len(p.options) > 1 and len(said) != 1:
                 return args, f"Which {p.label}? ({', '.join(o.label for o in p.options)})"
-            v = said[0]
+            if not said and others:     # round 4 (11-14): "sell Dorothea", who has no contract to sell; one choice, and Ada was sold
+                return args, f"That is not one of the choices for {p.label}: {', '.join(o.label for o in p.options)}."
+            v = said[0] if said else v
         v = v or getattr(p, "default", "")
         if not v and len(p.options) == 1:   # round 32 T2 (906e3e1f1a93): "I take the job", one job on offer, and the command
             v = p.options[0].id             # was refused with "Which Job? (Rats in the Cellar)": one choice needs no asking

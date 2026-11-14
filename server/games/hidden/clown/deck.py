@@ -209,9 +209,14 @@ def deal(state: ClownState, hook: dict, *, turn: int, deal_abs: int, name: str) 
     again = ""
     if before and sw.on("asks_again"):
         last = before[-1]
-        how = {"done": "the house played it", "failed": "it went badly", "passed": "it was left unanswered and lapsed"}.get(last.status, "nothing came of it")
+        how = {"done": "the house played it", "failed": "it went badly", "passed": "the house did not take it (refused or let lapse: the story so far says which)"}.get(last.status, "nothing came of it")
         again = (f" This is not the first time: they asked before, and {how}. They ask again now, and say so: shorter, in new words, "
                  f"none of the first visit's sentences.")
+    # round 4 (11-14): a client who asks again pays more (harder), and the card's own words still said the first fee: the panel
+    # read 18 gold and the caller said fourteen. The figure is the engine's, said after the card's words
+    payer = next((q for pr in raw.get("people") or [] if (pr.get("client") or {}) and (q := state.person(pr.get("id") or "")) is not None and q.client is not None), None)
+    if count > 1 and payer is not None:
+        again += f" The fee they name this time is {int(payer.client.pays)} gold, more than before: say that figure and no other."
     for e in hook_events(hook, inst, deal_abs, name, when):
         if again and e["id"].endswith("_reach") and e.get("directive"):
             e["directive"] = str(e["directive"]).rstrip() + again

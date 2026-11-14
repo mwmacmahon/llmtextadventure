@@ -22,6 +22,10 @@ from . import switches as sw
 KINDS: dict[str, dict[str, str]] = {
     "desk": {"what": "only a command the game lists and nothing more (the week's plan, a listed booking taken, a switch, an upgrade, a contract "
                      "bought or sold): the command decides it. Asking a person for work they have not offered is town", "settle": "command"},
+    "skip": {"what": "letting whole days go by, to another day or to a show's day (\"then skip to the show\", \"and let the week run\"): days "
+                     "pass only by the player's own Skip, said on its own", "settle": "fails",
+             "outcome": "The days do not pass on this turn; it ends on the same day and hour it would have without those words.",
+             "why": "days pass only by the player's own Skip"},
     "outing": {"what": "the proprietor leaves the building or lets hours pass: going from the house into the town, from one part of the town to "
                        "another, or back home, alone or with a girl; waiting or resting for a part of the day; watching a whole show; teaching "
                        "or practising for hours. It takes the rest of this part of the day; nothing resists. A room or the yard of the house "
@@ -34,14 +38,15 @@ KINDS: dict[str, dict[str, str]] = {
     "town": {"what": "asked of, or done to, someone of the town who could refuse or resist, where it matters: a favour, a lie they could "
                      "check, a threat, a way past them, the proprietor performing for a crowd; also anything asked of a girl who is not of the "
                      "house yet (met about the town, or at the door asking)", "settle": "check"},
-    "hopeless": {"what": "the words plainly miss: a demand nobody in their place would grant", "settle": "fails"},
+    "hopeless": {"what": "the words plainly miss: a demand nobody in their place would grant; or taking back what a command has already done "
+                         "(a sale, a purchase, a booking made): done is done", "settle": "fails"},
     "errand": {"what": "small and where they stand, or a step into another room or the yard of the house: a plain question, a small purchase, a "
                        "greeting: routine, nothing resists. Asking a favour is town", "settle": "works"},
     "look": {"what": "looking, reading, recalling, or asking how the game works", "settle": "works"},
 }
 
 if not sw.on("outing_kind"):       # the table as it was to the night of 11-14: one kind for going somewhere and for a plain question
-    del KINDS["outing"]
+    del KINDS["outing"], KINDS["skip"]
     KINDS["errand"] = {"what": "going somewhere, waiting, watching, practising, a small purchase, a plain question to anyone, a talk nobody has "
                                "reason to refuse: routine, nothing resists", "settle": "works"}
 

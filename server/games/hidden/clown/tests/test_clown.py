@@ -2080,3 +2080,22 @@ def test_going_out_is_its_own_kind_and_spends_the_part_of_the_day():
     assert block_spend(g.clock, out, 10, 0)[0] is True
     assert "task_said" not in HouseReadingStaked.model_json_schema()["properties"]
     assert g.word_guards["task-kind-words"] == "count"
+
+
+def test_round_four_levers_that_hit_the_wrong_girl_or_were_told_as_done():
+    """Round 4 (11-14, D279): "sell Dorothea", who came of herself and has no contract, sold Ada (the one choice); a plan said
+    for the new girl overwrote the plan of the one in training; a sold girl's bookings became "nobody went"; a plain yes with
+    more words after it was not taken as the yes to the engine's own question."""
+    from types import SimpleNamespace
+
+    from engine.game import Option, Param
+    from engine.pipeline import BLOCK_YES, _parse_command_args
+
+    spec = SimpleNamespace(params=[Param(must_name=True, name="girl", label="whose", options=[Option(id="ada_vosk", label="Ada Vosk (129 gold)")], default="ada_vosk")])
+    args, problem = _parse_command_args(spec, [], {"dot"}, {"dot"})
+    assert problem and "Ada Vosk" in problem and not args                        # someone named who is not a choice: asked, nobody sold
+    assert _parse_command_args(spec, [], set(), set()) == ({"girl": "ada_vosk"}, "")       # nobody named and one choice: it stands
+    assert _parse_command_args(spec, [], {"ada_vosk"}, {"ada_vosk"}) == ({"girl": "ada_vosk"}, "")
+    assert BLOCK_YES.search("Yes, I'll spend the morning on it.") and BLOCK_YES.search("I wander about. Yes, spend the evening on it.")
+    assert not BLOCK_YES.search("Yes Mrs Teague, I will take the booking.")
+    assert make_game(CONTENT).lever_ask_plain is True

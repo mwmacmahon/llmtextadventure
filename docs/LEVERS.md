@@ -928,6 +928,7 @@ rounds stays on and may lose its switch; one that has not goes with its code. Al
 | `event_words` | an event that fires on a turn adds words to the telling's length | skips given 40 words wrote 75 to 104 before it; a median of 0.97 written against given after |
 | `asks_again` | a client dealt a second time says they have asked before, in new words | not yet |
 | `outing_kind` | going out (into the town, across it, home again, waiting, a whole show watched) is its own kind of attempt and the only one that spends the part of the day; a plain question or a step into another room does not | before it the engine's verb list decided: see `task-kind-words`, §8 |
+| `not_today` | a booked show at a place the turn concerns, more than an hour and a half off, is named to the narrator as not played today, with its day and hour | before it: a show told in full two days early and again on its day (round 4, 2026-11-14) |
 | `axis_note` | the referee is told when the player's character dealt directly with someone of the house, and asked for the three standings | before it: 6 standing rows in 57 turns over 20 such attempts |
 
 The reading in two steps with the game's kinds of attempt is the profile module `reading_steps` (§2); the lever phrase

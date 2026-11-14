@@ -211,6 +211,7 @@ class ClownGame(GameBase):
     adjudication_schema_staked = HouseReadingStaked   # reading.py: the engine's forms, with this game's kinds of attempt for the two-step reading
     in_place = False                 # the simulator (tools/sim.py, D212C): after_turn and run_command work on the state they are given,
                                      # no copy; never in play, where a refused command must leave the state as it was
+    lever_ask_plain = True                     # D279: "Which contract?" is asked in the engine's words, with no telling
     word_guards = {"lever-phrases": "count", "task-kind-words": "count"}   # C112, D275 (the owner, 11-14): no phrase list between the reading's pick and the lever;
                                                # the pick's own arguments and the lever's refusal are the checks; the list only counts
     texture_gap_turns = 15           # C115: a street's texture (a bell, the fog) is not handed to the narrator again for fifteen turns
@@ -927,12 +928,16 @@ class ClownGame(GameBase):
         girl of the house and 6 rows on how she stands in 57 turns, against the rules' "two weeks of scenes with no row is
         wrong". On a turn the reading aims at a girl of the house, the referee is told so and asked for her three axes first.
         Assumes of the reading: who the attempt is aimed at (ids, an easy field)."""
-        if not sw.on("axis_note") or adj is None:
+        if adj is None:
             return []
         ids = [x for i in (getattr(adj, "intents", None) or []) for x in (getattr(i, "targets", None) or [])]
         out = []
+        if "skip" in (getattr(adj, "attempt_kinds", None) or []):     # a scene, 11-14: the referee had the turn retold three times for "not skipping to Thursday"
+            out.append(f"The player's words asked for days to be skipped inside this turn. The engine refused that part: days pass only by the Skip "
+                       f"command, said on its own. The prose is right to stay on this day and hour; that the days did not pass is not a contradiction "
+                       f"and not a line left unplayed, and no row moves the clock.")
         for g in state.girls:
-            if g.id in ids and g.in_house():
+            if sw.on("axis_note") and g.id in ids and g.in_house():
                 out.append(f"This turn {state.player.name} dealt directly with {g.name} ({g.id}; now: {axis_word('love', g.love)}, {axis_word('respect', g.respect)}, "
                            f"{axis_word('fear', g.fear)}). Weigh her love, her respect and her fear, each on its own, from what the prose "
                            f"shows {state.player.name} do or say to her and how she takes it. An ordinary talk, an order given and done, a "
@@ -941,7 +946,7 @@ class ClownGame(GameBase):
                            f"someone well in front of her, and down when he is shown a fool; fear, on a threat, a punishment or cruelty seen; "
                            f"love, on a real kindness, a side taken, a promise kept, and down on a promise broken, a shaming, a cold use of "
                            f"what she told him. Love does not rise two turns running for the same sort of kindness.")
-        return out[:2]
+        return out[:3]
 
     def scene_block(self, state: ClownState, adj: Any, audience: str) -> str:
         if audience != "narrator" or adj is None or not sw.on("outsider_block"):
@@ -2121,7 +2126,23 @@ class ClownGame(GameBase):
         due = [x for x in sorted(state.shows, key=lambda x: x.at_abs) if not x.result and now - 720 <= x.at_abs <= now + 90
                and (state.player.location == x.venue or x.venue in going)]
         if not due:
-            return state, w
+            # round 4 (11-14, turn 37): the proprietor walked the girl to a venue two days early and the show was told in full,
+            # then played again on its day. A booked show at a place this turn concerns, not due, is named as not today
+            early = [x for x in sorted(state.shows, key=lambda x: x.at_abs) if not x.result and x.at_abs > now + 90 and x.venue in going] if sw.on("not_today") else []
+            said_skip = "skip" in (getattr(adj, "attempt_kinds", None) or [])
+            if not early and not said_skip:
+                return state, w
+            s = state if self.in_place else state.model_copy(deep=True)
+            for x in early[:1]:
+                days = x.at_abs // DAY - now // DAY
+                when = "later today" if days == 0 else "tomorrow" if days == 1 else f"in {days} days"
+                w.directives.append(f"NOT TODAY: {x.title} at {x.venue} is booked for {WEEKDAYS[weekday(x.at_abs // DAY)]} of week {week_of(x.at_abs // DAY)} at "
+                                    f"{hhmm(x.at_abs % DAY)}, {when}. It is {WEEKDAYS[weekday(now // DAY)]}, {hhmm(now % DAY)} now. The show is not played this turn "
+                                    f"and no part of it is told: nobody is gathered at {x.venue} for it and nobody there expects a clown yet. If the "
+                                    f"proprietor goes there, they find the place as it is on an ordinary day, and whoever they meet says when it is.")
+            if said_skip:                          # the player's line on how days are let run
+                w.mechanics.append("The days did not pass: a skip is said on its own, as its own turn (\"skip to Thursday\", \"skip to the show\").")
+            return s, w
         s = state if self.in_place else state.model_copy(deep=True)
         x = next(y for y in s.shows if y.id == due[0].id)
         by = "place" if s.player.location == x.venue else "reading"
@@ -2949,7 +2970,9 @@ class ClownGame(GameBase):
                                    Param(name="with", label="taught by", options=[Option(id="house", label="The house (free)"),
                                          Option(id="tutor", label=f"A tutor ({int(dk.dial(s, 'tutor_cost'))} gold a slot, x{dk.dial(s, 'tutor_gain'):g})"),
                                          Option(id="master", label=f"A master ({int(dk.dial(s, 'master_cost'))} gold a slot, x{dk.dial(s, 'master_gain'):g}"
-                                                + (")" if s.house.renown >= dk.dial(s, 'master_renown') else f"; not until the house has a name)"))], default="house")],
+                                                + (")" if s.house.renown >= dk.dial(s, 'master_renown') else f"; not until the house has a name)"))], default="house"),
+                                   *([Param(name="girl", label="whose plan", options=[Option(id=g.id, label=g.name + (" (in training)" if g.id == s.active else " (on the bench)")) for g in s.in_house()],
+                                            default=s.active)] if s.active and len(s.in_house()) > 1 else [])],
                            hint="Set what the girl in training does in the mornings or the afternoons this week: one of the fifteen skills, Rest, or a job in town (a little money, and her diligence, which helps every slot after). The plan holds until changed.",
                            words=["plan", "train", "put her on", "work on", "practise", "practice", "mornings", "afternoons", "rest", "drill"]))
         out.append(CommandSpec(id="better", label="Better yourself", mode="narrated",   # D215C
@@ -3214,6 +3237,10 @@ class ClownGame(GameBase):
         g = s.active_girl
         if g is None or not g.in_house():
             return state, CommandResult(ok=False, label="Plan", text="There is nobody in training.")
+        whom = s.girl(str(args.get("girl") or ""))
+        if whom is not None and whom.id != g.id:      # round 4 (11-14): a plan said for the new girl overwrote the plan of the one in training
+            return state, CommandResult(ok=False, label="Plan", text=f"The plan is {g.name}'s: she is the one in training. {whom.name} is on the bench until you "
+                                                                     f"Switch to her (the one put aside loses a point of love), and then the plan is set for her.")
         if skill in g.untrainable and not s.flags.get(f"{g.id}_spoke"):
             return state, CommandResult(ok=False, label="Plan", text=f"{g.name} cannot work on {self.skill_name(skill).lower()}, not yet.")
         setattr(s.plan, slot, skill)
@@ -3471,9 +3498,18 @@ class ClownGame(GameBase):
         self._note(s, f"{g.name}'s contract sold on; she left the house.", f"{g.name}'s contract sold on for {paid} gold (her contract value {value} gold); she left the house.")
         self._tally(s, f"The shed's book: {g.name}'s contract value {value} gold, sold on at {dk.dial(s, 'sell_share'):g} for {paid} gold.")
         tail = ""
+        hers = [x for x in s.shows if x.girl == g.id and not x.result]     # round 4 (11-14): her bookings stayed hers; the next was "nobody went"
+        for x in hers:
+            x.girl = ""                                                      # whoever is in training on the day goes (_resolve_show)
+            hk = s.hook(x.deal or x.hook)
+            if hk is not None:                                               # the referee's note on the card said "Ada assigned" to the round's end
+                hk.note = f"{g.name} was sold on; whoever is in training on the day goes."
+        if hers:
+            tail += (f" Her {len(hers)} booking{'s' if len(hers) != 1 else ''} ({', '.join(x.title for x in hers)}) stay{'s' if len(hers) == 1 else ''} with the house: "
+                     "whoever is in training on the day goes, unless you Book another.")
         if s.active and s.active_girl is not None and s.active_girl.id != g.id and s.plan.set_week and g.id == state.active:
             s.plan = Plan(set_week=s.house.week)
-            tail = f" {s.active_girl.name} is in training from now; the plan is empty."
+            tail += f" {s.active_girl.name} is in training from now; the plan is empty."
         line = f"{g.name}'s contract is sold on; she is gone from the house." + tail
         directive = (f"{p.name} tells {g.name} her contract is sold on through the shed's book, and she is to go today. Play the telling where she is (the game "
                      f"state says), short: what she says back in her own voice (her file in the game state: heartbroken, defiant, relieved, silent, whatever she "
