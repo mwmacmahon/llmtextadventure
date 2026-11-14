@@ -1756,7 +1756,8 @@ def test_the_reading_is_the_newer_form_and_the_staked_one_carries_the_settled_at
     from engine.roles import AssistantReadingStaked, AssistantReadingV2
     st = new(game)
     system, msgs, schema = adjudicator_inputs(game, st, [], "I tell her to sit down.", stakes=True)
-    assert issubclass(game.adjudication_schema, AssistantReadingV2) and schema is AssistantReadingStaked and "fiat" in schema.model_fields
+    assert issubclass(game.adjudication_schema, AssistantReadingV2) and issubclass(schema, AssistantReadingStaked) and "fiat" in schema.model_fields
+    assert "attempt_kinds" not in schema.model_json_schema()["properties"] and "lean_kinds" not in schema.model_json_schema()["properties"]
     assert "No die is rolled here" in system                      # the stakes' rules, in this game's terms
     assert "- Climbing and physical" not in system and "The town's people:" in system    # its own edge lines for the engine's five
     view = msgs[-1].content

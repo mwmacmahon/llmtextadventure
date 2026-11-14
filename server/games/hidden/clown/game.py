@@ -16,17 +16,18 @@ from engine import threads as th
 from engine.events import Event, next_moment, clock_text as ev_clock_text
 from engine.game import (Chip, ClockSpec, CommandResult, CommandSpec, Commands, EntityCard, EntityCards, GameBase, ListPanel, LogPanel,
                          Meter, MeterGroup, Option, Param, QuestPanel, QuestRow, StatusStrip, Table, TableCell, TaskRow, TurnInfo, UISchema)
-from engine.gamekit import Clock, Writer, quest_line
+from engine.gamekit import Clock, Writer, flags_named, quest_line
 from engine.mechanics import CheckRequest, Modifier
 from engine.pipeline import next_block
 from engine.pending import Pending, PendingNew, add as add_pending, by_tag
 from engine.resolve import Quest
-from engine.roles import AssistantReadingV2, Change
+from engine.roles import Change
 from engine.spontaneous import Spontaneous
 from . import debug as dbg
 
 from . import deck as dk
 from . import harbour as hb
+from .reading import HouseReading, HouseReadingStaked
 from .state import (AXES, AXIS_WORDS, DAY, SHOW_WORDS, SKILL_TIERS, SLOTS, STATS, STAT_NAMES, TIER_POINTS, TRAINING_DAYS, WEEKDAYS, WEEK_END_MINUTE, ClownState,
                     Condition, Girl, Hidden, House, Note, Person, Plan, Proprietor, Scenario, Show, Thing, axis_word, hhmm, tier_of,
                     week_of, weekday)
@@ -187,7 +188,8 @@ class ClownGame(GameBase):
         "sleep": TaskRow(least=60, most=720, lost=0),
     })
     resolver = "threshold"
-    adjudication_schema = AssistantReadingV2   # C106 (11-13): targets, focus and, with the stakes on, the settled attempts (fiat) its rules always asked for
+    adjudication_schema = HouseReading          # C106 (11-13): targets, focus and, with the stakes on, the settled attempts (fiat) its rules always asked for
+    adjudication_schema_staked = HouseReadingStaked   # reading.py: the engine's forms, with this game's kinds of attempt for the two-step reading
     in_place = False                 # the simulator (tools/sim.py, D212C): after_turn and run_command work on the state they are given,
                                      # no copy; never in play, where a refused command must leave the state as it was
     typed_only_commands = ("skip",)  # D205C: the days run only on the player's own "skip to …" (typed_command); never the assistant's pick
@@ -964,7 +966,7 @@ class ClownGame(GameBase):
             "Rows this game records:",
             "- move player <place>; move <girl or person id> <place>: where they are when the prose ends. Someone on the way has not arrived: a soon "
             "row, and the move when they get there. move player Unknown: the prose had the player leave and did not show them arriving.",
-            "- set <girl id>.love / .respect / .fear <a step: +1 or -1, or +2 or -2 for something grave>: how she stands to the proprietor changed this turn "
+            "- set <girl id>.love / .respect / .fear <a step: +1 or -1, or +2 or -2 for something serious>: how she stands to the proprietor changed this turn "
             "because of what the proprietor did or said, or what she saw. Write the step, not a word: the word the game state prints is where she stands "
             "now, and writing it again changes nothing. A talk that changed nothing is no row. "
             "For reading the game state only, the words run low to high: love " + ", ".join(AXIS_WORDS["love"]) + "; respect " + ", ".join(AXIS_WORDS["respect"])
@@ -1042,21 +1044,11 @@ class ClownGame(GameBase):
         out: dict[str, str] = {}
         hooks = self.hooks_content()
 
-        def walk(pred: Any, title: str) -> None:
-            if isinstance(pred, dict):
-                for key, val in pred.items():
-                    if key == "flag" and isinstance(val, str):
-                        out.setdefault(val, title)
-                    elif key != "not_flag":
-                        walk(val, title)
-            elif isinstance(pred, list):
-                for x in pred:
-                    walk(x, title)
-
         for h in s.hooks:
             hk = hooks.get(h.hook)
             if hk is not None and h.status in ("dealt", "live") and hk.get("kind") == "trouble":
-                walk(hk.get("done"), h.title)
+                for f in flags_named(hk.get("done")):
+                    out.setdefault(f, h.title)
         return out
 
     # ---- quests (B93): bookings and troubles in one shape --------------------------------------------------------------

@@ -31,7 +31,7 @@ from engine.game import (
     UISchema,
 )
 from engine.game import Rejection
-from engine.gamekit import Clock, Writer, quest_line, with_introduction
+from engine.gamekit import Clock, Writer, flags_named, quest_line, with_introduction
 from engine.mechanics import WON, CheckRequest, Modifier
 from engine.narration import default_mechanic_line
 from engine.pending import Pending
@@ -1343,22 +1343,11 @@ class FantasyGame(GameBase):
         out: dict[str, str] = {}
         hooks = self.hooks_content()
 
-        def walk(pred: Any, title: str) -> None:
-            if isinstance(pred, dict):
-                for key, val in pred.items():
-                    if key == "flag" and isinstance(val, str):
-                        out.setdefault(val, title)
-                    elif key != "not_flag":
-                        walk(val, title)
-            elif isinstance(pred, list):
-                for x in pred:
-                    walk(x, title)
-
         for h in s.hooks:
             hk = hooks.get(h.id)
             if hk is not None and h.status in ("dealt", "live"):
-                walk(hk.get("done"), h.title)
-                walk(hk.get("failed"), h.title)
+                for f in [*flags_named(hk.get("done")), *flags_named(hk.get("failed"))]:
+                    out.setdefault(f, h.title)
         return out
 
     # ---- checks -------------------------------------------------------------------------------------------------------

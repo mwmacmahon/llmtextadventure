@@ -120,6 +120,23 @@ THREAD_WORDS = {"open": "open", "resolved": "resolved", "failed": "failed"}
 THREAD_TONES = {"resolved": "ok", "failed": "bad"}
 
 
+def flags_named(pred: Any) -> list[str]:
+    """The flags a condition names as set (its `flag:` leaves, anywhere in the tree; `not_flag:` is skipped), in order: what a
+    quest's done or failed condition waits on, so a game can tell the referee which flag settles which quest (D165). Two games
+    had this walker copied (the debt review, 11-13)."""
+    out: list[str] = []
+    if isinstance(pred, dict):
+        for key, val in pred.items():
+            if key == "flag" and isinstance(val, str):
+                out.append(val)
+            elif key != "not_flag":
+                out += flags_named(val)
+    elif isinstance(pred, list):
+        for x in pred:
+            out += flags_named(x)
+    return out
+
+
 def quest_line(*parts: str) -> str:
     """The row's one line: what is wanted, then the latest word on it, each once."""
     out: list[str] = []

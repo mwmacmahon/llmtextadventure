@@ -295,6 +295,9 @@ def play_one(sc: dict, store: Any, keep: bool) -> dict:
         try:
             events = (_stream(f"/api/instances/{iid}/tell", {"text": say}) if told else _stream(f"/api/instances/{iid}/command", lever) if lever
                       else _stream(f"/api/instances/{iid}/turn", {"text": say}))
+            # a game that asks before a long turn ("that would take the rest of the morning ... say yes"): the scene means yes
+            if not told and not lever and any(e["event"] == "command" and not e["data"].get("ok") and e["data"].get("label") == "Time" for e in events):
+                events = _stream(f"/api/instances/{iid}/turn", {"text": "yes"})
         except SystemExit as e:
             rec["failed"].append(f"step {n}: the server refused it: {e}")
             break

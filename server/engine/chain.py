@@ -175,6 +175,37 @@ _SETTLE = ("How this attempt is decided, the first of these that fits. A blow (a
            "next. Otherwise works: routine with nothing pressing, or the words plainly give what is asked.")
 
 
+# A game's own kinds of attempt, as the first step (D272; the owner, 11-13: "as long as you need to identify [the turn types]
+# for length you might be able to use that for the general questions"). A reading schema may carry `lean_kinds`:
+# {kind: {"what": when it fits, "settle": works | check | fails, "outcome": the settled sentence, optional}}. The first form
+# then asks each attempt's `what_kind` in the game's words instead of the general `settle`, and the engine routes by the
+# table: a `check` kind is asked for in the second message; a `fails` kind with an `outcome` is settled by the table with no
+# second message; one without is asked how it fails; a `works` kind is done. The kinds reach the merged reading as
+# `attempt_kinds` (engine-only, never in a schema), for a game's own use (the telling's length).
+KINDS_NOTE = ("HOW YOU ANSWER. You answer in two steps, and this first answer is the reading only. It has no check field and no "
+              "fiat. Each attempt has `what_kind`: which of this game's kinds of attempt it is (the fields below list them, with "
+              "when each fits). Where the rules above send an attempt under fiat or give it a check, here you only choose its "
+              "kind: the engine settles most kinds itself, and only for a kind that needs a check, or words that plainly miss, "
+              "does the engine's next message ask you for the check (its stat, difficulty, edge and both futures) or for how it "
+              "fails. Write no stat, no difficulty, no outcome and no why anywhere in this first answer.")
+
+
+def lean_kinds(schema: type) -> dict[str, dict[str, str]]:
+    return dict(getattr(schema, "lean_kinds", None) or {})
+
+
+def kind_field(kinds: dict[str, dict[str, str]]) -> tuple[Any, Any]:
+    desc = ("Which kind of attempt this is, the first of these that fits. " + " ".join(f"{k}: {v['what'].rstrip('.')}." for k, v in kinds.items()))
+    return (Literal[tuple(kinds)], Field(description=desc))                                            # type: ignore[valid-type]
+
+
+def how_settled(intent: Any, kinds: dict[str, dict[str, str]]) -> str:
+    """works | check | fails for a first-form attempt: its own `settle`, or its kind's row in the game's table."""
+    if kinds:
+        return kinds.get(getattr(intent, "what_kind", ""), {}).get("settle", "works")
+    return intent.settle
+
+
 class LeanIntent(BaseModel):
     action: str = Field(description="One concrete thing the player is trying to do, in a short sentence.")
     leaving: bool
@@ -192,10 +223,13 @@ def lean_models(schema: type) -> tuple[type[BaseModel], type[BaseModel]]:
     # `settle` is not last (D267): with it last, Gemma closed the list after the first attempt on 15 of 24 turns that had two or
     # three (the blow among them); an attempt that ends on attack_at and weapon, as the one form's does, kept all 24
     names = ["action", "leaving", "goes_to", "targets", "settle", "attack_at", "weapon"]
+    kinds = lean_kinds(schema)
     fields: dict[str, Any] = {}
     for n in names:
         lf = LeanIntent.model_fields[n]
-        if n in ("action", "targets", "settle"):
+        if n == "settle" and kinds:                # the game's own kinds, in the same place in the attempt
+            fields["what_kind"] = kind_field(kinds)
+        elif n in ("action", "targets", "settle"):
             fields[n] = (lf.annotation, Field(description=lf.description))
         elif n in intent_model.model_fields:
             fields[n] = (lf.annotation, Field(description=intent_model.model_fields[n].description))
@@ -224,17 +258,22 @@ def lean_system(system: str, role: Any, reading_model: type[BaseModel], checks_m
     """The one system text of both messages: the rules, the note on the two steps, and both forms' field guides (the second
     form's too: in the second message it would be read again on every turn with a check, here it is cached with the rest)."""
     from .providers.llamacpp_provider import schema_guide
+    note = KINDS_NOTE if "what_kind" in reading_model.model_fields["intents"].annotation.__args__[0].model_fields else LEAN_NOTE
     if not getattr(role, "field_guide", False):
-        return system + "\n\n" + LEAN_NOTE
+        return system + "\n\n" + note
     first = schema_guide(reading_model.model_json_schema()).replace("FIELDS. What each field of your answer means.", "FIELDS OF THE FIRST ANSWER, the reading.", 1)
     second = schema_guide(checks_model.model_json_schema()).split("\n", 1)[1]
-    return (system + "\n\n" + LEAN_NOTE + "\n\n" + first + "\n\nFIELDS OF THE SECOND ANSWER, the checks. Only when the engine asks for it, "
+    return (system + "\n\n" + note + "\n\n" + first + "\n\nFIELDS OF THE SECOND ANSWER, the checks. Only when the engine asks for it, "
             "after a reading that marked an attempt check or fails.\n" + second)
 
 
-def lean_ask(reading: Any) -> str:
-    """The second message: which attempts it is about and what to write for each."""
-    marked = [f"{n}. {i.action} (marked {i.settle})" for n, i in enumerate(reading.intents, 1) if i.settle in ("check", "fails")]
+def lean_ask(reading: Any, kinds: dict[str, dict[str, str]] | None = None) -> str:
+    """The second message: which attempts it is about and what to write for each. With a game's kinds, an attempt its table
+    already settled (a `fails` kind with its outcome) is not listed."""
+    kinds = kinds or {}
+    asked = [(n, i, how_settled(i, kinds)) for n, i in enumerate(reading.intents, 1)]
+    marked = [f"{n}. {i.action} (marked {how})" for n, i, how in asked
+              if how == "check" or (how == "fails" and not kinds.get(getattr(i, "what_kind", ""), {}).get("outcome"))]
     return ("NOW THE SECOND ANSWER, the checks. Your reading marked these attempts, by number:\n" + "\n".join(marked) +
             "\nFor each attempt marked check, one row in `checks`: its number, and its check as the rules give it: the label, the "
             "stat, the difficulty, the edge and why, then both of its futures. For each attempt marked fails, one row in `fiat`: "
@@ -246,6 +285,7 @@ async def lean_adjudication(provider: Any, role: Any, system: str, msgs: list[Ms
     """The reading in two steps, merged into `schema`. usage.extra["chain"] has one row a message (step, input, cache, output,
     seconds), so a run can see that the second message read only its own increment."""
     reading_model, checks_model = lean_models(schema)
+    kinds = lean_kinds(schema)
     sys_text = lean_system(system, role, reading_model, checks_model)
     plain = role.model_copy(update={"field_guide": False})          # the guide is placed here, never appended per schema
     rows: list[dict] = []
@@ -267,17 +307,27 @@ async def lean_adjudication(provider: Any, role: Any, system: str, msgs: list[Ms
         if again.intents:
             reading, raw = again, raw2
     checks = None
-    if reading.kind == "action" and any(i.settle in ("check", "fails") for i in reading.intents):
-        checks, _ = await ask("checks", [*msgs, Msg("assistant", raw), Msg("user", lean_ask(reading))], checks_model)
+    def needs_asking(i: Any) -> bool:
+        how = how_settled(i, kinds)
+        return how == "check" or (how == "fails" and not kinds.get(getattr(i, "what_kind", ""), {}).get("outcome"))
+
+    if reading.kind == "action" and any(needs_asking(i) for i in reading.intents):
+        checks, _ = await ask("checks", [*msgs, Msg("assistant", raw), Msg("user", lean_ask(reading, kinds))], checks_model)
     # ---- the merge: the one reading the engine already uses
     by_check = {c.intent - 1: c.check for c in (checks.checks if checks else []) if c.check is not None}   # the message numbers from 1
     intents, fiat = [], [f.model_dump() for f in (checks.fiat if checks else [])]
+    said: list[str] = []
     for n, it in enumerate(reading.intents):
         d = it.model_dump()
-        how = d.pop("settle")
+        how = how_settled(it, kinds)
+        row = kinds.get(d.pop("what_kind", ""), {}) if kinds else {}
+        d.pop("settle", None)
+        said.append(getattr(it, "what_kind", ""))
         ck = by_check.get(n)
         if ck is not None:
             d["check"] = ck.model_dump()
+        elif row.get("outcome"):                    # the game's table settles this kind: its sentence, no second message
+            fiat.append({"attempt": it.action, "outcome": row["outcome"], "settled": "fails" if how == "fails" else "works", "why": row.get("why", "")})
         elif how == "works" and not d.get("attack_at") and not d.get("leaving"):
             # an attempt the reading settled with no roll: the narrator is told so, in the attempt's own words and no more
             fiat.append({"attempt": it.action, "outcome": "It works as the player means it.", "settled": "works", "why": ""})
@@ -287,6 +337,8 @@ async def lean_adjudication(provider: Any, role: Any, system: str, msgs: list[Ms
     if "fiat" in schema.model_fields:
         merged["fiat"] = fiat[:4]
         merged["pivotal"] = (checks.pivotal if checks else "") or next((c["check"]["label"] for c in intents if c.get("check")), "")
+    if kinds and "attempt_kinds" in schema.model_fields:
+        merged["attempt_kinds"] = said
     out = schema.model_validate(merged)
     total = Usage()
     for r in rows:

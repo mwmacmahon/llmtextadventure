@@ -183,3 +183,56 @@ async def test_lean_off_is_the_one_call_and_the_dial_routes(setup):
     adj, usage, retry, recovered = await extract_adjudication(p, role, "RULES", [], AssistantReadingCombat, {})
     assert p.seen[0][3].__name__ == "LeanReading" and adj.intents[0].action == "Wait." and "FIELDS OF" not in p.seen[0][1]
     assert RoleConfig(provider="fake", model="m").lean is False
+
+
+# ---- D272: a game's own kinds of attempt as the first step ---------------------------------------------------------
+def _kinds_schema():
+    from typing import ClassVar
+
+    from pydantic.json_schema import SkipJsonSchema
+
+    from engine.roles import AssistantReadingStaked
+
+    class KindsReading(AssistantReadingStaked):
+        lean_kinds: ClassVar[dict] = {
+            "home": {"what": "done at home, nobody resists", "settle": "works"},
+            "price": {"what": "offering less than the price", "settle": "fails", "outcome": "The price stands.", "why": "prices are fixed"},
+            "world": {"what": "someone could refuse", "settle": "check"},
+            "hopeless": {"what": "the words plainly miss", "settle": "fails"},
+        }
+        attempt_kinds: SkipJsonSchema[list[str]] = []
+    return KindsReading
+
+
+def _kinds_reading(*intents):
+    return {"kind": "action", "summary": "s", "time_minutes": 5, "tempo": "slow", "risk": "low", "commands": [], "focus": {}, "open_to_callers": True,
+            "carried": [], "intents": [{"targets": [], **i} for i in intents]}
+
+
+@pytest.mark.asyncio
+async def test_a_games_kinds_are_the_first_step_and_the_table_routes_them():
+    from engine.chain import KINDS_NOTE, lean_adjudication, lean_models
+    from engine.config import RoleConfig
+    schema = _kinds_schema()
+    first = lean_models(schema)[0].model_fields["intents"].annotation.__args__[0]
+    assert list(first.model_fields) == ["action", "targets", "what_kind"] and "world: someone could refuse." in first.model_fields["what_kind"].description
+    role = RoleConfig(provider="fake", model="m", lean=True, field_guide=True)
+    # nothing needs a second message: a kind that works, and a kind the table settles with its own sentence
+    p = _Scripted([_kinds_reading({"action": "Tell her to sit.", "what_kind": "home"}, {"action": "Offer half.", "what_kind": "price"})])
+    adj, usage = await lean_adjudication(p, role, "RULES", [], schema)
+    assert len(p.seen) == 1 and KINDS_NOTE in p.seen[0][1] and adj.attempt_kinds == ["home", "price"]
+    assert [(f.settled, f.attempt, f.outcome) for f in adj.fiat] == [("works", "Tell her to sit.", "It works as the player means it."),
+                                                                    ("fails", "Offer half.", "The price stands.")]
+    assert "attempt_kinds" not in schema.model_json_schema()["properties"]
+    # a check kind and a fails kind with no sentence of its own are asked for; the settled price is not listed
+    check = {"label": "Talk him round", "stat": "charm", "difficulty": "medium", "edge": 0, "edge_why": "", "success_gain": "He agrees.",
+             "success_minutes": 5, "failure_outcome": "He does not.", "failure_minutes": 5, "complication": "none", "complication_what": "", "danger": "none"}
+    p = _Scripted([_kinds_reading({"action": "Talk the inspector round.", "what_kind": "world"}, {"action": "Offer half.", "what_kind": "price"},
+                                  {"action": "Ask him for his house.", "what_kind": "hopeless"}),
+                   {"checks": [{"intent": 1, "check": check}], "fiat": [{"attempt": "Ask for his house", "outcome": "He laughs.", "settled": "fails", "why": "nobody would"}],
+                    "pivotal": "Talk him round"}])
+    adj, usage = await lean_adjudication(p, role, "RULES", [], schema)
+    ask = p.seen[1][2][-1].content
+    assert "1. Talk the inspector round. (marked check)" in ask and "3. Ask him for his house. (marked fails)" in ask and "Offer half" not in ask
+    assert adj.intents[0].check.label == "Talk him round" and adj.intents[1].check is None and adj.pivotal == "Talk him round"
+    assert sorted((f.settled, f.outcome) for f in adj.fiat) == [("fails", "He laughs."), ("fails", "The price stands.")]

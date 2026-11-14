@@ -314,6 +314,14 @@ shape, how it is asked for, and what the model is told about it.
   also numbered attempts from 0 and lost checks. Not adopted: it changes every turn of every kind of play (the owner,
   11-13), so it needs whole rounds of talk, travel, quests and fights read against the one form, and a read of what the
   narrator does without the assistant's outcome sentence for a settled attempt. Untested on Sonnet and Qwen.
+- **A game's own kinds as the first step (D272, 2026-11-13):** a reading schema may carry `lean_kinds`, a table of the
+  game's kinds of attempt (when each fits, how it is settled, and a sentence for a kind the game settles itself). The
+  first form then asks each attempt's `what_kind` instead of the general "how is it decided", and the engine routes by
+  the table. Trialled on the hidden game (seven kinds; only one is asked for a check). Gemma, the same 60 stored turns:
+  a check the rules forbid at a member of the house, 3 on the one form, 3 on the general two-step, 0 with the kinds; a
+  check for haggling over a fixed price, 4, 1 and 0 (all 7 haggles settled by the table); commands as stored 57 of 60
+  on all three; one message on 55 of 60; output tokens 14,254, 10,052 and 9,571. The 13 staged scenes are the
+  whole-turn check. Not adopted: it waits on a played round read whole.
 
 ### `chain`
 
