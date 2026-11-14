@@ -3182,9 +3182,21 @@ class ClownGame(GameBase):
         """The one rule for days that run in a turn, a Skip's or a time the player named (D197C, C50): the clock's day, never the
         one meant; a line of passing time from something not told before; nothing done the player did not say."""
         p = s.player
+        # the reader, 11-14 (round 4): ten skips opened "The days pass in a blur / haze / quiet hum". The line is given something
+        # of the house to open on, a different one each time, from what the engine knows (switch skip_anchor)
+        g = s.active_girl
+        work = self._slot_words(s.plan.mornings) if g is not None and s.plan.mornings else ""
+        anchors = [x for x in (
+            f"what {g.name} was put to in the mornings ({work})" if work and work != "nothing set" else "",
+            "Mrs Pell and the kitchen", f"the cashbox and what is in it ({s.house.money} gold)", "the weather over the street and the yard",
+            "the practice room heard through the wall", "the post and the newspaper on the desk", "the street outside the gate and who went by",
+            f"{g.name} at table in the evenings" if g is not None else "") if x]
+        n = int(s.flags.get("_skips_told") or 0)
+        s.flags["_skips_told"] = n + 1
+        opener = f" Open the line on {anchors[n % len(anchors)]}." if sw.on("skip_anchor") else ""
         return (f"The days ran only as far as the game state's clock says (its Time line: the day and the hour), and no further: if that is "
                 f"short of {meant}, something stopped them, and THIS TURN says what. Write the time passing up to that day and hour in a line or "
-                f"two, in new words: no sentence, image or sound from an earlier telling of days passing comes back. Name the day THIS TURN's clock "
+                f"two, in new words: no sentence, image or sound from an earlier telling of days passing comes back.{opener} Name the day THIS TURN's clock "
                 f"line names, in words, and never the one {p.name} meant or one from an earlier turn; nothing is done in "
                 f"it that the player did not say. If THIS TURN brings someone to the door or word from the town, the days pass in one line and "
                 f"then you play that. What the training did meanwhile is in THIS TURN: say it once, in words, where it fits, or not at all. " + then)

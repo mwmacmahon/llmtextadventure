@@ -50,7 +50,7 @@ did over a round, count those rows; to judge it, read each against the turn.
 
 | guard | default | hidden game | measured |
 |---|---|---|---|
-| `lever-phrases` | on | count | A 55-turn round on Gemma (2026-11-14): it would have dropped 6 bookings, all 6 meant by the player; it would have stopped nothing. |
+| `lever-phrases` | on | count | Three 55-turn rounds on Gemma (2026-11-14): it would have dropped 17 picks, all 17 meant by the player; it would have stopped nothing. |
 | `lever-check-label` | on | on | Not yet; silent until 2026-11-14. |
 | `task-kind-words` | on | count | Two 55-turn rounds on Gemma before the game's own kind decided: 22 turns named travel, wait, search or sleep by the words, at least 6 wrongly (a walk down the hall cost five hours). |
 

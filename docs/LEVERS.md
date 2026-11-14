@@ -880,7 +880,8 @@ are still in the code as they always were and are listed on that page as owed.
   brittle word lists what we are trying to avoid?" after it dropped a booking that was then told as made.
 - **Measured:** the hidden game, Gemma, a 55-turn round (2026-11-14, count): 6 matches, all 6 bookings the player meant;
   no lever ran on mere talk; Plan 17 of 17 and Book 6 of 6 went through. A 20-turn round the night before (on): 1
-  booking dropped and narrated as made.
+  booking dropped and narrated as made. Two more 55-turn rounds (count): 4 and 7 matches, every one a pick the
+  player meant: 17 of 17 wrong over three rounds.
 - **Helped / did not:** in the hidden game it only did harm. The fantasy, noir and the station still have it on,
   unmeasured: count it on the replay corpus before changing it. What retires it: the pick's own arguments and the
   lever's refusal, and with the two-step reading the attempt's kind.
@@ -922,14 +923,15 @@ rounds stays on and may lose its switch; one that has not goes with its code. Al
 
 | switch | what it does | measured |
 |---|---|---|
-| `show_first` | a booked show the player's character goes to is played and scored before the prose, and told once | before it: 4 of 18 stored shows were ever counted as attended; after: see the rounds of 11-14 |
+| `show_first` | a booked show the player's character goes to is played and scored before the prose, and told once | before it: 4 of 18 stored shows were ever counted as attended; after (rounds 3 and 4): 3 of 3 shows gone to were played first, told once in 270 to 335 words and paid |
 | `outsider_block` | someone not yet of the house is named to the narrator as such; an attempt at them is not settled as the house's own | one misread in a 55-turn round before it |
 | `desk_beat` | a turn that is only desk levers (a plan, a booking) is a short beat told in the present | plan turns ran 100 to 200 words before it |
 | `event_words` | an event that fires on a turn adds words to the telling's length | skips given 40 words wrote 75 to 104 before it; a median of 0.97 written against given after |
 | `asks_again` | a client dealt a second time says they have asked before, in new words | not yet |
 | `outing_kind` | going out (into the town, across it, home again, waiting, a whole show watched) is its own kind of attempt and the only one that spends the part of the day; a plain question or a step into another room does not | before it the engine's verb list decided: see `task-kind-words`, §8 |
 | `not_today` | a booked show at a place the turn concerns, more than an hour and a half off, is named to the narrator as not played today, with its day and hour | before it: a show told in full two days early and again on its day (round 4, 2026-11-14) |
-| `axis_note` | the referee is told when the player's character dealt directly with someone of the house, and asked for the three standings | before it: 6 standing rows in 57 turns over 20 such attempts |
+| `skip_anchor` | each telling of days let run is given a different thing of the house to open on (the kitchen, the cashbox, the weather, what was trained), from what the engine knows | before it: ten skips in one round opened on the same blur of days (round 4, the reader); not yet played |
+| `axis_note` | the referee is told when the player's character dealt directly with someone of the house, and asked for the three standings | before it: 6 standing rows in 57 turns over 20 such attempts, then 9 in 55 of which 7 were love up; with it (round 4, 55 turns): 15 rows (love up 8 and down 2, fear up 4, respect up 1), which the reader found matched how each was treated |
 
 The reading in two steps with the game's kinds of attempt is the profile module `reading_steps` (§2); the lever phrase
 list is the word guard `lever-phrases` (§8); the street texture gap is the game attribute `texture_gap_turns`.
