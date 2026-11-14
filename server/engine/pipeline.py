@@ -1881,7 +1881,14 @@ class Engine:
             spec = next((c for c in specs if c.id == pick.id and c.typed), None)
             if spec is None or not isinstance(game, GameBase):
                 log.info("command.typed.ignored " + logs.kv(iid=iid, turn=turn, id=pick.id))
+                closed = _hook(game, "lever_closed", state, pick.id, default="") or ""     # a game may say what a lever not open now means
+                if closed and not any(lv.id == pick.id and lv.blocked for lv in levers):
+                    ledger("command_preview", {"id": pick.id, "args": {}, "mode": "narrated", "typed": True, "ok": False, "text": closed, "closed": True})
+                    levers.append(PendingLever(id=pick.id, args={}, mode="narrated", label=pick.id, preview=CommandResult(ok=False, text=closed), blocked=True,
+                                               directive=f"The player's attempt: BLOCKED. {closed} Play the attempt and the player finding that out, in the fiction, and do not narrate it as done."))
                 continue
+            if getattr(game, "lever_once", False) and any(k.id == pick.id and list(k.args) == list(pick.args) for k in kept):   # round 5 (11-14, turn 59): Take picked twice; the second
+                continue                                                                 # preview found her gone and the purchase was told as lost
             if spec.words and player_text and not asks_for(spec.words, player_text):
                 # the word guard `lever-phrases` (engine/word_guards.py, D275): on, the pick is dropped; count, it stands and the
                 # row says the list would have dropped it; off, the list is not consulted
@@ -1894,7 +1901,8 @@ class Engine:
             named = ({x for i in adj.intents for x in (getattr(i, "targets", None) or [])} | set(getattr(getattr(adj, "focus", None), "people", None) or [])
                      | set(getattr(adj, "entities", None) or []))
             people = {x for i in adj.intents for x in (getattr(i, "targets", None) or [])} | set(getattr(getattr(adj, "focus", None), "people", None) or [])
-            args, problem = _parse_command_args(spec, pick.args, named, people)
+            said_words = " ".join([str(getattr(adj, "summary", "") or "")] + [str(getattr(i, "action", "") or "") for i in adj.intents])
+            args, problem = _parse_command_args(spec, pick.args, named, people, said_words)
             if problem:
                 ledger("command", {"id": spec.id, "args": args, "mode": spec.mode, "typed": True, "ok": False, "text": problem})
                 log.info("command.typed.refused " + logs.kv(iid=iid, turn=turn, id=spec.id, kind="clarify", why=problem))
@@ -3871,7 +3879,7 @@ def _commands_text(specs: list[Any]) -> str:
     return "\n".join(lines)
 
 
-def _parse_command_args(spec: Any, raw: list[str], named: set[str] | None = None, people: set[str] | None = None) -> tuple[dict[str, str], str]:
+def _parse_command_args(spec: Any, raw: list[str], named: set[str] | None = None, people: set[str] | None = None, words: str = "") -> tuple[dict[str, str], str]:
     """'name=value' pairs -> validated args. Values match an option id exactly, else an id or
     label case-insensitively. Returns (args, problem): a non-empty problem is the question to ask."""
     given: dict[str, str] = {}
@@ -3887,11 +3895,19 @@ def _parse_command_args(spec: Any, raw: list[str], named: set[str] | None = None
         v = given.get(p.name, "")
         if not v and getattr(p, "must_name", False) and named is not None:
             said = [o.id for o in p.options if o.id in named]      # the reading's own ids: its targets and focus
-            others = sorted(x for x in (people or ()) if x not in {o.id for o in p.options})
+            others = sorted(x for x in (people or ()) if x in set(getattr(p, "not_these", None) or []))   # round 5: any person named refused six bookings
+            if len(said) != 1 and words:
+                # round 5 (11-14, turns 24, 58): "buy Liesl Wark" and the pick had no argument; a contract on a slip is nobody the
+                # reading has an id for. The option whose own name stands in the reading's attempts is the one meant: a name
+                # looked up, not a meaning guessed (a name is the part of an option's label before its first comma or bracket)
+                low = words.lower()
+                byname = [o.id for o in p.options if (nm := re.split(r"[,(]", o.label, maxsplit=1)[0].strip().lower()) and len(nm) >= 4 and nm in low]
+                if len(byname) == 1:
+                    said = byname
             if len(p.options) > 1 and len(said) != 1:
                 return args, f"Which {p.label}? ({', '.join(o.label for o in p.options)})"
             if not said and others:     # round 4 (11-14): "sell Dorothea", who has no contract to sell; one choice, and Ada was sold
-                return args, f"That is not one of the choices for {p.label}: {', '.join(o.label for o in p.options)}."
+                return args, f"That one is not a choice here. The choices: {', '.join(o.label for o in p.options)}."
             v = said[0] if said else v
         v = v or getattr(p, "default", "")
         if not v and len(p.options) == 1:   # round 32 T2 (906e3e1f1a93): "I take the job", one job on offer, and the command

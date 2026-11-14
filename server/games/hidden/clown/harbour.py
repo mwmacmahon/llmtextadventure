@@ -258,10 +258,11 @@ def take(state: ClownState, cid: str, deck: dict, cards: dict[str, dict], rng: r
     return g, ""
 
 
-def sell(state: ClownState, g: Girl, dial) -> int:
+def sell(state: ClownState, g: Girl, dial, value: int | None = None) -> int:
     """Her contract sold on: the share of its value paid in, and she is gone. Her shows to come go to the girl in training when she is
     free that day, else stand with nobody to send; the girls who were close to her think less of the house."""
-    paid = int(round(g.value_of(state.scenario.dials) * float(dial("sell_share"))))
+    # round 5 (11-14): the lever's label said 182 gold (the panel's contract value) and the sale paid 210 (this file's own sum)
+    paid = int(round((value if value is not None else g.value_of(state.scenario.dials)) * float(dial("sell_share"))))
     state.house.money += paid
     g.status, g.location = "gone", "Unknown"
     for x in state.shows:

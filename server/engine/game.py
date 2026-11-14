@@ -147,6 +147,7 @@ class Param(BaseModel):
     # its focus) is taken; with none or several, the player is asked. For a choice that cannot be guessed safely (whose contract
     # is sold: a scene of 11-14 sold the girl in training when the player named the new one and the pick carried no argument).
     must_name: bool = False
+    not_these: list[str] = Field(default_factory=list)   # with must_name: ids that are NOT choices but could be meant (a girl with no contract, for Sell); the reading naming one refuses the lever
 
 
 class CommandPanel(BaseModel):

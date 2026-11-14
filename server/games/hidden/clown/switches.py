@@ -20,6 +20,7 @@ SWITCHES: dict[str, tuple[bool, str]] = {
     "outing_kind": (True, "D278, the night of 11-14: going out is its own kind of attempt (`outing`) and the part of the day is spent on that, not on the engine's verb list (word guard task-kind-words: count)"),
     "not_today": (True, "round 4 of 11-14: a booked show at a place the turn concerns, days off, is named to the narrator as not played today"),
     "skip_anchor": (True, "the reader, round 4 of 11-14: ten skips opened on the same blur of days; each telling of days let run is given a different thing of the house to open on"),
+    "unheard_kept": (True, "round 5 of 11-14: a week's offer whose caller has not come yet is not closed on Sunday night; it stays in hand and the caller still comes"),
     "axis_note": (True, "the long round of 11-14 (6 standing rows in 57 turns): the referee is told when the proprietor dealt directly with a girl, and asked for her love, respect and fear"),
 }
 

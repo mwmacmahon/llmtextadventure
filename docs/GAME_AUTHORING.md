@@ -484,7 +484,10 @@ live eval case if the mapping is subtle.
 **Who, and which (2026-11-14).** A parameter that says who or which a lever acts on takes `must_name=True`. When the
 reading picks the lever without it, the engine does not fill in the default: it takes the one option the reading names in
 its targets or focus; with none or several it asks the player; and when the reading names somebody who is not an option
-it refuses and lists the options. A game with `lever_ask_plain = True` has that question put in the engine's own words
+it refuses and lists the options (the parameter's `not_these` says who that could be: for a sale, those with no
+contract). A contract or a booking the reading has no id for is taken by its own name standing in the reading's attempts,
+one match only. With `lever_once = True` a lever picked twice with the same arguments runs once, and a pick for a lever that is not open now is
+told to the narrator as blocked when the game gives the sentence (`lever_closed(state, id)`). A game with `lever_ask_plain = True` has that question put in the engine's own words
 with no telling and no turn spent; otherwise the narrator is asked to put it in character, which a local model told as
 the thing done. A game that knows the kind of turn from its reading gives it by `task_kind(state, reading)` (travel, wait,
 sleep, search, talk, other): the engine then does not read the summary's verbs for it (word guard `task-kind-words`).

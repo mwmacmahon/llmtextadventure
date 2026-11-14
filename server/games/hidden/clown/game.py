@@ -211,6 +211,7 @@ class ClownGame(GameBase):
     adjudication_schema_staked = HouseReadingStaked   # reading.py: the engine's forms, with this game's kinds of attempt for the two-step reading
     in_place = False                 # the simulator (tools/sim.py, D212C): after_turn and run_command work on the state they are given,
                                      # no copy; never in play, where a refused command must leave the state as it was
+    lever_once = True                          # D280: the same lever picked twice with the same arguments runs once
     lever_ask_plain = True                     # D279: "Which contract?" is asked in the engine's words, with no telling
     word_guards = {"lever-phrases": "count", "task-kind-words": "count"}   # C112, D275 (the owner, 11-14): no phrase list between the reading's pick and the lever;
                                                # the pick's own arguments and the lever's refusal are the checks; the list only counts
@@ -1492,6 +1493,9 @@ class ClownGame(GameBase):
                 w.reject("people", f"already listed: {value}", value)
                 return True
             g = s.girl((ch.title or "").strip().lower()) or next((x for x in s.girls if value.lower() in (x.name.lower(), *[a.lower() for a in x.aliases])), None)
+            if g is not None and g.status == "gone" and s.flags.get(f"{g.id}_sold"):   # round 5 (11-14, turn 57): a sale "cancelled" by a telephone call;
+                w.reject("people", f"{g.name}'s contract was sold on: she is gone from the house and no talk brings her back", value)   # the referee filed her as a new person
+                return True
             if g is not None and g.status != "gone":   # round 4 (t33): the written Dot at the door filed as a new person: a duplicate the
                 place = self._place(s, ch.field) or p.location     # take-on then went to, and she never joined; she is the girl
                 if g.status in ("available", "away") and g.location != place and w.set(f"girls.{g.id}.location", g.location, place):
@@ -1524,6 +1528,9 @@ class ClownGame(GameBase):
         return False
 
     def _girl_row(self, s: ClownState, g: Girl, kind: str, field: str, value: str, ch: Change, w: Writer) -> bool:
+        if g.status == "gone" and s.flags.get(f"{g.id}_sold"):
+            w.reject(f"girls.{g.id}.{field or kind}", f"{g.name}'s contract was sold on: she is gone from the house and no row brings her back", value)
+            return True
         if kind == "move" or field == "location":
             place = self._place(s, value)
             if place is None and value.lower() != "unknown":
@@ -2141,7 +2148,7 @@ class ClownGame(GameBase):
                                     f"and no part of it is told: nobody is gathered at {x.venue} for it and nobody there expects a clown yet. If the "
                                     f"proprietor goes there, they find the place as it is on an ordinary day, and whoever they meet says when it is.")
             if said_skip:                          # the player's line on how days are let run
-                w.mechanics.append("The days did not pass: a skip is said on its own, as its own turn (\"skip to Thursday\", \"skip to the show\").")
+                w.mechanics.append("Nothing was skipped: to let days run, say the skip on its own, as its own turn (\"skip to Thursday\", \"skip to the show\").")
             return s, w
         s = state if self.in_place else state.model_copy(deep=True)
         x = next(y for y in s.shows if y.id == due[0].id)
@@ -3064,7 +3071,8 @@ class ClownGame(GameBase):
         bought = [g for g in s.in_house() if g.card]
         if bought:
             out.append(CommandSpec(id="sell", label="Sell contract", mode="narrated",
-                                   params=[Param(must_name=True, name="girl", label="whose", options=[Option(id=g.id, label=f"{g.name} ({int(round(self.contract_value_of(s, g) * dk.dial(s, 'sell_share')))} gold)") for g in bought], default=bought[0].id)],
+                                   params=[Param(must_name=True, name="girl", label="whose", options=[Option(id=g.id, label=f"{g.name} ({int(round(self.contract_value_of(s, g) * dk.dial(s, 'sell_share')))} gold)") for g in bought], default=bought[0].id,
+                                                 not_these=[g.id for g in s.girls if not (g.in_house() and g.card)])],
                                    hint="Sell a girl's contract on through the shed's book, for a share of what she is worth as a performer (her contract value on her panel). "
                                         "She leaves the house for good; the girls close to her think less of you. Only a girl bought off the boats.",
                                    words=["sell her contract", "sell the contract", "sell her on", "put her out", "sell contract"]))
@@ -3142,6 +3150,16 @@ class ClownGame(GameBase):
         """The pipeline's hook (D278): the kind of turn for the clock, from the reading's own kinds of attempt; '' leaves it to the engine."""
         from .reading import task_of_kinds
         return task_of_kinds(list(getattr(adj, "attempt_kinds", None) or []))
+
+    def lever_closed(self, state: ClownState, command_id: str) -> str:
+        """The pipeline's hook (round 5, 11-14, turn 44): the reading picked a lever that is not open now (Book with no offer in
+        hand), the engine dropped the pick in silence and the booking was told as taken. What the narrator is told instead."""
+        return {"book": "No offer is in hand to take: nothing is booked this turn, and nobody confirms a booking. Whoever is asked has no such offer open now.",
+                "take": "No contract can be bought now (none on the slip, one taken this week already, no room, or not the money): nothing is bought this turn.",
+                "sell": "There is no contract in the house to sell: nobody is sold this turn.",
+                "welcome": "Nobody is asking to be taken on now: nobody joins the house this turn.",
+                "switch": "There is nobody else in the house to put into training: nothing changes.",
+                "graduate": "Nobody can be passed out today: nothing changes."}.get(command_id, "")
 
     def plain_spend(self, state: ClownState, adj: Any) -> bool:
         """The pipeline's hook (D210C): a turn that plainly spends the part of the day without asking: work in the practice room."""
@@ -3505,20 +3523,20 @@ class ClownGame(GameBase):
             return state, CommandResult(ok=False, label="Sell contract", text="Whose contract? Only a girl bought off the boats: " + (", ".join(x.name for x in s.in_house() if x.card) or "nobody"))
         p = s.player
         value = self.contract_value_of(s, g)
-        paid = hb.sell(s, g, lambda k: dk.dial(s, k))
+        s.flags[f"{g.id}_sold"] = True
+        hers = [x for x in s.shows if x.girl == g.id and not x.result]     # round 4 (11-14): her bookings, and who has them after the sale
+        paid = hb.sell(s, g, lambda k: dk.dial(s, k), value)
         g.history.append(stamp(s, f"her contract sold on through the shed's book for {paid} gold"))
         self._note(s, f"{g.name}'s contract sold on; she left the house.", f"{g.name}'s contract sold on for {paid} gold (her contract value {value} gold); she left the house.")
         self._tally(s, f"The shed's book: {g.name}'s contract value {value} gold, sold on at {dk.dial(s, 'sell_share'):g} for {paid} gold.")
         tail = ""
-        hers = [x for x in s.shows if x.girl == g.id and not x.result]     # round 4 (11-14): her bookings stayed hers; the next was "nobody went"
-        for x in hers:
-            x.girl = ""                                                      # whoever is in training on the day goes (_resolve_show)
+        for x in hers:                                                       # hb.sell gave each to the girl in training if she is free that day
+            to = s.girl(x.girl) if x.girl else None
             hk = s.hook(x.deal or x.hook)
             if hk is not None:                                               # the referee's note on the card said "Ada assigned" to the round's end
-                hk.note = f"{g.name} was sold on; whoever is in training on the day goes."
+                hk.note = f"{g.name} was sold on; " + (f"{to.name} goes." if to else "nobody is set to go: whoever is in training on the day goes.")
         if hers:
-            tail += (f" Her {len(hers)} booking{'s' if len(hers) != 1 else ''} ({', '.join(x.title for x in hers)}) stay{'s' if len(hers) == 1 else ''} with the house: "
-                     "whoever is in training on the day goes, unless you Book another.")
+            tail += " Her bookings stay with the house: " + "; ".join(f"{x.title} ({(s.girl(x.girl).name + ' goes') if x.girl and s.girl(x.girl) else 'nobody set to go yet'})" for x in hers) + "."
         if s.active and s.active_girl is not None and s.active_girl.id != g.id and s.plan.set_week and g.id == state.active:
             s.plan = Plan(set_week=s.house.week)
             tail += f" {s.active_girl.name} is in training from now; the plan is empty."

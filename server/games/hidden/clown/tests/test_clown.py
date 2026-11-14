@@ -221,10 +221,13 @@ def test_the_weeks_offers_are_dealt_once_open_all_week_and_any_number_may_be_boo
     first = [h.id for h in dk.hand(st2)]
     st2.house.week = 2
     st2.clock.day, st2.clock.minute = 7, 1330                                 # Sunday night, after the close
+    unheard = first[-1]                                                       # round 5 (11-14): a card whose caller has not come is kept
+    for e in st2.hidden.events:
+        e.fired = e.fired or (e.id.endswith("_reach") and e.id != f"{unheard}_reach")
     dk.deal_week(st2, dk.deck_of(game.scenario()), game.hooks_content(), random.Random(3), st2.now_abs, 5, "Hal")
-    assert all(st2.hook(i).status == "passed" for i in first) and st2.deck.dealt_week == 2
+    assert all(st2.hook(i).status == "passed" for i in first[:-1]) and st2.deck.dealt_week == 2 and st2.hook(unheard).status != "passed"
     new_cards = dk.hand(st2)
-    assert len(new_cards) == 3 and min(h.dealt_abs for h in new_cards) == 8 * DAY + 540   # Monday morning, a day apart
+    assert len(new_cards) == 3 and min(h.dealt_abs for h in new_cards if h.id != unheard) >= 8 * DAY + 540   # the kept card and two new, from Monday morning on
     assert dk.deal_week(st2, dk.deck_of(game.scenario()), game.hooks_content(), random.Random(3), st2.now_abs, 6, "Hal") == []
 
 def test_a_cards_show_is_weeks_off_as_the_card_says_and_the_client_says_when(game: ClownGame):
@@ -2091,7 +2094,9 @@ def test_round_four_levers_that_hit_the_wrong_girl_or_were_told_as_done():
     from engine.game import Option, Param
     from engine.pipeline import BLOCK_YES, _parse_command_args
 
-    spec = SimpleNamespace(params=[Param(must_name=True, name="girl", label="whose", options=[Option(id="ada_vosk", label="Ada Vosk (129 gold)")], default="ada_vosk")])
+    spec = SimpleNamespace(params=[Param(must_name=True, name="girl", label="whose", options=[Option(id="ada_vosk", label="Ada Vosk (129 gold)")], default="ada_vosk", not_these=["dot"])])
+    book = SimpleNamespace(params=[Param(must_name=True, name="booking", label="booking", options=[Option(id="rope_walk_birthday", label="A birthday on Rope Walk")], default="rope_walk_birthday")])
+    assert _parse_command_args(book, [], {"ada_vosk"}, {"ada_vosk"}) == ({"booking": "rope_walk_birthday"}, "")   # round 5: a person named is no reason to refuse a booking
     args, problem = _parse_command_args(spec, [], {"dot"}, {"dot"})
     assert problem and "Ada Vosk" in problem and not args                        # someone named who is not a choice: asked, nobody sold
     assert _parse_command_args(spec, [], set(), set()) == ({"girl": "ada_vosk"}, "")       # nobody named and one choice: it stands
@@ -2099,3 +2104,18 @@ def test_round_four_levers_that_hit_the_wrong_girl_or_were_told_as_done():
     assert BLOCK_YES.search("Yes, I'll spend the morning on it.") and BLOCK_YES.search("I wander about. Yes, spend the evening on it.")
     assert not BLOCK_YES.search("Yes Mrs Teague, I will take the booking.")
     assert make_game(CONTENT).lever_ask_plain is True
+
+
+def test_round_five_a_contract_named_in_the_reading_is_the_one_bought():
+    """Round 5 (11-14): "buy Liesl Wark" picked Take with no argument and the engine asked which, listing her first; a second
+    pick of the same lever cancelled a purchase; a booking was refused because a person was named."""
+    from types import SimpleNamespace
+
+    from engine.game import Option, Param
+    from engine.pipeline import _parse_command_args
+
+    take = SimpleNamespace(params=[Param(must_name=True, name="girl", label="contract", default="liesl_wark", options=[
+        Option(id="liesl_wark", label="Liesl Wark, 23, off a ship; 250 gold"), Option(id="winnie_dace", label="Winnie Dace, 16, the harbour; 250 gold")])])
+    assert _parse_command_args(take, [], set(), set(), "The proprietor buys Winnie Dace's contract.") == ({"girl": "winnie_dace"}, "")
+    assert _parse_command_args(take, [], set(), set(), "The proprietor buys a contract.")[1].startswith("Which contract?")
+    assert _parse_command_args(take, [], set(), set(), "He weighs Liesl Wark against Winnie Dace.")[1].startswith("Which contract?")

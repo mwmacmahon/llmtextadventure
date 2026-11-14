@@ -909,7 +909,10 @@ are still in the code as they always were and are listed on that page as owed.
   travel, 4 wait, 3 search and 1 sleep; at least 6 were wrong (a walk down the hall to a room of the house cost five
   hours, three times; reading a letter was a search; "lets her rest all day" was the player's sleep). With the kind
   deciding, 60 stored turns read again: 18 named an outing, none of them a room of the house; 2 trips into town were
-  missed (no part of the day spent); no check at anyone of the house and none on a price, as before.
+  missed (no part of the day spent); no check at anyone of the house and none on a price, as before. Played (a
+  60-turn round, count): the words would have differed on 18 of 56 turns; on the 6 where they said travel for a move
+  inside the house the kind was right each time; the player counted 10 turns inside with none charged unasked and 13
+  out in the town with 11 charged.
 - **Helped / did not:** unmeasured in the fantasy, noir and the station, where it is still the only reader.
 
 ---
@@ -931,6 +934,7 @@ rounds stays on and may lose its switch; one that has not goes with its code. Al
 | `outing_kind` | going out (into the town, across it, home again, waiting, a whole show watched) is its own kind of attempt and the only one that spends the part of the day; a plain question or a step into another room does not | before it the engine's verb list decided: see `task-kind-words`, §8 |
 | `not_today` | a booked show at a place the turn concerns, more than an hour and a half off, is named to the narrator as not played today, with its day and hour | before it: a show told in full two days early and again on its day (round 4, 2026-11-14) |
 | `skip_anchor` | each telling of days let run is given a different thing of the house to open on (the kitchen, the cashbox, the weather, what was trained), from what the engine knows | before it: ten skips in one round opened on the same blur of days (round 4, the reader); not yet played |
+| `unheard_kept` | a week's offer whose caller has not come yet is not closed on Sunday night | before it: an offer made the morning after it closed, accepted, and never booked (round 5) |
 | `axis_note` | the referee is told when the player's character dealt directly with someone of the house, and asked for the three standings | before it: 6 standing rows in 57 turns over 20 such attempts, then 9 in 55 of which 7 were love up; with it (round 4, 55 turns): 15 rows (love up 8 and down 2, fear up 4, respect up 1), which the reader found matched how each was treated |
 
 The reading in two steps with the game's kinds of attempt is the profile module `reading_steps` (§2); the lever phrase
