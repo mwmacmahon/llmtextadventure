@@ -38,6 +38,7 @@ What a step may expect (all optional; a step with none only has to finish withou
   attitude_change: {id: down|up|same|not_down|not_up}
   people_added: n           how many people the turn filed; people_added_at_most: n
   hp_full: true             the player is at full hit points after the turn
+  ledger: <text> | no_ledger: <text>   the turn's ledger rows hold this text, or do not (a row's kind or its reason)
 Each scenario may name an `area` (fight, quests, pockets, places, talk, time, people); `--area` plays one, and the table
 ends with the passes by area, so what kind of play the suite reaches is on the page.
 """
@@ -160,6 +161,12 @@ def check(exp: dict, lines: list[str], rows: list[dict], before: dict, after: di
         bad.append(f"people_added: {added}, not {exp['people_added']}")
     if "people_added_at_most" in exp and added > int(exp["people_added_at_most"]):
         bad.append(f"people_added: {added}, more than {exp['people_added_at_most']}")
+    book = json.dumps([{"kind": r["kind"], **(r["payload"] if isinstance(r["payload"], dict) else {})} for r in rows
+                       if r["kind"] not in ("model_call", "exchange", "snapshot")], ensure_ascii=False).lower()
+    if "ledger" in exp and str(exp["ledger"]).lower() not in book:
+        bad.append(f"ledger: no row holds {exp['ledger']!r}")
+    if "no_ledger" in exp and str(exp["no_ledger"]).lower() in book:
+        bad.append(f"no_ledger: a row holds {exp['no_ledger']!r}")
     if exp.get("hp_full") and int((after.get("player") or {}).get("hp") or 0) < int((after.get("player") or {}).get("hp_max") or 0):
         bad.append(f"hp_full: {(after.get('player') or {}).get('hp')} of {(after.get('player') or {}).get('hp_max')}")
     if "place" in exp and str((after.get("player") or {}).get("location") or "").lower() != str(exp["place"]).lower():

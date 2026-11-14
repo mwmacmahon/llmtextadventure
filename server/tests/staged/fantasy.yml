@@ -123,7 +123,7 @@
     - "DEBUG: room"
     - "DEBUG: place skeleton feeble"
     - say: "I sit down on the floor and eat an apple."
-      expect: {fighting: true, line: "Combat begins"}
+      expect: {fighting: true, line: "Combat begins", ledger: "hostile, in sight"}
 
 - id: angry_strikes_no_first_blow
   why: "B397: one who is angry (-2) is set against the player and may be fought, and does not strike first"
@@ -146,7 +146,9 @@
     - say: "I turn and run for the door and get out of here."
       expect: {fled: true}
     - say: "I lean on the wall and catch my breath."
-      expect: {fighting: false}
+      # the engine does not put them back in the fight; the telling may still have them come on, by a call (Sonnet did, 11-13:
+      # the room has no way out and the player stood still), so the key is the engine's own row, not who is fought after
+      expect: {no_ledger: "hostile, in sight"}
 
 - id: yielded_to_stays_quiet
   why: "B397: people who took the player's yield do not attack again at once"
