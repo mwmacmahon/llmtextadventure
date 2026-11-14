@@ -204,7 +204,7 @@ class ClownGame(GameBase):
     name = "clown"
     version = "0.1.0"
     title = "Clown Maker"
-    description = "A house behind the harbour that trains clowns. A week at a time, a stable of girls, private clients, the city."
+    description = "A clown school for girls, behind the harbour of a river town. A week at a time: pupils to teach, clients to please, a town to win over."
     family = "clown"
     # the owner, 11-14: "the dev mode one with the mod and the non-dev-mode one without". This one is listed without the dev
     # switch wherever hidden games are loaded at all (never on a player's server, TA_DEV_MODE=off); the one with the owner's
