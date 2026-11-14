@@ -2240,8 +2240,12 @@ def test_the_player_says_whether_the_proprietor_is_a_man_or_a_woman_and_the_narr
     female here"."""
     opts = game.setup_options()["sex"]
     assert [o["id"] for o in opts["options"]] == ["woman", "man"] and opts["default"] == "woman"
-    for pick, want, never in (("woman", "ma'am or madam", "sir or Mr"), ("man", "sir or Mr", "ma'am")):
+    for pick, want, never in (("woman", "ma'am to her face", "sir to his face"), ("man", "sir to his face", "ma'am")):
         st = new(game, sex=pick)
         line = next(x for x in game.frozen_prefix(st).split("\n") if x.startswith("The proprietor: "))
         assert want in line and never not in line and st.player.sex == pick
     assert new(game).player.sex == "woman"                    # a setup that does not say takes the form's default
+    # a name given with its own title gets no second one: the narrator is told the rule, and no code reads the name
+    posh = next(x for x in game.frozen_prefix(new(game, name="Madame Pish Posh", sex="woman")).split("\n") if x.startswith("The proprietor: "))
+    assert "Madame Pish Posh is a woman" in posh and "nothing is put in front of it" in posh
+

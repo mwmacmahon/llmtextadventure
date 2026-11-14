@@ -119,8 +119,14 @@ GUARDS: dict[str, dict[str, str]] = {
 }
 # how the house and the town speak to the proprietor and of them, by the setup's choice (the frozen prefix's line on the proprietor)
 ADDRESS = {
-    "man": " {name} is a man: he and him when anyone speaks of him, sir or Mr to his face.",
-    "woman": " {name} is a woman: she and her when anyone speaks of her, ma'am or madam to her face, Miss or Mrs as the speaker supposes.",
+    # the owner, 11-14: a name given with its own title ("Madame Pish Posh") must not get another put in front of it. The name is
+    # the player's own text, so nothing here reads it: the narrator is told the rule and judges the name itself
+    "man": (" {name} is a man: he and him when anyone speaks of him; sir to his face. The name is exactly as written here. If it already "
+            "carries a title or a style of its own (Dr, Captain, Lord, Monsieur), that is how he is addressed and nothing is put in front "
+            "of it; otherwise Mr with his surname."),
+    "woman": (" {name} is a woman: she and her when anyone speaks of her; ma'am to her face. The name is exactly as written here. If it "
+              "already carries a title or a style of its own (Madame, Dr, Lady, Mother), that is how she is addressed and nothing is put "
+              "in front of it; otherwise Miss or Mrs with her surname, as the speaker supposes."),
     "": " People speak to {name} by name or as the proprietor, and of {name} the same way; nobody says sir or madam, he or she.",   # a save from before the form asked
 }
 GAIN_WORDS = ((7, "much better than they were"), (4, "better than they were"), (2, "a little better"), (1, "barely moved"), (0, "an hour that went nowhere"))
