@@ -591,7 +591,14 @@ class Engine:
         return [self._summary(i, *latest.get(i.id, (0, None))) for i in rows]
 
     def _summary(self, inst: Any, turn: int, doc: dict | None = None, state: BaseModel | None = None) -> dict[str, Any]:
-        game = self.game_of(inst) if inst.game in self.games else None
+        # one save whose mods can no longer be read (a mod format since changed, a deck file gone) must not take the whole list
+        # of saves down with it (the owner, 11-14: a 500 on a game's page). Its line is drawn from the game unmodded; opening
+        # it still says why it cannot be played
+        try:
+            game = self.game_of(inst) if inst.game in self.games else None
+        except Exception as e:  # noqa: BLE001
+            log.warning("save.mods_unreadable " + logs.kv(iid=inst.id, game=inst.game, why=str(e)[:160]))
+            game = self.games.get(inst.game)
         line: list[dict[str, Any]] = []
         ending = None
         if game is not None:

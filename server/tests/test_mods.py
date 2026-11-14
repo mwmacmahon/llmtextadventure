@@ -203,3 +203,18 @@ def test_a_mod_names_deck_files_that_replace_a_loader_whole_and_patches_over_the
     assert "d.yml" in bad["error"] and any("d.yml" in x for x in mm.check_all(tmp_path, {"g": game}))
     with pytest.raises(ValueError):
         mm.resolve(tmp_path, game, ["m.yml"])
+
+
+def test_a_save_whose_mods_cannot_be_read_does_not_take_the_list_of_saves_down(engine, game):  # noqa: F811
+    """The owner, 11-14: a game's page answered 500 because one save kept a mod text in a form the engine no longer reads."""
+    import json
+    iid = engine.create_instance("fantasy", dict(SHEET))
+    setup = dict(engine.store.get_instance(iid).setup or {})
+    setup[md.SETUP_KEY] = [{"name": "Old", "file": "old.yml", "hash": "x", "text": "name: Old\ngame: fantasy\ncontent: a/folder\n"}]
+    engine.store.conn.execute("UPDATE instance SET setup_json=? WHERE id=?", (json.dumps(setup), iid))
+    engine.store.conn.commit()
+    engine._mods_cache.clear()
+    engine._games_cache.clear()
+    with pytest.raises(ValueError):
+        engine.game_of(engine.store.get_instance(iid))
+    assert any(r.get("id") == iid for r in engine.summaries("fantasy", dev=True))
