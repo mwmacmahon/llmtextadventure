@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import random
 import re
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -28,7 +29,7 @@ from . import debug as dbg
 from . import deck as dk
 from . import harbour as hb
 from .reading import HouseReading, HouseReadingStaked
-from .state import (AXES, AXIS_WORDS, DAY, SHOW_WORDS, SKILL_TIERS, SLOTS, STATS, STAT_NAMES, TIER_POINTS, TRAINING_DAYS, WEEKDAYS, WEEK_END_MINUTE, ClownState,
+from .state import (AXES, HouseClock, AXIS_WORDS, DAY, SHOW_WORDS, SKILL_TIERS, SLOTS, STATS, STAT_NAMES, TIER_POINTS, TRAINING_DAYS, WEEKDAYS, WEEK_END_MINUTE, ClownState,
                     Condition, Girl, Hidden, House, Note, Person, Plan, Proprietor, Scenario, Show, Thing, axis_word, hhmm, tier_of,
                     week_of, weekday)
 
@@ -146,6 +147,19 @@ def day_text(day: int, minute: int) -> str:
 def money_word(money: int) -> str:
     """The house's money as the narrator hears it (the number is the player's)."""
     return "in the red" if money < 0 else "tight" if money < 50 else "enough" if money < 400 else "comfortable"
+
+
+@dataclass
+class HouseTurn:
+    """What the clown's world turn hands the pipeline (the shape of the fantasy's WorldTurn): directives for THIS TURN, ledger
+    rows, and the minutes it ran the clock on."""
+    blocked: bool = False
+    directives: list[str] = field(default_factory=list)
+    mechanics: list[str] = field(default_factory=list)
+    rows: list[dict] = field(default_factory=list)
+    skip: list[str] = field(default_factory=list)
+    replaces: list[str] = field(default_factory=list)
+    extra_minutes: int = 0
 
 
 def scenario_from(sc: dict) -> Scenario:
@@ -286,7 +300,7 @@ class ClownGame(GameBase):
         kind = kinds.get(str(setup.get("kind") or "")) or next(iter(kinds.values()))
         sc = dk.fill(sc0, name)
         start = sc.get("start") or {}
-        clock = Clock(day=int(start.get("day", 1)), minute=int(start.get("minute", 540)))
+        clock = HouseClock(day=int(start.get("day", 1)), minute=int(start.get("minute", 540)))
         deck_g, cards = self.content.girls_deck(), self.content.girl_cards()
         starters = [o["id"] for o in self._starter_options()]
         first = str(setup.get("first_girl") or "").strip().lower() or (starters or [(sc.get("girls") or [{}])[0].get("id", "")])[0]
@@ -1990,6 +2004,40 @@ class ClownGame(GameBase):
                 return x
         return None
 
+    # ---- a show the proprietor goes to is played before the prose (C114; the long round, 11-14, and the store: 4 of 18 played
+    # shows were ever counted as attended, though the players nearly always went). The show was scored after the turn its hour
+    # passed, from where the referee had left the proprietor by then; so the narrator told a show it had no result for, the engine
+    # scored it "not attended" a turn or two later, and it was told again as news.
+    def world_turn(self, state: ClownState, adj: Any, player_text: str, rng: Any, turn: int, offset: int = 0) -> tuple[ClownState, HouseTurn]:
+        """The pipeline's hook before the prose. One thing: a booked show whose hour falls in this turn (or within an hour and a
+        half of its end), at the place the proprietor is or the reading says they go, is played now, attended: the clock runs to
+        the show's end, the formula scores it, and THIS TURN carries it as it went.
+        What it assumes the reading got right: only where the proprietor goes, and only when they are not already there; a
+        miss leaves the show to be scored after the turn, as before. Counted in the ledger (`world`: show, by)."""
+        from engine.roles import destination
+        w = HouseTurn()
+        if adj is None or getattr(adj, "kind", "") != "action" or getattr(adj, "minutes_fixed", False):
+            return state, w
+        named = [destination(i) for i in (getattr(adj, "intents", None) or [])] + list(getattr(getattr(adj, "focus", None), "places", None) or [])
+        going = {self._place(state, str(v).replace("_", " ")) for v in named if v}
+        now = state.now_abs
+        due = [x for x in sorted(state.shows, key=lambda x: x.at_abs) if not x.result and now - 720 <= x.at_abs <= now + 90
+               and (state.player.location == x.venue or x.venue in going)]
+        if not due:
+            return state, w
+        s = state if self.in_place else state.model_copy(deep=True)
+        x = next(y for y in s.shows if y.id == due[0].id)
+        by = "place" if s.player.location == x.venue else "reading"
+        end = max(now, x.at_abs + x.hours * 60)
+        s.clock.day, s.clock.minute = end // DAY, end % DAY
+        s.player.location = x.venue
+        self._resolve_show(s, x, turn)
+        s.flags["_played_first"] = [*(s.flags.get("_played_first") or []), x.id]
+        w.extra_minutes = end - now
+        w.directives = [text for kind, text in self.telling_parts(s) if kind == "show" and x.title in text]
+        w.rows = [{"show": x.id, "attended": True, "by": by, "minutes_added": end - now, "result": x.result}]
+        return s, w
+
     def _resolve_show(self, s: ClownState, x: Show, turn: int) -> None:
         g = s.girl(x.girl) if x.girl else s.active_girl
         if g is not None and not g.in_house():
@@ -2505,8 +2553,9 @@ class ClownGame(GameBase):
         s.flags.pop("_report_fresh", None)
         s.flags.pop("_upgrade_fresh", None)
         for x in s.shows:
-            if x.result and x.resolved_turn is not None and x.resolved_turn < info.turn:
-                x.told = True
+            if x.result and x.resolved_turn is not None and (x.resolved_turn < info.turn or x.id in (s.flags.get("_played_first") or [])):
+                x.told = True                            # C114: a show played before this turn's prose was told in it
+        s.flags.pop("_played_first", None)
         h.week_lines = [ln.lstrip("* ") for ln in h.week_lines]
         if h.reckoning and not h.reckoning_until_abs:
             h.reckoning_until_abs = now + int(dk.dial(s, "reckoning_days") * DAY)
@@ -2998,8 +3047,8 @@ class ClownGame(GameBase):
         p = s.player
         return (f"The days ran only as far as the game state's clock says (its Time line: the day and the hour), and no further: if that is "
                 f"short of {meant}, something stopped them, and THIS TURN says what. Write the time passing up to that day and hour in a line or "
-                f"two, built from one thing of the house or the street that has not been told before (never the tram bell, the gasworks or the "
-                f"plan on the wall again once they have been); name the day the clock names and never the one {p.name} meant; nothing is done in "
+                f"two, in new words: no sentence, image or sound from an earlier telling of days passing comes back. Name the day THIS TURN's clock "
+                f"line names, in words, and never the one {p.name} meant or one from an earlier turn; nothing is done in "
                 f"it that the player did not say. If THIS TURN brings someone to the door or word from the town, the days pass in one line and "
                 f"then you play that. What the training did meanwhile is in THIS TURN: say it once, in words, where it fits, or not at all. " + then)
 

@@ -57,6 +57,7 @@ NOTES = {
     "farewell": "Tell the parting briefly: what changes hands, and one thing she says as she goes, in her own voice, new this turn.",
     "arrival": "This is the first sight of her: how she looks and stands, and one new line she speaks.",
     "meeting": "This is a first meeting: who this is, in a look and a line, before the talk.",
+    "lever": "It is set in a line or two, now: nothing it plans or books has happened yet, and none of it is told as done.",
 }
 
 
@@ -71,6 +72,11 @@ def move(game: Any, state: Any, adj: Any, res: dict[str, Any]) -> str:
             return "arrival"
     if cmd:
         return {"skip": "skip", "bear": "borne", "better": "session"}.get(cmd, "lever")
+    # the two-step reading's kinds, when it is on (reading.py): every attempt the desk's (a plan set, a booking taken) and a lever
+    # picked: a beat, not a talk. The long round (11-14): plans set ran 100 to 200 words, one telling the week ahead as done
+    said = list(getattr(adj, "attempt_kinds", None) or [])
+    if said and all(k == "desk" for k in said) and levers:
+        return "lever"
     ids = [x for i in (getattr(adj, "intents", None) or []) for x in (getattr(i, "targets", None) or [])]
     ids += [t for i in (getattr(adj, "intents", None) or []) if (t := getattr(getattr(i, "check", None), "target_entity", None))]
     ids += list(getattr(adj, "entities", None) or [])
@@ -90,7 +96,7 @@ def kind(game: Any, state: Any, adj: Any, res: dict[str, Any], level: str) -> di
         return None
     mv = move(game, state, adj, res)
     parts = [k for k, _ in game.telling_parts(state)]
-    extra = [x for x in (res.get("levers") or []) if x not in FAREWELL and x != "take"]      # a lever beside the player's words: a beat each
+    extra = [] if mv == "lever" else [x for x in (res.get("levers") or []) if x not in FAREWELL and x != "take"]   # a lever beside the player's words: a beat each
     if not mv and not parts and not extra and not (res.get("directives") or []):
         return None
     checks = len(res.get("told") or res.get("assessments") or [])

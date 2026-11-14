@@ -67,6 +67,15 @@ def hhmm(minute: int) -> str:
     return f"{minute // 60:02d}:{minute % 60:02d}"
 
 
+class HouseClock(Clock):
+    """The clock as THIS TURN tells it to the narrator: the weekday and the week, since this game runs on them. The engine's
+    "Day 13, 09:00" left the narrator to work out the weekday, and a skip to Saturday was told as "It is Tuesday morning"
+    (the long round, 11-14, turns 38 and 49)."""
+
+    def render(self) -> str:
+        return f"{WEEKDAYS[weekday(self.day)]} of week {week_of(self.day)}, {hhmm(self.minute)} (day {self.day})"
+
+
 class Secret(BaseModel):
     id: str
     what: str
@@ -425,7 +434,7 @@ class Scenario(BaseModel):
 
 class ClownState(BaseModel):
     scenario: Scenario
-    clock: Clock = Field(default_factory=Clock)
+    clock: HouseClock = Field(default_factory=HouseClock)
     player: Proprietor = Field(default_factory=Proprietor)
     house: House = Field(default_factory=House)
     girls: list[Girl] = Field(default_factory=list)

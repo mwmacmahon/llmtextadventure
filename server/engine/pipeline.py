@@ -1078,6 +1078,8 @@ class Engine:
                 res["directives"] = [d for d in res["directives"] if not d.startswith(tuple(world.replaces))]
             if world.directives:
                 res["directives"] = list(world.directives) + list(res["directives"])
+            if getattr(world, "extra_minutes", 0):        # the game ran the clock on inside its world turn (a show played through to its end)
+                res["elapsed"] = int(res.get("elapsed") or 0) + int(world.extra_minutes)
             if world.blocked:                             # a compulsion won (part four §6): the attempt does not happen, nothing to call
                 res["assessments"] = []
             # B383 (Gemma round 30, 99d2b5b91e22 T6, T19, T26; and 16 retells in the store from 11-11 on): a check the world turn

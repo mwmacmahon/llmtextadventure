@@ -1031,7 +1031,7 @@ def test_round_three_fixes_the_double_charge_the_house_as_a_place_the_quest_note
 def test_the_skip_directive_tells_the_narrator_the_clock_may_have_stopped_short(game: ClownGame):
     st = new(game)
     _, res = game.run_command(st, "skip", {"to": "tomorrow", "confirm": "yes"})
-    assert "short of tomorrow morning" in res.directive and "name the day the clock names" in res.directive     # round 3, turn 9: Tuesday written at Monday 17:00
+    assert "short of tomorrow morning" in res.directive and "clock" in res.directive and "never the one" in res.directive and "tram bell" not in res.directive   # round 3, turn 9: Tuesday written at Monday 17:00; 11-14: the list of things not to repeat fed them back
 
 
 # ---- the bench at odd jobs, dear contracts, the house bought room by room (D198C) -------------------------------------------
@@ -1902,3 +1902,62 @@ def test_an_offer_to_a_girl_who_is_not_of_the_house_is_not_settled_as_the_houses
     adj2 = AssistantReadingStaked(kind="action", summary="x", time_minutes=5, risk="none", intents=[IntentStaked(action="Tell her to sit.", targets=[inside.id])],
                                   fiat=[FiatOutcome(attempt="Tell her to sit.", outcome="It works as the player means it.")])
     assert game.aim_blows(st, adj2, "") == [] and len(adj2.fiat) == 1 and game.scene_block(st, adj2, "narrator") == ""
+
+
+def test_the_turns_clock_line_names_the_weekday(game: ClownGame):
+    """The long round (11-14, turns 38 and 49): "Day 13, 09:00" left the weekday to the narrator, who wrote Tuesday on a Saturday."""
+    from engine.pipeline import _clock_now
+    st = new(game)
+    st.clock.day, st.clock.minute = 13, 540
+    assert _clock_now(st) == "Saturday of week 2, 09:00 (day 13)"
+    assert game.load_state(st.model_dump(mode="json")).clock.render() == _clock_now(st)      # a save loads back as the house's clock
+
+
+def test_a_turn_that_is_only_the_desks_levers_is_a_beat_not_a_talk(game: ClownGame):
+    from engine.roles import IntentStaked
+    from games.hidden.clown import telling
+    from games.hidden.clown.reading import HouseReadingStaked
+    st = _quiet(game)
+    adj = HouseReadingStaked(kind="action", summary="x", time_minutes=2, risk="none", intents=[IntentStaked(action="Write up the week.")], attempt_kinds=["desk"])
+    k = game.telling_kind(st, adj, _res(levers=["plan", "plan"]), "short")
+    assert k["kind"] == "lever" and k["words"] == telling.LEVELS["short"]["move"]["lever"] and "told as done" in k["note"]
+    adj.attempt_kinds = ["desk", "house"]                     # a word with her beside the plan: the talk keeps its room
+    assert game.telling_kind(st, adj, _res(levers=["plan"]), "short")["kind"] == "talk+lever"
+
+
+def _booked(st, minutes_ahead=60, venue="Rope Walk"):
+    from games.hidden.clown.state import Show
+    x = Show(id="t_show", hook="t", title="A birthday tea", client="rope_walk_mother", venue=venue, at_abs=st.now_abs + minutes_ahead, girl=st.active, fee=20, wants=["children"])
+    st.shows.append(x)
+    return x
+
+
+def test_a_show_the_proprietor_goes_to_is_played_before_the_prose_and_counted_as_attended(game: ClownGame):
+    """C114 (the long round, 11-14; the store: 4 of 18 played shows ever attended): the narrator told a show with no result,
+    the engine scored it unattended afterwards, and it was told again as news."""
+    from engine.roles import Focus, IntentStaked
+    from games.hidden.clown.reading import HouseReadingStaked
+    st = _quiet(game)
+    x = _booked(st)
+    money, start = st.house.money, st.now_abs
+    go = HouseReadingStaked(kind="action", summary="x", time_minutes=60, risk="none", intents=[IntentStaked(action="Walk her to the birthday and watch.", transition="move:Rope Walk via:street")],
+                            focus=Focus(places=["Rope Walk"]))
+    s2, w = game.world_turn(st, go, "", random.Random(0), 5)
+    y = next(s for s in s2.shows if s.id == "t_show")
+    assert y.result and y.attended and s2.now_abs == x.at_abs + x.hours * 60 and w.extra_minutes == s2.now_abs - start
+    assert len(w.directives) == 1 and w.directives[0].startswith("THE SHOW, as it went") and w.rows[0]["by"] == "reading"
+    assert s2.house.money == money + y.paid and not next(s for s in st.shows if s.id == "t_show").result       # the given state is untouched
+    assert "show" in game.telling_kind(s2, go, _res(block_spent=True, elapsed=180), "short")["kind"].split("+")
+    s3 = game.after_turn(s2, info(turn=5, minutes=180))
+    assert next(s for s in s3.shows if s.id == "t_show").told and not [k for k, _ in game.telling_parts(s3) if k.startswith("show")]   # told once
+    # staying home, a clicked command, or a show hours off: nothing is played early
+    home = HouseReadingStaked(kind="action", summary="x", time_minutes=5, risk="none", intents=[IntentStaked(action="Ask Mrs Pell for tea.", targets=["pell"])])
+    assert game.world_turn(st, home, "", random.Random(0), 5)[1].rows == []
+    go.minutes_fixed = True
+    assert game.world_turn(st, go, "", random.Random(0), 5)[1].rows == []
+    go.minutes_fixed = False
+    st.shows[-1].at_abs = st.now_abs + 400
+    assert game.world_turn(st, go, "", random.Random(0), 5)[1].rows == []
+    st.shows[-1].at_abs = st.now_abs + 30                                # already there: no reading needed
+    st.player.location = "Rope Walk"
+    assert game.world_turn(st, home, "", random.Random(0), 5)[1].rows[0]["by"] == "place"
