@@ -11,6 +11,9 @@ is never offered). The directory is read fresh whenever it is asked for, so an e
     rules: assistant, referee  the same, on the assistant's and the referee's rules text (frozen per save, like the prefix)
     state                      JSON merge patch onto the starting state (inventory, a list with ids, patched by id)
     rulings_off                a list of the game's own rulings switched off: the referee's rule text and the engine's net
+    content                    a folder under the game's own content folder (decks/<name>) swapped in whole for it: the
+                               prefix, the house file, the cards, the hooks. The base game is the same game; the mod
+                               replaces the decks and the wording. Read live, like the game's own content (not frozen)
 
 Application order at creation (the design): scenario patch, prefix build and patch, rules patch, state build and patch,
 then freeze. A save keeps each applied mod's name, hash and full text (setup `_mods`), so it outlives the file.
@@ -26,7 +29,7 @@ import yaml
 
 EXAMPLE = "example.yml"
 SETUP_KEY = "_mods"           # where a save keeps the applied mods: [{name, file, hash, text}] in its setup
-KEYS = ("name", "about", "game", "scenario", "prefix", "rules", "state", "rulings_off", "order")
+KEYS = ("name", "about", "game", "scenario", "prefix", "rules", "state", "rulings_off", "order", "content")
 NAME_OK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.-]{0,60}\.ya?ml$")
 HEADING = re.compile(r"^[A-Z][A-Z0-9 ,'’\-]{3,}[.:]?(\s|$)")
 
@@ -194,16 +197,46 @@ class PatchedContent:
         return getattr(self._base, name)
 
 
+def content_folder(applied: list[dict] | None) -> str:
+    """The folder a mod swaps the game's content for (`content: decks/<name>`, under the game's own content folder); the last
+    mod that names one wins. The owner, 11-14: "the mod should be able to swap out decks ... keep the games identical in their
+    base, just the mod replaces language etc". The folder is a whole content folder (prefix, house file, cards, hooks): nothing
+    falls back to the game's own, so none of the game's own wording reaches a save made with the mod."""
+    out = ""
+    for m in parsed(applied):
+        f = str(m.get("content") or "").strip().strip("/")
+        if f:
+            if f.startswith(".") or ".." in Path(f).parts or Path(f).is_absolute():
+                raise ValueError(f"Mods: content must be a folder under the game's own content folder, not {f!r}")
+            out = f
+    return out
+
+
 def game_with(game: Any, applied: list[dict] | None) -> Any:
-    """The game as a modded save sees it: a shallow copy whose content loader carries the mods' scenario patch; the game
-    itself when no mod patches the scenario. Generic: any game whose content is a `Content` (gamekit) or like it."""
-    patch = scenario_patch(applied)
-    if not patch or getattr(game, "content", None) is None or isinstance(game.content, PatchedContent):
+    """The game as a modded save sees it: a shallow copy whose content loader is the mods' content folder when one names one,
+    and carries the mods' scenario patch; the game itself when no mod does either. Generic: any game whose content is a
+    `Content` (gamekit) or like it."""
+    patch, folder = scenario_patch(applied), content_folder(applied)
+    if (not patch and not folder) or getattr(game, "content", None) is None or isinstance(game.content, PatchedContent):
         return game
     import copy
     g = copy.copy(game)
-    g.content = PatchedContent(game.content, patch)
+    if folder:
+        d = Path(game.content.dir) / folder
+        if not d.is_dir():
+            raise ValueError(f"Mods: the content folder {folder!r} is not in this game's content")
+        key = str(d)
+        if key not in _SWAPPED:                      # one loader a folder, so its file cache holds from turn to turn
+            _SWAPPED[key] = type(game.content)(d)
+        g.content = _SWAPPED[key]
+        if hasattr(g, "content_dir"):
+            g.content_dir = d
+    if patch:
+        g.content = PatchedContent(g.content, patch)
     return g
+
+
+_SWAPPED: dict[str, Any] = {}
 
 
 def rulings_off(applied: list[dict] | None) -> set[str]:

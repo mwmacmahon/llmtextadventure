@@ -407,6 +407,10 @@ is Super Dark Fantasy's Conan pass with too_far off. Variants: a game's features
 strong backend, because they may overwhelm a local model (the owner, 10-30). Design: DESIGN-mods-2026-11-08 (the
 owner's five answers recorded); the variants idea has no design.
 
+**A mod may swap the decks (11-14, D286):** `content: decks/<name>` names a folder under the game's own content folder,
+swapped in whole (prefix, house file, cards, hooks) for a save made with the mod; a game may name mods that are always on
+(`forced_mods`), which is how a derived listing is "the same game with this mod". First use: the hidden game's second listing.
+
 **Mods designed; placement next after the fantasy is considered ready (B79).** Super Dark Fantasy exists as a copy
 (B88); the Conan pass is B89. **Variants: idea**, not started; the game-design pages are the inventory to tag from;
 do not build the split until the hard/easy eval slice shows where local models fail.
@@ -464,7 +468,15 @@ three-day warning (D211C). Live rounds on hold (the owner). **Built 11-13 (D269 
 both futures; it was the last game on the first form), the telling's length by its own kinds of turn (C105: a move plus the
 parts the engine wants told, summed to a cap; the numbers are first guesses), its system text stable for the cache, keyed
 staged scenes with debug words, the reading probe on its stored turns, the command handler one function a command.
-**Left:** the owner's word on how short and a judged trial of the lengths; the two-step reading tried on it; the simulator's calibration grids; a round on the four-part
+**Built 11-14 (D277 to D286):** the two-step, kinds-first reading adopted for it on any local server (`reading_steps_local`);
+three long Gemma rounds read and fixed (levers said in words, the clock by the reading's own kind, shows, offers); a trip out
+asks before it spends the part of the day and the panel shows the day; listed without the dev switch wherever hidden games
+load; the game opens at the Harbourmaster's shed and the first pupil is chosen in play with the ordinary Take; a seed per
+game; the default wording reworded to a warmer register with the earlier decks and text kept whole as a content folder a mod
+swaps in (a second, dev-only listing has that mod always on), and a tool and a test that none of the default's new wording
+reaches it. **Next (the owner, 11-14):** booking eligibility by a girl's visible tags (a booking requires or excludes tags;
+C129), and asking about a booking before it is played, a check that can nudge the show (C130).
+**Left:** the owner's word on how short and a judged trial of the lengths; the simulator's calibration grids; a round on the four-part
 day when live play resumes; the save's growth (C97, every game); the content pass; the C-lines in its own roadmap.
 
 ## 16. Writing for models

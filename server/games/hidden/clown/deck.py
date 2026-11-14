@@ -113,6 +113,12 @@ class ClownContent(Content):
         p = self.dir / "challenges.yml"
         return list((self._yaml(p) or {}).get("challenges") or []) if p.exists() else []
 
+    def words(self) -> dict:
+        """words.yml: wording the code otherwise carries itself (the shed's paragraph, the reckonings), for a content folder that
+        words them its own way; absent, the code's stand."""
+        p = self.dir / "words.yml"
+        return dict(self._yaml(p) or {}) if p.exists() else {}
+
     def death_lines(self) -> list[dict]:
         p = self.dir / "death_lines.yml"
         return list((self._yaml(p) or {}).get("lines") or []) if p.exists() else []

@@ -41,3 +41,8 @@ state:
 
 # The game's own rulings switched off (this game declares none).
 rulings_off: []
+
+# A whole replacement set of decks and text: a folder under this game's content folder (notes/content/clown/decks/<name>/) with
+# its own prefix.md, scenarios/, girls/, hooks/, challenges.yml and death_lines.yml. Nothing falls back to the game's own files.
+# content: decks/<name>
+

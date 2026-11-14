@@ -100,7 +100,7 @@ def test_the_setup_is_four_fields_and_the_first_morning(game: ClownGame):
     assert all(h.tier == 1 for h in st.hooks)                                          # Rope Walk and two of the tier-one cards
     assert st.house.best["acrobatics"] == 45
     prefix = game.frozen_prefix(st)
-    assert "Hal Ferris" in prefix and "Hidden: She lit the fire" in prefix and "Comes to the house later" in prefix
+    assert "Hal Ferris" in prefix and "Hidden: She started the fire" in prefix and "Comes to the house later" in prefix
     assert game.opening(st).startswith("Monday, nine")
 
 
@@ -992,7 +992,7 @@ def test_the_first_girl_is_a_harbour_girl_and_the_written_three_come_to_the_door
     assert {x.id: x.status for x in st.girls if not x.card} == {"dot": "away", "rosalind": "away", "billie": "away"}
     assert st.house.best["pratfalls"] == 30 and game._at_the_door(st) is None
     prefix = game.frozen_prefix(st)
-    assert "Until then she is about the town: she sleeps in what is left of the Vance wagon" in prefix
+    assert "Until then she is about the town: she lives in the Vance family's wagon" in prefix
     assert "dot (Dorothea Vance, not yet in the house; about the town)" in game.adjudication_rules(st) and "pim_dace" in game.referee_rules(st)
     assert "Pim Dace" in game.render_bulletin(st, "") and "bought off the boats" in game.render_bulletin(st, "")
     st.flags["first_girl_come"] = True                                   # day 8, by the event
@@ -1094,7 +1094,7 @@ def test_dear_contracts_and_the_rooms_the_take_refuses_when_full_and_a_written_g
     assert st.house.rooms == int(dk.dial(st, "rooms")) == 2 and st.house.upgrades == []
     cards = game.content.girl_cards()
     assert all(100 <= c["price"] <= 300 for c in cards.values())
-    assert "The house: 2 rooms for girls, 1 kept; the hand holds 3 cards." in game.render_bulletin(st, "")
+    assert "The house: 2 rooms for pupils, 1 taken; the hand holds 3 offers of work." in game.render_bulletin(st, "")
     cid = st.harbour.hand[0]
     st.house.money = cards[cid]["price"] - 1
     _, res = game.run_command(st, "take", {"girl": cid})
@@ -1145,7 +1145,7 @@ def test_the_house_is_the_upgrade_tree_rooms_and_cards_in_the_hand(game: ClownGa
     s2, _ = game.run_command(s2, "upgrade", {"upgrade": "guild_book"})
     s2, res = game.run_command(s2, "upgrade", {"upgrade": "hill_cards"})
     assert res.ok and s2.house.rooms == 4 and s2.house.hand_size == 5
-    assert "The house: 4 rooms for girls, 1 kept; the hand holds 5 cards." in game.render_bulletin(s2, "")
+    assert "The house: 4 rooms for pupils, 1 taken; the hand holds 5 offers of work." in game.render_bulletin(s2, "")
     table = next(p for p in game.ui(s2).panels if p.type == "table" and p.title == "The house")
     cells = [c.text for row in table.rows for c in row]
     assert "1 kept of 4" in cells and "5 cards" in cells and ups["hill_cards"]["name"] in cells
@@ -2022,7 +2022,7 @@ def test_the_narrators_state_is_cut_by_what_the_turn_concerns_and_whole_without_
     aimed = AssistantReadingV2(kind="action", summary="x", time_minutes=5, risk="none", intents=[IntentV2(action="Call on them.", targets=[far.id])])
     assert f"- {far.name}:" in narrator_bulletin(game, st, "", aimed) and f"- {far.name}:" not in cut
     slip = AssistantReadingV2(kind="action", summary="x", time_minutes=5, risk="none", intents=[IntentV2(action="Read the slip again.")], focus=Focus(things=["the_slip"]))
-    assert "On the clerk's slip at the Harbourmaster's shed (contracts for sale" in narrator_bulletin(game, st, "", slip)
+    assert "On the clerk's slip at the Harbourmaster's shed (women who put their names down" in narrator_bulletin(game, st, "", slip)
     assert narrator_bulletin(game, st, "", None) == whole == game.state_for_models(st).replace(game.state_for_models(st), whole)   # no reading: everything
     assert "This turn is not about them" not in game.state_for_models(st)            # the assistant and the referee see it all
     monkeypatch.setenv("TA_CLOWN_SWITCHES", "focus_filter=off")
@@ -2132,9 +2132,11 @@ def test_a_trip_out_asks_before_it_spends_the_part_of_the_day():
     game = make_game(CONTENT)
     s = new(game)
     s.clock.minute = 10 * 60
-    out = SimpleNamespace(attempt_kinds=["outing"])
+    out = SimpleNamespace(attempt_kinds=["outing"], intents=[], focus=SimpleNamespace(places=["the_harbour"]))
     ask = game.spend_ask(s, out)
-    assert "rest of the morning" in ask and "afternoon (14:00)" in ask and "yes" in ask.lower()
+    assert "rest of the morning" in ask and "afternoon (14:00)" in ask and "yes" in ask.lower() and "out in the town" in ask
+    indoors = game.spend_ask(s, SimpleNamespace(attempt_kinds=["outing"], intents=[], focus=SimpleNamespace(places=["the_practice_room"])))
+    assert "out in the town" not in indoors and "rest of the morning" in indoors          # hours let pass indoors: no town in the question
     assert game.spend_ask(s, SimpleNamespace(attempt_kinds=["house"])) == ""
     place = next(x for x in s.places if x not in s.scenario.house_places)
     s.shows.append(Show(id="t", hook="t", title="A tea", client="c", venue=place, at_abs=s.now_abs + 120, girl=s.girls[0].id, fee=10))
@@ -2167,3 +2169,13 @@ def test_the_first_pupil_is_chosen_at_the_harbour_and_every_game_has_its_own_see
     assert len(hands) > 1
     a, b = (game.new_instance({**SETUP, "first_girl": "harbour", "seed": "k"})[1] for _ in range(2))
     assert a.harbour.hand == b.harbour.hand and a.seed == "k"
+
+
+def test_none_of_the_defaults_new_wording_reaches_the_variant_kept_as_it_was():
+    """D285 (the owner, 11-14): the default game was reworded; the text as it stood is kept whole in another content folder for
+    the variant with the owner's mod on. Every file there has its hash of that day, a reworded file is never shared, and no
+    sentence new to the default is anywhere in the variant's files or its assembled prefix."""
+    from games.hidden.clown.tools import after_dark
+    if not (after_dark.DARK / after_dark.MANIFEST).exists():
+        pytest.skip("the variant's content is not on this machine")
+    assert after_dark.check() == []

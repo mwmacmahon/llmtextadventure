@@ -205,10 +205,15 @@ def seed_words(card: dict, skill_name, lift: int = 0) -> str:
     return ", ".join(f"{skill_name(k).lower()} {tier_of(v, SKILL_TIERS)}" for k, v in seed) or "nothing the clerk could name"
 
 
-def card_line(card: dict, deck: dict, skill_name, state: ClownState | None = None, dial=None) -> str:
-    """One line of a card for the narrator and the slip: who, how old, from where, bound for what, what the slip says she can do, the price."""
-    return (f"{card['name']}, {card.get('age')}, {tag_meaning(deck, str(card.get('origin') or ''))}, bound for {card.get('bound_for')}; the slip says "
-            f"{seed_words(card, skill_name, lift_of(state, dial, state.harbour.since.get(str(card.get('id') or ''))))}; {price_of(card, state, dial)} gold for the contract")
+def card_line(card: dict, deck: dict, skill_name, state: ClownState | None = None, dial=None, words: str | None = None) -> str:
+    """One line of a card for the narrator and the slip: who, how old, from where, bound for what, what the slip says she can do, the price.
+    `words`: a content folder's own wording of the line (words.yml card_line), with the same fields."""
+    f = dict(name=card["name"], age=card.get("age"), origin=tag_meaning(deck, str(card.get("origin") or "")), bound_for=card.get("bound_for"),
+             can=seed_words(card, skill_name, lift_of(state, dial, state.harbour.since.get(str(card.get("id") or "")))), price=price_of(card, state, dial))
+    line = str(words or "{name}, {age}, {origin}, bound for {bound_for}; the slip says {can}; {price} gold for the contract").format(**f)
+    if bucket_of(int(card.get("age", 30))) == "youth":       # the bucket's own line, said on the slip itself too (the cold read, 11-14: it came last, after the purchase)
+        line += " (" + str(bucket_rules(deck, "youth").get("line") or "She is a child in the house and is written as one.") + ")"
+    return line
 
 
 def girl_file_lines(g: Girl, deck: dict) -> list[str]:
