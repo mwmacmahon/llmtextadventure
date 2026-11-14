@@ -2252,3 +2252,13 @@ def test_the_player_says_whether_the_proprietor_is_a_man_or_a_woman_and_the_narr
     posh = next(x for x in game.frozen_prefix(new(game, name="Madame Pish Posh", sex="woman")).split("\n") if x.startswith("The proprietor: "))
     assert "Madame Pish Posh is a woman" in posh and "nothing is put in front of it" in posh
 
+
+
+def test_only_the_engines_offers_are_work_and_the_block_and_a_guard_say_so(game):
+    """Round 8 (11-14) and the owner: "No hallucinated bookings!" The narrator's block names the offers in hand each turn and
+    says anyone else sends word; the referee has a guard for a day or a fee fixed in talk."""
+    st = new(game)
+    block = game.render_bulletin(st, "")
+    assert "A show exists only as one of these or under Booked" in block and "will send word to the house" in block
+    assert ("Offers in hand, heard and not yet booked: " in block) or ("No offer of work is in hand." in block)
+    assert "talk_booking" in game.guards and "ruling talk_booking (serious)" in game.referee_rules(st)

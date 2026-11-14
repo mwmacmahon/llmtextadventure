@@ -116,6 +116,14 @@ GUARDS: dict[str, dict[str, str]] = {
                          'reaching her (want, loss, fear, danger, an unkind client): those may happen to her and be told, as a child lives them.'),
                 "fix": ('Tell the turn again with her at her own age: a child of the house among grown-ups who look out for her. Leave out what '
                         'the first telling did with her, and keep everything else as it was.')},
+    # a booking made in talk (round 8, 11-14; the owner: "No hallucinated bookings!"). The narrator's block says what work there is;
+    # this is the check after the telling
+    "talk_booking": {"rule": ("the telling had someone agree to a show, or name a day, an hour or a fee for one, that the game state lists "
+                              "neither among the offers in hand nor under Booked. Never for an offer or a booking the game state lists (its "
+                              "day, hour and fee are the engine's and may be said), and never for someone who says they would like a clown "
+                              "and will send word."),
+                     "fix": ("Tell the turn again: whoever it was is interested and says they will send word to the house. No day, hour or fee "
+                             "is named and nothing is agreed. Keep everything else as it was.")},
 }
 # how the house and the town speak to the proprietor and of them, by the setup's choice (the frozen prefix's line on the proprietor)
 ADDRESS = {
@@ -814,6 +822,14 @@ class ClownGame(GameBase):
             lines.append("Booked: " + "; ".join(f"{x.title} at {x.venue}, {WEEKDAYS[weekday(x.at_abs // DAY)]} at {hhmm(x.at_abs % DAY)}"
                                                 + (f", {s.girl(x.girl).name} goes" if s.girl(x.girl) else "") for x in shows)
                          + ". Each is played, and its fee paid, there at its hour and not before.")
+        if sw.on("offers_only"):
+            # round 8 (11-14, turns 16, 42, 43, 52; the owner: "No hallucinated bookings!"): two people named a day and a fee for
+            # a show in talk, with no offer open; nothing could be booked, and one changed his day a week later. The block now
+            # says each turn what work there is, and what anyone else can say
+            in_hand = [x.title for x in dk.hand(s) if x.status == "live" and not x.show]
+            lines.append(("Offers in hand, heard and not yet booked: " + "; ".join(in_hand) + ". " if in_hand else "No offer of work is in hand. ")
+                         + "A show exists only as one of these or under Booked. Anyone else who would like a clown says they will send word to "
+                           "the house; the day, the hour and the fee come with that word.")
         if h.last_show:
             last = max((x for x in s.shows if x.result), key=lambda x: x.at_abs, default=None)
             when = f" (on {WEEKDAYS[weekday(last.at_abs // DAY)]}, {'this week' if last.at_abs // DAY >= s.clock.day - weekday(s.clock.day) else 'last week'})" if last else ""
