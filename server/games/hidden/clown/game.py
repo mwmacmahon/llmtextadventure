@@ -823,6 +823,40 @@ class ClownGame(GameBase):
         from . import telling
         return telling.kind(self, state, adj, res, level)
 
+    # ---- a girl who is not of the house (the long round, 11-14, turn 29: an offer of a room to a girl met about the town was read
+    # as the house's own business, settled "works", and told as her moving in; the engine takes on only one who has come asking)
+    def _outsiders(self, s: ClownState, adj: Any) -> list[Girl]:
+        """The girls this reading aims at who are not of the house: met about the town (away) or at the door asking (available)."""
+        ids = [x for i in (getattr(adj, "intents", None) or []) for x in (getattr(i, "targets", None) or [])] + list(getattr(getattr(adj, "focus", None), "people", None) or [])
+        return [g for g in s.girls if g.id in ids and g.status in ("away", "available")]
+
+    def aim_blows(self, state: ClownState, adj: Any, player_text: str = "") -> list[str]:
+        """The engine's hook for mending a reading (named and counted in the ledger). One mend: an attempt at a girl who is not
+        of the house is not the house's to settle, so its settled "works" is taken out; the narrator's block says how she stands."""
+        out = self._outsiders(state, adj)
+        fiat = getattr(adj, "fiat", None)
+        if not out or not fiat:
+            return []
+        mine = {i.action for i in adj.intents if set(getattr(i, "targets", None) or []) & {g.id for g in out}}
+        kept = [f for f in fiat if not (f.settled == "works" and f.attempt in mine)]
+        if len(kept) == len(fiat):
+            return []
+        adj.fiat = kept
+        return ["not_of_the_house"]
+
+    def scene_block(self, state: ClownState, adj: Any, audience: str) -> str:
+        if audience != "narrator" or adj is None:
+            return ""
+        p, lines = state.player, []
+        for g in self._outsiders(state, adj):
+            if g.status == "available":
+                lines.append(f"{g.name} is not of the house yet: she has come asking to be taken on. If {p.name} says yes this turn and she agrees in "
+                             f"words, she joins" + ("" if self._rooms_free(state) > 0 else ", but the house has no room free, and that stops it: play her finding that out") + "; anything less leaves her outside.")
+            else:
+                lines.append(f"{g.name} is not of the house and has not come asking to be taken on. She may talk, and may say she will think on it or "
+                             f"come by; whatever {p.name} offers, she does not move in, take a room or start work this turn.")
+        return ("WHO IS NOT OF THE HOUSE\n" + "\n".join(lines)) if lines else ""
+
     def assistant_lists(self, s: ClownState, fresh: ClownState) -> dict[str, list[str]]:
         """The assistant's own lists while the stakes are on (engine/assistant_view.stakes_blocks): who is who (the girls, then
         the people met or heard of), what each still hides, and what play added to the cast."""

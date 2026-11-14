@@ -17,13 +17,14 @@ from engine.roles import AssistantReadingStaked, AssistantReadingV2
 KINDS: dict[str, dict[str, str]] = {
     "desk": {"what": "only a listed command and nothing more (the week's plan, a booking taken, a switch, an upgrade, a contract bought or sold): "
                      "the command decides it", "settle": "command"},
-    "house": {"what": "done to or with a girl of the house, or said to the housekeeper: an order, a question, a kindness, a threat, a "
+    "house": {"what": "done to or with a girl who lives in the house now, or said to the housekeeper: an order, a question, a kindness, a threat, a "
                       "punishment, a promise, a lesson, taking her somewhere. It works; nobody in the house stops the proprietor",
               "settle": "works"},
     "haggle": {"what": "offering less than a listed price, or asking more than a listed fee: the price stands", "settle": "fails",
                "outcome": "The price stands as it is listed; it is not moved by talk.", "why": "prices are the engine's"},
     "town": {"what": "asked of, or done to, someone of the town who could refuse or resist, where it matters: a favour, a lie they could "
-                     "check, a threat, a way past them, the proprietor's own turn on a floor", "settle": "check"},
+                     "check, a threat, a way past them, the proprietor's own turn on a floor; also anything asked of a girl who is not of the house "
+                     "yet (met about the town, or at the door asking)", "settle": "check"},
     "hopeless": {"what": "the words plainly miss: a demand nobody in their place would grant", "settle": "fails"},
     "errand": {"what": "going somewhere, waiting, watching, practising, a small purchase, a plain question to anyone, a talk nobody has "
                        "reason to refuse: routine, nothing resists", "settle": "works"},

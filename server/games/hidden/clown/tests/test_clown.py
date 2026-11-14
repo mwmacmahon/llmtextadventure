@@ -1883,3 +1883,22 @@ async def test_no_phrase_list_stands_between_the_readings_pick_and_the_lever(eng
     adj2, levers = engine._preview_levers(game, st, adj, iid, 1, lambda k, p: rows.append((k, p)), "Ada is on the clubs before lunch from now on.")
     assert [lv.id for lv in levers] == ["plan"] and not levers[0].blocked
     assert [k for k, _ in rows if k.startswith("lever_")] == ["lever_gate_off"]
+
+
+def test_an_offer_to_a_girl_who_is_not_of_the_house_is_not_settled_as_the_houses_own(game: ClownGame):
+    """The long round (11-14, turn 29): a room offered to a girl met about the town was settled "works" and told as her moving in."""
+    from engine.roles import AssistantReadingStaked, FiatOutcome, IntentStaked
+    st = _quiet(game)
+    away = next(g for g in st.girls if g.status == "away")
+    adj = AssistantReadingStaked(kind="action", summary="x", time_minutes=5, risk="none",
+                                 intents=[IntentStaked(action="Offer her a room.", targets=[away.id]), IntentStaked(action="Ask Mrs Pell for tea.", targets=["pell"])],
+                                 fiat=[FiatOutcome(attempt="Offer her a room.", outcome="It works as the player means it."), FiatOutcome(attempt="Ask Mrs Pell for tea.", outcome="It works as the player means it.")])
+    assert game.aim_blows(st, adj, "") == ["not_of_the_house"] and [f.attempt for f in adj.fiat] == ["Ask Mrs Pell for tea."]
+    block = game.scene_block(st, adj, "narrator")
+    assert away.name in block and "does not move in" in block and game.scene_block(st, adj, "engine") == ""
+    away.status = "available"
+    assert "she joins" in game.scene_block(st, adj, "narrator")
+    inside = next(g for g in st.girls if g.in_house())
+    adj2 = AssistantReadingStaked(kind="action", summary="x", time_minutes=5, risk="none", intents=[IntentStaked(action="Tell her to sit.", targets=[inside.id])],
+                                  fiat=[FiatOutcome(attempt="Tell her to sit.", outcome="It works as the player means it.")])
+    assert game.aim_blows(st, adj2, "") == [] and len(adj2.fiat) == 1 and game.scene_block(st, adj2, "narrator") == ""
