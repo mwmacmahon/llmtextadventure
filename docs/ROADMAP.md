@@ -454,9 +454,11 @@ by the owner (D205C: only "skip to …" runs days, warned first; no haggling, th
 offers, any number booked, shows two weeks out); rounds 6 and 7 and their fixes (D206C, D207C); a deck heavy in the first tier,
 rebooking a step harder, rest that always pays, Saturday training (D208C); the day in four parts with the engine's confirm, and
 an engine-only simulator with its own design doc, notes/CLOWN_SIMULATOR.md (D210C, D212C); tiredness on a curve with a
-three-day warning (D211C). Live rounds on hold (the owner). **High priority (the owner, 11-12): the telling's length for the
-clown (C105; the engine's budget, D246, already reaches it on the `sonnet` profile; its own kinds of turn, a cold read and a
-trial are left).** **Left:** the simulator's calibration grids; a round on the four-part
+three-day warning (D211C). Live rounds on hold (the owner). **Built 11-13 (D269 to D271):** the newer reading form (targets, focus, attempts settled without a check, checks with
+both futures; it was the last game on the first form), the telling's length by its own kinds of turn (C105: a move plus the
+parts the engine wants told, summed to a cap; the numbers are first guesses), its system text stable for the cache, keyed
+staged scenes with debug words, the reading probe on its stored turns, the command handler one function a command.
+**Left:** the owner's word on how short and a judged trial of the lengths; the two-step reading tried on it; the simulator's calibration grids; a round on the four-part
 day when live play resumes; the save's growth (C97, every game); the content pass; the C-lines in its own roadmap.
 
 ## 16. Writing for models

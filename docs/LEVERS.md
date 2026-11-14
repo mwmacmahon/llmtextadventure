@@ -207,8 +207,14 @@ secrets).
   early stops: not adopted. Gemma trial on 20 stored turns: median 162 to 135 words, narrator seconds 154 to 133, no
   problem in either telling. Played round on Gemma (D254): median 140 words, none over 1.5 times its budget.
 - **Helped / did not:** helped on Sonnet and on Gemma in the fantasy. Sonnet runs 15 to 60 percent over its number:
-  the budget pulls, it does not cap. The fantasy's death and peril numbers are first guesses, not trialled. Noir, the
-  station and the clown are not trialled. Untested on Qwen.
+  the budget pulls, it does not cap. The fantasy's death and peril numbers are first guesses, not trialled. Noir and
+  the station are not trialled. Untested on Qwen.
+- **The hidden game's kinds (C105, 2026-11-13):** its turns are a move plus parts, summed to a cap
+  (`games/hidden/clown/telling.py`: the move is a skip, a farewell, an arrival, a scene and so on; the parts are the
+  game's own directives for the turn, from one list that also writes the directives). The engine passes a game's
+  `telling_kind` what ran (`res["command"]`, `res["levers"]`), since a sale read as "talk" and a skip of days as a
+  "passage". Its numbers are first guesses from the owner's words on style; keyed by the staged scenes
+  (`staged.py run --game clown`, the `telling` expectation), not yet read by a judge.
 
 ### `directive_economy`
 
@@ -680,7 +686,8 @@ sampler is `config.llamacpp.yml`'s line, because the `gemma4-31b` profile sets n
 - **Helped / did not:** Gemma: no call loses its whole cache, the average work is unchanged, readings and rows are not
   worse. Sonnet: by the prices it should cut the system part's cost by about 40% (no rewrite at twice the price when a
   list changes); not measured, a paid check. Noir and the station name no `turn_lines` yet: on them it moves only the
-  command list.
+  command list. The hidden game names its own (C107, 2026-11-13: the stats, the people by id, the places, the flags),
+  with a test that its system text holds eleven days on.
 
 ### `recent_step`
 
@@ -839,5 +846,8 @@ These change where things run or are stored, not what a model does or is sent. B
 - `GuardConfig`: `default_chars`.
 - `Config`: `pricing`.
 - `Profile`: `name`, `config`, `note`.
+- A game's own text for the assistant, used only when the game gives it (D269): `edge_lines` (its edge examples in place
+  of the engine's five), `stakes_rules` (its rules for futures and settled attempts), `assistant_lists` (who is who, what
+  the cast hide, what play made up, for a cast of another shape), `turn_lines` (what `stable_system` lifts).
 - Environment: `TA_CONFIG`, `TA_LLAMA_URL`, `TA_LLAMA_HELPER_URL`, `TA_LLAMA_PREPARE_URL`, `TA_DATA_DIR`,
   `TA_DEV_MODE`, `TA_DEV_PIN`.

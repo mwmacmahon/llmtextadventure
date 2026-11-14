@@ -1064,6 +1064,10 @@ class Engine:
         # ---- 2. resolve -----------------------------------------------------
         res = self._resolve(game, state, adj, iid, turn, extra_directives, through=bool(cmd_result is not None and cmd_result.through))
         state = res["state"]
+        # C105 (11-13): what ran this turn, for a game's `telling_kind` (a sale is not a talk): the clicked or typed command's
+        # id and arguments, and the ids of the levers the reading picked (played by the narrator, committed after the prose)
+        res["command"] = {"id": command[0], "args": dict(command[1] or {})} if (command is not None and cmd_result is not None) else None
+        res["levers"] = [lv.id for lv in levers if not lv.blocked]
         # ---- 2b. the world acts (part four, D176): the game's own rolls before the prose (a peril's
         #          countdown, the enemies' moves); the narrator is told each in THIS TURN, the § lines follow the prose
         world = None
@@ -2800,12 +2804,18 @@ Things in the pockets count when named or plainly in use; name the thing in edge
 EDGE_TEXT = {
     "dice_d20": ("From -4 to +4: a thing made for the job +2; the right thing and a sound plan +3 or +4; a ploy against someone with reason to doubt -2; a plainly stupid attempt -3 or -4.", "+2", "-2"),
     "dice_2d6": ("-1, 0 or +1, and +2 only for a plan that nearly settles it.", "+1", "-1"),
+    # no die (the clown, C106): the stat and the edge alone settle it, so the edge is the whole of what this attempt adds
+    "threshold": ("From -4 to +4: something that helps +2; what this person wants, brought, and a sound plan +3 or +4; a ploy against someone with reason to doubt -2; a plainly stupid attempt -3 or -4.", "+2", "-2"),
 }
 
 
 def words_decide(game: Game) -> str:
     rng_text, up, down = EDGE_TEXT.get(getattr(game, "resolver", "dice_d20"), EDGE_TEXT["dice_d20"])
     text = WORDS_DECIDE.replace("{range}", rng_text).replace("{up}", up).replace("{down}", down)
+    own = getattr(game, "edge_lines", None) or []        # a game's own edge examples and closing line, for the five general ones (the clown, C106)
+    if own:
+        head = text.split("\n- Climbing and physical", 1)[0]
+        text = head + "\n" + "\n".join(own)
     ex = getattr(game, "words_examples", None) or []
     return text + ("\nIn this game, for example:\n" + "\n".join(f"- {e}" for e in ex) if ex else "")
 
@@ -2832,7 +2842,7 @@ def adjudicator_inputs(game: Game, state: BaseModel, recent: list[Msg], player_t
     if notes:                                        # the pre-checks' lines (engine/prechecks.py, B105): a nudge, the assistant decides
         msgs[-1] = Msg(msgs[-1].role, msgs[-1].content + "\n\n[ENGINE NOTE]\n" + "\n".join(notes), cache=msgs[-1].cache)
     if extra:
-        game_rules = STAKES_RULES.get(getattr(game, "family", None) or game.name, "").replace("The rules of this game.", "In the futures, complications and fiat you write, these rules hold.", 1)
+        game_rules = (STAKES_RULES.get(getattr(game, "family", None) or game.name, "") or str(getattr(game, "stakes_rules", "") or "")).replace("The rules of this game.", "In the futures, complications and fiat you write, these rules hold.", 1)
         system += "\n\n" + ADJUDICATOR_STAKES + ("\n\n" + game_rules if game_rules else "")
         ideas = getattr(game, "consequence_ideas", "")
         if ideas:                                       # ROADMAP 1c (D144): the author's table, as ideas for the assistant's own

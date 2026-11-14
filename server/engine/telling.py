@@ -81,7 +81,7 @@ def line(b: dict[str, Any] | None, name: str = "") -> str:
     answer = (f" If {who} spoke to someone or asked something, their answer comes whole, in their own words, before anything "
               f"else is cut; the turn stops after the answer, never before it.") if b.get("aimed") else ""
     head = (f"Length: about {b['words']} words of story for the turn (check lines do not count), in at most {b['paragraphs']} "
-            f"short paragraphs.")
+            f"short paragraph{'' if b['paragraphs'] == 1 else 's'}.")
     if b.get("final"):                              # a game's kind that ends the story (a death): no next choice to stop at
         return f"{head}{each} Tell every result settled above."
     return f"{head}{each}{answer} Tell every result settled above; then stop at the first moment {who} would choose what to do next."

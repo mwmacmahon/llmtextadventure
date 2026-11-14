@@ -47,11 +47,18 @@ between the replays and a played round: a new game, a few `DEBUG:` turns that st
 hold them under), then the player's own words, with what the engine must have done (`fled`, `fighting`, `player_attack`,
 `weapon`, a § line held or not held). A step may also be `tell:` (B406): the last turn told again in exactly those words, the referee run on them, so what the referee files from a given telling is keyed. Scenes carry an `area` (fight 17, pockets 6, people 5, time 4, quests 2, places 2, talk 2), and a run ends with the passes by area: what kind of play the suite reaches is on the page. A model reads and tells every turn, so it reaches everything, and the answer is
 keyed. A model varies, so a scenario is judged over repeats. Every fault a round finds gets a scenario. It cannot judge prose.
+Any game can be keyed (C108, 2026-11-13): `state` and `state_change` read the stored state by a dotted path, `reading` the
+assistant's stored reading (its checks, the attempts it settled without one, the commands it picked, who a check is at),
+`telling` the length the engine set and what was written; a step may click a lever (`command:`). `--game <name>` plays
+`notes/content/<name>/staged.yml`, so a hidden game's scenes stay out of the repo; the hidden game has thirteen (reading 4,
+levers 1, length 5, referee 3) and its own `DEBUG:` words (`games/hidden/clown/debug.py`).
 
 **6. The reading probe** (`tools/reading_probe.py run --variant base --variant name:opt=value`, `score`). Stored turns read
 again by the assistant under role options (the field guide, a schema), the live path's own call. Counts with no key: a move
 given on a turn that moved, blow targets that are a person's id, how often the engine rewrote the reading. It measures the
-reading and nothing after it.
+reading and nothing after it. `--game <name>` reads another game's stored turns (any model's) and scores a plain count
+against the stored reading: commands kept, checks gained and lost, attempts settled without a check, with every check and
+settling printed for a reader.
 
 **7. The flee and yield probes** (`tools/flee_probe.py run [--set yield] [--keys REGEX] [--opt structured=tool]`, `score`).
 Keyed sentences (real runs, look-alikes: "I run at it", "I bolt the door", "I walk out") said in stored fights; the score

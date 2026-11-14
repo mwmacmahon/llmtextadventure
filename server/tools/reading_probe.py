@@ -141,18 +141,18 @@ async def run(a: argparse.Namespace) -> Path:
     from engine.store import Store
     cfg = load_config()
     games = load_games(cfg.resolve(cfg.server.content_root))
-    game = games["fantasy"]
+    game = games[a.game]
     profile = os.environ.get("TA_PROFILE", "") or (cfg.profile_name or "")
     variants: dict[str, dict[str, str]] = {}
     for v in a.variant or ["base", "guide:field_guide=true"]:
         name, _, opts = v.partition(":")
         variants[name] = dict(kv.split("=", 1) for kv in opts.split(",") if kv)
-    turns = pick(a.store, profile, a.n, a.since)
+    turns = pick(a.store, profile, a.n, a.since) if a.game == "fantasy" else pick_plain(a.store, a.game, a.n, a.since, a.seed, a.profile)
     src = Store(a.store)
     docs: dict[str, dict] = {}
     OUT.mkdir(parents=True, exist_ok=True)
-    path = a.out or OUT / f"reading_{dt.datetime.now():%Y%m%d-%H%M}_{profile}_{len(turns)}t{('_' + a.note) if a.note else ''}.json"
-    result: dict[str, Any] = {"made": dt.datetime.now().astimezone().isoformat(timespec="seconds"), "profile": profile,
+    path = a.out or OUT / f"reading_{'' if a.game == 'fantasy' else a.game + '_'}{dt.datetime.now():%Y%m%d-%H%M}_{profile}_{len(turns)}t{('_' + a.note) if a.note else ''}.json"
+    result: dict[str, Any] = {"made": dt.datetime.now().astimezone().isoformat(timespec="seconds"), "profile": profile, "game": a.game,
                               "variants": variants, "turns": []}
     have: dict[str, dict] = {}
     if a.resume:                                    # the same turns again: only a reading that is missing or errored is asked for
@@ -182,7 +182,7 @@ async def run(a: argparse.Namespace) -> Path:
                 cur = getattr(role, o)
                 setattr(role, o, (val.lower() == "true") if isinstance(cur, bool) else type(cur)(val))
             eng, sid, folder = _scratch_engine(vcfg, games, docs[iid], t)
-            kept = (game.adjudication_schema, game.adjudication_schema_staked)
+            kept = (game.adjudication_schema, getattr(game, "adjudication_schema_staked", None))
             if swap == "dest":
                 game.adjudication_schema = game.adjudication_schema_staked = dest_schema()
             try:
@@ -202,7 +202,9 @@ async def run(a: argparse.Namespace) -> Path:
             except Exception as e:  # noqa: BLE001
                 rec["readings"][name] = {"error": f"{type(e).__name__}: {e}"[:300]}
             finally:
-                game.adjudication_schema, game.adjudication_schema_staked = kept
+                game.adjudication_schema = kept[0]
+                if kept[1] is not None:
+                    game.adjudication_schema_staked = kept[1]
                 shutil.rmtree(folder, ignore_errors=True)
         result["turns"].append(rec)
         path.write_text(json.dumps(result, indent=0, ensure_ascii=False))
@@ -292,6 +294,85 @@ def score(a: argparse.Namespace) -> int:
     return 0
 
 
+def pick_plain(store: Path, game: str, n: int, since: str, seed: int = 0, profile: str = "") -> list[dict[str, Any]]:
+    """Any game's turns to read again (--game): the stored turns a model read (an adjudication row with its call), `n` of them
+    by a fixed seed, across every stored game of that name born since `since`; `profile` keeps one model's games when given."""
+    c = sqlite3.connect(f"file:{store}?mode=ro", uri=True)
+    rows = []
+    for iid, in c.execute("select id from instance where game=? and created>=? order by created", (game, since)):
+        prof = c.execute("select json_extract(payload_json,'$.name') from ledger where instance_id=? and kind='profile' order by seq desc limit 1", (iid,)).fetchone()
+        if profile and (prof or [""])[0] != profile:
+            continue
+        for t, js in c.execute("select turn, payload_json from ledger where instance_id=? and kind='adjudication' and undone=0 order by turn", (iid,)):
+            if '"_call"' in js and t > 0:
+                rows.append({"key": f"{iid}:{t}", "iid": iid, "turn": t, "why": "stored", "moved": False})
+    random.Random(seed).shuffle(rows)
+    return sorted(rows[:n], key=lambda r: (r["iid"], r["turn"]))
+
+
+def score_plain(a: argparse.Namespace) -> int:
+    """Any game's readings, counted (--game on the run): what each variant wrote, and where it differs from the stored reading
+    on the things a reading must not lose (a listed command, a check)."""
+    run_ = json.loads(Path(a.run).read_text())
+    names = list(run_["variants"])
+    tot: dict[str, Counter] = {n: Counter() for n in names}
+    differ: list[str] = []
+    for rec in run_["turns"]:
+        old = rec.get("stored") or {}
+        old_cmd = sorted(c.get("id", "") for c in old.get("commands") or [])
+        old_chk = sum(1 for i in old.get("intents") or [] if i.get("check"))
+        line = []
+        for n in names:
+            r = rec["readings"].get(n) or {}
+            c = tot[n]
+            if "reading" not in r:
+                c["errors"] += "error" in r
+                continue
+            rd = r["reading"]
+            ints = rd.get("intents") or []
+            cmd = sorted(x.get("id", "") for x in rd.get("commands") or [])
+            chk = sum(1 for i in ints if i.get("check"))
+            c["turns"] += 1
+            c["seconds"] += r.get("seconds") or 0
+            c["out_tokens"] += int((r.get("usage") or {}).get("output_tokens") or 0)
+            c[f"kind {rd.get('kind')}"] += 1
+            c["attempts"] += len(ints)
+            c["attempts with a target"] += sum(1 for i in ints if i.get("targets"))
+            c["checks"] += chk
+            c["settled attempts (fiat)"] += len(rd.get("fiat") or [])
+            c["  of them fails"] += sum(1 for f in rd.get("fiat") or [] if f.get("settled") == "fails")
+            c["turns with neither a check nor a settling nor a command"] += rd.get("kind") == "action" and not (chk or rd.get("fiat") or cmd)
+            c["commands"] += len(cmd)
+            c["commands as stored"] += cmd == old_cmd
+            c["checks: stored had, this has none"] += bool(old_chk and not chk)
+            c["checks: stored had none, this has"] += bool(chk and not old_chk)
+            c["closed to callers"] += rd.get("open_to_callers") is False
+            c["focus given"] += bool(any((rd.get("focus") or {}).get(k) for k in ("people", "things", "places", "topics")))
+            if cmd != old_cmd or bool(chk) != bool(old_chk):
+                line.append(f"{n}: commands {cmd} (stored {old_cmd}), checks {chk} (stored {old_chk})")
+        if line:
+            differ.append(f"{rec['key']}: {rec['player'][:150]!r}\n    " + "; ".join(line))
+    keys = sorted({k for c in tot.values() for k in c}, key=lambda k: (not k.startswith(("turns", "errors")), k.strip()))
+    print(f"{'':58s}" + "".join(f"{n:>12s}" for n in names))
+    for k in keys:
+        print(f"{k:58s}" + "".join(f"{round(tot[n][k]):>12d}" for n in names))
+    print(f"\n{len(differ)} turns where a variant differs from the stored reading on commands or on having a check:")
+    for d in differ[: a.show]:
+        print("  " + d)
+    print("\nEvery check and every settled attempt written, for a reader:")
+    for rec in run_["turns"][: a.show]:
+        print(f"  {rec['key']}: {rec['player'][:130]!r}")
+        for n in names:
+            rd = (rec["readings"].get(n) or {}).get("reading") or {}
+            for i in rd.get("intents") or []:
+                if i.get("check"):
+                    k = i["check"]
+                    print(f"      {n}: CHECK {k.get('stat')} {k.get('difficulty')} at {k.get('target_entity')} edge {k.get('edge')}: {k.get('label')}")
+            for f in rd.get("fiat") or []:
+                print(f"      {n}: {f.get('settled', 'works').upper()} {f.get('attempt')}: {f.get('outcome')} ({f.get('why')})")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -305,12 +386,17 @@ def main() -> int:
     s = sub.add_parser("score")
     s.add_argument("run")
     s.add_argument("--show", type=int, default=40)
+    r.add_argument("--game", default="fantasy", help="another game's stored turns, any model's (the clown, C106); its score is the plain count")
+    r.add_argument("--profile", default="", help="with --game: only the games played on this profile")
+    r.add_argument("--seed", type=int, default=0)
     for sp in (r, s):
         sp.add_argument("--store", type=Path, default=ROOT / "data" / "textadventure.sqlite3")
     a = ap.parse_args()
     if a.cmd == "run":
         asyncio.run(run(a))
         return 0
+    if json.loads(Path(a.run).read_text()).get("game", "fantasy") != "fantasy":
+        return score_plain(a)
     return score(a)
 
 

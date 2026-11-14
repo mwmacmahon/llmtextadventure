@@ -1737,3 +1737,119 @@ def test_renown_grows_slower_as_the_house_is_known(game):
     assert st.house.renown == 51 and st.house.renown_xp > 0              # the fraction carried, not lost
     game._add_renown(st, -5)
     assert st.house.renown == 46
+
+
+# ---- C105, C106 (11-13): the telling's length by the clown's own kinds of turn; the newer reading form -------------------
+def _quiet(game):
+    """A fresh game with nothing waiting to be told (the first boat's slip is announced on the first morning)."""
+    st = new(game)
+    st.harbour.announce = False
+    return st
+
+
+def _res(**over):
+    return {"elapsed": 0, "block_spent": False, "command": None, "levers": [], "assessments": [], **over}
+
+
+def test_the_reading_is_the_newer_form_and_the_staked_one_carries_the_settled_attempts(game: ClownGame):
+    from engine.pipeline import adjudicator_inputs
+    from engine.roles import AssistantReadingStaked, AssistantReadingV2
+    st = new(game)
+    system, msgs, schema = adjudicator_inputs(game, st, [], "I tell her to sit down.", stakes=True)
+    assert issubclass(game.adjudication_schema, AssistantReadingV2) and schema is AssistantReadingStaked and "fiat" in schema.model_fields
+    assert "No die is rolled here" in system                      # the stakes' rules, in this game's terms
+    assert "- Climbing and physical" not in system and "The town's people:" in system    # its own edge lines for the engine's five
+    view = msgs[-1].content
+    girl = next(g for g in st.girls if g.in_house())
+    assert f"{girl.id} = {girl.name}" in view                     # who is who lists the girls
+
+
+def test_a_talk_where_they_stand_with_nothing_else_to_tell_is_the_engines_kind(game: ClownGame):
+    st = _quiet(game)
+    assert game.telling_kind(st, None, _res(), "short") is None
+    assert game.telling_kind(st, None, _res(), "off") is None
+
+
+def test_a_skip_is_a_line_or_two_and_grows_by_what_it_must_tell(game: ClownGame):
+    from games.hidden.clown import telling
+    st = _quiet(game)
+    k = game.telling_kind(st, None, _res(command={"id": "skip", "args": {"to": "tomorrow"}}, elapsed=1440), "short")
+    assert k["kind"] == "skip" and k["words"] == telling.LEVELS["short"]["move"]["skip"] and k["note"].endswith("no scene.")
+    st.flags["_report_fresh"] = True
+    st.house.report = ["The week closed."]
+    st.house.week_lines = ["* She is surer on her feet."]
+    k = game.telling_kind(st, None, _res(command={"id": "skip", "args": {}}, elapsed=3 * 1440), "short")
+    row = telling.LEVELS["short"]
+    assert k["kind"] == "skip+training+week" and k["words"] == row["move"]["skip"] + row["part"]["week"] + row["part"]["training"]
+    assert [kind for kind, _ in game.telling_parts(st)] == ["training", "week"] and len(game.turn_directives(st)) == 2
+
+
+def test_a_sale_is_a_farewell_whether_clicked_or_picked_by_the_reading_and_the_sum_is_capped(game: ClownGame):
+    from games.hidden.clown import telling
+    st = _quiet(game)
+    row = telling.LEVELS["short"]
+    assert game.telling_kind(st, None, _res(command={"id": "sell", "args": {}}), "short")["kind"] == "farewell"
+    k = game.telling_kind(st, None, _res(levers=["sell", "plan"]), "short")
+    assert k["kind"] == "farewell+lever" and k["words"] == row["move"]["farewell"] + row["part"]["lever"]
+    assert game.telling_kind(st, None, _res(command={"id": "take", "args": {}}), "short")["kind"] == "arrival"
+    st.flags["_report_fresh"], st.house.report = True, ["The week closed."]
+    st.house.tells = ["A window was broken."]
+    st.harbour.announce = True
+    k = game.telling_kind(st, None, _res(block_spent=True, elapsed=180, assessments=[object(), object(), object()]), "short")
+    assert k["kind"].startswith("scene+night") and k["words"] == row["cap"] and k["rolls"] == 3 and k["paragraphs"] <= 5
+
+
+def test_a_turn_aimed_at_someone_not_yet_met_is_a_meeting_and_a_spent_part_of_the_day_a_scene(game: ClownGame):
+    from engine.roles import AssistantReadingV2, IntentV2
+    st = _quiet(game)
+    q = next(x for x in st.people if not x.met)
+    adj = AssistantReadingV2(kind="action", summary="x", time_minutes=10, risk="none", intents=[IntentV2(action="say good day", targets=[q.id])])
+    assert game.telling_kind(st, adj, _res(), "short")["kind"] == "meeting"
+    q.met = True
+    assert game.telling_kind(st, adj, _res(), "short") is None
+    assert game.telling_kind(st, adj, _res(block_spent=True, elapsed=120), "standard")["kind"] == "scene"
+
+
+def test_with_stable_system_the_roles_system_text_holds_while_the_house_moves(game: ClownGame):
+    """C107 (B405): the stats, the people by id, the places and the flags are this turn's lines; a new mover in the rules fails here."""
+    from engine.pipeline import adjudicator_inputs, referee_inputs
+    from engine.roles import LISTS_HEAD
+    from games.hidden.clown.state import Person
+    st = new(game)
+    s2 = st.model_copy(deep=True)
+    for t in range(2, 12):                                        # eleven days on: a week counted, a boat in, cards dealt
+        s2 = advance(game, s2, DAY, t)
+    s2.people.append(Person(id="a_carter", name="A carter with a bad hand", role="carter", location=s2.player.location, met=True))
+    s2.scenario.locations.append("The carter's yard")
+    s2.player.stats = {k: v + 1 for k, v in s2.player.stats.items()}
+    for g in s2.girls:
+        if g.status == "away":
+            g.status = "available"
+    a1, m1, _ = adjudicator_inputs(game, st, [], "I look in on the practice room", stakes=True, stable=True)
+    a2, m2, _ = adjudicator_inputs(game, s2, [], "I look in on the practice room", stakes=True, stable=True)
+    assert a1 == a2, "the assistant's system text moved with the state: name the line in turn_lines"
+    r1, n1 = referee_inputs(game, st, [], "I look in", "They look in.", stable=True)
+    r2, n2 = referee_inputs(game, s2, [], "I look in", "They look in.", stable=True)
+    assert r1 == r2, "the referee's system text moved with the state: name the line in turn_lines"
+    assert m2[-1].content.startswith(LISTS_HEAD) and "a_carter (A carter with a bad hand" in m2[-1].content and "The carter's yard" in m2[-1].content
+    assert "a_carter = A carter with a bad hand" in n2[-1].content
+    off1, _, _ = adjudicator_inputs(game, st, [], "I look in", stakes=True)                 # off: the lists stay in the rules
+    assert "Entities (the girls and the people, by id)" in off1 and LISTS_HEAD not in off1
+
+
+def test_the_debug_words_stage_a_moment_on_a_dev_server_and_are_plain_words_on_a_players(game: ClownGame, monkeypatch):
+    """C108: DEBUG: is the engine's on a dev server (no model, no clock); off it, the words are an ordinary turn."""
+    st = _quiet(game)
+    assert game.typed_command(st, "DEBUG: money 7") == ("debug", {"text": "money 7"})
+    s2, res = game.run_command(st, "debug", {"text": "money 7"})
+    assert res.ok and s2.house.money == 7 and st.house.money != 7
+    s2, res = game.run_command(s2, "debug", {"text": "show triumph attended"})
+    s2, res = game.run_command(s2, "debug", {"text": "week"})
+    assert [k for k, _ in game.telling_parts(s2)] == ["show", "week"]
+    k = game.telling_kind(s2, None, _res(), "short")
+    assert k["kind"] == "talk+show+week" and k["words"] > 300
+    assert not game.run_command(st, "debug", {"text": "fly"})[1].ok
+    assert "debug" not in [c.id for p in game.ui(st).panels for c in getattr(p, "items", []) if hasattr(c, "mode")]
+    monkeypatch.setenv("TA_DEV_MODE", "off")
+    assert game.typed_command(st, "DEBUG: money 7") is None and "debug" not in [c.id for c in game.commands(st)]
+    assert not game.run_command(st, "debug", {"text": "money 7"})[1].ok

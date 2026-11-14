@@ -15,7 +15,7 @@ The server must be a dev server (the DEBUG commands are refused on a player's). 
 kept, titled "staged: <id>", to be opened. A model's reading varies: --repeat says how many times each scenario is played,
 and the table shows passes of plays.
 
-A step is the player's words (`say:`, or a bare string), or `tell:` (B406): the last turn told again in exactly those words,
+A step is the player's words (`say:`, or a bare string), a clicked lever (`command: <id>` or `command: {id: .., args: {..}}`), or `tell:` (B406): the last turn told again in exactly those words,
 with no narrator call, and the referee run on them: what the referee files from a given telling can be keyed.
 
 What a step may expect (all optional; a step with none only has to finish without an error):
@@ -44,6 +44,14 @@ What a step may expect (all optional; a step with none only has to finish withou
   people_added: n           how many people the turn filed; people_added_at_most: n
   hp_full: true             the player is at full hit points after the turn
   ledger: <text> | no_ledger: <text>   the turn's ledger rows hold this text, or do not (a row's kind or its reason)
+For any game (C108):
+  state: {path: value}      a dotted path in the state after the turn (a step into a list picks the item with that id:
+                            girls.dot.status); a list of values means any of them
+  state_change: {path: down|up|same|not_down|not_up|<n>}   how far a number (or a list's length) moved over the turn
+  reading: {kind, checks: n|[lo,hi], settled: n|[lo,hi], commands: [ids], check_at: id, no_check_at: id, targets: [ids]}
+                            the assistant's reading as stored: its checks, the attempts it settled without one, the commands it picked
+  telling: {kind, kind_has: part|[parts], given: n|[lo,hi], written: n|[lo,hi], over_by_at_most: n}
+                            the telling's length: the kind of turn the engine took it for, the words given, the words written
 Each scenario may name an `area` (fight, quests, pockets, places, talk, time, people); `--area` plays one, and the table
 ends with the passes by area, so what kind of play the suite reaches is on the page.
 """
@@ -180,6 +188,85 @@ def check(exp: dict, lines: list[str], rows: list[dict], before: dict, after: di
         bad.append(f"hp_full: {(after.get('player') or {}).get('hp')} of {(after.get('player') or {}).get('hp_max')}")
     if "place" in exp and str((after.get("player") or {}).get("location") or "").lower() != str(exp["place"]).lower():
         bad.append(f"place: {(after.get('player') or {}).get('location')!r}, not {exp['place']!r}")
+    bad += check_any(exp, rows, before, after)
+    return bad
+
+
+def at(doc: Any, path: str) -> Any:
+    """A dotted path into a stored state; a step into a list picks the item with that id (girls.dot.love)."""
+    cur = doc
+    for seg in str(path).split("."):
+        if isinstance(cur, list):
+            cur = next((x for x in cur if isinstance(x, dict) and str(x.get("id")) == seg), None) if not seg.isdigit() else (cur[int(seg)] if int(seg) < len(cur) else None)
+        elif isinstance(cur, dict):
+            cur = cur.get(seg)
+        else:
+            return None
+    return cur
+
+
+def _in(n: int, want: Any) -> bool:
+    return (int(want[0]) <= n <= int(want[1])) if isinstance(want, (list, tuple)) else n == int(want)
+
+
+def check_any(exp: dict, rows: list[dict], before: dict, after: dict) -> list[str]:
+    """The expectations any game can use (C108): the state by path, the assistant's reading as stored, the telling's length."""
+    bad: list[str] = []
+    for path, want in (exp.get("state") or {}).items():
+        got = at(after, path)
+        if got not in (want if isinstance(want, list) else [want]):
+            bad.append(f"state {path}: {got!r}, not {want!r}")
+    for path, want in (exp.get("state_change") or {}).items():
+        a, b = at(before, path), at(after, path)
+        if isinstance(a, list) or isinstance(b, list):
+            a, b = len(a or []), len(b or [])
+        try:
+            d = float(b or 0) - float(a or 0)
+        except (TypeError, ValueError):
+            d = 0.0 if a == b else 1.0
+        ok = {"down": d < 0, "up": d > 0, "same": d == 0, "not_down": d >= 0, "not_up": d <= 0}.get(str(want))
+        if ok is False or (ok is None and d != float(want)):
+            bad.append(f"state_change {path}: {a!r} to {b!r}, wanted {want}")
+    rd = exp.get("reading") or {}
+    if rd:
+        adj = next((r["payload"] for r in reversed(rows) if r["kind"] == "adjudication"), None) or {}
+        ints = adj.get("intents") or []
+        checks = [i["check"] for i in ints if i.get("check")]
+        fiat = adj.get("fiat") or []
+        cmd = sorted(c.get("id", "") for c in adj.get("commands") or [])
+        if not adj:
+            bad.append("reading: no reading was stored this turn")
+        if "kind" in rd and adj.get("kind") not in (rd["kind"] if isinstance(rd["kind"], list) else [rd["kind"]]):
+            bad.append(f"reading kind: {adj.get('kind')}, not {rd['kind']}")
+        if "checks" in rd and not _in(len(checks), rd["checks"]):
+            bad.append(f"reading checks: {len(checks)} ({[c.get('label') for c in checks]}), wanted {rd['checks']}")
+        if "settled" in rd and not _in(len(fiat), rd["settled"]):
+            bad.append(f"reading settled attempts: {len(fiat)}, wanted {rd['settled']}")
+        if "commands" in rd and cmd != sorted(rd["commands"]):
+            bad.append(f"reading commands: {cmd}, wanted {sorted(rd['commands'])}")
+        if "check_at" in rd and rd["check_at"] not in [c.get("target_entity") for c in checks]:
+            bad.append(f"reading: no check at {rd['check_at']} ({[c.get('target_entity') for c in checks]})")
+        if "no_check_at" in rd and rd["no_check_at"] in [c.get("target_entity") for c in checks]:
+            bad.append(f"reading: a check at {rd['no_check_at']} ({[c.get('label') for c in checks if c.get('target_entity') == rd['no_check_at']]})")
+        if "targets" in rd and not set(rd["targets"]) <= {t for i in ints for t in i.get("targets") or []} | set(adj.get("entities") or []):
+            bad.append(f"reading targets: {[i.get('targets') for i in ints]}, wanted {rd['targets']}")
+    tl = exp.get("telling") or {}
+    if tl:
+        t = next((r["payload"] for r in reversed(rows) if r["kind"] == "telling"), None)
+        if t is None:
+            bad.append("telling: no length was set this turn")
+        else:
+            if "kind" in tl and str(t.get("kind")) != str(tl["kind"]):
+                bad.append(f"telling kind: {t.get('kind')}, not {tl['kind']}")
+            for part in ([tl["kind_has"]] if isinstance(tl.get("kind_has"), str) else tl.get("kind_has") or []):
+                if part not in str(t.get("kind") or "").split("+"):
+                    bad.append(f"telling kind: {t.get('kind')} has no {part}")
+            if "given" in tl and not _in(int(t.get("words") or 0), tl["given"]):
+                bad.append(f"telling words given: {t.get('words')}, wanted {tl['given']}")
+            if "written" in tl and not _in(int(t.get("written") or 0), tl["written"]):
+                bad.append(f"telling words written: {t.get('written')} (given {t.get('words')}, {t.get('kind')}), wanted {tl['written']}")
+            if "over_by_at_most" in tl and int(t.get("written") or 0) - int(t.get("words") or 0) > int(tl["over_by_at_most"]):
+                bad.append(f"telling ran over: {t.get('written')} written against {t.get('words')} given ({t.get('kind')})")
     return bad
 
 
@@ -199,11 +286,15 @@ def play_one(sc: dict, store: Any, keep: bool) -> dict:
     rec: dict[str, Any] = {"id": sc["id"], "iid": iid, "steps": [], "failed": []}
     for n, step in enumerate(sc["steps"], 1):
         told = isinstance(step, dict) and "tell" in step
-        say, exp = (step, {}) if isinstance(step, str) else (step.get("say") or step["tell"], step.get("expect") or {})
+        lever = step.get("command") if isinstance(step, dict) else None         # a clicked lever: {id: ..., args: {...}} or a bare id
+        if lever is not None:
+            lever = {"command": lever, "args": {}} if isinstance(lever, str) else {"command": lever["id"], "args": {k: str(v) for k, v in (lever.get("args") or {}).items()}}
+        say, exp = (step, {}) if isinstance(step, str) else (step.get("say") or step.get("tell") or f"[{lever['command']} {lever['args']}]", step.get("expect") or {})
         # a telling written by hand replaces the last turn: what it changed is measured from before that turn
         before = store.load_state(iid, store.latest_turn(iid) - 1) if told else store.load_state(iid)
         try:
-            events = _stream(f"/api/instances/{iid}/tell", {"text": say}) if told else _stream(f"/api/instances/{iid}/turn", {"text": say})
+            events = (_stream(f"/api/instances/{iid}/tell", {"text": say}) if told else _stream(f"/api/instances/{iid}/command", lever) if lever
+                      else _stream(f"/api/instances/{iid}/turn", {"text": say}))
         except SystemExit as e:
             rec["failed"].append(f"step {n}: the server refused it: {e}")
             break
@@ -219,6 +310,7 @@ def play_one(sc: dict, store: Any, keep: bool) -> dict:
         rec["steps"].append({"say": say, "turn": turn, "lines": lines, "expect": exp, "bad": bad,
                              "retold": sum(1 for r in rows if r["kind"] == "rewrite"),
                              "mends": [m for r in rows if r["kind"] == "mend" for m in r["payload"].get("what") or []],
+                             "telling": next(({k: r["payload"].get(k) for k in ("kind", "words", "written")} for r in reversed(rows) if r["kind"] == "telling"), None),
                              "fighting": (after.get("player") or {}).get("fighting"), "hp": (after.get("player") or {}).get("hp")})
         rec["failed"] += [f"step {n} ({say[:50]!r}): {b}" for b in bad]
         if errors:
@@ -287,6 +379,7 @@ def main() -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run")
     r.add_argument("file", nargs="?", type=Path, default=DEFAULT)
+    r.add_argument("--game", help="another game's scenes: notes/content/<game>/staged.yml (a hidden game's scenes stay out of the repo)")
     r.add_argument("--only")
     r.add_argument("--area", help="play only the scenarios of these areas (fight,quests,pockets,places,talk,time,people)")
     r.add_argument("--repeat", type=int, default=1)
@@ -295,9 +388,12 @@ def main() -> int:
     r.add_argument("--store", type=Path)
     ls = sub.add_parser("list")
     ls.add_argument("file", nargs="?", type=Path, default=DEFAULT)
+    ls.add_argument("--game")
     sh = sub.add_parser("show")
     sh.add_argument("run")
     a = ap.parse_args()
+    if getattr(a, "game", None):
+        a.file = ROOT / "notes" / "content" / a.game / "staged.yml"
     if a.cmd == "list":
         for s in load(a.file):
             print(f"{s['id']:<28} {len(s['steps'])} steps  {s.get('why', '')}")

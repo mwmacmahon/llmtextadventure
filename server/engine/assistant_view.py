@@ -457,6 +457,10 @@ def stakes_blocks(game: Any, state: Any, fresh: Any) -> str:
     who = ([f"{q.id} = {q.name}" for q in state.people if q.met or q.id in {p.id for p in fresh.people}] if _fam(game) in PEOPLE_GAMES
            else [f"{c.id} = {c.name}" for c in state.crew])
     ahead, hidden, invented = _case_ahead(game, state), _hidden_cast(game, state), _invented(game, state, fresh)
+    own = getattr(game, "assistant_lists", None)        # a game whose cast is neither shape gives its own lists (the clown, C106)
+    if callable(own):
+        mine = own(state, fresh) or {}
+        who, hidden, invented = mine.get("who", who), mine.get("hidden", hidden), mine.get("invented", invented)
     return ("[WHO IS WHO: id = name]\n" + ("; ".join(who) or "nobody") + "\n\n"
             + "[THE CASE AHEAD: scripted, not yet happened; each fires when its conditions are met, or in its reach form later]\n" + ("\n".join(ahead) or "nothing left") + "\n\n"
             + ("[WHAT THE CAST HIDE: what each knows and gives up only piece by piece, as its conditions are met]\n" + "\n".join(hidden) + "\n\n" if hidden else "")
