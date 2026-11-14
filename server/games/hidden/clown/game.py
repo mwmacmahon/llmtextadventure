@@ -3170,6 +3170,25 @@ class ClownGame(GameBase):
         """The pipeline's hook (D210C): a turn that plainly spends the part of the day without asking: work in the practice room."""
         return state.player.location == PRACTICE
 
+    def spend_ask(self, state: ClownState, adj: Any) -> str:
+        """The pipeline's hook (the owner, 11-14; C126): a trip out asks before it spends the part of the day, in the engine's
+        words; yes spends it. Both players of rounds 4 and 5 read the same walk costing one hour or five as no rule at all: the
+        rule was never shown at the moment it applied. Not asked for a show of the house due this part of the day (going to it
+        is the plain purpose), nor in the practice room's own work."""
+        if not sw.on("outing_ask") or self.task_kind(state, adj) != "travel":
+            return ""
+        now = state.clock.minute
+        part = part_of_day(now)
+        ends = next((b for b in self.clock.blocks if b > now), self.clock.blocks[0])
+        now_abs = state.now_abs
+        left = (ends - now) % DAY or DAY
+        if any(not x.result and now_abs <= x.at_abs < now_abs + left + 60 for x in state.shows):
+            return ""
+        nxt = part_of_day(ends % DAY)
+        where = "out in the town" if state.player.location in state.scenario.house_places else "on this"
+        return (f"Spend the rest of the {part} {where}? It runs until the {nxt} ({hhmm(ends % DAY)}). "
+                f"Say yes to go, or do something that keeps you here.")
+
     def turn_cap_line(self, state: ClownState) -> str:
         """The pipeline's hook (round 6): the player's line when a typed turn meant days and the clock ran a night at most."""
         return "The clock runs at most a night on its own. To let days pass, say \"skip to Thursday\" (or another day, or \"skip to the show\")."
@@ -3608,6 +3627,23 @@ class ClownGame(GameBase):
         if h.reckoning in RECKONINGS:
             strip.append(Chip(label="Reckoning", value=RECKONINGS[h.reckoning]["who"], tone="bad"))
         panels: list[Any] = [StatusStrip(chips=strip)]
+        if sw.on("day_strip"):             # the owner, 11-14: "the UI should maybe make the time blocks more clear"
+            blocks, names, now = list(self.clock.blocks), list(self.clock.block_names), s.clock.minute
+            cur = part_of_day(now)
+            ci = names.index(cur)
+            early = now < blocks[0]        # past midnight: the night in hand is yesterday's, and today's parts are all to come
+            day = []
+            for i, nm in enumerate(names):
+                ends = blocks[(i + 1) % len(blocks)]
+                if nm == cur:
+                    day.append(Chip(label=nm.capitalize(), value=f"now, to {hhmm(ends)}", tone="info"))
+                else:
+                    day.append(Chip(label=nm.capitalize(), value="to come" if (early or i > ci) else "gone"))
+            if early:                      # show the night in hand first
+                day = [day[-1], *day[:-1]]
+            panels.append(StatusStrip(chips=day))
+            panels.append(StatusStrip(chips=[Chip(label=f"Costs the {cur}", value="a trip out, a session, long work"),
+                                             Chip(label="Costs no time", value="talk, questions, the desk")]))
         if g is not None:
             w = g.words()
             panels.append(Meter(label=f"{g.name}: fatigue", value=g.fatigue, tier=g.fatigue_word, tone=self.FATIGUE_TONES.get(g.fatigue_word, "warn"), thresholds=[30, 60, 80]))

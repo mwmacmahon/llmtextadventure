@@ -22,6 +22,8 @@ SWITCHES: dict[str, tuple[bool, str]] = {
     "skip_anchor": (True, "the reader, round 4 of 11-14: ten skips opened on the same blur of days; each telling of days let run is given a different thing of the house to open on"),
     "unheard_kept": (True, "round 5 of 11-14: a week's offer whose caller has not come yet is not closed on Sunday night; it stays in hand and the caller still comes"),
     "worn_mornings": (True, "the reader, round 6 of 11-14: the house's word that a girl is worn before a show is given to the narrator in the mornings only (it came on six turns, twice running)"),
+    "outing_ask": (True, "the owner, 11-14 (C126): a trip out asks first, in the engine's words (\"Spend the rest of the morning out in the town?\"), and yes spends the part of the day; not asked when a show of the house is due in it"),
+    "day_strip": (True, "the owner, 11-14 (C126): the panel shows the four parts of the day as chips, the one in hand marked with the hour it ends, and the Time chip says what a trip or a session costs"),
     "her_floor": (True, "the readers, rounds 5 and 6 of 11-14: three of four shows were the proprietor stepping in to cover for the girl; a show gone to is hers unless the player's words put the proprietor on the floor"),
     "axis_note": (True, "the long round of 11-14 (6 standing rows in 57 turns): the referee is told when the proprietor dealt directly with a girl, and asked for her love, respect and fear"),
 }

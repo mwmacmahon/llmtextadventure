@@ -2229,7 +2229,14 @@ class Engine:
         if clock is None or not getattr(clock, "blocks", None) or adj.kind != "action" or getattr(adj, "minutes_fixed", False):
             return ""
         spend, _ = block_spend(clock, adj, int(adj.time_minutes), self._free_run(iid, turn))
-        if not spend or task_of(adj) in ("travel", "wait", "sleep") or _hook(game, "plain_spend", state, adj, default=False):
+        if not spend:
+            return ""
+        # a game may ask in its own words, for a turn that would otherwise spend the part of the day unasked (the hidden game's
+        # trip out; the owner, 11-14: "when the player wants to go out, perhaps it should pop up with a question")
+        own = _hook(game, "spend_ask", state, adj, default="")
+        if own:
+            return own
+        if task_of(adj) in ("travel", "wait", "sleep") or _hook(game, "plain_spend", state, adj, default=False):
             return ""
         clk = sp.lookup(state.model_dump(mode="json"), clock.path)
         now_part = block_name(clock, int(clk["minute"]))

@@ -2122,3 +2122,26 @@ def test_round_five_a_contract_named_in_the_reading_is_the_one_bought():
         Option(id="sorrel", label="The Widow Sorrel's fourteenth"), Option(id="bargemans_arms", label="A free-and-easy at the Bargeman's Arms (no girl free that day)")])])
     assert _parse_command_args(book, [], set(), set(), "The proprietor books Dorothea for the free-and-easy at the Bargeman's Arms.") == ({"booking": "bargemans_arms"}, "")
     assert _parse_command_args(take, [], set(), set(), "He weighs Liesl Wark against Winnie Dace.")[1].startswith("Which contract?")
+
+
+def test_a_trip_out_asks_before_it_spends_the_part_of_the_day():
+    """The owner, 11-14 (C126): going out asks first, in the engine's words; a show due in this part of the day is not asked
+    about; a talk in the house never is. The panel shows the four parts of the day, the one in hand marked."""
+    from types import SimpleNamespace
+    from games.hidden.clown.state import Show
+    game = make_game(CONTENT)
+    s = new(game)
+    s.clock.minute = 10 * 60
+    out = SimpleNamespace(attempt_kinds=["outing"])
+    ask = game.spend_ask(s, out)
+    assert "rest of the morning" in ask and "afternoon (14:00)" in ask and "yes" in ask.lower()
+    assert game.spend_ask(s, SimpleNamespace(attempt_kinds=["house"])) == ""
+    place = next(x for x in s.places if x not in s.scenario.house_places)
+    s.shows.append(Show(id="t", hook="t", title="A tea", client="c", venue=place, at_abs=s.now_abs + 120, girl=s.girls[0].id, fee=10))
+    assert game.spend_ask(s, out) == ""                      # the show is this morning: going is the plain purpose
+    chips = [c for p in game.ui(s).panels if getattr(p, "type", "") == "status_strip" for c in p.chips]
+    by = {c.label: c.value for c in chips}
+    assert by["Morning"] == "now, to 14:00" and by["Afternoon"] == "to come" and "Costs no time" in by
+    s.clock.minute = 20 * 60
+    by = {c.label: c.value for p in game.ui(s).panels if getattr(p, "type", "") == "status_strip" for c in p.chips}
+    assert by["Morning"] == "gone" and by["Evening"] == "now, to 22:00"

@@ -937,6 +937,8 @@ rounds stays on and may lose its switch; one that has not goes with its code. Al
 | `unheard_kept` | a week's offer whose caller has not come yet is not closed on Sunday night | before it: an offer made the morning after it closed, accepted, and never booked (round 5) |
 | `worn_mornings` | the house's word to the narrator that a girl is worn before a show is given in the mornings only | before it: on six turns of 60, twice running (round 6, the reader); not yet played |
 | `her_floor` | a show gone to is the girl's: the proprietor watches unless the player's words put them on the floor | before it: three of four shows told as the proprietor covering for her (rounds 5 and 6, the readers); not yet played |
+| `outing_ask` | a trip out asks first, in the engine's words, and yes spends the part of the day (engine hook `spend_ask`); not asked when a show of the house is due in it | before it: both players of rounds 5 and 6 read one walk costing an hour or five as no rule; not yet played; watch the two turns a trip now takes |
+| `day_strip` | the panel shows the four parts of the day (gone, now and its end, to come) and what takes the rest of the part in hand and what takes none | not yet played |
 | `axis_note` | the referee is told when the player's character dealt directly with someone of the house, and asked for the three standings | before it: 6 standing rows in 57 turns over 20 such attempts, then 9 in 55 of which 7 were love up; with it (round 4, 55 turns): 15 rows (love up 8 and down 2, fear up 4, respect up 1), which the reader found matched how each was treated |
 
 The reading in two steps with the game's kinds of attempt is the profile module `reading_steps` (§2); the lever phrase
