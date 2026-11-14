@@ -287,3 +287,39 @@ async def test_an_early_tell_is_retold_under_rewrite(engine: Engine, fake: FakeP
     assert "looks at the door" in events[-1]["data"]["text"]
     st = engine.games["noir"].load_state(engine.store.load_state(iid))
     assert not next(t for t in st.person("szabo").tells if t.id == "szabo_booth").told
+
+
+async def test_a_telling_written_by_hand_is_canon_and_is_never_retold(engine: Engine, fake: FakeProvider):
+    """B406 (the owner, 11-13: "rewrite the narrator's message, and then have the referee run on the changed message with it
+    considered canonical (no rewrites etc)"): the last turn told again in given words. No narrator call; the referee reads
+    the words and its rows land; a serious ruling does not retell it, under any guard mode."""
+    engine.update_settings({"guard": {"mode": "rewrite", "max_retells": 2}})
+    iid = engine.create_instance("noir", {})
+    fake.canned["AssistantReading"] = [LOOK]
+    await events_of(engine.play(iid, "I look around"))
+    first = next(r.text for r in engine.store.transcript(iid) if r.turn == 1 and r.role == "narrator")
+    seen: list[str] = []
+    narrator_calls = {"n": 0}
+
+    def hook(schema, last):
+        if schema is ChangeReport:
+            seen.append(last)
+            return ChangeReport.of(Change(kind="ruling", field="contradiction", value="the door was shut", note="say it is shut"), log_line="He looks.")
+        return None
+
+    def script(system, messages):
+        narrator_calls["n"] += 1
+        return "The narrator's own words."
+    fake.script = script
+    fake.hook = hook
+    words = "Frank looks the room over. The safe behind the desk stands open, and it is empty."
+    events = await events_of(engine.tell_as(iid, words))
+    assert events[0]["event"] == "rewrite" and events[0]["data"]["by"] == "owner"
+    assert not [e for e in events if e["event"] == "error"], events
+    told = [r.text for r in engine.store.transcript(iid) if r.turn == 1 and r.role == "narrator"]
+    assert told == [words] and words != first
+    assert narrator_calls["n"] == 0 and len(seen) == 1 and words in seen[0]          # the referee read these words, once
+    rows = engine.store.ledger(iid, 1)
+    assert any(r["kind"] == "owner_told" for r in rows) and sum(1 for r in rows if r["kind"] == "rewrite") == 1
+    assert engine.store.latest_turn(iid) == 1
+    assert (await events_of(engine.tell_as(iid, "  ")))[0]["event"] == "error"

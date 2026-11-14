@@ -294,11 +294,13 @@
   why: "waiting passes the time waited"
   setup: *fighter
   steps:
-    # a new game's first job reaches the player five minutes in, and the clock stops at what is due (so a wait on turn one
-    # is five minutes, by design): the first step lets that land
-    - "I look around the common room."
+    # the clock stops at what is due, by design: a new game's first job reaches the player five minutes in and the next about
+    # an hour in. The first two steps let the first land; the wait is then cut at the second (50 minutes on both plays, 11-13),
+    # so the key is "far longer than an ordinary turn, and never more than was asked"
+    - "I sit at my table and wait a few minutes, watching the room."
+    - "I hear the innkeeper out and tell her I will think about it."
     - say: "I sit at my table and wait two hours, watching who comes and goes."
-      expect: {minutes: [100, 140], fighting: false}
+      expect: {minutes: [30, 125], fighting: false}
 
 - id: the_impossible_costs_nothing
   area: time
@@ -310,4 +312,41 @@
     # key is that it costs little and changes nothing
     - say: "I flap my arms and fly up to the rafters."
       expect: {minutes: [0, 10], place: The Drowned Lantern, count_change: {gold: same}, check: false}
+
+# ---- the referee, on a telling written by hand (B406): `tell:` replaces the last turn's telling, word for word
+- id: referee_files_a_lot_as_one
+  area: people
+  why: "B392 (round 31 T16): 'three men in stained leather' was filed as one Thug Leader, and one body came to the fight"
+  setup: *fighter
+  steps:
+    - "I step outside into Lantern Row and look up and down the street."
+    - tell: "Brin steps out into the fog of Lantern Row. Under the nearest lamp three men in stained leather are shaking down a fishwife, tipping her basket into the gutter. None of them has seen Brin yet."
+      expect: {people_added_at_most: 2, ledger: "three men", fighting: false}
+
+- id: referee_moves_one_of_a_stack
+  area: pockets
+  why: "B407 (round 32 T3): one torch wedged in a bracket, and all three torches left the pockets"
+  setup: *fighter
+  steps:
+    - "I light a torch at the hearth."
+    - tell: "Brin lights one torch at the hearth and wedges it into the iron bracket by the door, where it burns steadily. The other two torches stay in the pack."
+      expect: {count: {torches: 2}}
+
+- id: referee_takes_the_coin_the_telling_spent
+  area: pockets
+  why: "what the telling says was paid is what leaves the purse"
+  setup: *fighter
+  steps:
+    - "I ask the innkeeper for a bowl of stew."
+    - tell: "Maud ladles out a bowl of eel stew and sets it down. 'Two gold,' she says. Brin counts two gold coins onto the bar and she sweeps them into her apron."
+      expect: {count_change: {gold: -2}, fighting: false}
+
+- id: referee_sours_who_the_telling_soured
+  area: people
+  why: "an attitude moves when the telling shows the player doing something to that person, and only then"
+  setup: *fighter
+  steps:
+    - "I talk to the innkeeper."
+    - tell: "Brin leans over the bar and tells Maud, loud enough for the room, that her ale is horse water and her mother was a river rat. Maud's face goes flat and cold. She takes his mug away without a word and turns her back on him."
+      expect: {attitude_change: {maud: down, hesk: same}, fighting: false}
 

@@ -1036,7 +1036,7 @@ class Engine:
         if command is None and adj is not None and adj.kind != "clarify" and adj.commands:
             adj, levers = self._preview_levers(game, state, adj, iid, turn, ledger, player_text or "")
             extra_directives.extend(lv.directive for lv in levers)
-        if replay is not None and replay.by != "eval":
+        if replay is not None and replay.by not in ("eval", "owner"):
             who = "the referee" if replay.by == "referee" else "the player"
             if replay.hint:
                 extra_directives.append(
@@ -1177,6 +1177,9 @@ class Engine:
         self.store.append_transcript(iid, turn, "bulletin", bulletin)
 
         provider = self._provider(role, iid, "narrator")
+        if replay is not None and replay.told is not None:      # B406: the telling is given, word for word
+            provider = _ToldProvider(replay.told)
+            ledger("owner_told", {"chars": len(replay.told)})
         system = (inst.prefix_text or game.frozen_prefix(state)) + "\n\n" + NARRATOR_WORLD
         reminder = _check_reminder(res, told)
         budget = role.max_prompt_tokens
@@ -1305,7 +1308,8 @@ class Engine:
         referee_error: str | None = None
         leaked: list[str] = _hook(game, "leaked_terms", state, narration, player_text or "", default=[]) or []
         # D77: the guard's last telling. The prose wins: conflicts are applied and flagged, the leaked word is learned.
-        force = replay is not None and replay.by == "referee" and replay.attempt >= int(self.settings["guard"]["max_retells"])
+        force = replay is not None and ((replay.by == "referee" and replay.attempt >= int(self.settings["guard"]["max_retells"]))
+                                        or replay.by == "owner")                 # B406: a telling written by hand stands
         if not getattr(game, "skip_referee", False) and adj is not None and adj.kind in ("action", "trivial"):
             yield {"event": "progress", "data": _progress("checking", len(narration), max(len(narration), 1))}
             try:
@@ -1623,7 +1627,17 @@ class Engine:
             },
         }
 
-    async def rewrite_turn(self, iid: str, hint: str, by: str = "player") -> AsyncIterator[dict[str, Any]]:
+    async def tell_as(self, iid: str, text: str) -> AsyncIterator[dict[str, Any]]:
+        """B406, a debug tool: the last turn told again in these words. The same reading, levers and dice; no narrator call;
+        the referee reads the text and its rows are applied; no ruling retells it (it does not go through the guard)."""
+        text = (text or "").strip()
+        if not text:
+            yield {"event": "error", "data": {"message": "no telling was given", "step": "rewrite"}}
+            return
+        async for ev in self.rewrite_turn(iid, "", by="owner", told=text):
+            yield ev
+
+    async def rewrite_turn(self, iid: str, hint: str, by: str = "player", told: str | None = None) -> AsyncIterator[dict[str, Any]]:
         """"You're out of line": tell the last turn again. The turn is rewound and replayed with its stored
         adjudication (the referee's retell) or a fresh one with the player's words about it (the player's, B280), the same levers and the same dice seed, with the player's ruling as a directive; the
         narrator and the referee run again and this telling replaces the last one. The earlier tellings stay
@@ -1673,7 +1687,7 @@ class Engine:
         # B280 (the owner, 11-09: "rewrite should also redo the assistant turn"): the player's rewrite asks the assistant again,
         # with their words about it; the referee's retell (a prose fault) keeps the reading, its checks and its settlings
         again = None if by == "player" else adj
-        async for ev in self.run_turn(iid, player_text, replay=Replay(adjudication=again, hint=hint, attempt=attempt, history=history, call=call, by=by)):
+        async for ev in self.run_turn(iid, player_text, replay=Replay(adjudication=again, hint=hint, attempt=attempt, history=history, call=call, by=by, told=told)):
             yield ev
 
     # ---- the graveyard (B81, B84): player-only; nothing here reaches a model --------------------------------------
@@ -3060,6 +3074,28 @@ class Replay:
     by: str = "player"                # who asked: the player (the rewrite button) or the referee (a serious ruling under the guard);
                                       # "eval": the narrator replay (tools/eval_replay.py narrate), which adds no retelling directive
     stop_after_narration: bool = False  # the narrator replay: yield `narrated` with the telling and stop before the referee
+    # B406 (the owner, 11-13: "rewrite the narrator's message, and then have the referee run on the changed message with it
+    # considered canonical (no rewrites etc)"): by="owner", and this text is the telling: no narrator call is made, the referee
+    # reads it as it reads any telling, and whatever it rules, the telling stands
+    told: str | None = None
+
+
+class _ToldProvider:
+    """The narrator for a telling written by hand (B406): it answers with the text once, and with nothing if asked to go on."""
+    name = "owner"
+
+    def __init__(self, text: str) -> None:
+        self.text, self.said = text, False
+
+    async def stream(self, role: Any, system: str, messages: list[Msg]) -> AsyncIterator[Any]:
+        from .providers.base import StreamDone, TextDelta, Usage
+        text = "" if self.said else self.text
+        self.said = True
+        if text:
+            yield TextDelta(text)
+        u = Usage()
+        u.extra["model"] = "owner"
+        yield StreamDone(text=text, stop_reason="end_turn", model="owner", usage=u)
 
 
 @dataclass

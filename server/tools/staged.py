@@ -15,6 +15,9 @@ The server must be a dev server (the DEBUG commands are refused on a player's). 
 kept, titled "staged: <id>", to be opened. A model's reading varies: --repeat says how many times each scenario is played,
 and the table shows passes of plays.
 
+A step is the player's words (`say:`, or a bare string), or `tell:` (B406): the last turn told again in exactly those words,
+with no narrator call, and the referee run on them: what the referee files from a given telling can be keyed.
+
 What a step may expect (all optional; a step with none only has to finish without an error):
   fled: true|false          the Flee lever went through ("Out of the fight")
   yielded: true|false       the Yield lever went through
@@ -195,10 +198,12 @@ def play_one(sc: dict, store: Any, keep: bool) -> dict:
     name = str((sc.get("setup") or {}).get("name") or "the player")
     rec: dict[str, Any] = {"id": sc["id"], "iid": iid, "steps": [], "failed": []}
     for n, step in enumerate(sc["steps"], 1):
-        say, exp = (step, {}) if isinstance(step, str) else (step["say"], step.get("expect") or {})
-        before = store.load_state(iid)
+        told = isinstance(step, dict) and "tell" in step
+        say, exp = (step, {}) if isinstance(step, str) else (step.get("say") or step["tell"], step.get("expect") or {})
+        # a telling written by hand replaces the last turn: what it changed is measured from before that turn
+        before = store.load_state(iid, store.latest_turn(iid) - 1) if told else store.load_state(iid)
         try:
-            events = _stream(f"/api/instances/{iid}/turn", {"text": say})
+            events = _stream(f"/api/instances/{iid}/tell", {"text": say}) if told else _stream(f"/api/instances/{iid}/turn", {"text": say})
         except SystemExit as e:
             rec["failed"].append(f"step {n}: the server refused it: {e}")
             break

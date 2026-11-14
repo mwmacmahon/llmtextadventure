@@ -5,6 +5,8 @@
         opening and what the player sees.
     turn.py play <iid> "<what the player does>"      (or: turn.py play <iid> --command <id> [k=v ...])
         plays one turn, appends it to the transcript, prints the prose, the mechanics lines and what the player sees.
+    turn.py play <iid> --tell "<the telling, word for word>"
+        B406, a debug tool (a dev server): the last turn told again in exactly these words; the referee reads them as canon.
     turn.py finish <iid> [--title T]
         closes the transcript (the run table, usage) and writes the call report page beside it (tools/round_report.py).
 
@@ -79,7 +81,11 @@ def play(a: argparse.Namespace) -> int:
         print("no transcript for this instance: start it with turn.py new", file=sys.stderr)
         return 2
     game = side["game"]
-    if a.command:
+    if getattr(a, "tell", None):
+        label = f"told by hand: {a.tell[:60]}"
+        events = _stream(f"/api/instances/{a.iid}/tell", {"text": a.tell})
+        side["turn"] -= 1                      # the same turn, told again
+    elif a.command:
         args = {k: v for k, _, v in (p.partition("=") for p in a.text or [])}
         label = f"cmd {a.command} {args}"
         events = _stream(f"/api/instances/{a.iid}/command", {"command": a.command, "args": args})
@@ -149,7 +155,7 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     n = sub.add_parser("new"); n.add_argument("game"); n.add_argument("--tag", required=True); n.add_argument("--title"); n.add_argument("--setup", nargs="*", action="extend"); n.add_argument("--mod", action="append", help="a mod file to tick (B79), e.g. tweaks.yml")
-    p = sub.add_parser("play"); p.add_argument("iid"); p.add_argument("text", nargs="*"); p.add_argument("--command")
+    p = sub.add_parser("play"); p.add_argument("iid"); p.add_argument("text", nargs="*"); p.add_argument("--command"); p.add_argument("--tell")
     f = sub.add_parser("finish"); f.add_argument("iid"); f.add_argument("--title")
     a = ap.parse_args(_reordered(argv))
     return {"new": new, "play": play, "finish": finish}[a.cmd](a)

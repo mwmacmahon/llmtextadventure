@@ -47,6 +47,10 @@ class RewriteInput(BaseModel):
     hint: str = ""
 
 
+class TellInput(BaseModel):
+    text: str
+
+
 class SettingsInput(BaseModel):
     guard: dict[str, Any] | None = None
     progress: dict[str, Any] | None = None
@@ -353,6 +357,16 @@ async def turn(iid: str, body: TurnInput):
 async def command(iid: str, body: CommandInput):
     _exists(iid)
     return _sse(engine.play(iid, command=(body.command, body.args)))
+
+
+@app.post("/api/instances/{iid}/tell")
+async def tell(iid: str, body: TellInput, request: Request):
+    """B406, a debug tool (a dev server only): the last turn told again in exactly these words, and the referee run on them
+    as canon. No narrator call, no retelling whatever the referee rules."""
+    _exists(iid)
+    if not engine.cfg.server.dev_mode:               # off on a player's server (TA_DEV_MODE=off), whatever the request says
+        raise HTTPException(status_code=403, detail="the telling can be written by hand on a dev server only")
+    return _sse(engine.tell_as(iid, body.text))
 
 
 @app.post("/api/instances/{iid}/rewrite")

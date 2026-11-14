@@ -14,7 +14,7 @@ All commands run from `server/` with its venv. "The box" is the local model (Gem
 | 2 | Fight cases | one stored fight turn each, through the engine | none | yes | 5 s, free | `notes/eval/fight_cases.yml` |
 | 3 | The replay corpus | every stored fantasy turn through the engine's first half | none | against a baseline | 20 s, free | `notes/eval/corpus/fantasy_*.json` |
 | 4 | The whole-turn replay | stored turns through the whole pipeline on their stored model answers | none | against a baseline | 10 min, free | `notes/eval/corpus/turns_*.json` |
-| 5 | The staged suite | scripted scenes played live, the engine's doing keyed | the box (or Sonnet) | yes | 13 min for 17 scenes on the box, free | `server/tests/staged/*.yml`, runs in `notes/eval/staged/` |
+| 5 | The staged suite | scripted scenes played live, the engine's doing keyed | the box (or Sonnet) | yes | 25 min for 38 scenes on the box, free | `server/tests/staged/*.yml`, runs in `notes/eval/staged/` |
 | 6 | The reading probe | the assistant's reading of stored turns, under variants | the box or Sonnet | no (counts) | 25 min for 100 turns; about 7 cents a reading on Sonnet | `notes/eval/probes/reading_*.json` |
 | 7 | The flee and yield probes | the reading and the rule on keyed sentences said in stored fights | the box or Sonnet | yes | 20 min for 96 readings; about 7 cents each on Sonnet | `notes/eval/probes/flee_*.json` |
 | 7b | The referee probe | the referee's rows on stored turns, under a change of its wording | the box or Sonnet | no (counts, rows listed) | 12 min for 30 turns | `notes/eval/probes/referee_*.json` |
@@ -45,7 +45,7 @@ commit that touches the pipeline.
 **5. The staged suite** (`TA_URL=http://127.0.0.1:8013 tools/staged.py run [--repeat 2]`, `list`, `show <run>`). The layer
 between the replays and a played round: a new game, a few `DEBUG:` turns that stage a moment (spawn the foes, grab the player,
 hold them under), then the player's own words, with what the engine must have done (`fled`, `fighting`, `player_attack`,
-`weapon`, a § line held or not held). A model reads and tells every turn, so it reaches everything, and the answer is
+`weapon`, a § line held or not held). A step may also be `tell:` (B406): the last turn told again in exactly those words, the referee run on them, so what the referee files from a given telling is keyed. Scenes carry an `area` (fight 17, pockets 6, people 5, time 4, quests 2, places 2, talk 2), and a run ends with the passes by area: what kind of play the suite reaches is on the page. A model reads and tells every turn, so it reaches everything, and the answer is
 keyed. A model varies, so a scenario is judged over repeats. Every fault a round finds gets a scenario. It cannot judge prose.
 
 **6. The reading probe** (`tools/reading_probe.py run --variant base --variant name:opt=value`, `score`). Stored turns read
