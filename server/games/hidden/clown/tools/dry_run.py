@@ -86,7 +86,7 @@ def choose_plan(game: ClownGame, st: ClownState, plan: str, focus: list[str], re
 def run(weeks: int = 8, kind: str = "charmer", girl: str = "nell_sorley", plan: str = "pratfalls,children", focus: str = "", rest_at: int = 0,
         book: str = "all", attend: bool = True, seed: int = 0, verbose: bool = False, content: Path = CONTENT, out=print, take: int = 0, recruit: bool = True) -> ClownState:
     game = make_game(content)
-    _, st = game.new_instance({"name": "the proprietor", "kind": kind, "first_girl": girl})
+    _, st = game.new_instance({"name": "the proprietor", "kind": kind, "first_girl": girl, "seed": ""})
     rng = random.Random(seed)
     turn = 1
     focus_l = [x for x in focus.split(",") if x]

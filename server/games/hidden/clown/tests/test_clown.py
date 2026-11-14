@@ -25,7 +25,7 @@ from games.hidden.clown.state import SLOTS, weekday
 
 CONTENT = Path(__file__).resolve().parents[5] / "notes" / "content"
 pytestmark = pytest.mark.skipif(not (CONTENT / "clown" / "scenarios" / "tumbler_house.yml").exists(), reason="the clown content is not on this machine")
-SETUP = {"name": "Hal Ferris", "kind": "charmer", "first_girl": "dot", "about": "Ran a dance hall in the north until it burned."}
+SETUP = {"name": "Hal Ferris", "kind": "charmer", "first_girl": "dot", "seed": "", "about": "Ran a dance hall in the north until it burned."}
 C = Change
 
 
@@ -87,7 +87,7 @@ def test_the_setup_is_four_fields_and_the_first_morning(game: ClownGame):
     f = setup_fields(game.setup_options())
     assert set(f) == {"name", "kind", "first_girl", "about"}
     assert f["about"].hint and not f["kind"].hint
-    assert [o.id for o in f["first_girl"].options] == game.content.girls_deck()["starters"] and f["first_girl"].options[0].name.startswith("Ada Vosk, 23")
+    assert [o.id for o in f["first_girl"].options] == ["harbour", *game.content.girls_deck()["starters"]] and f["first_girl"].options[1].name.startswith("Ada Vosk, 23")
     assert "dot" not in [o.id for o in f["first_girl"].options]                    # the written three come later; dot still works unlisted, for the tools
     st = new(game)
     assert st.player.stats == {"charm": 3, "menace": -1, "business": 1, "connections": 1, "craft": 0}
@@ -698,7 +698,7 @@ async def test_a_turn_through_the_pipeline(engine: Engine):
     assert events[-1]["event"] == "done", [ev["event"] for ev in events]
     st = engine.games["clown"].load_state(engine.store.load_state(iid))
     assert st.plan.mornings == "pratfalls" and st.now_abs == before
-    assert engine.games["clown"].hidden is True
+    assert engine.games["clown"].hidden is False and engine.games["clown_after_dark"].hidden is True
 
 
 # ---- stage A: the narrator's log in words, Skip, Graduate ------------------------------------------------------------------
@@ -2145,3 +2145,25 @@ def test_a_trip_out_asks_before_it_spends_the_part_of_the_day():
     s.clock.minute = 20 * 60
     by = {c.label: c.value for p in game.ui(s).panels if getattr(p, "type", "") == "status_strip" for c in p.chips}
     assert by["Morning"] == "gone" and by["Evening"] == "now, to 22:00"
+
+
+def test_the_first_pupil_is_chosen_at_the_harbour_and_every_game_has_its_own_seed(game):
+    """The owner, 11-14: the game opens at the shed with nobody in the house; the lease's one contract is taken with the ordinary
+    Take, free, and she is in training; the week's one purchase is still open. Two games under one name differ (their own seed);
+    a seed given makes the same game again."""
+    st = new(game, first_girl="harbour")
+    assert st.active == "" and not st.in_house() and st.flags.get("first_pick") and st.player.location == "The harbour"
+    assert len(st.harbour.hand) >= 2 and "clerk" in game.opening(st) and game._at_the_door(st) is None      # nobody of the file's three at the door on day one
+    take = next(c for c in game.commands(st) if c.id == "take")
+    assert take.enabled and all("paid with the lease" in o.label for o in take.params[0].options)
+    money, cid = st.house.money, st.harbour.hand[0]
+    out = game.run_command(st, "take", {"girl": cid})
+    s2 = out[0]
+    assert s2.active == cid and s2.house.money == money and not s2.flags.get("first_pick") and s2.harbour.taken_week != s2.house.week
+    assert s2.girl(cid).price_paid > 0 and "no money changes hands" in out[1].directive
+    assert "paid with the lease" not in " ".join(o.label for c in game.commands(s2) if c.id == "take" for o in c.params[0].options)
+    advance(game, s2, 3 * DAY, 2)                             # the house runs with her in it
+    hands = {tuple(game.new_instance({"name": "Hal Ferris", "kind": "charmer", "first_girl": "harbour"})[1].harbour.hand) for i in range(6)}
+    assert len(hands) > 1
+    a, b = (game.new_instance({**SETUP, "first_girl": "harbour", "seed": "k"})[1] for _ in range(2))
+    assert a.harbour.hand == b.harbour.hand and a.seed == "k"

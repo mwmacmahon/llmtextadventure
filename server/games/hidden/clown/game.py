@@ -8,6 +8,7 @@ Bookings and troubles are a deck (deck.py); the three-act spine is the house fil
 from __future__ import annotations
 
 import random
+import secrets
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -54,6 +55,8 @@ AUTHORITY = {
 }
 PRACTICE = "The practice room"
 OFFICE = "The office"
+HARBOUR = "The harbour"
+HARBOUR_START = "harbour"          # the setup's first_girl: chosen in play, at the shed
 AWAY_PLACE = "about the town"          # a girl who came to the door and waits on an answer (D199C)
 JOIN_WORDS = ("joined", "join", "taken on", "taken in", "hired", "recruited", "in the house", "house", "passive", "member")
 AXIS_STEP = 2                   # the referee's most in a turn on one axis
@@ -190,8 +193,12 @@ class ClownGame(GameBase):
     name = "clown"
     version = "0.1.0"
     title = "Clown Maker"
-    description = "A house behind the harbour that trains clowns. A week at a time, a stable of girls, private clients, the city. Dev mode only."
-    hidden = True
+    description = "A house behind the harbour that trains clowns. A week at a time, a stable of girls, private clients, the city."
+    family = "clown"
+    # the owner, 11-14: "the dev mode one with the mod and the non-dev-mode one without". This one is listed without the dev
+    # switch wherever hidden games are loaded at all (never on a player's server, TA_DEV_MODE=off); the one with the owner's
+    # mod always on is a derived game beside it (games/hidden/clown_after_dark, dev switch only)
+    hidden = False
 
     # D210C (the owner, 11-10: "times of day blocks with only some things moving it forward, persona style"): the day is a
     # morning, an afternoon, an evening and a night; going somewhere, an errand, waiting, sleeping or a long scene spends the
@@ -290,9 +297,9 @@ class ClownGame(GameBase):
             "kind": {"kind": "select", "label": "What kind of proprietor", "required": True,
                      "options": [{"id": k["id"], "name": k["name"]} for k in sc.get("proprietors") or []], "default": "charmer"},
             "first_girl": {"kind": "select", "label": "The first girl", "required": True,
-                           "options": self._starter_options(),
-                           "default": (self._starter_options() or [{"id": "dot"}])[0]["id"],
-                           "hint": "Her contract came with the house, off the boat on Saturday. The three the file tells of come to the door later; you may meet them about the town first."},
+                           "options": ([{"id": HARBOUR_START, "name": "Choose her yourself, at the harbour"}] if self.content.girls_deck() else []) + self._starter_options(),
+                           "default": HARBOUR_START if self.content.girls_deck() else (self._starter_options() or [{"id": "dot"}])[0]["id"],
+                           "hint": "The lease pays for one contract off the clerk's slip. Choose her in play at the Harbourmaster's shed, or name her here and she is in the house when the game opens. The three the file tells of come to the door later; you may meet them about the town first."},
             "about": {"kind": "textarea", "label": "About you", "hint": "Anything you like: how you came by the house, what you were before, what you want."},
         }
 
@@ -317,8 +324,18 @@ class ClownGame(GameBase):
         deck_g, cards = self.content.girls_deck(), self.content.girl_cards()
         starters = [o["id"] for o in self._starter_options()]
         first = str(setup.get("first_girl") or "").strip().lower() or (starters or [(sc.get("girls") or [{}])[0].get("id", "")])[0]
-        if first not in cards and not any(g["id"] == first for g in sc.get("girls") or []):
+        # the owner, 11-14: "have you pick the girl at the start of the game. Like a 'you head to the harbor to hunt for your first
+        # pupil' bit. That would let me see the normal in game recruitment system too": the game opens at the shed with nobody in
+        # the house, and the lease's one contract is taken off the slip with the ordinary Take
+        at_harbour = first == HARBOUR_START and bool(deck_g)
+        if not at_harbour and first not in cards and not any(g["id"] == first for g in sc.get("girls") or []):
             first = (starters or [(sc.get("girls") or [{}])[0].get("id", "")])[0]
+        if at_harbour:
+            first = ""
+        # every shuffle and draw of this game is salted with its own seed (the owner, 11-14: "is there no RNG to the deck?": it was
+        # the proprietor's name, so one name was one game); a setup may give one (the tools and the tests: "" is the name, as before)
+        seed = str(setup["seed"]) if "seed" in setup else secrets.token_hex(4)
+        salt = seed or name
         girls = []
         for raw in sc.get("girls") or []:
             g = girl_from(raw, "active" if raw["id"] == first else "away")
@@ -327,7 +344,7 @@ class ClownGame(GameBase):
                 g.location = PRACTICE
             girls.append(g)
         if first in cards:          # a harbour girl: her contract came with the house (the card's price, paid before the game)
-            g = hb.make_girl(cards[first], deck_g, scenario_from(sc), random.Random(f"first:{name}:{first}"), clock.day - 2, hb.price_of(cards[first]))
+            g = hb.make_girl(cards[first], deck_g, scenario_from(sc), random.Random(f"first:{salt}:{first}"), clock.day - 2, hb.price_of(cards[first]))
             g.status, g.location, g.mood = "active", PRACTICE, "new"
             g.history.append(f"{clock_text(clock.day - 2, 600)}. her contract bought at the shed with the house's lease")
             girls.insert(0, g)
@@ -342,12 +359,12 @@ class ClownGame(GameBase):
                     things.append(Thing(id=sec.thing["id"], name=sec.thing.get("name", sec.thing["id"]), place=sec.thing.get("place", ""),
                                         state=sec.thing.get("state", ""), known=False))
         player = Proprietor(name=name, kind=kind["id"], kind_name=kind["name"], about=str(setup.get("about") or "").strip(),
-                            stats={k: int(kind.get("stats", {}).get(k, 0)) for k in STATS}, location=OFFICE)
+                            stats={k: int(kind.get("stats", {}).get(k, 0)) for k in STATS}, location=HARBOUR if at_harbour else OFFICE)
         events = [Event.model_validate(e) for e in sc.get("events") or []]
         state = ClownState(
             scenario=scenario_from(sc), clock=clock, player=self._with_points(player), house=House(last_tick_abs=clock.day * DAY + clock.minute),
-            girls=girls, active=first, people=[dk.person_from(p) for p in sc.get("people") or []], things=things,
-            log=[f"{clock_text(clock.day, clock.minute)}. {scenario_from(sc).house_name} opens for business; {next(g.name for g in girls if g.id == first)} is on the mats."],
+            girls=girls, active=first, seed=seed, flags={"first_pick": True, "harbour_start": True} if at_harbour else {}, people=[dk.person_from(p) for p in sc.get("people") or []], things=things,
+            log=[f"{clock_text(clock.day, clock.minute)}. {scenario_from(sc).house_name} opens for business; " + (f"{next(g.name for g in girls if g.id == first)} is on the mats." if first else "nobody is on the mats yet: the lease's contract waits at the shed.")],
             hidden=Hidden(events=events, spontaneous=[Spontaneous.model_validate(x) for x in sc.get("spontaneous") or []],
                           facts=list(sc.get("hidden_facts") or []), terms=list(sc.get("secret_terms") or [])),
         )
@@ -360,7 +377,7 @@ class ClownGame(GameBase):
             if hid in hooks:
                 dk.deal(state, hooks[hid], turn=0, deal_abs=now, name=name)
         self._best(state)
-        dk.deal_week(state, dk.deck_of(sc0), hooks, random.Random(f"hand:{name}"), now, 0, name)   # the first week's offers
+        dk.deal_week(state, dk.deck_of(sc0), hooks, random.Random(f"hand:{salt}"), now, 0, name)   # the first week's offers
         self._first_boat(state)
         if sc0.get("opening_text"):
             for e in state.hidden.events:
@@ -390,7 +407,7 @@ class ClownGame(GameBase):
         deck = self.content.girls_deck()
         if not deck:
             return
-        s.harbour.queue = hb.shuffle(deck, random.Random(f"harbour:{s.player.name}"))
+        s.harbour.queue = hb.shuffle(deck, random.Random(f"harbour:{s.salt}"))
         for g in s.girls:           # the first girl's card, if she came off the boat, is gone from the deck
             if g.card and g.card in s.harbour.queue:
                 s.harbour.queue.remove(g.card)
@@ -398,7 +415,8 @@ class ClownGame(GameBase):
         hb.deal(s, deck, self.content.girl_cards(), int(dk.dial(s, "harbour_hand")))
 
     def opening(self, state: ClownState) -> str | None:
-        return self.scenario(state.scenario.id).get("opening_text")
+        sc = self.scenario(state.scenario.id)
+        return (sc.get("opening_text_harbour") if state.flags.get("first_pick") else None) or sc.get("opening_text")
 
     def _arm_week_end(self, s: ClownState, turn: int) -> None:
         """The scripted pending that closes the week: the next Sunday at ten (D132)."""
@@ -632,7 +650,8 @@ class ClownGame(GameBase):
         order = [g for g in written if g.status == "away"]
         if not order:
             return None
-        first_is_card = bool(s.girls and s.girls[0].card)        # the first girl off the boat: the week-two event brings the first of the file's three
+        # the first girl off the boat (named on the form, or chosen at the shed in play): the week-two event brings the first of the file's three
+        first_is_card = bool(s.girls and s.girls[0].card) or bool(s.flags.get("harbour_start"))
         n_come = sum(int(bool(s.flags.get(k))) for k in ("second_girl_come", "third_girl_come")) + int(first_is_card and bool(s.flags.get("first_girl_come")))
         arrived = sum(1 for g in written if g.status != "away") - (0 if first_is_card else 1)
         return order[0] if n_come > arrived else None
@@ -676,6 +695,11 @@ class ClownGame(GameBase):
                      f"; money {money_word(h.money)}") + ".")
         lines.append(f"The house: {h.rooms} rooms for girls, {len(s.in_house())} kept; the hand holds {h.hand_size} cards.")
         lines.extend(self._house_lines(s, engine))
+        if s.flags.get("first_pick"):          # the harbour start: nobody in the house yet, the whole slip shown below
+            lines.append(f"THE FIRST PUPIL: the house has no girl yet. The lease paid for one contract off the clerk's slip at the Harbourmaster's shed, and "
+                         f"{p.name} has come to choose. The women on the slip are at the shed and may be looked at, asked about and spoken with, each as her "
+                         f"line on the slip has her; the clerk answers what he knows. Nobody is chosen, struck off the slip or brought home until the engine "
+                         f"says so: if {p.name} talks as though choosing, the clerk asks which name he is to strike.")
         if h.closed_until_abs > s.now_abs:
             lines.append("The house is closed for repairs; no bookings.")
         if s.flags.get("licence_revoked"):
@@ -812,7 +836,7 @@ class ClownGame(GameBase):
             return []
         out: list[str] = []
         slip = [cards[c] for c in s.harbour.hand if c in cards]
-        about_slip = (rel is None or s.harbour.announce or bool(rel["places"] & HARBOUR_PLACES) or SLIP_ID in rel["ids"]
+        about_slip = (rel is None or s.harbour.announce or bool(s.flags.get("first_pick")) or bool(rel["places"] & HARBOUR_PLACES) or SLIP_ID in rel["ids"]
                       or any(str(c.get("id")) in rel["ids"] for c in slip))
         if slip and not about_slip:
             out.append("")
@@ -2046,7 +2070,7 @@ class ClownGame(GameBase):
             quality += add(-1, "her name went before her, and it was not good")
         quality += add(-x.difficulty, DIFFICULTY_WORDS.get(x.difficulty, "a hard room"), f"the room's difficulty ({-x.difficulty:+d})")
         if x.variance:
-            v = random.Random(f"show:{s.player.name}:{x.id}:{x.at_abs // DAY}").randint(-x.variance, x.variance)
+            v = random.Random(f"show:{s.salt}:{x.id}:{x.at_abs // DAY}").randint(-x.variance, x.variance)
             if v:
                 quality += add(v, "luck was with her" if v > 0 else "luck was against her", f"the night itself ({v:+d})")
         return quality, words, nums
@@ -2317,7 +2341,7 @@ class ClownGame(GameBase):
         for day in range(since // DAY, now // DAY + 1):
             if not since < day * DAY + 1320 <= now:
                 continue
-            rng = random.Random(f"challenge:{s.player.name}:{day}")
+            rng = random.Random(f"challenge:{s.salt}:{day}")
             if rng.random() >= dk.dial(s, "challenge_rate") + dk.dial(s, "challenge_step") * self._renown_steps(s):
                 continue
             doc = doc or s.model_dump(mode="json")
@@ -2491,7 +2515,7 @@ class ClownGame(GameBase):
         owned = [(g, gid) for g in s.in_house() for gid in g.gear]
         if not owned:
             return
-        rng = random.Random(f"wardrobe:{s.player.name}:{s.house.week}")
+        rng = random.Random(f"wardrobe:{s.salt}:{s.house.week}")
         if rng.random() >= dk.dial(s, "gear_theft_chance"):
             return
         who = "a man of Brascombe's" if s.flags.get("brascombe_enemy") else "someone from a rival house"
@@ -3054,16 +3078,18 @@ class ClownGame(GameBase):
         deck, cards = self.content.girls_deck(), self.content.girl_cards()
         slip = [cards[c] for c in s.harbour.hand if c in cards]
         if slip:
-            can = s.harbour.taken_week != s.house.week or not s.harbour.taken_week
+            lease = bool(s.flags.get("first_pick"))     # the lease's one contract: any on the slip, no money
+            can = lease or s.harbour.taken_week != s.house.week or not s.harbour.taken_week
             room = len(in_house) < s.house.rooms
             dl = lambda k: dk.dial(s, k)  # noqa: E731
-            afford = [c for c in slip if hb.price_of(c, s, dl) <= s.house.money]
+            afford = [c for c in slip if lease or hb.price_of(c, s, dl) <= s.house.money]
             out.append(CommandSpec(id="take", label="Take" + ("" if can else " (one a week)") + ("" if room else " (the rooms are full)"), mode="narrated",
                                    enabled=bool(can and room and afford),
                                    params=[Param(must_name=True, name="girl", label="contract", options=[Option(id=c["id"], label=f"{c['name']}, {c.get('age')}, {hb.tag_meaning(deck, str(c.get('origin') or ''))}; {hb.price_of(c, s, dl)} gold"
-                                                                                                           + ("" if hb.price_of(c, s, dl) <= s.house.money else " (too dear)")) for c in slip],
+                                                                                                           + (" (paid with the lease)" if lease else "" if hb.price_of(c, s, dl) <= s.house.money else " (too dear)")) for c in slip],
                                                  default=(afford or slip)[0]["id"])],
-                                   hint="Buy a contract off the clerk's slip at the Harbourmaster's shed and bring her home: the price from the house's money, one a week, "
+                                   hint=("The lease paid for one contract: choose the house's first pupil off the clerk's slip and bring her home; no money changes hands. After her: " if lease else "")
+                                        + "Buy a contract off the clerk's slip at the Harbourmaster's shed and bring her home: the price from the house's money, one a week, "
                                         f"and a room for her (the house has {s.house.rooms}; the Upgrade makes more). "
                                         "She comes passive, with her own grid and her own story; a boat refreshes the slip on the first and third Sunday of the month.",
                                    words=["take her on", "buy her contract", "buy the contract", "take the contract", "bring her home", "take on", "the shed", "the slip"]))
@@ -3341,7 +3367,7 @@ class ClownGame(GameBase):
         h.status, h.closed_turn = "passed", 0
         s.flags[f"swap_week_{s.house.week}"] = True
         hooks = self.hooks_content()
-        hid = dk.draw(s, dk.deck_of(self.scenario(s.scenario.id)), hooks, random.Random(f"swap:{s.player.name}:{s.house.week}"), s.now_abs, 0)
+        hid = dk.draw(s, dk.deck_of(self.scenario(s.scenario.id)), hooks, random.Random(f"swap:{s.salt}:{s.house.week}"), s.now_abs, 0)
         if hid is None:
             return s, CommandResult(label="Swap an offer", text=f"{h.title} is handed back; the book has nothing else this week.")
         new = dk.deal(s, hooks[hid], turn=0, deal_abs=s.now_abs - 120, name=s.player.name)
@@ -3509,24 +3535,28 @@ class ClownGame(GameBase):
         if cid not in s.harbour.hand:
             by_name = {cards[c]["name"].lower(): c for c in s.harbour.hand if c in cards}
             cid = by_name.get(cid, cid)
-        g, why = hb.take(s, cid, deck, cards, random.Random(f"take:{s.player.name}:{cid}:{s.house.week}"), lambda k: dk.dial(s, k))
+        lease = bool(s.flags.get("first_pick"))
+        g, why = hb.take(s, cid, deck, cards, random.Random(f"take:{s.salt}:{cid}:{s.house.week}"), lambda k: dk.dial(s, k))
         if g is None:
             return state, CommandResult(ok=False, label="Take", text=(why[:1].upper() + why[1:] + ".") if cid in s.harbour.hand or cid in cards else
                                         "Whose contract? " + ", ".join(cards[c]["name"] for c in s.harbour.hand if c in cards))
         p = s.player
-        g.history.append(stamp(s, f"her contract bought at the shed for {g.price_paid} gold"))
+        g.history.append(stamp(s, f"her contract taken at the shed, paid with the house's lease ({g.price_paid} gold)" if lease else f"her contract bought at the shed for {g.price_paid} gold"))
         g.off_routine_until = self._next_slot_start(g, s.now_abs)
         self._note(s, f"{g.name}'s contract bought at the shed; she came to the house.", f"{g.name}'s contract bought at the shed for {g.price_paid} gold; she came to the house.")
         self._tally(s, f"The shed: {g.name}'s contract, {g.price_paid} gold; her contract value {self.contract_value_of(s, g)} gold.")
         line = f"{g.name}'s contract is the house's; she is in the house from today." + (" She is in training; the plan is empty." if s.active == g.id else "")
         if s.active == g.id:
             s.plan = Plan(set_week=s.house.week)
-        directive = (f"{p.name} goes down to the Harbourmaster's shed, pays the clerk {g.price_paid} gold for {g.name}'s contract, and brings her home to the house. "
+        directive = ((f"{p.name}, at the Harbourmaster's shed, chooses {g.name}: the clerk strikes her off the slip against the lease's paper (the contract was paid "
+                      f"for with the lease; no money changes hands now), and {p.name} brings her home to the house, its first pupil. ") if lease else
+                     f"{p.name} goes down to the Harbourmaster's shed, pays the clerk {g.price_paid} gold for {g.name}'s contract, and brings her home to the house. ")
+        directive = (directive +
                      f"Play the shed (the clerk, the slip, the woman herself as her file in the game state has her, in her own voice: \"{g.voice}\"), the walk "
                      f"back along Harbour Street, and the door; a line from whoever is in the house when she comes in. She is in the house from now, not in "
                      f"training unless the game state says so. Stop where {p.name} would next decide.")
-        return s, CommandResult(label="Take", player_line=f"I go down to the shed and buy {g.name}'s contract, and bring her home.",
-                                summary=f"{p.name} buys {g.name}'s contract at the shed and brings her to the house.", directive=directive, minutes=90, log_line=line,
+        return s, CommandResult(label="Take", player_line=f"I choose {g.name} off the clerk's slip, and bring her home." if lease else f"I go down to the shed and buy {g.name}'s contract, and bring her home.",
+                                summary=f"{p.name} {'takes' if lease else 'buys'} {g.name}'s contract at the shed and brings her to the house.", directive=directive, minutes=90, log_line=line,
                                 entities=[g.id], referee_skip=["money"])
 
     def _cmd_customize(self, state: ClownState, s: ClownState, command_id: str, args: dict[str, Any]) -> tuple[ClownState, CommandResult] | None:
@@ -3625,6 +3655,8 @@ class ClownGame(GameBase):
                  Chip(label="Money", value=f"{h.money} gold", tone="bad" if h.money < 0 else None),                  Chip(label="Renown", value=h.renown_word)]
         if g is not None:
             strip.append(Chip(label="In training", value=g.name))
+        elif s.flags.get("first_pick"):
+            strip.append(Chip(label="In training", value="nobody yet: choose her at the shed", tone="warn"))
         if h.reckoning in RECKONINGS:
             strip.append(Chip(label="Reckoning", value=RECKONINGS[h.reckoning]["who"], tone="bad"))
         panels: list[Any] = [StatusStrip(chips=strip)]

@@ -432,6 +432,7 @@ class GameBase:
     clock: ClockSpec | None = None                    # None: no engine clock
     family: str | None = None                         # a copy of another game (a hidden variant) names the original: tables keyed by game read it
     derived_from: str = ""                            # B231: a derived game names the game whose content root it reads (its own: saves, title, mods)
+    forced_mods: tuple[str, ...] = ()                  # mods always applied to a new game, by file or name (a derived game that is another with a mod on)
     resolver: str = "dice_d20"                        # key in mechanics.RESOLVERS
     caps: bool = False              # B200 (D178): no modifier caps on any game (supersedes D168's and B103's); True keeps them
     target_offset: int = 0                            # the dice spec's dial (D168): every check's target moves by it (+1 harder)

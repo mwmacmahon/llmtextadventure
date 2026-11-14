@@ -239,18 +239,21 @@ def take(state: ClownState, cid: str, deck: dict, cards: dict[str, dict], rng: r
         return None, "she is not on the clerk's slip"
     if state.girl(cid) is not None:
         return None, "she is in the house already"
-    if hb.taken_week == state.house.week and hb.taken_week:
+    first = bool(state.flags.get("first_pick"))        # the lease's one contract, chosen in play: no money, and not the week's one
+    if not first and hb.taken_week == state.house.week and hb.taken_week:
         return None, "the house has bought a contract this week already; the clerk will hold the slip"
     if len(state.in_house()) >= state.house.rooms:
         return None, f"the house has {state.house.rooms} rooms and they are full"
     price = price_of(card, state, dial)
-    if state.house.money < price:
+    if not first and state.house.money < price:
         return None, f"the house has {state.house.money} gold and the contract is {price}"
-    state.house.money -= price
+    if not first:
+        state.house.money -= price
+        hb.taken_week = state.house.week
+    state.flags.pop("first_pick", None)
     hb.hand = [c for c in hb.hand if c != cid]
     hb.queue = [c for c in hb.queue if c != cid]
     hb.gone.append(cid)
-    hb.taken_week = state.house.week
     g = make_girl(card, deck, state.scenario, rng, state.clock.day, price, hb.overrides.get(cid), lift_of(state, dial, hb.since.get(cid)))
     state.girls.append(g)
     if not state.active or state.active_girl is None or not state.active_girl.in_house():

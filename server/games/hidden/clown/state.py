@@ -452,6 +452,12 @@ class ClownState(BaseModel):
     threads: list[Thread] = Field(default_factory=list)
     flags: dict[str, Any] = Field(default_factory=dict)
     hidden: Hidden = Field(default_factory=Hidden)
+    seed: str = ""                                          # the game's own seed for every shuffle and draw (the owner, 11-14); "" in an older save: the name
+
+    @property
+    def salt(self) -> str:
+        """What every seeded draw of this game is salted with: its own seed; the proprietor's name in a save from before it."""
+        return self.seed or self.player.name
 
     def girl(self, gid: str) -> Girl | None:
         k = (gid or "").strip().lower()

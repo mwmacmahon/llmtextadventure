@@ -310,6 +310,8 @@ class Engine:
             raise ValueError(f"Difficulty: no such choice {difficulty!r}")
         self.setup_options(game)                                  # a game's own field may not take the engine's id
         setup = check_setup(game.setup_options(), setup)          # required fields filled, defaults taken (B21, D154)
+        # a game may have mods that are always on (a derived game that is another with a mod: `forced_mods`, by file or name)
+        mods = list(dict.fromkeys([*(getattr(game, "forced_mods", None) or []), *(mods or [])]))
         applied = mods_mod.resolve(self.cfg.resolve(self.cfg.server.content_root), game, list(mods or []))   # B79: name, hash, text
         if applied:
             setup[mods_mod.SETUP_KEY] = applied

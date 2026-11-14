@@ -187,7 +187,7 @@ def trial(strategy: Strategy, weeks: int, seed: int, content: Path = CONTENT, ch
     game.in_place = in_place
     starters = game.content.girls_deck().get("starters") or ["dot"]
     girl = strategy.girl or starters[seed % len(starters)]
-    _, st = game.new_instance({"name": f"Proprietor {seed}", "kind": "charmer", "first_girl": girl})
+    _, st = game.new_instance({"name": f"Proprietor {seed}", "kind": "charmer", "first_girl": girl, "seed": ""})
     for k, v in strategy.dials:                 # the calibration's dials, on this game only
         st.scenario.dials[k] = v
     for f in game.favours(st):                  # D219C: the simulator's proprietor knows the town's people (play meets them)
