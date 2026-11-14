@@ -172,7 +172,7 @@
   steps:
     - "I ask the innkeeper what work she has for someone with a sword."
     - say: "I take the job."
-      expect: {quest: {cellar_rats: live}, fighting: false}
+      expect: {quest_taken: {cellar_rats: true}, fighting: false}
 
 - id: asking_takes_no_job
   area: quests
@@ -180,7 +180,7 @@
   setup: *fighter
   steps:
     - say: "I ask the innkeeper what the job in the cellar pays, and say I'll think about it."
-      expect: {quest: {cellar_rats: dealt}, fighting: false}
+      expect: {quest_taken: {cellar_rats: false}, fighting: false}
 
 - id: buy_a_drink
   area: pockets

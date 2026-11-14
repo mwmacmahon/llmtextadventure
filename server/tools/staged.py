@@ -28,6 +28,8 @@ What a step may expect (all optional; a step with none only has to finish withou
   hp_lost_at_most: <n>      the player lost no more hit points than this over the turn
   place: <name>             the player is here after the turn
   quest: {id: status}       a quest's status after the turn (dealt, live, done, failed), or a list of statuses it may have
+                            (live is "in play": put to the player, its terms named; it is not "taken")
+  quest_taken: {id: true|false}   whether the player has said yes to it
   command: {id: true|false} the engine ran that command this turn and it went through (or was refused)
   has / lacks: [ids]        things in the pockets after the turn (a count above nought), or not
   count: {id: n}            a pocket count after the turn, exactly
@@ -123,6 +125,10 @@ def check(exp: dict, lines: list[str], rows: list[dict], before: dict, after: di
         got = next((str(h.get("status")) for h in after.get("hooks") or [] if h.get("id") == qid), "absent")
         if got not in ([want] if isinstance(want, str) else list(want)):
             bad.append(f"quest {qid}: {got}, not {want}")
+    for qid, want in (exp.get("quest_taken") or {}).items():
+        got = next((bool(h.get("taken")) for h in after.get("hooks") or [] if h.get("id") == qid), None)
+        if got is not bool(want):
+            bad.append(f"quest_taken {qid}: {got}, wanted {want}")
     for cid, want in (exp.get("command") or {}).items():
         got = cmds.get(cid)
         if got is None or bool(got.get("ok", True)) != bool(want):
