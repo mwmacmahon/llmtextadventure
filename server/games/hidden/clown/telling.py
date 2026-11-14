@@ -70,7 +70,7 @@ def move(game: Any, state: Any, adj: Any, res: dict[str, Any]) -> str:
     for cid in [cmd, *levers]:
         if cid in FAREWELL:
             return "farewell"
-        if cid == "take":
+        if cid in ("take", "welcome"):
             return "arrival"
     if cmd:
         return {"skip": "skip", "bear": "borne", "better": "session"}.get(cmd, "lever")
@@ -98,7 +98,7 @@ def kind(game: Any, state: Any, adj: Any, res: dict[str, Any], level: str) -> di
         return None
     mv = move(game, state, adj, res)
     parts = [k for k, _ in game.telling_parts(state)]
-    extra = [] if mv == "lever" else [x for x in (res.get("levers") or []) if x not in FAREWELL and x != "take"]   # a lever beside the player's words: a beat each
+    extra = [] if mv == "lever" else [x for x in (res.get("levers") or []) if x not in FAREWELL and x not in ("take", "welcome")]   # a lever beside the player's words: a beat each
     if not mv and not parts and not extra and not (res.get("directives") or []):
         return None
     checks = len(res.get("told") or res.get("assessments") or [])

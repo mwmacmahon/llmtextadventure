@@ -16,6 +16,7 @@ SWITCHES: dict[str, tuple[bool, str]] = {
     "event_words": (True, "the check round, 11-13: an event that fires on a turn adds words to the telling's length"),
     "asks_again": (True, "C116, the reader, 11-14: a client dealt a second time says they have asked before, in new words"),
     "focus_filter": (True, "the owner, 11-13: the narrator's state cut by what the turn concerns: the slip, bought girls' files and people met are one line each when the turn is not about them"),
+    "welcome_lever": (True, "rounds 2 and 3 of 11-14: a girl who has come asking is taken on by a lever the reading picks, not only by the referee's row"),
     "axis_note": (True, "the long round of 11-14 (6 standing rows in 57 turns): the referee is told when the proprietor dealt directly with a girl, and asked for her love, respect and fear"),
 }
 

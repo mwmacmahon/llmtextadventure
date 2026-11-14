@@ -237,6 +237,8 @@ class ClownGame(GameBase):
         "Asking Judge Amory for a loan: it fails, no check. Asking him to put in a word at the licensing office after two dinners that "
         "pleased him: open, charm at high, with the edge the dinners earned.",
         "Telling Mr Sallis to get out of the house: works. Making him afraid to come back: open, menace at medium.",
+        "Asking a landlord whether he would have a clown in on a Saturday: open, charm; if it works he says he will send word to the house. "
+        "It books nothing: a show is booked only with the Book command, from an offer the game state lists.",
     ]
 
     # C106 (11-13): the newer reading form. What the edge is in this game, in place of the engine's five general lines
@@ -255,7 +257,9 @@ class ClownGame(GameBase):
         "stranger stays nobody and is not added. A place is one the game lists, a spot inside one of them, or a new place in the town with "
         "a word on where it is. Nothing you add reveals a hidden truth, a girl's secret or a piece of a person's Hidden line they have not "
         "earned by its Tells or its How: what you add can point somewhere, never answer the question. Money, a girl's skills, a booking, a "
-        "contract bought or sold and the days are the engine's: a future or a settled attempt never grants, spends or changes them.")
+        "contract bought or sold and the days are the engine's: a future or a settled attempt never grants, spends or changes them. "
+        "A show is booked only from the engine's offers (the hand): asking someone for work is open, and the most its success gains is "
+        "their goodwill and that they will send word; it never makes a booking, names a fee or sets a date.")
 
     def __init__(self, content_dir: Path):
         self.content = dk.ClownContent(content_dir)
@@ -930,10 +934,13 @@ class ClownGame(GameBase):
         for g in state.girls:
             if g.id in ids and g.in_house():
                 out.append(f"This turn {state.player.name} dealt directly with {g.name} ({g.id}; now: {axis_word('love', g.love)}, {axis_word('respect', g.respect)}, "
-                           f"{axis_word('fear', g.fear)}). Decide her love, her respect and her fear first, each on its own: from what the prose shows "
-                           f"{state.player.name} do or say to her and how she takes it, did it move? A row for each that moved (set {g.id}.love +1, "
-                           f"set {g.id}.fear +1, ...); for one that did not move, no row. A kindness, a harsh word, a promise kept or broken, "
-                           f"competence shown, a thing of her past given up: each of these moves one.")
+                           f"{axis_word('fear', g.fear)}). Weigh her love, her respect and her fear, each on its own, from what the prose "
+                           f"shows {state.player.name} do or say to her and how she takes it. An ordinary talk, an order given and done, a "
+                           f"question answered: nothing moved, no row. A row (set {g.id}.respect +1, set {g.id}.fear +1, set {g.id}.love -1, ...) "
+                           f"only for what the prose shows landing on her: respect, when {state.player.name} shows he knows the trade or handles "
+                           f"someone well in front of her, and down when he is shown a fool; fear, on a threat, a punishment or cruelty seen; "
+                           f"love, on a real kindness, a side taken, a promise kept, and down on a promise broken, a shaming, a cold use of "
+                           f"what she told him. Love does not rise two turns running for the same sort of kindness.")
         return out[:2]
 
     def scene_block(self, state: ClownState, adj: Any, audience: str) -> str:
@@ -1061,6 +1068,8 @@ class ClownGame(GameBase):
             "not a Plan command: it is a scene, and the referee records the slot off; only a standing change (\"afternoons she rests from now\") is the Plan. Taking a booking by name is the Book command with "
             "booking=<its title as the game state lists it> and girl=<the id of the girl who goes; the one in training when the input names nobody>; "
             "a booking is never turned down, only left in hand. Switch and Graduate take girl=<her id>. "
+            "Saying yes to a girl who has come to the door asking to be taken on (the game state lists her as asking) is the Take her on command, "
+            "welcome, with girl=<her id>; it costs nothing. "
             "Buying a contract off the clerk's slip at the Harbourmaster's shed (taking a girl on from the boats) is the Take command with girl=<the "
             "card's id as the game state lists it>; selling a girl's contract on (putting her out of the house for money) is the Sell command with "
             "girl=<her id>, only for a girl bought off the boats. When a reckoning is open (the game state says so), taking what is coming is the Bear "
@@ -1127,7 +1136,8 @@ class ClownGame(GameBase):
             "Never for a girl on the clerk's slip: her contract is bought only by the Take lever at the slip's price, never in the prose.",
             "- add house.money -n / +n: money the prose shows paid, spent, taken or received in the scene (a bribe, a doctor paid, a tip, a debt paid), "
             "never more than the house has. Money that changes hands at a show is its fee, and the engine pays that itself at the show's hour: no row, "
-            "and none for a booked show played or paid before its hour.",
+            "and none for a booked show played or paid before its hour. A performance the game state's Booked line does not list is not a show of "
+            "the house: no fee for it, whatever the prose says changed hands.",
             "- set player.conditions +<name> / -<name>: the proprietor's own body, from the same list. move player <place>.",
             "present: the listed girls and people in the scene with the proprietor when the prose ends.",
             "Threads: open one for a promise made, a job taken up or a question raised that is not one of the bookings or troubles in hand; close it "
@@ -1154,7 +1164,14 @@ class ClownGame(GameBase):
 
     def _targets_line(self, s: ClownState) -> str:
         girls = [g for g in s.girls if g.status != "gone"]
-        return (f"Targets: player ({s.player.name}); the girls by id: " + ", ".join(f"{g.id} = {g.name} (also {', '.join(g.aliases[:3])})" + ("; not yet in the house, met about the town: learned rows only" if g.status == "away" else "; asking to be taken on, not in the house: status joined when the prose takes her on" if g.status == "available" else "") for g in girls)
+        # rounds 2 and 3 of 11-14 (five turns): each girl's note followed her after a semicolon and ran into the next girl with a
+        # comma, and the referee wrote "set rosalind.status joined" for the girl before her every time. Each note now sits in its
+        # own brackets, names its own id, and the girls are parted by semicolons.
+        def one(g: Girl) -> str:
+            note = (f" [{g.id} is not yet in the house; met about the town: learned rows only for {g.id}]" if g.status == "away" else
+                    f" [{g.id} is asking to be taken on and is not in the house: write set {g.id}.status joined when the prose takes her on]" if g.status == "available" else "")
+            return f"{g.id} = {g.name} (also {', '.join(g.aliases[:3])}){note}"
+        return (f"Targets: player ({s.player.name}); the girls by id: " + "; ".join(one(g) for g in girls)
                 + "; people by id: " + ", ".join(f"{q.id} = {q.name}" + (f" (also {', '.join(q.aliases[:2])})" if q.aliases else "") for q in s.people)
                 + "; things by id as the game state lists them; the house as house.")
 
@@ -2990,6 +3007,14 @@ class ClownGame(GameBase):
                                    hint="Pass a girl out as a finished clown, on a Sunday, once three of her skills are sound and one is finished (or she has had a "
                                         "triumph at a good house). She stays in the house, her shows pay the house in full, and she may be put back in training.",
                                    words=["graduate", "pass her out", "she is finished", "she is made", "her training is over"]))
+        asking = [g for g in s.girls if g.status == "available"]
+        if asking and sw.on("welcome_lever"):          # rounds 2 and 3 of 11-14: a yes at the door was told and never filed (five turns)
+            room = self._rooms_free(s) > 0
+            out.append(CommandSpec(id="welcome", label="Take her on" + ("" if room else " (the rooms are full)"), mode="narrated", enabled=room,
+                                   params=[Param(name="girl", label="who", options=[Option(id=g.id, label=g.name) for g in asking], default=asking[0].id)],
+                                   hint="Say yes to a girl who has come asking to be taken on: she comes into the house, takes a room and is kept from now "
+                                        "(not in training until you Switch to her). No price: she came of herself.",
+                                   words=["take her on", "taken on", "a place here", "you can stay", "welcome to"]))
         deck, cards = self.content.girls_deck(), self.content.girl_cards()
         slip = [cards[c] for c in s.harbour.hand if c in cards]
         if slip:
@@ -3168,7 +3193,7 @@ class ClownGame(GameBase):
         out = handler(state, s, command_id, args)
         return out if out is not None else (state, CommandResult(ok=False, text=f"unknown command {command_id!r}"))
 
-    COMMAND_HANDLERS = {"plan": "_cmd_plan", "better": "_cmd_better", "swap": "_cmd_swap", "equip": "_cmd_equip", "turn_down": "_cmd_turn_down", "book": "_cmd_book", "switch": "_cmd_switch", "skip": "_cmd_skip", "graduate": "_cmd_graduate", "bear": "_cmd_bear", "give_up": "_cmd_bear", "take": "_cmd_take", "customize": "_cmd_customize", "sell": "_cmd_sell", "upgrade": "_cmd_upgrade", "journal": "_cmd_journal"}
+    COMMAND_HANDLERS = {"plan": "_cmd_plan", "better": "_cmd_better", "swap": "_cmd_swap", "equip": "_cmd_equip", "turn_down": "_cmd_turn_down", "book": "_cmd_book", "switch": "_cmd_switch", "skip": "_cmd_skip", "graduate": "_cmd_graduate", "bear": "_cmd_bear", "give_up": "_cmd_bear", "take": "_cmd_take", "welcome": "_cmd_welcome", "customize": "_cmd_customize", "sell": "_cmd_sell", "upgrade": "_cmd_upgrade", "journal": "_cmd_journal"}
 
     def _cmd_plan(self, state: ClownState, s: ClownState, command_id: str, args: dict[str, Any]) -> tuple[ClownState, CommandResult] | None:
         slot = str(args.get("slot") or "mornings").lower()
@@ -3375,6 +3400,21 @@ class ClownGame(GameBase):
                      f"it or will hear of it by morning, each in a line. {words}. Stop where {p.name} is alone with it.")
         return s, CommandResult(label="Give up a girl", player_line=f"I give {r['who']} {g.name}'s contract.", summary=f"{p.name} gives up {g.name} to {r['who']}.",
                                 directive=directive, minutes=60, log_line=f"{g.name} was given up to {r['who']}.", entities=[g.id])
+
+    def _cmd_welcome(self, state: ClownState, s: ClownState, command_id: str, args: dict[str, Any]) -> tuple[ClownState, CommandResult] | None:
+        """A girl who came asking is taken on by the proprietor's yes (the lever; the referee's `status joined` row still works)."""
+        who = str(args.get("girl") or "").strip().lower()
+        g = next((x for x in s.girls if x.status == "available" and (x.id == who or x.name.lower() == who)), None)
+        if g is None:
+            return state, CommandResult(ok=False, label="Take her on", text="Who? " + (", ".join(x.name for x in s.girls if x.status == "available") or "Nobody is asking."))
+        why = self._take_on(s, g, "the proprietor said yes")
+        if why:
+            return state, CommandResult(ok=False, label="Take her on", text=f"{g.name} cannot be taken on: {why}.")
+        p = s.player
+        return s, CommandResult(label="Take her on", player_line=f"I tell {g.name} she has a place in the house.", summary=f"{p.name} takes {g.name} on.",
+                                directive=(f"{p.name} says yes to {g.name}: she is of the house from now, with a room and her keep, not yet in training. Play her taking it, "
+                                           f"in her own manner, and Mrs Pell or the other girls making room, in a few lines. Stop where {p.name} would next decide."),
+                                minutes=10, entities=[g.id], log_line=f"{g.name} was taken on.")
 
     def _cmd_take(self, state: ClownState, s: ClownState, command_id: str, args: dict[str, Any]) -> tuple[ClownState, CommandResult] | None:
         deck, cards = self.content.girls_deck(), self.content.girl_cards()

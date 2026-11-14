@@ -1990,7 +1990,7 @@ def test_the_referee_is_told_when_the_proprietor_dealt_with_a_girl_of_the_house_
     g = next(x for x in st.girls if x.in_house())
     adj = AssistantReadingV2(kind="action", summary="x", time_minutes=5, risk="none", intents=[IntentV2(action="Tell her she did well.", targets=[g.id])])
     notes = game.referee_notes(st, adj)
-    assert len(notes) == 1 and f"set {g.id}.love +1" in notes[0] and g.name in notes[0]
+    assert len(notes) == 1 and f"set {g.id}.respect +1" in notes[0] and g.name in notes[0]
     _, msgs = referee_inputs(game, st, [], "I tell her she did well.", "You tell her.", adj)
     assert "[ENGINE NOTE]" in msgs[-1].content and "dealt directly with" in msgs[-1].content
     away = AssistantReadingV2(kind="action", summary="x", time_minutes=5, risk="none", intents=[IntentV2(action="Ask Mrs Pell.", targets=["pell"])])
@@ -2024,3 +2024,22 @@ def test_the_narrators_state_is_cut_by_what_the_turn_concerns_and_whole_without_
     assert "This turn is not about them" not in game.state_for_models(st)            # the assistant and the referee see it all
     monkeypatch.setenv("TA_CLOWN_SWITCHES", "focus_filter=off")
     assert narrator_bulletin(game, st, "", talk) == whole
+
+
+def test_a_girl_who_came_asking_is_taken_on_by_a_lever_and_the_referees_list_keeps_each_note_with_its_girl(game: ClownGame):
+    """Rounds 2 and 3 of 11-14: the referee filed "joined" under the next girl's id five times; her yes was told and never kept."""
+    st = _quiet(game)
+    dot = next(g for g in st.girls if g.status == "away")
+    assert "welcome" not in [c.id for c in game.commands(st)]
+    dot.status = "available"
+    line = game._targets_line(st)
+    assert f"[{dot.id} is asking to be taken on and is not in the house: write set {dot.id}.status joined" in line and "; " in line
+    spec = next(c for c in game.commands(st) if c.id == "welcome")
+    assert [o.id for o in spec.params[0].options] == [dot.id] and "welcome" in game.adjudication_rules(st)
+    s2, res = game.run_command(st, "welcome", {"girl": dot.id})
+    assert res.ok and s2.girl(dot.id).in_house() and st.girl(dot.id).status == "available" and dot.name in res.directive
+    assert game.telling_kind(s2, None, _res(command={"id": "welcome", "args": {}}), "short")["kind"].startswith("arrival")
+    s2.house.rooms = len(s2.in_house())
+    other = next(g for g in s2.girls if g.status == "away")
+    other.status = "available"
+    assert not game.run_command(s2, "welcome", {"girl": other.id})[1].ok

@@ -8,6 +8,7 @@ next turn plays on what it left. It stages the moments a keyed scene needs and a
     fatigue <girl id> <n>           0 to 100
     reckoning <ruined|arrested|shot|...>       that reckoning is open (reckoning none closes it)
     show <disaster|poor|fine|good|triumph> [attended]   a show of the girl in training, played and waiting to be told
+    book <minutes> [place]          a show booked for the girl in training, that many minutes from now, at a listed place
     week                            the week's count waits to be told, as on a Monday morning
     slip                            the shed's slip is announced as new
     night <words>                   a night's event, settled, waits to be told
@@ -83,6 +84,16 @@ def run(game: Any, state: ClownState, words: str, reckonings: dict[str, Any]) ->
                             at_abs=s.now_abs - 60, girl=g.id, result=rest[0], quality=SHOW_WORDS.index(rest[0]), fee=40, paid=40,
                             why=["she was ready for the room"], attended="attended" in rest[1:]))
         did = f"a show waits to be told: {rest[0]}" + (", attended" if "attended" in rest[1:] else ", not attended")
+    elif verb == "book" and rest and (n := num(rest[0], 1, 7 * 1440)) is not None:
+        g = s.active_girl
+        if g is None:
+            return no("Nobody is in training.")
+        place = game._place(s, " ".join(rest[1:])) if rest[1:] else next((x for x in s.places if x not in s.scenario.house_places), s.places[0])
+        if not place:
+            return no("Where? " + ", ".join(s.places))
+        s.shows.append(Show(id=f"debug_booked_{len(s.shows) + 1}", hook="debug", title="A booked tea", client="a client of the house", venue=place,
+                            at_abs=s.now_abs + n, girl=g.id, fee=20, wants=["children"]))
+        did = f"a show is booked at {place} in {n} minutes, {g.name} to go"
     elif verb == "week":
         s.house.report = s.house.report or ["The week was an ordinary one: the rent paid, the girls fed, a little left over."]
         s.flags["_report_fresh"] = True
@@ -97,5 +108,5 @@ def run(game: Any, state: ClownState, words: str, reckonings: dict[str, Any]) ->
         did = "a night's event waits to be told"
     else:
         return no("DEBUG: money <n> | meet <person id> | unmeet <person id> | axis <girl id> <love|respect|fear> <n> | fatigue <girl id> <n> | "
-                  "reckoning <kind|none> | show <disaster|poor|fine|good|triumph> [attended] | week | slip | night <words>")
+                  "reckoning <kind|none> | show <disaster|poor|fine|good|triumph> [attended] | book <minutes> [place] | week | slip | night <words>")
     return s, CommandResult(label="Debug", text=f"DEBUG: {did}.")
