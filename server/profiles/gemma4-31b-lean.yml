@@ -20,7 +20,11 @@ roles:
   # D264: the reading's grammar written with no whitespace between its tokens (the server's own lets the model pad: 27 to 30%
   # of a reading's characters). On 60 stored turns, like for like: 15.3 s to 12.1 with the prompt cold, 9.6 to 5.9 with it
   # cached; 486 output tokens to about 300; no error; the readings alike. The referee's answer is not measured yet.
-  assistant: {tight_json: true}
+  # B405 cause 1 (11-13): stable_system, the rules' changing lists written in the message, so the system text holds for a
+  # whole game and no call starts from nothing (2 of 7 did, both roles, in an eight-turn game). 60 stored readings and 40
+  # referee calls against the old layout: the same blows, checks, commands and rows, and ids used a little more often.
+  assistant: {tight_json: true, stable_system: true}
+  referee: {stable_system: true}
 dials:
   stakes: live          # B94 (D176): every profile names it
 # D246 (11-12): the telling's word budget by the kind of turn (engine/telling.py). Trial on 20 stored turns: median 162 words to

@@ -664,28 +664,36 @@ sampler is `config.llamacpp.yml`'s line, because the `gemma4-31b` profile sets n
 - **Levels:** `false` (the game's rules are written whole into the system text, lists and all), `true` (the lines a game
   names as this turn's, its `turn_lines`, and the engine's command list are written in the message under LISTS FOR THIS
   TURN; the system text says where they are). Assistant and referee.
-- **Set in:** no profile yet. Default false.
+- **Set in:** `gemma4-31b` and `gemma4-31b-lean`: true for both roles. `sonnet`: false (not yet measured there). Default
+  false.
 - **Why it exists:** B405 cause 1 (2026-11-13; the owner: "a no brainer to try upfront, and it'll save sonnet costs
   too"). The system text is the cached prefix; the fantasy's rules had the people by id, the places, the commands on
-  offer and the flags in them. A changed line re-reads the whole prompt on Gemma, which cannot rewind inside a message,
-  and rewrites the cache on Sonnet.
+  offer and the flags in them. A changed line re-reads the whole prompt on Gemma, which resumes only from the start of a
+  message, and rewrites the cache on Sonnet.
 - **Measured:** offline, three stored games (20, 25 and 49 turns): the assistant's system text changed on 10, 10 and 10
-  turns and the referee's on 5, 6 and 17; with it on, 0 on every one. `tests/test_stable_system.py` holds that. On a
-  model: being measured (the reading probe, the referee probe, a played round's cache line).
-- **Helped / did not:** not yet known whether readings or rows move with the lists in the message. Noir and the station
-  name no `turn_lines` yet: on them it moves only the command list.
+  turns and the referee's on 5, 6 and 17; with it on, 0 (`tests/test_stable_system.py`). Gemma, an eight-turn game: calls
+  that began from nothing 2 of 7 for each role without it, 0 with it; fresh tokens from turn 2, assistant 49,300 to
+  41,300, referee 27,200 to 27,800 (the lists are now read every turn, about 2,000 tokens, which is what the full losses
+  cost). Quality, Gemma: 60 stored readings, the same blows on 56 of 59 (the three that differ use the foes' ids where
+  the old layout wrote "rats"), the same checks on 55, the same commands on 59; 40 referee calls, 147 rows against 143,
+  the same kinds. One reading of 60 ran out of tokens (a loop; the old layout: none).
+- **Helped / did not:** Gemma: no call loses its whole cache, the average work is unchanged, readings and rows are not
+  worse. Sonnet: by the prices it should cut the system part's cost by about 40% (no rewrite at twice the price when a
+  list changes); not measured, a paid check. Noir and the station name no `turn_lines` yet: on them it moves only the
+  command list.
 
 ### `recent_step`
 
 - **Levels:** `0` (the reading is shown the last two turns of story, sliding one a turn), `N` (two turns, then one more
   each turn for N turns, then back to two). Assistant only.
-- **Set in:** no played profile yet; `gemma4-31b-stable` (the trial) sets 3. Default 0.
-- **Why it exists:** B405 cause 3 (2026-11-13; the owner: "keep adding and then shift window all at once"). With a
-  sliding window everything after the system text is new each turn, about 5,500 tokens on Gemma, which resumes only from
-  the start of a message. Between steps the prompt only grows, as the narrator's does.
-- **Measured:** being measured (an eight-turn game's cache by turn; the reading probe for whether readings move when
-  the reading sees up to four past turns).
-- **Helped / did not:** not yet known.
+- **Set in:** nowhere. Default 0.
+- **Why it exists:** B405 cause 3 (2026-11-13; the owner: "keep adding and then shift window all at once"). I had said
+  the sliding window cost about 3,500 tokens a turn.
+- **Measured:** Gemma, the same eight-turn game with a step of 3: the cached part grew by about 200 tokens a turn between
+  steps (6,011, 6,224, 6,381, 6,569, then back) and the fresh part stayed at 5,500 to 6,300. Two past turns of story are
+  a few hundred tokens; the fresh tokens are the game state and the lists, which change every turn.
+- **Helped / did not:** did not: about 250 tokens a turn. My estimate was wrong (the state, not the story, is what is
+  re-read). Not adopted; kept off.
 
 ### `slot`
 
