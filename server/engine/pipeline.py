@@ -1868,7 +1868,9 @@ class Engine:
                     ledger("word_guard", word_guards.row("lever-phrases", gm, {"lever": pick.id, "args": list(pick.args)}))
                 if gm == "on":
                     continue
-            args, problem = _parse_command_args(spec, pick.args)
+            named = ({x for i in adj.intents for x in (getattr(i, "targets", None) or [])} | set(getattr(getattr(adj, "focus", None), "people", None) or [])
+                     | set(getattr(adj, "entities", None) or []))
+            args, problem = _parse_command_args(spec, pick.args, named)
             if problem:
                 ledger("command", {"id": spec.id, "args": args, "mode": spec.mode, "typed": True, "ok": False, "text": problem})
                 log.info("command.typed.refused " + logs.kv(iid=iid, turn=turn, id=spec.id, kind="clarify", why=problem))
@@ -3840,7 +3842,7 @@ def _commands_text(specs: list[Any]) -> str:
     return "\n".join(lines)
 
 
-def _parse_command_args(spec: Any, raw: list[str]) -> tuple[dict[str, str], str]:
+def _parse_command_args(spec: Any, raw: list[str], named: set[str] | None = None) -> tuple[dict[str, str], str]:
     """'name=value' pairs -> validated args. Values match an option id exactly, else an id or
     label case-insensitively. Returns (args, problem): a non-empty problem is the question to ask."""
     given: dict[str, str] = {}
@@ -3853,7 +3855,13 @@ def _parse_command_args(spec: Any, raw: list[str]) -> tuple[dict[str, str], str]
         given = {p.name: v for p, v in zip(spec.params, values)}
     args: dict[str, str] = {}
     for p in spec.params:
-        v = given.get(p.name, "") or getattr(p, "default", "")
+        v = given.get(p.name, "")
+        if not v and getattr(p, "must_name", False) and named is not None and len(p.options) > 1:
+            said = [o.id for o in p.options if o.id in named]      # the reading's own ids: its targets and focus
+            if len(said) != 1:
+                return args, f"Which {p.label}? ({', '.join(o.label for o in p.options)})"
+            v = said[0]
+        v = v or getattr(p, "default", "")
         if not v and len(p.options) == 1:   # round 32 T2 (906e3e1f1a93): "I take the job", one job on offer, and the command
             v = p.options[0].id             # was refused with "Which Job? (Rats in the Cellar)": one choice needs no asking
         hit = next((o.id for o in p.options if o.id == v), None) or \

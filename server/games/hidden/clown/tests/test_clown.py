@@ -2043,3 +2043,19 @@ def test_a_girl_who_came_asking_is_taken_on_by_a_lever_and_the_referees_list_kee
     other = next(g for g in s2.girls if g.status == "away")
     other.status = "available"
     assert not game.run_command(s2, "welcome", {"girl": other.id})[1].ok
+
+
+def test_a_lever_whose_reading_left_out_who_takes_the_one_the_reading_names_or_asks_and_never_the_default(game: ClownGame):
+    """A scene of 11-14: "I sell Queenie's contract" arrived as Sell with no argument, and the default sold the girl in training."""
+    from engine.pipeline import _parse_command_args
+    st = game.new_instance({**SETUP, "first_girl": "ada_vosk"})[1]         # a first girl off the boats: her contract can be sold too
+    st.house.money = 900
+    st, res = game.run_command(st, "take", {"girl": st.harbour.hand[0]})
+    assert res.ok
+    new_girl = next(g for g in st.girls if g.card and g.id != st.active)
+    spec = next(c for c in game.commands(st) if c.id == "sell")
+    assert _parse_command_args(spec, [], {new_girl.id, "pell"}) == ({"girl": new_girl.id}, "")
+    args, ask = _parse_command_args(spec, [], set())
+    assert not args and ask.startswith("Which ")                                  # nobody named: asked, never the default
+    assert _parse_command_args(spec, [f"girl={st.active}"], {new_girl.id})[0] == {"girl": st.active}   # an argument given stands
+    assert _parse_command_args(spec, [])[0]                                       # a clicked lever (no reading) is as it was

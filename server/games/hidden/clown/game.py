@@ -2940,7 +2940,7 @@ class ClownGame(GameBase):
                                    words=["bear it", "take it", "let them", "pay the fine", "i'll take", "we take it", "do your worst"]))
             if r["give"] and s.in_house():
                 out.append(CommandSpec(id="give_up", label="Give up a girl", mode="narrated",
-                                       params=[Param(name="girl", label="whose contract", options=[Option(id=g.id, label=g.name) for g in s.in_house()], default=s.in_house()[0].id)],
+                                       params=[Param(must_name=True, name="girl", label="whose contract", options=[Option(id=g.id, label=g.name) for g in s.in_house()], default=s.in_house()[0].id)],
                                        hint=f"{r['give'][0].upper() + r['give'][1:]}. She is gone for good, and every girl in the house turns on you for it.",
                                        words=["give up", "hand over", "take her", "sign her over", "her contract", "have her"]))
         out.append(CommandSpec(id="plan", label="Plan", mode="engine",
@@ -2983,7 +2983,7 @@ class ClownGame(GameBase):
         if offered and in_house:
             first = s.active_girl if s.active_girl is not None and s.active_girl.in_house() else in_house[0]
             out.append(CommandSpec(id="book", label="Book", mode="engine",
-                                   params=[Param(name="booking", label="booking", options=[Option(id=h.id, label=h.title + (" (no girl free that day)" if self._day_full(s, h) else "")) for h in offered], default=offered[0].id),
+                                   params=[Param(must_name=True, name="booking", label="booking", options=[Option(id=h.id, label=h.title + (" (no girl free that day)" if self._day_full(s, h) else "")) for h in offered], default=offered[0].id),
                                            Param(name="girl", label="who goes", options=[Option(id=g.id, label=g.name + (" (in training)" if g.id == s.active else " (graduate)" if g.graduated else "")) for g in in_house], default=first.id)],
                                    hint="Take one of this week's offers: the show is set for its day (weeks off, as the card says) and the girl named goes. Book "
                                         "as many as the girls can play; what is not booked by Sunday night is gone. A girl on the bench comes off her odd jobs for it.",
@@ -2991,7 +2991,7 @@ class ClownGame(GameBase):
         others = [g for g in in_house if g.id != s.active]
         if others:
             out.append(CommandSpec(id="switch", label="Switch", mode="engine",
-                                   params=[Param(name="girl", label="train", options=[Option(id=g.id, label=g.name + (" (graduate)" if g.graduated else "")) for g in others], default=others[0].id)],
+                                   params=[Param(must_name=True, name="girl", label="train", options=[Option(id=g.id, label=g.name + (" (graduate)" if g.graduated else "")) for g in others], default=others[0].id)],
                                    hint="Put another of the house's girls into training from now, a graduate included (her schooling goes on). What it costs: "
                                         "the plan is cleared (set it again for her); the one put aside loses a point of love and goes to the bench, where she keeps "
                                         "her bookings and works at them a little on her own (or does odd jobs if she has none). Switching back costs the same again.",
@@ -3003,7 +3003,7 @@ class ClownGame(GameBase):
             pick = ready or house_girls
             out.append(CommandSpec(id="graduate", label="Graduate" + ("" if sunday and ready else " (a Sunday, when she is ready)"), mode="narrated",
                                    enabled=bool(sunday and ready),
-                                   params=[Param(name="girl", label="girl", options=[Option(id=g.id, label=g.name) for g in pick], default=pick[0].id)],
+                                   params=[Param(must_name=True, name="girl", label="girl", options=[Option(id=g.id, label=g.name) for g in pick], default=pick[0].id)],
                                    hint="Pass a girl out as a finished clown, on a Sunday, once three of her skills are sound and one is finished (or she has had a "
                                         "triumph at a good house). She stays in the house, her shows pay the house in full, and she may be put back in training.",
                                    words=["graduate", "pass her out", "she is finished", "she is made", "her training is over"]))
@@ -3011,7 +3011,7 @@ class ClownGame(GameBase):
         if asking and sw.on("welcome_lever"):          # rounds 2 and 3 of 11-14: a yes at the door was told and never filed (five turns)
             room = self._rooms_free(s) > 0
             out.append(CommandSpec(id="welcome", label="Take her on" + ("" if room else " (the rooms are full)"), mode="narrated", enabled=room,
-                                   params=[Param(name="girl", label="who", options=[Option(id=g.id, label=g.name) for g in asking], default=asking[0].id)],
+                                   params=[Param(must_name=True, name="girl", label="who", options=[Option(id=g.id, label=g.name) for g in asking], default=asking[0].id)],
                                    hint="Say yes to a girl who has come asking to be taken on: she comes into the house, takes a room and is kept from now "
                                         "(not in training until you Switch to her). No price: she came of herself.",
                                    words=["take her on", "taken on", "a place here", "you can stay", "welcome to"]))
@@ -3024,7 +3024,7 @@ class ClownGame(GameBase):
             afford = [c for c in slip if hb.price_of(c, s, dl) <= s.house.money]
             out.append(CommandSpec(id="take", label="Take" + ("" if can else " (one a week)") + ("" if room else " (the rooms are full)"), mode="narrated",
                                    enabled=bool(can and room and afford),
-                                   params=[Param(name="girl", label="contract", options=[Option(id=c["id"], label=f"{c['name']}, {c.get('age')}, {hb.tag_meaning(deck, str(c.get('origin') or ''))}; {hb.price_of(c, s, dl)} gold"
+                                   params=[Param(must_name=True, name="girl", label="contract", options=[Option(id=c["id"], label=f"{c['name']}, {c.get('age')}, {hb.tag_meaning(deck, str(c.get('origin') or ''))}; {hb.price_of(c, s, dl)} gold"
                                                                                                            + ("" if hb.price_of(c, s, dl) <= s.house.money else " (too dear)")) for c in slip],
                                                  default=(afford or slip)[0]["id"])],
                                    hint="Buy a contract off the clerk's slip at the Harbourmaster's shed and bring her home: the price from the house's money, one a week, "
@@ -3041,7 +3041,7 @@ class ClownGame(GameBase):
         bought = [g for g in s.in_house() if g.card]
         if bought:
             out.append(CommandSpec(id="sell", label="Sell contract", mode="narrated",
-                                   params=[Param(name="girl", label="whose", options=[Option(id=g.id, label=f"{g.name} ({int(round(self.contract_value_of(s, g) * dk.dial(s, 'sell_share')))} gold)") for g in bought], default=bought[0].id)],
+                                   params=[Param(must_name=True, name="girl", label="whose", options=[Option(id=g.id, label=f"{g.name} ({int(round(self.contract_value_of(s, g) * dk.dial(s, 'sell_share')))} gold)") for g in bought], default=bought[0].id)],
                                    hint="Sell a girl's contract on through the shed's book, for a share of what she is worth as a performer (her contract value on her panel). "
                                         "She leaves the house for good; the girls close to her think less of you. Only a girl bought off the boats.",
                                    words=["sell her contract", "sell the contract", "sell her on", "put her out", "sell contract"]))

@@ -143,6 +143,10 @@ class Param(BaseModel):
     label: str
     options: list[Option]
     default: str = ""               # an option id taken when the input names none (1e: the block of a "Work on" lever)
+    # A typed lever whose reading left this out: never the default. The one option the reading names elsewhere (its targets,
+    # its focus) is taken; with none or several, the player is asked. For a choice that cannot be guessed safely (whose contract
+    # is sold: a scene of 11-14 sold the girl in training when the player named the new one and the pick carried no argument).
+    must_name: bool = False
 
 
 class CommandPanel(BaseModel):
