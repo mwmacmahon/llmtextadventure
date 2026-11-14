@@ -47,6 +47,10 @@ REGISTRY: dict[str, WordGuard] = {g.id: g for g in [
     WordGuard("lever-check-label", "the assistant's check label", "takes a check off an attempt when its label holds the picked lever's phrases or name",
               "B306: Gemma rolled 'Turn Undead, CHA medium' beside Turn Undead's own die", "engine/pipeline.py:_preview_levers (asks_for)", default="on", wired=True,
               replace_with="the reading says which attempt the lever is (the two-step reading's command kind), so no label is matched"),
+    WordGuard("task-kind-words", "the assistant's summary and attempts", "names the turn's kind (sleep, wait, search, travel, talk, fight) by the first verb list that matches, "
+              "which clamps the minutes and decides whether a part of the day is spent",
+              "D148: a model asked for the kind wrote the first choice on 23 of 24 turns", "engine/pipeline.py:task_of (TASK_WORDS)", default="on", wired=True,
+              replace_with="a game's task_kind hook: the kind from the reading's own kinds of attempt (the hidden game, D278)"),
 ]}
 
 

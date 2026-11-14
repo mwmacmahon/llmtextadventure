@@ -14,29 +14,55 @@ from pydantic.json_schema import SkipJsonSchema
 
 from engine.roles import AssistantReadingStaked, AssistantReadingV2
 
+from . import switches as sw
+
+# The order is the order the model reads them in ("the first of these that fits"). Read cold (11-14, a subagent): with `house`
+# before `outing`, a lesson that takes the afternoon and walking a girl to a venue were the house's (no time spent); "go out to
+# the yard" was an outing; "ask him to book my girl" was the desk's by the word; a trip and what is done on arriving were one attempt
 KINDS: dict[str, dict[str, str]] = {
-    "desk": {"what": "only a listed command and nothing more (the week's plan, a booking taken, a switch, an upgrade, a contract bought or sold): "
-                     "the command decides it", "settle": "command"},
+    "desk": {"what": "only a command the game lists and nothing more (the week's plan, a listed booking taken, a switch, an upgrade, a contract "
+                     "bought or sold): the command decides it. Asking a person for work they have not offered is town", "settle": "command"},
+    "outing": {"what": "the proprietor leaves the building or lets hours pass: going from the house into the town, from one part of the town to "
+                       "another, or back home, alone or with a girl; waiting or resting for a part of the day; watching a whole show; teaching "
+                       "or practising for hours. It takes the rest of this part of the day; nothing resists. A room or the yard of the house "
+                       "is not an outing. What is done on arriving is its own attempt with its own kind", "settle": "works", "task": "travel"},
     "house": {"what": "done to or with a girl who lives in the house now, or said to the housekeeper: an order, a question, a kindness, a threat, a "
-                      "punishment, a promise, a lesson, taking her somewhere. It works; nobody in the house stops the proprietor",
+                      "punishment, a promise, a short lesson. It works; nobody in the house stops the proprietor",
               "settle": "works"},
-    "haggle": {"what": "offering less than a listed price, or asking more than a listed fee: the price stands", "settle": "fails",
+    "haggle": {"what": "asking for less than a listed price, or for more than a listed fee: the price stands", "settle": "fails",
                "outcome": "The price stands as it is listed; it is not moved by talk.", "why": "prices are the engine's"},
     "town": {"what": "asked of, or done to, someone of the town who could refuse or resist, where it matters: a favour, a lie they could "
-                     "check, a threat, a way past them, the proprietor's own turn on a floor; also anything asked of a girl who is not of the house "
-                     "yet (met about the town, or at the door asking)", "settle": "check"},
+                     "check, a threat, a way past them, the proprietor performing for a crowd; also anything asked of a girl who is not of the "
+                     "house yet (met about the town, or at the door asking)", "settle": "check"},
     "hopeless": {"what": "the words plainly miss: a demand nobody in their place would grant", "settle": "fails"},
-    "errand": {"what": "going somewhere, waiting, watching, practising, a small purchase, a plain question to anyone, a talk nobody has "
-                       "reason to refuse: routine, nothing resists", "settle": "works"},
-    "look": {"what": "looking, recalling, or asking how the game works", "settle": "works"},
+    "errand": {"what": "small and where they stand, or a step into another room or the yard of the house: a plain question, a small purchase, a "
+                       "greeting: routine, nothing resists. Asking a favour is town", "settle": "works"},
+    "look": {"what": "looking, reading, recalling, or asking how the game works", "settle": "works"},
 }
+
+if not sw.on("outing_kind"):       # the table as it was to the night of 11-14: one kind for going somewhere and for a plain question
+    del KINDS["outing"]
+    KINDS["errand"] = {"what": "going somewhere, waiting, watching, practising, a small purchase, a plain question to anyone, a talk nobody has "
+                               "reason to refuse: routine, nothing resists", "settle": "works"}
+
+
+def task_of_kinds(kinds: list[str]) -> str:
+    """The kind of turn for the clock (the engine's task: travel spends the part of the day), from the kinds the reading gave
+    its attempts; '' when the reading gave none (the one-form reading) or the switch is off, and the engine's own way stands.
+    D278: the engine's verb list read "goes to the practice room to question her" as travel (five hours for a walk down the
+    hall) and "takes and reads a letter" as a search; where the proprietor goes is not in the lean reading at all."""
+    if not kinds or not sw.on("outing_kind"):
+        return ""
+    return next((t for k in kinds if (t := KINDS.get(k, {}).get("task"))), "other")
 
 
 class HouseReading(AssistantReadingV2):
     lean_kinds: ClassVar[dict[str, dict[str, str]]] = KINDS
     attempt_kinds: SkipJsonSchema[list[str]] = []
+    task_said: SkipJsonSchema[str] = ""
 
 
 class HouseReadingStaked(AssistantReadingStaked):
     lean_kinds: ClassVar[dict[str, dict[str, str]]] = KINDS
     attempt_kinds: SkipJsonSchema[list[str]] = []
+    task_said: SkipJsonSchema[str] = ""

@@ -211,7 +211,7 @@ class ClownGame(GameBase):
     adjudication_schema_staked = HouseReadingStaked   # reading.py: the engine's forms, with this game's kinds of attempt for the two-step reading
     in_place = False                 # the simulator (tools/sim.py, D212C): after_turn and run_command work on the state they are given,
                                      # no copy; never in play, where a refused command must leave the state as it was
-    word_guards = {"lever-phrases": "count"}   # C112, D275 (the owner, 11-14): no phrase list between the reading's pick and the lever;
+    word_guards = {"lever-phrases": "count", "task-kind-words": "count"}   # C112, D275 (the owner, 11-14): no phrase list between the reading's pick and the lever;
                                                # the pick's own arguments and the lever's refusal are the checks; the list only counts
     texture_gap_turns = 15           # C115: a street's texture (a bell, the fog) is not handed to the narrator again for fifteen turns
     typed_only_commands = ("skip",)  # D205C: the days run only on the player's own "skip to …" (typed_command); never the assistant's pick
@@ -3114,6 +3114,11 @@ class ClownGame(GameBase):
             s.house.warned = (s.house.warned + [key])[-40:]
             s.house.alerts.append(f"{g.name} is {g.fatigue_word} (fatigue {g.fatigue}) and plays {x.title} {when}: as she is, the show "
                                   f"would bring x{fatigue_factor(g.fatigue):g} of its fee and Name. Rest her to keep it whole.")
+
+    def task_kind(self, state: ClownState, adj: Any) -> str:
+        """The pipeline's hook (D278): the kind of turn for the clock, from the reading's own kinds of attempt; '' leaves it to the engine."""
+        from .reading import task_of_kinds
+        return task_of_kinds(list(getattr(adj, "attempt_kinds", None) or []))
 
     def plain_spend(self, state: ClownState, adj: Any) -> bool:
         """The pipeline's hook (D210C): a turn that plainly spends the part of the day without asking: work in the practice room."""

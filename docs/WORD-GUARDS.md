@@ -43,7 +43,7 @@ did over a round, count those rows; to judge it, read each against the turn.
 
 ## State today (2026-11-14)
 
-- **Wired** (asks its mode, writes its row): 2 of about 130.
+- **Wired** (asks its mode, writes its row): 3 of about 130.
 - **Counted in some other way** (a `mend`, `hold`, `precheck`, world row or a rejection in the turn's `delta`): about
   half. They leave a trace but cannot be turned off or run in count mode.
 - **Silent and always on:** about 45. These are the debt.
@@ -52,13 +52,15 @@ did over a round, count those rows; to judge it, read each against the turn.
 |---|---|---|---|
 | `lever-phrases` | on | count | A 55-turn round on Gemma (2026-11-14): it would have dropped 6 bookings, all 6 meant by the player; it would have stopped nothing. |
 | `lever-check-label` | on | on | Not yet; silent until 2026-11-14. |
+| `task-kind-words` | on | count | Two 55-turn rounds on Gemma before the game's own kind decided: 22 turns named travel, wait, search or sleep by the words, at least 6 wrongly (a walk down the hall cost five hours). |
 
 ## The order of work
 
 The five most likely to change a correct reading in silence, from the audit, are wired and counted first:
 
-1. `task-kind-words`: the first matching verb list overrides the assistant's reading of the turn's kind on every turn
-   ("reads" makes a talk a search; "follows" or "watches" makes anything a wait).
+1. `task-kind-words`: wired 2026-11-14 for a game that knows the kind from its reading (a `task_kind` hook); elsewhere
+   the first matching verb list still names the turn's kind on every turn ("reads" makes a talk a search; "follows" or
+   "watches" makes anything a wait).
 2. `lever-check-label`: wired 2026-11-14.
 3. `fight-words`: "strikes a bargain" and "struggles with the lock" read as a fight; B359 records one misread.
 4. `private-room` with `on-the-move`: one "closes the door" in ten turns of summaries blocks every caller.
@@ -85,7 +87,7 @@ referee's report, or nothing. Paths are under `server/`. Line numbers move; the 
 | `wait-until-words` | pipeline `UNTIL_ANY`, `UNTIL_MORNING`, `UNTIL_NIGHT` | player input | overwrites the assistant's minutes (to the cap, to 07:00, to 19:00) | none | per game |
 | `told-to-wait` | pipeline `TOLD_TO_WAIT`, `QUOTED` | player input | drops the until-when logic when the wait is quoted or asked of someone else (B233) | none | none |
 | `sleep-to-morning` | pipeline `TASK_WORDS` (sleep) | summary, attempts | runs the clock to 07:00 and lifts the turn cap | none | game `sleep_by_command` |
-| `task-kind-words` | pipeline `TASK_WORDS`, `task_of` | summary, attempts | names the turn's kind by the first matching verb list, which clamps minutes and decides whether a part of the day is spent (D148) | clock note only | per game (no `clock.tasks`) |
+| `task-kind-words` | pipeline `TASK_WORDS`, `task_of` | summary, attempts | names the turn's kind by the first matching verb list, which clamps minutes and decides whether a part of the day is spent (D148) | `word_guard` | **wired** |
 | `fight-words` | pipeline `is_fight` | summary, attempts, check label | marks the turn a fight: holds callers and events, drops task floors, vetoes the prying floor (B245, B359) | `hold` when something is held | `clock.scene_mark = 0` in part |
 | `on-the-move` | pipeline `ON_THE_MOVE` | summary, attempts | holds anyone walking up and word from elsewhere (B235) | `hold` | none |
 | `private-room` | pipeline `PRIVATE_IN`, `PUBLIC_AGAIN` | summaries of the last ten turns | blocks callers until a later reading has a public or moving word (B255) | `hold` | none |

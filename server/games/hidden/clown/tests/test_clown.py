@@ -2059,3 +2059,24 @@ def test_a_lever_whose_reading_left_out_who_takes_the_one_the_reading_names_or_a
     assert not args and ask.startswith("Which ")                                  # nobody named: asked, never the default
     assert _parse_command_args(spec, [f"girl={st.active}"], {new_girl.id})[0] == {"girl": st.active}   # an argument given stands
     assert _parse_command_args(spec, [])[0]                                       # a clicked lever (no reading) is as it was
+
+
+def test_going_out_is_its_own_kind_and_spends_the_part_of_the_day():
+    """D278: the part of the day is spent on the reading's own kind (`outing`), not on the engine's verb list: "goes to the
+    practice room to question her" was read as travel and cost five hours; "takes and reads a letter" as a search."""
+    from types import SimpleNamespace
+
+    from engine.pipeline import block_spend, task_of
+    from games.hidden.clown.reading import KINDS, HouseReadingStaked, task_of_kinds
+
+    assert KINDS["outing"]["task"] == "travel" and "task" not in KINDS["errand"]
+    assert task_of_kinds(["outing", "town"]) == "travel" and task_of_kinds(["errand", "house"]) == "other" and task_of_kinds([]) == ""
+    g = make_game(CONTENT)
+    hall = SimpleNamespace(tempo="slow", summary="Hal goes to the practice room to question Ada.", intents=[], task_said="")
+    assert task_of(hall) == "travel"                       # the words alone
+    hall.task_said = task_of_kinds(["errand", "house"])
+    assert task_of(hall) == "other" and block_spend(g.clock, hall, 10, 0)[0] is False
+    out = SimpleNamespace(tempo="slow", summary="Hal calls on the widow.", intents=[], task_said=task_of_kinds(["outing"]))
+    assert block_spend(g.clock, out, 10, 0)[0] is True
+    assert "task_said" not in HouseReadingStaked.model_json_schema()["properties"]
+    assert g.word_guards["task-kind-words"] == "count"

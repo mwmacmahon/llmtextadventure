@@ -895,6 +895,22 @@ are still in the code as they always were and are listed on that page as owed.
 - **Helped / did not:** unknown. It matches by the opening letters of words, so a lever phrase such as "rest", "work"
   or "turn" can take off an unrelated check. Count it on the next rounds.
 
+### `task-kind-words`
+
+- **Levels:** `on` (the turn's kind, which clamps its minutes and decides whether a part of the day is spent, is the
+  first verb list that matches the assistant's summary and attempts), `count` (a game that knows the kind from its
+  reading decides, through its `task_kind` hook; a row says what the words would have made it), `off` (the same, and
+  the words are not run). A game with no `task_kind` hook is read by the words whatever the mode.
+- **Set in:** default on. The hidden game: count, with the two-step reading (its attempt kind `outing` is the only one
+  that spends the part of the day; switch `outing_kind`, §9).
+- **Why it exists:** D148: a model asked for the kind wrote the first choice on 23 of 24 keyed turns.
+- **Measured:** the hidden game, Gemma, two 55-turn rounds (2026-11-14, before the hook): the words made 14 turns
+  travel, 4 wait, 3 search and 1 sleep; at least 6 were wrong (a walk down the hall to a room of the house cost five
+  hours, three times; reading a letter was a search; "lets her rest all day" was the player's sleep). With the kind
+  deciding, 60 stored turns read again: 18 named an outing, none of them a room of the house; 2 trips into town were
+  missed (no part of the day spent); no check at anyone of the house and none on a price, as before.
+- **Helped / did not:** unmeasured in the fantasy, noir and the station, where it is still the only reader.
+
 ---
 
 ## 9. The hidden game's switches
@@ -911,6 +927,7 @@ rounds stays on and may lose its switch; one that has not goes with its code. Al
 | `desk_beat` | a turn that is only desk levers (a plan, a booking) is a short beat told in the present | plan turns ran 100 to 200 words before it |
 | `event_words` | an event that fires on a turn adds words to the telling's length | skips given 40 words wrote 75 to 104 before it; a median of 0.97 written against given after |
 | `asks_again` | a client dealt a second time says they have asked before, in new words | not yet |
+| `outing_kind` | going out (into the town, across it, home again, waiting, a whole show watched) is its own kind of attempt and the only one that spends the part of the day; a plain question or a step into another room does not | before it the engine's verb list decided: see `task-kind-words`, §8 |
 | `axis_note` | the referee is told when the player's character dealt directly with someone of the house, and asked for the three standings | before it: 6 standing rows in 57 turns over 20 such attempts |
 
 The reading in two steps with the game's kinds of attempt is the profile module `reading_steps` (§2); the lever phrase

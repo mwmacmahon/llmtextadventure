@@ -1051,6 +1051,18 @@ class Engine:
         if adj is not None:
             yield {"event": "adjudication", "data": adj.model_dump(mode="json")}
 
+        # the word guard `task-kind-words` (D278): a game that knows the kind of turn from its reading (its task_kind hook) says it
+        # here, once, before anything asks task_of. on: the verb list decides, as it always did. count: the game's kind decides
+        # and a row says what the words would have made it. off: the game's kind decides and the words are not run
+        if adj is not None and adj.kind == "action" and hasattr(adj, "task_said") and not adj.task_said:
+            said = _hook(game, "task_kind", state, adj, default="") or ""
+            gm = word_guards.mode(self.cfg, game, "task-kind-words")
+            if said and gm != "on":
+                words = task_of(adj) if gm == "count" else said
+                adj.task_said = said
+                if words != said:
+                    ledger("word_guard", word_guards.row("task-kind-words", gm, {"words": words, "said": said, "kinds": list(getattr(adj, "attempt_kinds", None) or [])}))
+
         # ---- 1d. D210C: a turn that would spend the part of the day, and is not plainly one that does (going somewhere, waiting,
         #          sleeping, what the game says is plain: the clown's practice room), asks first, in the engine's words; "yes" spends it
         if command is None and replay is None and not block_confirmed and adj is not None:
@@ -3705,7 +3717,7 @@ def is_fight(adj: Any) -> bool:
     """A fight beat: read as a fight, or as one fast beat (a blow, a shot, a lunge). Takes a reading or its ledger row."""
     if isinstance(adj, dict):
         from types import SimpleNamespace
-        adj = SimpleNamespace(tempo=adj.get("tempo", "slow"), summary=adj.get("summary", ""),
+        adj = SimpleNamespace(tempo=adj.get("tempo", "slow"), summary=adj.get("summary", ""), task_said=adj.get("task_said", ""),
                               intents=[SimpleNamespace(action=(i or {}).get("action", "")) for i in adj.get("intents") or []])
     return task_of(adj) == "fight"
 
@@ -3740,6 +3752,9 @@ def task_of(adj: Any) -> str:
     """The kind of turn (time doc §3 (iv), D148), read by the engine from what the assistant already wrote: a fast beat is a
     fight; otherwise the summary's verbs, the longest-running kind first. A model asked for the kind itself wrote "fight"
     (the first choice) on 23 of 24 keyed turns, a talk with Rosa among them."""
+    said = getattr(adj, "task_said", "") or (adj.get("task_said", "") if isinstance(adj, dict) else "")
+    if said:                                    # the game's own kind (its task_kind hook; the word guard task-kind-words)
+        return said
     if getattr(adj, "tempo", "slow") == "fast":
         return "fight"
     text = " ".join([getattr(adj, "summary", "") or ""] + [getattr(i, "action", "") or "" for i in (getattr(adj, "intents", None) or [])])
