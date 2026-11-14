@@ -354,6 +354,10 @@ B144 covers the plain words).
 - The narrator's invented gear losses never reach the sheet (a burning pack, armour off; B338), a dead foe still listed
   hostile, the § line netting the modifiers into one number (B338). *open*
 
+**Decks (B411, the owner 11-14: "it's already how we handle quests etc in the fantasy game").** The hook deck, the bestiary,
+the classes and the other sets brought onto the engine's deck concept (§12), editable, addable and replaceable from a mod and
+its deck files; the grimdark mod's decks with it.
+
 ## 9. Noir, Lowtown
 
 Frank's case in Lowtown: 2d6, the notebook, the city's table of consequences, nerves, the wounds. Design: the noir
@@ -412,6 +416,12 @@ content loader's names to patches (by id: edit, add, null to take out; `$replace
 a replacement deck may be a file of its own beside the mod (`kind: deck`), named in the mod's `decks:`, uploaded, downloaded
 and checked like a mod (at the list and at the server's start). A game may name mods that are always on (`forced_mods`),
 which is how a derived listing is "the same game with this mod". First use: the hidden game's second listing.
+
+**Next: the deck as an engine concept, and the fantasy on it (B411, the owner 11-14).** One notion of a deck in the engine (a
+named set of items with ids, membership, tiers, gates, lint) for every game's quests, cards, bestiary and the rest; the
+fantasy's hooks, bestiary, classes, conditions, rumours and death lines read through it, so a mod edits, adds to or replaces
+any of them the way the hidden game's are now; Super Grimdark Fantasy's mod given its own deck files where it wants them; a
+mod's added item linted by the game's own lint; a deck's items seen in the lobby.
 
 **Mods designed; placement next after the fantasy is considered ready (B79).** Super Dark Fantasy exists as a copy
 (B88); the Conan pass is B89. **Variants: idea**, not started; the game-design pages are the inventory to tag from;
