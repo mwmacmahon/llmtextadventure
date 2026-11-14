@@ -83,9 +83,9 @@ def test_the_lint_catches_a_predicate_path_that_does_not_resolve(game: ClownGame
     assert not any("house.best.crowd" in p for p in problems)
 
 
-def test_the_setup_is_four_fields_and_the_first_morning(game: ClownGame):
+def test_the_setup_is_five_fields_and_the_first_morning(game: ClownGame):
     f = setup_fields(game.setup_options())
-    assert set(f) == {"name", "kind", "first_girl", "about"}
+    assert set(f) == {"name", "kind", "first_girl", "sex", "about"}
     assert f["about"].hint and not f["kind"].hint
     assert [o.id for o in f["first_girl"].options] == ["harbour", *game.content.girls_deck()["starters"]] and f["first_girl"].options[1].name.startswith("Ada Vosk, 23")
     assert "dot" not in [o.id for o in f["first_girl"].options]                    # the written three come later; dot still works unlisted, for the tools
@@ -2233,3 +2233,14 @@ def test_a_mod_edits_a_deck_adds_to_it_takes_from_it_or_replaces_it(game):
     st = g.new_instance({"name": "Hal Ferris", "kind": "charmer", "first_girl": "harbour", "seed": "k"})[1]             # a game is made from it
     assert set(st.harbour.hand) <= {"zz_new", "ada_vosk"} and st.harbour.hand
     assert mods_mod.merge_patch([{"id": "a", "x": 1}, {"id": "b"}], {"$replace": True, "c": {"x": 2}}) == [{"id": "c", "x": 2}]
+
+
+def test_the_player_says_whether_the_proprietor_is_a_man_or_a_woman_and_the_narrator_is_told(game):
+    """The owner, 11-14: "let user pick gender in the character creation, affecting things like sir vs madame"."""
+    opts = game.setup_options()["sex"]
+    assert [o["id"] for o in opts["options"]] == ["man", "woman", "unsaid"] and opts["default"] == "unsaid"
+    for pick, want, never in (("woman", "ma'am or madam", "sir or Mr"), ("man", "sir or Mr", "ma'am"), ("unsaid", "nobody says sir or madam", "is a man")):
+        st = new(game, sex=pick)
+        line = next(x for x in game.frozen_prefix(st).split("\n") if x.startswith("The proprietor: "))
+        assert want in line and never not in line and st.player.sex == ("" if pick == "unsaid" else pick)
+    assert new(game).player.sex == ""                         # a setup that does not say: not said

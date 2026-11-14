@@ -293,6 +293,7 @@ class Proprietor(BaseModel):
     kind: str = ""
     kind_name: str = ""
     about: str = ""
+    sex: str = ""                                            # the setup's choice: "man", "woman", or "" (not said): how the town addresses them
     stats: dict[str, int] = Field(default_factory=dict)
     points: dict[str, int] = Field(default_factory=dict)     # D218C: each stat 0-100, the truth; `stats` holds the check modifier made from it
     xp: dict[str, float] = Field(default_factory=dict)       # D218C: the part-point earned toward the next point
