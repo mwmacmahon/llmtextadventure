@@ -919,7 +919,7 @@ class Engine:
         extra_directives: list[str] = []
         block_confirmed = False
         pend_b = self._block_pending.pop(iid, None) if command is None and replay is None else None
-        if pend_b is not None and pend_b[0] == turn and BLOCK_YES.search((player_text or "").strip()):   # D210C: the player said yes
+        if pend_b is not None and pend_b[0] == turn and (BLOCK_YES.search((player_text or "").strip()) or BLOCK_YES_FIRST.match(player_text or "")):   # D210C: the player said yes
             player_text, adj, block_confirmed = pend_b[1], pend_b[2].model_copy(deep=True), True
             ledger("block_confirmed", {"text": player_text})
         if command is None:                                  # D205C: a game may read a command in the player's own words ("skip to Wednesday")
@@ -3267,6 +3267,10 @@ def own_words(text: str) -> str:
     return QUOTED.sub(" ", text or "")
 
 
+# an answer to the engine's own question that opens with a yes is a yes, whatever the player goes on to say ("Yes, I'll spend the
+# afternoon out in the town." was read as a new turn, asked about again, and the bare "Yes" that followed spent the afternoon on
+# that sentence instead of the call the player had asked for: an opening round, 11-14)
+BLOCK_YES_FIRST = re.compile(r"^\s*(?:yes|yeah|yep|aye|ok|okay|sure|all right|alright|very well)\b", re.I)
 BLOCK_YES = re.compile(r"(?:^|[.!?]\s+)(?:y|yes|yeah|yep|ok|okay|sure|go on|do it|spend it|confirm(?:ed)?)"                # D210C: the player's yes to
                        r"(?:[,.! ]+(?:i(?:'ll| will| do)?[, ]+)?(?:spend|take|use) (?:it|the (?:whole |rest of the )?\w+)(?: on (?:it|that|this))?)?[.!]?$", re.I)
                                                                                                           # the engine's own question

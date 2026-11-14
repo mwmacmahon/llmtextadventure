@@ -2262,3 +2262,11 @@ def test_only_the_engines_offers_are_work_and_the_block_and_a_guard_say_so(game)
     assert "A show exists only as one of these or under Booked" in block and "will send word to the house" in block
     assert ("Offers in hand, heard and not yet booked: " in block) or ("No offer of work is in hand." in block)
     assert "talk_booking" in game.guards and "ruling talk_booking (serious)" in game.referee_rules(st)
+
+
+def test_an_answer_that_opens_with_yes_is_a_yes_to_the_engines_question():
+    """An opening round, 11-14: "Yes, I'll spend the afternoon out in the town." was read as a new turn and asked about again."""
+    from engine.pipeline import BLOCK_YES, BLOCK_YES_FIRST
+    yes = lambda s: bool(BLOCK_YES.search(s.strip()) or BLOCK_YES_FIRST.match(s))  # noqa: E731
+    assert all(yes(s) for s in ("Yes.", "yes", "Yes, I'll spend the afternoon out in the town.", "Very well, the morning then.", "Okay, go."))
+    assert not any(yes(s) for s in ("No, I stay here in the practice room.", "I ask Mrs Pell what is for dinner.", "Yesterday's letters, I read them."))
