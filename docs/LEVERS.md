@@ -59,7 +59,7 @@ silent. "n/a" means the lever does nothing on that provider.
 | `consequences` | role dial | map, table, off | map | map | map | adopted, not compared |
 | `consequences.chances` | config | percent pairs by tier | 20/5, 35/12, 50/20 | same | same | adopted |
 | `target_offset` | dial, per game | int per game | the game's own | the game's own | the game's own | adopted (set by games, not profiles) |
-| `reading_steps` (`lean`) | module | one, two | one | one (`gemma4-31b-lean`: two) | one | trial, being measured (D267) |
+| `reading_steps` (`lean`) | module | one, two | one | one (`gemma4-31b-lean`: two) | one | trial, being measured (D267); a game may ask for two on any local server (`reading_steps_local`; the hidden game does, 11-14) |
 | `chain` | role dial | bool | false | false | false | off, not adopted (X3) |
 | `field_guide` | module | off, on | off | on | n/a (hosted gets the descriptions with the tool) | adopted on Gemma (D249) |
 | `structured_answers` (`structured`) | module | grammar, tool, fit | grammar | n/a | fit | adopted on Sonnet (D256) |

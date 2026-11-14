@@ -212,6 +212,7 @@ class ClownGame(GameBase):
     in_place = False                 # the simulator (tools/sim.py, D212C): after_turn and run_command work on the state they are given,
                                      # no copy; never in play, where a refused command must leave the state as it was
     lever_once = True                          # D280: the same lever picked twice with the same arguments runs once
+    reading_steps_local = "two"     # D283: the kinds-first reading on every local server (D267 adopted for this game); Sonnet keeps the one form
     lever_ask_plain = True                     # D279: "Which contract?" is asked in the engine's words, with no telling
     word_guards = {"lever-phrases": "count", "task-kind-words": "count"}   # C112, D275 (the owner, 11-14): no phrase list between the reading's pick and the lever;
                                                # the pick's own arguments and the lever's refusal are the checks; the list only counts

@@ -1834,6 +1834,10 @@ class Engine:
 
     async def _adjudicate(self, game: Game, state: BaseModel, iid: str, player_text: str, retell: str | None = None) -> tuple[AssistantReading, dict]:
         role = self.cfg.role("assistant")
+        # a game tuned on the two-step reading asks for it on any local server, whatever the profile (the owner, 11-14: "why is
+        # it not on the 8013": the hidden game's kinds, clock and levers were on the trial profile only); never on a hosted model
+        if getattr(game, "reading_steps_local", "") == "two" and getattr(role, "provider", "") == "llamacpp" and not getattr(role, "lean", False):
+            role = role.model_copy(update={"lean": True})
         provider = self._provider(role, iid, "assistant")
         recent = _recent_prose(self.store, iid, turns=2, step=getattr(role, "recent_step", 0))
         nrole = self.cfg.role("narrator")
