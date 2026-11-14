@@ -11,9 +11,12 @@ is never offered). The directory is read fresh whenever it is asked for, so an e
     rules: assistant, referee  the same, on the assistant's and the referee's rules text (frozen per save, like the prefix)
     state                      JSON merge patch onto the starting state (inventory, a list with ids, patched by id)
     rulings_off                a list of the game's own rulings switched off: the referee's rule text and the engine's net
-    content                    a folder under the game's own content folder (decks/<name>) swapped in whole for it: the
-                               prefix, the house file, the cards, the hooks. The base game is the same game; the mod
-                               replaces the decks and the wording. Read live, like the game's own content (not frozen)
+    content                    patches onto the rest of the game's content, by the content loader's own names: a mapping
+                               {<loader method>: <patch>}. A loader that returns a mapping or a list of objects with ids
+                               (the hidden game's girl_cards, hooks, girls_deck, challenges, words) is merge-patched as the
+                               scenario is; one that returns text (prefix) is replaced by the patch's text. With `scenario`
+                               this lets one mod file carry a whole second wording of a game: its decks, its narrator's
+                               instructions, its referee's guards. The base game is the same game
 
 Application order at creation (the design): scenario patch, prefix build and patch, rules patch, state build and patch,
 then freeze. A save keeps each applied mod's name, hash and full text (setup `_mods`), so it outlives the file.
@@ -94,8 +97,23 @@ def resolve(content_root: Path, game: Any, wanted: list[str]) -> list[dict]:
     return sorted(out, key=lambda m: order.index(m["file"]))
 
 
+_PARSED: dict[str, dict] = {}
+
+
 def parsed(applied: list[dict] | None) -> list[dict]:
-    return [parse(m.get("text") or "") for m in applied or []]
+    """Each applied mod's text as its mapping. Kept by the text's hash and handed out as a copy: a mod that carries a whole
+    second wording of a game is tens of kilobytes, and this is asked several times a turn."""
+    import copy
+    out = []
+    for m in applied or []:
+        text = m.get("text") or ""
+        key = digest(text)
+        if key not in _PARSED:
+            if len(_PARSED) > 32:
+                _PARSED.clear()
+            _PARSED[key] = parse(text)
+        out.append(copy.deepcopy(_PARSED[key]))
+    return out
 
 
 # ---- JSON merge patch, with lists of objects patched by id ------------------------------------------------------------
@@ -183,60 +201,68 @@ def scenario_patch(applied: list[dict] | None) -> dict:
 
 
 class PatchedContent:
-    """A game's content loader with a save's scenario patch on every scenario it returns (B79, generic): every game reads
-    its scenario through `content.scenarios()`, at creation and all through play (gates, aliases, the cast, projects), so
-    the patch holds wherever the game looks. Everything else is the game's own loader's."""
+    """A game's content loader with a save's patches on what it returns (B79, generic): the scenario patch on every scenario
+    (every game reads its scenario through `content.scenarios()`, at creation and all through play, so the patch holds
+    wherever the game looks), and a patch by name on any other loader method (`content:` in the mod: a mapping or an id-list
+    is merge-patched, text is replaced). Everything else is the game's own loader's."""
 
-    def __init__(self, base: Any, patch: dict):
-        self._base, self._patch = base, patch
+    def __init__(self, base: Any, patch: dict, content: dict | None = None):
+        self._base, self._patch, self._content = base, patch or {}, dict(content or {})
 
     def scenarios(self) -> dict[str, dict]:
-        return {k: merge_patch(v, self._patch) for k, v in self._base.scenarios().items()}
+        out = self._base.scenarios()
+        return {k: merge_patch(v, self._patch) for k, v in out.items()} if self._patch else out
 
     def __getattr__(self, name: str) -> Any:
-        return getattr(self._base, name)
+        attr = getattr(self._base, name)
+        if name.startswith("_") or name not in self._content or not callable(attr):
+            return attr
+        patch = self._content[name]
+
+        def patched(*a: Any, **kw: Any) -> Any:
+            got = attr(*a, **kw)
+            if isinstance(got, str) or got is None:
+                return str(patch).strip() if isinstance(patch, str) else got
+            return merge_patch(got, patch)
+        return patched
 
 
-def content_folder(applied: list[dict] | None) -> str:
-    """The folder a mod swaps the game's content for (`content: decks/<name>`, under the game's own content folder); the last
-    mod that names one wins. The owner, 11-14: "the mod should be able to swap out decks ... keep the games identical in their
-    base, just the mod replaces language etc". The folder is a whole content folder (prefix, house file, cards, hooks): nothing
-    falls back to the game's own, so none of the game's own wording reaches a save made with the mod."""
-    out = ""
+def content_patch(applied: list[dict] | None) -> dict:
+    """The applied mods' content patches as one, by loader name (later mods over earlier ones). The owner, 11-14: "the mod
+    should be able to swap out decks ... keep the games identical in their base, just the mod replaces language etc", and
+    all of it in the one file a player downloads, edits and uploads."""
+    out: dict = {}
     for m in parsed(applied):
-        f = str(m.get("content") or "").strip().strip("/")
-        if f:
-            if f.startswith(".") or ".." in Path(f).parts or Path(f).is_absolute():
-                raise ValueError(f"Mods: content must be a folder under the game's own content folder, not {f!r}")
-            out = f
+        c = m.get("content")
+        if c is None or c == {}:
+            continue
+        if not isinstance(c, dict):
+            raise ValueError("Mods: content is a mapping of the content loader's names to patches")
+        for name, patch in c.items():
+            out[str(name)] = patch if (not isinstance(patch, dict) or str(name) not in out) else _join(out[str(name)], patch)
+    return out
+
+
+def _join(a: Any, b: Any) -> Any:
+    """Two patches as one, the second over the first, keeping a null (a deletion) that merge_patch would apply and lose."""
+    if not isinstance(a, dict) or not isinstance(b, dict):
+        return b
+    out = dict(a)
+    for k, v in b.items():
+        out[k] = _join(out[k], v) if (k in out and isinstance(out[k], dict) and isinstance(v, dict)) else v
     return out
 
 
 def game_with(game: Any, applied: list[dict] | None) -> Any:
-    """The game as a modded save sees it: a shallow copy whose content loader is the mods' content folder when one names one,
-    and carries the mods' scenario patch; the game itself when no mod does either. Generic: any game whose content is a
-    `Content` (gamekit) or like it."""
-    patch, folder = scenario_patch(applied), content_folder(applied)
-    if (not patch and not folder) or getattr(game, "content", None) is None or isinstance(game.content, PatchedContent):
+    """The game as a modded save sees it: a shallow copy whose content loader carries the mods' scenario patch and content
+    patches; the game itself when no mod has either. Generic: any game whose content is a `Content` (gamekit) or like it."""
+    patch, content = scenario_patch(applied), content_patch(applied)
+    if (not patch and not content) or getattr(game, "content", None) is None or isinstance(game.content, PatchedContent):
         return game
     import copy
     g = copy.copy(game)
-    if folder:
-        d = Path(game.content.dir) / folder
-        if not d.is_dir():
-            raise ValueError(f"Mods: the content folder {folder!r} is not in this game's content")
-        key = str(d)
-        if key not in _SWAPPED:                      # one loader a folder, so its file cache holds from turn to turn
-            _SWAPPED[key] = type(game.content)(d)
-        g.content = _SWAPPED[key]
-        if hasattr(g, "content_dir"):
-            g.content_dir = d
-    if patch:
-        g.content = PatchedContent(g.content, patch)
+    g.content = PatchedContent(game.content, patch, content)
     return g
-
-
-_SWAPPED: dict[str, Any] = {}
 
 
 def rulings_off(applied: list[dict] | None) -> set[str]:

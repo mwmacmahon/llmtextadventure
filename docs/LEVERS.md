@@ -941,7 +941,7 @@ rounds stays on and may lose its switch; one that has not goes with its code. Al
 | `day_strip` | the panel shows the four parts of the day (gone, now and its end, to come) and what takes the rest of the part in hand and what takes none | not yet played |
 
 Not switches, set by the content (11-14): `words.yml` in the game's content folder words what the code otherwise says itself
-(`shed_text`, `slip_header`, `card_line`, `rooms_line`, `reckonings`, `shot_note`); a folder without it gets the code's
+(`shed_text`, `children`, `slip_header`, `card_line`, `rooms_line`, `reckonings`, `shot_note`, and `guards`: the referee's serious rulings on what a telling may show, each a `rule` and a `fix`, the code's own `her_age` always among them); a folder without it gets the code's
 strings. The form's first girl is `harbour` by default (the first pupil chosen in play at the shed; the lease's contract is
 free and is not the week's one). Every draw is salted with the save's own seed (`state.seed`; a setup's `seed: ""` is the
 proprietor's name, as before 11-14).

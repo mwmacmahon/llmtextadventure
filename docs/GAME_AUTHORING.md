@@ -500,14 +500,17 @@ words first, for those too: `spend_ask(state, reading)` returns the question or 
 **The reading in two steps for one game.** `reading_steps_local = "two"` on a game has its reading taken in two steps on a
 local (llamacpp) server whatever the profile says; a hosted model is untouched.
 
-**One game, two wordings.** A game's content folder may hold `decks/<name>/`, a whole second content folder (prefix.md,
-scenarios/, and whatever else the game's loader reads). A mod names it (`content: decks/<name>`) and a save made with the mod
-reads only that folder: nothing falls back to the game's own files. A derived game (a class whose `derived_from` names the
+**One game, two wordings.** A mod's `content` key patches a game's content beyond the scenario, by the content loader's own
+method names: `content: {hooks: {<id>: {...}}, prefix: "..."}`. A loader that returns a mapping or a list of things with ids is
+merge-patched (null deletes, an unknown id adds); one that returns text is replaced. So one mod file can hold a whole second
+wording. A derived game (a class whose `derived_from` names the
 game whose content root it reads) with `forced_mods = ("that_mod.yml",)` is then the same game listed twice, once with the
 mod always on. Wording the code itself carries can be handed to the content the same way: the hidden game reads an optional
 `words.yml` (the shed's paragraph, the slip's header and line, the reckonings) and falls back to its own strings without it.
-When one wording must never leak into the other, check it by file: the hidden game's `tools/after_dark.py check` holds the
-swapped folder to a manifest of hashes and looks for every sentence new to the default in the other's files and prefix.
+The referee's guards on what a telling may show are data the same way there (`guards`: an id, the `rule` the referee
+looks for, the `fix` a retelling is given; they become the game's `extra_rulings`), under a heading (THE GUARDS) so a mod's
+`rules: referee` reaches the section. When the second wording must be exactly a kept text, check it: the hidden game's
+`tools/after_dark.py build` makes the mod's patches from a reference folder and `check` holds the game with the mod on to it.
 
 ## 7b. The world does not wait
 

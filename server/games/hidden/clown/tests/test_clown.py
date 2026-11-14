@@ -2171,13 +2171,13 @@ def test_the_first_pupil_is_chosen_at_the_harbour_and_every_game_has_its_own_see
     assert a.harbour.hand == b.harbour.hand and a.seed == "k"
 
 
-def test_none_of_the_defaults_new_wording_reaches_the_variant_kept_as_it_was():
-    """D285 (the owner, 11-14): the default game was reworded; the text as it stood is kept whole in another content folder for
-    the variant with the owner's mod on. Every file there has its hash of that day, a reworded file is never shared, and no
-    sentence new to the default is anywhere in the variant's files or its assembled prefix."""
+def test_the_default_with_the_owners_mod_on_is_the_wording_kept_exactly():
+    """D285, D289 (the owner, 11-14): the default game was reworded; the wording as it stood is one mod file's patches on the
+    default's content. With the mod on, every loader's content and the narrator's instructions are the kept reference's,
+    exactly, so nothing of the default's rewording reaches a game made with it."""
     from games.hidden.clown.tools import after_dark
-    if not (after_dark.DARK / after_dark.MANIFEST).exists():
-        pytest.skip("the variant's content is not on this machine")
+    if not (after_dark.REF / after_dark.MANIFEST).exists() or not after_dark.MOD.exists():
+        pytest.skip("the mod and its reference are not on this machine")
     assert after_dark.check() == []
 
 
@@ -2189,3 +2189,17 @@ def test_a_child_of_the_house_is_said_as_what_she_is_and_the_guard_is_the_refere
     assert "THE CHILDREN OF THE HOUSE. Anyone under eighteen who lives in the house is one of its children." in prefix
     assert "nothing else, ever" not in prefix and "mascot" not in prefix
     assert "her_age" in game.extra_rulings and "ruling her_age (serious)" in game.referee_rules(st) and "her_age" not in prefix
+    # D288: the guards are data a content folder words for itself; the code's own cannot be dropped
+    from games.hidden.clown.game import GUARDS
+    assert set(GUARDS) <= set(game.guards) and all(v["rule"] and v["fix"] for v in game.guards.values())
+    assert all(f"ruling {k} (serious)" in game.referee_rules(st) for k in game.guards) and set(game.extra_rulings) == set(game.guards)
+
+
+def test_a_mod_reaches_the_referees_lines_by_their_headings(game):
+    """The owner, 11-14: the referee's prompt lines are editable from a mod. The guards and the rows are headed sections, and a
+    mod's rules.referee patch replaces or adds to one without touching the other."""
+    from engine import mods as mods_mod
+    text = game.referee_rules(new(game))
+    out, notes = mods_mod.patch_sections(text, {"replace": {"THE GUARDS": "ruling quiet (serious): a test line."}, "append": {"ROWS THIS GAME RECORDS:": "- a row a mod added."}})
+    assert "ruling quiet (serious): a test line." in out and "ruling her_age" not in out and "- a row a mod added." in out
+    assert "- move player <place>" in out and "Flags you may set" in out and all("no such heading" not in n for n in notes)

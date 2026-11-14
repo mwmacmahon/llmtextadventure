@@ -107,6 +107,16 @@ RECKONINGS: dict[str, dict[str, str]] = {
              "give": "a girl's contract signed over to the Tallyman for the blood owed; nobody shot", "fee": ""},
 }
 CHILDREN = ("Anyone under eighteen who lives in the house is one of its children. Mrs Pell feeds them first and sends them to bed early; the older girls boss them and look out for them; the proprietor is their teacher. Write each of them at her own age.")
+# The guards the code itself holds (ClownGame.guards): a content folder's words.yml may reword them and add its own.
+GUARDS: dict[str, dict[str, str]] = {
+    "her_age": {"rule": ('the telling treated a child of the house (anyone the game state gives as under eighteen) as other than a child: any '
+                         "romantic or sexual light on her, from anyone, the player's character included, in word, look or act; her body "
+                         "described as a grown woman's would be; or her suffering made a spectacle, told at length for its own sake. Never for a "
+                         'child who is scolded, tired, homesick, in a scrape or worked hard at her lessons, nor for the hard things of the town '
+                         'reaching her (want, loss, fear, danger, an unkind client): those may happen to her and be told, as a child lives them.'),
+                "fix": ('Tell the turn again with her at her own age: a child of the house among grown-ups who look out for her. Leave out what '
+                        'the first telling did with her, and keep everything else as it was.')},
+}
 GAIN_WORDS = ((7, "much better than they were"), (4, "better than they were"), (2, "a little better"), (1, "barely moved"), (0, "an hour that went nowhere"))
 TIER_WORDS = {"clumsy": "clumsy", "passable": "passable", "sound": "sound", "finished": "finished"}
 TIME_WORDS = {0: "the morning's work", 1: "the afternoon's work"}
@@ -225,10 +235,6 @@ class ClownGame(GameBase):
     word_guards = {"lever-phrases": "count", "task-kind-words": "count"}   # C112, D275 (the owner, 11-14): no phrase list between the reading's pick and the lever;
                                                # the pick's own arguments and the lever's refusal are the checks; the list only counts
     texture_gap_turns = 15           # C115: a street's texture (a bell, the fog) is not handed to the narrator again for fifteen turns
-    # the game's own serious ruling (engine/changes.py extra_rulings; the fantasy's too_far is the pattern, D160): the referee rules
-    # it after a telling, the telling is told again with this fix, and the narrator's standing text never names it
-    extra_rulings = {"her_age": "Tell the turn again with her at her own age: a child of the house among grown-ups who look out for her. Leave out what "
-                                "the first telling did with her, and keep everything else as it was."}
     typed_only_commands = ("skip",)  # D205C: the days run only on the player's own "skip to …" (typed_command); never the assistant's pick
     mechanic_numbers = False
     target_offset = 0
@@ -287,6 +293,24 @@ class ClownGame(GameBase):
 
     def hooks_content(self) -> dict[str, dict]:
         return self.content.hooks()
+
+    @property
+    def guards(self) -> dict[str, dict[str, str]]:
+        """The referee's guards on the telling's content: {id: {rule, fix}}. Each is a serious ruling (engine/changes.py
+        extra_rulings; the fantasy's too_far is the pattern, D160): the referee rules it after a telling, the telling is told
+        again with the fix, and the narrator's standing text never names it. The code's own (GUARDS) with the content's laid
+        over (words.yml `guards`): a content folder may reword any of them and add its own, so a mod that swaps the decks
+        carries its own guards (the owner, 11-14: "all referee guards I want to show up in the mod with alt text so by editing
+        mod we can edit guards"). A guard of the code's cannot be dropped by leaving it out or leaving it blank."""
+        out = {k: dict(v) for k, v in GUARDS.items()}
+        for k, v in (self.content.words().get("guards") or {}).items():
+            if isinstance(v, dict) and str(v.get("rule") or "").strip():
+                out[str(k)] = {"rule": " ".join(str(v["rule"]).split()), "fix": " ".join(str(v.get("fix") or out.get(str(k), {}).get("fix") or "").split())}
+        return out
+
+    @property
+    def extra_rulings(self) -> dict[str, str]:
+        return {k: v["fix"] for k, v in self.guards.items()}
 
     @property
     def reckonings(self) -> dict[str, dict[str, str]]:
@@ -1159,12 +1183,11 @@ class ClownGame(GameBase):
             "GAME RULES FOR THE REFEREE",
             self._targets_line(s),
             self._ref_places_line(s),
-            "ruling her_age (serious): the telling treated a child of the house (anyone the game state gives as under eighteen) as other than "
-            "a child: any romantic or sexual light on her, from anyone, the player's character included, in word, look or act; her body "
-            "described as a grown woman's would be; or her suffering made a spectacle, told at length for its own sake. value = what it showed, in a few "
-            "plain words. Never for a child who is scolded, tired, homesick, in a scrape or worked hard at her lessons, nor for the hard things "
-            "of the town reaching her (want, loss, fear, danger, an unkind client): those may happen to her and be told, as a child lives them.",
-            "Rows this game records:",
+            # two headed sections, so a mod's `rules: {referee: {replace / append: {"THE GUARDS": ...}}}` reaches each by its heading
+            # (engine/mods.py patch_sections; the owner, 11-14: "having the referee prompt lines editable in the mod")
+            "THE GUARDS",
+            *[f"ruling {k} (serious): {v['rule']} value = what it showed, in a few plain words." for k, v in self.guards.items()],
+            "ROWS THIS GAME RECORDS:",
             "- move player <place>; move <girl or person id> <place>: where they are when the prose ends. Someone on the way has not arrived: a soon "
             "row, and the move when they get there. move player Unknown: the prose had the player leave and did not show them arriving.",
             "- set <girl id>.love / .respect / .fear <a step: +1 or -1, or +2 or -2 for something serious>: how she stands to the proprietor changed this turn "

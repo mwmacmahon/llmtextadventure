@@ -42,7 +42,10 @@ state:
 # The game's own rulings switched off (this game declares none).
 rulings_off: []
 
-# A whole replacement set of decks and text: a folder under this game's content folder (notes/content/clown/decks/<name>/) with
-# its own prefix.md, scenarios/, girls/, hooks/, challenges.yml and death_lines.yml. Nothing falls back to the game's own files.
-# content: decks/<name>
-
+# The rest of the content, by the loader's own names (a mapping or a list of things with ids is merge-patched like the house
+# file above; text is replaced). girl_cards and hooks are by id; words holds what the code otherwise says itself, the referee's
+# guards among them (each a `rule` and a `fix`); prefix is the narrator's instructions whole.
+# content:
+#   girl_cards: {ada_vosk: {voice: "..."}}
+#   hooks: {depot_dance: {summary: "..."}}
+#   words: {guards: {a_guard_of_mine: {rule: "the telling ...", fix: "Tell the turn again ..."}}}
