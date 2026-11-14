@@ -25,6 +25,7 @@ from engine.resolve import Quest
 from engine.roles import Change
 from engine.spontaneous import Spontaneous
 from . import debug as dbg
+from . import switches as sw
 
 from . import deck as dk
 from . import harbour as hb
@@ -848,7 +849,7 @@ class ClownGame(GameBase):
     def aim_blows(self, state: ClownState, adj: Any, player_text: str = "") -> list[str]:
         """The engine's hook for mending a reading (named and counted in the ledger). One mend: an attempt at a girl who is not
         of the house is not the house's to settle, so its settled "works" is taken out; the narrator's block says how she stands."""
-        out = self._outsiders(state, adj)
+        out = self._outsiders(state, adj) if sw.on("outsider_block") else []
         fiat = getattr(adj, "fiat", None)
         if not out or not fiat:
             return []
@@ -859,8 +860,26 @@ class ClownGame(GameBase):
         adj.fiat = kept
         return ["not_of_the_house"]
 
+    def referee_notes(self, state: ClownState, adj: Any) -> list[str]:
+        """The clown's word to the referee for this turn (switch `axis_note`). The long round (11-14): 20 attempts made on a
+        girl of the house and 6 rows on how she stands in 57 turns, against the rules' "two weeks of scenes with no row is
+        wrong". On a turn the reading aims at a girl of the house, the referee is told so and asked for her three axes first.
+        Assumes of the reading: who the attempt is aimed at (ids, an easy field)."""
+        if not sw.on("axis_note") or adj is None:
+            return []
+        ids = [x for i in (getattr(adj, "intents", None) or []) for x in (getattr(i, "targets", None) or [])]
+        out = []
+        for g in state.girls:
+            if g.id in ids and g.in_house():
+                out.append(f"This turn {state.player.name} dealt directly with {g.name} ({g.id}; now: {axis_word('love', g.love)}, {axis_word('respect', g.respect)}, "
+                           f"{axis_word('fear', g.fear)}). Decide her love, her respect and her fear first, each on its own: from what the prose shows "
+                           f"{state.player.name} do or say to her and how she takes it, did it move? A row for each that moved (set {g.id}.love +1, "
+                           f"set {g.id}.fear +1, ...); for one that did not move, no row. A kindness, a harsh word, a promise kept or broken, "
+                           f"competence shown, a thing of her past given up: each of these moves one.")
+        return out[:2]
+
     def scene_block(self, state: ClownState, adj: Any, audience: str) -> str:
-        if audience != "narrator" or adj is None:
+        if audience != "narrator" or adj is None or not sw.on("outsider_block"):
             return ""
         p, lines = state.player, []
         for g in self._outsiders(state, adj):
@@ -2017,7 +2036,7 @@ class ClownGame(GameBase):
         miss leaves the show to be scored after the turn, as before. Counted in the ledger (`world`: show, by)."""
         from engine.roles import destination
         w = HouseTurn()
-        if adj is None or getattr(adj, "kind", "") != "action" or getattr(adj, "minutes_fixed", False):
+        if not sw.on("show_first") or adj is None or getattr(adj, "kind", "") != "action" or getattr(adj, "minutes_fixed", False):
             return state, w
         named = [destination(i) for i in (getattr(adj, "intents", None) or [])] + list(getattr(getattr(adj, "focus", None), "places", None) or [])
         going = {self._place(state, str(v).replace("_", " ")) for v in named if v}
@@ -2033,6 +2052,10 @@ class ClownGame(GameBase):
         s.clock.day, s.clock.minute = end // DAY, end % DAY
         s.player.location = x.venue
         self._resolve_show(s, x, turn)
+        # the older way was two turns (a "curtain" event at the hour that stopped before the first routine, the show told the
+        # turn after): its event is taken out, and its line, if it fired this turn, gives way to the show's own
+        s.hidden.events = [e for e in s.hidden.events if e.id != f"curtain_{x.deal or x.hook}" or e.fired]
+        w.replaces = [f"The curtain: {x.title}"]
         s.flags["_played_first"] = [*(s.flags.get("_played_first") or []), x.id]
         w.extra_minutes = end - now
         w.directives = [text for kind, text in self.telling_parts(s) if kind == "show" and x.title in text]

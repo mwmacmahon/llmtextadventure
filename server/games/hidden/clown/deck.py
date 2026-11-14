@@ -28,6 +28,7 @@ from engine.events import Event, evaluate, reach_event, rebase_event, rebase_pre
 from engine.gamekit import Content
 from engine.spontaneous import Spontaneous
 
+from . import switches as sw
 from .state import DAY, WEEKDAYS, ClientInfo, ClownState, HookState, Person, Tell, week_of, weekday
 
 
@@ -202,7 +203,20 @@ def deal(state: ClownState, hook: dict, *, turn: int, deal_abs: int, name: str) 
         if t not in state.hidden.terms:
             state.hidden.terms.append(t)
     have_e = {e.id for e in state.hidden.events}
+    # C116 (the reader, 11-14): a client dealt again came in with the first visit's words, and the narrator wrote the same
+    # paragraph a second time. A deal after the first tells the narrator so, and how the last one ended.
+    before = [h for h in state.hooks if h.hook == hid]
+    again = ""
+    if before and sw.on("asks_again"):
+        last = before[-1]
+        how = {"done": "the house played it", "failed": "it went badly", "passed": "it was left unanswered and lapsed"}.get(last.status, "nothing came of it")
+        again = (f" This is not the first time: they asked before, and {how}. They ask again now, and say so: shorter, in new words, "
+                 f"none of the first visit's sentences.")
     for e in hook_events(hook, inst, deal_abs, name, when):
+        if again and e["id"].endswith("_reach") and e.get("directive"):
+            e["directive"] = str(e["directive"]).rstrip() + again
+            if isinstance(e.get("fallback"), dict) and e["fallback"].get("directive"):
+                e["fallback"]["directive"] = str(e["fallback"]["directive"]).rstrip() + again
         if e["id"] not in have_e:
             state.hidden.events.append(Event.model_validate(e))
     for x in raw.get("spontaneous") or []:

@@ -2874,7 +2874,8 @@ def referee_inputs(game: Game, state: BaseModel, directives: list[str], player_t
     rules = _hook(game, "referee_rules", state, default="")
     return referee_messages(rules, _engine_state_text(game, state, adj), directives, player_text, tier_only_view(narration), levers=levers, recent=recent,
                             hints=quest_hints(game, state, player_text, narration),
-                            turn_lines=_hook(game, "turn_lines", state, default=None), stable=stable)
+                            turn_lines=_hook(game, "turn_lines", state, default=None), stable=stable,
+                            notes=list(_hook(game, "referee_notes", state, adj, default=None) or []))
 
 
 def quest_hints(game: Game, state: BaseModel, player_text: str, narration: str) -> list[str]:

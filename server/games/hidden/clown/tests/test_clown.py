@@ -1980,3 +1980,20 @@ def test_a_streets_texture_is_not_rolled_again_for_fifteen_turns_however_many_da
     plain, _ = roll([bell], doc, random.Random(4), 3 * 1440, 22, 40_000)        # a game that does not ask: as before
     assert [h.id for h in plain] == ["bell"]
     assert ClownGame.texture_gap_turns == 15
+
+
+def test_the_referee_is_told_when_the_proprietor_dealt_with_a_girl_of_the_house_and_a_switch_turns_it_off(game: ClownGame, monkeypatch):
+    from engine.pipeline import referee_inputs
+    from engine.roles import AssistantReadingV2, IntentV2
+    from games.hidden.clown import switches
+    st = _quiet(game)
+    g = next(x for x in st.girls if x.in_house())
+    adj = AssistantReadingV2(kind="action", summary="x", time_minutes=5, risk="none", intents=[IntentV2(action="Tell her she did well.", targets=[g.id])])
+    notes = game.referee_notes(st, adj)
+    assert len(notes) == 1 and f"set {g.id}.love +1" in notes[0] and g.name in notes[0]
+    _, msgs = referee_inputs(game, st, [], "I tell her she did well.", "You tell her.", adj)
+    assert "[ENGINE NOTE]" in msgs[-1].content and "dealt directly with" in msgs[-1].content
+    away = AssistantReadingV2(kind="action", summary="x", time_minutes=5, risk="none", intents=[IntentV2(action="Ask Mrs Pell.", targets=["pell"])])
+    assert game.referee_notes(st, away) == [] and "[ENGINE NOTE]" not in referee_inputs(game, st, [], "x", "y", away)[1][-1].content
+    monkeypatch.setenv("TA_CLOWN_SWITCHES", "axis_note=off, show_first=off")
+    assert game.referee_notes(st, adj) == [] and not switches.on("show_first") and switches.on("desk_beat")

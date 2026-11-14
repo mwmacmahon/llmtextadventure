@@ -32,6 +32,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from . import switches as sw
+
 # level -> the move's words, each part's words, words added per check told, the most a turn may be given
 LEVELS: dict[str, dict[str, Any]] = {
     "short": {
@@ -75,7 +77,7 @@ def move(game: Any, state: Any, adj: Any, res: dict[str, Any]) -> str:
     # the two-step reading's kinds, when it is on (reading.py): every attempt the desk's (a plan set, a booking taken) and a lever
     # picked: a beat, not a talk. The long round (11-14): plans set ran 100 to 200 words, one telling the week ahead as done
     said = list(getattr(adj, "attempt_kinds", None) or [])
-    if said and all(k == "desk" for k in said) and levers:
+    if sw.on("desk_beat") and said and all(k == "desk" for k in said) and levers:
         return "lever"
     ids = [x for i in (getattr(adj, "intents", None) or []) for x in (getattr(i, "targets", None) or [])]
     ids += [t for i in (getattr(adj, "intents", None) or []) if (t := getattr(getattr(i, "check", None), "target_entity", None))]
@@ -103,7 +105,7 @@ def kind(game: Any, state: Any, adj: Any, res: dict[str, Any], level: str) -> di
     # what else the engine asks told this turn (an event that fired, a caller, the news of days let run): a beat each. The
     # check round (11-13): three skips given 40 words wrote 75 to 104, each with an offer or a caller arriving on the way
     asked = len(res.get("directives") or [])
-    events = max(0, asked - len(parts) - len(res.get("levers") or []) - (1 if (res.get("command") or {}).get("id") else 0))
+    events = 0 if not sw.on("event_words") else max(0, asked - len(parts) - len(res.get("levers") or []) - (1 if (res.get("command") or {}).get("id") else 0))
     # no move of the clown's own (a talk where they stand): the engine's talk words, so a part never shortens the answer
     from engine.telling import LEVELS as ENGINE
     base = row["move"].get(mv) if mv else ENGINE.get(level, ENGINE["short"])["talk"]

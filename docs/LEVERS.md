@@ -894,3 +894,24 @@ are still in the code as they always were and are listed on that page as owed.
 - **Measured:** nothing yet: it was silent until 2026-11-14 and now writes a row for each check it takes off.
 - **Helped / did not:** unknown. It matches by the opening letters of words, so a lever phrase such as "rest", "work"
   or "turn" can take off an unrelated check. Count it on the next rounds.
+
+---
+
+## 9. The hidden game's switches
+
+The hidden game's own fixes and trials can each be turned off on a server by its environment
+(`TA_CLOWN_SWITCHES="axis_note=off,show_first=off"`); the list, with what each is and where it came from, is
+`server/games/hidden/clown/switches.py`. They are that game's, not engine modules: a switch that has earned its keep over
+rounds stays on and may lose its switch; one that has not goes with its code. All default on. State at 2026-11-14:
+
+| switch | what it does | measured |
+|---|---|---|
+| `show_first` | a booked show the player's character goes to is played and scored before the prose, and told once | before it: 4 of 18 stored shows were ever counted as attended; after: see the rounds of 11-14 |
+| `outsider_block` | someone not yet of the house is named to the narrator as such; an attempt at them is not settled as the house's own | one misread in a 55-turn round before it |
+| `desk_beat` | a turn that is only desk levers (a plan, a booking) is a short beat told in the present | plan turns ran 100 to 200 words before it |
+| `event_words` | an event that fires on a turn adds words to the telling's length | skips given 40 words wrote 75 to 104 before it; a median of 0.97 written against given after |
+| `asks_again` | a client dealt a second time says they have asked before, in new words | not yet |
+| `axis_note` | the referee is told when the player's character dealt directly with someone of the house, and asked for the three standings | before it: 6 standing rows in 57 turns over 20 such attempts |
+
+The reading in two steps with the game's kinds of attempt is the profile module `reading_steps` (§2); the lever phrase
+list is the word guard `lever-phrases` (§8); the street texture gap is the game attribute `texture_gap_turns`.

@@ -459,7 +459,8 @@ def earlier_turns_block(recent: list[tuple[int, str, str]]) -> str:
 
 def referee_messages(rules: str, state_text: str, directives: list[str], player_text: str, narration: str,
                      levers: list[str] | None = None, recent: list[tuple[int, str, str]] | None = None,
-                     hints: list[str] | None = None, turn_lines: list[str] | None = None, stable: bool = False) -> tuple[str, list[Msg]]:
+                     hints: list[str] | None = None, turn_lines: list[str] | None = None, stable: bool = False,
+                     notes: list[str] | None = None) -> tuple[str, list[Msg]]:
     lists: list[str] = []
     if stable:                                  # B405: the rules' lines that change by the turn go in the message
         rules, lists = lift_turn_lines(rules, turn_lines)
@@ -471,6 +472,8 @@ def referee_messages(rules: str, state_text: str, directives: list[str], player_
             f"[PLAYER INPUT]\n{player_text.strip()}\n\n[NARRATION AND THE NARRATOR'S NOTES]\n{narration.strip()}")
     if hints:                                   # B93's pre-check: quests in motion this turn's words may concern
         user += "\n\n[QUESTS THIS TURN MAY CONCERN]\n" + "\n".join(f"- {h}" for h in hints)
+    if notes:                                   # a game's own word to the referee for this turn (its `referee_notes` hook)
+        user += "\n\n[ENGINE NOTE]\n" + "\n".join(f"- {n}" for n in notes)
     return system, [Msg("user", user)]
 
 

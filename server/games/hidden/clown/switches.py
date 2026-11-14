@@ -1,0 +1,28 @@
+"""The clown's switches (the owner, 11-14: "you can use modules or something to keep your stuff toggleable"): each fix or
+trial of this game's own that can be turned off on its own, with what it is and the issue it came from. A switch is on or
+off for a whole server: `TA_CLOWN_SWITCHES="axis_note=off,show_first=off"` in its environment turns some off (or on) for a
+trial against the defaults here; nothing else reads them. They are this game's, not the engine's modules (docs/LEVERS.md):
+when one has earned its keep over rounds it stays and its switch may go; when it has not, it and its code go together.
+docs/LEVERS.md §9 lists them with what each measured.
+"""
+from __future__ import annotations
+
+import os
+
+SWITCHES: dict[str, tuple[bool, str]] = {
+    "show_first": (True, "C114: a booked show the proprietor goes to is played and scored before the prose (world_turn)"),
+    "outsider_block": (True, "the long round of 11-14: a girl not of the house is named to the narrator as such, and an attempt at her is not settled as the house's own"),
+    "desk_beat": (True, "the reader, 11-14: a turn that is only the desk's levers is a short beat told in the present"),
+    "event_words": (True, "the check round, 11-13: an event that fires on a turn adds words to the telling's length"),
+    "asks_again": (True, "C116, the reader, 11-14: a client dealt a second time says they have asked before, in new words"),
+    "axis_note": (True, "the long round of 11-14 (6 standing rows in 57 turns): the referee is told when the proprietor dealt directly with a girl, and asked for her love, respect and fear"),
+}
+
+
+def on(name: str) -> bool:
+    default = SWITCHES[name][0]
+    for part in os.environ.get("TA_CLOWN_SWITCHES", "").split(","):
+        k, _, v = part.strip().partition("=")
+        if k == name and v.strip().lower() in ("on", "off"):
+            return v.strip().lower() == "on"
+    return default
