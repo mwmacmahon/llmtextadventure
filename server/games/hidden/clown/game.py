@@ -443,7 +443,7 @@ class ClownGame(GameBase):
         deck = self.content.girls_deck()
         if not deck:
             return
-        s.harbour.queue = hb.shuffle(deck, random.Random(f"harbour:{s.salt}"))
+        s.harbour.queue = hb.shuffle(deck, random.Random(f"harbour:{s.salt}"), self.content.girl_cards())
         for g in s.girls:           # the first girl's card, if she came off the boat, is gone from the deck
             if g.card and g.card in s.harbour.queue:
                 s.harbour.queue.remove(g.card)

@@ -78,7 +78,7 @@ export function GamePage({ name }: { name: string }) {
   const fields = all.filter((f) => Object.entries(f.showIf).every(([k, v]) => { const o = all.find((x) => x.key === k); return o ? valueOf(o) === v : false; }));
   const tickedOf = (f: Field) => valueOf(f).split(",").filter(Boolean);
   const missing = fields.filter((f) => (f.required && !valueOf(f).trim()) || (f.kind === "checks" && f.pick > 0 && tickedOf(f).length !== f.pick));
-  const usable = mods.filter((m) => !m.error);
+  const usable = mods.filter((m) => !m.error && m.kind !== "deck");
   const on = ticked.filter((f) => usable.some((m) => m.file === f));
   const toggle = (file: string) => {
     const next = on.includes(file) ? on.filter((x) => x !== file) : [...on, file];
@@ -176,8 +176,8 @@ export function GamePage({ name }: { name: string }) {
             <span className="mod-checks">
               {usable.map((m) => (
                 <label key={m.file} className="mod-check" title={m.file}>
-                  <input type="checkbox" checked={on.includes(m.file)} onChange={() => toggle(m.file)} />
-                  <span><strong>{m.name}</strong>{m.about ? <span className="muted"> — {m.about}</span> : null}</span>
+                  <input type="checkbox" checked={m.forced || on.includes(m.file)} disabled={m.forced} onChange={() => toggle(m.file)} />
+                  <span><strong>{m.name}</strong>{m.forced ? <span className="muted"> (always on in this game)</span> : null}{m.about ? <span className="muted"> — {m.about}</span> : null}</span>
                 </label>
               ))}
             </span>
@@ -234,12 +234,14 @@ export function GamePage({ name }: { name: string }) {
       {saves.length ? [newGame, saved] : [newGame]}
       <section className="mods-list">
         <h2>Mods</h2>
-        <p className="muted small">YAML files that patch this game's content, prompts and starting state when a new game starts (the shape: notes/content/fantasy/mods/example.yml).</p>
+        <p className="muted small">YAML files that patch this game's content, prompts and starting state when a new game starts (the shape: notes/content/fantasy/mods/example.yml). A deck is a file a mod swaps in whole (cards, bookings, the house file, the narrator's and the referee's words); it is uploaded and downloaded here like a mod.</p>
         {mods.length > 0 && (
           <ul className="mod-files">
             {mods.map((m) => (
               <li key={m.file}>
-                <span className="mod-name">{m.name}</span> <span className="muted small">{m.file} · {m.size} bytes · {ago(new Date(m.modified * 1000).toISOString())}</span>
+                <span className="mod-name">{m.name}</span> <span className="muted small">{m.kind === "deck" ? "deck · " : ""}{m.file} · {m.size} bytes · {ago(new Date(m.modified * 1000).toISOString())}</span>
+                {m.kind === "deck" && m.holds && <div className="muted small">Holds: {m.holds.join(", ")}</div>}
+                {m.kind !== "deck" && m.decks && m.decks.length > 0 && <div className="muted small">Its decks: {m.decks.join(", ")}</div>}
                 {m.error && <div className="error small">Not offered: {m.error}</div>}
                 {m.about && !m.error && <div className="muted small">{m.about}</div>}
                 <span className="mod-actions">
@@ -251,7 +253,7 @@ export function GamePage({ name }: { name: string }) {
           </ul>
         )}
         <input ref={upRef} type="file" accept=".yml,.yaml" hidden onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
-        <button onClick={() => upRef.current?.click()}>Upload a mod</button>
+        <button onClick={() => upRef.current?.click()}>Upload a mod or a deck</button>
       </section>
     </div>
   );

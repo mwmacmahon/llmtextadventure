@@ -132,7 +132,9 @@ export type InstanceView = InstanceSummary & {
 };
 export type SaveCard = InstanceSummary & { ui: UISchema; last: { turn: number; text: string; clock: string } | null; mods?: SaveMod[] };
 // B79: a game's mod files (the new-game form's checkboxes; the Mods section's download, delete, upload)
-export type ModInfo = { file: string; name: string; about: string; size: number; modified: number; hash: string; error?: string };
+// kind "deck": a mod's asset (a whole replacement deck a mod names), listed to download, upload and delete, never ticked.
+// forced: a mod this listing always has on. decks: the deck files a mod names. holds: what a deck file holds.
+export type ModInfo = { file: string; name: string; about: string; size: number; modified: number; hash: string; error?: string; kind?: "mod" | "deck"; forced?: boolean; decks?: string[]; holds?: string[] };
 export type SaveMod = { name: string; hash: string; text: string };
 export type SetupOption = { id: string; name: string };
 // A setup key is the plain list (a select) or a field (ISSUES B21): the label is the whole hint unless the game gives one.

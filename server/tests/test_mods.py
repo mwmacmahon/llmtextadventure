@@ -154,3 +154,52 @@ async def test_mods_are_generic_every_game_alike(engine, fake, tmp_path, game_na
     assert "A line the mod added." in inst.prefix_text
     plain = engine.create_instance(game_name, SHEET if game_name == "fantasy" else {})
     assert engine.game_of(engine.store.get_instance(plain)) is engine.games[game_name]
+
+
+def test_a_mod_names_deck_files_that_replace_a_loader_whole_and_patches_over_them(tmp_path):
+    """The owner, 11-14: a mod may edit a deck, add to it or replace it, and a replacement deck may be a file of its own beside
+    the mod: listed (never offered), read live, checked. A mod whose deck is missing is listed with the reason."""
+    import yaml
+    from engine import mods as mm
+
+    class Content:
+        def __init__(self, d):
+            self.dir = d
+
+        def scenarios(self):
+            return {"s": {"id": "s", "name": "the game's"}}
+
+        def cards(self):
+            return {"a": {"id": "a", "voice": "one"}, "b": {"id": "b", "voice": "two"}}
+
+        def prefix(self):
+            return "the game's prefix"
+
+    class Game:
+        name, forced_mods = "g", ("m.yml",)
+
+        def __init__(self, d):
+            self.content = Content(d / "g")
+
+    game = Game(tmp_path)
+    folder = tmp_path / "g" / "mods"
+    folder.mkdir(parents=True)
+    (folder / "d.yml").write_text(yaml.safe_dump({"kind": "deck", "name": "D", "game": "g", "content": {"cards": {"x": {"id": "x", "voice": "ex"}, "y": {"id": "y", "voice": "why"}}, "prefix": "the deck's prefix"}}))
+    mod = {"name": "M", "game": "g", "decks": ["d.yml"], "content": {"cards": {"x": {"voice": "edited"}, "z": {"voice": "added"}, "y": None}}}
+    (folder / "m.yml").write_text(yaml.safe_dump(mod))
+    rows = {r["file"]: r for r in mm.list_mods(tmp_path, game)}
+    assert rows["d.yml"]["kind"] == "deck" and rows["d.yml"]["holds"] == ["cards", "prefix"] and rows["m.yml"]["forced"] and rows["m.yml"]["decks"] == ["d.yml"]
+    assert not rows["m.yml"].get("error") and mm.check_all(tmp_path, {"g": game}) == []
+    applied = mm.resolve(tmp_path, game, ["m.yml"])
+    with pytest.raises(ValueError):
+        mm.resolve(tmp_path, game, ["d.yml"])                 # a deck is not ticked
+    g = mm.game_with(game, applied)
+    assert g.content.cards() == {"x": {"id": "x", "voice": "edited"}, "z": {"voice": "added"}} and g.content.prefix() == "the deck's prefix"
+    assert g.content.scenarios() == game.content.scenarios() and game.content.cards()["a"]["voice"] == "one"
+    whole = mm.game_with(game, [{"text": yaml.safe_dump({"name": "W", "game": "g", "content": {"cards": {"$replace": True, "q": {"voice": "only"}}}})}])
+    assert whole.content.cards() == {"q": {"voice": "only"}}
+    (folder / "d.yml").unlink()
+    bad = {r["file"]: r for r in mm.list_mods(tmp_path, game)}["m.yml"]
+    assert "d.yml" in bad["error"] and any("d.yml" in x for x in mm.check_all(tmp_path, {"g": game}))
+    with pytest.raises(ValueError):
+        mm.resolve(tmp_path, game, ["m.yml"])

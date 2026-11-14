@@ -26,6 +26,8 @@ cfg = load_config()
 log = logs.setup_logging(cfg.resolve(cfg.server.log_dir), cfg.server.log_level)
 store = Store(cfg.resolve(cfg.server.data_dir) / "textadventure.sqlite3")
 games = load_games(cfg.resolve(cfg.server.content_root), hidden=cfg.server.dev_mode)
+for _line in mods_mod.check_all(cfg.resolve(cfg.server.content_root), games):       # every mod and deck file present, used or not
+    log.warning("mods.check " + _line)
 engine = Engine(cfg, store, games)
 log.info("startup " + logs.kv(db=store.path, content=cfg.resolve(cfg.server.content_root), games=",".join(games), profile=cfg.profile_label,
                                **{f"role.{k}": f"{v.provider}:{v.model}/{v.effort}" for k, v in cfg.roles.items()}))

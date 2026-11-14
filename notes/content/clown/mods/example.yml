@@ -42,10 +42,15 @@ state:
 # The game's own rulings switched off (this game declares none).
 rulings_off: []
 
-# The rest of the content, by the loader's own names (a mapping or a list of things with ids is merge-patched like the house
-# file above; text is replaced). girl_cards and hooks are by id; words holds what the code otherwise says itself, the referee's
-# guards among them (each a `rule` and a `fix`); prefix is the narrator's instructions whole.
+# The rest of the content, by the loader's own names. By id an item the deck has is edited, a new id is added, an id set to
+# null is taken out; a mapping that carries `$replace: true` is the whole thing instead of a patch. Text (prefix) is replaced.
+# girl_cards and hooks are by id; words holds what the code otherwise says itself, the referee's guards among them (each a
+# `rule` and a `fix`).
 # content:
-#   girl_cards: {ada_vosk: {voice: "..."}}
-#   hooks: {depot_dance: {summary: "..."}}
+#   girl_cards: {ada_vosk: {voice: "..."}, a_card_of_mine: {id: a_card_of_mine, name: "...", age: 30, ...}, pim_dace: null}
+#   hooks: {$replace: true, my_only_booking: {...}}
 #   words: {guards: {a_guard_of_mine: {rule: "the telling ...", fix: "Tell the turn again ..."}}}
+#
+# A whole deck as a file of its own, beside this one: `kind: deck`, name, about, game, and `content` as above with each part
+# given whole. Name it here; it is swapped in before `content` above is laid over it. Uploaded and downloaded like a mod.
+# decks: [my_cards.yml]

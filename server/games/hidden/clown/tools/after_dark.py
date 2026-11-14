@@ -3,16 +3,16 @@ mod replaces language etc"; "when the mod is applied you should be able to check
 is left"; "when the player downloads/edits/uploads/etc the mod files they should all be editable").
 
 notes/content/clown/ is the game's content (the default, reworded on 2026-11-14). The owner's mod
-(notes/content/clown_after_dark/mods/tweaks.yml, always on in the listing "Clown Maker - After Dark") carries, in the one
-file, patches that turn the default's content back into the wording kept from before: the house file (`scenario`), and under
-`content` the harbour cards, the bookings and troubles, the deck's tag meanings, the night challenges, the card's lines, the
-words the code otherwise says itself (with the referee's guards and the paragraph on the children of the house), and the
-narrator's instructions whole.
+(notes/content/clown_after_dark/mods/tweaks.yml, always on in the listing "Clown Maker - After Dark") names its own decks,
+each a file beside it (`decks:`; the after_dark_*.yml files): the house file; the harbour cards and the deck's meanings; the
+bookings, troubles, night challenges and the card's lines; the narrator's instructions with the words the code otherwise says
+itself (the referee's guards and the paragraph on the children of the house among them). What a deck file holds replaces the
+game's own, whole. All of them are listed, uploaded, downloaded and checked from the lobby's mod screen.
 
 notes/content/clown_after_dark/reference/ is that kept wording as a plain content folder. No game reads it. It is what the
 mod is built from and checked against.
 
-    after_dark.py build     write the mod's generated part (below its marker line) from default against reference
+    after_dark.py build     write the mod's deck files and the mod's generated part (below its marker line) from the reference
     after_dark.py check     the default with the mod on is the reference, loader by loader and in the narrator's instructions,
                             exactly; every reference file has the hash REFERENCE.sha256 gives it. Exit 1 on any problem
     after_dark.py accept    after a deliberate edit under reference/: rewrite REFERENCE.sha256 from it
@@ -79,27 +79,23 @@ def diff(a: Any, b: Any) -> tuple[bool, Any]:
     return True, b
 
 
-def patches() -> tuple[dict, dict]:
-    base, ref = loaders(BASE), loaders(REF)
-    sb, sr = base.scenarios(), ref.scenarios()
-    assert list(sb) == list(sr) and len(sb) == 1, "one house file, the same id in both"
-    sid = next(iter(sb))
-    scenario = diff(sb[sid], sr[sid])[1] or {}
-    content: dict[str, Any] = {}
-    for name in LOADERS:
-        ch, p = diff(getattr(base, name)(), getattr(ref, name)())
-        if ch:
-            content[name] = p
-    # the referee's guards and the children's paragraph in full, changed from the default's or not: they are what the owner
-    # asked to be able to edit in the mod
-    w = ref.words()
-    content.setdefault("words", {})
-    for key in ("guards", "children"):
-        if w.get(key):
-            keep = {k: None for k, v in (content["words"].get(key) or {}).items() if v is None} if isinstance(w[key], dict) else None
-            content["words"][key] = {**w[key], **keep} if isinstance(w[key], dict) else w[key]
-    content["prefix"] = (REF / "prefix.md").read_text().strip() + "\n"
-    return scenario, content
+DECKS = {      # the mod's deck files: file -> (its name, what it is, the loaders it holds)
+    "after_dark_house.yml": ("After Dark: the house file", "The house, the town, the three written girls, the people, the events, as they stood before 2026-11-14.", ("scenarios",)),
+    "after_dark_cards.yml": ("After Dark: the harbour deck", "The sixty harbour cards and the deck's tag meanings and age buckets.", ("girls_deck", "girl_cards")),
+    "after_dark_bookings.yml": ("After Dark: bookings and troubles", "The bookings and troubles, the night challenges and the card's lines.", ("hooks", "challenges", "death_lines")),
+    "after_dark_words.yml": ("After Dark: the narrator and the referee", "The narrator's standing instructions; the referee's guards (what a telling may not show, and the fix a retelling is given); the paragraph on the children of the house.", ("prefix", "words")),
+}
+
+
+def decks() -> dict[str, dict]:
+    """The mod's deck files, each loader whole, from the reference: nothing of the default's content shows through, and a
+    later change to the default does not reach a game made with the mod."""
+    ref = loaders(REF)
+    out = {}
+    for file, (name, about, holds) in DECKS.items():
+        content = {h: ((REF / "prefix.md").read_text().strip() + "\n") if h == "prefix" else getattr(ref, h)() for h in holds}
+        out[file] = {"kind": "deck", "name": name, "about": about, "game": "clown_after_dark", "content": content}
+    return out
 
 
 class Dumper(yaml.SafeDumper):
@@ -114,20 +110,22 @@ Dumper.add_representer(str, _str)
 
 
 def build() -> None:
-    scenario, content = patches()
-    text = MOD.read_text()
-    head = text.split(MARK)[0].rstrip("\n")
-    for key in ("scenario", "content"):                 # the hand-written part must not carry these keys itself
+    for file, data in decks().items():
+        p = MOD.parent / file
+        p.write_text(f"# A deck file of the mod tweaks.yml (its `decks:` list): what it holds replaces the game's own, whole. Edit it freely; it is\n"
+                     f"# uploaded, downloaded and checked like a mod. Made by server/games/hidden/clown/tools/after_dark.py build, re-made only on purpose.\n"
+                     + yaml.dump(data, Dumper=Dumper, sort_keys=False, allow_unicode=True, width=118, default_flow_style=False))
+        print(f"written {p.name} ({p.stat().st_size} bytes)")
+    head = MOD.read_text().split(MARK)[0].rstrip("\n")
+    for key in ("scenario", "content", "decks"):                 # the hand-written part must not carry these keys itself
         head = "\n".join(ln for ln in head.split("\n") if not ln.startswith(key + ":"))
-    body = yaml.dump({"scenario": scenario, "content": content}, Dumper=Dumper, sort_keys=False, allow_unicode=True, width=118, default_flow_style=False)
-    notes = ("# What follows turns the default game's content into this mod's own: `scenario` patches the house file (nested keys merge,\n"
-             "# a list of things with ids is patched by id, null deletes); `content` patches the rest by name: girl_cards (the harbour\n"
-             "# cards, by id), hooks (the bookings and troubles, by id), girls_deck (the tags' meanings, the age buckets' lines),\n"
-             "# challenges, death_lines, words (what the code otherwise says itself: `guards` are the referee's rulings on what a\n"
-             "# telling may show, each a `rule` and the `fix` a retelling is given; `children` is the narrator's paragraph on anyone\n"
-             "# under eighteen), and prefix (the narrator's standing instructions, whole).\n")
-    MOD.write_text(head.rstrip("\n") + "\n\n" + MARK + "\n" + notes + body)
-    print(f"written {MOD} ({MOD.stat().st_size} bytes)")
+    notes = ("# This mod's own decks, each a file beside this one (upload, download and edit them like this file): the house file, the\n"
+             "# harbour deck, the bookings, and the narrator's and the referee's words. What a deck file holds replaces the game's own,\n"
+             "# whole. `content` below is laid over them, for a change that does not need a deck of its own: by id, an item the deck has\n"
+             "# is edited, a new id is added, an id set to null is taken out (girl_cards and hooks are by id; `$replace: true` in a\n"
+             "# mapping makes it the whole thing instead). Example: content: {girl_cards: {ada_vosk: {voice: \"...\"}}}\n")
+    MOD.write_text(head.rstrip("\n") + "\n\n" + MARK + "\n" + notes + yaml.dump({"decks": list(DECKS), "content": {}}, Dumper=Dumper, sort_keys=False))
+    print(f"written {MOD.name} ({MOD.stat().st_size} bytes)")
 
 
 def effective():
@@ -176,7 +174,8 @@ def check() -> list[str]:
         bad.append("prefix: the narrator's instructions with the mod on are not the reference's")
     n = sum(len(getattr(ref, name)()) for name in ("girl_cards", "hooks"))
     print(f"the default with the mod on against the reference: the house file, {len(LOADERS)} loaders ({n} cards and hooks) and the "
-          f"narrator's instructions compared; {len(have)} reference files hashed; the mod file is {MOD.stat().st_size} bytes")
+          f"narrator's instructions compared; {len(have)} reference files hashed; the mod is {MOD.stat().st_size} bytes and its "
+          f"{len(DECKS)} deck files {sum((MOD.parent / f).stat().st_size for f in DECKS if (MOD.parent / f).exists())} bytes")
     return bad
 
 

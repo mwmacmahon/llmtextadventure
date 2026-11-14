@@ -2203,3 +2203,33 @@ def test_a_mod_reaches_the_referees_lines_by_their_headings(game):
     out, notes = mods_mod.patch_sections(text, {"replace": {"THE GUARDS": "ruling quiet (serious): a test line."}, "append": {"ROWS THIS GAME RECORDS:": "- a row a mod added."}})
     assert "ruling quiet (serious): a test line." in out and "ruling her_age" not in out and "- a row a mod added." in out
     assert "- move player <place>" in out and "Flags you may set" in out and all("no such heading" not in n for n in notes)
+
+
+def test_a_mod_edits_a_deck_adds_to_it_takes_from_it_or_replaces_it(game):
+    """The owner, 11-14: "One can imagine a mod adding to the deck or editing the deck or replacing it." A mod's content patch
+    does each: an id the deck has is edited, a new id is added, an id set to null is taken out, and a mapping that carries
+    `$replace: true` is the whole deck. The harbour deck follows its cards, so no list of names is restated."""
+    import random as _random
+    from engine import mods as mods_mod
+    from games.hidden.clown import harbour as hb
+
+    def with_mod(content):
+        import yaml
+        return mods_mod.game_with(game, [{"name": "t", "file": "t.yml", "hash": "x", "text": yaml.safe_dump({"name": "t", "game": "clown", "content": content})}])
+
+    base = game.content.girl_cards()
+    one = dict(base["ada_vosk"], id="zz_new", name="Zz New")
+    g = with_mod({"girl_cards": {"ada_vosk": {"voice": "A new line."}, "zz_new": one, "ketty_lamb": None}})
+    cards = g.content.girl_cards()
+    assert cards["ada_vosk"]["voice"] == "A new line." and cards["ada_vosk"]["bio"] == base["ada_vosk"]["bio"]      # edited
+    assert "zz_new" in cards and "ketty_lamb" not in cards and len(cards) == len(base)                                  # added, taken out
+    queue = hb.shuffle(g.content.girls_deck(), _random.Random(1), cards)
+    assert "zz_new" in queue and "ketty_lamb" not in queue and len(queue) == len(cards)                                 # the deck follows the cards
+    assert sorted(hb.shuffle(game.content.girls_deck(), _random.Random(1), base)) == sorted(game.content.girls_deck()["cards"])
+    g = with_mod({"girl_cards": {"$replace": True, "zz_new": one, "ada_vosk": base["ada_vosk"]},
+                  "hooks": {"$replace": True, "depot_dance": game.content.hooks()["depot_dance"]}})
+    assert set(g.content.girl_cards()) == {"zz_new", "ada_vosk"} and set(g.content.hooks()) == {"depot_dance"}          # replaced whole
+    assert sorted(hb.shuffle(g.content.girls_deck(), _random.Random(1), g.content.girl_cards())) == ["ada_vosk", "zz_new"]
+    st = g.new_instance({"name": "Hal Ferris", "kind": "charmer", "first_girl": "harbour", "seed": "k"})[1]             # a game is made from it
+    assert set(st.harbour.hand) <= {"zz_new", "ada_vosk"} and st.harbour.hand
+    assert mods_mod.merge_patch([{"id": "a", "x": 1}, {"id": "b"}], {"$replace": True, "c": {"x": 2}}) == [{"id": "c", "x": 2}]

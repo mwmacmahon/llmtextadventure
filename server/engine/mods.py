@@ -14,9 +14,18 @@ is never offered). The directory is read fresh whenever it is asked for, so an e
     content                    patches onto the rest of the game's content, by the content loader's own names: a mapping
                                {<loader method>: <patch>}. A loader that returns a mapping or a list of objects with ids
                                (the hidden game's girl_cards, hooks, girls_deck, challenges, words) is merge-patched as the
-                               scenario is; one that returns text (prefix) is replaced by the patch's text. With `scenario`
-                               this lets one mod file carry a whole second wording of a game: its decks, its narrator's
-                               instructions, its referee's guards. The base game is the same game
+                               scenario is; one that returns text (prefix) is replaced by the patch's text. So a mod may
+                               EDIT a deck (patch an item by its id), ADD to it (an id the deck does not have), take from
+                               it (an id set to null), or REPLACE it: a mapping that carries `$replace: true` is the whole
+                               thing, not a patch onto it (`content: {hooks: {$replace: true, <id>: {...}, ...}}`; under
+                               `scenarios`, by scenario id, a whole house file). One mod file can carry a whole second
+                               set of decks for a game, with its narrator's instructions and its referee's guards
+
+    decks                      a list of deck files in the same folder, swapped in before `content` is applied. A deck file
+                               is `kind: deck`, `name`, `about`, `game`, and `content` as above with each loader it names
+                               given whole. It is listed, uploaded, downloaded and deleted like a mod, is never ticked,
+                               and is read live (an edit reaches the saves that use it, as an edit to the game's own
+                               content does). A mod whose deck is missing or broken is listed with the reason
 
 Application order at creation (the design): scenario patch, prefix build and patch, rules patch, state build and patch,
 then freeze. A save keeps each applied mod's name, hash and full text (setup `_mods`), so it outlives the file.
@@ -32,7 +41,8 @@ import yaml
 
 EXAMPLE = "example.yml"
 SETUP_KEY = "_mods"           # where a save keeps the applied mods: [{name, file, hash, text}] in its setup
-KEYS = ("name", "about", "game", "scenario", "prefix", "rules", "state", "rulings_off", "order", "content")
+KEYS = ("name", "about", "game", "scenario", "prefix", "rules", "state", "rulings_off", "order", "content", "decks")
+DECK_KEYS = ("kind", "name", "about", "game", "content")     # a deck file: `kind: deck`, and `content` as a mod's, each loader named in it given whole
 NAME_OK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.-]{0,60}\.ya?ml$")
 HEADING = re.compile(r"^[A-Z][A-Z0-9 ,'’\-]{3,}[.:]?(\s|$)")
 
@@ -46,28 +56,44 @@ def parse(text: str) -> dict:
     data = yaml.safe_load(text) or {}
     if not isinstance(data, dict):
         raise ValueError("a mod is a YAML mapping")
+    if is_deck(data):
+        unknown = [k for k in data if k not in DECK_KEYS]
+        if unknown:
+            raise ValueError(f"unknown keys: {', '.join(unknown)} (a deck file has {', '.join(DECK_KEYS)})")
+        if not isinstance(data.get("content"), dict) or not data["content"]:
+            raise ValueError("a deck file's content is a mapping of the content loader's names to what each holds")
+        return data
     unknown = [k for k in data if k not in KEYS]
     if unknown:
         raise ValueError(f"unknown keys: {', '.join(unknown)} (a mod has {', '.join(KEYS)})")
+    if data.get("decks") is not None and not (isinstance(data["decks"], list) and all(isinstance(x, str) and NAME_OK.match(x) for x in data["decks"])):
+        raise ValueError("decks is a list of deck file names in this game's mods folder")
     return data
+
+
+def is_deck(data: dict) -> bool:
+    return str((data or {}).get("kind") or "").strip().lower() == "deck"
 
 
 def digest(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
-def list_mods(content_root: Path, game: Any) -> list[dict]:
-    """The mods this game's form offers: every YAML file in its directory whose `game` is this game, example.yml never.
-    A file that does not parse is listed with its error, so the owner sees why it is not offered."""
+def list_mods(content_root: Path, game: Any, check: bool = True) -> list[dict]:
+    """The files of this game's mods folder: every mod whose `game` is this game (offered on the form) and every deck file
+    (a mod's asset: listed to download, upload and delete, marked `kind: deck`, never offered), example.yml never. A file
+    that does not parse is listed with its error, so the owner sees why it is not offered; so is a mod whose decks are
+    missing or broken, or whose content fails the game's own lint (`check`), since a mod is only as good as what it swaps in."""
     d = mods_dir(content_root, game)
     out: list[dict] = []
     if not d.is_dir():
         return out
+    forced = {str(x) for x in (getattr(game, "forced_mods", None) or [])}
     for p in sorted(d.glob("*.y*ml")):
         if p.name == EXAMPLE:
             continue
         text = p.read_text(encoding="utf-8")
-        row = {"file": p.name, "size": len(text), "modified": p.stat().st_mtime, "hash": digest(text)}
+        row = {"file": p.name, "size": len(text), "modified": p.stat().st_mtime, "hash": digest(text), "kind": "mod"}
         try:
             m = parse(text)
         except Exception as e:  # noqa: BLE001 - the list shows the error instead of the mod
@@ -75,8 +101,61 @@ def list_mods(content_root: Path, game: Any) -> list[dict]:
             continue
         if str(m.get("game") or "") != getattr(game, "name", ""):
             continue
-        out.append({**row, "name": str(m.get("name") or p.stem), "about": str(m.get("about") or ""), "order": m.get("order")})
-    return sorted(out, key=lambda r: (r.get("order") is None, r.get("order") or 0, r["file"]))
+        row.update(name=str(m.get("name") or p.stem), about=str(m.get("about") or ""), order=m.get("order"))
+        if is_deck(m):
+            row.update(kind="deck", holds=sorted(str(k) for k in m["content"]))
+        else:
+            row.update(decks=list(m.get("decks") or []), forced=p.name in forced or row["name"] in forced)
+            if check:
+                problem = mod_problem(content_root, game, {"name": row["name"], "file": p.name, "hash": row["hash"], "text": text})
+                if problem:
+                    row["error"] = problem[:300]
+        out.append(row)
+    return sorted(out, key=lambda r: (r["kind"] == "deck", r.get("order") is None, r.get("order") or 0, r["file"]))
+
+
+def mod_problem(content_root: Path, game: Any, applied_one: dict) -> str:
+    """Why this mod cannot be used as it stands, or "": a deck file it names is missing, not a deck, or for another game; or
+    the game with the mod on fails its own content lint (a game's `lint_mod`, where it has one)."""
+    try:
+        m = parse(applied_one.get("text") or "")
+        if not (m.get("scenario") or m.get("content") or m.get("decks")):
+            return ""                                  # nothing of the content is touched: nothing to check here
+        folder = mods_dir(content_root, game)
+        times = tuple((f, (folder / f).stat().st_mtime if (folder / f).is_file() else 0) for f in m.get("decks") or [])
+        key = (str(getattr(game, "name", "")), applied_one.get("hash") or digest(applied_one.get("text") or ""), times)
+        if key not in _PROBLEMS:
+            if len(_PROBLEMS) > 64:
+                _PROBLEMS.clear()
+            problem = ""
+            try:
+                g = game_with(game, [applied_one])
+                lint = getattr(g, "lint_mod", None)
+                if g is not game and callable(lint):
+                    lint()
+            except Exception as e:  # noqa: BLE001 - whatever it is, it is why the mod is not offered
+                problem = str(e) or type(e).__name__
+            _PROBLEMS[key] = problem
+        return _PROBLEMS[key]
+    except Exception as e:  # noqa: BLE001
+        return str(e) or type(e).__name__
+
+
+_PROBLEMS: dict[tuple, str] = {}
+
+
+def check_all(content_root: Path, games: dict[str, Any]) -> list[str]:
+    """Every game's mods folder read once (the server's start): the lines to log for a file that does not parse, a mod whose
+    decks are missing or broken, a mod that fails its game's lint. Present and unused files are checked too."""
+    out = []
+    for name, game in games.items():
+        try:
+            rows = list_mods(content_root, game)
+        except Exception as e:  # noqa: BLE001 - a broken folder must not stop the server
+            out.append(f"{name}: the mods folder could not be read: {e}")
+            continue
+        out += [f"{name}/{r['file']}: {r['error']}" for r in rows if r.get("error")]
+    return out
 
 
 def resolve(content_root: Path, game: Any, wanted: list[str]) -> list[dict]:
@@ -84,7 +163,12 @@ def resolve(content_root: Path, game: Any, wanted: list[str]) -> list[dict]:
     directory does not have, or a mod for another game, is refused (ValueError)."""
     if not wanted:
         return []
-    offered = {r["file"]: r for r in list_mods(content_root, game) if not r.get("error")}
+    listed = list_mods(content_root, game)
+    broken = {k: r["error"] for r in listed if r.get("error") for k in (r["file"], r["name"])}
+    for w in wanted:
+        if w in broken:
+            raise ValueError(f"Mods: {w} cannot be used: {broken[w]}")
+    offered = {r["file"]: r for r in listed if not r.get("error") and r.get("kind") != "deck"}
     by_name = {r["name"]: r for r in offered.values()}
     out = []
     for w in wanted:
@@ -116,12 +200,22 @@ def parsed(applied: list[dict] | None) -> list[dict]:
     return out
 
 
+REPLACE = "$replace"        # a patch mapping that carries `$replace: true` is the whole thing, not a patch onto it
+
+
 # ---- JSON merge patch, with lists of objects patched by id ------------------------------------------------------------
 def merge_patch(target: Any, patch: Any) -> Any:
     """RFC 7386, and one extension the content needs: when the target is a list of objects with ids and the patch is a
     mapping, each key is an id and its value patches that item (null removes it; an id not there adds a new item)."""
     if not isinstance(patch, dict):
         return patch
+    if patch.get(REPLACE):
+        # a whole replacement, not a patch (the owner, 11-14: a mod may edit a deck, add to it, or replace it): what the patch
+        # holds is the thing itself. For a list of objects with ids, each key is an id and its value the whole item.
+        own = {k: v for k, v in patch.items() if k != REPLACE}
+        if isinstance(target, list) and all(isinstance(x, dict) and "id" in x for x in target):
+            return [{"id": k, **(v if isinstance(v, dict) else {})} for k, v in own.items()]
+        return own
     if isinstance(target, list) and all(isinstance(x, dict) and "id" in x for x in target):
         items = [dict(x) for x in target]
         for key, val in patch.items():
@@ -211,7 +305,11 @@ class PatchedContent:
 
     def scenarios(self) -> dict[str, dict]:
         out = self._base.scenarios()
-        return {k: merge_patch(v, self._patch) for k, v in out.items()} if self._patch else out
+        if self._patch:
+            out = {k: merge_patch(v, self._patch) for k, v in out.items()}
+        if isinstance(self._content.get("scenarios"), dict):       # by scenario id; with `$replace` a whole house file of the mod's own
+            out = merge_patch(out, self._content["scenarios"])
+        return out
 
     def __getattr__(self, name: str) -> Any:
         attr = getattr(self._base, name)
@@ -227,12 +325,40 @@ class PatchedContent:
         return patched
 
 
-def content_patch(applied: list[dict] | None) -> dict:
-    """The applied mods' content patches as one, by loader name (later mods over earlier ones). The owner, 11-14: "the mod
-    should be able to swap out decks ... keep the games identical in their base, just the mod replaces language etc", and
-    all of it in the one file a player downloads, edits and uploads."""
+def deck_content(folder: Path, file: str, game_name: str) -> dict:
+    """A deck file's content, read live from the game's mods folder (kept by its time of change): {loader: what it holds}."""
+    p = Path(folder) / file
+    if not NAME_OK.match(file) or not p.is_file():
+        raise ValueError(f"Mods: the deck file {file!r} is not in this game's mods folder")
+    key, mt = str(p), p.stat().st_mtime
+    hit = _DECKS.get(key)
+    if hit is None or hit[0] != mt:
+        m = parse(p.read_text(encoding="utf-8"))
+        if not is_deck(m):
+            raise ValueError(f"Mods: {file} is not a deck file (kind: deck)")
+        if str(m.get("game") or "") != game_name:
+            raise ValueError(f"Mods: the deck file {file} is for {m.get('game')!r}, not {game_name!r}")
+        _DECKS[key] = hit = (mt, m["content"])
+    import copy
+    return copy.deepcopy(hit[1])
+
+
+_DECKS: dict[str, tuple[float, dict]] = {}
+
+
+def content_patch(applied: list[dict] | None, game: Any = None) -> dict:
+    """The applied mods' content as one, by loader name (later mods over earlier ones). The owner, 11-14: a mod may edit a
+    deck, add to it, or replace it; and a replacement deck may be a file of its own that the mod names (`decks:`), an asset
+    beside the mod that is uploaded, downloaded and checked like the mod. A mod's deck files come first, each loader a deck
+    names given whole; the mod's own `content` is then laid over them (a patch by id, or with `$replace` the whole thing)."""
     out: dict = {}
+    folder = Path(game.content.dir).parent / str(game.name) / "mods" if (game is not None and getattr(getattr(game, "content", None), "dir", None)) else None
     for m in parsed(applied):
+        for file in m.get("decks") or []:
+            if folder is None:
+                raise ValueError("Mods: this game has no mods folder to read a deck file from")
+            for name, whole in deck_content(folder, file, str(game.name)).items():
+                out[str(name)] = {REPLACE: True, **whole} if isinstance(whole, dict) else whole
         c = m.get("content")
         if c is None or c == {}:
             continue
@@ -247,16 +373,21 @@ def _join(a: Any, b: Any) -> Any:
     """Two patches as one, the second over the first, keeping a null (a deletion) that merge_patch would apply and lose."""
     if not isinstance(a, dict) or not isinstance(b, dict):
         return b
+    if b.get(REPLACE):
+        return b
     out = dict(a)
     for k, v in b.items():
-        out[k] = _join(out[k], v) if (k in out and isinstance(out[k], dict) and isinstance(v, dict)) else v
+        if v is None and a.get(REPLACE):
+            out.pop(k, None)                       # taken out of a whole deck: gone, with no null left in it
+        else:
+            out[k] = _join(out[k], v) if (k in out and isinstance(out[k], dict) and isinstance(v, dict)) else v
     return out
 
 
 def game_with(game: Any, applied: list[dict] | None) -> Any:
     """The game as a modded save sees it: a shallow copy whose content loader carries the mods' scenario patch and content
     patches; the game itself when no mod has either. Generic: any game whose content is a `Content` (gamekit) or like it."""
-    patch, content = scenario_patch(applied), content_patch(applied)
+    patch, content = scenario_patch(applied), content_patch(applied, game)
     if (not patch and not content) or getattr(game, "content", None) is None or isinstance(game.content, PatchedContent):
         return game
     import copy

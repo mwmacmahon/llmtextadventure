@@ -502,15 +502,19 @@ local (llamacpp) server whatever the profile says; a hosted model is untouched.
 
 **One game, two wordings.** A mod's `content` key patches a game's content beyond the scenario, by the content loader's own
 method names: `content: {hooks: {<id>: {...}}, prefix: "..."}`. A loader that returns a mapping or a list of things with ids is
-merge-patched (null deletes, an unknown id adds); one that returns text is replaced. So one mod file can hold a whole second
-wording. A derived game (a class whose `derived_from` names the
+merge-patched (an id the deck has is edited, an unknown id is added, null takes one out; a mapping that carries
+`$replace: true` is the whole thing); one that returns text is replaced. A whole replacement deck may be a file of its own in
+the same mods folder (`kind: deck`, `name`, `about`, `game`, `content` with each loader it holds given whole), named in the
+mod's `decks:` list and swapped in before the mod's `content` is laid over it; deck files are listed, uploaded and
+downloaded like mods, never ticked, read live, and checked with every mod when the list is asked for and at the server's
+start (a mod whose deck is missing or whose game fails its lint is listed with the reason). A derived game (a class whose `derived_from` names the
 game whose content root it reads) with `forced_mods = ("that_mod.yml",)` is then the same game listed twice, once with the
 mod always on. Wording the code itself carries can be handed to the content the same way: the hidden game reads an optional
 `words.yml` (the shed's paragraph, the slip's header and line, the reckonings) and falls back to its own strings without it.
 The referee's guards on what a telling may show are data the same way there (`guards`: an id, the `rule` the referee
 looks for, the `fix` a retelling is given; they become the game's `extra_rulings`), under a heading (THE GUARDS) so a mod's
 `rules: referee` reaches the section. When the second wording must be exactly a kept text, check it: the hidden game's
-`tools/after_dark.py build` makes the mod's patches from a reference folder and `check` holds the game with the mod on to it.
+`tools/after_dark.py build` makes the mod's deck files from a reference folder and `check` holds the game with the mod on to it.
 
 ## 7b. The world does not wait
 

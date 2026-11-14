@@ -68,10 +68,15 @@ def tag_meaning(deck: dict, tag: str) -> str:
     return tag.replace("_", " ")
 
 
-def shuffle(deck: dict, rng: random.Random) -> list[str]:
-    cards = list(deck.get("cards") or [])
-    rng.shuffle(cards)
-    return cards
+def shuffle(deck: dict, rng: random.Random, cards: dict[str, dict] | None = None) -> list[str]:
+    """The deck's cards in the save's own order. The deck file lists them; with the cards themselves given, the deck follows
+    the cards: a listed name with no card is left out and a card not listed joins (after the listed ones, by id, before the
+    shuffle), so a mod adds a card by adding it and takes one out by removing it, with no list to restate."""
+    names = list(deck.get("cards") or [])
+    if cards is not None:
+        names = [c for c in names if c in cards] + sorted(c for c in cards if c not in names)
+    rng.shuffle(names)
+    return names
 
 
 def ship_sunday(week: int) -> bool:
