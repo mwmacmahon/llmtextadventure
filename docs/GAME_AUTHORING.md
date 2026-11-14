@@ -646,3 +646,11 @@ with `commands` set (`tests/test_typed_commands.py`). `test_role_rules_are_
 stable_across_turns` fails if a game's `adjudication_rules` or `referee_rules` change with the
 state, which would break the structured roles' prompt cache. Live role evaluations (real models, opt-in,
 `TA_LIVE=1`) live under `server/tests/live/` and write scorecards to `data/evals/`.
+
+## Word lists that guess meaning
+
+A game does not decide what the player or a model meant by matching English words. Ask the model in its form (a field, a
+kind of attempt) or use what the engine knows. Where a word list is unavoidable it is a word guard: a registry entry in
+`server/engine/word_guards.py`, a row on `docs/WORD-GUARDS.md`, a mode (`on`, `count`, `off`) and a `word_guard` ledger
+row for every match, starting at `count`. A list is never widened. The page has the rule, the inventory and the order in
+which the existing ones are being wired.

@@ -206,8 +206,8 @@ class ClownGame(GameBase):
     adjudication_schema_staked = HouseReadingStaked   # reading.py: the engine's forms, with this game's kinds of attempt for the two-step reading
     in_place = False                 # the simulator (tools/sim.py, D212C): after_turn and run_command work on the state they are given,
                                      # no copy; never in play, where a refused command must leave the state as it was
-    lever_word_gate = False          # C112 (the owner, 11-14): no phrase list between the reading's pick and the lever; the pick's own
-                                     # arguments (a listed booking, a listed girl) and the lever's own refusal are the checks
+    word_guards = {"lever-phrases": "count"}   # C112, D275 (the owner, 11-14): no phrase list between the reading's pick and the lever;
+                                               # the pick's own arguments and the lever's refusal are the checks; the list only counts
     typed_only_commands = ("skip",)  # D205C: the days run only on the player's own "skip to …" (typed_command); never the assistant's pick
     mechanic_numbers = False
     target_offset = 0

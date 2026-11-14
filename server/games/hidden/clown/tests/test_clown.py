@@ -1874,7 +1874,8 @@ async def test_no_phrase_list_stands_between_the_readings_pick_and_the_lever(eng
     from engine.providers.fake import FakeProvider
     from engine.roles import AssistantReadingV2, CommandPick, IntentV2
     game = engine.games["clown"]
-    assert game.lever_word_gate is False
+    from engine import word_guards
+    assert word_guards.mode(engine.cfg, game, "lever-phrases") == "count" and word_guards.mode(engine.cfg, engine.games["fantasy"], "lever-phrases") == "on"
     iid = engine.create_instance("clown", dict(SETUP, first_girl="ada_vosk"))
     st = game.load_state(engine.store.load_state(iid))
     adj = AssistantReadingV2(kind="action", summary="The week is written up.", time_minutes=2, risk="none", intents=[IntentV2(action="Write up the week.")],
@@ -1882,7 +1883,7 @@ async def test_no_phrase_list_stands_between_the_readings_pick_and_the_lever(eng
     rows: list = []
     adj2, levers = engine._preview_levers(game, st, adj, iid, 1, lambda k, p: rows.append((k, p)), "Ada is on the clubs before lunch from now on.")
     assert [lv.id for lv in levers] == ["plan"] and not levers[0].blocked
-    assert [k for k, _ in rows if k.startswith("lever_")] == ["lever_gate_off"]
+    assert [(k, p["id"], p["acted"]) for k, p in rows if k == "word_guard"] == [("word_guard", "lever-phrases", False)]
 
 
 def test_an_offer_to_a_girl_who_is_not_of_the_house_is_not_settled_as_the_houses_own(game: ClownGame):

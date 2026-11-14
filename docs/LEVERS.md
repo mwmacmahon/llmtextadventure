@@ -853,9 +853,44 @@ These change where things run or are stored, not what a model does or is sent. B
   `dev_mode`.
 - `GuardConfig`: `default_chars`.
 - `Config`: `pricing`.
-- `Profile`: `name`, `config`, `note`.
+- `Profile`: `name`, `config`, `note`. (`word_guards` on a profile and on `Config` is §8.)
 - A game's own text for the assistant, used only when the game gives it (D269): `edge_lines` (its edge examples in place
   of the engine's five), `stakes_rules` (its rules for futures and settled attempts), `assistant_lists` (who is who, what
   the cast hide, what play made up, for a cast of another shape), `turn_lines` (what `stable_system` lifts).
 - Environment: `TA_CONFIG`, `TA_LLAMA_URL`, `TA_LLAMA_HELPER_URL`, `TA_LLAMA_PREPARE_URL`, `TA_DATA_DIR`,
   `TA_DEV_MODE`, `TA_DEV_PIN`.
+
+---
+
+## 8. Word guards
+
+A word guard is a place where the code decides what free prose meant by matching English words. The rule (D275,
+2026-11-14) and the whole inventory, about 130 of them, are in `docs/WORD-GUARDS.md`: a word list is never how a meaning
+is read; it may exist only as a named guard with a mode (`on`, `count`, `off`) and a ledger row (`word_guard`) for every
+match. Modes are set by `word_guards: {id: mode}` in a profile, then on a game, then in the base config (`word_guards`),
+then by the guard's default in `server/engine/word_guards.py`. The entries below are the guards that are wired; the rest
+are still in the code as they always were and are listed on that page as owed.
+
+### `lever-phrases`
+
+- **Levels:** `on` (a lever the assistant picked is dropped when none of the lever's phrases is in the player's
+  words), `count` (the pick stands; the row says the list would have dropped it), `off`.
+- **Set in:** default on. The hidden game: count. No profile names it.
+- **Why it exists:** before B306: "I strike a match" was picked as the Smoke lever. The owner, 2026-11-14: "isn't
+  brittle word lists what we are trying to avoid?" after it dropped a booking that was then told as made.
+- **Measured:** the hidden game, Gemma, a 55-turn round (2026-11-14, count): 6 matches, all 6 bookings the player meant;
+  no lever ran on mere talk; Plan 17 of 17 and Book 6 of 6 went through. A 20-turn round the night before (on): 1
+  booking dropped and narrated as made.
+- **Helped / did not:** in the hidden game it only did harm. The fantasy, noir and the station still have it on,
+  unmeasured: count it on the replay corpus before changing it. What retires it: the pick's own arguments and the
+  lever's refusal, and with the two-step reading the attempt's kind.
+
+### `lever-check-label`
+
+- **Levels:** `on` (a check is taken off an attempt when its label holds the picked lever's phrases or name), `count`,
+  `off`.
+- **Set in:** default on, every game.
+- **Why it exists:** B306: Gemma rolled "Turn Undead, CHA medium" beside Turn Undead's own die.
+- **Measured:** nothing yet: it was silent until 2026-11-14 and now writes a row for each check it takes off.
+- **Helped / did not:** unknown. It matches by the opening letters of words, so a lever phrase such as "rest", "work"
+  or "turn" can take off an unrelated check. Count it on the next rounds.

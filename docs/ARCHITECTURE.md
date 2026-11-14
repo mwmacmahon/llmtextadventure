@@ -529,3 +529,11 @@ time rules of notes/DESIGN-time-and-attempts-2026-11-06.md §3, then the context
 sections first, then the focus filter and the prefix split, then the window and own-prose levels for a move off
 Gemma), the rename of the assistant to the assistant (one mechanical commit; the stored ledger kind stays), noir on
 the world.
+
+## Word lists that guess meaning
+
+A game does not decide what the player or a model meant by matching English words. Ask the model in its form (a field, a
+kind of attempt) or use what the engine knows. Where a word list is unavoidable it is a word guard: a registry entry in
+`server/engine/word_guards.py`, a row on `docs/WORD-GUARDS.md`, a mode (`on`, `count`, `off`) and a `word_guard` ledger
+row for every match, starting at `count`. A list is never widened. The page has the rule, the inventory and the order in
+which the existing ones are being wired.

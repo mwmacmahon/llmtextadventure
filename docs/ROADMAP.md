@@ -18,6 +18,12 @@ standing rule or a measure that recurs. *designed*: a design document exists and
 it. *decided*: the owner has ruled, no design yet. *open with the owner*: a question waits for the owner's answer.
 *idea*: raised, not weighed. *not started*: agreed, nothing written.
 
+
+**Word guards (D275, 2026-11-14; state: started).** `docs/WORD-GUARDS.md` is the rule and the inventory: about 130 places
+where the code guesses meaning from words, 2 wired to a mode (on, count, off) with a ledger row. Next: wire and count
+`task-kind-words`, `fight-words`, `private-room` with `on-the-move`, and the label-substring modifiers; read the counts on
+rounds; replace or delete by what they show.
+
 ## The standing rules
 
 1. Nothing in the engine branches on the model's name. A model's needs are a profile's levels.

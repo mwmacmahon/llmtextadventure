@@ -44,6 +44,7 @@ from . import prechecks
 from . import spontaneous as spon
 from . import statepath as sp
 from . import repetition
+from . import word_guards
 from . import threads as th
 from .config import Config
 from .brackets import STOP_SEQUENCES, Call, Note, StreamFilter, extract, is_mechanic_line, with_mechanic
@@ -1859,13 +1860,13 @@ class Engine:
                 log.info("command.typed.ignored " + logs.kv(iid=iid, turn=turn, id=pick.id))
                 continue
             if spec.words and player_text and not asks_for(spec.words, player_text):
-                # The phrase gate ("I strike a match" is not Smoke): a word list, so a game may turn it off (`lever_word_gate =
-                # False`; the owner, 11-14: "isn't brittle word lists what we are trying to avoid?"). Off, the reading's pick
-                # stands and the row says the list would have dropped it, so the list's worth is counted, not assumed (C112).
-                gate = getattr(game, "lever_word_gate", True)
-                log.info("command.typed.ignored " + logs.kv(iid=iid, turn=turn, id=pick.id, why="the input does not ask for it", gate=gate))
-                ledger("lever_dropped" if gate else "lever_gate_off", {"id": pick.id, "args": list(pick.args), "why": "none of the lever's phrases is in the player's words"})
-                if gate:
+                # the word guard `lever-phrases` (engine/word_guards.py, D275): on, the pick is dropped; count, it stands and the
+                # row says the list would have dropped it; off, the list is not consulted
+                gm = word_guards.mode(self.cfg, game, "lever-phrases")
+                if gm != "off":
+                    log.info("command.typed.ignored " + logs.kv(iid=iid, turn=turn, id=pick.id, why="the input does not ask for it", guard=gm))
+                    ledger("word_guard", word_guards.row("lever-phrases", gm, {"lever": pick.id, "args": list(pick.args)}))
+                if gm == "on":
                     continue
             args, problem = _parse_command_args(spec, pick.args)
             if problem:
@@ -1878,9 +1879,15 @@ class Engine:
             if spec.decides:                                         # B289: the lever is the roll (Gemma set a DEX escape check beside Flee)
                 adj = adj.model_copy(update={"intents": [i.model_copy(update={"check": None}) for i in adj.intents]})
             else:                                                    # B306: a check the reading labelled with the lever is the lever's (Gemma
-                adj = adj.model_copy(update={"intents": [               # rolled 'Turn Undead, CHA medium' beside Turn Undead's own die)
-                    i.model_copy(update={"check": None}) if i.check is not None and asks_for(list(spec.words) + [spec.label], i.check.label) else i
-                    for i in adj.intents]})
+                # rolled 'Turn Undead, CHA medium' beside Turn Undead's own die). The word guard `lever-check-label` (D275): it was
+                # silent; now each check it takes off, or would, is a row
+                gm = word_guards.mode(self.cfg, game, "lever-check-label")
+                hit = [i.check.label for i in adj.intents if i.check is not None and asks_for(list(spec.words) + [spec.label], i.check.label)] if gm != "off" else []
+                for lb in hit:
+                    ledger("word_guard", word_guards.row("lever-check-label", gm, {"lever": spec.id, "check": lb}))
+                if hit and gm == "on":
+                    adj = adj.model_copy(update={"intents": [i.model_copy(update={"check": None}) if i.check is not None and i.check.label in hit else i
+                                                             for i in adj.intents]})
             game.dice_salt = dice_salt(iid)                     # D205: a power's own dice follow the undo box (B310)
             after, res = game.run_command(working, spec.id, args)
             label = res.label or spec.label

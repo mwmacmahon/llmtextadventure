@@ -212,6 +212,9 @@ class Config(BaseModel):
     # (a hosted provider has no slots).
     side_slot: int | None = None
     context: ContextConfig = Field(default_factory=ContextConfig)
+    # D275: word guards by id -> on | count | off (engine/word_guards.py; docs/LEVERS.md §8). A profile's own `word_guards` wins,
+    # then a game's, then this, then the guard's default.
+    word_guards: dict[str, str] = Field(default_factory=dict)
     pricing: dict[str, Pricing] = Field(default_factory=dict)
 
     def cost_usd(self, model: str, usage: dict) -> float | None:

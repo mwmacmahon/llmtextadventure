@@ -123,6 +123,7 @@ class Profile(BaseModel):
     roles: dict[str, dict[str, Any]] = Field(default_factory=dict)
     dials: Dials = Field(default_factory=Dials)
     modules: dict[str, str] = Field(default_factory=dict)
+    word_guards: dict[str, str] = Field(default_factory=dict)      # D275: a model's word guards, id -> on | count | off (engine/word_guards.py)
 
     @property
     def base(self) -> str:
