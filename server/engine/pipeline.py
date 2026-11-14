@@ -1857,9 +1857,14 @@ class Engine:
                 log.info("command.typed.ignored " + logs.kv(iid=iid, turn=turn, id=pick.id))
                 continue
             if spec.words and player_text and not asks_for(spec.words, player_text):
-                log.info("command.typed.ignored " + logs.kv(iid=iid, turn=turn, id=pick.id, why="the input does not ask for it"))
-                ledger("lever_dropped", {"id": pick.id, "args": list(pick.args), "why": "none of the lever's phrases is in the player's words"})   # counted (C112): a pick dropped in silence was told as done
-                continue                            # "I strike a match" is not Smoke
+                # The phrase gate ("I strike a match" is not Smoke): a word list, so a game may turn it off (`lever_word_gate =
+                # False`; the owner, 11-14: "isn't brittle word lists what we are trying to avoid?"). Off, the reading's pick
+                # stands and the row says the list would have dropped it, so the list's worth is counted, not assumed (C112).
+                gate = getattr(game, "lever_word_gate", True)
+                log.info("command.typed.ignored " + logs.kv(iid=iid, turn=turn, id=pick.id, why="the input does not ask for it", gate=gate))
+                ledger("lever_dropped" if gate else "lever_gate_off", {"id": pick.id, "args": list(pick.args), "why": "none of the lever's phrases is in the player's words"})
+                if gate:
+                    continue
             args, problem = _parse_command_args(spec, pick.args)
             if problem:
                 ledger("command", {"id": spec.id, "args": args, "mode": spec.mode, "typed": True, "ok": False, "text": problem})

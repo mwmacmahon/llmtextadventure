@@ -192,6 +192,8 @@ class ClownGame(GameBase):
     adjudication_schema_staked = HouseReadingStaked   # reading.py: the engine's forms, with this game's kinds of attempt for the two-step reading
     in_place = False                 # the simulator (tools/sim.py, D212C): after_turn and run_command work on the state they are given,
                                      # no copy; never in play, where a refused command must leave the state as it was
+    lever_word_gate = False          # C112 (the owner, 11-14): no phrase list between the reading's pick and the lever; the pick's own
+                                     # arguments (a listed booking, a listed girl) and the lever's own refusal are the checks
     typed_only_commands = ("skip",)  # D205C: the days run only on the player's own "skip to …" (typed_command); never the assistant's pick
     mechanic_numbers = False
     target_offset = 0
@@ -2801,8 +2803,7 @@ class ClownGame(GameBase):
                                            Param(name="girl", label="who goes", options=[Option(id=g.id, label=g.name + (" (in training)" if g.id == s.active else " (graduate)" if g.graduated else "")) for g in in_house], default=first.id)],
                                    hint="Take one of this week's offers: the show is set for its day (weeks off, as the card says) and the girl named goes. Book "
                                         "as many as the girls can play; what is not booked by Sunday night is gone. A girl on the bench comes off her odd jobs for it.",
-                                   words=["book", "take the booking", "take the job", "accept", "we'll do it", "we will do it", "say yes", "we'll take", "we will take", "take it",
-                                          "tell her yes", "tell him yes", "agree"]))   # C112: "tell Mrs Pell we'll take the christening" was dropped and told as done
+                                   words=["book", "take the booking", "take the job", "accept", "we'll do it", "we will do it", "say yes"]))
         others = [g for g in in_house if g.id != s.active]
         if others:
             out.append(CommandSpec(id="switch", label="Switch", mode="engine",

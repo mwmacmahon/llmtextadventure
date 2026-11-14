@@ -1866,3 +1866,20 @@ def test_an_event_that_fires_on_a_skip_gets_its_own_words(game: ClownGame):
     assert k["kind"] == "skip+event" and k["words"] == row["move"]["skip"] + 2 * row["part"]["event"] and "spend the rest" in k["note"]
     k = game.telling_kind(st, None, _res(command=skip, elapsed=1440, directives=["the skip's own line"]), "short")
     assert k["kind"] == "skip" and k["words"] == row["move"]["skip"]
+
+
+async def test_no_phrase_list_stands_between_the_readings_pick_and_the_lever(engine: Engine):
+    """C112 (the owner, 11-14: "isn't brittle word lists what we are trying to avoid?"): a pick whose words are in none of the
+    lever's phrases still runs, and the ledger says the list would have dropped it."""
+    from engine.providers.fake import FakeProvider
+    from engine.roles import AssistantReadingV2, CommandPick, IntentV2
+    game = engine.games["clown"]
+    assert game.lever_word_gate is False
+    iid = engine.create_instance("clown", dict(SETUP, first_girl="ada_vosk"))
+    st = game.load_state(engine.store.load_state(iid))
+    adj = AssistantReadingV2(kind="action", summary="The week is written up.", time_minutes=2, risk="none", intents=[IntentV2(action="Write up the week.")],
+                             commands=[CommandPick(id="plan", args=["slot=mornings", "skill=juggling"])])
+    rows: list = []
+    adj2, levers = engine._preview_levers(game, st, adj, iid, 1, lambda k, p: rows.append((k, p)), "Ada is on the clubs before lunch from now on.")
+    assert [lv.id for lv in levers] == ["plan"] and not levers[0].blocked
+    assert [k for k, _ in rows if k.startswith("lever_")] == ["lever_gate_off"]
