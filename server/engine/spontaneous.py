@@ -67,7 +67,8 @@ def per_turn_chance(chance_per_hour: float, elapsed_minutes: int) -> float:
 
 def roll(items: list[Spontaneous], doc: dict, rng: random.Random, elapsed_minutes: int, turn: int,
          now_minutes: int, clock_path: str = "clock", log_path: str = "log", max_per_turn: int = 2,
-         ctx: EffectContext | None = None, busy: str = "", newcomer: str = "", unmet: set[str] | None = None) -> tuple[list[Happened], list[str]]:
+         ctx: EffectContext | None = None, busy: str = "", newcomer: str = "", unmet: set[str] | None = None,
+         texture_gap_turns: int = 0) -> tuple[list[Happened], list[str]]:
     """Mutates `doc` (effects) and the items' status. Returns (happened, directives).
     B235: a happening that brings someone to the player (it has `who`) does not happen while `busy` says why not (on the
     move, just interrupted), and at most one such happens in a turn; the others (bells, fog, a hand that shakes) still roll.
@@ -89,6 +90,11 @@ def roll(items: list[Spontaneous], doc: dict, rng: random.Random, elapsed_minute
             continue
         if it.last_fired_at is not None and now_minutes - it.last_fired_at < it.cooldown_minutes:
             continue
+        # C115 (the reader, 11-14): a cooldown in game minutes means nothing to a turn that runs days, so the same street
+        # texture fired on skip after skip and the narrator wrote it again each time. A happening that changes nothing and
+        # brings nobody (pure texture) also waits a number of TURNS, when the game asks for it (`texture_gap_turns`).
+        if texture_gap_turns and not it.effects and not it.who and it.last_fired_turn is not None and turn - it.last_fired_turn < texture_gap_turns:
+            continue
         if rng.random() >= per_turn_chance(it.chance_per_hour, elapsed_minutes):
             continue
         try:
@@ -102,7 +108,7 @@ def roll(items: list[Spontaneous], doc: dict, rng: random.Random, elapsed_minute
         it.count += 1
         it.last_fired_turn, it.last_fired_at = turn, now_minutes
         vis = "the player can see this" if it.visible else "the player cannot see this; show its effects, not its cause"
-        who = ", ".join(it.who) if it.who else "the station"
+        who = ", ".join(it.who) if it.who else "the place"      # was "the station" in every game, the fantasy and the clown included
         text = f"Unscripted, this turn ({who}): {it.directive.strip()}"
         if it.reason:
             text += f" Why, which you know ({vis}): {it.reason.strip()}"

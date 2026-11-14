@@ -2125,7 +2125,8 @@ class Engine:
                 now_abs = int(clk.get("day", 1)) * (clock.minutes_per_day if clock else 1440) + int(clk.get("minute", 0))
                 busy = ectx.unquiet or ("someone came to the player this turn" if any(e.hook and e.fired and e.fired_turn == turn and e.directive for e in events) else "")
                 happened, h_directives = spon.roll(items, doc, rng_for(iid, turn, "spontaneous"), elapsed, turn, now_abs, clock_path, log_path,
-                                                   ctx=ectx, busy=busy, newcomer=ectx.newcomer, unmet=nc[2])
+                                                   ctx=ectx, busy=busy, newcomer=ectx.newcomer, unmet=nc[2],
+                                                   texture_gap_turns=int(getattr(game, "texture_gap_turns", 0) or 0))
                 sp.assign(doc, spath, [i.model_dump(mode="json") for i in items])
                 directives.extend(h_directives)
                 rpath = getattr(game, "recent_path", None)

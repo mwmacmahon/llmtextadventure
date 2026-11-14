@@ -1962,3 +1962,21 @@ def test_a_show_the_proprietor_goes_to_is_played_before_the_prose_and_counted_as
     st.shows[-1].at_abs = st.now_abs + 30                                # already there: no reading needed
     st.player.location = "Rope Walk"
     assert game.world_turn(st, home, "", random.Random(0), 5)[1].rows[0]["by"] == "place"
+
+
+def test_a_streets_texture_is_not_rolled_again_for_fifteen_turns_however_many_days_ran(game: ClownGame, no_happenings):
+    """C115 (the reader, 11-14): the same bell on skip after skip; a cooldown in game minutes means nothing when days run."""
+    from engine.spontaneous import Spontaneous
+    roll = no_happenings                     # the suite turns happenings off; the fixture hands back the real roll
+    bell = Spontaneous(id="bell", chance_per_hour=1.0, directive="A bell goes.")
+    caller = Spontaneous(id="caller", chance_per_hour=1.0, directive="Someone knocks.", effects=[{"flag": ["a_knock", True]}])
+    doc = new(game).model_dump(mode="json")
+    first, _ = roll([bell, caller], doc, random.Random(1), 3 * 1440, 5, 10_000, texture_gap_turns=15)
+    assert {h.id for h in first} == {"bell", "caller"}
+    again, _ = roll([bell, caller], doc, random.Random(2), 3 * 1440, 9, 20_000, texture_gap_turns=15)
+    assert [h.id for h in again] == ["caller"]                                  # what changes something still happens
+    later, _ = roll([bell, caller], doc, random.Random(3), 3 * 1440, 21, 30_000, texture_gap_turns=15)
+    assert "bell" in {h.id for h in later}
+    plain, _ = roll([bell], doc, random.Random(4), 3 * 1440, 22, 40_000)        # a game that does not ask: as before
+    assert [h.id for h in plain] == ["bell"]
+    assert ClownGame.texture_gap_turns == 15
