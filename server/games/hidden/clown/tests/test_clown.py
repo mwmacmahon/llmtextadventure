@@ -2239,9 +2239,9 @@ def test_the_player_says_whether_the_proprietor_is_a_man_or_a_woman_and_the_narr
     """The owner, 11-14: "let user pick gender in the character creation, affecting things like sir vs madame"; "Just male /
     female here"."""
     opts = game.setup_options()["sex"]
-    assert [o["id"] for o in opts["options"]] == ["man", "woman"] and opts["default"] == "man"
+    assert [o["id"] for o in opts["options"]] == ["woman", "man"] and opts["default"] == "woman"
     for pick, want, never in (("woman", "ma'am or madam", "sir or Mr"), ("man", "sir or Mr", "ma'am")):
         st = new(game, sex=pick)
         line = next(x for x in game.frozen_prefix(st).split("\n") if x.startswith("The proprietor: "))
         assert want in line and never not in line and st.player.sex == pick
-    assert new(game).player.sex == "man"                      # a setup that does not say takes the form's default
+    assert new(game).player.sex == "woman"                    # a setup that does not say takes the form's default

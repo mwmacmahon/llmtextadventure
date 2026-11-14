@@ -343,8 +343,8 @@ class ClownGame(GameBase):
                            "hint": "The lease pays for one contract off the clerk's slip. Choose her in play at the Harbourmaster's shed, or name her here and she is in the house when the game opens. The three the file tells of come to the door later; you may meet them about the town first."},
             # the owner, 11-14: "let user pick gender in the character creation, affecting things like sir vs madame". Nothing said
             # before, so a local model guessed ("sir", from the housekeeper, in an opening round)
-            "sex": {"kind": "select", "label": "You are", "required": True, "default": "man",       # the owner: "Just male / female here"
-                    "options": [{"id": "man", "name": "Male (sir, Mr)"}, {"id": "woman", "name": "Female (ma'am, Miss or Mrs)"}],
+            "sex": {"kind": "select", "label": "You are", "required": True, "default": "woman",     # the owner: "Just male / female here", "Default to female"
+                    "options": [{"id": "woman", "name": "Female (ma'am, Miss or Mrs)"}, {"id": "man", "name": "Male (sir, Mr)"}],
                     "hint": "How the house and the town speak to you and of you."},
             "about": {"kind": "textarea", "label": "About you", "hint": "Anything you like: how you came by the house, what you were before, what you want."},
         }
@@ -406,7 +406,7 @@ class ClownGame(GameBase):
                     things.append(Thing(id=sec.thing["id"], name=sec.thing.get("name", sec.thing["id"]), place=sec.thing.get("place", ""),
                                         state=sec.thing.get("state", ""), known=False))
         player = Proprietor(name=name, kind=kind["id"], kind_name=kind["name"], about=str(setup.get("about") or "").strip(),
-                            sex={"man": "man", "woman": "woman", "male": "man", "female": "woman"}.get(str(setup.get("sex") or "").strip().lower(), "man"),
+                            sex={"man": "man", "woman": "woman", "male": "man", "female": "woman"}.get(str(setup.get("sex") or "").strip().lower(), "woman"),
                             stats={k: int(kind.get("stats", {}).get(k, 0)) for k in STATS}, location=HARBOUR if at_harbour else OFFICE)
         events = [Event.model_validate(e) for e in sc.get("events") or []]
         state = ClownState(
