@@ -196,6 +196,7 @@ def _kinds_schema():
     class KindsReading(AssistantReadingStaked):
         lean_kinds: ClassVar[dict] = {
             "home": {"what": "done at home, nobody resists", "settle": "works"},
+            "lever": {"what": "only a listed command", "settle": "command"},
             "price": {"what": "offering less than the price", "settle": "fails", "outcome": "The price stands.", "why": "prices are fixed"},
             "world": {"what": "someone could refuse", "settle": "check"},
             "hopeless": {"what": "the words plainly miss", "settle": "fails"},
@@ -218,9 +219,10 @@ async def test_a_games_kinds_are_the_first_step_and_the_table_routes_them():
     assert list(first.model_fields) == ["action", "targets", "what_kind"] and "world: someone could refuse." in first.model_fields["what_kind"].description
     role = RoleConfig(provider="fake", model="m", lean=True, field_guide=True)
     # nothing needs a second message: a kind that works, and a kind the table settles with its own sentence
-    p = _Scripted([_kinds_reading({"action": "Tell her to sit.", "what_kind": "home"}, {"action": "Offer half.", "what_kind": "price"})])
+    p = _Scripted([_kinds_reading({"action": "Tell her to sit.", "what_kind": "home"}, {"action": "Offer half.", "what_kind": "price"},
+                                  {"action": "Set the plan.", "what_kind": "lever"})])       # a command's attempt is told as nothing settled
     adj, usage = await lean_adjudication(p, role, "RULES", [], schema)
-    assert len(p.seen) == 1 and KINDS_NOTE in p.seen[0][1] and adj.attempt_kinds == ["home", "price"]
+    assert len(p.seen) == 1 and KINDS_NOTE in p.seen[0][1] and adj.attempt_kinds == ["home", "price", "lever"]
     assert [(f.settled, f.attempt, f.outcome) for f in adj.fiat] == [("works", "Tell her to sit.", "It works as the player means it."),
                                                                     ("fails", "Offer half.", "The price stands.")]
     assert "attempt_kinds" not in schema.model_json_schema()["properties"]

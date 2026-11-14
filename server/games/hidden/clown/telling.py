@@ -13,6 +13,7 @@ The move, one of:
 - lever: any other narrated command, or a lever the reading picked beside the player's words (Book, Switch, Plan): a beat.
 - meeting: the turn is aimed at someone the proprietor has not met.
 - scene: a typed turn that spends the part of the day (an outing, an errand, a long talk): the room a scene needs.
+An event that fires on the turn (a caller, an offer arriving, the news of days let run) adds a beat's words each, to three.
 - (none): a talk where they stand, a question, a look: the engine's own kinds (talk, quick, plain) stand, and so does its
   count of checks.
 
@@ -36,13 +37,13 @@ LEVELS: dict[str, dict[str, Any]] = {
     "short": {
         "move": {"skip": 40, "farewell": 80, "arrival": 130, "borne": 120, "session": 70, "lever": 60, "meeting": 150, "scene": 150},
         "part": {"show": 200, "show_word": 40, "week": 60, "training": 30, "night": 35, "slip": 45, "upgrade": 20, "reckoning": 40,
-                 "worn": 15, "lost": 10, "lever": 25},
+                 "worn": 15, "lost": 10, "lever": 25, "event": 30},
         "per_check": 35, "cap": 380,
     },
     "standard": {
         "move": {"skip": 60, "farewell": 120, "arrival": 200, "borne": 180, "session": 110, "lever": 90, "meeting": 220, "scene": 220},
         "part": {"show": 300, "show_word": 60, "week": 90, "training": 45, "night": 55, "slip": 70, "upgrade": 30, "reckoning": 60,
-                 "worn": 25, "lost": 15, "lever": 40},
+                 "worn": 25, "lost": 15, "lever": 40, "event": 45},
         "per_check": 45, "cap": 560,
     },
 }
@@ -90,14 +91,18 @@ def kind(game: Any, state: Any, adj: Any, res: dict[str, Any], level: str) -> di
     mv = move(game, state, adj, res)
     parts = [k for k, _ in game.telling_parts(state)]
     extra = [x for x in (res.get("levers") or []) if x not in FAREWELL and x != "take"]      # a lever beside the player's words: a beat each
-    if not mv and not parts and not extra:
+    if not mv and not parts and not extra and not (res.get("directives") or []):
         return None
     checks = len(res.get("told") or res.get("assessments") or [])
+    # what else the engine asks told this turn (an event that fired, a caller, the news of days let run): a beat each. The
+    # check round (11-13): three skips given 40 words wrote 75 to 104, each with an offer or a caller arriving on the way
+    asked = len(res.get("directives") or [])
+    events = max(0, asked - len(parts) - len(res.get("levers") or []) - (1 if (res.get("command") or {}).get("id") else 0))
     # no move of the clown's own (a talk where they stand): the engine's talk words, so a part never shortens the answer
     from engine.telling import LEVELS as ENGINE
     base = row["move"].get(mv) if mv else ENGINE.get(level, ENGINE["short"])["talk"]
-    words = base + sum(row["part"].get(k, 0) for k in parts) + row["part"]["lever"] * len(extra) + row["per_check"] * checks
-    name = "+".join([mv or "talk", *dict.fromkeys(parts), *(["lever"] if extra else [])])
+    words = base + sum(row["part"].get(k, 0) for k in parts) + row["part"]["lever"] * len(extra) + row["part"]["event"] * min(3, events) + row["per_check"] * checks
+    name = "+".join([mv or "talk", *dict.fromkeys(parts), *(["lever"] if extra else []), *(["event"] if events else [])])
     return {"kind": name, "words": min(row["cap"], words), "paragraphs": min(5, 1 + (mv in ("scene", "meeting", "arrival", "borne"))
                                                                          + sum(1 for k in parts if k in BIG) + ("show" in parts) + min(1, checks)) or 1,
-            "rolls": checks, "note": NOTES.get(mv + "+" if (mv == "skip" and parts) else mv, "")}
+            "rolls": checks, "note": NOTES.get(mv + "+" if (mv == "skip" and (parts or events)) else mv, "")}

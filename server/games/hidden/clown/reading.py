@@ -16,7 +16,7 @@ from engine.roles import AssistantReadingStaked, AssistantReadingV2
 
 KINDS: dict[str, dict[str, str]] = {
     "desk": {"what": "only a listed command and nothing more (the week's plan, a booking taken, a switch, an upgrade, a contract bought or sold): "
-                     "the command decides it", "settle": "works"},
+                     "the command decides it", "settle": "command"},
     "house": {"what": "done to or with a girl of the house, or said to the housekeeper: an order, a question, a kindness, a threat, a "
                       "punishment, a promise, a lesson, taking her somewhere. It works; nobody in the house stops the proprietor",
               "settle": "works"},

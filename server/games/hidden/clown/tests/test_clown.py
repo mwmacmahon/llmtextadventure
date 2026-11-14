@@ -1854,3 +1854,15 @@ def test_the_debug_words_stage_a_moment_on_a_dev_server_and_are_plain_words_on_a
     monkeypatch.setenv("TA_DEV_MODE", "off")
     assert game.typed_command(st, "DEBUG: money 7") is None and "debug" not in [c.id for c in game.commands(st)]
     assert not game.run_command(st, "debug", {"text": "money 7"})[1].ok
+
+
+def test_an_event_that_fires_on_a_skip_gets_its_own_words(game: ClownGame):
+    """The check round (11-13): skips given 40 words wrote 75 to 104, each with a caller or an offer arriving on the way."""
+    from games.hidden.clown import telling
+    st = _quiet(game)
+    row = telling.LEVELS["short"]
+    skip = {"id": "skip", "args": {}}
+    k = game.telling_kind(st, None, _res(command=skip, elapsed=1440, directives=["the skip's own line", "an offer arrives", "a caller at the door"]), "short")
+    assert k["kind"] == "skip+event" and k["words"] == row["move"]["skip"] + 2 * row["part"]["event"] and "spend the rest" in k["note"]
+    k = game.telling_kind(st, None, _res(command=skip, elapsed=1440, directives=["the skip's own line"]), "short")
+    assert k["kind"] == "skip" and k["words"] == row["move"]["skip"]

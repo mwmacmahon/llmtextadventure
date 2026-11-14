@@ -1858,6 +1858,7 @@ class Engine:
                 continue
             if spec.words and player_text and not asks_for(spec.words, player_text):
                 log.info("command.typed.ignored " + logs.kv(iid=iid, turn=turn, id=pick.id, why="the input does not ask for it"))
+                ledger("lever_dropped", {"id": pick.id, "args": list(pick.args), "why": "none of the lever's phrases is in the player's words"})   # counted (C112): a pick dropped in silence was told as done
                 continue                            # "I strike a match" is not Smoke
             args, problem = _parse_command_args(spec, pick.args)
             if problem:

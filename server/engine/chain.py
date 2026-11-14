@@ -177,7 +177,8 @@ _SETTLE = ("How this attempt is decided, the first of these that fits. A blow (a
 
 # A game's own kinds of attempt, as the first step (D272; the owner, 11-13: "as long as you need to identify [the turn types]
 # for length you might be able to use that for the general questions"). A reading schema may carry `lean_kinds`:
-# {kind: {"what": when it fits, "settle": works | check | fails, "outcome": the settled sentence, optional}}. The first form
+# {kind: {"what": when it fits, "settle": works | check | fails | command, "outcome": the settled sentence, optional}}
+# (command: a listed command decides it, so the engine tells the narrator nothing is settled). The first form
 # then asks each attempt's `what_kind` in the game's words instead of the general `settle`, and the engine routes by the
 # table: a `check` kind is asked for in the second message; a `fails` kind with an `outcome` is settled by the table with no
 # second message; one without is asked how it fails; a `works` kind is done. The kinds reach the merged reading as
@@ -202,7 +203,8 @@ def kind_field(kinds: dict[str, dict[str, str]]) -> tuple[Any, Any]:
 def how_settled(intent: Any, kinds: dict[str, dict[str, str]]) -> str:
     """works | check | fails for a first-form attempt: its own `settle`, or its kind's row in the game's table."""
     if kinds:
-        return kinds.get(getattr(intent, "what_kind", ""), {}).get("settle", "works")
+        how = kinds.get(getattr(intent, "what_kind", ""), {}).get("settle", "works")
+        return "works" if how == "command" else how
     return intent.settle
 
 
@@ -328,6 +330,8 @@ async def lean_adjudication(provider: Any, role: Any, system: str, msgs: list[Ms
             d["check"] = ck.model_dump()
         elif row.get("outcome"):                    # the game's table settles this kind: its sentence, no second message
             fiat.append({"attempt": it.action, "outcome": row["outcome"], "settled": "fails" if how == "fails" else "works", "why": row.get("why", "")})
+        elif row.get("settle") == "command":        # the listed command decides it: nothing is told as settled here (C112)
+            pass
         elif how == "works" and not d.get("attack_at") and not d.get("leaving"):
             # an attempt the reading settled with no roll: the narrator is told so, in the attempt's own words and no more
             fiat.append({"attempt": it.action, "outcome": "It works as the player means it.", "settled": "works", "why": ""})

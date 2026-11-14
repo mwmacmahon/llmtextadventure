@@ -2801,7 +2801,8 @@ class ClownGame(GameBase):
                                            Param(name="girl", label="who goes", options=[Option(id=g.id, label=g.name + (" (in training)" if g.id == s.active else " (graduate)" if g.graduated else "")) for g in in_house], default=first.id)],
                                    hint="Take one of this week's offers: the show is set for its day (weeks off, as the card says) and the girl named goes. Book "
                                         "as many as the girls can play; what is not booked by Sunday night is gone. A girl on the bench comes off her odd jobs for it.",
-                                   words=["book", "take the booking", "take the job", "accept", "we'll do it", "we will do it", "say yes"]))
+                                   words=["book", "take the booking", "take the job", "accept", "we'll do it", "we will do it", "say yes", "we'll take", "we will take", "take it",
+                                          "tell her yes", "tell him yes", "agree"]))   # C112: "tell Mrs Pell we'll take the christening" was dropped and told as done
         others = [g for g in in_house if g.id != s.active]
         if others:
             out.append(CommandSpec(id="switch", label="Switch", mode="engine",
