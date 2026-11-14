@@ -163,6 +163,10 @@ class HouseTurn:
     extra_minutes: int = 0
 
 
+HARBOUR_PLACES = {"The harbour", "The Harbourmaster's office"}      # where the clerk's slip is read (the shed is on the quay)
+SLIP_ID = "the_slip"               # what the reading puts in focus.things when the turn is about the slip or a contract on it
+
+
 def scenario_from(sc: dict) -> Scenario:
     h = sc.get("house") or {}
     return Scenario(id=sc["id"], name=sc.get("name", sc["id"]), premise=sc.get("premise", ""), house_name=h.get("name", sc.get("name", "")),
@@ -472,7 +476,7 @@ class ClownGame(GameBase):
                  f"sister, nothing else, ever.")
         return "\n".join(b)
 
-    def _in_motion_lines(self, s: ClownState) -> list[str]:
+    def _in_motion_lines(self, s: ClownState, rel: dict[str, set[str]] | None = None) -> list[str]:
         """The reached hooks' whole, for the per-turn block (the frozen prefix cannot carry a hook dealt later, and a hook in it before its
         reach leaked: the round of 11-09 had Mrs Pell pass on the Teague booking three days before Mrs Teague came)."""
         p = s.player
@@ -483,6 +487,14 @@ class ClownGame(GameBase):
             if hk is None or h.status not in ("live",):
                 continue
             hk = dk.fill(hk, p.name, h.when)
+            if rel is not None and h.kind == "booking":          # focus_filter: a booking's whole only on a turn that concerns it
+                mine = [q for q in s.people if q.hook == h.hook or q.id == str(hk.get("client") or "") or q.name == h.giver]
+                show = next((x for x in s.shows if x.id == h.show and not x.result), None) if h.show else None
+                soon = show is not None and show.at_abs - s.now_abs <= 2 * DAY
+                if not (soon or any(q.id in rel["ids"] or q.location in rel["places"] for q in mine) or (show is not None and show.venue in rel["places"])):
+                    out.append("")
+                    out.append(f"In motion: {h.title}: {dk.standing_of(h)}. Not part of this turn: its whole is shown when it is.")
+                    continue
             out.append("")
             out.append(f"In motion: {h.title}.")
             if hk.get("summary"):
@@ -618,8 +630,39 @@ class ClownGame(GameBase):
         arrived = sum(1 for g in written if g.status != "away") - (0 if first_is_card else 1)
         return order[0] if n_come > arrived else None
 
-    def render_bulletin(self, state: ClownState, player_text: str, engine: bool = False) -> str:
+    # ---- what the narrator is shown, cut by what the turn concerns (switch `focus_filter`; the owner, 11-13: "the assistant when
+    # it was created that was the #1 job ... determine relevant state content to bother showing narrator"; games must reach 200
+    # turns). Three blocks grow or repeat whole every turn: the clerk's slip (about 1,600 characters, every turn), the files of
+    # the girls bought off the boats, and everyone the proprietor has dealt with (about 175 characters a person, without end).
+    # Each is shown whole when the turn concerns it and as one line when it does not. What the turn concerns is the reading's
+    # own fields (targets, focus, where the player goes) and what the engine knows (who is where, whose booking is in hand).
+    # A turn with no reading (a clicked lever, a skip) is shown everything. The assistant and the referee always see everything.
+    def _relevance(self, s: ClownState, adj: Any) -> dict[str, set[str]] | None:
+        from engine.roles import destination
+        if adj is None or getattr(adj, "minutes_fixed", False) or not hasattr(adj, "focus") or not sw.on("focus_filter"):
+            return None
+        ints = list(getattr(adj, "intents", None) or [])
+        fo = getattr(adj, "focus", None)
+        ids = {x for i in ints for x in (getattr(i, "targets", None) or [])} | set(getattr(fo, "people", None) or []) | set(getattr(adj, "entities", None) or [])
+        ids |= {t for i in ints if (t := getattr(getattr(i, "check", None), "target_entity", None))}
+        named = [destination(i) for i in ints] + list(getattr(fo, "places", None) or [])
+        places = {self._place(s, str(v).replace("_", " ")) for v in named if v} | {s.player.location}
+        ids |= set(getattr(fo, "things", None) or [])                # `the_slip`: the reading says the turn is about the clerk's slip (no words are read)
+        return {"ids": ids, "places": {x for x in places if x}}
+
+    def _person_matters(self, s: ClownState, q: Person, rel: dict[str, set[str]]) -> bool:
+        """Shown whole: aimed at or in focus, where the player is or goes, or tied to a booking or trouble in hand or a show to come."""
+        if q.id in rel["ids"] or q.location in rel["places"]:
+            return True
+        hooks = self.hooks_content()
+        for x in s.hooks:
+            if x.status in ("dealt", "live") and (x.giver == q.name or str((hooks.get(x.hook) or {}).get("client") or "") == q.id or q.hook == x.hook):
+                return True
+        return any(not x.result and x.client == q.id for x in s.shows)
+
+    def render_bulletin(self, state: ClownState, player_text: str, engine: bool = False, adj: Any = None) -> str:
         s, p, h = state, state.player, state.house
+        rel = None if engine else self._relevance(s, adj)
         lines = [f"Time: {day_text(s.clock.day, s.clock.minute)} (day {s.clock.day})."]
         lines.append(f"{p.name}: at {p.location or 'unknown'}" + (f"; {', '.join(c.name for c in p.conditions)}" if p.conditions else "") + ".")
         lines.append(f"The house: the house is {h.renown_word} in the town" + (f"; money {h.money} gold" if engine else
@@ -672,7 +715,7 @@ class ClownGame(GameBase):
             lines.append(f"Asking to be taken on, waiting on {p.name}'s answer (not in the house: no keep, no bookings, no training; {room}): "
                          + "; ".join(f"{x.name}, " + (f"at {x.location}" if x.location != AWAY_PLACE else "about the town") + (f" (she {x.before.rstrip('.')})" if x.before else "") for x in waiting)
                          + f". She joins only when the prose shows {p.name} taking her on and her agreeing.")
-        lines.extend(self._harbour_lines(s))
+        lines.extend(self._harbour_lines(s, rel))
         shows = [x for x in s.shows if not x.result and x.at_abs > s.now_abs]
         if shows:
             lines.append("Booked: " + "; ".join(f"{x.title} at {x.venue}, {WEEKDAYS[weekday(x.at_abs // DAY)]} at {hhmm(x.at_abs % DAY)}"
@@ -688,7 +731,10 @@ class ClownGame(GameBase):
         if met:
             lines.append("")
             lines.append(f"People {p.name} has dealt with:")
+            rest = [] if rel is None else [q for q in met if not self._person_matters(s, q, rel)]
             for q in met:
+                if q in rest:
+                    continue
                 bits = [f"at {q.location or 'unknown'}" if q.location != "Unknown" else "whereabouts unknown", f"{q.attitude_word} toward {p.name}", q.mood, q.condition,
                         q.status if q.status != "alive" else ""]
                 if q.client:
@@ -698,6 +744,9 @@ class ClownGame(GameBase):
                     lines.append(f"    Wants: {q.wants}")
                 for f in q.facts[-3:]:
                     lines.append(f"    {f}")
+            if rest:
+                lines.append(f"- And, not part of this turn (a name and how they stand; the rest is not needed now): "
+                             + "; ".join(f"{q.name} ({q.role + ', ' if q.role else ''}{q.attitude_word})" for q in rest) + ".")
         heard = [q for q in s.people if q.heard_of and not q.met]
         if heard:
             lines.append("")
@@ -719,7 +768,7 @@ class ClownGame(GameBase):
                     if q is not None and q.client:
                         extra = "; wants " + " and ".join(self.skill_name(k).lower() for k in q.client.wants) + (f"; pays {'well' if q.client.pays >= 40 else 'a little' if q.client.pays else 'nothing'}")
                 lines.append(f"- {x.title}" + (f" (from {x.giver})" if x.giver else "") + f": {dk.standing_of(x)}{extra}.")
-            lines.extend(self._in_motion_lines(s))
+            lines.extend(self._in_motion_lines(s, rel))
         if s.journal:
             lines.append("")
             lines.append("Journal (most recent):")
@@ -748,7 +797,7 @@ class ClownGame(GameBase):
             lines.append(f"Do not narrate past {ev_clock_text(nxt[1], DAY)}.")
         return "\n".join(lines)
 
-    def _harbour_lines(self, s: ClownState) -> list[str]:
+    def _harbour_lines(self, s: ClownState, rel: dict[str, set[str]] | None = None) -> list[str]:
         """The clerk's slip (what is for sale, in words and the price), and the files of the girls bought off it (the frozen prefix cannot
         carry a girl dealt later; the narrator reads her whole here, as the written girls' in the prefix)."""
         deck, cards = self.content.girls_deck(), self.content.girl_cards()
@@ -756,7 +805,14 @@ class ClownGame(GameBase):
             return []
         out: list[str] = []
         slip = [cards[c] for c in s.harbour.hand if c in cards]
-        if slip:
+        about_slip = (rel is None or s.harbour.announce or bool(rel["places"] & HARBOUR_PLACES) or SLIP_ID in rel["ids"]
+                      or any(str(c.get("id")) in rel["ids"] for c in slip))
+        if slip and not about_slip:
+            out.append("")
+            out.append(f"On the clerk's slip at the Harbourmaster's shed: {len(slip)} contracts for sale at the clerk's price ("
+                       + ", ".join(str(c.get("name")) for c in slip) + f"). This turn is not about them: their particulars are not shown, and if "
+                       f"talk turns to one, say only that the slip has the rest. Nothing is bought except by {s.player.name}'s own Take.")
+        elif slip:
             out.append("")
             out.append(f"On the clerk's slip at the Harbourmaster's shed (contracts for sale at the price written, the clerk's own: a little lower each week a girl waits, and never by talk; {s.player.name} "
                        f"buys one only with the Take command, in their own time, and the girl stays at the shed until then; "
@@ -768,7 +824,9 @@ class ClownGame(GameBase):
             out.append("")
             out.append(f"The girls bought off the boats (their files; yours to know, as the girls' in the house's file, and {s.player.name} learns what they hide only in play):")
             for g in bought:
-                out.extend(hb.girl_file_lines(g, deck))
+                whole = rel is None or g.id == s.active or g.id in rel["ids"] or g.location in rel["places"]
+                out.extend(hb.girl_file_lines(g, deck) if whole else [f"- {g.name} ({g.id}), {g.age}, off the boat; traits: {', '.join(g.traits)}. Not part of this turn: "
+                                                                       f"her file is shown when she is."])
         return out
 
     def _needs_hold(self, s: ClownState, needs: Any) -> bool:
@@ -1024,6 +1082,8 @@ class ClownGame(GameBase):
             self._entities_line(s),
             self._places_line(s),
             "There are no systems and no pockets in this game; leave `systems` and `carried` empty. Only a command the list offers this turn may be listed.",
+            f"focus: the people and places this input needs in front of the narrator, by id and by name. When the input is about the clerk's slip, a "
+            f"contract for sale or a girl on the slip, also put {SLIP_ID} in focus.things (and her id from the Take command's list in focus.people when one is named).",
         ]
         return "\n".join(lines)
 

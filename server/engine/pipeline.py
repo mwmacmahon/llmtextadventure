@@ -1178,7 +1178,7 @@ class Engine:
         res["telling"] = telling.budget(role.telling, res, len(world.mechanics) if world is not None else 0, own)   # D246
         scene_text = _hook(game, "scene_block", state, adj, "narrator", default="")
         coming = _pending_block(game, state, "narrator")
-        bulletin = (((scene_text + "\n\n") if scene_text else "") + game.render_bulletin(state, player_text)
+        bulletin = (((scene_text + "\n\n") if scene_text else "") + narrator_bulletin(game, state, player_text or "", adj)
                     + ((("\n\n" + coming) if coming else "")) + "\n\n" + _this_turn_block(res, _clock_now(state)))
         yield {"event": "bulletin", "data": {"turn": turn, "text": bulletin}}
         self.store.append_transcript(iid, turn, "bulletin", bulletin)
@@ -4076,6 +4076,18 @@ def _soften_unreached(rulings: list[dict[str, Any]], res: dict[str, Any]) -> lis
                  "what": r.get("what", "") + " (the turn was cut short at a timer; what was not reached was not ignored)"}
         out.append(r)
     return out
+
+
+def narrator_bulletin(game: Any, state: BaseModel, player_text: str, adj: Any) -> str:
+    """The narrator's state block. A game whose `render_bulletin` takes the reading (`adj`) may cut the block by what the turn
+    concerns (the relevance filter: the assistant's first job, the owner, 11-13); the others are called as they always were."""
+    import inspect
+    fn = game.render_bulletin
+    try:
+        takes = "adj" in inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        takes = False
+    return fn(state, player_text, adj=adj) if takes else fn(state, player_text)
 
 
 def _this_turn_block(res: dict[str, Any], clock_text: str = "") -> str:

@@ -1997,3 +1997,30 @@ def test_the_referee_is_told_when_the_proprietor_dealt_with_a_girl_of_the_house_
     assert game.referee_notes(st, away) == [] and "[ENGINE NOTE]" not in referee_inputs(game, st, [], "x", "y", away)[1][-1].content
     monkeypatch.setenv("TA_CLOWN_SWITCHES", "axis_note=off, show_first=off")
     assert game.referee_notes(st, adj) == [] and not switches.on("show_first") and switches.on("desk_beat")
+
+
+def test_the_narrators_state_is_cut_by_what_the_turn_concerns_and_whole_without_a_reading(game: ClownGame, monkeypatch):
+    """Switch focus_filter (the owner, 11-13: the assistant's first job, never built): the slip, bought girls' files and the
+    people met are one line when the turn is not about them. No words are read: the reading's ids and places, and the engine's."""
+    from engine.pipeline import narrator_bulletin
+    from engine.roles import AssistantReadingV2, Focus, IntentV2
+    st = _quiet(game)
+    for q in st.people[:8]:
+        q.met, q.facts = True, ["A fact learned in play about them."]
+    whole = game.render_bulletin(st, "")
+    pell = st.person("pell")
+    girl = next(g for g in st.girls if g.in_house())
+    talk = AssistantReadingV2(kind="action", summary="x", time_minutes=5, risk="none", intents=[IntentV2(action="Ask her about the mats.", targets=[girl.id])])
+    cut = narrator_bulletin(game, st, "", talk)
+    assert len(cut) < len(whole) - 1500 and "This turn is not about them" in cut and "not part of this turn" in cut
+    assert f"- {pell.name}:" not in cut or pell.location == st.player.location       # someone elsewhere, tied to nothing: a name only
+    assert f"{girl.name} (the girl in training" in cut                               # the girl in training is always whole
+    far = next(q for q in st.people if q.met and q.location not in (st.player.location, ""))
+    aimed = AssistantReadingV2(kind="action", summary="x", time_minutes=5, risk="none", intents=[IntentV2(action="Call on them.", targets=[far.id])])
+    assert f"- {far.name}:" in narrator_bulletin(game, st, "", aimed) and f"- {far.name}:" not in cut
+    slip = AssistantReadingV2(kind="action", summary="x", time_minutes=5, risk="none", intents=[IntentV2(action="Read the slip again.")], focus=Focus(things=["the_slip"]))
+    assert "On the clerk's slip at the Harbourmaster's shed (contracts for sale" in narrator_bulletin(game, st, "", slip)
+    assert narrator_bulletin(game, st, "", None) == whole == game.state_for_models(st).replace(game.state_for_models(st), whole)   # no reading: everything
+    assert "This turn is not about them" not in game.state_for_models(st)            # the assistant and the referee see it all
+    monkeypatch.setenv("TA_CLOWN_SWITCHES", "focus_filter=off")
+    assert narrator_bulletin(game, st, "", talk) == whole
