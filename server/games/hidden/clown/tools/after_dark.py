@@ -113,7 +113,7 @@ def check() -> list[str]:
     new_lines: dict[str, str] = {}
     code_words = " ".join(variant_prefix().split())      # a file only the default has (words.yml) rewords what the code says itself
     for n in changed + only_default:
-        old = flat_text(have[n]) if n in have else code_words
+        old = (flat_text(have[n]) if n in have else "") + (" " + code_words if n == "words.yml" or n not in have else "")
         for s in sentences(base[n]):
             if len(s) >= 25 and s not in old:
                 new_lines.setdefault(s, n)

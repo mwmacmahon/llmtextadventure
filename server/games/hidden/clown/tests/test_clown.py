@@ -2179,3 +2179,13 @@ def test_none_of_the_defaults_new_wording_reaches_the_variant_kept_as_it_was():
     if not (after_dark.DARK / after_dark.MANIFEST).exists():
         pytest.skip("the variant's content is not on this machine")
     assert after_dark.check() == []
+
+
+def test_a_child_of_the_house_is_said_as_what_she_is_and_the_guard_is_the_referees(game):
+    """The owner, 11-14: the narrator's text says what a child of the house is, for any number of them, and names nothing it
+    means to keep out; the guard is a serious ruling of the referee's, after the telling (extra_rulings, as the fantasy's)."""
+    st = new(game)
+    prefix = game.frozen_prefix(st)
+    assert "THE CHILDREN OF THE HOUSE. Anyone under eighteen who lives in the house is one of its children." in prefix
+    assert "nothing else, ever" not in prefix and "mascot" not in prefix
+    assert "her_age" in game.extra_rulings and "ruling her_age (serious)" in game.referee_rules(st) and "her_age" not in prefix

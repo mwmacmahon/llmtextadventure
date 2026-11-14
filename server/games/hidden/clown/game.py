@@ -106,6 +106,7 @@ RECKONINGS: dict[str, dict[str, str]] = {
     "shot": {"who": "the Tallyman's man", "bear": "shot at the desk and not killed: a month wounded (every check and every slot the worse), Dr Lisle's 80 gold, the house shut a week, the street talking",
              "give": "a girl's contract signed over to the Tallyman for the blood owed; nobody shot", "fee": ""},
 }
+CHILDREN = ("Anyone under eighteen who lives in the house is one of its children. Mrs Pell feeds them first and sends them to bed early; the older girls boss them and look out for them; the proprietor is their teacher. Write each of them at her own age.")
 GAIN_WORDS = ((7, "much better than they were"), (4, "better than they were"), (2, "a little better"), (1, "barely moved"), (0, "an hour that went nowhere"))
 TIER_WORDS = {"clumsy": "clumsy", "passable": "passable", "sound": "sound", "finished": "finished"}
 TIME_WORDS = {0: "the morning's work", 1: "the afternoon's work"}
@@ -224,6 +225,10 @@ class ClownGame(GameBase):
     word_guards = {"lever-phrases": "count", "task-kind-words": "count"}   # C112, D275 (the owner, 11-14): no phrase list between the reading's pick and the lever;
                                                # the pick's own arguments and the lever's refusal are the checks; the list only counts
     texture_gap_turns = 15           # C115: a street's texture (a bell, the fog) is not handed to the narrator again for fifteen turns
+    # the game's own serious ruling (engine/changes.py extra_rulings; the fantasy's too_far is the pattern, D160): the referee rules
+    # it after a telling, the telling is told again with this fix, and the narrator's standing text never names it
+    extra_rulings = {"her_age": "Tell the turn again with her at her own age: a child of the house among grown-ups who look out for her. Leave out what "
+                                "the first telling did with her, and keep everything else as it was."}
     typed_only_commands = ("skip",)  # D205C: the days run only on the player's own "skip to …" (typed_command); never the assistant's pick
     mechanic_numbers = False
     target_offset = 0
@@ -500,14 +505,19 @@ class ClownGame(GameBase):
         b.append(f"BOOKINGS AND TROUBLE. The town's offers and troubles reach the house in play; each comes with its whole in the game state block "
                  f"once it has reached {p.name} (\"In motion\"), and not before: nobody in the house knows of one until THIS TURN brings it.")
         b.append("")
-        shed = str(self.content.words().get("shed_text") or "").strip()     # the content may word the shed itself (words.yml; the default game's, 11-14)
+        words = self.content.words()
+        shed = str(words.get("shed_text") or "").strip()     # the content may word the shed itself (words.yml; the default game's, 11-14)
         b.append(shed.replace("{name}", p.name) if shed else
                  f"THE HARBOURMASTER'S SHED. The ships bring indentured people, and some would rather be clowns: a clerk at the shed on the quay keeps a slip "
                  f"of contracts for sale, refreshed when a boat comes in (the first and third Sunday of the month; the new slip is up on the Monday, and only when THIS "
                  f"TURN says WORD FROM THE SHED: until then the slip is the one the game state lists, boat or no boat). {p.name} may buy a contract and bring the "
                  f"woman home, or sell one on through the shed's book; the game state block carries the slip and, for every girl so bought, her file, written "
-                 f"like the girls' above and kept the same way. A girl under eighteen in the house is a child in it and is written as one: a mascot, a kid "
-                 f"sister, nothing else, ever.")
+                 f"like the girls' above and kept the same way.")
+        # the owner, 11-14: the old line was "over specific" and named what it meant to
+        # keep out. What a child of the house is, said as what she is, for any number of them; the guard is the referee's ruling
+        # her_age, after the fact, which the narrator never reads. A content folder may word it its own way (words.yml children)
+        b.append("")
+        b.append("THE CHILDREN OF THE HOUSE. " + (str(words.get("children") or "").strip() or CHILDREN))
         return "\n".join(b)
 
     def _in_motion_lines(self, s: ClownState, rel: dict[str, set[str]] | None = None) -> list[str]:
@@ -1149,6 +1159,11 @@ class ClownGame(GameBase):
             "GAME RULES FOR THE REFEREE",
             self._targets_line(s),
             self._ref_places_line(s),
+            "ruling her_age (serious): the telling treated a child of the house (anyone the game state gives as under eighteen) as other than "
+            "a child: any romantic or sexual light on her, from anyone, the player's character included, in word, look or act; her body "
+            "described as a grown woman's would be; or her suffering made a spectacle, told at length for its own sake. value = what it showed, in a few "
+            "plain words. Never for a child who is scolded, tired, homesick, in a scrape or worked hard at her lessons, nor for the hard things "
+            "of the town reaching her (want, loss, fear, danger, an unkind client): those may happen to her and be told, as a child lives them.",
             "Rows this game records:",
             "- move player <place>; move <girl or person id> <place>: where they are when the prose ends. Someone on the way has not arrived: a soon "
             "row, and the move when they get there. move player Unknown: the prose had the player leave and did not show them arriving.",

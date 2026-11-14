@@ -212,7 +212,7 @@ def card_line(card: dict, deck: dict, skill_name, state: ClownState | None = Non
              can=seed_words(card, skill_name, lift_of(state, dial, state.harbour.since.get(str(card.get("id") or "")))), price=price_of(card, state, dial))
     line = str(words or "{name}, {age}, {origin}, bound for {bound_for}; the slip says {can}; {price} gold for the contract").format(**f)
     if bucket_of(int(card.get("age", 30))) == "youth":       # the bucket's own line, said on the slip itself too (the cold read, 11-14: it came last, after the purchase)
-        line += " (" + str(bucket_rules(deck, "youth").get("line") or "She is a child in the house and is written as one.") + ")"
+        line += " (" + str(bucket_rules(deck, "youth").get("line") or "She is a child: write her at her own age, a child learning a trade among grown-ups who look out for her.") + ")"
     return line
 
 
@@ -231,7 +231,7 @@ def girl_file_lines(g: Girl, deck: dict) -> list[str]:
         if tags:
             out.append(f"    {lead}: " + "; ".join(tag_meaning(deck, t) for t in tags) + ".")
     if g.age_bucket == "youth":
-        out.append("    " + str(bucket_rules(deck, "youth").get("line") or "She is a child in the house and is written as one."))
+        out.append("    " + str(bucket_rules(deck, "youth").get("line") or "She is a child: write her at her own age, a child learning a trade among grown-ups who look out for her."))
     return out
 
 
