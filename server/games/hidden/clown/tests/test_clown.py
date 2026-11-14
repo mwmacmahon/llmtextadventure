@@ -2236,11 +2236,12 @@ def test_a_mod_edits_a_deck_adds_to_it_takes_from_it_or_replaces_it(game):
 
 
 def test_the_player_says_whether_the_proprietor_is_a_man_or_a_woman_and_the_narrator_is_told(game):
-    """The owner, 11-14: "let user pick gender in the character creation, affecting things like sir vs madame"."""
+    """The owner, 11-14: "let user pick gender in the character creation, affecting things like sir vs madame"; "Just male /
+    female here"."""
     opts = game.setup_options()["sex"]
-    assert [o["id"] for o in opts["options"]] == ["man", "woman", "unsaid"] and opts["default"] == "unsaid"
-    for pick, want, never in (("woman", "ma'am or madam", "sir or Mr"), ("man", "sir or Mr", "ma'am"), ("unsaid", "nobody says sir or madam", "is a man")):
+    assert [o["id"] for o in opts["options"]] == ["man", "woman"] and opts["default"] == "man"
+    for pick, want, never in (("woman", "ma'am or madam", "sir or Mr"), ("man", "sir or Mr", "ma'am")):
         st = new(game, sex=pick)
         line = next(x for x in game.frozen_prefix(st).split("\n") if x.startswith("The proprietor: "))
-        assert want in line and never not in line and st.player.sex == ("" if pick == "unsaid" else pick)
-    assert new(game).player.sex == ""                         # a setup that does not say: not said
+        assert want in line and never not in line and st.player.sex == pick
+    assert new(game).player.sex == "man"                      # a setup that does not say takes the form's default
