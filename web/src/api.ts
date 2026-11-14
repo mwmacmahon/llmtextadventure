@@ -309,6 +309,12 @@ export function streamTurn(id: string, text: string, signal?: AbortSignal): Asyn
   return streamSse(`/api/instances/${id}/turn`, { text }, signal);
 }
 
+/** B406, a debug tool (a dev server only): the last turn told again in exactly these words; the referee reads them as
+ * canon, and nothing retells it. */
+export function streamTell(id: string, text: string, signal?: AbortSignal): AsyncGenerator<TurnEvent> {
+  return streamSse(`/api/instances/${id}/tell`, { text }, signal);
+}
+
 /** POST a ruling on the last turn (or none: just tell it again): same facts and dice, the referee reads it again. */
 export function streamRewrite(id: string, hint: string, signal?: AbortSignal): AsyncGenerator<TurnEvent> {
   return streamSse(`/api/instances/${id}/rewrite`, { hint }, signal);

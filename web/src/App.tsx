@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, streamCommand, streamRewrite, streamTurn, type GraveCard, type InstanceView, type Mechanics, type TranscriptRow, type TurnEvent } from "./api";
+import { api, devMode, streamCommand, streamRewrite, streamTell, streamTurn, type GraveCard, type InstanceView, type Mechanics, type TranscriptRow, type TurnEvent } from "./api";
 import { Bar } from "./components/Bar";
 import { DebugDrawer } from "./components/DebugDrawer";
 import { GamePage } from "./components/GamePage";
@@ -70,6 +70,7 @@ function Game({ id }: { id: string }) {
   const [pending, setPending] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [debug, setDebug] = useState(false);
+  const [telling, setTelling] = useState<string | null>(null);   // B406: the last telling, open for editing by hand (dev mode)
   const [hideUndone, setHideUndone] = useState(prefs.hideUndone());
   const [death, setDeath] = useState<GraveCard | null>(null);
   const [overlay, setOverlay] = useState<"timeline" | "journal" | null>(null);    // B261: the Timeline overlay and its tab
@@ -220,6 +221,22 @@ function Game({ id }: { id: string }) {
     return run(streamRewrite(id, hint), `${last ? last.text : ""}  ↺ ${hint || "tell it again"}`.trim());
   }
 
+  /** B406 (the owner, 11-13: "It needs to start you with the original so you can edit it"): the last turn's telling, as
+   * it was written, opened in a box; what is saved from the box is the telling, and the referee runs on it. */
+  function editTelling() {
+    if (!view || streaming !== null || view.turn === 0 || lastWasCommand) return;
+    const told = view.transcript.filter((r) => r.turn === view.turn && r.role === "narrator" && !r.undone);
+    setTelling(told.length ? told[told.length - 1].text : "");
+  }
+
+  function saveTelling() {
+    if (!view || telling === null || !telling.trim()) return;
+    const text = telling;
+    setTelling(null);
+    const last = [...view.transcript].reverse().find((r) => r.role === "player");
+    return run(streamTell(id, text), `${last ? last.text : ""}  ✎ the telling, written by hand`.trim());
+  }
+
   async function redo() {
     if (streaming !== null) return;
     setErr(null);
@@ -287,6 +304,12 @@ function Game({ id }: { id: string }) {
                 title={lastWasCommand ? "The last turn was a command, not words: there is nothing to tell again" : "Request a rewrite of the last turn: same facts, same dice, the referee's changes undone. Whatever is in the text box is your explanation or instructions; empty just tells it again."}>
           rewrite
         </button>
+        {devMode.on() && (
+          <button onClick={() => editTelling()} disabled={view.turn === 0 || streaming !== null || lastWasCommand}
+                  title="Debug: open the last telling to edit by hand. What you save is the telling, word for word, and the referee runs on it; nothing retells it. Same reading, same dice.">
+            edit telling
+          </button>
+        )}
         <a className="button-like" href={`#/settings/${id}`} title="Settings: this game's difficulty, the narrator guard, the profile this server plays on">settings</a>
         <button onClick={() => branch()} disabled={streaming !== null} title="Copy this game as a new branch from here">
           branch
@@ -399,6 +422,29 @@ function Game({ id }: { id: string }) {
         </div>
       </footer>
       {overlay && <Timeline panels={view.ui.panels} tab={overlay} onTab={setOverlay} onClose={() => setOverlay(null)} />}
+      {telling !== null && (
+        <div className="overlay" onClick={() => setTelling(null)}>
+          <div className="overlay-sheet tell-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="overlay-head">
+              <strong>Edit the telling of turn {view.turn}</strong>
+              <span className="spacer" />
+              <button onClick={() => setTelling(null)}>cancel</button>
+            </div>
+            <div className="overlay-body">
+              <p className="muted small">
+                Debug. This is the last telling as it was written. Change it and save: your text becomes the telling, word for word, and the
+                referee runs on it as canon. Nothing retells it. The reading, the levers and the dice of the turn stay as they were.
+              </p>
+              <textarea className="tell-box" value={telling} onChange={(e) => setTelling(e.target.value)} rows={18} autoFocus spellCheck={false} />
+              <div className="tell-actions">
+                <span className="muted small">{telling.trim() ? telling.trim().split(/\s+/).length : 0} words</span>
+                <span className="spacer" />
+                <button onClick={() => saveTelling()} disabled={!telling.trim()}>save and run the referee</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <DebugDrawer
         instanceId={id}
         turn={view.turn}
