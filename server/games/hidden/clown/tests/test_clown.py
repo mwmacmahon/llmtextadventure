@@ -83,12 +83,14 @@ def test_the_lint_catches_a_predicate_path_that_does_not_resolve(game: ClownGame
     assert not any("house.best.crowd" in p for p in problems)
 
 
-def test_the_setup_is_five_fields_and_the_first_morning(game: ClownGame):
+def test_the_setup_is_four_fields_and_the_first_morning(game: ClownGame):
     f = setup_fields(game.setup_options())
-    assert set(f) == {"name", "kind", "first_girl", "sex", "about"}
-    assert f["about"].hint and not f["kind"].hint
-    assert [o.id for o in f["first_girl"].options] == ["harbour", *game.content.girls_deck()["starters"]] and f["first_girl"].options[1].name.startswith("Ada Vosk, 23")
-    assert "dot" not in [o.id for o in f["first_girl"].options]                    # the written three come later; dot still works unlisted, for the tools
+    assert list(f) == ["name", "sex", "kind", "about"]            # no first girl on the form: she is chosen in play, at the shed
+    assert f["about"].hint and not f["kind"].hint and [o.name for o in f["sex"].options] == ["Female", "Male"]
+    assert f["name"].default == "" and f["kind"].label == "Your archetype" and not f["sex"].label.strip()
+    assert [o.name for o in f["kind"].options] == ["The Charmer", "The Taskmaster", "The Bookkeeper", "The Old Clown"]
+    assert game.new_instance({"name": ""})[0].endswith("The Proprietor") and game.new_instance({"name": "Hal Ferris"})[0].endswith("Hal Ferris")
+    assert [o["id"] for o in game._starter_options()] == game.content.girls_deck()["starters"]     # a setup may still name one (the tools)
     st = new(game)
     assert st.player.stats == {"charm": 3, "menace": -1, "business": 1, "connections": 1, "craft": 0}
     assert st.active == "dot" and st.active_girl.status == "active" and st.active_girl.location == "The practice room"
@@ -106,7 +108,7 @@ def test_the_setup_is_five_fields_and_the_first_morning(game: ClownGame):
 
 def test_the_empty_setup_builds_a_game_too(game: ClownGame):
     _, st = game.new_instance({})
-    assert st.player.name == "the proprietor" and st.active == "ada_vosk"
+    assert st.player.name == "the proprietor" and st.active == "" and st.flags.get("first_pick") and st.player.sex == "woman"
 
 
 def test_a_saved_game_rereads_the_script(game: ClownGame):
@@ -1002,7 +1004,8 @@ def test_the_first_girl_is_a_harbour_girl_and_the_written_three_come_to_the_door
     st.flags["second_girl_come"] = True
     assert game._at_the_door(st).id == "rosalind"
     # a setup that names nobody, or nonsense, gets the first starter
-    assert game.new_instance({})[1].active == "ada_vosk" and game.new_instance({"first_girl": "nobody"})[1].active == "ada_vosk"
+    assert game.new_instance({})[1].active == "" and game.new_instance({})[1].flags.get("first_pick")      # nothing said: chosen at the shed
+    assert game.new_instance({"first_girl": "nobody"})[1].active == "ada_vosk"                                 # a name that is nobody's: the first starter
     assert any(e.id == "first_girl_arrives" for e in st.hidden.events)
 
 

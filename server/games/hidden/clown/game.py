@@ -338,20 +338,19 @@ class ClownGame(GameBase):
 
     # ---- protocol ----------------------------------------------------------------------------------------------------
     def setup_options(self) -> dict[str, Any]:
+        """The start form, in the order it is shown (the owner, 11-14): the name (blank until the player types one), male or female
+        right after it with no label of its own, the archetype, and the lines about the player's character. No first girl here:
+        the game opens at the shed and she is chosen there. A setup may still name one (`first_girl`: a starter's or a written
+        girl's id) for the tools, the tests and the staged scenes."""
         sc = self.scenario()
         return {
-            "name": {"kind": "text", "label": "Your name", "required": False, "default": "the proprietor"},
-            "kind": {"kind": "select", "label": "What kind of proprietor", "required": True,
+            "name": {"kind": "text", "label": "Your name", "required": False, "default": ""},
+            # nothing said it before, so a local model guessed ("sir", from the housekeeper, in an opening round). The label is a
+            # space: the client shows a field's key when the label is empty
+            "sex": {"kind": "select", "label": " ", "required": True, "default": "woman",
+                    "options": [{"id": "woman", "name": "Female"}, {"id": "man", "name": "Male"}]},
+            "kind": {"kind": "select", "label": "Your archetype", "required": True,
                      "options": [{"id": k["id"], "name": k["name"]} for k in sc.get("proprietors") or []], "default": "charmer"},
-            "first_girl": {"kind": "select", "label": "The first girl", "required": True,
-                           "options": ([{"id": HARBOUR_START, "name": "Choose her yourself, at the harbour"}] if self.content.girls_deck() else []) + self._starter_options(),
-                           "default": HARBOUR_START if self.content.girls_deck() else (self._starter_options() or [{"id": "dot"}])[0]["id"],
-                           "hint": "The lease pays for one contract off the clerk's slip. Choose her in play at the Harbourmaster's shed, or name her here and she is in the house when the game opens. The three the file tells of come to the door later; you may meet them about the town first."},
-            # the owner, 11-14: "let user pick gender in the character creation, affecting things like sir vs madame". Nothing said
-            # before, so a local model guessed ("sir", from the housekeeper, in an opening round)
-            "sex": {"kind": "select", "label": "You are", "required": True, "default": "woman",     # the owner: "Just male / female here", "Default to female"
-                    "options": [{"id": "woman", "name": "Female (ma'am, Miss or Mrs)"}, {"id": "man", "name": "Male (sir, Mr)"}],
-                    "hint": "How the house and the town speak to you and of you."},
             "about": {"kind": "textarea", "label": "About you", "hint": "Anything you like: how you came by the house, what you were before, what you want."},
         }
 
@@ -375,7 +374,7 @@ class ClownGame(GameBase):
         clock = HouseClock(day=int(start.get("day", 1)), minute=int(start.get("minute", 540)))
         deck_g, cards = self.content.girls_deck(), self.content.girl_cards()
         starters = [o["id"] for o in self._starter_options()]
-        first = str(setup.get("first_girl") or "").strip().lower() or (starters or [(sc.get("girls") or [{}])[0].get("id", "")])[0]
+        first = str(setup.get("first_girl") or "").strip().lower() or (HARBOUR_START if deck_g else (starters or [(sc.get("girls") or [{}])[0].get("id", "")])[0])
         # the owner, 11-14: "have you pick the girl at the start of the game. Like a 'you head to the harbor to hunt for your first
         # pupil' bit. That would let me see the normal in game recruitment system too": the game opens at the shed with nobody in
         # the house, and the lease's one contract is taken off the slip with the ordinary Take
@@ -437,7 +436,7 @@ class ClownGame(GameBase):
             for e in state.hidden.events:
                 if e.id == "opening":
                     e.fired, e.fired_turn = True, 0
-        return f"{state.scenario.name} — {name}", state
+        return f"{state.scenario.name} — {name if str(setup.get('name') or '').strip() else 'The Proprietor'}", state
 
     def load_state(self, data: dict[str, Any]) -> ClownState:
         sc = self.content.scenarios().get((data.get("scenario") or {}).get("id", ""))
