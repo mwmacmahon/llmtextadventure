@@ -441,11 +441,17 @@ def test_a_jobs_own_giver_in_the_scene_is_not_held_by_that_scene(engine):
     st = state_of(engine, iid)
     st.player.location = "The Drowned Lantern"
     st.person("maud").location = "The Drowned Lantern"
-    assert "cellar_rats" in game.givers_here(st) or not any(h.id == "cellar_rats" for h in st.hooks)
+    assert game.givers_here(st) == []                                  # she is only in the room: her job waits like anyone's
+    assert "cellar_rats" in game.givers_here(st, ["maud"])             # the player's attempt is at her
+    st.person("hesk").location = "The Drowned Lantern"
+    assert game.givers_here(st, ["hesk"]) == [] or "cellar_rats" not in game.givers_here(st, ["hesk"])   # talking to someone else: Maud's job still waits
+    st.player.with_them = ["maud"]
+    assert "cellar_rats" in game.givers_here(st)                       # she is in the player's company
     doc = st.model_dump(mode="json")
     mk = lambda: ev.Event.model_validate({"id": "x_reach", "hook": "x", "trigger": True, "where": ["The Drowned Lantern"], "directive": "She asks."})  # noqa: E731
     for why, soft in (("in a scene with Maud Tallow", True), ("on the move", False)):
         assert not ev.tick([mk()], doc, 3, ctx=ev.EffectContext(unquiet=why, soft=soft))[0]                       # the giver elsewhere: held
         assert [f.event_id for f in ev.tick([mk()], doc, 3, ctx=ev.EffectContext(unquiet=why, soft=soft, givers_here=["x"]))[0]] == ["x_reach"]
     st.person("maud").location = "Reed Island"
-    assert "cellar_rats" not in game.givers_here(st)
+    st.player.with_them = []
+    assert "cellar_rats" not in game.givers_here(st, ["maud"])

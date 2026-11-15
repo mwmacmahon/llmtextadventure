@@ -2149,8 +2149,12 @@ class Engine:
                                 **dict(zip(("unquiet", "soft"), quiet_why(game, state, adj, doc, turn, self._last_turn(iid, turn)))),
                                 far=str(_hook(game, "far_from_word", state, default="") or ""),
                                 newcomer=nc[0], unmet=nc[1])
-        if ectx.unquiet and (ectx.soft or ectx.unquiet == "on the move"):     # a scene or a move, never a fight, a peril or a closed door
-            ectx.givers_here = list(_hook(game, "givers_here", state, default=[]) or [])
+        # the owner, 11-15: "Every person in the inn would walk up and interrupt". Only the person the player is dealing with: the
+        # one this turn's attempt is at, or already in the player's company. Never on the spacing after another caller, and never
+        # in a fight, a peril or behind a closed door
+        if ectx.unquiet == "on the move" or ectx.unquiet.startswith("in a scene with ") or ectx.unquiet.endswith(" was talking with the player"):
+            at = {t for i in (getattr(adj, "intents", None) or []) for t in (getattr(i, "targets", None) or [])} if adj is not None else set()
+            ectx.givers_here = list(_hook(game, "givers_here", state, sorted(at), default=[]) or [])
         # B105 (D177): a question about the scene (kind trivial) moves nothing: no event, pending or hazard ticks on it
         quiet = adj is not None and adj.kind == "trivial"
         fired, expired, ev_directives = ([], [], []) if quiet else ev.tick(events, doc, turn, clock_path, log_path, ectx, since_abs=since_abs)

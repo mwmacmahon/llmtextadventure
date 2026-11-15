@@ -804,19 +804,24 @@ def test_a_blow_at_one_of_a_lot_the_reading_noted_brings_the_lot(game):
     assert sum(max(1, s3.person(x).combat.count) for x in s3.player.fighting) == 1
 
 
-def test_friendly_company_joins_a_fight_and_stays_in_it(game):
+def test_who_fights_beside_the_player_is_what_the_story_showed_not_how_friendly_they_are(game):
     """11-15, her game 8c2749b90327: a natural 20 rallied the innkeeper and the old man, the telling had them swinging, and
-    neither was in the round (friendly, not loyal). In a fight, friendly company fights and stays in it though a later turn
-    files them as not present; out of a fight the party is as before (the encounter's size)."""
+    neither was in the round. The owner: not "based on pure disposition". The referee's row marks who agreed to fight; a
+    friendly person in the room who did not is no part of the round; the mark holds through a turn that files them absent
+    and is cleared when the fight ends."""
     from games.fantasy import combat as cb
     st = new(game)
     foe(st, "maud", attitude=-3).met = True
     hesk = st.person("hesk")
     hesk.location, hesk.attitude, hesk.met = st.player.location, 1, True
     st.player.with_them = ["hesk"]
-    assert cb.party(st) == [] or all(q.id != "hesk" for q in cb.party(st))
+    s1, _ = game.world_turn(st, act("I swing at her"), "I swing at her.", Dice(10), 3, 2)
+    assert s1.combat is not None and not any(e.get("who") == "hesk" for e in s1.combat.plan)        # friendly and present: a bystander
+    assert "fights_beside true" in game.referee_rules(st)
+    hesk.fights_beside = True
     s2, _ = game.world_turn(st, act("I swing at her"), "I swing at her.", Dice(10), 3, 2)
-    assert s2.combat is not None and "hesk" in s2.combat.allies and any(q.id == "hesk" for q in cb.party(s2))
     assert any(e.get("who") == "hesk" and e.get("side") == "ally" for e in s2.combat.plan)
     s2.player.with_them = []
     assert any(q.id == "hesk" for q in cb.party(s2))
+    s3, _ = cb.run_fight_command(game, s2, "flee")
+    assert s3.combat is None and not s3.person("hesk").fights_beside

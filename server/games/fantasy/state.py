@@ -194,6 +194,8 @@ class Person(BaseModel):
     moves: list[dict] = Field(default_factory=list)   # what they do in a fight (B95, D176): [{kind: strike|hold|grab|song, bonus, damage, peril, harm}]
     hidden_from_player: bool = False   # present and unseen (an ambusher in the fog, a pickpocket at the next table; B92, §7c)
     combat: CombatBlock | None = None  # part fifteen §1: the fighting numbers; a default by the role words when None
+    fights_beside: bool = False     # 11-15 (the owner: not "based on pure disposition"): the story had them agree to fight on the player's
+                                    # side, or take up a weapon for them; the referee's row sets and clears it. They are in the round while it stands
 
     @property
     def attitude_word(self) -> str:

@@ -693,10 +693,13 @@ class FantasyGame(GameBase):
         return [q.id for q in s.people if q.status == "alive" and not q.hidden_from_player
                 and (q.id in p.with_them or (q.location and self._same_spot(s, q.location, p.location)))]   # B245: the boat's party filed elsewhere
 
-    def givers_here(self, state: FantasyState) -> list[str]:
-        """The pipeline's hook (11-15): the jobs whose giver is with the player now. Such a job's own caller is not held back by
-        the scene the player is having with that very person, or by the player crossing the room."""
-        here = {q.name for q in state.people if q.id in set(self.people_here(state))}
+    def givers_here(self, state: FantasyState, at: list[str] | None = None) -> list[str]:
+        """The pipeline's hook (11-15): the jobs whose giver the player is dealing with now: the person this turn's attempt is at
+        (`at`), or one in the player's company. Such a job's own caller is not held back by the scene the player is having with
+        that very person. Anyone else in the room still waits for a quiet turn (the owner: "Every person in the inn would walk up
+        and interrupt")."""
+        dealing = (set(at or []) | set(state.player.with_them)) & set(self.people_here(state))
+        here = {q.name for q in state.people if q.id in dealing}
         return [h.id for h in state.hooks if h.giver and h.giver in here]      # the hook keeps its giver by name (the quest log's column)
 
     def people_records(self, state: FantasyState) -> list[str]:
@@ -1180,6 +1183,8 @@ class FantasyGame(GameBase):
                f"quote it in the note."] if any(q.hidden_from_player for q in s.people) else []),
             "- set <person id>.told value=<tell id>: the person gave that piece of what they know this turn. The game state lists the open pieces, with "
             "their ids, for the people with the player; one row per piece told.",
+            f"- set <person id>.fights_beside true: the prose shows them agree to fight on {p.name}'s side, or take up a weapon for {p.name}, against "
+            f"a foe who is here or coming. false: the prose shows them back out, run, or part from {p.name}. Never for someone who only cheers or watches.",
             "- set <person id>.status alive|dead|missing|gone; set <person id>.condition <a few words>; set <person id>.mood <a word>. "
             "In A FIGHT (THIS TURN lists a round), write no hit point or status rows for anyone the round touched: the engine counted every "
             "blow and told the narrator what happened; conditions, places and heat as always.",
@@ -2851,6 +2856,11 @@ class FantasyGame(GameBase):
             words = clip_words(value.strip(" .").lower(), 80)
             if words and w.set(f"people.{q.id}.condition", q.condition, words):
                 q.condition = words
+            return True
+        if kind == "set" and field == "fights_beside":
+            yes = value.strip().lower() in ("true", "yes", "1")
+            if w.set(f"people.{q.id}.fights_beside", q.fights_beside, yes):
+                q.fights_beside = yes
             return True
         if kind == "set" and field == "mood":
             word = value.strip(" .").lower()[:30]
