@@ -693,6 +693,12 @@ class FantasyGame(GameBase):
         return [q.id for q in s.people if q.status == "alive" and not q.hidden_from_player
                 and (q.id in p.with_them or (q.location and self._same_spot(s, q.location, p.location)))]   # B245: the boat's party filed elsewhere
 
+    def givers_here(self, state: FantasyState) -> list[str]:
+        """The pipeline's hook (11-15): the jobs whose giver is with the player now. Such a job's own caller is not held back by
+        the scene the player is having with that very person, or by the player crossing the room."""
+        here = {q.name for q in state.people if q.id in set(self.people_here(state))}
+        return [h.id for h in state.hooks if h.giver and h.giver in here]      # the hook keeps its giver by name (the quest log's column)
+
     def people_records(self, state: FantasyState) -> list[str]:
         """B244 (b): for the game master's asides, each person the player can see here with the record's description after the
         role, so an age or a coat the content already has is the answer. Named only once the player knows the name."""
@@ -1889,6 +1895,9 @@ class FantasyGame(GameBase):
         if pline and data.get("outcome") in WON:
             return pline
         if data.get("outcome") not in WON:
+            foe = next((q for x in state.player.fighting if (q := state.person(x)) is not None and q.status == "alive"), None)
+            if foe is not None:                        # 11-15: in a fight a failed attempt's cost is the foe's doing, and the line says so
+                data["harm_by"] = f"{self.shown_name(state, foe)} punishes the opening."
             danger = str((data.get("stake") or {}).get("danger") or "")
             if danger in ("scrape", "solid", "serious", "lethal"):        # B206: the step the assistant's stake named
                 if danger == "lethal":

@@ -334,6 +334,8 @@ def run_check(call: Call, n: int, stats: dict[str, int], resolver: Callable[[Any
         dice = str(data.get("harm_dice") or "")        # the owner, 11-13: a cost is shown as its dice ("1d6+4: 3+4 = 7")
         mechanic += (f" It costs {dice} = {data['harm']} hit point{'s' if data['harm'] != 1 else ''}." if dice and "+" in dice else
                      f" It costs {data['harm']} hit point{'s' if data['harm'] != 1 else ''}" + (f" ({dice.split(':')[0]})." if dice else "."))
+        if data.get("harm_by"):                        # 11-15 (the owner: "why did I take 2 damage for failing to start a fire?"): who it was
+            mechanic += f" {data['harm_by']}"
     return CallResult(text=text, mechanic=mechanic, data=data, causes=causes)
 
 

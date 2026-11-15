@@ -476,8 +476,27 @@ def living_enemies(game: Any, s: FantasyState) -> list[Person]:
 def party(s: FantasyState) -> list[Person]:
     """The allies who fight (§5): with the player, alive, and either carrying a block of their own in the content (Hazel, Tam)
     or loyal (attitude 2 or more). Anyone else present is a bystander and takes no part until struck or joined."""
-    return [q for x in s.player.with_them if (q := s.person(x)) is not None and q.status == "alive" and not q.hidden_from_player
-            and x not in s.player.fighting and (q.combat is not None or q.attitude >= 2)]
+    out = [q for x in s.player.with_them if (q := s.person(x)) is not None and q.status == "alive" and not q.hidden_from_player
+           and x not in s.player.fighting and (q.combat is not None or q.attitude >= 2)]
+    # 11-15, her game 8c2749b90327: a natural 20 rallied the innkeeper and the old man ("Maud and Hesk back Mimi against the troll"),
+    # the telling had a cudgel and a boathook swinging, and neither was in the round: friendly (1) is short of loyal. In a fight,
+    # those who joined it (join_fight, below) stay in it while they live, whoever the referee files as present turn by turn
+    if s.combat is not None:
+        have = {q.id for q in out}
+        out += [q for x in s.combat.allies if x not in have and x not in s.player.fighting and (q := s.person(x)) is not None
+                and q.status == "alive" and not q.hidden_from_player]
+    return out
+
+
+def join_fight(s: FantasyState) -> list[str]:
+    """Who of the player's company comes into the fight on the player's side as a round is planned: anyone with the player who
+    is friendly or better. They are kept on the fight's own list, so a turn's filing of who is present does not drop them.
+    Outside a fight nothing changes: `party` counts only those with a block of their own or loyal (the encounter's size)."""
+    c, p = s.combat, s.player
+    new = [x for x in p.with_them if x not in c.allies and x not in p.fighting and (q := s.person(x)) is not None
+           and q.status == "alive" and not q.hidden_from_player and q.attitude >= 1]
+    c.allies += new
+    return new
 
 
 def plan_round(game: Any, s: FantasyState, adj: Any, player_text: str, turn: int, rng: Any) -> list[dict]:
@@ -488,6 +507,7 @@ def plan_round(game: Any, s: FantasyState, adj: Any, player_text: str, turn: int
     if s.combat is None:
         s.combat = CombatState(round=0, since_turn=turn)
     c = s.combat
+    join_fight(s)
     plan: list[dict] = []
     att = player_attack(adj)
     if att:

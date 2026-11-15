@@ -428,3 +428,24 @@ async def test_a_slow_turn_in_a_tense_scene_takes_what_the_assistant_said(engine
     issues = lambda evs: " ".join(str(e["data"].get("mechanics", {}).get("issues")) for e in evs if isinstance(e.get("data"), dict))  # noqa: E731
     assert "tense turn (" in issues(ev1) and "the slow floor stands down" in issues(ev1)
     assert "slow turn: 2 minutes raised to the floor of 5" in issues(ev2) and "tense turn" not in issues(ev2)    # calm: the floor stands
+
+
+def test_a_jobs_own_giver_in_the_scene_is_not_held_by_that_scene(engine):
+    """11-15, her game 8c2749b90327: the innkeeper's job was held seven turns, "on the move" (the player crossed the room and
+    waited for her) and then "in a scene with Maud Tallow" (the player talking to her, prodding for the job). A job whose giver
+    is with the player comes through a scene or a move; a fight, a peril or a closed door still hold it, and so does a scene
+    when the giver is somewhere else."""
+    from engine import events as ev
+    game = engine.games["fantasy"]
+    iid = engine.create_instance("fantasy", SHEET)
+    st = state_of(engine, iid)
+    st.player.location = "The Drowned Lantern"
+    st.person("maud").location = "The Drowned Lantern"
+    assert "cellar_rats" in game.givers_here(st) or not any(h.id == "cellar_rats" for h in st.hooks)
+    doc = st.model_dump(mode="json")
+    mk = lambda: ev.Event.model_validate({"id": "x_reach", "hook": "x", "trigger": True, "where": ["The Drowned Lantern"], "directive": "She asks."})  # noqa: E731
+    for why, soft in (("in a scene with Maud Tallow", True), ("on the move", False)):
+        assert not ev.tick([mk()], doc, 3, ctx=ev.EffectContext(unquiet=why, soft=soft))[0]                       # the giver elsewhere: held
+        assert [f.event_id for f in ev.tick([mk()], doc, 3, ctx=ev.EffectContext(unquiet=why, soft=soft, givers_here=["x"]))[0]] == ["x_reach"]
+    st.person("maud").location = "Reed Island"
+    assert "cellar_rats" not in game.givers_here(st)

@@ -441,7 +441,18 @@ def still_left_behind(s: FantasyState, pid: str) -> bool:
     if lb and lb.get("at") != s.player.location:
         s.flags.pop("left_behind", None)                 # the player is somewhere else now: coming back is walking in on them
         return False
-    return pid in (lb.get("who") or [])
+    if pid not in (lb.get("who") or []):
+        return False
+    # 11-15, her game 8c2749b90327: the player ran up the cellar stairs (the cellar is inside the inn, so the place never changed),
+    # the troll followed, broke the door and smashed a table, and for five turns no fight opened: he was still "left behind".
+    # When the story itself has that foe coming (a timer of his own set in motion and not yet fallen due or just due), he is no
+    # longer behind: the fight opens on sight again
+    q = s.person(pid)
+    names = {pid.lower()} | ({q.name.lower(), str(getattr(q, "called", "") or "").lower()} if q is not None else set())
+    if any(str(x.who or "").lower() in names - {""} and not x.hidden and x.source != "script" for x in s.hidden.pending if x.live):
+        lb["who"] = [x for x in lb.get("who") or [] if x != pid]
+        return False
+    return True
 
 
 def _break_contact(s: FantasyState, w: "WorldTurn") -> str:

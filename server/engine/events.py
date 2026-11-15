@@ -77,6 +77,10 @@ class EffectContext(BaseModel):
     newcomer: str = ""                          # B250: a newcomer of the last six turns is still here ("Tam Reedy came in lately and is here")
     unmet: list[str] = Field(default_factory=list)   # B250: the names (lower case, full and first) of the people the player has not met
     holds: list[dict] = Field(default_factory=list)   # what waited this turn for a quiet one, and why (the ledger's)
+    givers_here: list[str] = Field(default_factory=list)   # the hooks whose giver is with the player now, when the why is only a scene
+                                                # or a move (11-15, her game 8c2749b90327: the innkeeper's own job was held seven turns
+                                                # "in a scene with" the innkeeper, the player waiting for her to speak): she is the one
+                                                # talking, so her job comes
 
 Strictness = Literal["scripted", "guided", "advisory"]
 
@@ -426,7 +430,7 @@ def tick(events: list[Event], doc: dict, turn: int, clock_path: str = "clock", l
         soft_now = ctx.soft if ctx is not None else False
         if not why_now and ctx is not None and ctx.newcomer and variant == "trigger" and names_any(says, ctx.unmet):
             why_now, soft_now = ctx.newcomer, True       # B250: one newcomer a scene; met people (Tam back for his answer) still come
-        if e.hook and says and why_now:
+        if e.hook and says and why_now and not (variant == "trigger" and ctx is not None and e.hook in ctx.givers_here):
             # B104, B235, B248: a hook's caller (in its own scene too) and word from elsewhere wait for a quiet turn; a hook
             # that has waited `patience` game minutes gives way to a soft why (a scene in progress, a recent caller)
             now_abs = _clock_abs(doc, clock_path, mpd)

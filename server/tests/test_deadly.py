@@ -768,6 +768,12 @@ def test_a_hostile_fled_from_or_yielded_to_does_not_open_the_fight_again(game):
     assert s2.player.fighting == [] and s2.flags["left_behind"]["who"] == ["maud"]
     s3, _ = game.world_turn(s2, act("I catch my breath"), "I catch my breath.", Dice(10), 3, 2)        # the state still has them in one place
     assert s3.player.fighting == []
+    # 11-15: the story has her coming after the player (a timer of her own): she is not behind any more, and the fight opens
+    from engine.pending import Pending
+    s3b = s3.model_copy(deep=True)
+    s3b.hidden.pending.append(Pending(id="p9", what="Maud comes up the stairs after the player", who="Maud Tallow", due_day=s3b.clock.day, due_minute=s3b.clock.minute + 1))
+    s3c, _ = game.world_turn(s3b, act("I catch my breath"), "I catch my breath.", Dice(10), 3, 2)
+    assert s3c.player.fighting == ["maud"]
     s3.player.location = "Ferry Landing"
     s3.person("maud").location = "Ferry Landing"                                                    # she is met again somewhere else
     s4, _ = game.world_turn(s3, act("I catch my breath"), "I catch my breath.", Dice(10), 3, 2)
@@ -796,3 +802,21 @@ def test_a_blow_at_one_of_a_lot_the_reading_noted_brings_the_lot(game):
                                  intents=[IntentCombat(action="Stab the cutpurse.", attack_at=["cutpurse"], weapon="dagger")])
     s3, _ = game.world_turn(st, one, "I stab the cutpurse.", Dice(10), 3, 2)
     assert sum(max(1, s3.person(x).combat.count) for x in s3.player.fighting) == 1
+
+
+def test_friendly_company_joins_a_fight_and_stays_in_it(game):
+    """11-15, her game 8c2749b90327: a natural 20 rallied the innkeeper and the old man, the telling had them swinging, and
+    neither was in the round (friendly, not loyal). In a fight, friendly company fights and stays in it though a later turn
+    files them as not present; out of a fight the party is as before (the encounter's size)."""
+    from games.fantasy import combat as cb
+    st = new(game)
+    foe(st, "maud", attitude=-3).met = True
+    hesk = st.person("hesk")
+    hesk.location, hesk.attitude, hesk.met = st.player.location, 1, True
+    st.player.with_them = ["hesk"]
+    assert cb.party(st) == [] or all(q.id != "hesk" for q in cb.party(st))
+    s2, _ = game.world_turn(st, act("I swing at her"), "I swing at her.", Dice(10), 3, 2)
+    assert s2.combat is not None and "hesk" in s2.combat.allies and any(q.id == "hesk" for q in cb.party(s2))
+    assert any(e.get("who") == "hesk" and e.get("side") == "ally" for e in s2.combat.plan)
+    s2.player.with_them = []
+    assert any(q.id == "hesk" for q in cb.party(s2))
