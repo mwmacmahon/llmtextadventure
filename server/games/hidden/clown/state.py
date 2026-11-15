@@ -307,6 +307,7 @@ class House(BaseModel):
     alerts: list[str] = Field(default_factory=list)   # D211C: the player's § lines for the next turn (a worn girl before her show)
     tells: list[str] = Field(default_factory=list)    # D215C: what the narrator plays at the next turn (a night's challenge), in words
     warned: list[str] = Field(default_factory=list)   # "day:show" warned already (once a day)
+    charged: list[str] = Field(default_factory=list)  # what the engine itself took from or put in the cashbox at the last turn's end, each with its sum (the referee is told: no row for these)
     money: int = 200
     heat: int = 0
     renown_xp: float = 0.0          # D219C: the part of a point of renown earned toward the next

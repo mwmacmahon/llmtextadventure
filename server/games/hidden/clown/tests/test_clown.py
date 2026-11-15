@@ -1202,7 +1202,7 @@ def test_money_is_never_clipped_silently_a_spend_past_the_cashbox_is_retold(game
     assert s.house.money == 50 and not rep.rejected                               # a dear purchase the house can pay lands whole
     s, rep, _ = apply(game, st, C(kind="add", target="house", field="money", value="-300", note="the chandler"))
     assert s.house.money == 200 and any(r.kind == "conflict" and "200 gold" in r.reason for r in rep.rejected)
-    s, rep, _ = _force(game, st, C(kind="add", target="house", field="money", value="-300"))
+    s, rep, _ = _force(game, st, C(kind="add", target="house", field="money", value="-300", note="the chandler"))
     assert s.house.money == 0                                                     # forced: what there is, never below nothing
     s, rep, _ = apply(game, st, C(kind="add", target="house", field="money", value="+250", note="a windfall"))
     assert s.house.money == 200 and any(r.kind == "conflict" for r in rep.rejected)
@@ -2270,3 +2270,46 @@ def test_an_answer_that_opens_with_yes_is_a_yes_to_the_engines_question():
     yes = lambda s: bool(BLOCK_YES.search(s.strip()) or BLOCK_YES_FIRST.match(s))  # noqa: E731
     assert all(yes(s) for s in ("Yes.", "yes", "Yes, I'll spend the afternoon out in the town.", "Very well, the morning then.", "Okay, go."))
     assert not any(yes(s) for s in ("No, I stay here in the practice room.", "I ask Mrs Pell what is for dinner.", "Yesterday's letters, I read them."))
+
+
+def test_the_referee_is_told_the_engines_charges_and_a_money_row_needs_a_reason(game):
+    """Round 8 (11-14): the week's keep and a broken window were each charged by the engine and again by a referee's row. The
+    owner: tell the referee which changes are made already, and have it give a reason for any it adds."""
+    st = new(game)
+    adj = type("A", (), {"intents": [], "attempt_kinds": []})()
+    assert not any("THE CASHBOX" in str(n) for n in game.referee_notes(st, adj))
+    st.house.charged = ["the week's coal, food and Mrs Pell's wages, 15 gold", "An admirer in the yard, 20 gold lost"]
+    note = next(str(n) for n in game.referee_notes(st, adj) if "THE CASHBOX" in str(n))
+    assert "15 gold" in note and "20 gold lost" in note and "Write no money row" in note
+    for pd in st.hidden.pending:
+        if pd.tag == "week_end":
+            pd.fired = True
+    due = next(str(n) for n in game.referee_notes(st, adj) if "THE WEEK CLOSES" in str(n))
+    assert f"{game._keep(st)} gold" in due
+    before = st.house.money
+    st, rep, _ = apply(game, st, Change(kind="add", target="house.money", value="-5"))
+    assert st.house.money == before and any("no note" in r.reason for r in rep.rejected)
+    st, rep, _ = apply(game, st, Change(kind="add", target="house.money", value="-5", note="a tip to the carter"))
+    assert st.house.money == before - 5 and any("a tip to the carter" in a for a in rep.applied)
+    assert "a money row with no note is refused" in game.referee_rules(st)
+
+
+def test_a_nights_loss_takes_no_more_than_the_cashbox_and_says_its_sum(game):
+    """Round 8, turn 40: a prank took 35 gold from a cashbox holding 25 and the house stood below nothing for nine turns."""
+    import random
+    st = new(game)
+    st.house.money = 25
+    said = game._challenge_effect(st, {"money": -35}, random.Random(1), "The cashbox")
+    assert st.house.money == 0 and "held only 25 gold" in said and st.house.charged == ["The cashbox, 25 gold lost"]
+    st.house.money, st.house.charged = 100, []
+    assert "35 gold lost" in game._challenge_effect(st, {"money": -35}, random.Random(1), "The cashbox") and st.house.money == 65
+
+
+def test_the_narrators_fixed_text_has_the_engines_prices(game):
+    """Round 8: the cook quoted a week's costs and a price for clubs, both invented; the purchase the next turn cost eleven times that."""
+    st = new(game)
+    text = game.frozen_prefix(st)
+    line = next(x for x in text.split("\n") if x.startswith("WHAT THINGS COST"))
+    for it in game.gear_list(st).values():
+        assert f"{it['name']}, {int(it['cost'])}" in line
+    assert f"wages: {int(dk.dial(st, 'keep'))} for the house" in line

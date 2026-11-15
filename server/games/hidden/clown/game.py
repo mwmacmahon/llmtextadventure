@@ -555,6 +555,18 @@ class ClownGame(GameBase):
         b.append(f"BOOKINGS AND TROUBLE. The town's offers and troubles reach the house in play; each comes with its whole in the game state block "
                  f"once it has reached {p.name} (\"In motion\"), and not before: nobody in the house knows of one until THIS TURN brings it.")
         b.append("")
+        if sw.on("engine_charges"):
+            # round 8 (11-14): Mrs Pell said "about twenty gold a week" and "five gold a head" (15 and 3), and "clubs are ten gold a set"
+            # (110, bought the next turn); the narrator was shown no price. These are fixed for a game, so they sit here
+            gear = "; ".join(f"{it.get('name', it['id'])}, {int(it.get('cost') or 0)}" for it in self.gear_list(s).values())
+            b.append(f"WHAT THINGS COST, in gold. Use these only when a price comes up in the story; do not list them. A listed price is always this "
+                     f"figure, and the house pays it without a scene. For anything else the house might buy that is not listed here or in the game "
+                     f"state, nobody names a figure; small prices of the street (a drink, a cab, a tip) are yours to set. The week's coal, food and Mrs Pell's wages: "
+                     f"{int(dk.dial(s, 'keep'))} for the house and its first girl, and {int(dk.dial(s, 'keep_per_girl'))} more for each girl after her, paid on "
+                     f"Sunday night. The rent, every fourth week: {int(s.house.rent)} by the lease. A tutor for a girl's morning or afternoon: {int(dk.dial(s, 'tutor_cost'))}; "
+                     f"a master: {int(dk.dial(s, 'master_cost'))}." + (f" Gear, each a set for one girl: {gear}." if gear else "")
+                     + " A contract at the shed is the price on the clerk's slip that day.")
+            b.append("")
         words = self.content.words()
         shed = str(words.get("shed_text") or "").strip()     # the content may word the shed itself (words.yml; the default game's, 11-14)
         b.append(shed.replace("{name}", p.name) if shed else
@@ -986,6 +998,10 @@ class ClownGame(GameBase):
         room = min(3, int(info.difficulty) + steps)
         return room, int(round(int(info.pays) * (1 + dk.dial(s, "step_pay") * (room - int(info.difficulty)))))
 
+    def _keep(self, s: ClownState) -> int:
+        """The week's keep: the house's, and so much more for every girl in it beyond the first (D194C)."""
+        return int(dk.dial(s, "keep")) + int(dk.dial(s, "keep_per_girl")) * max(0, len(s.in_house()) - 1)
+
     def _rent(self, s: ClownState) -> int:
         """The rent every fourth week: the lease's, and the landlord's rise with each of the Name's steps (D213C)."""
         if self._favour(s, "rent_frozen"):              # D218C: the bank manager
@@ -1041,6 +1057,17 @@ class ClownGame(GameBase):
             out.append(f"The player's words asked for days to be skipped inside this turn. The engine refused that part: days pass only by the Skip "
                        f"command, said on its own. The prose is right to stay on this day and hour; that the days did not pass is not a contradiction "
                        f"and not a line left unplayed, and no row moves the clock.")
+        if sw.on("engine_charges"):
+            # round 8 (11-14): at the week's close the engine paid the keep (15) and the referee wrote -25 for "weekly upkeep"; the next
+            # turn it wrote -5 for a window the engine had charged 20 for. The owner: tell the referee which changes are made already.
+            # Assumes nothing of a reading: the list is the engine's own
+            if state.house.charged:
+                out.append("THE CASHBOX. The engine has made these changes to the house's money already, and the game state's money shows them: "
+                           + "; ".join(state.house.charged) + ". Write no money row for these, whatever the prose says was paid or lost. Other money in the scene (a tip, a bribe) still gets its row.")
+            if any(pd.fired and not pd.resolved_why.startswith("counted") for pd in by_tag(state.hidden.pending, "week_end")):
+                due = [f"the week's coal, food and Mrs Pell's wages, {self._keep(state)} gold"] + ([f"the rent, {self._rent(state)} gold"] if state.house.week % 4 == 0 else [])
+                out.append("THE WEEK CLOSES this turn. The engine pays these itself when the turn ends: " + "; ".join(due)
+                           + ". Write no money row for them, however the prose names them (the housekeeping, the bills, the upkeep).")
         for g in state.girls:
             if sw.on("axis_note") and g.id in ids and g.in_house():
                 out.append(f"This turn {state.player.name} dealt directly with {g.name} ({g.id}; now: {axis_word('love', g.love)}, {axis_word('respect', g.respect)}, "
@@ -1254,7 +1281,9 @@ class ClownGame(GameBase):
             "person only spoken of (Aurel Brascombe, the Alderman, the Mayor are talked about, not met). An alias of a listed person is that person: use their id. "
             "Never for a girl on the clerk's slip: her contract is bought only by the Take lever at the slip's price, never in the prose.",
             "- add house.money -n / +n: money the prose shows paid, spent, taken or received in the scene (a bribe, a doctor paid, a tip, a debt paid), "
-            "never more than the house has. Money that changes hands at a show is its fee, and the engine pays that itself at the show's hour: no row, "
+            "never more than the house has. Its note says what the money was for, in a few words; a money row with no note is refused. The week's "
+            "coal, food, wages and rent, a contract bought or sold, gear, a tutor's or a master's fee, and what a night's incident the game state "
+            "reports cost the house are the engine's: no row. Money that changes hands at a show is its fee, and the engine pays that itself at the show's hour: no row, "
             "and none for a booked show played or paid before its hour. A performance the game state's Booked line does not list is not a show of "
             "the house: no fee for it, whatever the prose says changed hands.",
             "- set player.conditions +<name> / -<name>: the proprietor's own body, from the same list. move player <place>.",
@@ -1514,6 +1543,7 @@ class ClownGame(GameBase):
                     n -= s.house.money
                 if not n:
                     return True
+                why = " ".join(str(ch.note or "").split())
                 told_now = [x for x in s.shows if x.result and not x.told]
                 if n > 0 and told_now:
                     w.reject("house.money", f"the show's fee is the engine's and was paid ({told_now[0].paid} gold); no row for it", value)
@@ -1530,6 +1560,9 @@ class ClownGame(GameBase):
                         w.note(f"house.money: {value} not paid (the forced telling; {early.title} pays at its hour)")
                         self._told(w, early.title, f"Nothing was paid: {early.title} is played, and paid, at {early.venue} on {when}.")
                     return True
+                if sw.on("engine_charges") and not why:      # the owner, 11-14: a reason line on every money change the referee adds
+                    w.reject("house.money", "a money row says in its note what the money was for; this one has no note", value)   # (a show's
+                    return True                              # fee is refused above, with its own retelling, note or no note)
                 if n > MONEY_ROW:          # C56: never a silent clip; a sum the town does not pay out of hand is retold
                     if not w.conflict("house.money", f"{n} gold handed over in a scene is more than the town pays out of hand (at most {MONEY_ROW})",
                                       value, "contradiction", f"The sum is at most {MONEY_ROW} gold. Tell it so."):
@@ -1544,6 +1577,8 @@ class ClownGame(GameBase):
                     n = -s.house.money
                 if w.set("house.money", s.house.money, s.house.money + n):
                     s.house.money += n
+                    if why:
+                        w.note(f"house.money: {n:+d} gold by the referee's row, for: {why[:120]}")
                 return True
             if f == "heat":              # D213C (the owner, 11-10): no heat; the cops come from the plot
                 w.reject("house.heat", "there is no heat in this game: what the authorities do comes from the story's own events", value)
@@ -2440,22 +2475,36 @@ class ClownGame(GameBase):
             held = a + b + mod >= int(c.get("target", 8))
             if held and str(c.get("check", "")) in STATS:   # D218C: a challenge met is practice in the stat that met it
                 self._practise(s, str(c["check"]), dk.dial(s, "xp_challenge"), str(c.get("title", "")))
-            lost = "" if held else self._challenge_effect(s, c.get("fail") or {}, rng)
+            lost = "" if held else self._challenge_effect(s, c.get("fail") or {}, rng, str(c.get("title", "")))
             if held and c.get("pass"):
-                self._challenge_effect(s, c["pass"], rng)
+                self._challenge_effect(s, c["pass"], rng, str(c.get("title", "")))
             roll = f"2d6 {a}+{b} {mod:+d} ({whose}) = {a + b + mod} against {int(c.get('target', 8))}"
             line = str(c.get("held") if held else c.get("failed"))
+            short = next((x for x in lost.split("; ") if x.startswith("the cashbox")), "")
+            if short:                                    # the written line names the full sum; what went is what was there
+                line += f" But {short}."
             s.house.alerts.append(f"{c.get('title')}: {line} ({roll})")
             s.house.tells.append(f"{c.get('text')}; " + ("the house dealt with it" if held else "it went badly for the house") + (f" ({lost})" if lost else ""))
             self._note(s, f"{c.get('title')}: {line}", f"{c.get('title')}: {roll}: {'held' if held else 'failed'}.", at=f"Day {day} 22:00")
             s.flags[f"challenge_{c['id']}_{'held' if held else 'failed'}"] = True
 
-    def _challenge_effect(self, s: ClownState, eff: dict, rng: random.Random) -> str:
-        """A challenge's effects (the vocabulary in challenges.yml). Returns words for the narrator (no numbers)."""
+    def _challenge_effect(self, s: ClownState, eff: dict, rng: random.Random, title: str = "") -> str:
+        """A challenge's effects (the vocabulary in challenges.yml). Returns words for the narrator: no numbers but a sum of gold
+        (switch engine_charges: round 8's telling said "a few gold poorer" beside the player's line of 20)."""
         out = []
         if eff.get("money"):
-            s.house.money += int(eff["money"])
-            out.append("money lost" if int(eff["money"]) < 0 else "money gained")
+            n = int(eff["money"])
+            if n < 0 and sw.on("engine_charges"):       # round 8 (turn 40): 35 gold went from a cashbox holding 25, and the house stood at -10 for nine turns
+                n = -min(-n, max(0, s.house.money))
+            s.house.money += n
+            if n != int(eff["money"]):
+                out.append(f"the cashbox held only {-n} gold and all of it went" if n else "the cashbox was empty and nothing could be taken")
+            elif sw.on("engine_charges"):
+                out.append(f"{-n} gold lost" if n < 0 else f"{n} gold gained")
+            else:
+                out.append("money lost" if n < 0 else "money gained")
+            if n:
+                s.house.charged.append(f"{title or 'the night'}, {abs(n)} gold {'lost' if n < 0 else 'gained'}")
         if eff.get("renown"):
             self._add_renown(s, int(eff["renown"]))
             out.append("the house's renown the worse for it" if int(eff["renown"]) < 0 else "the house's renown the better")
@@ -2665,14 +2714,16 @@ class ClownGame(GameBase):
                 lines.append(f"{x.name} worked odd jobs about the town {how_much} and brought a little in.")
                 nums.append(f"{x.name}, odd jobs: {n} slot{'s' if n != 1 else ''}, {n * int(dk.dial(s, 'bench_job_pay'))} gold; diligence {x.diligence} ({x.diligence_word}).")
                 x.week_jobs = 0
-        keep = int(dk.dial(s, "keep")) + int(dk.dial(s, "keep_per_girl")) * max(0, len(s.in_house()) - 1)
+        keep = self._keep(s)
         if keep:
             h.money -= keep
+            h.charged.append(f"the week's coal, food and Mrs Pell's wages, {keep} gold")
             lines.append("The coal, the food and Mrs Pell's wages were paid.")        # never "keep": the reader heard the ledger's word in the prose
             nums.append(f"The week's keep, {keep} gold" + (f" ({len(s.in_house())} girls)" if len(s.in_house()) > 1 else "") + ", was paid.")
         if h.week % 4 == 0:
             rent = self._rent(s)
             h.money -= rent
+            h.charged.append(f"the rent, {rent} gold")
             lines.append("The rent was paid." if rent == h.rent else "The rent was paid, at the landlord's new figure.")
             nums.append(f"The rent, {rent} gold, was paid.")
         lines.append(f"Money: {money_word(h.money)}. The house's renown: {h.renown_word}.")
@@ -2790,6 +2841,7 @@ class ClownGame(GameBase):
         s.deck.dealt_this_turn = []
         s.harbour.announce = False
         h.alerts = []                                    # D211C: shown at this turn's start; new ones below
+        h.charged = []                                   # the referee was told of them in this turn; new ones below
         h.tells = []
         self._challenges(s, h.last_tick_abs, now)        # D215C: a night's random challenge, settled at once
         s.flags.pop("_report_fresh", None)
@@ -3329,7 +3381,8 @@ class ClownGame(GameBase):
         if now < sunday * DAY + WEEK_END_MINUTE <= t:
             heard = [h.title for h in dk.hand(s) if h.status == "live"]
             unheard = sum(1 for h in dk.hand(s) if h.status == "dealt")
-            out.append(("the week closed on Sunday night and the house's upkeep was paid" if past else "the week closes on Sunday night: the house's upkeep is paid") + (f"; this week's offers close unbooked ({'; '.join(heard)})" if heard else "")
+            paid = f" ({self._keep(s)} gold" + (f", and the rent, {self._rent(s)} gold" if s.house.week % 4 == 0 else "") + ")" if sw.on("engine_charges") else ""
+            out.append((f"the week closed on Sunday night and the house's upkeep was paid{paid}" if past else f"the week closes on Sunday night: the house's upkeep is paid{paid}") + (f"; this week's offers close unbooked ({'; '.join(heard)})" if heard else "")
                        + (f"; {unheard} offer{'s' if unheard > 1 else ''} not yet heard of close with them" if unheard else ""))
         for pnd in s.hidden.pending:
             if pnd.live and not pnd.hidden and pnd.tag != "week_end" and now < pnd.due_abs(DAY) <= t:
@@ -3693,7 +3746,7 @@ class ClownGame(GameBase):
         directive = (f"{p.name} tells {g.name} her contract is sold on through the shed's book, and she is to go today. Play the telling where she is (the game "
                      f"state says), short: what she says back in her own voice (her file in the game state: heartbroken, defiant, relieved, silent, whatever she "
                      f"is), what she takes with her, the faces of the other girls in the house if any saw it. To whom the contract went is not said; the clerk's "
-                     f"book has it. She is gone from the house by the end of the turn. Stop where {p.name} would next decide.")
+                     f"book has it. The sale brought the house {paid} gold, and the telling says the sum once. She is gone from the house by the end of the turn. Stop where {p.name} would next decide.")
         return s, CommandResult(label="Sell contract", player_line=f"I tell {g.name} her contract is sold on, and she goes today.",
                                 summary=f"{p.name} sells {g.name}'s contract on; she leaves the house.", directive=directive, minutes=30, log_line=line, entities=[g.id],
                                 referee_skip=["money"])
