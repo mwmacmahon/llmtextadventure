@@ -1454,8 +1454,8 @@ def test_the_simulator_plays_a_seeded_game_by_a_strategy_and_a_grid_is_every_com
 
 
 async def test_the_day_is_four_parts_and_only_some_turns_spend_one(engine: Engine):
-    """D210C (the owner, 11-10, "persona style"): going somewhere, an errand, waiting, sleeping or 45 minutes and more spends the
-    part of the day (the clock runs to the next part's start); a talk where they stand costs nothing, however many
+    """D210C (the owner, 11-10, "persona style"): going somewhere, an errand, waiting or sleeping spends the
+    part of the day; the reading's guess at a length spends nothing (11-15) (the clock runs to the next part's start); a talk where they stand costs nothing, however many
     there are in a row (the owner, 11-14: "If it's free it's free"); THIS TURN says which."""
     from engine.pipeline import _this_turn_block, block_spend, next_block
     from engine.roles import AssistantReading
@@ -1466,7 +1466,8 @@ async def test_the_day_is_four_parts_and_only_some_turns_spend_one(engine: Engin
     talk = AssistantReading(kind="action", summary="asks her how the falls are going", time_minutes=10, risk="low")
     walk = AssistantReading(kind="action", summary="walks down to the harbour", time_minutes=15, risk="low")
     long = AssistantReading(kind="action", summary="works with her on the mats", time_minutes=90, risk="low")
-    assert not block_spend(c, talk, 10)[0] and block_spend(c, walk, 15)[0] and block_spend(c, long, 90)[0]
+    assert not block_spend(c, talk, 10)[0] and block_spend(c, walk, 15)[0] and not block_spend(c, long, 90)[0]
+    assert not hasattr(c, "block_spend_minutes")
     assert not hasattr(engine, "_free_run") and not hasattr(c, "block_free_turns")     # no count of free turns anywhere
     iid = engine.create_instance("clown", dict(SETUP, first_girl="ada_vosk"))
     st = game.load_state(engine.store.load_state(iid))
@@ -1474,6 +1475,8 @@ async def test_the_day_is_four_parts_and_only_some_turns_spend_one(engine: Engin
     res = engine._resolve(game, st, talk.model_copy(), iid, 1, [])
     assert res["elapsed"] == 0 and res["block_spent"] is False and "this part of the day goes on" in _this_turn_block(res, "")
     res = engine._resolve(game, st, long.model_copy(), iid, 1, [])
+    assert res["elapsed"] == 0 and res["block_spent"] is False          # a long scene by the reading's minutes: still free
+    res = engine._resolve(game, st, walk.model_copy(), iid, 1, [])
     assert res["block_spent"] and res["state"].clock.minute == 840                    # the morning spent: the afternoon
     assert "takes the rest of this part of the day" in _this_turn_block(res, "14:00")
     assert day_text(1, 600) == "Week 1, Monday morning, 10:00" and day_text(1, 1380).endswith("night, 23:00")
@@ -1489,7 +1492,7 @@ async def test_a_turn_that_would_spend_the_part_of_the_day_asks_first_unless_it_
     st = game.load_state(engine.store.load_state(iid))
     long_talk = AssistantReading(kind="action", summary="talks with Mr Dunning about the concert", time_minutes=60, risk="low")
     ask = engine._block_ask(game, st, long_talk, iid, 1, "I sit down with Mr Dunning and talk the concert through")
-    assert ask.startswith("That would take the rest of the morning") and "until the afternoon" in ask and "Say yes" in ask
+    assert ask == ""                                 # 11-15: a long talk is free; the reading's minutes spend nothing, so nothing is asked
     walk = AssistantReading(kind="action", summary="walks down to the harbour", time_minutes=15, risk="low")
     assert engine._block_ask(game, st, walk, iid, 1, "I walk down to the harbour") == ""
     st.player.location = "The practice room"

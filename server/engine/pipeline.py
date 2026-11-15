@@ -3275,14 +3275,12 @@ def block_name(clock: Any, minute: int) -> str:
 
 
 def block_spend(clock: Any, adj: Any, minutes: int) -> tuple[bool, str]:
-    """D210C: whether a turn spends the part of the day: going somewhere, an errand, waiting or sleeping, anything the assistant
-    put at `block_spend_minutes` or more. Nothing else spends it: a run of free turns once did (the fifth took the part, unwarned)
-    and the owner took it out on 11-14 ("If it's free it's free"). Returns (spend, why)."""
+    """D210C: whether a turn spends the part of the day: going somewhere, an errand, waiting or sleeping, by the kind of
+    turn. Nothing else spends it. Two rules once did and the owner took both out (11-14, 11-15: "If it's free it's free"): a run of
+    free turns (the fifth took the part, unwarned) and the assistant's guess at a length (45 minutes or more). Returns (spend, why)."""
     task = task_of(adj)
     if task in ("travel", "search", "wait", "sleep"):
         return True, f"a {task} spends the block"
-    if minutes >= clock.block_spend_minutes:
-        return True, f"{minutes} minutes fill the block"
     return False, f"free ({task}, {minutes} minutes)"
 
 

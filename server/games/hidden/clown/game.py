@@ -236,7 +236,7 @@ class ClownGame(GameBase):
     # part of the day and the clock runs to the next; a talk where they stand, a question, a lever costs nothing. A Skip runs
     # days (D205C); a typed turn at most a night.
     clock = ClockSpec(path="clock", minutes_per_day=1440, cap_minutes=7 * 1440, turn_cap_minutes=720, scene_mark=0,
-                      blocks=[540, 840, 1140, 1320], block_names=["morning", "afternoon", "evening", "night"], block_spend_minutes=45,
+                      blocks=[540, 840, 1140, 1320], block_names=["morning", "afternoon", "evening", "night"],
                       tasks={
         "talk": TaskRow(least=5, most=20, lost=15),
         "search": TaskRow(least=10, most=30, lost=30),
@@ -1250,7 +1250,7 @@ class ClownGame(GameBase):
             "Stats are exactly the five listed (charm, menace, business, connections, craft); never invent one.",
             "Time runs in parts of the day (morning, afternoon, evening, night), and the engine moves it: give time_minutes as the real length "
             "of what the player does (a word at the desk 2, a talk 10 to 20, a walk or a tram ride as the town's list says, a practice session "
-            "60 to 120, an evening's outing 180). Going somewhere, an errand, waiting, sleeping, or anything of 45 minutes or more takes the rest "
+            "60 to 120, an evening's outing 180). Going somewhere, an errand, waiting or sleeping takes the rest "
             "of the part of the day; a talk where they stand or a question does not use up the part of the day (its minutes are still given). The week ends on Sunday night whatever they do.",
             "",
             f"Where {p.name} is, who is with them, the money, the attention on the house: the game state block. Read it before ruling something impossible.",
