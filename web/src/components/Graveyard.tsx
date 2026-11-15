@@ -145,6 +145,17 @@ export function DeathCardBody({ g, actions }: { g: GraveCard; actions?: ReactNod
           </>
         )}
       </div>
+      {g.last && g.last.length > 0 && (
+        <details className="card-state last-turns">
+          <summary className="muted small">How it came to this: the last {g.last.length === 1 ? "turn" : `${g.last.length} turns`}</summary>
+          {g.last.map((t) => (
+            <div key={t.turn} className="last-turn">
+              {t.player && <p className="last-player">&gt; {t.player}</p>}
+              {t.telling && <p className="last-telling">{t.telling}</p>}
+            </div>
+          ))}
+        </details>
+      )}
       {g.ui && g.ui.panels.length > 0 && (
         <details className="card-state">
           <summary className="muted small">What {g.character} died holding</summary>

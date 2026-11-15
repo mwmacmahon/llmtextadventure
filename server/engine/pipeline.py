@@ -63,7 +63,7 @@ from .roles import NARRATOR_WORLD, REFEREE_PARTS, Change, ChangeReport, referee_
 from .assistant import FAILURES, choose_consequence, choose_cost, default_cost_options, paid_rows, recent_costs
 from .changes import _content_words, apply_changes, merge_parts, quoted_in_prose, quotes_of, says_result_played, screen_unseen_clues
 from .store import Store, live
-from .graveyard import Graveyard, compose_cause, load_lines, sentences
+from .graveyard import Graveyard, compose_cause, last_turns, load_lines, sentences
 from .tape import PART, Taped, exchange_row
 
 MODEL_CALL_KINDS = {"model_call": None, "adjudication": "assistant", "verdict": "referee"}
@@ -1790,6 +1790,13 @@ class Engine:
                 out["ui"] = game.ui(game.load_state(g["state"])).model_dump(mode="json")
             except Exception:
                 log.exception("graveyard.ui_failed " + logs.kv(grave=g["id"], game=g["game"]))
+        if out["save_stands"] and (not g.get("undone") or not g.get("last")):     # the last turns, kept with the grave while the save can still give them
+            last = last_turns(self.store.transcript(g["instance_id"], roles=("player", "narrator"), undone=bool(g.get("undone"))),
+                              int(g.get("epitaph_turn") or g["turn"]))
+            if last and last != g.get("last"):
+                self.graves.keep_last(g["id"], last)
+                out["last"] = last
+        out.pop("epitaph_turn", None)
         out["death_line"] = self.graves.pick_line(g["game"], g["character"], self.death_lines(g["game"])) if line else None
         return out
 

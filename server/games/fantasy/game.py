@@ -1900,10 +1900,9 @@ class FantasyGame(GameBase):
         if pline and data.get("outcome") in WON:
             return pline
         if data.get("outcome") not in WON:
-            foe = next((q for x in state.player.fighting if (q := state.person(x)) is not None and q.status == "alive"), None)
-            if foe is not None:                        # 11-15: in a fight a failed attempt's cost is the foe's doing, and the line says so
-                data["harm_by"] = f"{self.shown_name(state, foe)} punishes the opening."
             danger = str((data.get("stake") or {}).get("danger") or "")
+            if wo.in_fight(self, state) and state.player.peril is None:
+                return pline                           # the owner, 11-15: in a fight the foes' own round is the cost, never the failed roll
             if danger in ("scrape", "solid", "serious", "lethal"):        # B206: the step the assistant's stake named
                 if danger == "lethal":
                     data.update(kills=True, cause=label)

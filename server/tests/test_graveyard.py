@@ -267,5 +267,19 @@ def test_the_routes(engine: Engine, monkeypatch, tmp_path: Path):
     gid = gal["characters"][0]["graves"][0]["id"]
     card = c.get(f"/api/graveyard/{gid}").json()
     assert card["game_title"] and card["ui"]["panels"] and card["save_stands"]
+    # the last turns (the owner, 11-15: "read a little bit more about what led up to the death"): kept with the grave
+    for turn in range(1, 9):
+        engine.store.append_transcript(iid, turn, "player", f"I do thing {turn}")
+        engine.store.append_transcript(iid, turn, "narrator", f"Telling {turn}. [[a note]]\n\n§ DEX, medium. Failure.")
+    engine.store.append_transcript(iid, 9, "player", "after the end")
+    engine.graves.conn.execute("UPDATE graveyard SET turn=8, epitaph_turn=8 WHERE id=?", (gid,))
+    engine.graves.conn.commit()
+    last = c.get(f"/api/graveyard/{gid}").json()["last"]
+    assert [t["turn"] for t in last] == [3, 4, 5, 6, 7, 8] and last[-1]["player"] == "I do thing 8"
+    assert "a note" not in last[-1]["telling"] and "§ DEX" in last[-1]["telling"]
+    assert engine.graves.get(gid)["last"] == last                 # stored: it outlives the save
+    engine.store.delete_instance(iid)
+    gone = c.get(f"/api/graveyard/{gid}").json()
+    assert not gone["save_stands"] and gone["last"] == last
     assert c.get("/api/graveyard/nope").status_code == 404
     assert next(g for g in c.get("/api/games").json() if g["name"] == "noir")["deaths"] == 1

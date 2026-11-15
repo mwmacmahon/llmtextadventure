@@ -212,19 +212,21 @@ def test_no_words_choose_death(game):
     assert not s3.player.fate and not any(r.get("kind") == "death" for r in w3.rows)
 
 
-def test_a_failure_in_a_fight_costs_hit_points(game):
+def test_a_failed_roll_in_a_fight_costs_no_hit_points(game):
+    """The owner, 11-15 (Mimi died to 2 hit points for a torch that would not catch): in a fight the foes' own round is
+    the cost; a failed attempt, an attack included, takes nothing, whatever danger the stake named."""
     st = new(game)
     foe(st)
-    data = {"outcome": "huge_failure", "roll": 4, "stat": "str"}
-    note = game.check_note(st, data, "strike at the troll")
-    assert data["harm"] in (3, 4, 5) and "hard knock" in note
+    for data, label in (({"outcome": "huge_failure", "roll": 4, "stat": "str"}, "strike at the troll"),
+                        ({"outcome": "failure", "roll": 7, "stat": "dex"}, "Fire at the troll with a pitch-headed torch"),
+                        ({"outcome": "failure", "roll": 7, "stat": "dex", "stake": {"branch": "failure", "danger": "lethal"}}, "set the table alight"),
+                        ({"outcome": "huge_failure", "roll": 1, "stat": "str"}, "stamp down on the rat")):
+        assert game.check_note(st, data, label) == "" and "harm" not in data and not data.get("kills"), label
+        from engine.game import TurnInfo
+        after = game.after_turn(st, TurnInfo(turn=2, elapsed_minutes=1, rng=random.Random(0), calls=[{**data, "label": label}]))
+        assert after.player.hp == st.player.hp and not after.player.fate
     calm = new(game)
     assert game.check_note(calm, {"outcome": "failure", "roll": 4, "stat": "str"}, "lift the barrel") == ""
-    side = {"outcome": "huge_failure", "roll": 1, "stat": "str"}                  # B389: a side move in a fight costs nothing
-    assert game.check_note(st, side, "stamp down on the rat") == "" and "harm" not in side
-    from engine.game import TurnInfo
-    after = game.after_turn(st, TurnInfo(turn=2, elapsed_minutes=1, rng=random.Random(0), calls=[{**data, "label": "strike at the troll"}]))
-    assert after.player.hp == st.player.hp - data["harm"]
 
 
 async def test_the_pipeline_backstops_a_hostile_the_fake_prose_never_called(engine, fake, monkeypatch):
@@ -687,6 +689,8 @@ def test_a_failures_cost_is_a_die_of_its_own_shown_on_the_line(game):
     st = new(game)
     st.people.append(Person(id="rat", name="Rat", role="rat", location=st.player.location, met=True, attitude=-3))
     st.player.fighting = ["rat"]
+    from games.fantasy.state import Peril
+    st.player.peril = Peril(kind="burning")       # a failed roll costs only under a danger already on the player
     seen = set()
     for minute in range(40):                      # the same natural 1 at different moments: not one fixed number
         st.clock.minute = 600 + minute

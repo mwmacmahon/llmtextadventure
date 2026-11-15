@@ -1187,19 +1187,14 @@ def land(game: Any, s: FantasyState, calls: list[dict], turn: int) -> list[str]:
 
 
 def failure_harm(game: Any, s: FantasyState, data: dict, label: str) -> int:
-    """§4 "failures cost": a failed attack, escape or hazard check in a fight or a peril costs hit points by its tier."""
-    from .game import ATTACK
+    """A failed check costs hit points only where a danger is on the player already: in a peril (the water, the grip, the
+    fire). In a fight alone a failed attempt costs the attempt and nothing else: the foes' own round, with
+    its own rolls, is what hurts (the owner, 11-15: no hit points from a bad roll that nothing dealt)."""
     step = TIER_STEP.get(str(data.get("outcome") or ""))
-    if step is None:
+    pr = s.player.peril
+    if step is None or pr is None:
         return 0
-    hot = s.player.peril is not None or in_fight(game, s) or bool(getattr(s.player, "exposed", None))
-    if not hot:
-        return 0
-    pr = s.player.peril                           # an attack, a physical check, or a way out (no longer the old wide ESCAPE list)
-    # B389 (the owner, 11-13: a failed side move in a fight costs no hit points): a plain physical check costs only in a
-    # peril or under a hazard; in a fight alone the foes' own round is the cost
-    hazard = pr is not None or bool(getattr(s.player, "exposed", None))
-    if not (ATTACK.search(label) or (hazard and data.get("stat") in ("str", "dex", "con")) or MARKED.match(label) or BREAK_FREE.search(label)
+    if not (data.get("stat") in ("str", "dex", "con") or MARKED.match(label) or BREAK_FREE.search(label)
             or (pr is not None and way_out(pr, str(data.get("stat") or "").lower(), label))):
         return 0
     # its own die, not the check's (a natural 1 was always the same 7): seeded by the moment so a replay rolls it again the same

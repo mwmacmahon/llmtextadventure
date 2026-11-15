@@ -329,6 +329,10 @@ dl.score dd { margin: 0; font-family: var(--pixel-font); font-size: 15px; }
 .death-card .continue-row { flex-wrap: wrap; }
 .death-card .card-state summary { cursor: pointer; }
 .death-card .card-state .panels { margin-top: 8px; }
+.death-card .last-turns .last-turn { margin-top: 10px; padding-left: 12px; border-left: 2px solid var(--border); }
+.death-card .last-turns p { margin: 0 0 6px; line-height: 1.6; white-space: pre-wrap; }
+.death-card .last-turns .last-player { color: var(--muted, inherit); font-style: italic; }
+.death-card .last-turns { max-height: none; }
 .ending.death-ending { border-color: var(--warn); max-width: 72ch; }
 .ending .continue-row { margin-top: 8px; }
 @media (max-width: 600px) {

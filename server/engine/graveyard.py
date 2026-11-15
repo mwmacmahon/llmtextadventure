@@ -47,7 +47,8 @@ CREATE TABLE IF NOT EXISTS graveyard (
   epitaph_turn INTEGER,
   state_json TEXT NOT NULL,           -- the full state at death
   score_json TEXT NOT NULL DEFAULT '{}',
-  undone INTEGER NOT NULL DEFAULT 0   -- the player later undid past it; the grave stays
+  undone INTEGER NOT NULL DEFAULT 0,  -- the player later undid past it; the grave stays
+  last_json TEXT NOT NULL DEFAULT '[]'    -- the last turns before the end, as the player read them: [{turn, player, telling}]
 );
 CREATE INDEX IF NOT EXISTS graveyard_by_character ON graveyard (game, character_key);
 CREATE INDEX IF NOT EXISTS graveyard_by_instance ON graveyard (instance_id);
@@ -60,6 +61,7 @@ CREATE TABLE IF NOT EXISTS grave_line (
 """
 
 RECENT_LINES = 3          # a line is never one of the last three shown to that character
+LAST_TURNS = 6            # the card's "how it came to this": this many turns up to the end, as a roguelike keeps its last lines
 
 
 def _now() -> str:
@@ -88,6 +90,19 @@ def sentences(text: str, n: int) -> str:
     parts = SENTENCE.split(flat)
     out = " ".join(parts[:n]).strip()
     return out if len(out) <= 400 else out[:400].rsplit(" ", 1)[0] + "…"
+
+
+def last_turns(rows: list[Any], upto: int, n: int = LAST_TURNS) -> list[dict[str, Any]]:
+    """The last `n` turns up to turn `upto` from a save's transcript rows: what the player typed and what was told, the
+    engine's § lines kept (the dice are part of how it went), the narrator's notes gone."""
+    turns: dict[int, dict[str, Any]] = {}
+    for r in rows:
+        if r.turn > upto or r.role not in ("player", "narrator"):
+            continue
+        t = turns.setdefault(r.turn, {"turn": r.turn, "player": "", "telling": ""})
+        text = re.sub(r"\[\[.*?\]\]", "", r.text or "", flags=re.S).strip()
+        t["player" if r.role == "player" else "telling"] = text       # a turn told again: the last telling stands
+    return [turns[k] for k in sorted(turns)[-n:] if turns[k]["player"] or turns[k]["telling"]]
 
 
 def _phrase(note: str) -> str:
@@ -153,6 +168,9 @@ class Graveyard:
         self._lock = store._lock
         with self._lock:
             self.conn.executescript(SCHEMA)
+            if "last_json" not in {r["name"] for r in self.conn.execute("PRAGMA table_info(graveyard)")}:    # a store from before 11-15
+                with self.conn:
+                    self.conn.execute("ALTER TABLE graveyard ADD COLUMN last_json TEXT NOT NULL DEFAULT '[]'")
 
     # ---- writing ---------------------------------------------------------------------------------------------
     @_locked
@@ -191,6 +209,12 @@ class Graveyard:
         return row["id"]
 
     @_locked
+    def keep_last(self, gid: str, last: list[dict[str, Any]]) -> None:
+        """The grave's last turns, kept with it so they outlive the save."""
+        with self.conn:
+            self.conn.execute("UPDATE graveyard SET last_json=? WHERE id=?", (json.dumps(last), gid))
+
+    @_locked
     def undo_after(self, iid: str, turn: int) -> int:
         """The player undid past these deaths: they stay, marked."""
         with self.conn:
@@ -218,6 +242,8 @@ class Graveyard:
         if full:
             out["state"] = json.loads(r["state_json"])
             out["cause_from"] = r["cause_from"]
+            out["last"] = json.loads(r["last_json"] or "[]")
+            out["epitaph_turn"] = r["epitaph_turn"]
         return out
 
     @_locked
@@ -280,10 +306,10 @@ class Graveyard:
                 if not r.get("id") or self.conn.execute("SELECT 1 FROM graveyard WHERE id=?", (r["id"],)).fetchone():
                     continue
                 cols = ["id", "game", "instance_id", "turn", "created", "character", "character_key", "line_json", "place", "day", "clock",
-                        "cause", "cause_from", "epitaph", "epitaph_turn", "state_json", "score_json", "undone"]
+                        "cause", "cause_from", "epitaph", "epitaph_turn", "state_json", "score_json", "undone", "last_json"]
                 vals = {**{c: r.get(c) for c in cols}, "instance_id": iid}
                 vals["character_key"] = vals["character_key"] or character_key(r.get("character") or "")
-                for c, d in (("line_json", "[]"), ("score_json", "{}"), ("place", ""), ("clock", ""), ("cause_from", ""), ("epitaph", ""), ("undone", 0)):
+                for c, d in (("line_json", "[]"), ("score_json", "{}"), ("place", ""), ("clock", ""), ("cause_from", ""), ("epitaph", ""), ("undone", 0), ("last_json", "[]")):
                     if vals[c] is None:
                         vals[c] = d
                 self.conn.execute(f"INSERT INTO graveyard ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", [vals[c] for c in cols])

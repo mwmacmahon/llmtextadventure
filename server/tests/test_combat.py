@@ -712,6 +712,8 @@ def test_a_failures_cost_that_takes_the_last_hit_point_is_the_death_now(game):
     """B310 (187ae951f07d T16-T17): a failed flee's 1 hit point took the last; the prose had him down, the next turn crawling
     out, then the ending. Now the note tells the death this turn."""
     st, q = _fight(game, 1)
+    from games.fantasy.state import Peril
+    st.player.peril = Peril(kind="burning")            # D302: a failed roll costs only in a peril; in a fight alone, nothing
     st.player.hp = 1
     data = {"outcome": "failure", "stat": "str", "roll": 7, "hp_taken": 0}
     note = game.check_note(st, data, "break free and run")
