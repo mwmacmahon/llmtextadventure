@@ -3417,7 +3417,21 @@ class ClownGame(GameBase):
     def task_kind(self, state: ClownState, adj: Any) -> str:
         """The pipeline's hook (D278): the kind of turn for the clock, from the reading's own kinds of attempt; '' leaves it to the engine."""
         from .reading import task_of_kinds
-        return task_of_kinds(list(getattr(adj, "attempt_kinds", None) or []))
+        said = task_of_kinds(list(getattr(adj, "attempt_kinds", None) or []))
+        if said or not sw.on("outing_kind"):
+            return said
+        # the one-form reading (Sonnet) gives no kinds, and the engine's verb list then decided the clock: a first played game
+        # on Sonnet (11-15, turns 3 and 6) lost three and a half hours to "you will walk behind me" and five to accepting a
+        # booking on a street with Walk in its name. No words here: the turn is a trip when the reading itself says where the
+        # proprietor goes (an intent's goes_to or move) and that place is not the one they stand in nor, from inside the house,
+        # another room of it. Waiting and sleeping are not read on this form; days and parts pass by Skip
+        from engine.roles import destination
+        here, home = state.player.location, set(state.scenario.house_places)
+        for i in (getattr(adj, "intents", None) or []):
+            to = self._place(state, str(destination(i) or "").replace("_", " "))
+            if to and to != here and not (here in home and to in home):
+                return "travel"
+        return "other"
 
     def lever_closed(self, state: ClownState, command_id: str) -> str:
         """The pipeline's hook (round 5, 11-14, turn 44): the reading picked a lever that is not open now (Book with no offer in

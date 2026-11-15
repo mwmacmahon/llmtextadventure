@@ -689,7 +689,7 @@ async def test_a_turn_through_the_pipeline(engine: Engine):
         events = [ev async for ev in engine.run_turn(iid, "yes")]
     assert events[-1]["event"] == "done", [ev["event"] for ev in events]
     st = engine.games["clown"].load_state(engine.store.load_state(iid))
-    assert st.now_abs > 1 * DAY + 540
+    assert st.now_abs == 1 * DAY + 540               # 11-15: a step into another room of the house is free on every reading (no verb list)
     bulletin = next(e for e in events if e["event"] == "bulletin")["data"]["text"]
     assert "Ada Vosk (the girl in training)" in bulletin and "Timing 30" not in bulletin and st.girl("dot").status == "away"
     ui = engine.games["clown"].ui(st)
@@ -2395,3 +2395,23 @@ def test_a_girls_panel_says_what_she_is_doing_and_no_place(game):
     g = st.girl(st.active)
     her = next(p for p in view.panels if getattr(p, "title", "") == g.name)
     assert any(c.label == "Now" for c in her.items) and not any(c.label == "Where" for c in her.items)
+
+
+def test_the_one_form_reading_spends_the_part_only_when_it_says_where_the_proprietor_goes(game):
+    """A first played game on Sonnet (11-15): the one-form reading gives no kinds, the engine's verb list decided the clock, and
+    "you will walk behind me" cost three and a half hours, a booking on a street with Walk in its name five. The game answers
+    for this form too: a trip when an intent says where the proprietor goes, outside the room and the house; nothing by words."""
+    from engine.pipeline import block_spend, task_of
+    from games.hidden.clown.reading import HouseReading
+    st = new(game)
+    def kind(summary, **intent):
+        r = HouseReading(kind="action", summary=summary, time_minutes=2, risk="none", intents=[dict(action=summary, **intent)])
+        r.task_said = game.task_kind(st, r)
+        return task_of(r), block_spend(game.clock, r, 2)[0]
+    assert kind("lays down house rules to her: walk behind her, wipe her feet") == ("other", False)
+    assert kind("accepts the offer: the Rope Walk birthday, Saturday fortnight") == ("other", False)
+    assert kind("waits about the office for the post") == ("other", False)
+    town = next(p for p in st.scenario.locations if p not in st.scenario.house_places)
+    assert kind("goes down into the town", transition=f"move:{town}") == ("travel", True)
+    room = next(p for p in st.scenario.house_places if p != st.player.location)
+    assert kind("steps into another room", transition=f"move:{room}") == ("other", False)
