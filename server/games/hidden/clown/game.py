@@ -236,7 +236,7 @@ class ClownGame(GameBase):
     # part of the day and the clock runs to the next; a talk where they stand, a question, a lever costs nothing. A Skip runs
     # days (D205C); a typed turn at most a night.
     clock = ClockSpec(path="clock", minutes_per_day=1440, cap_minutes=7 * 1440, turn_cap_minutes=720, scene_mark=0,
-                      blocks=[540, 840, 1140, 1320], block_names=["morning", "afternoon", "evening", "night"], block_spend_minutes=45, block_free_turns=4,
+                      blocks=[540, 840, 1140, 1320], block_names=["morning", "afternoon", "evening", "night"], block_spend_minutes=45,
                       tasks={
         "talk": TaskRow(least=5, most=20, lost=15),
         "search": TaskRow(least=10, most=30, lost=30),

@@ -2087,10 +2087,10 @@ class Engine:
                     adj.time_minutes = kept
             # D210C, the clown first (the owner, 11-10: "times of day blocks with only some things moving it forward, persona
             # style"): a game with blocks spends the part of the day on going somewhere, an errand, waiting, sleeping or a long
-            # scene, and the clock runs to the next block; anything else costs nothing, until a run of free turns spends it
+            # scene, and the clock runs to the next block; anything else costs nothing (a free turn is free however many there are: the owner, 11-14)
             if clock and getattr(clock, "blocks", None) and adj.kind == "action" and not getattr(adj, "minutes_fixed", False):
                 clk0b = sp.lookup(doc, clock.path)
-                spend, why_b = block_spend(clock, adj, asked_minutes, self._free_run(iid, turn))
+                spend, why_b = block_spend(clock, adj, asked_minutes)
                 adj.time_minutes = next_block(clock, int(clk0b["minute"])) if spend else 0
                 block_spent = spend
                 notes.append(f"block: {why_b}")
@@ -2241,7 +2241,7 @@ class Engine:
         clock = getattr(game, "clock", None)
         if clock is None or not getattr(clock, "blocks", None) or adj.kind != "action" or getattr(adj, "minutes_fixed", False):
             return ""
-        spend, _ = block_spend(clock, adj, int(adj.time_minutes), self._free_run(iid, turn))
+        spend, _ = block_spend(clock, adj, int(adj.time_minutes))
         if not spend:
             return ""
         # a game may ask in its own words, for a turn that would otherwise spend the part of the day unasked (the hidden game's
@@ -2258,20 +2258,6 @@ class Engine:
         what = what if len(what) <= 120 else what[:117] + "..."
         return (f"That would take the rest of the {now_part}: \"{what}\", until the {nxt}. Say yes to spend the {now_part} on it, "
                 f"or do something shorter.")
-
-    def _free_run(self, iid: str, turn: int) -> int:
-        """D210C: how many turns in a row before this one moved no clock (the ledger's clock rows); a command turn ends the run."""
-        n = 0
-        for t in range(turn - 1, max(0, turn - 12), -1):
-            try:
-                rows = self.store.ledger(iid, t)
-            except Exception:  # noqa: BLE001 - a scratch store
-                return n
-            clock = next((r["payload"] for r in rows if r["kind"] == "clock" and "elapsed" in r["payload"]), None)
-            if clock is None or clock.get("elapsed") or any(r["kind"] == "command" for r in rows):
-                return n
-            n += 1
-        return n
 
     def _last_turn(self, iid: str, turn: int) -> dict:
         """Last turn as quiet_why reads it (B248): the people the referee had present, the people checks were rolled at,
@@ -3288,16 +3274,15 @@ def block_name(clock: Any, minute: int) -> str:
     return names[i] if i < len(names) else ""
 
 
-def block_spend(clock: Any, adj: Any, minutes: int, free_run: int) -> tuple[bool, str]:
+def block_spend(clock: Any, adj: Any, minutes: int) -> tuple[bool, str]:
     """D210C: whether a turn spends the part of the day: going somewhere, an errand, waiting or sleeping, anything the assistant
-    put at `block_spend_minutes` or more, or a run of `block_free_turns` free turns before it. Returns (spend, why)."""
+    put at `block_spend_minutes` or more. Nothing else spends it: a run of free turns once did (the fifth took the part, unwarned)
+    and the owner took it out on 11-14 ("If it's free it's free"). Returns (spend, why)."""
     task = task_of(adj)
     if task in ("travel", "search", "wait", "sleep"):
         return True, f"a {task} spends the block"
     if minutes >= clock.block_spend_minutes:
         return True, f"{minutes} minutes fill the block"
-    if free_run >= clock.block_free_turns:
-        return True, f"{free_run} free turns before: this one spends the block"
     return False, f"free ({task}, {minutes} minutes)"
 
 

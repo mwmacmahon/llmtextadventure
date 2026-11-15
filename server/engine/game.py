@@ -240,7 +240,6 @@ class ClockSpec(BaseModel):
                                     # blocks a turn either spends the part of the day (the clock runs to the next) or costs nothing
     block_names: list[str] = []     # their names (morning, afternoon, evening, night)
     block_spend_minutes: int = 45   # a turn the assistant put at this many minutes or more spends the block
-    block_free_turns: int = 4       # after this many free turns in a row the next one spends the block
                                     # (the clown's Skip runs days, a typed wait keeps to a night: D205C)
     slow_minutes: int = 5           # the least a slow action costs (D93: a search, a talk, a walk; a fast beat in a fight is exempt)
     fast_minutes: int = 1           # the least a fast action costs (time doc §3, D146: a stall is never free, a fight beat is a minute)
