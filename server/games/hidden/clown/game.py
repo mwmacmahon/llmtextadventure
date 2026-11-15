@@ -725,6 +725,20 @@ class ClownGame(GameBase):
         """What a girl on the bench is at this week, in two words (D198C): her booking's turn if she has a show to come, else odd jobs."""
         return "working at her booking" if self._has_show(s, g) else "at odd jobs"
 
+    def _panel_doing(self, s: ClownState, g: Girl) -> str:
+        """What a girl of the house is doing this part of the day, for the player's panel (the owner, 11-14: finding people is no
+        part of this game, and round 8's "last seen" place was often wrong; the panel says what she is at, from the engine's own
+        plan and bookings, and no place)."""
+        if any(x.girl == g.id and not x.result and x.at_abs <= s.now_abs < x.at_abs + x.hours * 60 for x in s.shows):
+            return "at her show"
+        if g.id != s.active:
+            return self._bench_doing(s, g)
+        d = self._now_doing(s, g).replace(", not in the house, until the slot ends", "").replace(" (in town)", "")
+        for a, b in (("between slots: she is about the house", "about the house, between sessions"), ("she has this slot off", "has this session off"),
+                     ("; she is about the house", ": about the house"), ("; she does what she likes", ": her time is her own")):
+            d = d.replace(a, b)
+        return d
+
     def _at_the_door(self, s: ClownState) -> Girl | None:
         """The girl whose arrival event has fired this turn and whose status has not caught up (after_turn sets it)."""
         written = [g for g in s.girls if not g.card]
@@ -4022,7 +4036,7 @@ class ClownGame(GameBase):
                             + ("Talk to her to take her on." if free > 0 else f"No room: the house's {h.rooms} rooms are full; make up a room first.")))
                 for x in waiting]))
         if g is not None:
-            her = [Chip(label="Where", value=g.location or "unknown"), Chip(label="Mood", value=g.mood or ""), Chip(label="Condition", value=g.condition or "")]
+            her = [Chip(label="Now", value=self._panel_doing(s, g)), Chip(label="Mood", value=g.mood or ""), Chip(label="Condition", value=g.condition or "")]
             her += [Chip(label="", value=c.name, tone="warn") for c in g.conditions]
             her += [Chip(label="Known", value=sec.what, tone="info") for sec in g.secrets if sec.known]
             panels.append(ListPanel(title=g.name, items=[c for c in her if c.value], layout="stack"))
@@ -4034,14 +4048,13 @@ class ClownGame(GameBase):
             cards.append(EntityCard(id=x.id, title=x.name, subtitle=f"{x.age}, " + ("in training" if x.id == s.active else "a graduate" if x.graduated else "not in training"),
                                     badges=[Chip(label="", value=wd["love"], tone="ok" if x.love > 1 else "bad" if x.love < -1 else None),
                                             Chip(label="", value=wd["fear"], tone="warn" if x.fear > 1 else None), Chip(label="", value=x.fatigue_word)],
-                                    details=[Chip(label="Where", value=x.location or "unknown"), Chip(label="Respect", value=wd["respect"]),
+                                    details=[Chip(label="Now", value=self._panel_doing(s, x)), Chip(label="Respect", value=wd["respect"]),
                                              *[Chip(label="Bond", value=f"{s.girl(o).name if s.girl(o) else o} {b:+d}") for o, b in x.bonds.items() if s.girl(o) and s.girl(o).in_house()]],
                                     notes=x.facts[-4:]))
         for x in s.girls:
             if x.status == "available":
                 cards.append(EntityCard(id=x.id, title=x.name, subtitle=f"{x.age}, asking to be taken on",
                                         badges=[Chip(label="", value="available: talk to her to take her on", tone="info")],
-                                        details=[Chip(label="Where", value="about the town" if x.location == AWAY_PLACE else x.location or "unknown")],
                                         notes=x.facts[-4:]))
         panels.append(EntityCards(title="The girls", cards=cards))
         rows_all = self.quest_rows(s)

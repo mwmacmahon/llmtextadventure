@@ -2380,3 +2380,17 @@ def test_the_loan_is_paid_back_at_least_half_as_much_again(game):
     st = new(game)
     gold, weekly, weeks = (int(dk.dial(st, k)) for k in ("loan_gold", "loan_weekly", "loan_weeks"))
     assert weekly * weeks >= 1.5 * gold
+
+
+def test_a_girls_panel_says_what_she_is_doing_and_no_place(game):
+    """The owner, 11-14: finding people is no part of this game, and the place shown was often wrong. A girl's card and the
+    trainee's own panel say what she is at this part of the day, from the plan and the bookings."""
+    st = new(game)
+    view = game.ui(st)
+    cards = next(p for p in view.panels if getattr(p, "title", "") == "The girls").cards
+    assert cards and all(not any(c.label == "Where" for c in card.details) for card in cards)
+    mine = [card for card in cards if any(c.label == "Now" and c.value for c in card.details)]
+    assert len(mine) == sum(1 for g in st.girls if g.in_house())
+    g = st.girl(st.active)
+    her = next(p for p in view.panels if getattr(p, "title", "") == g.name)
+    assert any(c.label == "Now" for c in her.items) and not any(c.label == "Where" for c in her.items)
