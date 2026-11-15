@@ -99,7 +99,7 @@ def test_the_setup_is_four_fields_and_the_first_morning(game: ClownGame):
     pend = next(p for p in st.hidden.pending if p.tag == "week_end")
     assert pend.due_day == 7 and pend.due_minute == 1320 and pend.source == "script"
     assert st.hooks[0].id == "rope_walk_birthday" and len(st.hooks) == 3              # the week's three offers at the open (D208C):
-    assert all(h.tier == 1 for h in st.hooks)                                          # Rope Walk and two of the tier-one cards
+    assert all(h.tier == 1 for h in st.hooks)                                          # Tanner Street and two of the tier-one cards
     assert st.house.best["acrobatics"] == 45
     prefix = game.frozen_prefix(st)
     assert "Hal Ferris" in prefix and "Hidden: She started the fire" in prefix and "Comes to the house later" in prefix
@@ -194,10 +194,10 @@ def test_a_card_in_hand_can_be_taken_for_any_girl_and_the_show_is_set_for_its_da
     st, res = game.run_command(st, "book", {"booking": "rope_walk_birthday", "girl": "dot"})
     assert res.ok and "Dorothea Vance goes" in res.text, res.text
     x = st.shows[0]
-    assert weekday(x.at_abs // DAY) == 5 and x.at_abs % DAY == 900 and x.venue == "Rope Walk" and x.fee == 15 and x.girl == "dot"
+    assert weekday(x.at_abs // DAY) == 5 and x.at_abs % DAY == 900 and x.venue == "Tanner Street" and x.fee == 15 and x.girl == "dot"
     assert x.at_abs // DAY == st.clock.day - weekday(st.clock.day) + 14 + 5 and "week 3" in res.text   # the Saturday fortnight
     assert dk.standing_of(h := st.hook("rope_walk_birthday")) == "booked" and h.girl == "dot"
-    assert any(e.id == "curtain_rope_walk_birthday" and e.where == ["Rope Walk"] for e in st.hidden.events)
+    assert any(e.id == "curtain_rope_walk_birthday" and e.where == ["Tanner Street"] for e in st.hidden.events)
     st2, res2 = game.run_command(st, "book", {"booking": "rope_walk_birthday"})
     assert not res2.ok
     _, res3 = game.run_command(st, "turn_down", {"booking": "rope_walk_birthday"})
@@ -275,7 +275,7 @@ def test_the_show_resolves_at_its_hour_by_the_formula_and_is_told_next_turn(game
     st, _ = game.run_command(st, "book", {"booking": "rope_walk_birthday"})
     x = st.shows[0]
     st.active_girl.skills["children"], st.active_girl.skills["balloons"] = 65, 60       # sound at what the client wants
-    st.player.location = "Rope Walk"
+    st.player.location = "Tanner Street"
     st = advance(game, st, x.at_abs - st.now_abs + 1, 5)
     x = st.shows[0]
     from games.hidden.clown.game import SHOW_PAY
@@ -348,7 +348,7 @@ def test_tiredness_takes_from_the_rewards_on_a_curve_and_the_player_is_warned_th
     y = st2.shows[0]
     st2.active_girl.skills["children"], st2.active_girl.skills["balloons"] = 65, 60
     st2.active_girl.fatigue = 90
-    st2.player.location = "Rope Walk"
+    st2.player.location = "Tanner Street"
     st2 = advance(game, st2, y.at_abs - st2.now_abs + 1, 8)
     y = st2.shows[0]
     from games.hidden.clown.game import SHOW_PAY
@@ -541,7 +541,7 @@ def test_the_bench_trains_a_little_at_her_own_booking_and_the_student_gets_a_boo
     st = new(game)
     st.girl("rosalind").status, st.girl("rosalind").location = "passive", "The kitchen"
     far = st.now_abs + 10 * DAY
-    st.shows.append(Show(id="s_r", hook="rope_walk_birthday", title="A birthday", client="rope_walk_mother", venue="Rope Walk", at_abs=far, wants=["children", "balloons"], girl="rosalind"))
+    st.shows.append(Show(id="s_r", hook="rope_walk_birthday", title="A birthday", client="rope_walk_mother", venue="Tanner Street", at_abs=far, wants=["children", "balloons"], girl="rosalind"))
     st.shows.append(Show(id="s_d", hook="judge_dinner", title="The Judge's dinner", client="judge", venue="The Judge's house", at_abs=far, wants=["mime", "poise"], girl="dot"))
     st, _ = game.run_command(st, "plan", {"slot": "mornings", "skill": "mime"})
     st, _ = game.run_command(st, "plan", {"slot": "afternoons", "skill": "pratfalls"})
@@ -593,7 +593,7 @@ def test_round_one_fixes_the_journal_row_the_fee_row_the_slot_off_the_job_and_th
     st2 = _offer(game, new(game))
     st2, _ = game.run_command(st2, "book", {"booking": "rope_walk_birthday", "girl": "dot"})
     x = st2.shows[0]
-    st2.player.location = "Rope Walk"
+    st2.player.location = "Tanner Street"
     st2 = advance(game, st2, x.at_abs - st2.now_abs + 1, 5)
     money = st2.house.money
     s2, rep2, _ = apply(game, st2, C(kind="add", target="house", field="money", value="+15"))
@@ -621,7 +621,7 @@ def test_round_one_fixes_the_journal_row_the_fee_row_the_slot_off_the_job_and_th
     st5 = new(game)
     assert "The whole of it" not in game.frozen_prefix(st5) and "The whole of it" not in game.render_bulletin(st5, "")
     st5 = _offer(game, st5)
-    assert "In motion: A birthday on Rope Walk." in game.render_bulletin(st5, "") and "The whole of it" in game.render_bulletin(st5, "")
+    assert "In motion: A birthday on Tanner Street." in game.render_bulletin(st5, "") and "The whole of it" in game.render_bulletin(st5, "")
 
 
 def test_a_reward_row_may_grow_the_hand(game: ClownGame):
@@ -1047,7 +1047,7 @@ def test_a_bench_girl_without_a_show_works_odd_jobs_and_one_with_a_show_trains_f
     st = new(game)
     st.girl("rosalind").status, st.girl("rosalind").location = "passive", "The kitchen"
     st.girl("billie").status, st.girl("billie").location = "passive", "The yard"
-    st.shows.append(Show(id="s_r", hook="rope_walk_birthday", title="A birthday", client="rope_walk_mother", venue="Rope Walk", at_abs=st.now_abs + 10 * DAY,
+    st.shows.append(Show(id="s_r", hook="rope_walk_birthday", title="A birthday", client="rope_walk_mother", venue="Tanner Street", at_abs=st.now_abs + 10 * DAY,
                          wants=["children", "balloons"], girl="rosalind"))
     pay, step = int(dk.dial(st, "bench_job_pay")), int(dk.dial(st, "self_train"))
     assert pay == 1 and step == 1
@@ -1214,10 +1214,10 @@ def test_a_booked_show_is_not_paid_before_its_hour(game: ClownGame):
     st = _offer(game, new(game))
     st, res = game.run_command(st, "book", {"booking": "rope_walk_birthday", "girl": "dot"})
     assert res.ok and st.shows[0].at_abs > st.now_abs
-    s, rep, _ = apply(game, st, C(kind="move", target="player", value="Rope Walk"), C(kind="add", target="house", field="money", value="+15", note="the mother pays"))
-    assert s.player.location == "Rope Walk" and s.house.money == st.house.money
+    s, rep, _ = apply(game, st, C(kind="move", target="player", value="Tanner Street"), C(kind="add", target="house", field="money", value="+15", note="the mother pays"))
+    assert s.player.location == "Tanner Street" and s.house.money == st.house.money
     assert any(r.kind == "conflict" and "Saturday" in r.reason for r in rep.rejected), rep.rejected
-    s, rep, _ = _force(game, st, C(kind="move", target="player", value="Rope Walk"), C(kind="add", target="house", field="money", value="+15"))
+    s, rep, _ = _force(game, st, C(kind="move", target="player", value="Tanner Street"), C(kind="add", target="house", field="money", value="+15"))
     assert s.house.money == st.house.money                                        # forced: still the engine's fee, paid at the hour
     s, rep, _ = apply(game, st, C(kind="add", target="house", field="money", value="+5", note="a tip at the office"))
     assert s.house.money == st.house.money + 5                                    # elsewhere money lands as before
@@ -1263,7 +1263,7 @@ def test_a_forced_telling_the_state_refused_is_told_by_the_engine_and_its_journa
     assert not any(a.startswith("TOLD ") for a in rep.applied)                    # a telling that will be retold says nothing yet
     st2 = _offer(game, new(game))
     st2, _ = game.run_command(st2, "book", {"booking": "rope_walk_birthday", "girl": "dot"})
-    s, rep, _ = _force(game, st2, C(kind="move", target="player", value="Rope Walk"), C(kind="add", target="house", field="money", value="+15"))
+    s, rep, _ = _force(game, st2, C(kind="move", target="player", value="Tanner Street"), C(kind="add", target="house", field="money", value="+15"))
     assert any(a.startswith("TOLD Nothing was paid") and "Saturday" in a for a in rep.applied), rep.applied
     assert "not before" in game.render_bulletin(st2, "")                         # the block says so up front
 
@@ -1582,7 +1582,7 @@ def test_gear_adds_to_a_show_that_wants_it_and_wears_out_and_paid_training_costs
     _, r = game.run_command(st, "equip", {"girl": g.id, "item": "hill_dress"})
     assert not r.ok and "nobody has heard of" in r.text                     # Name 25
     g = st.active_girl
-    x = Show(id="s", hook="rope_walk_birthday", title="A birthday", client="rope_walk_mother", venue="Rope Walk", at_abs=st.now_abs,
+    x = Show(id="s", hook="rope_walk_birthday", title="A birthday", client="rope_walk_mother", venue="Tanner Street", at_abs=st.now_abs,
              wants=["children", "balloons"], stat="charm", difficulty=1, fee=15, variance=0)
     kit = game._gear_for(st, g, x)                                          # D214C: her skills lifted for the show
     assert [it["id"] for it in kit] == ["motley"] and game._geared(st, g, "children", kit) == min(100, g.skills["children"] + 10)
@@ -1592,7 +1592,7 @@ def test_gear_adds_to_a_show_that_wants_it_and_wears_out_and_paid_training_costs
     q1, _, _ = game._show_quality(st, x, g)
     assert q0 > q1 and any("with her gear" in ln for ln in n0)
     g.gear = {"motley": 1}
-    st.player.location = "Rope Walk"
+    st.player.location = "Tanner Street"
     st.shows.append(x.model_copy(update={"girl": g.id}))
     game._resolve_show(st, st.shows[-1], 3)
     assert "motley" not in st.active_girl.gear                              # worn out after its last show
@@ -1933,7 +1933,7 @@ def test_a_turn_that_is_only_the_desks_levers_is_a_beat_not_a_talk(game: ClownGa
     assert game.telling_kind(st, adj, _res(levers=["plan"]), "short")["kind"] == "talk+lever"
 
 
-def _booked(st, minutes_ahead=60, venue="Rope Walk"):
+def _booked(st, minutes_ahead=60, venue="Tanner Street"):
     from games.hidden.clown.state import Show
     x = Show(id="t_show", hook="t", title="A birthday tea", client="rope_walk_mother", venue=venue, at_abs=st.now_abs + minutes_ahead, girl=st.active, fee=20, wants=["children"])
     st.shows.append(x)
@@ -1948,8 +1948,8 @@ def test_a_show_the_proprietor_goes_to_is_played_before_the_prose_and_counted_as
     st = _quiet(game)
     x = _booked(st)
     money, start = st.house.money, st.now_abs
-    go = HouseReadingStaked(kind="action", summary="x", time_minutes=60, risk="none", intents=[IntentStaked(action="Walk her to the birthday and watch.", transition="move:Rope Walk via:street")],
-                            focus=Focus(places=["Rope Walk"]))
+    go = HouseReadingStaked(kind="action", summary="x", time_minutes=60, risk="none", intents=[IntentStaked(action="Walk her to the birthday and watch.", transition="move:Tanner Street via:street")],
+                            focus=Focus(places=["Tanner Street"]))
     s2, w = game.world_turn(st, go, "", random.Random(0), 5)
     y = next(s for s in s2.shows if s.id == "t_show")
     assert y.result and y.attended and s2.now_abs == x.at_abs + x.hours * 60 and w.extra_minutes == s2.now_abs - start
@@ -1967,7 +1967,7 @@ def test_a_show_the_proprietor_goes_to_is_played_before_the_prose_and_counted_as
     st.shows[-1].at_abs = st.now_abs + 400
     assert game.world_turn(st, go, "", random.Random(0), 5)[1].rows == []
     st.shows[-1].at_abs = st.now_abs + 30                                # already there: no reading needed
-    st.player.location = "Rope Walk"
+    st.player.location = "Tanner Street"
     assert game.world_turn(st, home, "", random.Random(0), 5)[1].rows[0]["by"] == "place"
 
 
@@ -2099,7 +2099,7 @@ def test_round_four_levers_that_hit_the_wrong_girl_or_were_told_as_done():
     from engine.pipeline import BLOCK_YES, _parse_command_args
 
     spec = SimpleNamespace(params=[Param(must_name=True, name="girl", label="whose", options=[Option(id="ada_vosk", label="Ada Vosk (129 gold)")], default="ada_vosk", not_these=["dot"])])
-    book = SimpleNamespace(params=[Param(must_name=True, name="booking", label="booking", options=[Option(id="rope_walk_birthday", label="A birthday on Rope Walk")], default="rope_walk_birthday")])
+    book = SimpleNamespace(params=[Param(must_name=True, name="booking", label="booking", options=[Option(id="rope_walk_birthday", label="A birthday on Tanner Street")], default="rope_walk_birthday")])
     assert _parse_command_args(book, [], {"ada_vosk"}, {"ada_vosk"}) == ({"booking": "rope_walk_birthday"}, "")   # round 5: a person named is no reason to refuse a booking
     args, problem = _parse_command_args(spec, [], {"dot"}, {"dot"})
     assert problem and "Ada Vosk" in problem and not args                        # someone named who is not a choice: asked, nobody sold
@@ -2409,9 +2409,20 @@ def test_the_one_form_reading_spends_the_part_only_when_it_says_where_the_propri
         r.task_said = game.task_kind(st, r)
         return task_of(r), block_spend(game.clock, r, 2)[0]
     assert kind("lays down house rules to her: walk behind her, wipe her feet") == ("other", False)
-    assert kind("accepts the offer: the Rope Walk birthday, Saturday fortnight") == ("other", False)
+    assert kind("accepts the offer: the Tanner Street birthday, Saturday fortnight") == ("other", False)
     assert kind("waits about the office for the post") == ("other", False)
     town = next(p for p in st.scenario.locations if p not in st.scenario.house_places)
     assert kind("goes down into the town", transition=f"move:{town}") == ("travel", True)
     room = next(p for p in st.scenario.house_places if p != st.player.location)
     assert kind("steps into another room", transition=f"move:{room}") == ("other", False)
+
+
+def test_an_offer_is_in_hand_from_the_turn_its_caller_comes(game):
+    """A first played game (11-15, turn 4): the caller's event fired, the block still said "No offer of work is in hand", and
+    the referee's guard had the engine's own caller retold twice for naming her day and hour."""
+    st = new(game)
+    h = next(x for x in st.hooks if x.status == "dealt" and any(e.id == f"{x.id}_reach" and not e.fired for e in st.hidden.events))
+    assert h.title not in game.render_bulletin(st, "").split("Offers in hand")[-1][:400] or "No offer of work is in hand" in game.render_bulletin(st, "")
+    next(e for e in st.hidden.events if e.id == f"{h.id}_reach").fired = True
+    block = game.render_bulletin(st, "")
+    assert "Offers in hand, heard and not yet booked: " in block and h.title in block.split("Offers in hand, heard and not yet booked: ")[1].split(". A show exists")[0]

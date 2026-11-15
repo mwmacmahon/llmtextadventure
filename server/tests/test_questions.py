@@ -54,6 +54,28 @@ async def test_the_ask_mode_is_an_aside_that_moves_nothing(engine, fake):
     assert [r for r in engine.store.ledger(iid) if r["kind"] == "model_call" and r["payload"].get("step") == "ask"]
 
 
+async def test_the_ask_mode_remembers_the_questions_before_it(engine, fake):
+    """A newcomer's first game (11-15): "Do you recall my previous questions" was answered "I have no record of any earlier
+    questions". Each ask now carries the game's earlier asks and their answers, oldest first, as the conversation they were."""
+    iid = engine.create_instance("fantasy", SHEET)
+    await engine.ask(iid, "?what is a quay")
+    await engine.aside_settled(iid)
+    seen = []
+    real = fake.stream
+    async def stream(role, system, msgs, *a, **k):
+        seen.append((system, list(msgs)))
+        async for ev in real(role, system, msgs, *a, **k):
+            yield ev
+    fake.stream = stream
+    await engine.ask(iid, "?do you recall my previous question")
+    await engine.aside_settled(iid)
+    system, msgs = seen[-1]
+    assert [m.role for m in msgs] == ["user", "assistant", "user"]
+    assert "what is a quay" in msgs[0].content and msgs[0].content.startswith("[THE PLAYER ASKED EARLIER]")
+    assert "[THE PLAYER ASKS]\ndo you recall my previous question" in msgs[-1].content
+    assert "you remember them" in system and "it was a slip" in system
+
+
 async def test_word_from_elsewhere_waits_for_a_quiet_turn(engine, fake):
     """B104 (D177): the lamplighters' fallback, due during a standoff on the lake, is held; it fires on the first quiet
     turn back on the quay, and the ledger says why it waited."""

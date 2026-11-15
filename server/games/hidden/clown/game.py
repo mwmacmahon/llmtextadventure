@@ -860,7 +860,11 @@ class ClownGame(GameBase):
             # round 8 (11-14, turns 16, 42, 43, 52; the owner: "No hallucinated bookings!"): two people named a day and a fee for
             # a show in talk, with no offer open; nothing could be booked, and one changed his day a week later. The block now
             # says each turn what work there is, and what anyone else can say
-            in_hand = [x.title for x in dk.hand(s) if x.status == "live" and not x.show]
+            # an offer is in hand from the turn its caller comes (its reach event fired), not from the turn after: a first played
+            # game (11-15, turn 4) had the engine's own caller told twice over for naming her day and hour, "though no offer is in
+            # hand", and the player had to ask her for them
+            fired = {e.id for e in s.hidden.events if e.fired}
+            in_hand = [x.title for x in dk.hand(s) if not x.show and (x.status == "live" or (x.status == "dealt" and f"{x.id}_reach" in fired))]
             lines.append(("Offers in hand, heard and not yet booked: " + "; ".join(in_hand) + ". " if in_hand else "No offer of work is in hand. ")
                          + "A show exists only as one of these or under Booked. Anyone else who would like a clown says they will send word to "
                            "the house; the day, the hour and the fee come with that word.")

@@ -412,7 +412,26 @@ class Engine:
                   "carry, what the room holds, where {name} is and how they got there. Keep it in keeping with the records and the world, "
                   "say it as fact, and it is true from now on. Say that {name} cannot tell only for what is hidden from them: behind a "
                   "door, in someone's head, too far or too dark to see, or something nobody has told them. "
-                  "The answer is an aside: the story does not move, no time passes, nothing happens because of it.")
+                  "The answer is an aside: the story does not move, no time passes, nothing happens because of it. "
+                  # a first played game by a newcomer (11-15, the hidden game on Sonnet, eight asks in one turn): asked whether it
+                  # recalled the earlier questions it said it had no record of any; a telling's slip (dinner at two) was defended
+                  # five times with an invented custom, which then went into the journal as fact; "you're right, I was just
+                  # curious" was answered as a correction; and it promised how later tellings would be worded
+                  "The player's earlier questions and your answers to them, if there are any, come first under [THE PLAYER ASKED "
+                  "EARLIER], oldest first: you remember them, a new question may follow on from one, and you keep to your earlier "
+                  "answers unless one was itself a slip. "
+                  "When the player says the telling or an earlier answer got something wrong, look first at the game state and the "
+                  "last telling. If they do not show what the player says, your answer stands: say once what they show, and do not "
+                  "give way because the player insists. Only if they show the player is right, say plainly that it was a slip and "
+                  "what is true. Never invent a reason that makes a slip correct: deciding what {name} could see is not for "
+                  "explaining away something the telling said. "
+                  "When the player complains about how the game itself behaved (the clock, a roll, a rule), say in one line that it "
+                  "sounds like a fault in the game and not their doing, and that Undo takes the last turn back; give no cause for it "
+                  "and do not defend it. "
+                  "A remark that asks for nothing (thanks, a joke, a reaction, a single word) gets one short, friendly line: no recap, and "
+                  "never a request to say more or to ask a full question. "
+                  "A separate narrator writes the story's tellings and you cannot instruct it: asked to change what later tellings say or "
+                  "how they word it, say that you cannot set that from here; promise nothing and record nothing.")
 
     # B244 (c): the referee's learned pass alone, on an aside's answer (the referee's own prompt, then this as the pass)
     ASIDE_PART = ("THIS PASS: the narration above is not a turn. It is the game master's answer to a question the player asked out of the "
@@ -422,6 +441,8 @@ class Engine:
                   "carry, their manner). No other rows: no moves, no timers, no flags, no threads, no rulings. Where the player is, how they "
                   "got there, who is here and the time are in the state already and are never a row. An answer that tells nothing the state does not "
                   "already say, or says the player cannot tell, needs no rows. Write present, log_line and confidence as usual.")
+
+    ASK_MEMORY = 12            # how many earlier question-and-answer pairs an ask is shown
 
     async def ask(self, iid: str, question: str) -> dict[str, Any]:
         """The Ask mode (B105 (c), D177): a question to the game master out of the story. No clock, no events, no referee, no
@@ -444,7 +465,12 @@ class Engine:
         system = self.ASK_SYSTEM.replace("{name}", name)
         records = _hook(game, "people_records", state, default=[]) or []
         rec = ("[THE PEOPLE HERE, FROM THEIR RECORDS]\n" + "\n".join(records) + "\n\n") if records else ""
-        msgs = [Msg("user", f"[GAME STATE]\n{game.render_bulletin(state, q)}\n\n{rec}[THE LAST TELLING]\n{last}\n\n[THE PLAYER ASKS]\n{q}")]
+        # the asks of this game so far, oldest first, as the conversation they were (the last ASK_MEMORY of them): the mode had
+        # no memory at all, and each follow-up was answered cold. Story contexts still never read these rows
+        rows = [r for r in self.store.transcript(iid, roles=["ask", "aside"]) if r.turn <= turn]
+        pairs = [(a.text, b.text) for a, b in zip(rows, rows[1:]) if a.role == "ask" and b.role == "aside"][-self.ASK_MEMORY:]
+        earlier = [m for a, b in pairs for m in (Msg("user", f"[THE PLAYER ASKED EARLIER]\n{a}"), Msg("assistant", b))]
+        msgs = [*earlier, Msg("user", f"[GAME STATE]\n{game.render_bulletin(state, q)}\n\n{rec}[THE LAST TELLING]\n{last}\n\n[THE PLAYER ASKS]\n{q}")]
         ledger = lambda kind, payload: self.store.append_ledger(iid, turn, kind, payload)  # noqa: E731
         t0 = time.monotonic()
         done: StreamDone | None = None
