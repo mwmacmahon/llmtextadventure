@@ -316,7 +316,10 @@ class House(BaseModel):
     best: dict[str, int] = Field(default_factory=dict)       # the best of every girl in the house per skill (the spine's gates)
     red_weeks: int = 0
     last_tick_abs: int = 0
-    fate: str = ""                  # unused since D196C (nothing ends the game); kept for old saves
+    fate: str = ""                  # how the game ended: "loan" (the debt not paid at its day), "broke" (a week the house could not pay, the loan already offered); "" while it runs
+    loan: str = ""                  # the lender's one offer (the owner, 11-14): "" not yet made, "offered", "taken", "declined", "paid"
+    loan_owed: int = 0              # what is still to pay back
+    loan_weekly: int = 0            # taken from the cashbox each Sunday night until nothing is owed (the owner, 11-14: "a weekly fee, not all at once")
     reckoning: str = ""             # a catastrophe waiting on the proprietor's answer: ruined | arrested | shot (D196C); the events set it
     reckoning_until_abs: int = 0    # the engine lands the consequence itself at this clock if nobody answers
     reckonings: list[str] = Field(default_factory=list)   # what has been borne or paid, in words

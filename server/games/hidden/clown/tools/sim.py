@@ -57,6 +57,7 @@ class Strategy:
                                # hard: the worst (Dot given up to Fenn, Hatch's men put out, Sallis shown out)
     brascombe: str = "refuse"  # accept: his money and his cut; refuse: his enmity; ignore: no answer
     reckoning: str = "bear"    # bear it, or give_up the girl worth least
+    loan: str = "take"         # the lender's one offer: take it or decline it (the engine takes what is owed on its day)
     # the investment (D213C): where a player's money goes
     gear: str = "none"         # none; match: buy each girl the gear her booked shows want (and replace it when worn); lavish:
                                # also the gear of her three best skills
@@ -113,6 +114,10 @@ def _plot(game: Any, st: Any, strategy: Strategy, seen: dict[str, int], log: dic
                 log["averted"] = log.get("averted", 0) + 1
     if st.flags.get("gala_offered") and not st.flags.get("gala_done"):
         st.flags["gala_done"], log["gala"] = True, st.house.week
+    if st.house.loan == "offered" and not st.house.fate:
+        st2, r = game.run_command(st, "loan", {"answer": "take" if strategy.loan == "take" else "decline"})
+        if r.ok:
+            st, log["loan"] = st2, f"{'took' if strategy.loan == 'take' else 'declined'} week {st.house.week}, {st.house.money} gold in hand before"
     if st.house.reckoning and not getattr(st.house, "fate", ""):
         kind = st.house.reckoning
         if strategy.reckoning == "give_up" and st.in_house():
@@ -274,6 +279,7 @@ def trial(strategy: Strategy, weeks: int, seed: int, content: Path = CONTENT, ch
     played = [x for x in st.shows if x.result]
     return {"seed": seed, "girl": girl, "weeks": len(money_by_week), "money": money_by_week, "renown_by_week": renown_by_week, "final": st.house.money,
             "low": min(money_by_week) if money_by_week else st.house.money, "fate": st.house.fate or "",
+            "loan": st.house.loan, "loan_log": plot_log.get("loan", ""), "ended_week": st.house.week if st.house.fate else None,
             "shows": len(played), "results": {w: sum(1 for x in played if x.result == w) for w in SHOW_WORDS},
             "fees": sum(x.paid for x in played), "renown": st.house.renown, "heat": st.house.heat, "taken": taken, "upgrades": upgrades,
             "girls": len(st.in_house()), "quality": round(statistics.mean([x.quality or 0 for x in played]), 2) if played else None,
@@ -302,6 +308,10 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "mix": {w: round(res[w] / max(1, shows), 2) for w in SHOW_WORDS},
             "renown_p50": _pct([r["renown"] for r in rows], .5), "took_contract": round(sum(1 for r in rows if r["taken"]) / len(rows), 2),
             "fate": round(sum(1 for r in rows if r["fate"]) / len(rows), 2),
+            "fate_loan": round(sum(1 for r in rows if r["fate"] == "loan") / len(rows), 2), "fate_broke": round(sum(1 for r in rows if r["fate"] == "broke") / len(rows), 2),
+            "loan_offered": round(sum(1 for r in rows if r.get("loan")) / len(rows), 2), "loan_paid": round(sum(1 for r in rows if r.get("loan") == "paid") / len(rows), 2),
+            "loan_open": round(sum(1 for r in rows if r.get("loan") == "taken") / len(rows), 2),
+            "ended_week_p50": _pct([r["ended_week"] for r in rows if r.get("ended_week")], .5) if any(r.get("ended_week") for r in rows) else None,
             "gala": round(sum(1 for r in rows if r.get("gala")) / len(rows), 2),
             "gala_week_p50": _pct([r["gala"] for r in rows if r.get("gala")], .5) if any(r.get("gala") for r in rows) else None,
             "reckonings": round(sum(len(r.get("reckonings") or []) for r in rows) / len(rows), 2),
@@ -352,13 +362,14 @@ def grid(spec: list[str]) -> list[Strategy]:
 
 
 def table(results: list[tuple[Strategy, dict[str, Any]]]) -> str:
-    out = ["| strategy | money p10 / p50 / p90 | low p10 | in the red | shows a week | disaster / poor / fine / good / triumph | Renown p50 | bought a contract | girls p50 | fees earned p50 | gear spent p50 | rooms and contracts p50 | the gala (week p50) | reckonings a game | challenges a game (held) | favours p50 |",
-           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    out = ["| strategy | money p10 / p50 / p90 | low p10 | in the red | shows a week | disaster / poor / fine / good / triumph | Renown p50 | bought a contract | girls p50 | fees earned p50 | gear spent p50 | rooms and contracts p50 | the gala (week p50) | reckonings a game | challenges a game (held) | favours p50 | the loan: offered / paid / still owed | ended: debt / broke (week p50) |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for s, r in sorted(results, key=lambda x: -x[1]["final_p50"]):
         mix = " / ".join(f"{r['mix'][w]:.2f}" for w in SHOW_WORDS)
         out.append(f"| {s.label()} | {r['final_p10']} / {r['final_p50']} / {r['final_p90']} | {r['low_p10']} | {r['in_red']:.0%} | "
                    f"{r['shows_per_week']} | {mix} | {r['renown_p50']} | {r['took_contract']:.0%} | {r['girls_p50']} | {r['fees_p50']} | {r['gear_p50']} | {r['rooms_contracts_p50']} | "
-                   f"{r['gala']:.0%}" + (f" (w{r['gala_week_p50']})" if r.get('gala_week_p50') else "") + f" | {r['reckonings']} | {r['challenges_p50']} ({r['held_share']:.0%}) | {r['favours_p50']} |")
+                   f"{r['gala']:.0%}" + (f" (w{r['gala_week_p50']})" if r.get('gala_week_p50') else "") + f" | {r['reckonings']} | {r['challenges_p50']} ({r['held_share']:.0%}) | {r['favours_p50']} | {r['loan_offered']:.0%} / {r['loan_paid']:.0%} / {r['loan_open']:.0%} | "
+                   f"{r['fate_loan']:.0%} / {r['fate_broke']:.0%}" + (f" (w{r['ended_week_p50']})" if r.get('ended_week_p50') else "") + " |")
     return "\n".join(out)
 
 

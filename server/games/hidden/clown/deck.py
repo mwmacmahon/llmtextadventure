@@ -319,6 +319,15 @@ DIALS: dict[str, float] = {
     "job_diligence": 3,      # and raises her diligence by this
     "keep": 20,              # the house's keep a week (coal, food, Mrs Pell), paid on Sunday night beside the rent every fourth week
     "keep_per_girl": 3,      # and this much more a week for every girl in the house beyond the first (D194C)
+    # the lender (the owner, 11-14): one offer a game, when the cashbox first falls below loan_below or at week loan_week, whichever is first
+    "loan_below": 40, "loan_week": 8,
+    "loan_gold": 600,        # what he puts on the desk: two contracts off the slip and a little over
+    # the sim of 11-14 (40 games a row, 36 weeks; notes/sim/loan-1114-c.md, -d.md): the weekly sum is what ends a house, not the total.
+    # 30 a week: no game lost with the loan kept in hand, 20% lost when it is spent at once on the cheapest contract; 40 a week: 3% and
+    # 57%; 55: 57% and 95%. Declined: 40% lost
+    "loan_weekly": 30,       # what he takes each Sunday night, beside the keep; a Sunday the cashbox cannot pay it, the game ends
+    "loan_weeks": 40,        # for this many weeks (so loan_weekly x loan_weeks, twice the loan, is what he wants back in all)
+                             # the owner's floor (11-14, a test holds it): what is paid back is at least half as much again as what was lent
     "harbour_hand": 4,       # contracts on the clerk's slip at once (the harbour deck, D194C): four, refreshed on the first and third Sunday of the month
     "take_per_week": 1,      # the house buys at most this many contracts a week
     "sell_share": 0.75,      # a contract sold on pays this share of her contract value

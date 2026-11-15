@@ -788,6 +788,14 @@ class ClownGame(GameBase):
             lines.append("The house's licence is suspended; no bookings may be taken.")
         if h.reckoning in self.reckonings:
             lines.append(f"A reckoning is open: {self.reckonings[h.reckoning]['who']} wait on {p.name}'s answer.")
+        if h.loan == "offered":
+            gold, weekly, weeks = self._loan_terms(s)
+            lines.append(f"{self._lender_name(s)} has offered the house a loan, once: {gold} gold now, paid back at {weekly} gold every Sunday night for {weeks} weeks. "
+                         f"{p.name} has not answered. The terms are fixed and no talk moves them; the answer is the player's Loan lever, and until it is used "
+                         f"nothing is signed and no money changes hands.")
+        elif h.loan == "taken":
+            lines.append(f"The house owes {self._lender_name(s)} {h.loan_owed} gold, and the engine pays him {min(h.loan_weekly, h.loan_owed)} of it from the cashbox every "
+                         f"Sunday night. Anything more is paid only by the player's Repay lever; no talk changes the sum, the week's payment or the day.")
         if s.flags.get("brascombe_partner"):
             lines.append("Brascombe is the house's silent partner: his name is on the licence and a quarter of every fee is his.")
         g = s.active_girl
@@ -1066,6 +1074,8 @@ class ClownGame(GameBase):
                            + "; ".join(state.house.charged) + ". Write no money row for these, whatever the prose says was paid or lost. Other money in the scene (a tip, a bribe) still gets its row.")
             if any(pd.fired and not pd.resolved_why.startswith("counted") for pd in by_tag(state.hidden.pending, "week_end")):
                 due = [f"the week's coal, food and Mrs Pell's wages, {self._keep(state)} gold"] + ([f"the rent, {self._rent(state)} gold"] if state.house.week % 4 == 0 else [])
+                if state.house.loan == "taken":
+                    due.append(f"the week's payment on the loan, {min(state.house.loan_weekly, state.house.loan_owed)} gold")
                 out.append("THE WEEK CLOSES this turn. The engine pays these itself when the turn ends: " + "; ".join(due)
                            + ". Write no money row for them, however the prose names them (the housekeeping, the bills, the upkeep).")
         for g in state.girls:
@@ -1282,8 +1292,8 @@ class ClownGame(GameBase):
             "Never for a girl on the clerk's slip: her contract is bought only by the Take lever at the slip's price, never in the prose.",
             "- add house.money -n / +n: money the prose shows paid, spent, taken or received in the scene (a bribe, a doctor paid, a tip, a debt paid), "
             "never more than the house has. Its note says what the money was for, in a few words; a money row with no note is refused. The week's "
-            "coal, food, wages and rent, a contract bought or sold, gear, a tutor's or a master's fee, and what a night's incident the game state "
-            "reports cost the house are the engine's: no row. Money that changes hands at a show is its fee, and the engine pays that itself at the show's hour: no row, "
+            "coal, food, wages and rent, a contract bought or sold, gear, a tutor's or a master's fee, a loan taken or paid back, and what a night's "
+            "incident the game state reports cost the house are the engine's: no row. Money that changes hands at a show is its fee, and the engine pays that itself at the show's hour: no row, "
             "and none for a booked show played or paid before its hour. A performance the game state's Booked line does not list is not a show of "
             "the house: no fee for it, whatever the prose says changed hands.",
             "- set player.conditions +<name> / -<name>: the proprietor's own body, from the same list. move player <place>.",
@@ -2737,7 +2747,9 @@ class ClownGame(GameBase):
             if x.fatigue >= 80 or any(c.name == "spent" for c in x.conditions):
                 x.love = max(-5, x.love - 1)
             x.conditions = [c for c in x.conditions if c.duration != "until_rest"]
-        if h.money < RED_LINE:
+        if sw.on("loan"):
+            self._loan_week(s, lines, nums)
+        elif h.money < RED_LINE:
             h.red_weeks += 1
             lines.append("The house is deep in the red; another such week and the bailiffs come.")
             nums.append("Deep in the red: another such week and the bailiffs come.")
@@ -2879,6 +2891,7 @@ class ClownGame(GameBase):
                 pend.resolved, pend.resolved_why = True, "counted: the week closed"
                 self._week_end(s, info.turn)
                 self._arm_week_end(s, info.turn)
+        self._lender(s)
         # -- the hooks settle and pay; the deck deals
         hooks = self.hooks_content()
         for ln in dk.settle(s, hooks, info.turn, lambda row, why: self._pay(s, row, why)):
@@ -2904,7 +2917,67 @@ class ClownGame(GameBase):
         h.last_tick_abs = now
         return s
 
-    # ---- the reckonings (D196C): nothing ends the game ------------------------------------------------------------------
+    # ---- the lender (the owner, 11-14): one loan a game, and the two ways the money ends it --------------------------------
+    def _lender_name(self, s: ClownState) -> str:
+        q = s.person("lender")
+        return q.name if q is not None else "the lender"
+
+    def _loan_terms(self, s: ClownState) -> tuple[int, int, int]:
+        """(gold on the desk, gold taken each Sunday night, for how many weeks) for an offer made or taken now."""
+        return int(dk.dial(s, "loan_gold")), int(dk.dial(s, "loan_weekly")), int(dk.dial(s, "loan_weeks"))
+
+    def _lender(self, s: ClownState) -> None:
+        """The offer, once a game: when the cashbox first falls below the dial, or at the dial's week if it never has."""
+        h = s.house
+        if not sw.on("loan") or h.loan or h.fate or s.flags.get("first_pick"):
+            return
+        if h.money >= int(dk.dial(s, "loan_below")) and h.week < int(dk.dial(s, "loan_week")):
+            return
+        gold, weekly, weeks = self._loan_terms(s)
+        h.loan = "offered"
+        s.flags["lender_comes"] = True                 # the content's event plays his call (its words are the content's, and a mod's)
+        h.alerts.append(f"A loan is offered by {self._lender_name(s)}: {gold} gold now, paid back at {weekly} gold every Sunday night for {weeks} weeks "
+                        f"({weekly * weeks} gold in all). Take it or decline it with Loan; the offer is made once, and stands until this week closes.")
+        self._note(s, f"{self._lender_name(s)} offered the house a loan.", f"The loan offered: {gold} gold for {weekly} a week over {weeks} weeks ({weekly * weeks} in all).")
+
+    def _loan_week(self, s: ClownState, lines: list[str], nums: list[str]) -> None:
+        """Sunday night, after the keep and the rent: the loan's week, an offer left unanswered, and a week the house could not pay."""
+        h = s.house
+        who = self._lender_name(s)
+        if h.loan == "offered":
+            h.loan = "declined"
+            lines.append(f"{who}'s offer of a loan was left unanswered, and is withdrawn.")
+            nums.append("The loan's offer lapsed unanswered.")
+        if h.loan == "taken":
+            due = min(h.loan_weekly, h.loan_owed)
+            if h.money < due:
+                nums.append(f"The loan's week could not be paid: {due} gold due, {h.money} in the cashbox.")
+                self._end(s, "loan")
+                return
+            h.money -= due
+            h.loan_owed -= due
+            h.charged.append(f"the week's payment on the loan to {who}, {due} gold")
+            if h.loan_owed <= 0:
+                h.loan, h.loan_owed = "paid", 0
+                lines.append(f"The last of the loan was paid; the house owes {who} nothing.")
+                nums.append(f"The loan's last {due} gold was paid: nothing is owed.")
+            else:
+                lines.append(f"{who}'s week was paid.")
+                nums.append(f"The loan: {due} gold paid, {h.loan_owed} still owed.")
+        if h.money < 0 and h.loan:                     # the offer has been made (taken, declined or paid): nobody else lends
+            nums.append(f"The week could not be paid: the cashbox is {h.money} gold.")
+            self._end(s, "broke")
+
+    def _end(self, s: ClownState, fate: str) -> None:
+        """The game is over (the owner, 11-14: "if you can't pay them back, it's game over ... Hit undo a few times and try again")."""
+        line = (s.scenario.fate_lines.get(fate) or {}).get("line") or {
+            "loan": "The loan's week could not be paid. The house is the lender's now. Honk honk.",
+            "broke": "The week's bills could not be paid and nobody would lend. The house is shut. Honk honk."}.get(fate, "The house is shut.")
+        s.house.fate = fate
+        s.flags["ending"] = line.replace("{lender}", self._lender_name(s))
+        self._note(s, "The house is lost.", f"The end ({fate}): week {s.house.week}, {s.house.money} gold.")
+
+    # ---- the reckonings (D196C): nothing ends the game but the money (the lender, above) ----------------------------------
     def _close_house(self, s: ClownState, days: int) -> None:
         s.house.closed_until_abs = max(s.house.closed_until_abs, s.now_abs) + days * DAY
 
@@ -3137,6 +3210,19 @@ class ClownGame(GameBase):
                                        params=[Param(must_name=True, name="girl", label="whose contract", options=[Option(id=g.id, label=g.name) for g in s.in_house()], default=s.in_house()[0].id)],
                                        hint=f"{r['give'][0].upper() + r['give'][1:]}. She is gone for good, and every girl in the house turns on you for it.",
                                        words=["give up", "hand over", "take her", "sign her over", "her contract", "have her"]))
+        if s.house.loan == "offered":
+            gold, weekly, weeks = self._loan_terms(s)
+            out.append(CommandSpec(id="loan", label="Loan", mode="engine",
+                                   params=[Param(must_name=True, name="answer", label="answer", options=[Option(id="take", label="Take it"), Option(id="decline", label="Decline it")], default="take")],
+                                   hint=f"{self._lender_name(s)}'s offer, made once: {gold} gold now, paid back at {weekly} gold every Sunday night for {weeks} weeks "
+                                        f"({weekly * weeks} in all). A Sunday the cashbox cannot pay it, the house is lost and the game is over.",
+                                   words=["loan", "borrow", "his offer", "his money"]))
+        if s.house.loan == "taken":
+            out.append(CommandSpec(id="repay", label="Repay", mode="engine",
+                                   params=[Param(name="amount", label="how much", options=[Option(id="all", label=f"All of it ({s.house.loan_owed} gold)"), Option(id="50", label="50 gold"),
+                                                                                            Option(id="100", label="100 gold"), Option(id="200", label="200 gold")], default="all")],
+                                   hint=f"Pay {self._lender_name(s)} ahead: some or all of the {s.house.loan_owed} gold still owed, beyond the {s.house.loan_weekly} taken each "
+                                        f"Sunday night. It shortens the loan; it does not excuse a Sunday.", words=["repay", "pay back", "pay off", "the loan", "the debt"]))
         out.append(CommandSpec(id="plan", label="Plan", mode="engine",
                            params=[Param(name="slot", label="slot", options=[Option(id="mornings", label="Mornings"), Option(id="afternoons", label="Afternoons")], default="mornings"),
                                    Param(name="skill", label="trains", options=self._skill_options(s)),
@@ -3449,7 +3535,7 @@ class ClownGame(GameBase):
         out = handler(state, s, command_id, args)
         return out if out is not None else (state, CommandResult(ok=False, text=f"unknown command {command_id!r}"))
 
-    COMMAND_HANDLERS = {"plan": "_cmd_plan", "better": "_cmd_better", "swap": "_cmd_swap", "equip": "_cmd_equip", "turn_down": "_cmd_turn_down", "book": "_cmd_book", "switch": "_cmd_switch", "skip": "_cmd_skip", "graduate": "_cmd_graduate", "bear": "_cmd_bear", "give_up": "_cmd_bear", "take": "_cmd_take", "welcome": "_cmd_welcome", "customize": "_cmd_customize", "sell": "_cmd_sell", "upgrade": "_cmd_upgrade", "journal": "_cmd_journal"}
+    COMMAND_HANDLERS = {"loan": "_cmd_loan", "repay": "_cmd_loan", "plan": "_cmd_plan", "better": "_cmd_better", "swap": "_cmd_swap", "equip": "_cmd_equip", "turn_down": "_cmd_turn_down", "book": "_cmd_book", "switch": "_cmd_switch", "skip": "_cmd_skip", "graduate": "_cmd_graduate", "bear": "_cmd_bear", "give_up": "_cmd_bear", "take": "_cmd_take", "welcome": "_cmd_welcome", "customize": "_cmd_customize", "sell": "_cmd_sell", "upgrade": "_cmd_upgrade", "journal": "_cmd_journal"}
 
     def _cmd_plan(self, state: ClownState, s: ClownState, command_id: str, args: dict[str, Any]) -> tuple[ClownState, CommandResult] | None:
         slot = str(args.get("slot") or "mornings").lower()
@@ -3638,6 +3724,43 @@ class ClownGame(GameBase):
         return s, CommandResult(label="Graduate", player_line=f"I tell {g.name} she is finished: a clown, trained, and the house will book her on her own account.",
                                 summary=f"{p.name} passes {g.name} out as a finished clown.", directive=directive, minutes=20, log_line=line)
 
+    def _cmd_loan(self, state: ClownState, s: ClownState, command_id: str, args: dict[str, Any]) -> tuple[ClownState, CommandResult] | None:
+        """The lender's offer answered, and the debt paid down (the owner, 11-14). The engine's own: no model is asked."""
+        h, who = s.house, self._lender_name(s)
+        if command_id == "loan":
+            if h.loan != "offered":
+                return state, CommandResult(ok=False, label="Loan", text="No loan is on offer.")
+            answer = str(args.get("answer") or "").lower().strip()
+            if answer not in ("take", "decline"):
+                return state, CommandResult(ok=False, label="Loan", text="Take it, or decline it?")
+            if answer == "decline":
+                h.loan = "declined"
+                self._note(s, f"{who}'s loan was declined.", "The loan declined.")
+                return s, CommandResult(label="Loan", text=f"Declined. {who} does not offer twice: from now, a week the house cannot pay is the end of it.")
+            gold, weekly, weeks = self._loan_terms(s)
+            h.loan, h.loan_owed, h.loan_weekly = "taken", weekly * weeks, weekly
+            h.money += gold
+            self._note(s, f"The house took {who}'s loan.", f"The loan taken: {gold} gold in, {weekly} gold a week for {weeks} weeks ({weekly * weeks} owed).")
+            return s, CommandResult(label="Loan", text=f"Taken: {gold} gold in the cashbox ({h.money} now). {who} takes {weekly} gold every Sunday night, beside the "
+                                                       f"house's own bills, for {weeks} weeks ({weekly * weeks} gold in all), starting this Sunday. Pay ahead at any time "
+                                                       f"with Repay. A Sunday the cashbox cannot pay him, the game is over.")
+        if h.loan != "taken":
+            return state, CommandResult(ok=False, label="Repay", text="The house owes nothing.")
+        raw = str(args.get("amount") or "all").lower().strip()
+        n = h.loan_owed if raw == "all" else int(raw) if raw.isdigit() else 0
+        n = min(n, h.loan_owed)
+        if n <= 0:
+            return state, CommandResult(ok=False, label="Repay", text="How much? A number of gold, or all.")
+        if n > h.money:
+            return state, CommandResult(ok=False, label="Repay", text=f"The house has {h.money} gold; {n} cannot be paid.")
+        h.money -= n
+        h.loan_owed -= n
+        if h.loan_owed == 0:
+            h.loan = "paid"
+        self._note(s, f"The house paid {who}" + (" the last of the loan." if h.loan == "paid" else " part of the loan."), f"The loan: {n} gold paid, {h.loan_owed} owed.")
+        return s, CommandResult(label="Repay", text=(f"Paid {n} gold. The loan is cleared: the house owes {who} nothing." if h.loan == "paid" else
+                                                      f"Paid {n} gold. {h.loan_owed} gold is still owed, at {min(h.loan_weekly, h.loan_owed)} a Sunday."))
+
     def _cmd_bear(self, state: ClownState, s: ClownState, command_id: str, args: dict[str, Any]) -> tuple[ClownState, CommandResult] | None:
         kind = s.house.reckoning
         if kind not in self.reckonings:
@@ -3806,6 +3929,11 @@ class ClownGame(GameBase):
             strip.append(Chip(label="In training", value="nobody yet: choose her at the shed", tone="warn"))
         if h.reckoning in self.reckonings:
             strip.append(Chip(label="Reckoning", value=self.reckonings[h.reckoning]["who"], tone="bad"))
+        if h.loan == "offered":
+            strip.append(Chip(label="Loan offered", value=f"{self._loan_terms(s)[0]} gold, {self._loan_terms(s)[1]} a week back", tone="warn"))
+        elif h.loan == "taken":
+            due = min(h.loan_weekly, h.loan_owed)
+            strip.append(Chip(label="Debt", value=f"{h.loan_owed} gold, {due} due Sunday", tone="bad" if h.money < due + self._keep(s) else "warn"))
         panels: list[Any] = [StatusStrip(chips=strip)]
         if sw.on("day_strip"):             # the owner, 11-14: "the UI should maybe make the time blocks more clear"
             blocks, names, now = list(self.clock.blocks), list(self.clock.block_names), s.clock.minute

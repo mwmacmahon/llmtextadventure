@@ -2313,3 +2313,70 @@ def test_the_narrators_fixed_text_has_the_engines_prices(game):
     for it in game.gear_list(st).values():
         assert f"{it['name']}, {int(it['cost'])}" in line
     assert f"wages: {int(dk.dial(st, 'keep'))} for the house" in line
+
+
+def _close_week(game, st, turn=9):
+    """Sunday night: the week's pending fired, and the turn's end run, as the pipeline would."""
+    pend = next(p for p in st.hidden.pending if p.tag == "week_end" and not p.resolved)
+    t = pend.due_abs(DAY)
+    st.clock.day, st.clock.minute = t // DAY, t % DAY
+    pend.fired, pend.fired_turn = True, turn
+    return game.after_turn(st, info(turn=turn, minutes=600))
+
+
+def test_the_lender_offers_once_and_a_sunday_the_loan_cannot_be_paid_ends_the_game(game):
+    """The owner, 11-14: the first time the money runs out someone comes with a loan, steep to pay back, "like a weekly fee, not
+    all at once"; "if you can't pay them back, it's game over, honk honk"."""
+    st = new(game)
+    st = advance(game, st, 10, 1)
+    assert st.house.loan == "" and not any(c.id == "loan" for c in game.commands(st))     # 200 gold in week 1: nobody calls
+    st.house.money = 10
+    st = advance(game, st, 10, 2)
+    assert st.house.loan == "offered" and st.flags.get("lender_comes") and any("A loan is offered" in a for a in st.house.alerts)
+    assert "has offered the house a loan, once" in game.render_bulletin(st, "")
+    gold, weekly, weeks = (int(dk.dial(st, k)) for k in ("loan_gold", "loan_weekly", "loan_weeks"))
+    st, r = game.run_command(st, "loan", {"answer": "take"})
+    assert r.ok and st.house.money == 10 + gold and st.house.loan == "taken" and st.house.loan_owed == weekly * weeks and st.house.loan_weekly == weekly
+    assert [c.id for c in game.commands(st) if c.id in ("loan", "repay")] == ["repay"]
+    st, r = game.run_command(st, "repay", {"amount": "100"})
+    owed = weekly * weeks - 100
+    assert r.ok and st.house.loan_owed == owed and f"owes {game._lender_name(st)} {owed} gold" in game.render_bulletin(st, "")
+    assert not game.run_command(st, "repay", {"amount": "5000"})[1].ok or st.house.loan_owed >= 0
+    before = st.house.money
+    st = _close_week(game, st)                                # a Sunday: the keep, and his week beside it
+    assert st.house.loan_owed == owed - weekly and st.house.money == before - weekly - game._keep(st) and not game.ending(st)
+    assert any("payment on the loan" in c for c in st.house.charged)
+    paid = st.model_copy(deep=True)
+    paid.house.loan_owed, paid.house.money = weekly - 5, 500
+    paid = _close_week(game, paid, turn=11)
+    assert paid.house.loan == "paid" and paid.house.loan_owed == 0 and paid.house.money > 400 and not game.ending(paid)
+    st.house.money = game._keep(st) + weekly - 1              # one gold short of his week after the house's own bills
+    st = _close_week(game, st, turn=12)
+    assert st.house.fate == "loan" and game.dead(st) and "Honk honk" in game.ending(st)
+    assert [c.id for c in game.commands(st)] == ["journal"]
+    assert game.cause_of_death(st, {}) and game._lender_name(st) != "the lender"          # the content names him, and the stone's cause
+
+
+def test_a_week_the_house_cannot_pay_ends_it_once_the_offer_has_been_made(game):
+    """The owner, 11-14: "Other than that, it's game over. Hit undo a few times and try again"."""
+    st = new(game)
+    st.house.money = 5
+    st = _close_week(game, st)                              # the first week it cannot pay: below nought, and the lender comes
+    assert st.house.money < 0 and st.house.loan == "offered" and not game.ending(st)
+    st, r = game.run_command(st, "loan", {"answer": "decline"})
+    assert r.ok and st.house.loan == "declined"
+    st = _close_week(game, st, turn=12)
+    assert st.house.fate == "broke" and game.dead(st) and "Honk honk" in game.ending(st)
+    late = new(game)                                         # never short: he calls anyway at the dial's week
+    late.house.week = int(dk.dial(late, "loan_week"))
+    late = advance(game, late, 10, 3)
+    assert late.house.loan == "offered"
+    late = _close_week(game, late, turn=4)                   # left unanswered to the week's close: withdrawn, and no end with money in the box
+    assert late.house.loan == "declined" and not game.ending(late)
+
+
+def test_the_loan_is_paid_back_at_least_half_as_much_again(game):
+    """The owner, 11-14: "make sure the overall amount paid back is at least 50% more than what was received"."""
+    st = new(game)
+    gold, weekly, weeks = (int(dk.dial(st, k)) for k in ("loan_gold", "loan_weekly", "loan_weeks"))
+    assert weekly * weeks >= 1.5 * gold
