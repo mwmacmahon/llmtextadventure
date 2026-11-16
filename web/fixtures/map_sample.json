@@ -1,0 +1,531 @@
+{
+ "type": "map",
+ "title": "Map",
+ "place": "side",
+ "v": 1,
+ "palette": "forest",
+ "tile_m": 250,
+ "player": {
+  "x": 0,
+  "y": -3
+ },
+ "chunks": [
+  {
+   "cx": -1,
+   "cy": -1,
+   "g": "???????????????????????????????????????????????????????????????????????????????????????????????????????????????m??????????????mh??????????????hh??????????????hh??????ww~??????h?????wwww~???mmm?????wwww~??mmmm?????wwww~?mmmmm??????www~mmmmmm???????ww~mmmmmm",
+   "r": "......................................................................................................................................................................aaa............aaaaa...........aaaaa...........aaaaa............aaaa.............aa......."
+  },
+  {
+   "cx": -1,
+   "cy": 0,
+   "g": "???????ww~mmmmmm???????wwm~mmffm????????wwm~mfff????????www~mfff???????wwww~mfff???????wwww~mmmm???????wwwwm~mmm????????wwwmm~m??????????bbbb~????????????bbb???????????????????????????????????????????????????????????????????????????????????????????????????",
+   "r": ".......aa..............aa....dd.........aa...ddd........aaa..ddd.......aaaa..ddd.......aaaa............aaaa.............aaa..............ccccc............ccc..................................................................................................."
+  },
+  {
+   "cx": 0,
+   "cy": -1,
+   "g": "????????????????????????????????????????????????????????????????????????????????????????????????mm??????????????hhm?????????????hhm?????????????hhh?????????????hhhm????????????mmmm????????????mmmmm???????????mmmmmm??????????mmmmmm?????hhh??mmmmmmm???hhhhh?",
+   "r": "................................................................................................................................................................................................................................................................"
+  },
+  {
+   "cx": 0,
+   "cy": 0,
+   "g": "mmmmmmm???hhhhh?mmffmmm???hhhhh?ffffmmm????hhh??ffffmmmm????????ffffmmmmm???????mmmmRRRmmm??????mmmmRLRmmm???????mmmRRRmmm????????mmmmmmm??????????mmmmm????????????mmm?????????????????????????????????????????????????????????????????????????????????????????",
+   "r": "..................dd............dddd............dddd............dddd............................................................................................................................................................................................"
+  }
+ ],
+ "regions": [
+  {
+   "id": "westwood",
+   "name": "The west wood",
+   "kind": "wood_bright",
+   "state": "heard",
+   "line": "Good hunting, they say."
+  },
+  {
+   "id": "eastwood",
+   "name": "The east wood",
+   "kind": "wood_dark",
+   "state": "heard",
+   "line": "Nobody goes in."
+  },
+  {
+   "id": "bog",
+   "name": "The bog",
+   "kind": "bog",
+   "state": "heard",
+   "line": "Where the river ends."
+  },
+  {
+   "id": "farms",
+   "name": "The farms",
+   "kind": "farmland",
+   "state": "been",
+   "line": "Turnips, mostly."
+  }
+ ],
+ "places": [
+  {
+   "id": "village",
+   "name": "The village",
+   "kind": "village",
+   "x": 0,
+   "y": 0,
+   "state": "been",
+   "told": [
+    "Home."
+   ],
+   "way": null,
+   "job": null,
+   "here": false,
+   "changed": null,
+   "go": "I go to the village"
+  },
+  {
+   "id": "fort",
+   "name": "The hill fort",
+   "kind": "fort",
+   "x": 0,
+   "y": -8,
+   "state": "heard",
+   "told": [
+    "Smoke on the hill most days."
+   ],
+   "way": "25 minutes by the north road",
+   "job": "A stolen anvil",
+   "here": false,
+   "changed": null,
+   "go": "I go to the hill fort"
+  },
+  {
+   "id": "shrine",
+   "name": "The wayside shrine",
+   "kind": "shrine",
+   "x": 1,
+   "y": -5,
+   "state": "heard",
+   "told": [],
+   "way": "10 minutes by the north road",
+   "job": null,
+   "here": false,
+   "changed": null,
+   "go": "I go to the wayside shrine"
+  },
+  {
+   "id": "mill",
+   "name": "The old mill",
+   "kind": "mill",
+   "x": -5,
+   "y": 5,
+   "state": "been",
+   "told": [
+    "Nobody has worked it in ten years.",
+    "The wheel still turns."
+   ],
+   "way": "35 minutes by the lane",
+   "job": null,
+   "here": false,
+   "changed": null,
+   "go": "I go to the old mill"
+  },
+  {
+   "id": "bridge",
+   "name": "The bridge",
+   "kind": "bridge",
+   "x": -7,
+   "y": 0,
+   "state": "heard",
+   "told": [
+    "The only stone bridge."
+   ],
+   "way": "40 minutes by the west road",
+   "job": null,
+   "here": false,
+   "changed": null,
+   "go": "I go to the bridge"
+  },
+  {
+   "id": "mines",
+   "name": "The old mines",
+   "kind": "mine",
+   "x": 12,
+   "y": 0,
+   "state": "heard",
+   "told": [
+    "Boarded up."
+   ],
+   "way": "no road you know of",
+   "job": null,
+   "here": false,
+   "changed": null,
+   "go": "I go to the old mines"
+  },
+  {
+   "id": "hut",
+   "name": "The burners' hut",
+   "kind": "hut",
+   "x": -9,
+   "y": -4,
+   "state": "heard",
+   "told": [
+    "Somewhere in the west wood."
+   ],
+   "way": "no road you know of",
+   "job": null,
+   "here": false,
+   "changed": null,
+   "go": "I go to the burners' hut"
+  },
+  {
+   "id": "crater",
+   "name": "The broken tower",
+   "kind": "crater",
+   "x": 5,
+   "y": 6,
+   "state": "been",
+   "told": [],
+   "way": "50 minutes over open ground",
+   "job": null,
+   "here": false,
+   "changed": "blown apart on the third day",
+   "go": "I go to the broken tower"
+  }
+ ],
+ "lines": [
+  {
+   "id": "north_road",
+   "name": "The north road",
+   "kind": "road",
+   "leads": "to the hill fort",
+   "runs": [
+    [
+     [
+      0,
+      0
+     ],
+     [
+      0,
+      -1
+     ],
+     [
+      0,
+      -2
+     ],
+     [
+      1,
+      -3
+     ],
+     [
+      1,
+      -4
+     ],
+     [
+      1,
+      -5
+     ],
+     [
+      1,
+      -6
+     ],
+     [
+      0,
+      -7
+     ],
+     [
+      0,
+      -8
+     ]
+    ]
+   ]
+  },
+  {
+   "id": "west_road",
+   "name": "The west road",
+   "kind": "road",
+   "leads": "to the city, four days",
+   "runs": [
+    [
+     [
+      0,
+      0
+     ],
+     [
+      -1,
+      0
+     ],
+     [
+      -2,
+      0
+     ],
+     [
+      -3,
+      0
+     ],
+     [
+      -4,
+      0
+     ],
+     [
+      -5,
+      0
+     ],
+     [
+      -6,
+      0
+     ],
+     [
+      -7,
+      0
+     ],
+     [
+      -8,
+      1
+     ],
+     [
+      -9,
+      1
+     ],
+     [
+      -10,
+      1
+     ],
+     [
+      -11,
+      1
+     ],
+     [
+      -12,
+      1
+     ],
+     [
+      -13,
+      2
+     ]
+    ]
+   ]
+  },
+  {
+   "id": "east_track",
+   "name": "The east track",
+   "kind": "road",
+   "leads": "to the old mines",
+   "runs": [
+    [
+     [
+      0,
+      0
+     ],
+     [
+      1,
+      0
+     ],
+     [
+      2,
+      0
+     ],
+     [
+      3,
+      0
+     ],
+     [
+      4,
+      0
+     ],
+     [
+      5,
+      1
+     ],
+     [
+      6,
+      1
+     ],
+     [
+      7,
+      1
+     ],
+     [
+      8,
+      1
+     ],
+     [
+      9,
+      0
+     ],
+     [
+      10,
+      0
+     ],
+     [
+      11,
+      0
+     ],
+     [
+      12,
+      0
+     ]
+    ]
+   ]
+  },
+  {
+   "id": "mill_lane",
+   "name": "The mill lane",
+   "kind": "lane",
+   "leads": "to the old mill",
+   "runs": [
+    [
+     [
+      0,
+      0
+     ],
+     [
+      -1,
+      1
+     ],
+     [
+      -2,
+      2
+     ],
+     [
+      -3,
+      3
+     ],
+     [
+      -4,
+      4
+     ],
+     [
+      -5,
+      5
+     ]
+    ]
+   ]
+  },
+  {
+   "id": "river",
+   "name": "The river",
+   "kind": "river",
+   "leads": "down to the bog",
+   "runs": [
+    [
+     [
+      -8,
+      -7
+     ],
+     [
+      -8,
+      -6
+     ],
+     [
+      -7,
+      -5
+     ],
+     [
+      -7,
+      -4
+     ],
+     [
+      -7,
+      -3
+     ],
+     [
+      -7,
+      -2
+     ],
+     [
+      -7,
+      -1
+     ],
+     [
+      -7,
+      0
+     ],
+     [
+      -6,
+      1
+     ],
+     [
+      -5,
+      2
+     ],
+     [
+      -5,
+      3
+     ],
+     [
+      -5,
+      4
+     ],
+     [
+      -5,
+      5
+     ],
+     [
+      -4,
+      6
+     ],
+     [
+      -3,
+      7
+     ],
+     [
+      -3,
+      8
+     ],
+     [
+      -3,
+      9
+     ],
+     [
+      -4,
+      10
+     ]
+    ]
+   ]
+  }
+ ],
+ "journey": {
+  "to": "fort",
+  "label": "To the hill fort, 25 minutes left",
+  "path": [
+   [
+    1,
+    -3
+   ],
+   [
+    1,
+    -4
+   ],
+   [
+    1,
+    -5
+   ],
+   [
+    1,
+    -6
+   ],
+   [
+    0,
+    -7
+   ],
+   [
+    0,
+    -8
+   ]
+  ],
+  "stops": [
+   [
+    1,
+    -5
+   ],
+   [
+    0,
+    -8
+   ]
+  ]
+ },
+ "unplaced": [
+  "The lost tomb"
+ ],
+ "spots": []
+}
