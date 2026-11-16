@@ -4,8 +4,9 @@ The engine owns where things are. This module is pure: a world is a plain dict s
 from a scenario's `start` block and a seed, and every function here takes it and returns data. No game imports, no model
 calls, no clock. A game that does not call it is unchanged.
 
-Built so far (FN10 to FN12, FN16): the start area from the scenario's list, its checks, the first knowledge of a new
-game, and the panel's widget. Not here yet: chunks beyond the start area, paths and time, journeys, invented places."""
+Built so far (FN10 to FN12, FN16, FN31): the start area from the scenario's list, its checks, the first knowledge of a
+new game, paths and walking time, and the panel's widget. Not here yet: chunks beyond the start area, journeys,
+invented places."""
 from __future__ import annotations
 
 import heapq
@@ -514,13 +515,108 @@ def new_world(start: dict, seed: int, scenario_id: str = "") -> dict:
     raise ValueError(f"no start area in {REROLLS} rolls for seed {seed}: {last}")
 
 
+# ---- paths and time
+
+def _line_tiles(world: dict, known_only: bool = False) -> dict[tuple, dict]:
+    """Each road or lane tile and the line it belongs to (a road wins over a lane where they share)."""
+    out: dict[tuple, dict] = {}
+    for lid, line in world["lines"].items():
+        if line["kind"] == "river":
+            continue
+        upto = world["known"]["lines"].get(lid, 0)
+        for i, t in enumerate(line["tiles"]):
+            if known_only and not (i < upto or is_lit(world, *t)):
+                continue
+            if tuple(t) not in out or line["kind"] == "road":
+                out[tuple(t)] = line
+    return out
+
+
+def known_crossings(world: dict) -> set:
+    return {tuple(p["tile"]) for pid, p in world["places"].items()
+            if p["kind"] in CROSSINGS and not p.get("removed") and pid in world["known"]["places"]}
+
+
+def find_path(world: dict, a, b) -> list | None:
+    """The quickest walk from a to b over rolled ground, by the roads where they help, crossing water only at a bridge
+    or ford the player knows of (a hidden ford is never used). None when there is no such walk."""
+    a, b = tuple(a), tuple(b)
+    on_line = _line_tiles(world)
+    crossings = known_crossings(world)
+
+    def passable(t) -> bool:
+        g = ground_at(world, *t)
+        return g is not None and (WALK[g] < 900 or t in crossings)
+
+    def cost(t) -> float:
+        line = on_line.get(t)
+        if line:
+            return ROAD_MIN if line["kind"] == "road" else LANE_MIN
+        return ROAD_MIN if t in crossings else WALK[ground_at(world, *t)]
+
+    if not (passable(a) and passable(b)):
+        return None
+    xs = [int(k.split(",")[0]) for k in world["chunks"]]
+    ys = [int(k.split(",")[1]) for k in world["chunks"]]
+    bounds = (min(xs) * CHUNK, min(ys) * CHUNK, max(xs) * CHUNK + CHUNK - 1, max(ys) * CHUNK + CHUNK - 1)
+    return _route(a, b, cost, passable, bounds)
+
+
+def walk_minutes(world: dict, path: list, night: bool = False) -> int:
+    """Minutes to walk a path: each tile entered costs its ground, or its road; a diagonal step is longer; night adds half."""
+    on_line = _line_tiles(world)
+    crossings = known_crossings(world)
+    total = 0.0
+    for prev, t in zip(path, path[1:]):
+        t = tuple(t)
+        line = on_line.get(t)
+        m = (ROAD_MIN if line["kind"] == "road" else LANE_MIN) if line else ROAD_MIN if t in crossings else WALK[ground_at(world, *t)]
+        total += m * (1.4 if prev[0] != t[0] and prev[1] != t[1] else 1.0)
+    return max(1, round(total * (1.5 if night else 1.0)))
+
+
+def span_words(minutes: int) -> str:
+    if minutes < 55:
+        return f"{max(5, round(minutes / 5) * 5)} minutes"
+    if minutes < 100:
+        return "an hour" if minutes < 75 else "an hour and a half"
+    hours = round(minutes / 60)
+    return f"{hours} hours" if hours < 10 else "most of a day" if hours < 16 else f"{round(hours / 10)} days"
+
+
+def way_words(world: dict, to, night: bool = False) -> str | None:
+    """What the player is shown about getting to a tile from where they stand: a time and a road, worked out only over
+    ground and roads they know. Across ground they have not seen: no time."""
+    here = tuple(world["player"]["tile"])
+    if here == tuple(to):
+        return None
+    path = find_path(world, here, to)
+    if path is None:
+        return "no way you know of"
+    known = _line_tiles(world, known_only=True)
+    if any(not is_lit(world, *t) and tuple(t) not in known for t in path[1:-1]):
+        return "no road you know of"
+    carried: dict[str, int] = {}
+    for t in path[1:]:
+        line = known.get(tuple(t))
+        if line:
+            carried[line["name"]] = carried.get(line["name"], 0) + 1
+    span = span_words(walk_minutes(world, path, night))
+    if carried:
+        name, n = max(carried.items(), key=lambda kv: kv[1])
+        if n * 2 >= len(path) - 1:
+            return f"{span} by {_lower_the(name)}"
+    return f"{span} across country"
+
+
 # ---- what the browser is sent
 
 def _lower_the(name: str) -> str:
     return name[0].lower() + name[1:] if name.startswith(("The ", "A ", "An ")) else name
 
 
-def panel(world: dict, title: str = "Map", jobs: dict[str, str] | None = None, palette: str = "forest") -> dict:
+def panel(world: dict, title: str = "Map", jobs: dict[str, str] | None = None, palette: str = "forest",
+          night: bool = False) -> dict:
     """The `map` widget (the contract's section 3): only what the player knows. Ground not lit goes out as '?'."""
     jobs = jobs or {}
     known = world["known"]
@@ -547,7 +643,7 @@ def panel(world: dict, title: str = "Map", jobs: dict[str, str] | None = None, p
             continue
         here = p["tile"] == [px, py]
         places.append({"id": pid, "name": p["name"], "kind": p["kind"], "x": p["tile"][0], "y": p["tile"][1],
-                       "state": k["state"], "told": k["told"][::-1][:2], "way": None, "job": jobs.get(pid), "here": here,
+                       "state": k["state"], "told": k["told"][::-1][:2], "way": None if p.get("pinned") else way_words(world, p["tile"], night), "job": jobs.get(pid), "here": here,
                        "changed": p.get("changed"), "go": f"I go to {_lower_the(p['name'])}"})
     lines = []
     for lid, line in world["lines"].items():

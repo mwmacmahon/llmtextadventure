@@ -79,3 +79,38 @@ def test_a_start_list_that_cannot_be_laid_out_says_why():
     bad = {**START, "places": [*START["places"], {"id": "isle", "kind": "tower", "name": "The tower", "bearing": "N", "km": 0.1}]}
     with pytest.raises(ValueError, match="isle"):
         wm.new_world(bad, 1, "test")
+
+
+def test_a_walk_takes_the_road_and_its_time_and_the_player_is_told_so():
+    world = wm.new_world(START, 3, "test")
+    fort = world["places"]["fort"]["tile"]
+    path = wm.find_path(world, (0, 0), fort)
+    road = {tuple(t) for t in world["lines"]["north_road"]["tiles"]}
+    assert path[0] == (0, 0) and path[-1] == tuple(fort) and sum(t in road for t in path) >= len(path) - 2
+    minutes = wm.walk_minutes(world, path)
+    assert 25 <= minutes <= 60 and wm.walk_minutes(world, path, night=True) > minutes     # about 2 km of road
+    assert wm.way_words(world, fort).endswith("by the north road")
+    assert wm.way_words(world, (0, 0)) is None
+
+
+def test_water_is_crossed_only_at_a_crossing_the_player_knows():
+    world = wm.new_world(START, 3, "test")
+    bridge = tuple(world["places"]["bridge"]["tile"])
+    far = (bridge[0] - 3, bridge[1])
+    path = wm.find_path(world, (0, 0), far)
+    wet = [t for t in path if wm.ground_at(world, *t) == "~"]
+    assert wet and all(t in wm.known_crossings(world) for t in wet)
+    del world["known"]["places"]["bridge"]
+    for pid in [p for p, v in world["places"].items() if v["kind"] == "ford"]:
+        world["known"]["places"].pop(pid, None)
+    again = wm.find_path(world, (0, 0), far)
+    assert again is None or not any(wm.ground_at(world, *t) == "~" for t in again)
+
+
+def test_no_time_is_shown_across_ground_the_player_has_not_seen():
+    world = wm.new_world(START, 3, "test")
+    hut = world["places"]["hut"]["tile"]
+    assert wm.way_words(world, hut) in ("no road you know of", "no way you know of")
+    widget = wm.panel(world)
+    assert next(p for p in widget["places"] if p["id"] == "fort")["way"].endswith("by the north road")
+    assert next(p for p in widget["places"] if p["id"] == "city")["way"] is None
