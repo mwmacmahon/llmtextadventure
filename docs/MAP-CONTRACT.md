@@ -4,7 +4,8 @@ Written 2026-11-16, before either side is built, so the two can be built apart. 
 (draft 4). This page fixes only shapes: what the save holds and what the server sends the browser. A change to either
 shape is made here first, in the same commit as the code on both sides.
 
-State: **agreed, nothing built.** Version 1.
+State: version 1. **The engine's start area and its widget are built** (`server/engine/worldmap.py`, 11-16); the panel is being built;
+nothing reaches a game yet.
 
 ## 1. The ground
 
@@ -43,6 +44,8 @@ The engine's own record. The browser never sees it.
 {
   "v": 1,
   "seed": 48213,                      // the game's seed for the world
+  "roll": 0,                          // which roll of that seed passed the start area's checks (0 nearly always)
+  "home": "village",                  // the home place's id
   "scenario": "village",
   "chunks": {                         // every chunk rolled so far, keyed "cx,cy"
     "0,0":  {"g": "<256 ground letters>", "r": "<256 region letters>", "turn": 0},
@@ -79,7 +82,8 @@ The engine's own record. The browser never sees it.
   "known": {
     "lit": {"0,0": "<64 hex digits: 256 bits, bit i set when tile i is lit>"},
     "places": {"mill": {"state": "heard", "heard_turn": 0, "been_turn": null, "told": ["The wheel still turns."]}},
-    "lines": {"north_road": 12},      // how many tiles of the line, from its home end, the player knows
+    "lines": {"north_road": 12},      // how many tiles of the line, from its first end, the player knows without
+                                      // having seen them; a line's tile that is lit is known whatever this says
     "unplaced": ["The lost tomb"]     // heard of, whereabouts unknown
   },
   "road_dial": "written",             // quiet, written, wild
@@ -182,8 +186,8 @@ The UI schema gains one optional field beside `placeholder`:
 
 When present and the box is empty, the box is filled with it and selected, so Enter sends it and typing replaces it.
 
-## 5. The sample
+## 5. The samples
 
 `web/fixtures/map_sample.json` is a `map` widget made by a throwaway script, shaped as section 3 says, with made-up
-ground. The panel is built against it until the engine sends the real thing. It is replaced by a file the generator
-writes when the generator exists.
+ground. The panel is built against it until the engine sends the real thing. `web/fixtures/map_real.json` is what the generator sends for a new game on the test start list
+(`server/tests/fixtures/map_start.yml`, seed 11): real ground, no journey yet, `way` not yet filled.
