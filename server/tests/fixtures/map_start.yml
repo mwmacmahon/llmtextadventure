@@ -1,0 +1,23 @@
+# A start list for the world map's tests: generic names, no game content. Shaped as a scenario's `start` block.
+start:
+  home: {id: village, kind: village, name: The village}
+  regions:
+    - {id: westwood, kind: wood_bright, name: The west wood, bearing: WNW, km: 2.3, size: large}
+    - {id: eastwood, kind: wood_dark,   name: The east wood, bearing: NE,  km: 2.6, size: large}
+    - {id: bog,      kind: bog,         name: The bog,       bearing: SSW, km: 2.7, size: medium}
+    - {id: farms,    kind: farmland,    name: The farms,     bearing: S,   km: 0.6, size: small, seen_from_home: true}
+  places:
+    - {id: fort,   kind: fort,   name: The hill fort,  bearing: N,  km: 2.0, stands_on: hill, seen_from_home: true, landmark: 10}
+    - {id: mines,  kind: mine,   name: The old mines,  bearing: E,  km: 3.0, stands_on: hill}
+    - {id: mill,   kind: mill,   name: The old mill,   bearing: SW, km: 1.3, beside: river, seen_from_home: true}
+    - {id: bridge, kind: bridge, name: The bridge,     bearing: W,  km: 1.8, crosses: river}
+    - {id: hut,    kind: hut,    name: The hut in the east wood, within: eastwood, known: no}
+    - {id: city,   kind: town,   name: The city,       bearing: W,  km: 90, known: yes}
+  river: {name: The river, from: N, through: [bridge, mill], to: bog}
+  roads:
+    - {name: The north road, from: village, to: fort}
+    - {name: The west road,  from: village, to: city, through: [bridge]}
+    - {name: The east track, from: village, to: mines}
+  lanes:
+    - {from: village, to: mill}
+    - {from: village, to: farms}
