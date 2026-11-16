@@ -1,0 +1,119 @@
+# The where probe's player lines (tools/where_probe.py, 2026-11-16).
+# s: the situation. A = at the tavern in the village; B = on the north road; B2 = B with "on with their journey" at the
+#    end of Directions (a journey to the hill fort is held); C = in the west wood off any path; CW = C with a wolf (a fight).
+# kind: for slicing. level: easy | hard (the hard ones are run three more times).
+# Expected fields; one left out is expected EMPTY.
+#   goes_to: a name from the lists.   by_way_of: a list of names.
+#   place_named / moves_within: an exact name, "*" (anything non-empty: the player's own words), or "~word" (must hold it).
+# alt: other defensible answers per field (gray): {goes_to: [..], by_way_of: [[..], ..], place_named: [..], moves_within: [..]}.
+lines:
+  # ---- a plain known place
+  - {id: k01, s: A, kind: known, level: easy, line: "I go to the mill", goes_to: the old mill}
+  - {id: k02, s: A, kind: known, level: hard, line: "mill", goes_to: the old mill}
+  - {id: k03, s: A, kind: known, level: hard, line: "To the fort!", goes_to: the hill fort}
+  - {id: k04, s: A, kind: known, level: easy, line: "I walk out to the farms.", goes_to: the farms}
+  - {id: k05, s: A, kind: known, level: easy, line: "I set off for the city", goes_to: the city}
+  - {id: k06, s: A, kind: known, level: easy, line: "Let's head to the wayside shrine.", goes_to: the wayside shrine}
+  - {id: k07, s: A, kind: known, level: easy, line: "I leave the tavern and make for the old mines", goes_to: the old mines}
+  - {id: k08, s: A, kind: known, level: easy, line: "I want to go and see the bog", goes_to: the bog}
+  - {id: k09, s: A, kind: known, level: easy, line: "off to the bridge", goes_to: the bridge}
+  - {id: k10, s: B, kind: known, level: easy, line: "I walk on to the fort", goes_to: the hill fort}
+  - {id: k11, s: C, kind: known, level: easy, line: "I find my way to the mill", goes_to: the old mill}
+  - {id: k12, s: C, kind: known, level: hard, line: "I look for the old mines", goes_to: the old mines}
+  # ---- a place and a named road, river or wood
+  - {id: r01, s: A, kind: known_route, level: easy, line: "I take the north road to the fort", goes_to: the hill fort, by_way_of: [the north road]}
+  - {id: r02, s: A, kind: known_route, level: hard, line: "I go through the west wood to the bridge", goes_to: the bridge, by_way_of: [the west wood]}
+  - {id: r03, s: A, kind: known_route, level: easy, line: "I follow the mill lane down to the old mill", goes_to: the old mill, by_way_of: [the mill lane]}
+  - {id: r04, s: A, kind: known_route, level: easy, line: "I take the east track out to the east wood", goes_to: the east wood, by_way_of: [the east track]}
+  - {id: r05, s: A, kind: known_route, level: hard, line: "I go to the city by the west road, past the mines", goes_to: the city, by_way_of: [the west road, the old mines]}
+  - {id: r06, s: A, kind: known_route, level: hard, line: "I ride for the hill fort along the river", goes_to: the hill fort, by_way_of: [the river]}
+  - {id: r07, s: B, kind: known_route, level: hard, line: "I follow the river downstream to the bridge", goes_to: the bridge, by_way_of: [the river]}
+  - {id: r08, s: B, kind: known_route, level: hard, line: "I carry on up the road to the shrine", goes_to: the wayside shrine, by_way_of: [the north road], alt: {by_way_of: [[]]}}
+  # ---- a vague route that names nothing on the lists: by_way_of must be empty
+  - {id: v01, s: A, kind: vague_route, level: hard, line: "I cut across the north-west fields to the fort", goes_to: the hill fort}
+  - {id: v02, s: A, kind: vague_route, level: hard, line: "I take the back way to the mill", goes_to: the old mill}
+  - {id: v03, s: A, kind: vague_route, level: hard, line: "I sneak round the long way to the farms, keeping off the paths", goes_to: the farms}
+  - {id: v04, s: A, kind: vague_route, level: hard, line: "I take the shortest way to the shrine", goes_to: the wayside shrine}
+  - {id: v05, s: C, kind: vague_route, level: hard, line: "I pick my way through the trees to the bog", goes_to: the bog}
+  # ---- a road with no end
+  - {id: e01, s: A, kind: road_no_end, level: hard, line: "I take the west road", goes_to: the west road, alt: {by_way_of: [[the west road]]}}
+  - {id: e02, s: A, kind: road_no_end, level: hard, line: "I set off down the east track.", goes_to: the east track, alt: {by_way_of: [[the east track]]}}
+  - {id: e03, s: A, kind: road_no_end, level: hard, line: "I follow the mill lane", goes_to: the mill lane, alt: {by_way_of: [[the mill lane]]}}
+  # ---- bare directions
+  - {id: d01, s: A, kind: direction, level: easy, line: "I head north", goes_to: north}
+  - {id: d02, s: A, kind: direction, level: easy, line: "I walk south-west out of the village", goes_to: south-west}
+  - {id: d03, s: A, kind: direction, level: hard, line: "east", goes_to: east}
+  - {id: d04, s: B, kind: direction, level: easy, line: "I head north", goes_to: north}
+  - {id: d05, s: B, kind: direction, level: easy, line: "I turn back", goes_to: back}
+  - {id: d06, s: B, kind: direction, level: hard, line: "upstream", goes_to: upstream}
+  - {id: d07, s: C, kind: direction, level: easy, line: "I head east", goes_to: east}
+  - {id: d08, s: C, kind: direction, level: easy, line: "I go back", goes_to: back}
+  - {id: d09, s: C, kind: direction, level: easy, line: "I walk out of the wood to the east", goes_to: east}
+  - {id: d10, s: B, kind: direction, level: hard, line: "I leave the road and head east to the river", goes_to: east, alt: {goes_to: [the river], by_way_of: [[the river]]}}
+  # ---- back to a named place: the place, not "back"
+  - {id: b01, s: B, kind: back_to_place, level: hard, line: "I go back to the village", goes_to: the village}
+  - {id: b02, s: C, kind: back_to_place, level: hard, line: "I go back to the village", goes_to: the village}
+  - {id: b03, s: B2, kind: back_to_place, level: hard, line: "I go back to the village", goes_to: the village}
+  # ---- following the river
+  - {id: f01, s: A, kind: river_follow, level: hard, line: "I follow the river down", goes_to: downstream, by_way_of: [the river]}
+  - {id: f02, s: B, kind: river_follow, level: hard, line: "I follow the river upstream", goes_to: upstream, by_way_of: [the river]}
+  # ---- a place on no list: place_named, goes_to empty (never the nearest listed name)
+  - {id: u01, s: A, kind: unlisted, level: hard, line: "I go to the abandoned chapel", place_named: "~chapel"}
+  - {id: u02, s: A, kind: unlisted, level: hard, line: "I look for the witch's hut", place_named: "~hut"}
+  - {id: u03, s: A, kind: unlisted, level: hard, line: "I ride to the lighthouse on the coast", place_named: "~lighthouse"}
+  - {id: u04, s: A, kind: unlisted, level: hard, line: "I set out for Greyford", place_named: "~greyford"}
+  - {id: u05, s: A, kind: unlisted, level: hard, line: "I head to the quarry.", place_named: "~quarry"}
+  - {id: u06, s: B, kind: unlisted, level: hard, line: "I go to the monastery", place_named: "~monastery"}
+  - {id: u07, s: C, kind: unlisted, level: hard, line: "I make for the hunter's cabin", place_named: "~cabin"}
+  # ---- moving about inside the place: moves_within only
+  - {id: w01, s: A, kind: within, level: easy, line: "I go down to the cellar", moves_within: the cellar}
+  - {id: w02, s: A, kind: within, level: hard, line: "I go upstairs", moves_within: the rooms upstairs}
+  - {id: w03, s: A, kind: within, level: hard, line: "I step out to the door", moves_within: "*"}
+  - {id: w04, s: A, kind: within, level: hard, line: "I walk over to the bar", moves_within: "*"}
+  - {id: w05, s: A, kind: within, level: easy, line: "I go out to the yard", moves_within: the yard}
+  - {id: w06, s: A, kind: within, level: easy, line: "I slip into the taproom", moves_within: the taproom}
+  - {id: w07, s: A, kind: within, level: hard, line: "I climb up to my room and lock the door", moves_within: the rooms upstairs, alt: {moves_within: ["*"]}}
+  - {id: w08, s: A, kind: within, level: hard, line: "I go round to the kitchen", moves_within: "*"}
+  - {id: w09, s: B, kind: within, level: hard, line: "I step off the road into the meadow", moves_within: "*"}
+  - {id: w10, s: C, kind: within, level: hard, line: "I climb the nearest tree", moves_within: "*", alt: {moves_within: [""]}}
+  # ---- no travel, though a place is mentioned
+  - {id: n01, s: A, kind: no_travel, level: hard, line: "I ask the innkeeper about the old mines"}
+  - {id: n02, s: A, kind: no_travel, level: hard, line: "I look at the smoke from the fort"}
+  - {id: n03, s: A, kind: no_travel, level: easy, line: "I wait until dark"}
+  - {id: n04, s: CW, kind: no_travel, level: easy, line: "I attack the wolf"}
+  - {id: n05, s: A, kind: no_travel, level: hard, line: "I order an ale and listen for talk of the city"}
+  - {id: n06, s: A, kind: no_travel, level: hard, line: "I ask the farmhand the way to the bridge"}
+  - {id: n07, s: B, kind: no_travel, level: easy, line: "I sit down by the road and eat"}
+  - {id: n08, s: B, kind: no_travel, level: hard, line: "I study the hill fort from here"}
+  - {id: n09, s: C, kind: no_travel, level: easy, line: "I light a torch and listen"}
+  - {id: n10, s: A, kind: no_travel, level: hard, line: "I tell the innkeeper I came up the west road from the city"}
+  - {id: n11, s: C, kind: no_travel, level: easy, line: "I make camp for the night"}
+  - {id: n12, s: CW, kind: no_travel, level: hard, line: "I back away from the wolf, slowly, sword up"}
+  # ---- compound lines
+  - {id: c01, s: A, kind: compound, level: hard, line: "I buy rope and then head for the mines", goes_to: the old mines}
+  - {id: c02, s: A, kind: compound, level: hard, line: "I finish my ale, pay, and set off for the farms", goes_to: the farms}
+  - {id: c03, s: A, kind: compound, level: hard, line: "I fetch my pack from upstairs and take the north road to the shrine", goes_to: the wayside shrine, by_way_of: [the north road], alt: {moves_within: [the rooms upstairs, "*"]}}
+  - {id: c04, s: CW, kind: compound, level: hard, line: "I kill the wolf and then go back to the village", goes_to: the village}
+  # ---- a listed place in other words
+  - {id: o01, s: A, kind: other_words, level: hard, line: "I go to the ruined fort on the hill", goes_to: the hill fort}
+  - {id: o02, s: A, kind: other_words, level: hard, line: "I walk to the mill by the river", goes_to: the old mill}
+  - {id: o03, s: A, kind: other_words, level: easy, line: "I go to the mines", goes_to: the old mines}
+  - {id: o04, s: A, kind: other_words, level: easy, line: "I head for the shrine", goes_to: the wayside shrine}
+  - {id: o05, s: A, kind: other_words, level: hard, line: "I go into the woods to the west", goes_to: the west wood}
+  - {id: o06, s: B, kind: other_words, level: hard, line: "I go to the marsh", goes_to: the bog, alt: {goes_to: [""], place_named: ["~marsh"]}}
+  - {id: o07, s: A, kind: other_words, level: easy, line: "I make for the big city", goes_to: the city}
+  # ---- a held journey: "on with their journey" is at the end of Directions (B2)
+  - {id: j01, s: B2, kind: journey_on, level: hard, line: "I carry on", goes_to: on with their journey}
+  - {id: j02, s: B2, kind: journey_on, level: hard, line: "continue", goes_to: on with their journey}
+  - {id: j03, s: B2, kind: journey_on, level: hard, line: "keep going", goes_to: on with their journey}
+  - {id: j04, s: B2, kind: journey_on, level: hard, line: "I press on", goes_to: on with their journey}
+  - {id: j05, s: B2, kind: journey_on, level: hard, line: "Onward to the fort.", goes_to: on with their journey, alt: {goes_to: [the hill fort]}}
+  - {id: j06, s: B2, kind: journey_on, level: hard, line: "I rest a while and then carry on", goes_to: on with their journey}
+  - {id: j07, s: B2, kind: journey_other, level: hard, line: "I turn off for the mill instead", goes_to: the old mill}
+  - {id: j08, s: B2, kind: journey_no_travel, level: easy, line: "I sit down and eat"}
+  - {id: j09, s: B2, kind: journey_no_travel, level: hard, line: "I keep watching the smoke"}
+  - {id: j10, s: B2, kind: journey_no_travel, level: hard, line: "I continue sharpening my sword"}
+  - {id: j11, s: B2, kind: journey_no_travel, level: hard, line: "I go on telling myself this was a good idea"}
+  - {id: j12, s: B2, kind: journey_no_travel, level: easy, line: "I wait here until morning"}
+  # ---- no journey held (B): "carry on" has no entry to copy; the road's own direction or nothing are both defensible
+  - {id: j13, s: B, kind: journey_absent, level: hard, line: "I carry on", goes_to: north, alt: {goes_to: ["", the wayside shrine, the north road, the hill fort], by_way_of: [[the north road]]}}
