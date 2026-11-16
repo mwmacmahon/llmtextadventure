@@ -385,3 +385,20 @@ dl.score dd { margin: 0; font-family: var(--pixel-font); font-size: 15px; }
 
 /* part fifteen §7: an attack, damage or save line in the prose as a dice card */
 .mechanic-line.dice-card { border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 8px; padding: 6px 10px; background: var(--panel); }
+
+/* the world map (MapPanel.tsx) */
+.map-panel { position: relative; }
+.map-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.map-head h3 { margin: 0 0 6px; }
+.map-buttons { display: flex; gap: 10px; }
+.map-wrap { position: relative; width: 100%; overflow: hidden; border: 1px solid var(--border); border-radius: 6px; background: #1b1f28; line-height: 0; }
+.map-canvas { display: block; image-rendering: pixelated; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+.map-canvas:active { cursor: grabbing; }
+.map-card { position: absolute; z-index: 2; max-width: 240px; line-height: 1.35; background: var(--panel); border: 1px solid var(--accent); border-radius: 6px; padding: 6px 8px; pointer-events: none; box-shadow: 0 2px 8px rgba(0, 0, 0, .5); }
+.map-card-name { font-family: var(--pixel-font); font-size: 11px; color: var(--text); margin-bottom: 2px; }
+.map-card-job { color: var(--warn); }
+.map-journey { margin-top: 6px; color: var(--accent); }
+.map-list h4 { margin: 8px 0 2px; font-size: 12px; color: var(--muted); font-weight: normal; }
+.map-list ul, .map-spots { margin: 2px 0 0; padding-left: 16px; }
+.map-spots { margin-top: 8px; list-style: none; padding-left: 0; }
+.map-spots .here { color: var(--warn); }

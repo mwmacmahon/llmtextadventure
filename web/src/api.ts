@@ -23,7 +23,22 @@ export type MeterWidget = {
 // Where a panel is drawn and whether it stays put: `place` "side" (the default column) or "main" (the centre pane under the
 // story, the clown's hand); `pinned` keeps it at the top of its column while the rest scrolls (the girl in training).
 export type Placed = { place?: "side" | "main"; pinned?: boolean };
+// The world map (docs/MAP-CONTRACT.md section 3): only what the player knows; ground not lit is "?".
+export type MapPlace = {
+  id: string; name: string; kind: string; x: number; y: number; state: "heard" | "been"; told: string[];
+  way: string | null; job: string | null; here: boolean; changed: string | null; go: string;
+};
+export type MapWidget = {
+  type: "map"; title?: string | null; v: number; palette: string; tile_m: number; player: { x: number; y: number };
+  chunks: { cx: number; cy: number; g: string; r: string }[];
+  regions: { id: string; name: string; kind: string; state: string; line: string }[];
+  places: MapPlace[];
+  lines: { id: string; name: string; kind: string; leads?: string | null; runs: [number, number][][] }[];
+  journey: { to: string | null; label: string; path: [number, number][]; stops: [number, number][] } | null;
+  unplaced: string[]; spots: { name: string; here: boolean }[];
+};
 export type Widget = Placed & (
+  | MapWidget
   | { type: "status_strip"; chips: Chip[] }
   | MeterWidget
   | { type: "meter_group"; title?: string | null; meters: MeterWidget[] }
@@ -35,7 +50,7 @@ export type Widget = Placed & (
   | { type: "commands"; title?: string | null; items: CommandSpec[] }
   | { type: "quests"; title: string; rows: QuestRow[] });
 
-export type UISchema = { phase: string; free_text: boolean; placeholder: string; panels: Widget[] };
+export type UISchema = { phase: string; free_text: boolean; placeholder: string; prefill?: string | null; panels: Widget[] };
 
 export type TranscriptRow = {
   seq: number;

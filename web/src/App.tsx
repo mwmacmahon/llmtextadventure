@@ -63,6 +63,7 @@ const SHOWN: TranscriptRow["role"][] = ["player", "narrator", "mechanics", "comm
 function Game({ id }: { id: string }) {
   const [view, setView] = useState<InstanceView | null>(null);
   const [input, setInput] = useState("");
+  const boxRef = useRef<HTMLTextAreaElement>(null);
   const [asking, setAsking] = useState(false);       // the Ask toggle (B105): the box's words go to the game master as a question
   const [askBusy, setAskBusy] = useState(false);
   const [streaming, setStreaming] = useState<string | null>(null);
@@ -206,6 +207,14 @@ function Game({ id }: { id: string }) {
     return run(streamCommand(id, command, args), command);
   }
 
+  // MAP-CONTRACT section 4: a prefill fills the empty box and selects it, so Enter sends it and typing replaces it
+  const prefill = view?.ui.prefill ?? null;
+  useEffect(() => {
+    if (!prefill || input) return;
+    setInput(prefill);
+    requestAnimationFrame(() => boxRef.current?.select());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill]);
   const hasTimeline = !!view && view.ui.panels.some((w) => w.type === "log" && w.timeline);
 
   // B228: a clicked command's turn cannot be told again (no words to retell); the rewrite button is not offered for it
@@ -358,13 +367,13 @@ function Game({ id }: { id: string }) {
         </section>
         {view.ui.panels.some((w) => w.place === "main") && (
           <section className="main-panels">
-            <Panels panels={view.ui.panels} place="main" onChoice={(cmd) => send(cmd)} onCommand={sendCommand} busy={streaming !== null} ended={!!view.ending} />
+            <Panels panels={view.ui.panels} place="main" onChoice={(cmd) => send(cmd)} onCommand={sendCommand} onPick={setInput} busy={streaming !== null} ended={!!view.ending} />
           </section>
         )}
         </div>
         <aside className={`side${panelsOpen ? "" : " side-closed"}`}>
           <div className="side-full">
-            <Panels panels={view.ui.panels} place="side" onChoice={(cmd) => send(cmd)} onCommand={sendCommand} busy={streaming !== null} ended={!!view.ending} />
+            <Panels panels={view.ui.panels} place="side" onChoice={(cmd) => send(cmd)} onCommand={sendCommand} onPick={setInput} busy={streaming !== null} ended={!!view.ending} />
           </div>
           {/* B282: at phone width with the panels closed, the game's first two (the status strip and its key meter) stay in view */}
           <div className="side-compact">
@@ -380,6 +389,7 @@ function Game({ id }: { id: string }) {
           }}
         >
           <textarea
+            ref={boxRef}
             value={input}
             placeholder={asking ? "Ask the game master (nothing happens in the story)" : view.ui.placeholder}
             disabled={!view.ui.free_text || streaming !== null || askBusy}
