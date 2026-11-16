@@ -10,6 +10,28 @@ the evidence behind it is the state page, `docs/STATE-2026-11-08.md` (published:
 Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a short-term planning document and showed
 "basically nothing left"). Everything here was the roadmap's "Where we are", "Landed today" and Stage 5 queue.
 
+## Where we are (2026-11-16)
+
+Everything below this section is the page as it stood on 11-09 and is behind; it is kept until the next full re-cut.
+
+- **The fantasy game:** Marrowgate's setting was set aside on 11-15. The next game (a village in the woods, a rolled
+  world map the engine owns) is designed and not built. Its work list is `notes/FANTASY_ROADMAP.md` (FN1 to FN96), rolled
+  up in ROADMAP area 19.
+- **The hidden game:** waits on the owner's read of its time write-up and his own playtest; then B411, C129, C130.
+- **Her server:** where it was; moved only on the owner's word.
+
+**The fantasy order, proposed 11-16, waiting on the owner's go-ahead:**
+0. Before any code: the map design read cold, the clarify counts, where the new game lives (FN1 to FN4). A day.
+1. The scenario file and the start-area generator, a thousand seeds checked (FN10 to FN12, FN16, FN17).
+2. The map panel (FN20 to FN26): the owner looks at a real rolled map.
+3. The player on a tile and travel to a named place (FN30 to FN32, FN38, FN44).
+4. Journeys in legs, the road dial, the engine's questions (FN33 to FN35, FN39), played on Gemma and read.
+5. The slice: the village, three places, the job board, loot, character creation (FN60 to FN63, FN66, FN71, FN80).
+6. Its first player plays fifteen minutes (FN81, FN82).
+7. The ground beyond in chunks, long journeys, wandering (FN13 to FN15, FN36, FN37).
+8. The probes, the reading's new fields, invented places, changes (FN40 to FN43, FN50 to FN55).
+9. Fight terms, spots, written quests, the decks, by what the first play shows (FN68 to FN70, FN27, FN64, FN65, FN74).
+
 ## Where we are (2026-11-09, about 01:30, at ae5befb)
 
 - **Stage 1 is done** (D135 to D151, 2026-11-07 night to 11-08 dawn): 2d6 with caps, the dice and the player's row,

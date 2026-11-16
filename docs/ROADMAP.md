@@ -47,7 +47,7 @@ rounds; replace or delete by what they show.
 | 5 | The narrator's context | not started | DESIGN-context-modules §2 to §4 | the four modules; the chant, the formula, the leak, the retold order are its cases |
 | 6 | The assistant | built | ASSISTANT-DESIGN; DESIGN2 §17 | fiat and levers, a retold turn's stakes, the parked beats, the unsettled attempts |
 | 7 | The world's records | built | DESIGN.md; GAME_AUTHORING | the save's size and the per-turn snapshots (B329: compress, deltas, a bounded save, retention); "unknown", a place under another name, one object twice, name clashes, stale time text |
-| 8 | The fantasy game, Marrowgate | built; part eight in; playable on Sonnet with open items accepted | FANTASY_DESIGN; DIRECTIVE-fantasy | part nine (B217 to B228), the XP question, the rescue later, magic, the content questions |
+| 8 | The fantasy game, Marrowgate | **set aside 11-15 (the owner: unsalvageable; area 19 replaces it; the rules code is kept)**; built; part eight in; playable on Sonnet with open items accepted | FANTASY_DESIGN; DIRECTIVE-fantasy | part nine (B217 to B228), the XP question, the rescue later, magic, the content questions |
 | 9 | Noir, Lowtown | built | notes/design/noir page; DESIGN.md | whether noir takes death is death, the nerves sitting, stray engine lines |
 | 10 | The station | built | DESIGN-time-and-attempts §4; station page | the locked-out text, what each project unlocks, the upgrades, the canister, the station's week |
 | 11 | The player UI | slice one built; slice two designed | DESIGN-lobby-and-saves; DESIGN-player-ui | the play page (four questions open), the feedback button, the ending word, dev mode's gaps |
@@ -58,6 +58,7 @@ rounds; replace or delete by what they show.
 | 16 | Writing for models | running; the sweep proper not run | WRITING_FOR_MODELS.md | the full sweep and its rounds |
 | 17 | Tooling, tests and docs | running | INDEX.md §7 | tests on gitignored content, the docs marked behind, the register's statuses, the phone's pages |
 | 18 | Ideas not yet weighed | idea | the register | the referee review pass, the preference corpus, the station's self-upgrade |
+| 19 | The next fantasy game (the village in the woods) and the world map | designed; nothing built | FANTASY_NEXT; MAP_DESIGN; FANTASY_ROADMAP (FN1 to FN96) | all of it: the rolled world, the map panel, travel in legs, the engine's questions, invented places, the job board, the slice and its first play |
 
 ## The order (the owner's, as set)
 
@@ -528,6 +529,47 @@ what the store knows (did the player move, is a blow's target a person, how ofte
 A referee review pass, a second call over the referee's own report (X1). A preference corpus across games from the
 blind-pair judgements (X2). The station AI upgrading and downgrading itself (B19). Basic and advanced variants (area
 12). Per-campaign pacing numbers (B13). Each needs a measured run before it is kept.
+
+## 19. The next fantasy game and the world map
+
+The owner set Marrowgate's setting aside on 2026-11-15 after a played run on its first player's server (D304): a fresh
+slate, a small village in the woods with well-known kinds of place all round it, the plain thing first. The rules code is
+kept (classes, levels, dice, combat, perils, gravestones, death as the ending). The design is `notes/FANTASY_NEXT.md`; the
+map is `notes/MAP_DESIGN.md` (draft 4; D307 to D309). **The work list, one line per piece with an id and a state, is
+`notes/FANTASY_ROADMAP.md` (FN1 to FN96), written 11-16 before any code at the owner's word (D310).** A line leaves it
+only when built and seen in a played round. This section is its roll-up. **Nothing here is built.**
+
+- **Before any code (FN1 to FN6): next.** A fresh cold read of the map design's last two drafts; the game design's map
+  section brought in line with it; how often the reading chose `clarify` in the stored games and why so rarely; how much
+  rules code names Marrowgate and where the new game lives; every model-facing line of the design tried on a model
+  before anything rests on it.
+- **The world (FN10 to FN17): designed.** A scenario file (what is at the start by kind, bearing and distance; the
+  wilderness rules; names; what lives where); a start area rolled from a seed and checked over a thousand seeds; the
+  ground beyond rolled in 16 by 16 chunks on first need and stored, with no edge; far places pinned; the save's size
+  watched (B329); `server/engine/worldmap.py` with no game imports, off for every other game.
+- **The panel (FN20 to FN27): designed.** A low-resolution pixel map in the interface's colours that scrolls and zooms;
+  three states of a place (not known, heard of, been there); hover shows only what the player knows; jobs marked; a
+  click fills the input; a journey shown as it is walked; spots inside a place as a list.
+- **Travel (FN30 to FN44): designed.** The player always on a tile; time from the ground crossed; journeys told in legs
+  at stops the engine picks, with a pre-filled continue and an event roll per stop; a road dial at character creation,
+  apart from difficulty (quiet, as written, wild); long journeys with camps; wandering with no end; a place not on the
+  player's map cannot be walked to unless in view; the engine asks, with buttons, when the player's meaning is unclear,
+  and each question is counted; two probes on both models before the reading's two new fields.
+- **Places the story makes (FN50 to FN55): designed.** Told of a place at all puts it on the map; a secret whereabouts
+  only by the scenario's mark or the telling saying so; an invented place by a pick-one form, the engine choosing the
+  tile; lasting damage as a change on top of the rolled world; every assumption about a model counted.
+- **The game round it (FN60 to FN77): sketched, content not written.** The village and its first places; a job board of
+  five forms the engine fills and knows the end of; bounties; loot from every fight; residents sized to the party within
+  a place's limits; fight terms set when a fight opens (proposed, open with the owner); B411's decks re-read now the hook
+  deck is gone; a second scenario; the map for other games (assumed not now).
+- **Seeing it work (FN80 to FN85): not started.** The slice; fifteen playable minutes with its first player before more
+  is written; rounds on Gemma and Sonnet with reports and reads; a living page; LEVERS; when it goes to her server (only
+  on the owner's word).
+- **Carried from Marrowgate (FN86 to FN90): built, unseen.** The fight and job fixes of 11-15 never tried on a model; a
+  failed roll in a fight costing no hit points (B414) not seen in a played fight; the gravestone's last turns (B415) not
+  looked at in a browser; B413.
+- **Open with the owner and the first player (FN91 to FN96):** three answers of hers; the fight terms; the map design's
+  eight questions, each built on a stated assumption until answered. None blocks the world, the panel or travel.
 
 ## For the record: analysed and parked
 
