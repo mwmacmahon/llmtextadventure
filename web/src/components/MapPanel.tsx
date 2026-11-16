@@ -73,14 +73,19 @@ export function MapPanel({ widget, onPick }: { widget: MapWidget; onPick: (text:
   const drag = useRef<{ id: number; sx: number; sy: number; cx: number; cy: number; moved: boolean } | null>(null);
   const [size, setSize] = useState({ w: 300, h: 260 });
   const [dpr, setDpr] = useState(() => window.devicePixelRatio || 1);
-  const [half, setHalf] = useState(false);
+  const [close, setClose] = useState(false); // false: the country at a glance (about 30 tiles across); true: twice as close
   const [bob, setBob] = useState(0);
   const [ver, setVer] = useState(0); // bumped when the scroll changes
   const [hoverTile, setHoverTile] = useState<[number, number] | null>(null);
   const [card, setCard] = useState<{ c: Card; at: { x: number; y: number } | null } | null>(null);
   const [selected, setSelected] = useState<string | null>(null); // touch: the place whose card a second tap acts on
 
-  const s = Math.max(1, Math.round((half ? 2 : 3) * dpr)); // device pixels an art pixel: always a whole number
+  // device pixels an art pixel, always a whole number: the wide view is the whole number nearest to 30 tiles across the
+  // panel, the close view twice that. In the wide view the icons and the marker are drawn at twice the tile's scale (16
+  // art pixels, centred on their tile) so they stay readable.
+  const wide = Math.max(1, Math.round((size.w * dpr) / (30 * T)));
+  const s = close ? wide * 2 : wide;
+  const ik = close ? 1 : 2; // icon scale, in tiles' own scale
 
   const d = useMemo(() => {
     const chunks = new Map<string, { g: string; r: string }>();
@@ -222,7 +227,7 @@ export function MapPanel({ widget, onPick }: { widget: MapWidget; onPick: (text:
     }
     ctx.globalAlpha = 1;
     // region names
-    const font = `${Math.round(5 * s)}px Silkscreen, ui-monospace, monospace`;
+    const font = `${Math.round((close ? 5 : 7) * s)}px Silkscreen, ui-monospace, monospace`;
     const text = (t: string, cx: number, cy: number, fill: string) => {
       ctx.font = font;
       ctx.textAlign = "center";
@@ -234,7 +239,18 @@ export function MapPanel({ widget, onPick }: { widget: MapWidget; onPick: (text:
       ctx.fillStyle = fill;
       ctx.fillText(t, cx, cy);
     };
-    for (const l of d.labels) text(l.name, ox + (l.x + 0.5) * ts, oy + (l.y + 0.5) * ts, "rgba(230,230,230,.8)");
+    // a region's name only where it fits wholly inside lit ground in view; otherwise not drawn (the hover has it)
+    ctx.font = font;
+    for (const l of d.labels) {
+      const cx = ox + (l.x + 0.5) * ts, cy = oy + (l.y + 0.5) * ts;
+      const hw = ctx.measureText(l.name).width / 2 + s, hh = 3.5 * s;
+      if (cx - hw < 0 || cx + hw > W || cy - hh < 0 || cy + hh > H) continue;
+      let lit = true;
+      for (let ty = Math.floor((cy - hh - oy) / ts); lit && ty <= Math.floor((cy + hh - oy) / ts); ty++)
+        for (let tx = Math.floor((cx - hw - ox) / ts); tx <= Math.floor((cx + hw - ox) / ts); tx++)
+          if (d.at(tx, ty)[0] === "?") { lit = false; break; }
+      if (lit) text(l.name, cx, cy, "rgba(230,230,230,.85)");
+    }
     // the journey: a faint dotted path, its stops marked
     const j = widget.journey;
     if (j && j.path.length) {
@@ -265,12 +281,13 @@ export function MapPanel({ widget, onPick }: { widget: MapWidget; onPick: (text:
     for (const p of widget.places) {
       const x = ox + p.x * ts, y = oy + p.y * ts;
       if (x + ts < 0 || y + ts < 0 || x > W || y > H) continue;
-      ctx.drawImage(sprite(ICONS[p.kind] ?? ICONS.marker, p.state === "been" ? "bright" : "dim"), x, y, ts, ts);
-      if (p.job) ctx.drawImage(sprite(JOB_MARK, "bright"), x + 4 * s, y - 2 * s, 5 * s, 5 * s);
-      if (p.here) text(p.name, x + ts / 2, y + ts + 3 * s, "#e0af68");
+      const is = ts * ik, ix = x - (is - ts) / 2, iy = y - (is - ts) / 2; // centred on the tile
+      ctx.drawImage(sprite(ICONS[p.kind] ?? ICONS.marker, p.state === "been" ? "bright" : "dim"), ix, iy, is, is);
+      if (p.job) ctx.drawImage(sprite(JOB_MARK, "bright"), ix + is - 4 * s * ik, iy - s * ik, 5 * s * ik, 5 * s * ik);
+      if (p.here) text(p.name, x + ts / 2, iy + is + 3 * s, "#e0af68");
     }
     // the player, bobbing
-    ctx.drawImage(sprite(PLAYER, "bright"), ox + widget.player.x * ts, oy + (widget.player.y * T - bob) * s, ts, ts);
+    ctx.drawImage(sprite(PLAYER, "bright"), ox + widget.player.x * ts - (ts * ik - ts) / 2, oy + (widget.player.y * T - bob * ik) * s - (ts * ik - ts) / 2, ts * ik, ts * ik);
     // the tile under the pointer
     if (hoverTile) {
       ctx.strokeStyle = "rgba(122,162,247,.9)";
@@ -278,7 +295,7 @@ export function MapPanel({ widget, onPick }: { widget: MapWidget; onPick: (text:
       ctx.strokeRect(ox + hoverTile[0] * ts + s / 2, oy + hoverTile[1] * ts + s / 2, ts - s, ts - s);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [widget, d, s, size, dpr, bob, ver, hoverTile]);
+  }, [widget, d, s, ik, close, size, dpr, bob, ver, hoverTile]);
 
   // ---- pointing ----
   const tileAt = (e: React.PointerEvent): [number, number] => {
@@ -294,7 +311,7 @@ export function MapPanel({ widget, onPick }: { widget: MapWidget; onPick: (text:
     const [g, r] = d.at(tx, ty);
     if (g === "?") return { kind: "ground", title: "Not known", line: null };
     const reg = r !== "." ? widget.regions[r.charCodeAt(0) - 97] : undefined;
-    return reg ? { kind: "ground", title: reg.name, line: reg.line } : { kind: "ground", title: GROUND_NAME[g] ?? "Ground", line: null };
+    return reg && reg.name ? { kind: "ground", title: reg.name, line: reg.line || null } : { kind: "ground", title: GROUND_NAME[g] ?? "Ground", line: null };
   };
   const rel = (e: React.PointerEvent) => {
     const r = wrap.current!.getBoundingClientRect();
@@ -380,7 +397,7 @@ export function MapPanel({ widget, onPick }: { widget: MapWidget; onPick: (text:
         <h3>{widget.title || "Map"}</h3>
         <div className="map-buttons">
           <button className="link small" onClick={recentre}>Centre</button>
-          <button className="link small" aria-pressed={half} onClick={() => setHalf(!half)}>{half ? "Zoom in" : "Zoom out"}</button>
+          <button className="link small" onClick={() => setClose(!close)}>{close ? "Zoom out" : "Zoom in"}</button>
         </div>
       </div>
       <div className="map-wrap" ref={wrap}>
