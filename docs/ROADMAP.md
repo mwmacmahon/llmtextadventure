@@ -120,6 +120,13 @@ one roll a block). Design: DESIGN-time-and-attempts §3 and §4; D146 to D151.
   (T6).
 - Questions move no time and an Ask mode answers out of the story (B105): built (D177); reaches wait for a quiet turn
   (B104): built, its content half (a fallback names its carrier) is the fantasy's.
+- What an Ask answer decides is canon (D186, B244: the answer decides what the character could plainly see, a referee pass
+  writes it as learned rows, the next turn waits for them): built 11-09. Ask mode remembers its last twelve questions and
+  answers, admits a slip only where the state shows one, calls a complaint about the game a fault and promises nothing
+  about later tellings (D306): built 11-15, tried on Gemma only. **Untested end to end (B416):** whether a fact made by an
+  answer lands, holds over later turns and is caught when a telling breaks it; in the one store looked at the pass ran 28
+  times and applied rows 9 times, the other 19 unread. Never tried on Sonnet or seen in a fantasy game. Open: the pass
+  takes a definition of a word or an excuse for a telling's slip as a fact.
 
 ## 3. Measurement and parity
 
@@ -488,6 +495,17 @@ load; the game opens at the Harbourmaster's shed and the first pupil is chosen i
 game; the default wording reworded to a warmer register with the earlier wording kept as a mod and its four deck files (a second, dev-only listing has that mod always on), and a tool and a test that the default with the mod
 on is the kept wording exactly; the referee's guards on a telling's content as data each wording gives for itself. **Next (the owner, 11-14):** booking eligibility by a girl's visible tags (a booking requires or excludes tags;
 C129), and asking about a booking before it is played, a check that can nudge the show (C130).
+**Built 11-14 night to 11-15 (D293 to D299, D305, D306):** no bookings settled in talk; costs told the turn they fall; a
+lender with two money endings; a girl's card says what she is doing in place of where she is; a free turn is free (the
+count of free turns and the long-scene rule both taken out at the owner's word); the kind of turn for the clock is the game's
+answer on the one-form reading too. **A newcomer's first game (11-15, on Sonnet, six turns and fourteen asks)** was read
+whole: the owner's verdict, unplayable to somebody coming in. His rulings from it, not built: the parts of the day moved
+earlier, free time never ended early without the player's yes, the screen saying what a pupil does while the proprietor is
+out, upgrades taking time, a skip that says how it reads the days. **The state of all of it, 11-16:** every open line
+placed once, by block, with the testing owed in order, at the top of CLOWN_ROADMAP ("Where the work stands"). The order
+proposed there: the rest of the owner's and the player's notes; free testing (Ask canon, the opening read cold by a
+subagent, the staged scenes); the clock rebuilt whole; the opening and the screen; a newcomer round and the owner's
+playtest; then B411, C129, C130.
 **Left:** the owner's word on how short and a judged trial of the lengths; the simulator's calibration grids; a round on the four-part
 day when live play resumes; the save's growth (C97, every game); the content pass; the C-lines in its own roadmap.
 

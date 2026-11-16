@@ -17,7 +17,11 @@ Everything below this section is the page as it stood on 11-09 and is behind; it
 - **The fantasy game:** Marrowgate's setting was set aside on 11-15. The next game (a village in the woods, a rolled
   world map the engine owns) is designed and not built. Its work list is `notes/FANTASY_ROADMAP.md` (FN1 to FN96), rolled
   up in ROADMAP area 19.
-- **The hidden game:** waits on the owner's read of its time write-up and his own playtest; then B411, C129, C130.
+- **The hidden game:** a newcomer's first game (11-15) was read whole and the owner's first rulings on the clock are in,
+  with more notes to come; nothing of the clock or the opening is built before they do. Every open line and the testing
+  owed are placed in order at the top of its roadmap (gitignored), rolled up in ROADMAP area 15. Proposed order: the notes;
+  free testing (the Ask canon loop B416, the opening read cold, the staged scenes); the clock rebuilt whole; the opening
+  and the screen; a newcomer round and the owner's playtest; then B411, C129, C130.
 - **Her server:** where it was; moved only on the owner's word.
 
 **The fantasy order, proposed 11-16, waiting on the owner's go-ahead:**
