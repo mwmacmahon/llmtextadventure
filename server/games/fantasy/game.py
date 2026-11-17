@@ -272,6 +272,7 @@ class FantasyGame(GameBase):
     SETTING_LINE = "an adventurer in the city of Marrowgate and the country around it"
     ENDING = "{name} died at {where} on day {day}. The fog keeps the rest."
     START_LOG = "{name} takes a room at the Drowned Lantern."
+    LAW_AND_RENOWN = True                      # the Watch's heat and the player's renown (R-G4: Marrowgate's; Parchment has neither)
     # B249: on the water, in the wood or the south, word from the city does not reach the player and the deck does not deal
     FAR_FROM_WORD: frozenset[str] = frozenset(WATER | WOOD | SOUTH)
     # where a survivor of a fall wakes (D157, kept for old saves): by where they fell, else the Watch if wanted, else the Temple
@@ -864,7 +865,8 @@ class FantasyGame(GameBase):
         where = "a place the game has lost track of (say where they are this turn)" if p.location == "Unknown" else (p.location or "unknown")
         marks = [c.name for c in p.conditions] + [w.words for w in sorted(p.wounds, key=lambda x: -wd.WEIGHTS[x.weight])]
         lines.append(f"{p.name}: at {where}; {p.hp_tier}; marks: {', '.join(marks) or 'none'}.")
-        lines.append(f"The Watch on {p.name}: {p.heat_word}. What strangers have heard of {p.name}: {p.renown_word}.")
+        if self.LAW_AND_RENOWN:
+            lines.append(f"The Watch on {p.name}: {p.heat_word}. What strangers have heard of {p.name}: {p.renown_word}.")
         if p.peril is not None:
             pk = p.peril.kind
             lines.append(f"{p.name} is {wo.PERILS.get(pk, {}).get('what', pk)}" + (f" ({p.peril.by})" if p.peril.by else "")
@@ -1199,10 +1201,12 @@ class FantasyGame(GameBase):
             f"- add player.hp +n: healing the prose shows someone giving {p.name} (a priest's hands, a bandage done properly, a healer), up to {HEAL_STEP}, "
             "with how in the note. A potion drunk is add <the potion's id>.count -1 and nothing else; rests and the commands (a second wind) are the engine's.",
             "- What THIS TURN says a fall or a waking cost (gold, a thing left behind, a scar) the engine has already paid; write no row for it.",
-            "- add player.heat +n: the player was seen at a crime by anyone who could tell the Watch. Each crime its own row (a theft and a stabbing in "
-            "one turn are two). A theft 5 to 10; an assault 10 to 20; a killing 25 to 40; a third of that when nobody "
-            "saw but it will be found. Nothing the Watch would not care about. add player.heat -n: a bribe paid to the Watch or a favour done for it, "
-            "5 to 20. The days lower it by themselves; never count that. A failed check's cost that says the Watch will hear of it is add player.heat +5.",
+            *([  # R-G4: the Watch's heat is Marrowgate's (LAW_AND_RENOWN)
+              "- add player.heat +n: the player was seen at a crime by anyone who could tell the Watch. Each crime its own row (a theft and a stabbing in "
+              "one turn are two). A theft 5 to 10; an assault 10 to 20; a killing 25 to 40; a third of that when nobody "
+              "saw but it will be found. Nothing the Watch would not care about. add player.heat -n: a bribe paid to the Watch or a favour done for it, "
+              "5 to 20. The days lower it by themselves; never count that. A failed check's cost that says the Watch will hear of it is add player.heat +5."
+            ] if self.LAW_AND_RENOWN else []),
             "- add gold.count -n: gold spent, paid or lost (never more than carried); add gold.count +n: gold taken, found or paid to the player in the prose. "
             "A quest's reward is the engine's; never write it.",
             "- add coppers.count -n / +n: coppers the prose shows spent or taken (small change, a tip). Coppers are counted as their own pocket, "
@@ -1469,7 +1473,7 @@ class FantasyGame(GameBase):
         # B222's finesse on a STR check is gone (Gemma round 20, 58d04709b885 T7: 'pull the wall stones loose' read 'loose' as a blow
         # and took the rapier's DEX): since B288 a blow is an attack roll, which picks STR or DEX itself; a STR check is no blow
         if req.stat == "cha":
-            if stranger:
+            if stranger and self.LAW_AND_RENOWN:
                 bonus = {"quiet": 0, "known": 1, "talked about": 2, "famous": 2}[p.renown_word]
                 if bonus:
                     mods.append(Modifier(label=f"{p.name} is {p.renown_word}", value=bonus))
@@ -2031,6 +2035,8 @@ class FantasyGame(GameBase):
 
     def _watch_turned(self, s: FantasyState, applied: list[str]) -> None:
         """B55 (D167): a member of the Watch turned hostile this turn raises heat one step (to the next word's threshold)."""
+        if not self.LAW_AND_RENOWN:
+            return
         p = s.player
         for a in applied:
             m = re.match(r"people\.([\w-]+)\.attitude: (-?\d+) -> (-?\d+)$", a)
@@ -2116,6 +2122,8 @@ class FantasyGame(GameBase):
         """B227: a crime in open view with no heat row. A verdict that records a wound on a named person the player struck
         at, or a theft (the player's words steal and something came into the pockets), at a place where someone else is
         present (not the victim, not the player's own company), raises heat one step. Returns what it saw, or ""."""
+        if not self.LAW_AND_RENOWN:
+            return ""
         applied = list(info.applied or [])
         if any(a.startswith("player.heat") for a in applied):
             return ""
@@ -4324,8 +4332,9 @@ class FantasyGame(GameBase):
                   chips=[Chip(label=x.weight, value=x.words, tone=self.WOUND_TONES.get(x.weight)) for x in wounds]),
             Meter(label="XP", value=p.xp, min=floor, max=nxt, text=f"{p.xp} / {nxt}", tone="info",
                   tier="ready to level up" if p.xp >= nxt else f"to level {p.level + 1}"),
-            MeterGroup(meters=[Meter(label="Renown", value=p.renown, tier=p.renown_word, tone="info", thresholds=[25, 50, 75]),
-                               Meter(label="Heat", value=p.heat, tier=p.heat_word, tone=self.HEAT_TONES.get(p.heat_word, "warn"), thresholds=[20, 50, 80])]),
+            *([MeterGroup(meters=[Meter(label="Renown", value=p.renown, tier=p.renown_word, tone="info", thresholds=[25, 50, 75]),
+                                 Meter(label="Heat", value=p.heat, tier=p.heat_word, tone=self.HEAT_TONES.get(p.heat_word, "warn"), thresholds=[20, 50, 80])])]
+              if self.LAW_AND_RENOWN else []),
             *cb.fight_panel(self, s),                       # part fifteen §7: the Fight panel, main column, pinned
             Commands(title=None, items=[c for c in self.commands(s) if c.id not in ("flee", "yield", "debug")]),
             ListPanel(title="Character", items=sheet, layout="grid"),

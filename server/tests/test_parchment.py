@@ -73,3 +73,44 @@ def test_marrowgate_is_untouched(engine: Engine):
     assert st.world is None and st.player.location == "The Drowned Lantern"
     assert st.log[0].endswith("takes a room at the Drowned Lantern.")
     assert any(getattr(w, "title", "") == "Places" for w in game.ui(st).panels)
+
+
+def test_a_known_place_is_matched_by_its_name_and_never_a_hidden_one_by_a_part():
+    import yaml
+    sc = yaml.safe_load((Path(load_config().resolve(load_config().server.content_root)) / "parchment" / "scenarios" / "rustic_ramblings.yml").read_text()) \
+        if (Path(load_config().resolve(load_config().server.content_root)) / "parchment").is_dir() else None
+    if sc is None:
+        pytest.skip("no Parchment content on this machine")
+    w = wm.new_world(sc["start"], 7, sc["id"])
+    mill = next(k for k, p in w["places"].items() if p["name"] == "The old mill")
+    assert wm.place_named(w, "the old mill") == mill and wm.place_named(w, "Old Mill") == mill
+    assert wm.place_named(w, "the hut") is None                      # the hut in the dark wood is not known yet
+    assert wm.place_named(w, "the moon") is None
+
+
+async def test_a_turn_that_moves_the_player_walks_the_tile(engine: Engine):
+    import random
+    from engine.game import TurnInfo
+    iid = engine.create_instance("parchment", {**SHEET, "map_seed": 7})
+    game = engine.games["parchment"]
+    st = game.load_state(engine.store.load_state(iid))
+    before = st.clock.day * 1440 + st.clock.minute
+    st.player.location = "The old mill"                              # what a referee's move row leaves
+    st = game.after_turn(st, TurnInfo(turn=1, elapsed_minutes=1, rng=random.Random(0)))
+    mill = next(k for k, p in st.world["places"].items() if p["name"] == "The old mill")
+    assert st.world["player"]["tile"] == st.world["places"][mill]["tile"] and st.world["player"]["came_from"] == [0, 0]
+    assert st.world["known"]["places"][mill]["state"] == "been" and st.player.location == "The old mill"
+    assert st.clock.day * 1440 + st.clock.minute - before >= 10      # the walk's own minutes, not the turn's one
+    st.player.location = "the riverbank by the moon"                 # a name the map does not hold, no spot of here
+    st = game.after_turn(st, TurnInfo(turn=2, elapsed_minutes=1, rng=random.Random(0)))
+    assert st.player.location == "The old mill" and st.world["player"]["tile"] == st.world["places"][mill]["tile"]
+
+
+def test_no_watch_heat_or_renown_in_parchment(engine: Engine):
+    game = engine.games["parchment"]
+    st = game.load_state(engine.store.load_state(engine.create_instance("parchment", SHEET)))
+    assert not any(getattr(m, "label", "") in ("Renown", "Heat") for w in game.ui(st).panels for m in getattr(w, "meters", []) or [])
+    assert "The Watch" not in game.render_bulletin(st, "") and "player.heat" not in game.referee_rules(st)
+    mg = engine.games["fantasy"]
+    ms = mg.load_state(engine.store.load_state(engine.create_instance("fantasy", SHEET)))
+    assert "player.heat" in mg.referee_rules(ms) and any(getattr(m, "label", "") == "Heat" for w in mg.ui(ms).panels for m in getattr(w, "meters", []) or [])

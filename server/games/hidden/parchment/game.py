@@ -40,6 +40,7 @@ class ParchmentGame(FantasyGame):
     ENDING = "{name} died at {where} on day {day}."
     START_LOG = "{name} comes up the west road into the village."
     FAR_FROM_WORD: frozenset[str] = frozenset()
+    LAW_AND_RENOWN = False                    # R-G4: no Watch, no heat, no renown in the first slice
     TRAVEL_TIMES = ("Time: a look around is 2 minutes; a search 15 to 30; a conversation 10 to 20; anywhere in the village a minute or "
                     "two. How long a walk to another place takes is the engine's, never yours to set. A short rest is an hour; sleep is "
                     "six to eight hours; waiting is however long they wait.")
@@ -70,6 +71,35 @@ class ParchmentGame(FantasyGame):
         if rid and rid in w["places"]:
             return str(w["places"][rid]["name"])
         return "Open country"
+
+    def after_turn(self, state: FantasyState, info: Any) -> FantasyState:
+        """Gate 1 (FN30 to FN32): the turn named a known place as where the player is now (the referee's move row, the
+        reading's `goes_to`), and the engine walks the tile there by the quickest way the player knows: the ground passed is
+        lit, the place is been to, and the clock is charged the walk where the turn gave less. A place name the map does not
+        hold and that is no part of where the tile is (an invented name; the place form, FN52, will give those a tile) is
+        left as the turn wrote it; anything else is named from the tile again. One walk a turn until journeys come in legs."""
+        s = super().after_turn(state, info)
+        w = s.world
+        if not w or s.player.fate:
+            return s
+        here, want = self.where(s), s.player.location
+        if want and want.lower() != here.lower() and not self._same_spot(s, want, here):
+            pid = wm.place_named(w, want)
+            if pid is not None:
+                night = not (360 <= s.clock.minute < 1200)
+                walked = wm.walk_to(w, pid, int(getattr(info, "turn", 0) or 0), night)
+                if walked is not None:
+                    extra = int(walked["minutes"]) - int(getattr(info, "elapsed_minutes", 0) or 0)
+                    if extra > 0:
+                        self._advance(s, extra)
+                    s.player.location = self.where(s)
+                    s.player.visited[s.player.location] = s.clock.day * 1440 + s.clock.minute
+                else:
+                    s.flags["no_way_count"] = int(s.flags.get("no_way_count") or 0) + 1   # the travel question (FN39) will ask
+                    s.player.location = here
+            elif not any(f.name.lower() == want.lower() for f in s.found_places):
+                s.player.location = here
+        return s
 
     def ui(self, state: FantasyState) -> UISchema:
         """The family's panels, with the world map in the Places list's stead when the save has a map."""

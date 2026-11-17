@@ -609,6 +609,64 @@ def way_words(world: dict, to, night: bool = False) -> str | None:
     return f"{span} across country"
 
 
+# ---- moving the player (gate 1: one walk a turn; legs come with the journey, FN33)
+
+LIT_WALK = 2          # tiles lit either side of a path walked (the design's section 5: two on open ground)
+
+
+def _plain(name: str) -> str:
+    n = " ".join(str(name or "").lower().replace("'", "").split())
+    return n[4:] if n.startswith("the ") else n[2:] if n.startswith("a ") else n
+
+
+def place_named(world: dict, name: str) -> str | None:
+    """The known place a name means: its full name or an alias, case and a leading "the" aside; else one known place
+    whose name holds it as whole words. Only places the player knows (R12): a hidden one never matches on a part."""
+    want = _plain(name)
+    if not want:
+        return None
+    known = [pid for pid in world["known"]["places"] if pid in world["places"] and not world["places"][pid].get("removed")]
+    exact = [pid for pid in known if want in {_plain(world["places"][pid]["name"]), *(_plain(a) for a in world["places"][pid].get("aliases") or [])}]
+    if exact:
+        return exact[0]
+    words = [pid for pid in known if f" {want} " in f" {_plain(world['places'][pid]['name'])} "
+             or f" {_plain(world['places'][pid]['name'])} " in f" {want} "]
+    return words[0] if len(words) == 1 else None
+
+
+def walk_to(world: dict, pid: str, turn: int = 0, night: bool = False) -> dict | None:
+    """The player walks to a known place by the quickest way they know: the tile moves, the ground either side of the path
+    is lit, and the place becomes one they have been to. Returns the path and its minutes, or None when there is no way
+    (water with no crossing they know, unrolled ground) and nothing moves. A region's walk ends on its nearest tile."""
+    p = world["places"][pid]
+    here = tuple(world["player"]["tile"])
+    if p["shape"] == "point":
+        to = tuple(p["tile"])
+    else:
+        tiles = [(x, y) for key in world["chunks"] for x0, y0 in [tuple(int(v) * CHUNK for v in key.split(","))]
+                 for i in range(CHUNK * CHUNK) for x, y in [(x0 + i % CHUNK, y0 + i // CHUNK)] if region_at(world, x, y) == pid]
+        if not tiles:
+            return None
+        if here in tiles:
+            to = here
+        else:
+            to = min(tiles, key=lambda t: _dist(t, here))
+    if to == here:
+        path = [list(here)]
+    else:
+        path = find_path(world, here, to)
+        if path is None:
+            return None
+    for t in path:
+        light(world, *t, LIT_WALK)
+    world["player"]["came_from"] = list(here)
+    world["player"]["tile"] = list(to)
+    k = world["known"]["places"].setdefault(pid, {"state": "heard", "heard_turn": turn, "been_turn": None, "told": []})
+    if k["state"] != "been":
+        k["state"], k["been_turn"] = "been", turn
+    return {"path": [list(t) for t in path], "minutes": walk_minutes(world, path, night) if len(path) > 1 else 0}
+
+
 # ---- what the browser is sent
 
 def _lower_the(name: str) -> str:
