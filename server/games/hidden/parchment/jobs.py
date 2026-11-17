@@ -146,8 +146,8 @@ def _loot(s: FantasyState, fallen: list) -> list[str]:
     for name, n in got.items():
         iid = name.replace("'", "").replace(" ", "_") + "s"
         it = s.item(iid)
-        if it is None:
-            s.inventory.append(Item(id=iid, name=name + "s", count=n, note="a trophy; someone in the village pays for these"))
+        if it is None:                                    # the name singular; the count shows how many ("1 wolf pelts", the third run)
+            s.inventory.append(Item(id=iid, name=name, count=n, note="a trophy; someone in the village pays for these"))
         else:
             it.count += n
     if coin or got:
@@ -189,6 +189,6 @@ def sync_threads(s: FantasyState) -> None:
             about += f" {j['killed']} so far."
         # the gate-2 rerun: a job stayed "offered" after the player took the paper and went; a job is under way once its place
         # has been reached or one of its creatures killed (the Quests panel's step, B372)
-        note = "under way" if j.get("started") or j["status"] != "open" or j["killed"] else ""
+        note = "under way" if j["status"] == "open" and (j.get("started") or j["killed"]) else ""
         keep.append(th.Thread(id=j["id"], title=j["title"], status=status, about=about.strip(), who=j["who"], note=note))
     s.threads = keep

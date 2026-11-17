@@ -158,8 +158,10 @@ def _meander(rng: random.Random, a, b, avoid: set, bounds) -> list | None:
     return None
 
 
-def _route(a, b, cost, passable, bounds) -> list | None:
-    """Least cost over the ground from a to b, eight ways, never slipping diagonally between two tiles that cannot be walked."""
+def _route(a, b, cost, passable, bounds, links: set | None = None) -> list | None:
+    """Least cost over the ground from a to b, eight ways, never slipping diagonally between two tiles that cannot be walked,
+    except along `links` (a road's own steps: the gate-2 round of 11-17 found a road the generator laid round a river bend that
+    the walker could not follow, and the quickest walk to a bridge 1.8 km off went five hours round the river's end)."""
     x0, y0, x1, y1 = bounds
     best, came, heap = {a: 0.0}, {}, [(0.0, a)]
     while heap:
@@ -177,7 +179,7 @@ def _route(a, b, cost, passable, bounds) -> list | None:
             if not (x0 <= n[0] <= x1 and y0 <= n[1] <= y1) or not passable(n):
                 continue
             diagonal = n[0] != t[0] and n[1] != t[1]
-            if diagonal and not (passable((n[0], t[1])) and passable((t[0], n[1]))):
+            if diagonal and not (passable((n[0], t[1])) and passable((t[0], n[1]))) and not (links and (t, n) in links):
                 continue
             ng = g + cost(n) * (1.4 if diagonal else 1.0)
             if ng < best.get(n, 1e18):
@@ -559,7 +561,15 @@ def find_path(world: dict, a, b) -> list | None:
     xs = [int(k.split(",")[0]) for k in world["chunks"]]
     ys = [int(k.split(",")[1]) for k in world["chunks"]]
     bounds = (min(xs) * CHUNK, min(ys) * CHUNK, max(xs) * CHUNK + CHUNK - 1, max(ys) * CHUNK + CHUNK - 1)
-    return _route(a, b, cost, passable, bounds)
+    links = set()
+    for ln in world["lines"].values():
+        if ln["kind"] == "river":
+            continue
+        tiles = [tuple(t) for t in ln["tiles"]]
+        for u, v in zip(tiles, tiles[1:]):
+            links.add((u, v))
+            links.add((v, u))
+    return _route(a, b, cost, passable, bounds, links)
 
 
 def walk_minutes(world: dict, path: list, night: bool = False) -> int:
@@ -653,10 +663,13 @@ def walk_to(world: dict, pid: str, turn: int = 0, night: bool = False) -> dict |
                  for i in range(CHUNK * CHUNK) for x, y in [(x0 + i % CHUNK, y0 + i // CHUNK)] if region_at(world, x, y) == pid]
         if not tiles:
             return None
-        if here in tiles:
+        if here in tiles and not place_at(world, *here):
             to = here
         else:
-            to = min(tiles, key=lambda t: _dist(t, here))
+            # the gate-2 third run: standing on the bridge inside the wood, "head into the wood" walked nowhere; the walk goes to
+            # the nearest tile of the region that is no place's
+            free = [t for t in tiles if not place_at(world, *t) and t != here] or tiles
+            to = min(free, key=lambda t: _dist(t, here))
     if to == here:
         path = [list(here)]
     else:

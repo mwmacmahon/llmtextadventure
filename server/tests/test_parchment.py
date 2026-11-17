@@ -339,3 +339,24 @@ def test_a_paper_about_rats_is_no_rats(engine: Engine):
     game = engine.games["fantasy"]
     assert not game._creatures("the paper about the rats") and not game._creatures("a sack with rats")
     assert game._creatures("a cluster of giant rats") and game._creatures("three skeletons")      # B368 kept
+
+
+def test_every_start_place_is_reached_in_sensible_time():
+    """The gate-2 third run: a road laid round a river bend that the walker could not follow made a 1.8 km walk five hours.
+    Over many seeds no start place within 3 km of home takes more than four hours to walk to."""
+    import yaml
+    path = Path(load_config().resolve(load_config().server.content_root)) / "parchment" / "scenarios" / "rustic_ramblings.yml"
+    if not path.exists():
+        pytest.skip("no Parchment content on this machine")
+    sc = yaml.safe_load(path.read_text())
+    worst = []
+    for seed in range(40):
+        w = wm.new_world(sc["start"], seed, sc["id"])
+        for spec in sc["start"]["places"]:
+            if spec.get("km", 99) > 3 or "within" in spec:
+                continue
+            p = w["places"][spec["id"]]
+            route = wm.find_path(w, (0, 0), tuple(p["tile"]))
+            assert route is not None, (seed, spec["id"])
+            worst.append((wm.walk_minutes(w, route), seed, spec["id"]))
+    assert max(worst)[0] <= 240, sorted(worst)[-3:]
