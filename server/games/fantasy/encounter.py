@@ -87,14 +87,14 @@ def multiplier(bodies: int, members: int) -> float:
 
 
 def adjusted_xp(cand: list[tuple[str, int]], members: int) -> float:
-    total = sum(int(cb.ENTRIES.get(e, {}).get("xp") or 10) * n for e, n in cand)
+    total = sum(int(cb.bestiary().entries.get(e, {}).get("xp") or 10) * n for e, n in cand)
     return total * multiplier(sum(n for _, n in cand), members)
 
 
 def describe(cand: list[tuple[str, int]], variant: str = "") -> str:
     parts = []
     for e, n in cand:
-        name = str(cb.ENTRIES.get(e, {}).get("name") or e).lower()
+        name = str(cb.bestiary().entries.get(e, {}).get("name") or e).lower()
         head, sep, tail = name.partition(" of ")
         many = (head + ("" if head.endswith("s") else "s") + sep + tail) if n > 1 else name
         parts.append(f"{NUMBER.get(n, str(n))} {many}" if n != 1 else f"{'an' if name[:1] in 'aeiou' else 'a'} {name}")
@@ -146,8 +146,8 @@ def named_entries(text: str, region: str) -> tuple[list[str], str]:
         return [eid], ""
     kind = kind_of_words(head)
     if kind:
-        pool = [e for e, x in cb.ENTRIES.items() if x.get("kind") == kind and _at_home(x, region) and not _special(x)]
-        pool = pool or [e for e, x in cb.ENTRIES.items() if x.get("kind") == kind and not _special(x)]
+        pool = [e for e, x in cb.bestiary().entries.items() if x.get("kind") == kind and _at_home(x, region) and not _special(x)]
+        pool = pool or [e for e, x in cb.bestiary().entries.items() if x.get("kind") == kind and not _special(x)]
         if pool:
             return pool, f"'{text}' is {kind}: drawn from that kind"
     return ["commoner"], f"'{text}' names nothing in the bestiary: a commoner"
@@ -164,9 +164,8 @@ def _special(x: dict) -> bool:
 
 def located_pool(region: str) -> list[tuple[str, int]]:
     """(entry, weight): at home here 3, anywhere 1; never an entry at home neither here nor anywhere; no uniques."""
-    cb._ensure_loaded()
     out = []
-    for e, x in cb.ENTRIES.items():
+    for e, x in cb.bestiary().entries.items():
         if _special(x):
             continue
         homes = x.get("home") or []
@@ -227,7 +226,7 @@ def spawn(s: FantasyState, cand: list[tuple[str, int]], variant: str = "standard
     out: list[Person] = []
     k = 0
     for e, n in cand:
-        x = cb.ENTRIES.get(e, {})
+        x = cb.bestiary().entries.get(e, {})
         called = str(x.get("called") or x.get("name") or e)
         noun = re.sub(r"^(a|an|the)\s+", "", called, flags=re.I)
         noun = noun[:1].upper() + noun[1:]
@@ -465,11 +464,11 @@ def shortlist(want: Want, region: str, members: int, level: int, rng: random.Ran
     scored: list[tuple[float, list[tuple[str, int]]]] = []
     room = MAX_BODIES - sum(n for _, n in fixed)
     for e in bases:
-        x = cb.ENTRIES.get(e, {})
+        x = cb.bestiary().entries.get(e, {})
         for n in range(1, max(1, room) + 1):
             cands = [fixed + [(e, n)]]
             lead = str(x.get("lead") or "")
-            if lead and lead in cb.ENTRIES and n >= 3 and not fixed:
+            if lead and lead in cb.bestiary().entries and n >= 3 and not fixed:
                 cands.append([(e, n - 1), (lead, 1)])
             for c in cands:
                 scored.append((abs(adjusted_xp(c, members) - thr) / max(1.0, thr), c))
@@ -589,10 +588,9 @@ def count_in(words: str) -> int | None:
 
 def called_plural(cand: list[tuple[str, int]]) -> str:
     """The offer's words for who would come: what the player calls them ('three robbers', 'a giant spider')."""
-    cb._ensure_loaded()
     parts = []
     for e, n in cand:
-        x = cb.ENTRIES.get(e, {})
+        x = cb.bestiary().entries.get(e, {})
         noun = re.sub(r"^(a|an|the)\s+", "", str(x.get("called") or x.get("name") or e), flags=re.I).lower()
         if n == 1:
             parts.append(f"{'an' if noun[:1] in 'aeiou' else 'a'} {noun}")

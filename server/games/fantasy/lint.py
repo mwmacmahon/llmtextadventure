@@ -766,8 +766,7 @@ def lint_combat(content_dir: Path) -> list[str]:
     content is rewritten), and who fights (attitude -2 or below, moves, or an undead/fighter block by role) with no block of
     their own (they get the default by their role words)."""
     from games.fantasy import combat as cbm
-    if not cbm.ENTRIES:
-        cbm.load_bestiary(content_dir)
+    lib = cbm.load_bestiary(content_dir)          # this content's own (FN112), not whichever game loaded last
     out: list[str] = []
     city = _load(content_dir / "scenarios" / "marrowgate.yml")
     docs = [("city", city)] + [(p.stem, _load(p)) for p in sorted((content_dir / "hooks").glob("*.yml"))]
@@ -778,10 +777,10 @@ def lint_combat(content_dir: Path) -> list[str]:
             if pr.get("moves"):
                 out.append(f"{where}: {pr.get('id')} still uses moves (read as actions)")
             words = f"{pr.get('role', '')} {pr.get('name', '')}"
-            fights = (pr.get("attitude") or 0) <= -2 or pr.get("moves") or (cbm.match_entry(words) or "commoner") != "commoner"
+            fights = (pr.get("attitude") or 0) <= -2 or pr.get("moves") or (lib.match_entry(words) or "commoner") != "commoner"
             if fights and not pr.get("combat"):
                 out.append(f"{where}: {pr.get('id')} fights with no combat block (the default by role words)")
-            from games.fantasy.combat import BLOCKS
+            BLOCKS = lib.blocks
             cbk = pr.get("combat") or {}
             if (cbk.get("kind") or BLOCKS.get(cbk.get("block", ""), {}).get("kind")) == "undead" and not (
                     cbk.get("actions") or pr.get("moves") or BLOCKS.get(cbk.get("block", ""), {}).get("actions") or cbk.get("block") in BLOCKS):

@@ -51,22 +51,22 @@ def test_pinned_bodies_are_never_added_to_or_removed(game):
 def test_a_named_unknown_falls_to_its_kind_then_a_commoner(game):
     assert en.named_entries("the robbers", "catacombs")[0] == ["bandit"]
     dead, note = en.named_entries("something dead in the dark", "catacombs")
-    assert dead and all(cb.ENTRIES[x]["kind"] == "undead" for x in dead) and "undead" in note
+    assert dead and all(cb.bestiary().entries[x]["kind"] == "undead" for x in dead) and "undead" in note
     assert en.named_entries("a frobnicator", "city") == (["commoner"], "'a frobnicator' names nothing in the bestiary: a commoner")
 
 
 def test_the_located_draw_stays_at_home_or_anywhere():
     for region in ("city", "catacombs", "water", "wilds", "roads"):
         for e, _ in en.located_pool(region):
-            homes = cb.ENTRIES[e]["home"]
+            homes = cb.bestiary().entries[e]["home"]
             assert region in homes or "anywhere" in homes, (region, e)
-            assert "unique" not in (cb.ENTRIES[e].get("tags") or [])
+            assert "unique" not in (cb.bestiary().entries[e].get("tags") or [])
     rng = random.Random(1)
     for _ in range(20):
         cands, _ = en.shortlist(en.Want(band="normal"), "water", 1, 1, rng)
         for c in cands:
             for e, _ in c:
-                assert "water" in cb.ENTRIES[e]["home"] or "anywhere" in cb.ENTRIES[e]["home"] or e == cb.ENTRIES.get(c[0][0], {}).get("lead")
+                assert "water" in cb.bestiary().entries[e]["home"] or "anywhere" in cb.bestiary().entries[e]["home"] or e == cb.bestiary().entries.get(c[0][0], {}).get("lead")
 
 
 def test_impossible_is_never_sized_down(game):
@@ -366,20 +366,25 @@ def test_the_ladder_shows_strength_and_never_weakness(game):
     assert hps == sorted(hps) and hps[0] < hps[3] / 2                     # each rung weaker below; feeble about a third
 
 
-def test_one_bestiary_per_process(game, tmp_path):
-    """FN100: the same bestiary again is fine (another game object, a copy of the content); a different one refuses to
-    load rather than silently replacing the first for every game of the family."""
-    same = tmp_path / "same"
-    same.mkdir()
-    (same / "bestiary.yml").write_text((CONTENT / "bestiary.yml").read_text(encoding="utf-8"), encoding="utf-8")
-    before = dict(cb.ENTRIES)
-    cb.load_bestiary(same)
+def test_each_game_has_its_own_bestiary(game, tmp_path):
+    """FN112 (the owner, 11-17): a game with a bestiary of its own changes nobody else's fights. The second game's file holds
+    one wolf; Marrowgate's fights, made after it was loaded and while it is current elsewhere, still read Marrowgate's."""
     other = tmp_path / "other"
     other.mkdir()
-    (other / "bestiary.yml").write_text("entries:\n  - {id: hedge_wolf, name: a wolf, kind: beast, cr: '1/4', xp: 50}\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="one per process"):
-        cb.load_bestiary(other)
-    assert cb.ENTRIES == before
+    (other / "bestiary.yml").write_text("entries:\n  - {id: hedge_wolf, name: hedge wolf, kind: beast, cr: '1/4', xp: 50, ac: 12, hp: 9}\n",
+                                        encoding="utf-8")
+    theirs = cb.load_bestiary(other)
+    ours = game.bestiary
+    assert set(theirs.entries) == {"hedge_wolf"} and "hedge_wolf" not in ours.entries and "skeleton" in ours.entries
+    with cb.using(theirs):
+        assert cb.match_entry("a hedge wolf snarls") == "hedge_wolf" and cb.match_entry("two skeletons") is None
+        st = new(game)                                   # a game method run inside: the game's own bestiary is current there
+        assert cb.bestiary() is theirs
+    assert cb.match_entry("two skeletons") == "skeleton"     # the family's when no game is running
+    q = next(iter(st.people))
+    with cb.using(ours):
+        assert cb.block_of(q).ac is not None
+    assert cb.load_bestiary(other) is theirs and cb.load_bestiary(CONTENT) is ours   # one object per file
 
 
 def test_an_empty_scenario_id_is_the_default(game):

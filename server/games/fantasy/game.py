@@ -14,6 +14,8 @@ narrator's through the referee, bounded in `apply_change`; the hooks' scripts an
 """
 from __future__ import annotations
 
+import functools
+import inspect
 import re
 from pathlib import Path
 from typing import Any
@@ -47,6 +49,7 @@ from . import deck as dk
 from . import sheet as sh
 from . import debug as dbg
 from . import gear
+from . import combat as _cbm
 from .combat import person_hp_word
 from .state import (
     ATTITUDE_WORDS, COINS, COPPERS, COPPERS_TO_GOLD, HUNTED_AT, STAT_NAMES, STATS, WANTED_AT, Ability, City, CombatBlock, Condition, Count,
@@ -250,7 +253,13 @@ dev_mode = dbg.dev_mode                                  # the debug command's g
 
 
 class FantasyGame(GameBase):
+    """The fantasy family's game. Every method runs with this game's own bestiary current (FN112; see `_bind_bestiary` at
+    the end of the file), so the fight code beneath it reads this game's enemies and no other's."""
     name = "fantasy"
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        _bind_bestiary(cls)                  # a derived game's own methods too (Super Grimdark Fantasy, Parchment)
     version = "0.1.0"
     title = "Marrowgate"
     description = "A river city under a fog that never lifts, a tavern, a deck of trouble. A d20, a sheet, hit points, and the Temple's price."
@@ -330,7 +339,7 @@ class FantasyGame(GameBase):
         self.content = dk.FantasyContent(content_dir)
         self.content_dir = content_dir
         from . import combat as _cb
-        _cb.load_bestiary(content_dir)                      # part sixteen §1: every enemy in the world
+        self.bestiary = _cb.load_bestiary(content_dir)      # part sixteen §1: every enemy in the world; this game's own (FN112)
         self._classes: tuple[float, dict[str, cl.ClassDef]] | None = None
 
     def classes(self) -> dict[str, cl.ClassDef]:
@@ -1810,7 +1819,7 @@ class FantasyGame(GameBase):
             ents = {e for e, _ in bodies}
             word_e = cb.match_entry(words) if words else None
             if ref in ids or (word_e and word_e in ents) or (not word_e and en.kind_of_words(words)
-                                                            and en.kind_of_words(words) == cb.ENTRIES.get(bodies[0][0], {}).get("kind")):
+                                                            and en.kind_of_words(words) == cb.bestiary().entries.get(bodies[0][0], {}).get("kind")):
                 spawned = en.spawn(s, bodies, off.get("variant", "standard"), ids=ids)
                 pick = [ref] if ref in ids and en.count_in(words or ref) == 1 else ids
                 by_kind = ref not in ids and not (word_e and word_e in ents)
@@ -1842,7 +1851,7 @@ class FantasyGame(GameBase):
                 e, hit = self.encounter_for(s, band, words=words, offset=offset)
             if n is None and sum(c for _, c in e.bodies) < 2 and e.bodies:   # a plural is two at least ('the Hill men')
                 e, hit = self.encounter_for(s, band, pinned=[(e.bodies[0][0], 2)], offset=offset)
-            person = cb.is_person(str(cb.ENTRIES.get(e.bodies[0][0], {}).get("kind") or "")) if e.bodies else False
+            person = cb.is_person(str(cb.bestiary().entries.get(e.bodies[0][0], {}).get("kind") or "")) if e.bodies else False
             own = re.sub(r"^(the|a|an)\s+", "", " ".join(words.replace("_", " ").split()), flags=re.I)[:40]   # B308: an id is words
             made = en.spawn(s, e.bodies, e.variant, names=[own[:1].upper() + own[1:]] if named and n == 1 and person else None)
             # a monster is known by its name (the owner: "it can just be an Owlbear"); only a person keeps the player's words
@@ -1882,7 +1891,7 @@ class FantasyGame(GameBase):
         if not words or not words[-1].endswith("s") or len(words[-1]) < 4:
             return False
         eid = cb.match_entry(words[-1])
-        return bool(eid) and not cb.is_person(str(cb.ENTRIES.get(eid, {}).get("kind") or ""))
+        return bool(eid) and not cb.is_person(str(cb.bestiary().entries.get(eid, {}).get("kind") or ""))
 
     @staticmethod
     def _standing_word(s: FantasyState, q: Person) -> str:
@@ -3035,7 +3044,7 @@ class FantasyGame(GameBase):
         p = s.player
         if (q.combat is None or q.id not in p.fighting or q.status != "alive" or not self._same_spot(s, q.location, p.location)
                 or (s.combat is not None and s.combat.round > 1) or q.name.strip().lower() == name.strip().lower()
-                or slug(name) == q.id or cb.is_person(str(cb.ENTRIES.get(q.combat.block, {}).get("kind") or ""))):
+                or slug(name) == q.id or cb.is_person(str(cb.bestiary().entries.get(q.combat.block, {}).get("kind") or ""))):
             return False
         if cb.match_entry(f"{role} {name}") != q.combat.block:
             return False
@@ -3097,7 +3106,7 @@ class FantasyGame(GameBase):
         from . import combat as cb
         from . import encounter as en
         entry = cb.match_entry(f"{role} {name}")
-        monster = bool(entry) and not cb.is_person(str(cb.ENTRIES.get(entry, {}).get("kind") or ""))
+        monster = bool(entry) and not cb.is_person(str(cb.bestiary().entries.get(entry, {}).get("kind") or ""))
         hostile = entry in HOSTILE_ENTRIES and (bool(p.fighting) or s.combat is not None or bool((s.offer or {}).get("fresh")))
         s.people.append(Person(id=nid, name=name.strip()[:40], role=role.strip()[:60], location=loc, seen_at=loc if elsewhere is None else "",
                                met=elsewhere is None, heard_of=True))
@@ -3107,7 +3116,7 @@ class FantasyGame(GameBase):
             q.combat = CombatBlock(block=entry or "", count=n or 1, band="normal" if n != 1 else "")
             cb.ensure_block(q)
             if monster:
-                q.called = str(cb.ENTRIES.get(entry, {}).get("called") or q.called)    # a monster is known by its name
+                q.called = str(cb.bestiary().entries.get(entry, {}).get("called") or q.called)    # a monster is known by its name
                 q.attitude = min(q.attitude, -3)                                       # B397: a monster in a fight attacks on sight
             if nid not in p.fighting:
                 p.fighting.append(nid)
@@ -4342,3 +4351,30 @@ class FantasyGame(GameBase):
                      learned=[(f"Day {n.day} {n.minute // 60:02d}:{n.minute % 60:02d}. " if n.day else "") + n.text for n in s.journal if n.kind == "clue"]),
         ]
         return UISchema(phase="ended" if self.ending(s) else "narrate", free_text=not self.ending(s), placeholder=f"What does {p.name} do?", panels=panels)
+
+
+# ---- each game's own bestiary, current while its methods run (FN112) -------------------------------------------------
+def _with_bestiary(fn: Any) -> Any:
+    @functools.wraps(fn)
+    def run(self: Any, *args: Any, **kwargs: Any) -> Any:
+        lib = self.__dict__.get("bestiary")
+        if lib is None or _cbm._CURRENT.get() is lib:
+            return fn(self, *args, **kwargs)
+        with _cbm.using(lib):
+            return fn(self, *args, **kwargs)
+    run._with_bestiary = True             # type: ignore[attr-defined]
+    return run
+
+
+def _bind_bestiary(cls: type) -> None:
+    """Wrap each plain method defined on `cls` (not dunders, static or class methods, properties, generators) so that while
+    it runs the instance's bestiary is current. A method that calls another of the same game finds it current already."""
+    for name, fn in list(vars(cls).items()):
+        if (name.startswith("__") or not inspect.isfunction(fn) or getattr(fn, "_with_bestiary", False)
+                or inspect.isgeneratorfunction(fn) or inspect.iscoroutinefunction(fn)):
+            continue
+        setattr(cls, name, _with_bestiary(fn))
+
+
+_bind_bestiary(FantasyGame)
+

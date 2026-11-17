@@ -11,7 +11,11 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Any
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Iterator
 
 from .state import CombatBlock, FantasyState, Person, hp_word  # hp_word: one home for the tiers, state.py
 
@@ -40,85 +44,108 @@ CLASS_SAVES: dict[str, tuple[str, str]] = {
     "warlock": ("wis", "cha"), "wizard": ("int", "wis"),
 }
 
-# the library (part sixteen §1, the combat record §12a): every enemy in the world is an entry in the content's bestiary.yml,
-# loaded by load_bestiary (FantasyGame at start); a content block names one (`combat: {block: skeleton, count: 4}`) and
-# changes what it needs. BLOCKS holds each entry's numbers, ENTRIES the whole entry (name, called, kind, cr, xp, words,
-# home, tags), ALIASES the ids an older save may carry.
-BLOCKS: dict[str, dict[str, Any]] = {"commoner": {"ac": 10, "hp": 4, "attack": 2, "damage": "1d4", "xp": 10, "weight": 0.4, "kind": "humanoid"}}
-ENTRIES: dict[str, dict[str, Any]] = {}
-ALIASES: dict[str, str] = {}
-UNDEAD: set[str] = set()
-_LOADED: tuple[Any, str] | None = None   # the file the tables were read from and its text (FN100)
+# the library (part sixteen §1, the combat record §12a): every enemy in the world is an entry in the content's bestiary.yml;
+# a content block names one (`combat: {block: skeleton, count: 4}`) and changes what it needs.
+#
+# FN112 (the owner, 11-17: "If the fight code is screwed up by the new game having its own bestiary something is deeply wrong
+# with how the game is coded"): a bestiary belongs to its game. Each game holds one (`FantasyGame.bestiary`, its own file,
+# else the family's); while a game's method runs it is the current bestiary for everything beneath it (a context variable,
+# so two games' turns cannot see each other's, interleaved or not), and with no game running (a tool, a bare test) the
+# family's own is used. Nothing here is a module-wide table any more.
 BLOCK_FIELDS = ("ac", "hp", "attack", "damage", "saves", "kind", "actions", "dc", "regen", "regen_unless", "fanatic", "lead", "fixed")
 PERSON_KINDS = ("person", "humanoid", "fey")        # who takes a yield, loses their nerve, is a stranger until named
+COMMONER = {"ac": 10, "hp": 4, "attack": 2, "damage": "1d4", "xp": 10, "weight": 0.4, "kind": "humanoid"}
+FAMILY_DIR = Path(__file__).resolve().parents[3] / "notes" / "content" / "fantasy"
 
 
 def is_person(kind: str) -> bool:
     return (kind or "") in PERSON_KINDS
 
 
-def load_bestiary(content_dir: Any) -> dict[str, dict[str, Any]]:
-    """Read content/bestiary.yml into BLOCKS, ENTRIES, ALIASES and UNDEAD (in place, so every importer sees them)."""
-    import yaml
-    from pathlib import Path
-    global _LOADED
-    path = Path(content_dir) / "bestiary.yml"
-    if not path.exists():
-        return ENTRIES
-    text = path.read_text(encoding="utf-8")
-    # FN100: one bestiary per process until it is held per game. Every game of the fantasy family reads these module tables,
-    # so a second game with a bestiary of its own would silently replace the first's for both. Refuse that loudly instead;
-    # the same file loaded again (another game object, a test, a copy of the content) is fine.
-    if _LOADED is not None and _LOADED[1] != text:
-        raise ValueError(f"a second, different bestiary ({path}) after {_LOADED[0]}: the bestiary is still one per process (FN100)")
-    _LOADED = (path, text)
-    data = yaml.safe_load(text) or {}
-    entries = {str(e["id"]): dict(e) for e in data.get("entries") or []}
-    ENTRIES.clear()
-    ENTRIES.update(entries)
-    BLOCKS.clear()
-    for eid, e in entries.items():
-        b = {k: e[k] for k in BLOCK_FIELDS if k in e and e[k] not in (None, "")}
-        b["xp"] = int(e.get("xp") or 10)
-        b["weight"] = round(b["xp"] / 25, 2)                 # §9b's units, for the old scaler until the generator replaces it
-        BLOCKS[eid] = b
-    ALIASES.clear()
-    ALIASES.update({str(k): str(v) for k, v in (data.get("aliases") or {}).items()})
-    UNDEAD.clear()
-    UNDEAD.update(eid for eid, e in entries.items() if e.get("kind") == "undead")
-    _WORDS.clear()
-    return ENTRIES
+@dataclass
+class Bestiary:
+    """One game's library of enemies: `blocks` each entry's numbers, `entries` the whole entry (name, called, kind, cr, xp,
+    words, home, tags), `aliases` the ids an older save may carry, `undead` the undead entries' ids."""
+    source: str = ""
+    entries: dict[str, dict[str, Any]] = field(default_factory=dict)
+    blocks: dict[str, dict[str, Any]] = field(default_factory=lambda: {"commoner": dict(COMMONER)})
+    aliases: dict[str, str] = field(default_factory=dict)
+    undead: set[str] = field(default_factory=set)
+    _words: list[tuple[re.Pattern, str, int]] = field(default_factory=list, repr=False)
+
+    @classmethod
+    def read(cls, path: Path) -> "Bestiary":
+        import yaml
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        entries = {str(e["id"]): dict(e) for e in data.get("entries") or []}
+        blocks: dict[str, dict[str, Any]] = {}
+        for eid, e in entries.items():
+            b = {k: e[k] for k in BLOCK_FIELDS if k in e and e[k] not in (None, "")}
+            b["xp"] = int(e.get("xp") or 10)
+            b["weight"] = round(b["xp"] / 25, 2)                 # §9b's units, for the old scaler until the generator replaces it
+            blocks[eid] = b
+        return cls(source=str(path), entries=entries, blocks=blocks,
+                   aliases={str(k): str(v) for k, v in (data.get("aliases") or {}).items()},
+                   undead={eid for eid, e in entries.items() if e.get("kind") == "undead"})
+
+    def entry_id(self, block: str) -> str:
+        """A block id as the bestiary has it (an older save's watchman is the guard)."""
+        b = (block or "").strip()
+        return b if b in self.blocks else self.aliases.get(b, b)
+
+    def match_entry(self, text: str) -> str | None:
+        """The entry the words name (its name or one of its `words`, a plural too): the earliest in the text, then the
+        longest phrase there; None when nothing does."""
+        if not self._words:
+            for eid, e in self.entries.items():
+                for w in {str(e.get("name") or eid), eid.replace("_", " "), *[str(x) for x in e.get("words") or []]}:
+                    w = w.strip()
+                    if len(w) > 2:
+                        self._words.append((re.compile(r"(?<![\w-])" + re.escape(w) + r"(?:e?s)?(?![\w-])", re.I), eid, len(w)))
+        hits = [(m.start(), -n, eid) for pat, eid, n in self._words if (m := pat.search(text or ""))]
+        return min(hits)[2] if hits else None          # the earliest word (a role's head noun: "Sergeant of the Watch"), then the longest
 
 
-def _ensure_loaded() -> None:
-    """The bestiary from the default content folder when no game has loaded one (a test, a tool)."""
-    if not ENTRIES:
-        from pathlib import Path
-        load_bestiary(Path(__file__).resolve().parents[3] / "notes" / "content" / "fantasy")
+_LOADED: dict[tuple[str, float], Bestiary] = {}        # by file and its time: two games on one file share one object
+_CURRENT: ContextVar[Bestiary | None] = ContextVar("bestiary", default=None)
+
+
+def load_bestiary(content_dir: Any) -> Bestiary:
+    """A game's bestiary: `bestiary.yml` in its content folder, else the family's (a derived game with no file of its own
+    reads the fantasy's); a game with neither has only the commoner."""
+    for folder in (Path(content_dir), FAMILY_DIR):
+        path = folder / "bestiary.yml"
+        if path.exists():
+            key = (str(path.resolve()), path.stat().st_mtime)
+            if key not in _LOADED:
+                _LOADED[key] = Bestiary.read(path)
+            return _LOADED[key]
+    return Bestiary()
+
+
+def bestiary() -> Bestiary:
+    """The bestiary of the game whose method is running; the family's when none is."""
+    return _CURRENT.get() or load_bestiary(FAMILY_DIR)
+
+
+@contextmanager
+def using(b: Bestiary) -> Iterator[Bestiary]:
+    """Make `b` the current bestiary for the code inside (a game's method, a tool working for one game)."""
+    token = _CURRENT.set(b)
+    try:
+        yield b
+    finally:
+        _CURRENT.reset(token)
 
 
 def entry_id(block: str) -> str:
-    """A block id as the bestiary has it (an older save's watchman is the guard)."""
-    _ensure_loaded()
-    b = (block or "").strip()
-    return b if b in BLOCKS else ALIASES.get(b, b)
-
-
-_WORDS: list[tuple[re.Pattern, str, int]] = []
+    """A block id as the current bestiary has it."""
+    return bestiary().entry_id(block)
 
 
 def match_entry(text: str) -> str | None:
-    """The bestiary entry the words name (its name or one of its `words`, a plural too): the earliest in the text, then the
-    longest phrase there; None when nothing does."""
-    _ensure_loaded()
-    if not _WORDS:
-        for eid, e in ENTRIES.items():
-            for w in {str(e.get("name") or eid), eid.replace("_", " "), *[str(x) for x in e.get("words") or []]}:
-                w = w.strip()
-                if len(w) > 2:
-                    _WORDS.append((re.compile(r"(?<![\w-])" + re.escape(w) + r"(?:e?s)?(?![\w-])", re.I), eid, len(w)))
-    hits = [(m.start(), -n, eid) for pat, eid, n in _WORDS if (m := pat.search(text or ""))]
-    return min(hits)[2] if hits else None          # the earliest word (a role's head noun: "Sergeant of the Watch"), then the longest
+    """The current bestiary's entry the words name; None when nothing does."""
+    return bestiary().match_entry(text)
 
 
 def dice_avg(d: str) -> float:
@@ -182,7 +209,7 @@ def moves_as_actions(moves: list[dict]) -> list[dict]:
 def block_of(q: Person) -> CombatBlock:
     """A person's block, every number filled: the content's own, over the library block it names, over the default by the
     role words. A band's bodies' hit points are filled at its first fight (`size`), not here."""
-    _ensure_loaded()
+    lib = bestiary()
     own = q.combat or CombatBlock()
     if q.combat is None:
         # B392 (round 31 T16): "three men in stained leather" filed with no fight on had no block, and the blow that came later
@@ -191,8 +218,8 @@ def block_of(q: Person) -> CombatBlock:
         n = count_in(q.name or "")
         if n and n > 1:                          # a number in the name only: a plural with none ("Jenks") says nothing
             own = CombatBlock(count=n, band="normal")
-    eid = entry_id(own.block) if own.block else _role_block(q)
-    base = dict(BLOCKS.get(eid) or BLOCKS.get("commoner") or {})
+    eid = lib.entry_id(own.block) if own.block else _role_block(q)
+    base = dict(lib.blocks.get(eid) or lib.blocks.get("commoner") or {})
     data = dict(base)
     for k, v in own.model_dump().items():         # a saved block carries every field: its defaults never undo the library's
         if k == "block" or v in (None, "", [], {}):
@@ -223,7 +250,7 @@ def block_of(q: Person) -> CombatBlock:
     if b.xp is None:
         b.xp = derived_xp(b)
     if not b.kind:
-        b.kind = "undead" if data["block"] in UNDEAD else "humanoid"
+        b.kind = "undead" if data["block"] in lib.undead else "humanoid"
     return b
 
 
