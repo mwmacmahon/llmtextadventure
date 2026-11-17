@@ -16,10 +16,27 @@ moves or stops a server.
 ## Running now
 
 **On the Mac mini since 2026-11-17.** The project moved from the laptop on the night of 11-16; every address below is
-the mini's (`dadmini.local`, 192.168.0.56 on the LAN). :8013, :8014 and :8016 were started by hand that night, so a
-reboot stops them until they are made services. :8018 is started by the builder when a build needs it. Nothing runs on
+the mini's (`dadmini.local`, 192.168.0.56 on the LAN). :8013, :8014 and :8016 are services of the mini's account (LaunchAgents; below): they start
+at login and restart if they exit. :8018 is started by hand by the builder when a build needs it. Nothing runs on
 the laptop, and the laptop's store is a separate copy from that night on.
 
+- **The three services and their addresses.** One web server on the mini (Caddy) fronts them with HTTPS; the names answer
+  only on the home network or over the owner's private network, never from the internet. The port addresses
+  (`http://dadmini.local:<port>`) still work.
+
+  | Address | Service | Port | What |
+  |---|---|---|---|
+  | `https://textadventure.cyramili.com` | `lilith` (`com.dadbook.textadventure.lilith`) | 8016 | Lilith's |
+  | `https://textadventure-dev.cyramili.com` | `gemma` (`com.dadbook.textadventure.gemma`) | 8013 | the owner's games on Gemma |
+  | `https://textadventure-dev2.cyramili.com` | `sonnet` (`com.dadbook.textadventure.sonnet`) | 8014 | Sonnet rounds |
+
+  Managed by `~/services/caddy/service.sh` (outside the repo): `status`, `restart [caddy|lilith|gemma|sonnet]`, `logs
+  [name]`. Logs are in `~/services/caddy/logs/textadventure-<name>.log`, no longer `data/server-<port>.log` or her data
+  folder's `server.log`. **None reloads on a code change**: after a build that :8013 or :8014 should run (and a rebuilt
+  `web/dist`), `service.sh restart gemma` or `sonnet`, under the same rules as before (:8013 only after the build is
+  tested on :8018 and with no turn in flight). **Never start one of these three by hand**: the service keeps itself
+  alive and a second server would fight it for the port. `lilith_update.sh` restarts her service itself. The owner's
+  record of the whole machine is his "Mac mini plan" doc.
 - **Sign-in to Anthropic** is the `ant` login profile under `~/.config/anthropic/` (`ant auth login` at the mini's own
   screen; `ant auth status` to check). No API key in the environment or the repo-root `.env`: one there outranks the
   profile. A profile is never copied between machines.
