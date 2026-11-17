@@ -57,6 +57,8 @@ def test_raw_on_the_side_slot_and_nothing_logged(caplog):
     seen = {}
 
     def handler(request: httpx.Request):
+        if request.url.path == "/props":
+            return httpx.Response(404)
         if request.url.path == "/tokenize":
             return httpx.Response(200, json={"tokens": [1, 2, 3]})
         seen["path"], seen["body"] = request.url.path, json.loads(request.content)
@@ -80,6 +82,8 @@ def test_chat_with_system_and_thinking():
     seen = {}
 
     def handler(request: httpx.Request):
+        if request.url.path == "/props":
+            return httpx.Response(404)
         if request.url.path == "/tokenize":
             return httpx.Response(200, json={"tokens": [1]})
         seen["body"] = json.loads(request.content)
@@ -96,11 +100,35 @@ def test_chat_with_system_and_thinking():
 
 def test_prompt_cap():
     def handler(request: httpx.Request):
+        if request.url.path == "/props":
+            return httpx.Response(404)
         assert request.url.path == "/tokenize", "nothing is generated past the cap"
         return httpx.Response(200, json={"tokens": [0] * (scratch.MAX_PROMPT + 1)})
 
     evs = run(local_cfg(), scratch.ScratchInput(text="x"), handler)
     assert [e["event"] for e in evs] == ["error"]
+
+
+def test_the_cap_and_the_name_follow_the_loaded_model():
+    """Another model swapped in with smaller slots: the cap shrinks to its slot less the reply; the page names that model."""
+    props = {"model_path": "/models/Qwen3.8-27B-Q6_K.gguf", "total_slots": 4, "default_generation_settings": {"n_ctx": 8192}}
+
+    def handler(request: httpx.Request):
+        if request.url.path == "/props":
+            return httpx.Response(200, json=props)
+        if request.url.path == "/slots":
+            return httpx.Response(200, json=[])
+        assert request.url.path == "/tokenize", "nothing is generated past the cap"
+        return httpx.Response(200, json={"tokens": [0] * 7700})
+
+    evs = run(local_cfg(), scratch.ScratchInput(text="x", max_tokens=512), handler)
+    assert [e["event"] for e in evs] == ["error"] and "7,680" in evs[0]["data"]["message"]
+
+    async def go():
+        return await scratch.info(local_cfg(), transport=httpx.MockTransport(handler))
+    i = asyncio.run(go())
+    assert i["model"] == "Qwen3.8-27B-Q6_K" and i["max_prompt"] == 8192 and i["slot_ctx"] == 8192
+    assert scratch.max_prompt(122_880, 512) == scratch.MAX_PROMPT and scratch.max_prompt(None, 512) == scratch.MAX_PROMPT
 
 
 def test_wrap_in_the_models_template():

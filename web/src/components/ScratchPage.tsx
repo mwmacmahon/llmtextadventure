@@ -24,15 +24,41 @@ export function ScratchPage() {
   const abort = useRef<AbortController | null>(null);
   const boxRef = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => {
-    scratchInfo()
-      .then((i) => {
-        setInfo(i);
+  const [swapped, setSwapped] = useState<string | null>(null);   // the box's model changed under the page
+  const presetRef = useRef(preset);
+  presetRef.current = preset;
+  const seen = useRef<string | null>(null);                        // the model (and profile) last read from the box
+
+  /** What the box has loaded now: asked on opening, on coming back to the tab and before each call, because the model can be
+   *  swapped (another profile) while the page is open. A preset not edited by hand follows the new model's settings. */
+  async function refresh(): Promise<ScratchInfo | null> {
+    try {
+      const i = await scratchInfo();
+      setInfo(i);
+      const key = `${i.model ?? "?"} / ${i.profile}`;
+      if (seen.current === null) {
         const first = ROLE_ORDER.find((r) => i.presets[r]) ?? Object.keys(i.presets)[0];
         if (first) pick(first, i);
-      })
-      .catch(() => setErr("The scratch pad is only on a server whose model runs on the GPU box, in dev mode."));
-    return () => abort.current?.abort();
+      } else if (seen.current !== key) {
+        setSwapped(`The box changed from ${seen.current} to ${key}.` + (presetRef.current === "custom" ? " Your custom settings are kept; pick a preset for the new model's." : " The preset now has the new settings."));
+        if (presetRef.current !== "custom") pick(presetRef.current, i);
+      }
+      seen.current = key;
+      return i;
+    } catch {
+      setErr("The scratch pad is only on a server whose model runs on the GPU box, in dev mode.");
+      return null;
+    }
+  }
+
+  useEffect(() => {
+    refresh();
+    const onFocus = () => { if (!abort.current) refresh(); };
+    addEventListener("focus", onFocus);
+    return () => {
+      removeEventListener("focus", onFocus);
+      abort.current?.abort();
+    };
   }, []);
 
   function pick(name: string, i: ScratchInfo | null = info) {
@@ -51,6 +77,9 @@ export function ScratchPage() {
 
   async function generate() {
     if (busy || !text.trim()) return;
+    const before0 = seen.current;
+    if (!(await refresh())) return;
+    if (seen.current !== before0) return;      // the model changed: say so and let the person look before sending
     setErr(null);
     setDone(null);
     setReasoning("");
@@ -113,10 +142,16 @@ export function ScratchPage() {
     <div className="lobby scratch-page">
       <h1>Scratch pad</h1>
       <p className="muted small">
-        The model on the GPU box ({info.profile}), with no game around it, on the side slot (slot {info.slot}; the narrator, assistant and referee are on slots 0 to 2 and keep their caches).
+        The model loaded on the GPU box now, <strong>{info.model ?? "(the box did not say)"}</strong> (profile {info.profile}
+        {info.slot_ctx ? `, ${info.slot_ctx.toLocaleString()} tokens a slot` : ""}; prompts up to {info.max_prompt.toLocaleString()} tokens), with no game around it, on the side slot (slot {info.slot}; the narrator, assistant and referee are on slots 0 to 2 and keep their caches).
         Nothing is kept: Clear or a reload and it is gone. {info.busy && <strong>The box is busy with a turn just now; a call will share it.</strong>}
       </p>
       {err && <div className="error">{err}</div>}
+      {swapped && (
+        <div className="error">
+          {swapped} <button className="link small" onClick={() => setSwapped(null)}>dismiss</button>
+        </div>
+      )}
 
       <section className="settings">
         <div className="settings-row">

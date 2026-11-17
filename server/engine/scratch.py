@@ -28,7 +28,7 @@ from .config import Config
 
 log = logs.get("scratch")
 
-MAX_PROMPT = 24_000          # tokens; the Gemma profile's slots are 30,720 each out of one pool of 122,880 (B405)
+MAX_PROMPT = 24_000          # tokens at most, whatever the box holds (the Gemma profile's unified pool: 122,880 for four slots, B405)
 MAX_NEW = 8_192              # tokens one call may write
 TIMEOUT = 600.0              # seconds; a long raw continuation on a busy box
 SAMPLERS = ("temperature", "top_p", "top_k", "min_p", "repeat_penalty", "presence_penalty", "repeat_last_n",
@@ -72,11 +72,34 @@ def presets(cfg: Config) -> dict[str, dict[str, Any]]:
     return out
 
 
+async def box(cfg: Config, transport: httpx.AsyncBaseTransport | None = None) -> dict[str, Any]:
+    """What the box has loaded now (its /props): the model file and one slot's context. The model can be swapped under a
+    running server (another profile), so this is asked every time, never kept."""
+    out: dict[str, Any] = {"model": None, "slot_ctx": None, "slots": None}
+    try:
+        async with httpx.AsyncClient(base_url=_base(cfg), timeout=5, transport=transport) as client:
+            r = await client.get("/props")
+            if r.status_code == 200:
+                p = r.json()
+                out["model"] = (p.get("model_path") or "").rsplit("/", 1)[-1].removesuffix(".gguf") or None
+                out["slot_ctx"] = int((p.get("default_generation_settings") or {}).get("n_ctx") or 0) or None
+                out["slots"] = p.get("total_slots")
+    except Exception:  # noqa: BLE001 - the page says the box did not answer
+        pass
+    return out
+
+
+def max_prompt(slot_ctx: int | None, new_tokens: int) -> int:
+    """The prompt cap: MAX_PROMPT, less when the loaded model's slot is smaller (room kept for the reply)."""
+    return MAX_PROMPT if not slot_ctx else max(0, min(MAX_PROMPT, slot_ctx - new_tokens))
+
+
 async def info(cfg: Config, transport: httpx.AsyncBaseTransport | None = None) -> dict[str, Any]:
     base = _base(cfg)
+    b = await box(cfg, transport)
     busy = await profiles.slots_busy(base, transport=transport) if base else None
-    return {"slot": cfg.side_slot, "max_prompt": MAX_PROMPT, "max_new": MAX_NEW, "samplers": list(SAMPLERS),
-            "presets": presets(cfg), "profile": cfg.profile_label, "busy": busy}
+    return {"slot": cfg.side_slot, "max_prompt": max_prompt(b["slot_ctx"], 0), "max_new": MAX_NEW, "samplers": list(SAMPLERS),
+            "presets": presets(cfg), "profile": cfg.profile_label, "model": b["model"], "slot_ctx": b["slot_ctx"], "busy": busy}
 
 
 class TemplateInput(BaseModel):
@@ -126,9 +149,10 @@ async def run(cfg: Config, req: ScratchInput, transport: httpx.AsyncBaseTranspor
         async with httpx.AsyncClient(base_url=_base(cfg), timeout=TIMEOUT, transport=transport) as client:
             n = await _count(client, req)
             counts["prompt_tokens"] = n
-            if n is not None and n > MAX_PROMPT:
+            cap = max_prompt((await box(cfg, transport))["slot_ctx"], body.get("n_predict") or body.get("max_tokens") or 0)
+            if n is not None and n > cap:
                 counts["stop"] = "too_long"
-                yield {"event": "error", "data": {"message": f"The prompt is {n:,} tokens; the scratch pad takes {MAX_PROMPT:,} at most."}}
+                yield {"event": "error", "data": {"message": f"The prompt is {n:,} tokens; with this reply length the loaded model takes {cap:,} at most."}}
                 return
             async with client.stream("POST", path, json=body) as r:
                 if r.status_code != 200:

@@ -1,6 +1,7 @@
 # The scratch pad
 
-A dev page for sending text straight to the model on the GPU box, with no game around it: like Oobabooga's Notebook tab.
+A dev page for sending text straight to whatever model the GPU box has loaded, with no game around it: like Oobabooga's
+Notebook tab. Nothing in it is tied to one model: the box is asked what it holds (see "When the model is swapped").
 Built 2026-11-17 (D326). Code: `server/engine/scratch.py`, the routes `/api/scratch` and `/api/scratch/template` in
 `server/app.py`, the page `web/src/components/ScratchPage.tsx`.
 
@@ -28,21 +29,33 @@ Built 2026-11-17 (D326). Code: `server/engine/scratch.py`, the routes `/api/scra
 | **Clear** | Empties everything. |
 | The line under the box | Prompt tokens (how many were cached), tokens written, speed, time, and how it ended (`stop`, `eos`, `limit`, `cancelled`). |
 
-## Raw mode on Gemma: wrap first
+## Raw mode: wrap first for an instruction-tuned model
 
-Gemma 4 31B is an instruction-tuned model. Given bare text with sampling on, it loops within about 25 tokens ("the the
-the", "same same"), with or without `<bos>`; greedy (temperature 0) holds. Measured on the box 2026-11-17 at the narrator's
-settings. Inside its template it writes as it does in chat (120 and 290 clean tokens on the same settings). So for prose
-in raw mode: type the request, **Wrap in template**, then **Generate**. After a wrap the box holds the raw template, which
-you can edit: put words after the model's turn marker to start its reply for it.
+An instruction-tuned model (every model the game has played on) is trained on its chat template. Given bare text with
+sampling on, it can fall into loops. Measured on Gemma 4 31B, 2026-11-17, at the narrator's settings: "the the the" within
+about 25 tokens, with or without `<bos>`; greedy (temperature 0) held. Inside its template it wrote as in chat (120 and 290
+clean tokens on the same settings). Not yet measured on Qwen. So for prose in raw mode: type the request, **Wrap in
+template**, then **Generate**. The wrap asks the box for the loaded model's own template, so it is right for whatever is
+loaded. After a wrap the box holds the raw template, which you can edit: put words after the model's turn marker to start
+its reply for it.
+
+## When the model is swapped
+
+A profile switch (Settings, or `tools/llm.py use`) can load another model while the page is open. The page asks the box
+what it has loaded (its `/props`) on opening, whenever you come back to the tab, and before every Generate:
+- the heading names the model file loaded now, the profile, one slot's context and the prompt cap;
+- if the model or profile changed, the page says so and does not send that Generate (press it again once you have looked);
+- a preset you have not edited takes the new profile's settings; custom settings are kept as they are;
+- the prompt cap follows the new model's slot (below).
 
 ## Slot and limits
 
 - Every call runs on the **side slot** (slot 3 of four, counted from 0: the narrator is 0, the assistant 1, the referee 2; `side_slot`, B405), the slot the game's odd calls already share. The
   narrator, assistant and referee keep their caches; a game running at the same time loses nothing but a share of the GPU.
   The page says when the box is busy with a turn as it opens.
-- The prompt is capped at **24,000 tokens** (counted by the box's own tokenizer), below a slot's 30,720 in the Gemma
-  profile's unified pool of 122,880.
+- The prompt is capped at **24,000 tokens, or the loaded model's slot less the reply's length if that is smaller**
+  (counted by the box's own tokenizer, the slot read from the box before each call). The Gemma profile's slots share one
+  pool of 122,880 tokens, so there it is 24,000; a profile with small slots gets a smaller cap.
 
 ## Nothing kept
 
