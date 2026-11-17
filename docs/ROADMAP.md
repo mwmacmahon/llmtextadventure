@@ -569,27 +569,51 @@ blind-pair judgements (X2). The station AI upgrading and downgrading itself (B19
 
 The owner set Marrowgate's setting aside on 2026-11-15 after a played run on its first player's server (D304): a fresh
 slate, a small village in the woods with well-known kinds of place all round it, the plain thing first. The rules code is
-kept (classes, levels, dice, combat, perils, gravestones, death as the ending). The design is `notes/FANTASY_NEXT.md`; the
-map is `notes/MAP_DESIGN.md` (draft 4; D307 to D309). **The work list, one line per piece with an id and a state, is
-`notes/FANTASY_ROADMAP.md` (FN1 to FN96), written 11-16 before any code at the owner's word (D310).** A line leaves it
-only when built and seen in a played round. This section is its roll-up. **Nothing here is built.**
+kept (classes, levels, dice, combat, perils, gravestones, death as the ending). The game is **Parchment** and its first
+scenario **Rustic Ramblings** (the owner, 11-16), its own game folder beside Marrowgate, which is left as it is. Its
+principle: the map, the names and the jobs are each rolled inside a written frame; the engine rolls a name for what the
+engine makes and the narrator names what it invents. The design is `notes/FANTASY_NEXT.md`; the map is
+`notes/MAP_DESIGN.md` (draft 5 of 11-17, with the cold read's 25 rulings and the probe folded in; D307 to D309, D314 to
+D317); the shapes of the save and the panel are `docs/MAP-CONTRACT.md`. **The work list, one line per piece with an id
+and a state, is `notes/FANTASY_ROADMAP.md` (FN1 to FN111), written 11-16 before any code at the owner's word (D310).** A
+line leaves it only when built and seen in a played round. This section is its roll-up. **State on 11-17: the
+generator, paths and the panel are built and tested; no game calls the map, and nothing has been seen in a played
+round.**
 
-- **Before any code (FN1 to FN6): next.** A fresh cold read of the map design's last two drafts; the game design's map
-  section brought in line with it; how often the reading chose `clarify` in the stored games and why so rarely; how much
-  rules code names Marrowgate and where the new game lives; every model-facing line of the design tried on a model
-  before anything rests on it.
-- **The world (FN10 to FN17): designed.** A scenario file (what is at the start by kind, bearing and distance; the
-  wilderness rules; names; what lives where); a start area rolled from a seed and checked over a thousand seeds; the
-  ground beyond rolled in 16 by 16 chunks on first need and stored, with no edge; far places pinned; the save's size
-  watched (B329); `server/engine/worldmap.py` with no game imports, off for every other game.
-- **The panel (FN20 to FN27): designed.** A low-resolution pixel map in the interface's colours that scrolls and zooms;
-  three states of a place (not known, heard of, been there); hover shows only what the player knows; jobs marked; a
-  click fills the input; a journey shown as it is walked; spots inside a place as a list.
-- **Travel (FN30 to FN44): designed.** The player always on a tile; time from the ground crossed; journeys told in legs
-  at stops the engine picks, with a pre-filled continue and an event roll per stop; a road dial at character creation,
-  apart from difficulty (quiet, as written, wild); long journeys with camps; wandering with no end; a place not on the
-  player's map cannot be walked to unless in view; the engine asks, with buttons, when the player's meaning is unclear,
-  and each question is counted; two probes on both models before the reading's two new fields.
+How it is being built (the owner's go-ahead, 11-16): the contract between engine and panel first; then the engine, the
+panel and the model questions in parallel; three gates where the owner looks (a real game with the map in the side
+panel; a walk in legs on Gemma with one question asked by the engine; fifteen minutes with its first player); the
+endless ground, camps, wandering, invented places and ground changes held until the third gate.
+
+- **Before any code (FN1 to FN6, FN97 to FN99): done, but for trying every model-facing line.** The map design read
+  cold (25 holes, each ruled); the stored games counted for `clarify` (10 in 3,579 readings, never on a local model, and
+  89 turns that named an unknown destination with none asked about: so the engine raises the map's questions and no
+  work goes into making a model choose to ask); where the new game lives (its own folder, a subclass of the fantasy
+  game); the contract written; both design files made true on 11-17. Open: the place form, the ground-changed form
+  and the per-turn block are untried on a model.
+- **The world (FN10 to FN17, FN102): the start area built, the ground beyond designed.** `server/engine/worldmap.py`
+  rolls a start area from a scenario's list and a seed (places by kind, bearing and distance; regions; hills; the
+  river; roads; fords) and a thousand seeds pass its checks, 998 on the first roll. Beyond the start, ground, rivers
+  and roads are to be read from the seed tile by tile and a chunk's roll only adds its places, so nothing can seam.
+  Plain yet: the ground between the regions is all meadow.
+- **The panel (FN20 to FN27): built, seen on its demo page only.** `web/src/components/MapPanel.tsx`: a
+  low-resolution pixel map that scrolls and zooms; three states of a place; hover and tap cards; a click fills the
+  input unsent; a region's name where it fits. Never run in a live game; four icons read weakly (castle, ruin, quarry,
+  clearing). Spots inside a place, a list under the map, come with travel.
+- **Travel (FN30 to FN44, FN104 to FN107): paths and time built; the wording probed on Gemma; the rest designed.** The
+  player always on a tile; time from the ground crossed, water only at a known bridge or ford; the reading gives names
+  only (`goes_to`, `by_way_of`, `place_named`, `moves_within`); journeys told in legs at stops the engine picks, with a
+  pre-filled continue and an event roll per stop; a road dial at character creation, apart from difficulty; a place
+  not on the player's map cannot be walked to unless in view; the engine asks, with buttons, when the meaning is
+  unclear, and each question is counted. The where probe (95 written lines, Gemma): all four fields right on 84 per
+  cent, no listed place forced onto an unlisted one, no room written as a destination; `goes_to` is weak only where
+  the engine can take up the slack, so the engine is made tolerant and the text is not lengthened. Owed: Sonnet, and a
+  real Sonnet extract before the schema ships. Found on the way: the flee question came back yes on 17 of 92 lines
+  with no fight on, and one line looped the reading to its token limit.
+- **Next (FN100, FN101):** Marrowgate's setting moved out of the shared fantasy code into data, text-identical for
+  Marrowgate and held so by its 291 tests; then the Parchment folder, with the map in its state and its side panel.
+- **Names (FN108 to FN111): decided, not built.** Rolled from large word lists, several picks for a big name, per
+  game, kept in the save; the lists checked against the game's own terms.
 - **Places the story makes (FN50 to FN55): designed.** Told of a place at all puts it on the map; a secret whereabouts
   only by the scenario's mark or the telling saying so; an invented place by a pick-one form, the engine choosing the
   tile; lasting damage as a change on top of the rolled world; every assumption about a model counted.
@@ -603,8 +627,9 @@ only when built and seen in a played round. This section is its roll-up. **Nothi
 - **Carried from Marrowgate (FN86 to FN90): built, unseen.** The fight and job fixes of 11-15 never tried on a model; a
   failed roll in a fight costing no hit points (B414) not seen in a played fight; the gravestone's last turns (B415) not
   looked at in a browser; B413.
-- **Open with the owner and the first player (FN91 to FN96):** three answers of hers; the fight terms; the map design's
-  eight questions, each built on a stated assumption until answered. None blocks the world, the panel or travel.
+- **Open with the owner and the first player (FN91 to FN96, FN104, FN110):** two answers of hers (company on the road;
+  which three places first); the fight terms; the map design's questions (section 16: seven of the first eight, and
+  five from the rulings), each built on a stated assumption until answered. None blocks the next steps.
 
 ## For the record: analysed and parked
 
