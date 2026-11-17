@@ -673,6 +673,101 @@ def walk_to(world: dict, pid: str, turn: int = 0, night: bool = False) -> dict |
     return {"path": [list(t) for t in path], "minutes": walk_minutes(world, path, night) if len(path) > 1 else 0}
 
 
+# ---- journeys in legs (FN33, FN34; MAP_DESIGN 6.5 draft 5) -----------------------------------------------------------
+
+LEG_ABOVE = 15           # a walk longer than this many minutes is a journey in legs; a shorter one is one turn
+MAX_STOPS = 3            # at most three stops and the arrival
+STOP_STRENGTH = {"place": 6, "crossing": 5, "crossroads": 4, "edge": 3, "midpoint": 1}
+EVENT_CHANCE = {"crossing": 40, "crossroads": 35, "edge": 30, "place": 25, "midpoint": 10}
+ROADS = {"quiet": (0.5, 0.10), "written": (1.0, 0.25), "wild": (1.5, 0.40)}   # FN35: chance multiplier, share that is trouble
+EVENTS = ("sight", "something small", "trouble")       # R14: these first; a place seen and someone on the road come later
+
+
+def _stops(world: dict, path: list) -> list[tuple[int, str, str]]:
+    """Every waypoint on a path, as (index, kind, what): a place passed, a crossing, a crossroads, the edge of a region;
+    then the strongest MAX_STOPS of them, spread along the path; failing any, the midpoint of a long stretch."""
+    on_line = _line_tiles(world)
+    found: list[tuple[int, str, str]] = []
+    prev_region = region_at(world, *path[0])
+    for i, t in enumerate(path[1:-1], start=1):
+        p = place_at(world, *t)
+        reg = region_at(world, *t)
+        if p is not None and p["kind"] in CROSSINGS:
+            found.append((i, "crossing", p["name"]))
+        elif p is not None:
+            found.append((i, "place", p["name"]))
+        elif reg and reg != prev_region and reg in world["places"]:
+            found.append((i, "edge", f"the edge of {_lower_the(world['places'][reg]['name'])}"))
+        else:
+            near = [on_line.get(tuple(n)) for n in _n4(tuple(t))]
+            names = {ln["name"] for ln in near if ln and ln.get("name")}
+            here = on_line.get(tuple(t))
+            if here and len(names | {here.get("name")}) >= 3:
+                found.append((i, "crossroads", f"where {_lower_the(here['name'])} meets another way"))
+        prev_region = reg
+    if not found and len(path) > 6:
+        found.append((len(path) // 2, "midpoint", "half way"))
+    best = sorted(found, key=lambda f: -STOP_STRENGTH[f[1]])[:MAX_STOPS]
+    return sorted(best)
+
+
+def plan_journey(world: dict, pid: str, night: bool = False) -> dict | None:
+    """A journey to a known place: the path, its stops (index, kind, what) and the minutes; None when there is no way or the
+    walk is short enough for one turn (walk_to then does it)."""
+    p = world["places"][pid]
+    here = tuple(world["player"]["tile"])
+    if p["shape"] != "point":
+        return None
+    path = find_path(world, here, tuple(p["tile"]))
+    if path is None or len(path) < 2:
+        return None
+    if walk_minutes(world, path, night) <= LEG_ABOVE:
+        return None
+    return {"to": pid, "label": p["name"], "path": [list(t) for t in path],
+            "stops": [[i, k, w] for i, k, w in _stops(world, path)], "next": 0, "began": list(here)}
+
+
+def walk_leg(world: dict, turn: int = 0, night: bool = False) -> dict | None:
+    """Walk the held journey's next leg: from the player's tile along the path to the next stop, or to the end. Lights the
+    ground, moves the tile; at the end the place is been to and the journey is over. Returns {minutes, stop: (kind, what) or
+    None at the arrival, arrived: bool, left: minutes still to go}."""
+    j = world["player"].get("journey")
+    if not j:
+        return None
+    path = [tuple(t) for t in j["path"]]
+    here = tuple(world["player"]["tile"])
+    at = path.index(here) if here in path else 0
+    ahead = [s for s in j["stops"] if s[0] > at]
+    end = ahead[0][0] if ahead else len(path) - 1
+    seg = path[at:end + 1]
+    for t in seg:
+        light(world, *t, LIT_WALK)
+    world["player"]["came_from"] = list(here)
+    world["player"]["tile"] = list(path[end])
+    minutes = walk_minutes(world, seg, night) if len(seg) > 1 else 0
+    arrived = end == len(path) - 1
+    if arrived:
+        k = world["known"]["places"].setdefault(j["to"], {"state": "heard", "heard_turn": turn, "been_turn": None, "told": []})
+        if k["state"] != "been":
+            k["state"], k["been_turn"] = "been", turn
+        world["player"]["journey"] = None
+        return {"minutes": minutes, "stop": None, "arrived": True, "left": 0}
+    left = walk_minutes(world, path[end:], night)
+    return {"minutes": minutes, "stop": (ahead[0][1], ahead[0][2]), "arrived": False, "left": left}
+
+
+def leg_event(rng: random.Random, kind: str, roads: str = "written", night: bool = False) -> str | None:
+    """FN34: whether something happens at a stop, and what: None, or one of EVENTS. The chance is the stop's (crossings and
+    crossroads highest), night adds ten, the road dial scales it and sets how much of it is trouble."""
+    mult, trouble = ROADS.get(roads, ROADS["written"])
+    chance = (EVENT_CHANCE.get(kind, 10) + (10 if night else 0)) * mult
+    if rng.random() * 100 >= chance:
+        return None
+    if rng.random() < trouble:
+        return "trouble"
+    return "something small" if rng.random() < 0.4 else "sight"
+
+
 # ---- what the models are told each turn (MAP_DESIGN 6.7, draft 5; FN32)
 
 GROUND_WORDS = {"m": "on open meadow", "f": "among fields", "s": "on the shore", "w": "under bright trees", "W": "under dark trees",

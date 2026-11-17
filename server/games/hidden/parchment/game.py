@@ -46,10 +46,20 @@ class ParchmentGame(FantasyGame):
                     "two. How long a walk to another place takes is the engine's, never yours to set. A short rest is an hour; sleep is "
                     "six to eight hours; waiting is however long they wait.")
 
+    ROAD_CHOICES = [("written", "As written: some trouble on the roads"), ("quiet", "Quiet roads: get where you are going"),
+                    ("wild", "Wild roads: something on every road")]
+
+    def setup_options(self) -> dict[str, Any]:
+        """FN35: the road dial at character creation, apart from the difficulty (the owner, 11-15)."""
+        out = dict(super().setup_options())
+        out["roads"] = {"kind": "select", "label": "The roads", "options": [{"id": i, "name": n} for i, n in self.ROAD_CHOICES]}
+        return out
+
     def new_instance(self, setup: dict[str, Any]) -> tuple[str, FantasyState]:
         """The family's new game, then the world map rolled from the scenario's start list with a seed of this game's own
         (kept in the save). The player starts on the home's tile, and their place is the home's name (R-G3)."""
         title, state = super().new_instance(setup)
+        state.flags["roads"] = str(setup.get("roads") or "written")
         sc = self.scenario(str(setup.get("scenario") or ""))
         start = sc.get("start") or {}
         if start.get("home"):
@@ -91,7 +101,7 @@ class ParchmentGame(FantasyGame):
         rid = wm.region_at(w, x, y)
         if rid and rid in w["places"]:
             return str(w["places"][rid]["name"])
-        return "Open country"
+        return "open country"
 
     def after_turn(self, state: FantasyState, info: Any) -> FantasyState:
         """Gate 1 (FN30 to FN32): the turn named a known place as where the player is now (the referee's move row, the
@@ -102,6 +112,14 @@ class ParchmentGame(FantasyGame):
         s = super().after_turn(state, info)
         w = s.world
         if not w or s.player.fate:
+            return s
+        if s.flags.pop("leg_walked", False):
+            # R1: on a leg's turn the tile is the truth; a move row naming the journey's end or any place on it (the narrator
+            # told the arrival early) is not applied, and counted
+            if (s.player.location or "").lower() != self.where(s).lower():
+                s.flags["leg_move_ignored"] = int(s.flags.get("leg_move_ignored") or 0) + 1
+            s.player.location = self.where(s)
+            s.player.visited.setdefault(s.player.location, s.clock.day * 1440 + s.clock.minute)
             return s
         here, want = self.where(s), s.player.location
         if want and want.lower() != here.lower() and not self._same_spot(s, want, here):
@@ -192,9 +210,155 @@ class ParchmentGame(FantasyGame):
             return self.NOT_KNOWN.format(name=d)
         return None
 
+    # ---- journeys in legs (FN33 to FN35; MAP_DESIGN 6.5) -------------------------------------------------------------------
+    CONTINUE = "Continue to {label}"
+    # what a stop's "sight" shows, one rolled a time (a list in the line was copied whole, the cold read of 11-17)
+    SIGHTS = ["old wheel ruts", "a gibbet", "deer at the edge of the trees", "a broken cart", "a stone marker worn smooth",
+              "a scarecrow in an empty field", "a dead fire ringed with stones", "a heron standing in a ditch", "a fallen signpost",
+              "a shepherd's hut, empty", "a dead fox", "smoke from a chimney far off"]
+
+    def roads(self, s: FantasyState) -> str:
+        """FN35: the road dial (quiet, written, wild), chosen at character creation; 'written' when a save has none."""
+        r = str((s.flags.get("roads") or "written")).lower()
+        return r if r in wm.ROADS else "written"
+
+    def _journey_dest(self, s: FantasyState, adj: Any) -> str | None:
+        """The known place the reading sends the player to this turn, when it is a journey (longer than a turn's walk)."""
+        from engine.roles import destination
+        for i in getattr(adj, "intents", None) or []:
+            d = destination(i).strip()
+            pid = wm.place_named(s.world, d) if d else None
+            if pid is not None and pid != wm.place_named(s.world, self.where(s)):
+                return pid
+        return None
+
+    def world_turn(self, state: FantasyState, adj: Any, player_text: str, rng: Any, turn: int, offset: int):
+        """The family's world turn, then the journey: a turn that sets out for a known place more than a quarter hour off
+        starts a journey and walks its first leg; a held journey's leg is walked by the Continue command. The narrator is
+        told where this leg ends, and what happened there if the stop's roll says so (FN34)."""
+        s, w = super().world_turn(state, adj, player_text, rng, turn, offset)
+        if not s.world or s.player.fighting or s.player.fate or s.player.peril is not None:
+            return s, w
+        pid = self._journey_dest(s, adj)
+        if pid is not None:
+            plan = wm.plan_journey(s.world, pid, self._night(s))
+            if plan is not None:
+                s.world["player"]["journey"] = plan
+                self._leg(s, w, rng, turn, adj)
+        return s, w
+
+    def _leg(self, s: FantasyState, w: Any, rng: Any, turn: int, adj: Any = None) -> None:
+        """Walk the held journey's next leg now, before the prose, and tell the narrator what it is (R1: the leg's end in one
+        line). On quiet roads the legs are walked on until one has an event or the arrival (R16)."""
+        night = self._night(s)
+        j = s.world["player"]["journey"]
+        start = self.where(s)
+        total, told = 0, []
+        while True:
+            leg = wm.walk_leg(s.world, turn, night)
+            if leg is None:
+                return
+            total += leg["minutes"]
+            event = None if leg["arrived"] else wm.leg_event(rng, leg["stop"][0], self.roads(s), night)
+            told.append((leg, event))
+            if leg["arrived"] or event or self.roads(s) != "quiet":
+                break
+        leg, event = told[-1]
+        s.flags["leg_walked"] = True                      # R1: this turn's move is the leg's; after_turn keeps the tile's name
+        s.player.location = self.where(s)
+        lo = wm._lower_the
+        n, dest, frm = s.player.name, lo(j["label"]), lo(start)
+        # the wording after a cold read (11-17): the goal before the distance, no "on the way to"; the arrival shows the place
+        if leg["arrived"]:
+            line = f"This turn {n} walks from {frm} and arrives at {dest}: the last of the way, then {dest} as {n} sees it."
+        elif leg["stop"][0] == "midpoint":
+            line = f"This turn {n} walks from {frm} and stops half way; {dest} is still {wm.walk_word(leg['left'])} on. Tell the walk and the place {n} stops."
+        else:
+            line = (f"This turn {n} walks from {frm} and stops at {lo(leg['stop'][1])}; {dest} is still {wm.walk_word(leg['left'])} on. "
+                    f"Tell the walk and the place {n} stops.")
+        if event == "sight":
+            line += f" In view there: {rng.choice(self.SIGHTS)}. One detail, then stop."
+        elif event == "something small":
+            line += f" Off the path something small {rng.choice(['rustles', 'glints'])}; {n} cannot yet tell what. Show only that, and stop."
+        elif event == "trouble":
+            spawned = self._trouble(s, rng)
+            if spawned:
+                line += f" {spawned[:1].upper() + spawned[1:]} is there, close by. Show it, and stop while {n} can still choose."
+        w.directives.insert(0, line)
+        w.mechanics.append(f"Journey: {start} to {leg['stop'][1] if not leg['arrived'] else j['label']}, {total} minutes"
+                           + (f"; {event}" if event else "") + ".")
+        mins = int(getattr(adj, "time_minutes", 0) or 0) if adj is not None else 0
+        setattr(w, "extra_minutes", max(0, total - mins))
+        s.flags["prefill"] = "" if leg["arrived"] else self.CONTINUE.format(label=j["label"])
+
+    def _trouble(self, s: FantasyState, rng: Any) -> str:
+        """FN34's trouble: the encounter generator's located draw for the ground here, sized to the party, filed as hostile
+        and in sight (they attack on sight, B397, so the fight opens when the player acts). Returns what the narrator is told."""
+        from games.fantasy import encounter as en
+        x, y = s.world["player"]["tile"]
+        rid = wm.region_at(s.world, x, y)
+        on_road = any(tuple(t) == (x, y) for ln in s.world["lines"].values() if ln["kind"] != "river" for t in ln["tiles"])
+        region = "roads" if on_road else {"~": "water", "b": "water"}.get(wm.ground_at(s.world, x, y) or "", "wilds")
+        pool = en.located_pool(region)
+        if not pool:
+            return ""
+        eid = rng.choices([e for e, _ in pool], weights=[wt for _, wt in pool])[0]
+        made = en.spawn(s, [(eid, 1)], "standard")
+        s.people.extend(made or [])
+        for q in made or []:
+            q.location = s.player.location
+            q.attitude = -3
+        from games.fantasy import combat as cb
+        x = cb.bestiary().entries.get(eid, {})
+        called = str(x.get("called") or x.get("name") or eid).strip()
+        return called if called.lower().startswith(("a ", "an ")) else (("an " if called[:1].lower() in "aeiou" else "a ") + called.lower())
+
+    def _journey_open(self, s: FantasyState) -> dict | None:
+        j = (s.world or {}).get("player", {}).get("journey")
+        hostile = any(q.status == "alive" and q.attitude <= -3 and self._same_spot(s, q.location, s.player.location) for q in s.people)
+        return j if j and not s.player.fighting and not hostile and not s.player.fate else None
+
+    def commands(self, state: FantasyState) -> list:
+        out = list(super().commands(state))
+        j = self._journey_open(state)
+        if j:
+            from engine.game import CommandSpec
+            out.append(CommandSpec(id="continue_journey", label=self.CONTINUE.format(label=j["label"]), mode="narrated", typed=False,
+                                   hint="Walk the next leg of the journey."))
+        return out
+
+    def typed_command(self, state: FantasyState, text: str) -> tuple[str, dict[str, Any]] | None:
+        """The pre-filled 'Continue to ...' taken as it stands is the Continue command (MAP_DESIGN 6.5: no reading needed)."""
+        j = self._journey_open(state)
+        if j and " ".join((text or "").lower().split()).rstrip(".") == self.CONTINUE.format(label=j["label"]).lower():
+            return "continue_journey", {}
+        return super().typed_command(state, text)
+
+    def run_command(self, state: FantasyState, command_id: str, args: dict[str, Any]):
+        if command_id != "continue_journey":
+            return super().run_command(state, command_id, args)
+        from engine.game import CommandResult
+        import random
+        from games.fantasy.world import WorldTurn
+        s = state.model_copy(deep=True)
+        j = self._journey_open(s)
+        if not j:
+            return state, CommandResult(ok=False, label="Continue", text="There is no journey to go on with here.")
+        w = WorldTurn()
+        rng = random.Random(f"{s.world['seed']}:{s.clock.day}:{s.clock.minute}:leg")
+        label = j["label"]
+        self._leg(s, w, rng, 0)
+        return s, CommandResult(label="Continue", player_line=f"I go on toward {label}.", summary=f"{s.player.name} goes on toward {label}.",
+                                directive=" ".join(w.directives), text=" ".join(w.mechanics), minutes=int(getattr(w, "extra_minutes", 0) or 0),
+                                referee_skip=["location"])
+
     def ui(self, state: FantasyState) -> UISchema:
-        """The family's panels, with the world map in the Places list's stead when the save has a map."""
+        """The family's panels, with the world map in the Places list's stead when the save has a map; a journey's next step
+        pre-filled in the input (MAP_DESIGN 6.5) and drawn on the map."""
         out = super().ui(state)
+        j = self._journey_open(state)
+        if j:
+            out.prefill = self.CONTINUE.format(label=j["label"])
         if state.world:
             data = wm.panel(state.world)
             at = (state.player.location or "").lower()
@@ -203,6 +367,9 @@ class ParchmentGame(FantasyGame):
                 data["spots"] = [{"name": n, "here": n.lower() == at} for n in [self.where(state), *spots]]
                 if not any(x["here"] for x in data["spots"]):
                     data["spots"][0]["here"] = True
+            if j:
+                data["journey"] = {"to": j["to"], "label": self.CONTINUE.format(label=j["label"]),
+                                   "path": j["path"], "stops": [j["path"][st[0]] for st in j["stops"]]}
             panel = MapPanel(**data)
             out.panels = [panel if isinstance(w, ListPanel) and w.title == "Places" else w for w in out.panels]
         return out

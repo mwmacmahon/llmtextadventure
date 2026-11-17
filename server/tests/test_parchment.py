@@ -198,3 +198,39 @@ def test_a_list_with_a_game_term_is_refused():
     problems = rn.check(lists)
     assert any("game terms: walk" in p for p in problems) and any("lost hand" in p for p in problems)
 
+
+
+def test_a_journey_is_walked_in_legs_with_a_continue(engine: Engine):
+    import random
+    from games.fantasy.world import WorldTurn
+    game, st = _fresh(engine)
+    fort = next(k for k, p in st.world["places"].items() if p["name"] == "The goblin fort")
+    plan = wm.plan_journey(st.world, fort)
+    assert plan and 1 <= len(plan["stops"]) <= wm.MAX_STOPS and plan["path"][-1] == st.world["places"][fort]["tile"]
+    I = type("I", (), {})
+    i = I(); i.goes_to, i.transition = "The goblin fort", ""
+    adj = type("A", (), {})(); adj.intents, adj.time_minutes = [i], 5
+    w = WorldTurn()
+    st.world["player"]["journey"] = plan
+    game._leg(st, w, random.Random(3), 1, adj)
+    assert w.directives[0].startswith("This turn Wenna walks from the village and ")
+    assert st.world["player"]["tile"] != [0, 0] and st.flags["leg_walked"]
+    ui = game.ui(st)
+    if st.world["player"]["journey"]:                               # not yet there: the next step is pre-filled
+        assert ui.prefill == "Continue to The goblin fort"
+        assert game.typed_command(st, "Continue to The goblin fort") == ("continue_journey", {})
+        for _ in range(wm.MAX_STOPS + 1):
+            if not st.world["player"]["journey"]:
+                break
+            st, res = game.run_command(st, "continue_journey", {})
+            assert res.ok and res.directive.startswith("This turn Wenna walks")
+    assert st.world["player"]["tile"] == st.world["places"][fort]["tile"] and st.world["known"]["places"][fort]["state"] == "been"
+    assert game.ui(st).prefill is None
+
+
+def test_the_road_dial_is_a_choice_at_creation_and_scales_the_roll():
+    import random
+    hits = {r: sum(1 for k in range(2000) if wm.leg_event(random.Random(k), "crossing", r)) for r in ("quiet", "written", "wild")}
+    assert hits["quiet"] < hits["written"] < hits["wild"]
+    trouble = {r: sum(1 for k in range(4000) if wm.leg_event(random.Random(k), "crossing", r) == "trouble") for r in ("quiet", "wild")}
+    assert trouble["quiet"] * 4 < trouble["wild"]
