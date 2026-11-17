@@ -8,6 +8,7 @@ export function Bar({ settingsHref }: { settingsHref: string }) {
   const [dev, setDev] = useState(devMode.on());
   const [err, setErr] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
+  const [local, setLocal] = useState(false);          // a role plays on the GPU box: the scratch pad (D326) is offered in dev mode
   const fileRef = useRef<HTMLInputElement>(null);
 
   // A tab open since an older web build offers a reload (the owner's undo showed nothing on a page from before the change).
@@ -24,6 +25,7 @@ export function Bar({ settingsHref }: { settingsHref: string }) {
   useEffect(() => {
     const load = () => api.settings().then((s) => {
       setProfile(s.profile);
+      setLocal(Object.values(s.roles).some((r) => r.provider === "llamacpp"));
       if (s.dev_mode === false && devMode.on()) devMode.set(false);    // B232: a server with no dev mode clears this browser's switch
     }).catch(() => setProfile(null));
     load();
@@ -54,6 +56,7 @@ export function Bar({ settingsHref }: { settingsHref: string }) {
       <a href="#/">Games</a>
       <a href="#/graveyard">Graveyard</a>
       <a href={settingsHref}>Settings</a>
+      {dev && local && <a href="#/scratch" title="The model on the GPU box with no game around it; nothing kept">Scratch</a>}
       <button className="link" onClick={() => fileRef.current?.click()} title="Open a saved game from a file you exported">
         Import
       </button>

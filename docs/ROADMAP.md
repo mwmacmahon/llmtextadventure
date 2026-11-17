@@ -548,6 +548,13 @@ prose and referee rows back through the whole pipeline; 551 turns, all clean. **
 what the store knows (did the player move, is a blow's target a person, how often the engine rewrites the reading).
 **Left on it:** the phrase table for the word patterns; a plain destination field for the move; the other games.
 
+**Built 11-17 (D326): the scratch pad.** A Scratch page in the bar (dev mode, a server whose roles play on the box: :8013,
+:8018) hits the box's model with no game around it, like Oobabooga's Notebook: raw (the model continues the text, no chat
+template) or chat (a system text and one user message, the reply under it). A preset per role fills the sampling as the
+profile plays it; every field editable. On the side slot, so the turn roles keep their caches; the prompt capped at 24,000
+tokens. Nothing kept: the text lives in the page's memory only; the server logs one count-only line per call
+(`scratch.call`). **Left:** a template helper for raw mode (Gemma 4 loops in raw continuation once sampled; see D326).
+
 **Running.** **Left.**
 - Nineteen test files load the gitignored `notes/content`, so a fresh clone cannot run them (R5-1031).
 - The docs marked behind in INDEX §4 (ARCHITECTURE, GAME_AUTHORING's lines, LOCAL_LLM's next-model section) and §7's

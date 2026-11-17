@@ -345,7 +345,23 @@ export function streamCommand(id: string, command: string, args: Record<string, 
   return streamSse(`/api/instances/${id}/command`, { command, args }, signal);
 }
 
-async function* streamSse(url: string, body: unknown, signal?: AbortSignal): AsyncGenerator<TurnEvent> {
+// ---- the scratch pad (D326): the box's model with no game around it (dev mode, a local server only) ----------------------
+export type ScratchPreset = { params: Record<string, number>; max_tokens: number; thinking: boolean };
+export type ScratchInfo = { slot: number; max_prompt: number; max_new: number; samplers: string[]; presets: Record<string, ScratchPreset>; profile: string; busy: boolean | null };
+export type ScratchRequest = { mode: "raw" | "chat"; text: string; system: string; preset: string; params: Record<string, number | null>; max_tokens: number; thinking: boolean };
+export type ScratchDone = { prompt_tokens: number | null; cached: number | null; new_tokens: number | null; per_second: number | null; stop: string; ms: number };
+export type ScratchEvent =
+  | { event: "text"; data: { t: string } }
+  | { event: "reasoning"; data: { t: string } }
+  | { event: "done"; data: ScratchDone }
+  | { event: "error"; data: { message: string } };
+
+export const scratchInfo = () => req("/api/scratch").then((r) => j<ScratchInfo>(r));
+export function streamScratch(body: ScratchRequest, signal?: AbortSignal): AsyncGenerator<ScratchEvent> {
+  return streamSse<ScratchEvent>("/api/scratch", body, signal);
+}
+
+async function* streamSse<E = TurnEvent>(url: string, body: unknown, signal?: AbortSignal): AsyncGenerator<E> {
   const r = await req(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -370,7 +386,7 @@ async function* streamSse(url: string, body: unknown, signal?: AbortSignal): Asy
         if (line.startsWith("event:")) event = line.slice(6).trim();
         else if (line.startsWith("data:")) data += line.slice(5).trim();
       }
-      if (data) yield { event, data: JSON.parse(data) } as TurnEvent;
+      if (data) yield { event, data: JSON.parse(data) } as E;
     }
   }
 }

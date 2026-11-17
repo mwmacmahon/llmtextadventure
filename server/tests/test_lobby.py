@@ -421,3 +421,18 @@ def test_a_deleted_games_lines_leave_the_log(tmp_path: Path):
     (tmp_path / "server.log.1").write_text("t INFO ta turn.done iid=aaa111\n")
     assert logs.forget(tmp_path, "aaa111") == 3
     assert f.read_text() == "t INFO ta turn.start iid=bbb222 turn=1\n" and (tmp_path / "server.log.1").read_text() == ""
+
+
+# ---- the scratch pad (D326): dev mode and a local server only ------------------------------------------------------------
+
+def test_scratch_pad_only_in_dev_mode_on_a_local_server(client, engine: Engine, monkeypatch):
+    assert client.get("/api/scratch").status_code == 404                 # no dev headers
+    assert client.get("/api/scratch", headers=DEV).status_code == 404    # dev mode, but every role is the fake provider
+    assert client.post("/api/scratch", headers=DEV, json={"text": "x"}).status_code == 404
+    from engine import scratch
+    monkeypatch.setattr(scratch, "available", lambda cfg: None)
+    async def info(cfg):
+        return {"presets": {}}
+    monkeypatch.setattr(scratch, "info", info)
+    assert client.get("/api/scratch", headers=DEV).json() == {"presets": {}}
+    assert client.get("/api/scratch").status_code == 404                 # still never without dev mode

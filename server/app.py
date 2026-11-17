@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Str
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from engine import logs, picker
+from engine import logs, picker, scratch
 from engine import mods as mods_mod
 from engine.config import load_config
 from engine.pipeline import Engine
@@ -390,6 +390,25 @@ def update_settings(body: SettingsInput):
         return engine.update_settings(body.model_dump(exclude_none=True))
     except ValueError as e:
         raise HTTPException(422, str(e))
+
+
+# ---- the scratch pad (D326, engine/scratch.py): the box's model with no game around it; dev mode and a local server only --
+def _scratch_gate(request: Request) -> None:
+    if not dev_mode(request) or scratch.available(engine.cfg):
+        raise HTTPException(404, "no scratch pad here")
+
+
+@app.get("/api/scratch")
+async def scratch_info(request: Request):
+    _scratch_gate(request)
+    return await scratch.info(engine.cfg)
+
+
+@app.post("/api/scratch")
+async def scratch_run(body: scratch.ScratchInput, request: Request):
+    """Nothing kept: no store, no ledger, never the text in a log (one count-only line per call)."""
+    _scratch_gate(request)
+    return _sse(scratch.run(engine.cfg, body))
 
 
 # ---- the profile picker (Stage 3, engine/picker.py): the profiles, one's card, the switch -------------------

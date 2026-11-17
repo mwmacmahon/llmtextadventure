@@ -6,23 +6,27 @@ import { GamePage } from "./components/GamePage";
 import { DeathCardBody, Graveyard } from "./components/Graveyard";
 import { Home } from "./components/Home";
 import { Panels, Timeline } from "./components/Panels";
+import { ScratchPage } from "./components/ScratchPage";
 import { SettingsPage } from "./components/SettingsPage";
 import { prefs } from "./saves";
 
 // The pages, by hash: #/ home (the games), #/games/<name> a game's page (its saves, New game), #/g/<id> play,
-// #/settings Settings (#/settings/<id>: opened from that game, with its difficulty), #/graveyard (#/graveyard/<game>).
+// #/settings Settings (#/settings/<id>: opened from that game, with its difficulty), #/graveyard (#/graveyard/<game>),
+// #/scratch the scratch pad (D326: dev mode, a local server).
 type Route =
   | { page: "home" }
   | { page: "game"; name: string }
   | { page: "play"; id: string }
   | { page: "settings"; id: string | null }
-  | { page: "graveyard"; game: string | null };
+  | { page: "graveyard"; game: string | null }
+  | { page: "scratch" };
 
 function readRoute(): Route {
   const h = location.hash.replace(/^#/, "");
   let m: RegExpMatchArray | null;
   if ((m = h.match(/^\/g\/([^/?]+)/))) return { page: "play", id: decodeURIComponent(m[1]) };
   if ((m = h.match(/^\/graveyard(?:\/([^/?]+))?/))) return { page: "graveyard", game: m[1] ? decodeURIComponent(m[1]) : null };
+  if (/^\/scratch/.test(h)) return { page: "scratch" };
   if ((m = h.match(/^\/games\/([^/?]+)/))) return { page: "game", name: decodeURIComponent(m[1]) };
   if ((m = h.match(/^\/settings(?:\/([^/?]+))?/))) return { page: "settings", id: m[1] ? decodeURIComponent(m[1]) : null };
   return { page: "home" };
@@ -53,6 +57,7 @@ export default function App() {
         {route.page === "play" && <Game key={route.id} id={route.id} />}
         {route.page === "settings" && <SettingsPage key={route.id ?? ""} iid={route.id} />}
         {route.page === "graveyard" && <Graveyard key={route.game ?? ""} game={route.game} />}
+        {route.page === "scratch" && <ScratchPage />}
       </div>
     </div>
   );

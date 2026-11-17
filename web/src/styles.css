@@ -402,3 +402,13 @@ dl.score dd { margin: 0; font-family: var(--pixel-font); font-size: 15px; }
 .map-list ul, .map-spots { margin: 2px 0 0; padding-left: 16px; }
 .map-spots { margin-top: 8px; list-style: none; padding-left: 0; }
 .map-spots .here { color: var(--warn); }
+
+/* the scratch pad (D326) */
+.scratch-page { max-width: 1100px; }
+.scratch-params { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.scratch-params label { display: flex; flex-direction: column; gap: 2px; }
+.scratch-num { width: 7em; }
+.scratch-box { width: 100%; min-height: 50vh; resize: vertical; font-family: ui-monospace, Menlo, monospace; font-size: 13px; line-height: 1.45; }
+.scratch-system { width: 100%; resize: vertical; font-family: ui-monospace, Menlo, monospace; font-size: 13px; margin-bottom: 8px; }
+.scratch-actions { margin: 8px 0; }
+.scratch-reply, .scratch-reasoning pre { white-space: pre-wrap; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 13px; }
