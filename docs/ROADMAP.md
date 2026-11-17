@@ -612,10 +612,17 @@ endless ground, camps, wandering, invented places and ground changes held until 
   with no fight on, and one line looped the reading to its token limit.
 - **Marrowgate's setting out of the shared code (FN100): built 11-17**, text-identical (the full suite before and after).
   Each fantasy game now holds its own bestiary (FN112, 11-17): a second game's enemies cannot change another's fights.
-- **Parchment (FN101): built 11-17** (hidden, dev mode only): the map rolled at a new game, the player's place named
-  from the tile, the map in the side panel, no Watch, heat or renown; a turn that moves the player to a known place walks
-  the tile there and charges the walk (seen on Gemma). **Next:** the per-turn block, the "you do not know where that is"
-  question, spots inside a place; then gate 1.
+- **Parchment: built and played on Gemma, 11-17** (hidden, dev mode only; every step its own commit from the tag
+  `parchment-stretch-start-1117`; the calls made on Opus are listed for Fable's review in
+  `notes/HANDOFF-2026-11-18-for-fable.md`). Built: the game (FN101); the player on a tile and walking (FN30, FN31); the
+  models' per-turn block (FN32); the engine's question "you do not know where that is" (FN44, no buttons); spots and the
+  village's buildings (FN27); rolled names for places and people, kept in the save (FN108); journeys in legs with a
+  pre-filled Continue, events at the stops and the road dial (FN33 to FN35); wandering by a direction (FN37, part);
+  residents on first arrival, Parchment's own bestiary, the job board paid in the village, loot on every kill (FN62, FN63,
+  FN65, FN66, all in part); the village's people. Played: a gate-1 round and three gate-2 rounds on Gemma, each one's faults
+  fixed the same hour (FN113 to FN125). Model-facing text read cold before shipping, twice.
+- **Next:** gate 2 seen clean; then the owner's look (gate 1) and the rest of the slice (fetch and find jobs, shops, the
+  owner's open questions FN104, FN122).
 - **Names (FN108 to FN111): decided, not built.** Rolled from large word lists, several picks for a big name, per
   game, kept in the save; the lists checked against the game's own terms.
 - **Places the story makes (FN50 to FN55): designed.** Told of a place at all puts it on the map; a secret whereabouts

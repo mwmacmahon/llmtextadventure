@@ -56,10 +56,11 @@ Everything below this section is the page as it stood on 11-09 and is behind; it
 2. The map panel (FN20 to FN26). **Built**, seen on its demo page; the owner's look at a real rolled map in a game is gate 1.
 2a. Marrowgate's setting out of the shared fantasy code (FN100) and the Parchment game (FN101): **built 11-17** on Opus, with the
     design calls listed for Fable's review. Parchment walks on the map on Gemma; it is on the test server (:8018) in dev mode.
-3. The player on a tile and travel to a named place (FN30, FN31: **built 11-17**); **next:** the per-turn block (FN32), the "you do not
-   know where that is" question (FN44), spots inside a place (FN27). Gate 1: the owner looks at a real game with the map.
-4. Journeys in legs, the road dial, the engine's questions (FN33 to FN35, FN39), played on Gemma and read. Gate 2.
-4a. The name roller (FN108), before any content is written.
+3. The player on a tile, travel, the block, the question, spots (FN30 to FN32, FN44, FN27): **built 11-17**. Gate 1: the owner
+   looks at a real game with the map (Parchment on :8018 in dev mode).
+4. Journeys in legs, the road dial (FN33 to FN35): **built 11-17**, three gate-2 rounds on Gemma, faults fixed each time; the
+   engine's questions with buttons (FN39) not built. Gate 2.
+4a. The name roller (FN108): **built 11-17** (places and people).
 5. The slice: the village, three places, the job board, loot, character creation (FN60 to FN63, FN66, FN71, FN80).
 6. Its first player plays fifteen minutes (FN81, FN82). Gate 3.
 7. The ground beyond in chunks, long journeys, wandering (FN13 to FN15, FN36, FN37).
