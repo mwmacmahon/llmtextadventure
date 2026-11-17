@@ -142,7 +142,7 @@ def use(game: Any, state: FantasyState, args: dict) -> tuple[FantasyState, Any]:
         p.hp += n
         if p.peril is not None and p.peril.kind == "bleeding":
             p.peril = None
-        line = f"{e['name']}: {n} hit points back.{news}"
+        line = (f"{e['name']}: {n} hit points back." if n else f"{e['name']}: no hurt to heal; spent.") + news
         told = "the hurt eases" + (f", {u['feel']}" if u.get("feel") else "")
     elif kind in ("buff", "power"):
         cname = str(u.get("condition") or e["name"])
