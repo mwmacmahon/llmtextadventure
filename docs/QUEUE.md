@@ -10,6 +10,28 @@ the evidence behind it is the state page, `docs/STATE-2026-11-08.md` (published:
 Split out of the roadmap on 2026-11-09 (the owner: the roadmap had become a short-term planning document and showed
 "basically nothing left"). Everything here was the roadmap's "Where we are", "Landed today" and Stage 5 queue.
 
+## Active threads (2026-11-17, after the move to the Mac mini)
+
+The project moved from the laptop to the Mac mini (dadmini) on the night of 11-16. Three sessions work on it there, each
+in its own worktree, all sharing `notes/`, the store and the web client. This table is the one place that says who has
+what; whoever changes a thread's state changes its row in the same commit. The work itself stays in the registers named.
+
+| Thread | Session | Register | State | Next | Waiting on the owner |
+|---|---|---|---|---|---|
+| The next fantasy game (Parchment) and the world map: engine, reading, registers | "Fantasy Text Adventure - dadmini" | `notes/FANTASY_ROADMAP.md` (FN ids); ROADMAP area 19 | the contract, the start-area generator, paths and the where probe are built and pushed; no game calls the map | housekeeping in `notes/` (the decision numbers that clash, the design files made true), then Marrowgate's setting out of the shared code (FN100), then the new game's folder (FN101) | the questions listed in `notes/HANDOFF-2026-11-16-fantasy-main.md` section 5; none blocks |
+| The map panel (web) | "Map panel continuation" | the same work list, FN20 to FN26 | built, merged, checked on the mini on its demo page; never run in a live game | nothing until a game sends the map; then the live wiring | redraw four weak icons? delete the old panel branch? a look on a phone |
+| The hidden game and Ask mode | "Fantasy Text Adventure continuation 2" | its own roadmap (gitignored); ROADMAP areas 2 and 15 | the owner's rulings on the clock, the week's chart and the two windows are recorded; none built | one design for the clock, the chart and the windows, with a mock-up | whether to write that design now or after more notes |
+| The machine: servers, the box, sign-in | this session, as it comes up | `docs/SERVERS.md` | :8013, :8014 and :8016 run on the mini, started by hand; the box answers by its model port and by ssh | launchd services so a reboot brings them back, if the owner wants them | that yes or no |
+| Hosting by name (HTTPS on the owner's domain, a reverse proxy) | another chat of the owner's, not one of the three above | that chat's tracker | the dev server answers the names (`DEV_ALLOWED_HOSTS`); the address does not exist yet | - | - |
+
+Rules between the threads, so they do not collide:
+- `notes/DECISIONS.md` is shared. The fantasy thread writes plain D numbers; the hidden game writes its own C-suffixed
+  numbers. (Two sets of D311 to D313 were written on 11-16; the fantasy thread renumbers its own.)
+- The web client's shared files (`App.tsx`, `Panels.tsx`, `api.ts`, `styles.css`) are touched by all three. Small commits,
+  and pull `2.0` before starting on them.
+- A session commits in its own worktree and fast-forwards local `2.0`; pushing is on the owner's word.
+- The fantasy order below stands; its steps 0 to 2 are done.
+
 ## Where we are (2026-11-16)
 
 Everything below this section is the page as it stood on 11-09 and is behind; it is kept until the next full re-cut.
