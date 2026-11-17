@@ -18,6 +18,7 @@ import secrets
 from pathlib import Path
 from typing import Any
 
+from engine import names as rn
 from engine import worldmap as wm
 from engine.game import ListPanel, MapPanel, UISchema
 from games.fantasy.game import FantasyGame
@@ -53,9 +54,29 @@ class ParchmentGame(FantasyGame):
         start = sc.get("start") or {}
         if start.get("home"):
             seed = int(setup.get("map_seed") or secrets.randbelow(2 ** 31))
+            lists = self.name_lists()
+            if lists and not setup.get("written_names"):         # FN108: every name the engine makes is rolled from this seed
+                start = rn.roll_start(start, lists, seed)        # (written_names: the stand-ins, for tests and the debug room)
             state.world = wm.new_world(start, seed, str(sc.get("id") or ""))
             state.player.location = self.where(state)
+            state.city.city_name = state.player.location          # the village's rolled name is the "city" the fantasy's lines name
+            from games.fantasy.state import FoundPlace
+            home = self.where(state)
+            for spot in start.get("home_spots") or []:     # FN60: the village's buildings, spots of the village (the cold read, 11-17)
+                state.found_places.append(FoundPlace(name=str(spot), within=home))
         return title, state
+
+    def name_lists(self) -> dict:
+        """The scenario's name lists (`names.yml` beside the scenarios), checked; {} when there are none."""
+        import yaml
+        path = Path(self.content_dir) / "names.yml"
+        if not path.exists():
+            return {}
+        lists = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        problems = rn.check(lists)
+        if problems:
+            raise ValueError("names.yml: " + "; ".join(problems))
+        return lists
 
     def where(self, state: FantasyState) -> str:
         """The player's place as a name, worked out from the tile (R-G3): the place on it, else the region, else the open
@@ -101,11 +122,88 @@ class ParchmentGame(FantasyGame):
                 s.player.location = here
         return s
 
+    # ---- what the models are told (FN32; MAP_DESIGN 6.7) ----------------------------------------------------------------
+    def _night(self, s: FantasyState) -> bool:
+        return not (360 <= s.clock.minute < 1200)
+
+    def _spots(self, s: FantasyState) -> list[str]:
+        """FN27: the spots of the place the tile is on: the rooms and corners the story made inside it (the referee's
+        `new place` rows, a found place within it). Moving between them is no walk; the tile stays."""
+        here = self.where(s)
+        return [f.name for f in s.found_places if f.name.lower() != here.lower() and self._same_spot(s, f.name, here)]
+
+    def _map_lines(self, s: FantasyState) -> list[str]:
+        if not s.world:
+            return []
+        here, at = self.where(s), s.player.location or ""
+        where = here if not at or at.lower() == here.lower() else f"{at}, at {here}"
+        lines = wm.block(s.world, where, self._night(s))
+        spots = self._spots(s)
+        if spots:
+            lines.insert(1, "Here: " + ", ".join([here, *spots]) + ".")
+        return lines
+
+    def _places_line(self, s: FantasyState) -> str:
+        """The reading's and the referee's places: the map's block in the Places line's stead."""
+        return "\n".join(self._map_lines(s)) if s.world else super()._places_line(s)
+
+    def _ref_places_line(self, s: FantasyState) -> str:
+        base = super()._ref_places_line(s)
+        if not s.world:
+            return base
+        old = "Places: " + ", ".join(s.places) + ". "
+        rest = base[len(old):] if base.startswith(old) else base
+        p = s.player
+        return ("\n".join(self._map_lines(s)) + "\nA move or a location value is one of the Places, or one of the Here line's. "
+                "A spot or room inside a listed place (a table, the stairs, the cellar) is that place, or its own Here entry when the "
+                "Here line has it. A place the prose introduces that lies inside none of them (a clearing in the wood, a house in the "
+                "hills) is new: new place value=<its name> field=<the listed place it is in or near>, then the move. "
+                f"new place value=<a listed place>, no field: the prose names a listed place {p.name} has not been to; the game marks "
+                "it heard of.")
+
+    def render_bulletin(self, state: FantasyState, player_text: str, engine: bool = False) -> str:
+        """The narrator's block, with where the player stands on the map and what is near."""
+        text = super().render_bulletin(state, player_text, engine)
+        lines = [ln for ln in self._map_lines(state) if ln.startswith(("Where:", "Near:", "Roads and rivers:"))]
+        return text + ("\n" + "\n".join(lines) if lines else "")
+
+    # ---- the engine asks (FN44; MAP_DESIGN 6.3, 6.4) ---------------------------------------------------------------------
+    NOT_KNOWN = ("You do not know where {name} is, so you have not set off. Ask someone the way, or name a direction to head off in "
+                 "and look for it.")
+
+    def ask_first(self, state: FantasyState, adj: Any, player_text: str = "") -> str | None:
+        """The reading says the player sets out for somewhere the map does not hold and that is no part of where they stand:
+        nobody moves, and the player is asked (the owner, 11-15: "not on the map is basically a dealbreaker"). Assumes the
+        reading leaves `goes_to` empty for a move inside the place (the where probe: right on most lines on Gemma); a wrong
+        one asks about a loft. Counted in the ledger (`ask_first`). Not in a fight: leaving a fight is Flee's."""
+        from engine.roles import destination
+        s = state
+        if not s.world or s.player.fighting:
+            return None
+        here = self.where(s)
+        for i in getattr(adj, "intents", None) or []:
+            d = destination(i).strip()
+            if not d or d.lower() in (here.lower(), (s.player.location or "").lower()) or wm.place_named(s.world, d):
+                continue
+            if any(f.name.lower() == d.lower() for f in s.found_places) or self._same_spot(s, d, here):
+                continue
+            if d.lower() in [x.lower() for x in wm.DIRECTIONS] or wm.line_named(s.world, d):
+                continue                                  # a direction, a road or the river is wandering (FN37), not a place
+            return self.NOT_KNOWN.format(name=d)
+        return None
+
     def ui(self, state: FantasyState) -> UISchema:
         """The family's panels, with the world map in the Places list's stead when the save has a map."""
         out = super().ui(state)
         if state.world:
-            panel = MapPanel(**wm.panel(state.world))
+            data = wm.panel(state.world)
+            at = (state.player.location or "").lower()
+            spots = self._spots(state)
+            if spots:
+                data["spots"] = [{"name": n, "here": n.lower() == at} for n in [self.where(state), *spots]]
+                if not any(x["here"] for x in data["spots"]):
+                    data["spots"][0]["here"] = True
+            panel = MapPanel(**data)
             out.panels = [panel if isinstance(w, ListPanel) and w.title == "Places" else w for w in out.panels]
         return out
 

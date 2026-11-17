@@ -634,6 +634,12 @@ def place_named(world: dict, name: str) -> str | None:
     return words[0] if len(words) == 1 else None
 
 
+def line_named(world: dict, name: str) -> str | None:
+    """A road, lane or river the name means (whole name, case and "the" aside), or None."""
+    want = _plain(name)
+    return next((lid for lid, ln in world["lines"].items() if ln.get("name") and _plain(ln["name"]) == want), None)
+
+
 def walk_to(world: dict, pid: str, turn: int = 0, night: bool = False) -> dict | None:
     """The player walks to a known place by the quickest way they know: the tile moves, the ground either side of the path
     is lit, and the place becomes one they have been to. Returns the path and its minutes, or None when there is no way
@@ -665,6 +671,75 @@ def walk_to(world: dict, pid: str, turn: int = 0, night: bool = False) -> dict |
     if k["state"] != "been":
         k["state"], k["been_turn"] = "been", turn
     return {"path": [list(t) for t in path], "minutes": walk_minutes(world, path, night) if len(path) > 1 else 0}
+
+
+# ---- what the models are told each turn (MAP_DESIGN 6.7, draft 5; FN32)
+
+GROUND_WORDS = {"m": "on open meadow", "f": "among fields", "s": "on the shore", "w": "under bright trees", "W": "under dark trees",
+                "h": "in the hills", "b": "in the bog", "M": "on a mountainside", "S": "in snow", "B": "on burnt ground",
+                "R": "among rubble", "L": "on lava", "~": "in the water"}
+COMPASS8 = ["north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"]
+DIRECTIONS = COMPASS8 + ["upstream", "downstream", "back"]
+PLACES_SHOWN = 16      # R18: the reading sees at most sixteen places at a time; the engine still matches against all
+
+
+def walk_word(minutes: int) -> str:
+    """R13's walk words: the models get these, never minutes."""
+    return "a short walk" if minutes <= 30 else "an hour or so" if minutes <= 90 else "half a day" if minutes <= 360 else "a day or more"
+
+
+def compass(a, b) -> str:
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    if dx == 0 and dy == 0:
+        return ""
+    ang = (math.degrees(math.atan2(dx, -dy)) + 360) % 360       # north is -y on the map
+    return COMPASS8[int((ang + 22.5) // 45) % 8]
+
+
+def nearby(world: dict, night: bool = False) -> list[tuple[str, int, str]]:
+    """Known places other than where the player stands, nearest walk first: (name, minutes, which way). A place with no
+    way the player knows, or pinned beyond the rolled ground, is left out."""
+    here = tuple(world["player"]["tile"])
+    out = []
+    for pid in world["known"]["places"]:
+        p = world["places"].get(pid)
+        if p is None or p.get("removed") or p.get("pinned") or p["shape"] != "point":
+            continue
+        t = tuple(p["tile"])
+        if t == here:
+            continue
+        path = find_path(world, here, t)
+        if path is None:
+            continue
+        out.append((p["name"], walk_minutes(world, path, night), compass(here, t)))
+    return sorted(out, key=lambda x: x[1])
+
+
+def block(world: dict, where: str, night: bool = False) -> list[str]:
+    """The map's lines for the models (the narrator, the reading, the referee alike): where the player is and on what
+    ground; what is near and which way; the places, roads and rivers they know; the directions. The engine's account of
+    the ground, as the hit points are the engine's account of the body: nothing in it is an instruction."""
+    x, y = world["player"]["tile"]
+    ground = GROUND_WORDS.get(ground_at(world, x, y) or "", "")
+    rid = region_at(world, x, y)
+    region = world["places"][rid]["name"] if rid and rid in world["places"] and _plain(world["places"][rid]["name"]) != _plain(where) else ""
+    lines = [f"Where: {where}" + (f", in {_lower_the(region)}." if region else f", {ground}." if ground else ".")]
+    near = nearby(world, night)
+    close = [n for n in near if n[1] <= 90][:6]
+    if close:
+        lines.append("Near: " + "; ".join(f"{name}, {walk_word(m)} {way}".rstrip() for name, m, way in close) + ".")
+    shown = [n[0] for n in near][:PLACES_SHOWN - 1]
+    regions = [world["places"][pid]["name"] for pid in world["known"]["places"]
+               if pid in world["places"] and world["places"][pid]["shape"] != "point"]
+    home = world["places"][world["home"]]["name"]
+    names = list(dict.fromkeys([where, *shown, *regions, home]))[:PLACES_SHOWN]
+    lines.append("Places: " + ", ".join(names) + ".")
+    roads = [ln["name"] for lid, ln in world["lines"].items() if ln.get("name") and (lid in world["known"]["lines"] or ln["kind"] == "river"
+                                                                                   and any(is_lit(world, *t) for t in ln["tiles"]))]
+    if roads:
+        lines.append("Roads and rivers: " + ", ".join(dict.fromkeys(roads)) + ".")
+    lines.append("Directions: " + ", ".join(DIRECTIONS) + ".")
+    return lines
 
 
 # ---- what the browser is sent

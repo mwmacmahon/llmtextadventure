@@ -1065,6 +1065,14 @@ class Engine:
             adj, asked = until_when(game, state, adj, player_text or "")
             if asked:
                 ledger("until_when", {"task": adj.summary, "asked": asked})
+        # FN44 (MAP_DESIGN 6.4): a game may ask the player first, plainly, instead of guessing (Parchment: "You do not know where
+        # that is."); a question turn moves nothing and no time passes, the same as "until when"
+        if command is None and adj is not None and adj.kind == "action":
+            q = _hook(game, "ask_first", state, adj, player_text or "", default=None)
+            if q:
+                ledger("ask_first", {"text": player_text, "question": q})
+                adj = adj.model_copy(update={"kind": "clarify", "clarify_question": q, "time_minutes": 0,
+                                             "intents": [i.model_copy(update={"check": None}) for i in adj.intents], "commands": []})
         # ---- 1c. typed levers: previewed now, in order, played by the narrator, committed after the prose
         #          unless the referee reports one was not completed (DESIGN2 §6, LOG §12)
         levers: list[PendingLever] = []
