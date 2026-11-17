@@ -85,6 +85,8 @@ class ParchmentGame(FantasyGame):
             home = self.where(state)
             for spot in start.get("home_spots") or []:     # FN60: the village's buildings, spots of the village (the cold read, 11-17)
                 state.found_places.append(FoundPlace(name=str(spot), within=home))
+            if start.get("start_spot"):                      # FN131 (the owner, 11-17: "choice paralysis is our enemy"): at the tavern's door
+                state.player.location = str(start["start_spot"])
             jb.setup(sc, state)                              # FN62, FN63: the board
         return title, state
 
@@ -350,6 +352,25 @@ class ParchmentGame(FantasyGame):
                     self._arrive(s, w, pid)
         return s, w
 
+    def walk_minutes(self, state: FantasyState, adj: Any) -> int | None:
+        """FN141 (the owner's round, 11-17, T14: "head back to the village" charged the reading's hour for a four-minute leg):
+        on a turn the engine walks the player (a journey's leg, a short walk, a direction), the walk's own minutes are the
+        turn's. The pipeline sets the reading's minutes to what this returns (0) and the world turn charges the walk."""
+        s = state
+        if not s.world or s.player.fighting or s.player.fate or s.player.peril is not None:
+            return None
+        pid = self._journey_dest(s, adj)
+        if pid is not None:
+            p = s.world["places"][pid]
+            if p["shape"] != "point":
+                return 0
+            here = tuple(s.world["player"]["tile"])
+            return 0 if tuple(p["tile"]) != here and wm.find_path(s.world, here, tuple(p["tile"])) is not None else None
+        way = self._direction(adj)
+        if way and wm.toward(s.world, way) != (None, None):
+            return 0
+        return None
+
     def _charge(self, s: FantasyState, w: Any, minutes: int) -> None:
         """A walk's minutes beyond the turn's own: the clock moved here and reported to the pipeline (FN120, the gate-2 rounds:
         a 13-minute walk moved the clock 5, because the pipeline's extra minutes are a report, the clock is the game's)."""
@@ -374,9 +395,12 @@ class ParchmentGame(FantasyGame):
         if lines:
             w.directives.insert(1 if w.directives else 0, " ".join(lines) + " They are there as the player arrives.")
 
-    def _leg(self, s: FantasyState, w: Any, rng: Any, turn: int, adj: Any = None) -> None:
+    def _leg(self, s: FantasyState, w: Any, rng: Any, turn: int, adj: Any = None, charge: bool = True) -> int:
         """Walk the held journey's next leg now, before the prose, and tell the narrator what it is (R1: the leg's end in one
-        line). On quiet roads the legs are walked on until one has an event or the arrival (R16)."""
+        line). The walk goes on past every waypoint where nothing happens (FN140, the owner's round of 11-17: "six stops to go
+        four character widths through safe terrain"; a stop must carry something): a journey stops only where its roll says
+        something happens, or at the end. Returns the minutes walked; `charge` moves the clock by them (the Continue command
+        hands them to the pipeline instead)."""
         night = self._night(s)
         j = s.world["player"]["journey"]
         start = self.where(s)
@@ -384,11 +408,11 @@ class ParchmentGame(FantasyGame):
         while True:
             leg = wm.walk_leg(s.world, turn, night)
             if leg is None:
-                return
+                return 0
             total += leg["minutes"]
             event = None if leg["arrived"] else wm.leg_event(rng, leg["stop"][0], self.roads(s), night)
             told.append((leg, event))
-            if leg["arrived"] or event or self.roads(s) != "quiet":
+            if leg["arrived"] or event:
                 break
         leg, event = told[-1]
         s.flags["leg_walked"] = True                      # R1: this turn's move is the leg's; after_turn keeps the tile's name
@@ -400,14 +424,16 @@ class ParchmentGame(FantasyGame):
             line = f"This turn {n} walks from {frm} and arrives at {dest}: the last of the way, then {dest} as {n} sees it."
             arrived_at = j["to"]
         elif leg["stop"][0] == "midpoint":
-            line = f"This turn {n} walks from {frm} and stops half way; {dest} is still {wm.walk_word(leg['left'])} on. Tell the walk and the place {n} stops."
+            line = (f"This turn {n} walks from {frm} and stops half way; {dest} is still {wm.walk_word(leg['left'])} on, and {n} does not reach it "
+                    f"this turn. Tell the walk and the place {n} stops.")
         else:
-            line = (f"This turn {n} walks from {frm} and stops at {lo(leg['stop'][1])}; {dest} is still {wm.walk_word(leg['left'])} on. "
-                    f"Tell the walk and the place {n} stops.")
+            line = (f"This turn {n} walks from {frm} and stops at {lo(leg['stop'][1])}; {dest} is still {wm.walk_word(leg['left'])} on, and {n} "
+                    f"does not reach it this turn. Tell the walk and the place {n} stops.")
         if event == "sight":
-            line += f" In view there: {rng.choice(self.SIGHTS)}. One detail, then stop."
+            line += f" Something happens there: {self._happening(s, rng, 'sight', night)}. Tell the happening in a line or two, then stop."
         elif event == "something small":
-            line += f" Off the path something small {rng.choice(['rustles', 'glints'])}; {n} cannot yet tell what. Show only that, and stop."
+            line += (f" There, {self._happening(s, rng, 'small', night)}. Tell the walk, then that; do not say what it is and do not have {n} "
+                     "touch it; stop.")
         elif event == "trouble":
             spawned = self._trouble(s, rng)
             if spawned:
@@ -418,8 +444,31 @@ class ParchmentGame(FantasyGame):
         w.mechanics.append(f"Journey: {start} to {leg['stop'][1] if not leg['arrived'] else j['label']}, {total} minutes"
                            + (f"; {event}" if event else "") + ".")
         mins = int(getattr(adj, "time_minutes", 0) or 0) if adj is not None else 0
-        self._charge(s, w, max(0, total - mins))
+        if charge:
+            self._charge(s, w, max(0, total - mins))
         s.flags["prefill"] = "" if leg["arrived"] else self.CONTINUE.format(label=j["label"])
+        return total
+
+    def road_events(self) -> dict:
+        """FN140: the library of small happenings at a journey's stops (`road_events.yml` beside the scenarios): for each
+        kind (sight, small) lists by ground (road, wood, water, open, any) and `night`. {} when the game has none."""
+        import yaml
+        path = Path(self.content_dir) / "road_events.yml"
+        if not path.exists():
+            return {}
+        return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+    def _happening(self, s: FantasyState, rng: Any, kind: str, night: bool) -> str:
+        """One happening for a stop, from the library by the ground the stop is on; the built-in lists when there is none."""
+        lib = (self.road_events().get(kind) or {})
+        x, y = s.world["player"]["tile"]
+        on_road = any(tuple(t) == (x, y) for ln in s.world["lines"].values() if ln["kind"] != "river" for t in ln["tiles"])
+        g = wm.ground_at(s.world, x, y) or ""
+        ground = "road" if on_road else "wood" if g in ("w", "W") else "water" if g in ("~", "b", "s", "B") else "open"
+        pool = [*(lib.get(ground) or []), *(lib.get("any") or [])] + (list(lib.get("night") or []) if night else [])
+        if not pool:
+            pool = self.SIGHTS if kind == "sight" else ["something small rustling", "something small glinting"]
+        return str(rng.choice(pool)).strip().rstrip(".").replace("the traveller", s.player.name)
 
     def _trouble(self, s: FantasyState, rng: Any) -> str:
         """FN34's trouble: the encounter generator's located draw for the ground here, sized to the party, filed as hostile
@@ -448,8 +497,17 @@ class ParchmentGame(FantasyGame):
         hostile = any(q.status == "alive" and q.attitude <= -3 and self._same_spot(s, q.location, s.player.location) for q in s.people)
         return j if j and not s.player.fighting and not hostile and not s.player.fate else None
 
+    def _board_here(self, s: FantasyState) -> bool:
+        """FN137: the board can be read: the player is in the village, not fighting, and some job on it is not known yet."""
+        return bool(s.world) and not s.player.fighting and not s.player.fate and \
+            s.world["player"]["tile"] == s.world["places"][s.world["home"]]["tile"] and jb.board_unread(s)
+
     def commands(self, state: FantasyState) -> list:
         out = list(super().commands(state))
+        if self._board_here(state):
+            from engine.game import CommandSpec
+            out.append(CommandSpec(id="read_board", label="Read the board", mode="narrated",
+                                   hint="Read the papers pinned to the board by the tavern door: the village's jobs."))
         j = self._journey_open(state)
         if j:
             from engine.game import CommandSpec
@@ -465,6 +523,8 @@ class ParchmentGame(FantasyGame):
         return super().typed_command(state, text)
 
     def run_command(self, state: FantasyState, command_id: str, args: dict[str, Any]):
+        if command_id == "read_board":
+            return self._read_board(state)
         if command_id != "continue_journey":
             return super().run_command(state, command_id, args)
         from engine.game import CommandResult
@@ -477,10 +537,29 @@ class ParchmentGame(FantasyGame):
         w = WorldTurn()
         rng = random.Random(f"{s.world['seed']}:{s.clock.day}:{s.clock.minute}:leg")
         label = j["label"]
-        self._leg(s, w, rng, 0)
+        minutes = self._leg(s, w, rng, 0, charge=False)
+        # FN141 (the owner's round, T15: "a minute" shown for a leg that moved the clock seven): the leg's minutes are the
+        # command's own, so the turn shows them and the clock moves once
         return s, CommandResult(label="Continue", player_line=f"I go on toward {label}.", summary=f"{s.player.name} goes on toward {label}.",
-                                directive=" ".join(w.directives), text=" ".join(w.mechanics), minutes=0,   # the leg moved the clock itself
+                                directive=" ".join(w.directives), text=" ".join(w.mechanics), minutes=max(1, minutes),
                                 referee_skip=["location"])
+
+    def _read_board(self, state: FantasyState):
+        """FN137: the board by the tavern door read. Its jobs become the player's to see (the Quests panel), and the narrator
+        is told what the papers say."""
+        from engine.game import CommandResult
+        s = state.model_copy(deep=True)
+        if not self._board_here(s):
+            return state, CommandResult(ok=False, label="Read the board", text="There is no board here with anything new on it.")
+        papers = jb.read_board(s)
+        n = s.player.name
+        say = ("; ".join(papers) + ".") if papers else "nothing still wanted."
+        return s, CommandResult(label="Read the board", player_line="I read the papers on the board.",
+                                summary=f"{n} reads the papers pinned to the board by the tavern door.",
+                                directive=(f"{n} reads the board by the tavern door. The papers pinned there say: {say} Tell each paper in one "
+                                           f"line, as its poster might word it, keeping the price; add no papers and no details; {n} takes "
+                                           "nothing yet."),
+                                text="The board: " + say, minutes=2)
 
     def ui(self, state: FantasyState) -> UISchema:
         """The family's panels, with the world map in the Places list's stead when the save has a map; a journey's next step
@@ -501,7 +580,11 @@ class ParchmentGame(FantasyGame):
                 data["journey"] = {"to": j["to"], "label": self.CONTINUE.format(label=j["label"]),
                                    "path": j["path"], "stops": [j["path"][st[0]] for st in j["stops"]]}
             panel = MapPanel(**data)
-            out.panels = [panel if isinstance(w, ListPanel) and w.title == "Places" else w for w in out.panels]
+            rest = [w for w in out.panels if not (isinstance(w, ListPanel) and w.title == "Places")]
+            # FN132 (the owner, 11-17: "buried at the bottom of a long scroll"): the map right after the strip, the meters and
+            # the commands, before the sheet
+            at = next((i + 1 for i, w in enumerate(rest) if getattr(w, "type", "") == "commands"), min(3, len(rest)))
+            out.panels = rest[:at] + [panel] + rest[at:]
         return out
 
 

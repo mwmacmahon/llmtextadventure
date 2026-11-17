@@ -690,6 +690,7 @@ def walk_to(world: dict, pid: str, turn: int = 0, night: bool = False) -> dict |
 
 LEG_ABOVE = 15           # a walk longer than this many minutes is a journey in legs; a shorter one is one turn
 MAX_STOPS = 3            # at most three stops and the arrival
+STOP_AFTER = 10          # FN140: no stop sooner than this many minutes out
 STOP_STRENGTH = {"place": 6, "crossing": 5, "crossroads": 4, "edge": 3, "midpoint": 1}
 EVENT_CHANCE = {"crossing": 40, "crossroads": 35, "edge": 30, "place": 25, "midpoint": 10}
 ROADS = {"quiet": (0.5, 0.10), "written": (1.0, 0.25), "wild": (1.5, 0.40)}   # FN35: chance multiplier, share that is trouble
@@ -718,6 +719,10 @@ def _stops(world: dict, path: list) -> list[tuple[int, str, str]]:
             if here and len(names | {here.get("name")}) >= 3:
                 found.append((i, "crossroads", f"where {_lower_the(here['name'])} meets another way"))
         prev_region = reg
+    # FN140 (the owner's round, 11-17: a stop "one minute" out of the place just left): no stop in the first STOP_AFTER
+    # minutes, nor in the first quarter of the way
+    first = max(1, len(path) // 4)
+    found = [f for f in found if f[0] >= first and walk_minutes(world, path[:f[0] + 1]) >= STOP_AFTER]
     if not found and len(path) > 6:
         found.append((len(path) // 2, "midpoint", "half way"))
     best = sorted(found, key=lambda f: -STOP_STRENGTH[f[1]])[:MAX_STOPS]

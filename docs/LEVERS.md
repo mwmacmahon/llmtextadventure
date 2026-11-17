@@ -959,8 +959,8 @@ list is the word guard `lever-phrases` (§8); the street texture gap is the game
 
 - **Levels:** `quiet`, `written` (the default), `wild`, chosen at character creation in Parchment (setup field `roads`),
   kept in the save's flags. It changes only what happens between places: the chance of an event at a journey's stop
-  (times 0.5, 1, 1.5) and the share of those that are trouble (10, 25, 40 per cent); on `quiet` the legs are walked on
-  until one has an event or the arrival (R16).
+  (times 0.5, 1, 1.5) and the share of those that are trouble (10, 25, 40 per cent). Since 11-17 (FN140) every dial walks
+  on past a stop where nothing happens (it was `quiet` only, R16): a journey stops only where something happens, or at the end.
 - **Set in:** the player's choice; not in Settings yet, not in any profile.
 - **Why it exists:** the owner, 11-15: "how varied the travel experience is as a separate difficulty style slider at
   character creation ... do you want to fight a lot along the way or get to where you're going basically".
@@ -972,7 +972,22 @@ list is the word guard `lever-phrases` (§8); the street texture gap is the game
 
 - **Set in:** `engine/worldmap.py`, the same for every scenario.
 - **Levels:** a crossing 40, a crossroads 35, a region's edge 30, a place passed 25, half way 10 (per hundred, before the
-  dial); night adds 10. A walk over 15 minutes is a journey; at most three stops and the arrival.
+  dial); night adds 10. A walk over 15 minutes is a journey; at most three waypoints and the arrival. Since 11-17
+  (FN140): no waypoint in the first `STOP_AFTER` (10) minutes or the first quarter of the path, and a waypoint is a stop
+  only when its roll says something happens there (else the walk goes on). What happens at a sight or a small find is
+  picked from the game's library (Parchment: `road_events.yml`, by the ground: road, wood, water, open, any, night).
 - **Why it exists:** MAP_DESIGN 6.5 (the owner, 11-15: "river crossings, crossroads etc have highest chance of events").
-- **Measured:** nothing; first guesses.
+- **Measured:** the owner's own round, 11-17 (f9c7bfaa5c38): every waypoint was a stop, most with nothing at them; a
+  1.5 km walk stopped half way; a stop came one minute out of the ford. "Six stops to go four character widths through safe
+  terrain, ridiculous"; a stop must carry something ("you're at the bridge and see a deer, which bolts").
+- **Helped / did not:** the walk-on rule is new on 11-17; not played yet.
+
+### The getting-away roll (`combat.run_fight_command` Flee, FN134)
+
+- **Set in:** `games/fantasy/combat.py`, the family's (every fantasy game).
+- **Levels:** d20 + DEX against 12, plus 2 for each foe in reach after the first, at most 16; a natural 20 always gets
+  away, a 1 never. A success: away clean, no blows. A failure: one free blow from each foe in reach (at most two of a band), as before.
+- **Why it exists:** the owner, 11-17: "Running away should not always give everyone a free attack, let's roll a dex roll
+  or something to see if you can slip away cleanly first."
+- **Measured:** a test (40 seeded runs, both outcomes seen). Not played yet.
 - **Helped / did not:** not known yet.

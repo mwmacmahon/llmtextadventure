@@ -46,7 +46,8 @@ def setup(sc: dict, s: FantasyState) -> None:
             continue
         jobs.append({"id": f"job_{n + 1}", "form": form, "at": str(j.get("at") or ""), "entry": str(j.get("entry") or ""),
                      "pay": int(j.get("pay") or 0), "each": int(j.get("each") or 0), "who": str(j.get("who") or ""),
-                     "line": str(j.get("line") or ""), "title": title, "status": "open", "killed": 0, "paid": 0})
+                     "line": str(j.get("line") or ""), "title": title, "status": "open", "killed": 0, "paid": 0,
+                     "giver": str(j.get("giver") or ""), "known": False})
     s.flags["jobs"] = jobs
     s.flags["residents"] = {}
     sync_threads(s)
@@ -104,11 +105,11 @@ def update(game: Any, s: FantasyState) -> list[str]:
             continue
         if j["form"] == "clear" and _dead(s, residents.get(j["at"], [])):
             j["status"] = "done"
-            out.append(f"Job done: {j['title']}. {j['who'][:1].upper() + j['who'][1:]} will pay in the village.")
+            out += [f"Job done: {j['title']}. {j['who'][:1].upper() + j['who'][1:]} will pay in the village."] if known(s, j) else []
         elif j["form"] == "kill" and _dead(s, [x for x in residents.get(j["at"], []) if (q := s.person(x)) is not None
                                               and q.combat is not None and q.combat.block == j["entry"]]):
             j["status"] = "done"
-            out.append(f"Job done: {j['title']}. {j['who'][:1].upper() + j['who'][1:]} will pay in the village.")
+            out += [f"Job done: {j['title']}. {j['who'][:1].upper() + j['who'][1:]} will pay in the village."] if known(s, j) else []
     sync_threads(s)
     return out
 
@@ -165,6 +166,8 @@ def pay(s: FantasyState) -> list[str]:
     if at_home:
         gold = s.item("gold")
         for j in jobs:
+            if not known(s, j):                           # FN137: a job not heard of is not paid until it is
+                continue
             owed = j["pay"] if j["status"] == "done" else 0
             owed += max(0, j["killed"] - j["paid"]) * j["each"] if j["form"] == "bounty" else 0
             if owed and gold is not None:
@@ -178,11 +181,39 @@ def pay(s: FantasyState) -> list[str]:
     return out
 
 
+def known(s: FantasyState, j: dict) -> bool:
+    """FN137 (the owner's round, 11-17: "I started with a bunch of quests despite meeting no NPCs"): a job is the player's to
+    see once the board has been read (the Read the board command) or its giver met. A save from before has no `known`: known."""
+    if j.get("known", True):
+        return True
+    q = s.person(j["giver"]) if j.get("giver") else None
+    return q is not None and bool(q.met)
+
+
+def read_board(s: FantasyState) -> list[str]:
+    """The board read: every job on it known. Returns the papers as lines, for the narrator."""
+    out = []
+    for j in s.flags.get("jobs") or []:
+        if j["status"] == "open":
+            out.append(f"{j['title']}: {j['line']}" + (f", {j['pay']} gold" if j["pay"] else "") + f", posted by {j['who']}")
+        j["known"] = True
+    sync_threads(s)
+    return out
+
+
+def board_unread(s: FantasyState) -> bool:
+    return any(not known(s, j) for j in s.flags.get("jobs") or [])
+
+
 def sync_threads(s: FantasyState) -> None:
-    """The board as the player's threads (the Quests panel), rewritten from the record every turn."""
+    """The board as the player's threads (the Quests panel), rewritten from the record every turn; only the jobs the player
+    knows of (FN137)."""
     jobs = s.flags.get("jobs") or []
     keep = [t for t in s.threads if not t.id.startswith("job_")]
     for j in jobs:
+        if not known(s, j):
+            continue
+        j["known"] = True
         status = "resolved" if j["status"] == "paid" else "open"
         about = j["line"] + (f" ({j['pay']} gold)" if j["pay"] else "") + (" Done; to be paid back in the village." if j["status"] == "done" else "")
         if j["form"] == "bounty" and j["killed"]:

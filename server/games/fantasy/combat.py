@@ -1182,7 +1182,9 @@ def fight_panel(game: Any, s: FantasyState) -> list:
 
 
 def run_fight_command(game: Any, state: FantasyState, command_id: str) -> tuple[FantasyState, Any]:
-    """Flee: breaking contact, and one free blow from each enemy within reach as the player goes (rolled now, landed now).
+    """Flee: breaking contact. First a Dexterity roll to slip away (FN134, the owner 11-17: "Running away should not always give
+    everyone a free attack"): d20 + DEX against 12, two more for each foe in reach after the first (at most 16); a success is
+    away clean. A failure: one free blow from each enemy within reach as the player goes (rolled now, landed now).
     Yield: people may take it (the fight ends, no XP); the dead, beasts and fanatics do not (the round goes on)."""
     import random as _r
     from engine.game import CommandResult
@@ -1202,7 +1204,14 @@ def run_fight_command(game: Any, state: FantasyState, command_id: str) -> tuple[
         rng = _r.Random(f"{p.name}:{s.combat.since_turn}:{s.combat.round}:flee")    # B289: the preview's blows are the commit's (the clock moves between)
         tally: dict = {"hp": 0}
         lines, told = [], []
-        for q in living_enemies(game, s):
+        reach = sum(len(bodies(q)[:2]) for q in living_enemies(game, s))
+        dex = int(p.stats.get("dex", 0))
+        dc = min(16, 12 + 2 * max(0, reach - 1))
+        die = rng.randint(1, 20)
+        clean = die != 1 and (die == 20 or die + dex >= dc)
+        lines.append(f"DEX, to slip away: {die} {'+' if dex >= 0 else '-'} {abs(dex)} (DEX {dex:+d}) = {die + dex} against {dc}"
+                     + (f" ({reach} in reach)" if reach > 1 else "") + (". Away clean." if clean else ". Not clean: they get their blows."))
+        for q in ([] if clean else living_enemies(game, s)):
             for body in bodies(q)[:2]:                  # B321: at most two of a band reach the one running (the lever's hint says so)
                 b = ensure_block(q)
                 a = next((x for x in b.actions if x.get("kind") in ("strike", "drain")), {"kind": "strike"})
@@ -1226,9 +1235,13 @@ def run_fight_command(game: Any, state: FantasyState, command_id: str) -> tuple[
         dead = p.hp <= 0
         if dead:
             p.fate, p.fate_turn, p.fate_roll = "dead", 0, "cut down running"
-        directive = (f"{p.name} runs for it, out of reach of {names}. As {p.name} goes, each of them gets one blow: "
-                     + ("; ".join(told) or "none lands") + ". " + (f"It kills {p.name}: write the death straight." if dead else
-                     f"Play the getting away and where {p.name} ends up, and stop."))
+        if clean:
+            directive = (f"{p.name} runs for it and slips clean away from {names}: no blow reaches {p.name}. "
+                         f"Play the getting away and where {p.name} ends up, and stop.")
+        else:
+            directive = (f"{p.name} runs for it, out of reach of {names}, but not cleanly. As {p.name} goes, each enemy within reach gets one "
+                         "blow: " + ("; ".join(told) or "none lands") + ". Tell those blows exactly as given; no other harm. " + (f"It kills {p.name}: write the death straight." if dead else
+                         f"Play the getting away and where {p.name} ends up, and stop."))
         # B311 (e933e85fb6c2 T20): the line said each got one blow and showed none of the rolls
         # B394 (the Sonnet smoke, 85ca44771923 T6): this line and its directive said "Gorm's fist" where every other line says "Troll"
         directive = game.unnamed(s, directive)

@@ -66,7 +66,7 @@ type Card =
   | { kind: "place"; place: MapPlace }
   | { kind: "ground"; title: string; line: string | null };
 
-export function MapPanel({ widget, onPick }: { widget: MapWidget; onPick: (text: string) => void }) {
+export function MapPanel({ widget, onPick, big = false }: { widget: MapWidget; onPick: (text: string) => void; big?: boolean }) {
   const wrap = useRef<HTMLDivElement>(null);
   const cv = useRef<HTMLCanvasElement>(null);
   const centre = useRef<{ x: number; y: number } | null>(null); // art pixels; null until first centred
@@ -100,6 +100,12 @@ export function MapPanel({ widget, onPick }: { widget: MapWidget; onPick: (text:
     for (const p of widget.places) {
       const k = key(p.x, p.y);
       if (!placeAt.has(k) || p.here) placeAt.set(k, p);
+    }
+    // FN135: a road or river known past the ground seen (the west road drawn far off with nothing said): its name on a tap
+    const lineAt = new Map<string, MapWidget["lines"][number]>();
+    for (const ln of widget.lines) for (const run of ln.runs) for (const [x, y] of run) {
+      const k = key(x, y);
+      if (!lineAt.has(k) || ln.kind === "road") lineAt.set(k, ln);
     }
     // the line stamps: continuous pixel paths between tile centres, faint over ground not known
     const stamps: Stamp[] = [];
@@ -152,7 +158,7 @@ export function MapPanel({ widget, onPick }: { widget: MapWidget; onPick: (text:
       const dist = (t: [number, number]) => (t[0] - mx) ** 2 + (t[1] - my) ** 2;
       labels.push({ at: tiles.sort((a, b) => dist(a) - dist(b)).slice(0, 80), name: r.name });
     });
-    return { at, placeAt, stamps, labels };
+    return { at, placeAt, lineAt, stamps, labels };
   }, [widget]);
 
   // sized to the panel's width
@@ -161,7 +167,8 @@ export function MapPanel({ widget, onPick }: { widget: MapWidget; onPick: (text:
     if (!el) return;
     const ro = new ResizeObserver(() => {
       const w = Math.max(160, Math.floor(el.clientWidth));
-      setSize({ w, h: Math.round(Math.min(420, Math.max(200, w * 0.85))) });
+      // FN143: in the pop-up the map takes most of the screen's height
+      setSize({ w, h: big ? Math.round(Math.max(260, Math.min(window.innerHeight * 0.72, w * 1.3))) : Math.round(Math.min(420, Math.max(200, w * 0.85))) });
       setDpr(window.devicePixelRatio || 1);
     });
     ro.observe(el);
@@ -326,9 +333,12 @@ export function MapPanel({ widget, onPick }: { widget: MapWidget; onPick: (text:
     const p = d.placeAt.get(key(tx, ty));
     if (p) return { kind: "place", place: p };
     const [g, r] = d.at(tx, ty);
-    if (g === "?") return { kind: "ground", title: "Not known", line: null };
+    const ln = d.lineAt.get(key(tx, ty));
+    const lineWords = ln ? `${ln.name}${ln.leads ? ", " + ln.leads : ""}` : null;
+    if (g === "?") return ln ? { kind: "ground", title: ln.name, line: (ln.leads ? `Leads ${ln.leads}. ` : "") + "Heard of; the land along it not seen yet." } : { kind: "ground", title: "Not known", line: null };
     const reg = r !== "." ? widget.regions[r.charCodeAt(0) - 97] : undefined;
-    return reg && reg.name ? { kind: "ground", title: reg.name, line: reg.line || null } : { kind: "ground", title: GROUND_NAME[g] ?? "Ground", line: null };
+    return reg && reg.name ? { kind: "ground", title: reg.name, line: [lineWords, reg.line].filter(Boolean).join(". ") || null }
+      : { kind: "ground", title: GROUND_NAME[g] ?? "Ground", line: lineWords };
   };
   const rel = (e: React.PointerEvent) => {
     const r = wrap.current!.getBoundingClientRect();

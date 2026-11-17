@@ -15,7 +15,7 @@ The scenario writes:
       ofs: [lost kettle, nine ladles, ...] # "of the ..." tails for big names
       kinds: {mill: Mill, fort: Fort, wood_bright: Wood, ...}   # the kind's word after the name
       big: [village, castle, wood_bright, wood_dark, bog]        # kinds that may take an "of the" tail
-      of_chance: 0.35
+      of_chance: 0.04
 """
 from __future__ import annotations
 
@@ -49,12 +49,18 @@ def check(lists: dict[str, Any]) -> list[str]:
     return out
 
 
+# FN133 (the owner's round, 11-17: "'Cheeserock Wood of the Wandering Hog' tooooo long ... 'Hobknoll of the Sour Pudding' is
+# a terrible town name"; "Crumblecobble Bridge" is the kind): the "of the" tail rare, the run-together word at most 13 letters
+OF_CHANCE = 0.04
+LONGEST = 13
+
+
 def compound(rng: random.Random, lists: dict[str, Any]) -> str:
     """Two halves run together, capitalised once; a doubled letter at the seam is kept ("Wickkettle" reads fine as DF does)."""
     for _ in range(20):
         head = str(rng.choice(lists["heads"])).strip().lower()
         tail = str(rng.choice(lists["tails"])).strip().lower()
-        if head != tail and not head.endswith(tail) and not tail.startswith(head):
+        if head != tail and not head.endswith(tail) and not tail.startswith(head) and len(head + tail) <= int(lists.get("longest", LONGEST)):
             word = head + tail
             if word not in GAME_TERMS:
                 return word[:1].upper() + word[1:]
@@ -66,7 +72,7 @@ def place_name(rng: random.Random, lists: dict[str, Any], kind: str, the: bool =
     core = compound(rng, lists)
     word = (lists.get("kinds") or {}).get(kind, "")
     name = f"{core} {word}".strip()
-    if kind in (lists.get("big") or []) and lists.get("ofs") and rng.random() < float(lists.get("of_chance", 0.35)):
+    if kind in (lists.get("big") or []) and lists.get("ofs") and rng.random() < float(lists.get("of_chance", OF_CHANCE)):
         name += " of the " + " ".join(w[:1].upper() + w[1:] for w in str(rng.choice(lists["ofs"])).split())
     return name
 

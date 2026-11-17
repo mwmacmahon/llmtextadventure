@@ -6,6 +6,8 @@ import { GamePage } from "./components/GamePage";
 import { DeathCardBody, Graveyard } from "./components/Graveyard";
 import { Home } from "./components/Home";
 import { Panels, Timeline } from "./components/Panels";
+import { MapPanel } from "./components/MapPanel";
+import type { MapWidget } from "./api";
 import { ScratchPage } from "./components/ScratchPage";
 import { SettingsPage } from "./components/SettingsPage";
 import { prefs } from "./saves";
@@ -80,6 +82,7 @@ function Game({ id }: { id: string }) {
   const [hideUndone, setHideUndone] = useState(prefs.hideUndone());
   const [death, setDeath] = useState<GraveCard | null>(null);
   const [overlay, setOverlay] = useState<"timeline" | "journal" | null>(null);    // B261: the Timeline overlay and its tab
+  const [mapOpen, setMapOpen] = useState(false);   // FN143 (the owner, 11-17): the map in a pop-up, a big button to open it
   const [panelsOpen, setPanelsOpen] = useState(prefs.phonePanelsOpen());          // B282: at phone width the story gets the screen
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -177,14 +180,14 @@ function Game({ id }: { id: string }) {
 
   function send(text: string) {
     if (!view || streaming !== null || !text.trim()) return;
-    if (asking || text.trim().startsWith("?")) return askGM(text);
+    if (asking || text.trim().startsWith("?") || /^\/ask\b/i.test(text.trim())) return askGM(text);   // FN136: /ask too
     setInput("");
     return run(streamTurn(id, text), text);
   }
 
   // B105 (c): Ask mode, a question to the game master out of the story: no clock, no events, no referee
   async function askGM(text: string) {
-    const q = text.trim().replace(/^\?+/, "").trim();
+    const q = text.trim().replace(/^\/ask\b/i, "").replace(/^\?+/, "").trim();
     if (!q) return;
     setInput("");
     setErr(null);
@@ -219,8 +222,15 @@ function Game({ id }: { id: string }) {
     setInput(prefill);
     requestAnimationFrame(() => boxRef.current?.select());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefill]);
+  }, [prefill, view?.turn]);   // FN142: the same "Continue to ..." on the next leg fills the box again
   const hasTimeline = !!view && view.ui.panels.some((w) => w.type === "log" && w.timeline);
+  const mapWidget = (view?.ui.panels.find((w) => w.type === "map") ?? null) as (MapWidget & { type: "map" }) | null;
+  useEffect(() => {
+    if (!mapOpen) return;
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setMapOpen(false); };
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [mapOpen]);
 
   // B228: a clicked command's turn cannot be told again (no words to retell); the rewrite button is not offered for it
   const lastWasCommand = !!view && view.transcript.some((r) => r.turn === view.turn && r.role === "command");
@@ -420,6 +430,11 @@ function Game({ id }: { id: string }) {
           </div>
         </form>
         <div className="footer-chips">
+          {mapWidget && (
+            <button type="button" className="map-open-btn" onClick={() => setMapOpen(true)} title="Open the map">
+              <span aria-hidden="true">🗺</span> Map
+            </button>
+          )}
           <button type="button" className="check-chip small panels-toggle" aria-expanded={panelsOpen}
             onClick={() => { setPanelsOpen(!panelsOpen); prefs.setPhonePanelsOpen(!panelsOpen); }}>
             {panelsOpen ? "Hide panels" : "Panels"}
@@ -437,6 +452,21 @@ function Game({ id }: { id: string }) {
         </div>
       </footer>
       {overlay && <Timeline panels={view.ui.panels} tab={overlay} onTab={setOverlay} onClose={() => setOverlay(null)} />}
+      {mapOpen && mapWidget && (
+        <div className="overlay" onClick={() => setMapOpen(false)}>
+          <div className="overlay-sheet map-sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Map">
+            <div className="overlay-head">
+              <strong>Map</strong>
+              <span className="muted small">tap a place to see it; tap again to go there</span>
+              <span className="spacer" />
+              <button onClick={() => setMapOpen(false)}>close</button>
+            </div>
+            <div className="overlay-body">
+              <MapPanel widget={mapWidget} big onPick={(t) => { setInput(t); setMapOpen(false); requestAnimationFrame(() => boxRef.current?.select()); }} />
+            </div>
+          </div>
+        </div>
+      )}
       {telling !== null && (
         <div className="overlay" onClick={() => setTelling(null)}>
           <div className="overlay-sheet tell-sheet" onClick={(e) => e.stopPropagation()}>

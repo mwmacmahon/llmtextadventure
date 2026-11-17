@@ -1213,9 +1213,10 @@ class FantasyGame(GameBase):
             "100 to the gold; the game changes them to gold and back.",
             "- add <count id> -1: a use of a count the prose shows (spell_slots: a spell from the known list cast; a cantrip costs nothing). "
             "Never add to a count: rests and the commands refill them.",
-            "- add <pocket id>.count ±n; new thing value=<name> field=player: a thing the player took, bought or was given (one row per thing), named as "
-            "they would name it, note=what it looks like; new thing value=<name> field=<place>: something left lying that could matter again; gone <thing>; "
-            "move <thing> <place or person id>.",
+            "- A thing the prose brings in stays where it is: new thing value=<name> field=<place>, when it could matter again. field=player ONLY "
+            "when the prose has the player pick it up, buy it or be handed it (one row per thing, named as they would name it, note=what it "
+            "looks like). Anything fixed or too big to carry (an altar, a standing stone, a well) is never field=player.",
+            "- add <pocket id>.count ±n; gone <thing>; move <thing> <place or person id>.",
             "- set <person id>.attitude <hostile|angry|wary|neutral|friendly|loyal|devoted> (or a number -3 to 3): only when the player did something to them "
             "this turn that changes how they treat the player. A tense talk is no change. hostile is only for one who will now attack "
             f"{p.name} on sight; angry is one set against {p.name} who will not strike the first blow.",
@@ -3787,8 +3788,7 @@ class FantasyGame(GameBase):
         # and the troll's round ran on him as he went upstairs. The levers are there whenever someone is fought
         if state.player.fighting:                                           # part fifteen §7; B287 (the owner, 11-09): typed, no buttons
             out += [CommandSpec(id="flee", label="Flee", mode="narrated", typed=True, decides=True,
-                                hint="Run from the fight: the player turns their back on it and goes (out of reach, out of the place). Every enemy "
-                                     "within reach gets one free blow as they go (at most two of a band). Not a step back, a dodge, or a move to better ground inside the fight."),
+                                hint="Run from the fight: the player leaves it altogether, out of reach and out of the place. Not a step back, a dodge, or a move to better ground inside the fight."),
                     # no `words` on Flee (D255, B388): the pipeline drops a typed lever whose words the player's input does not
                     # hold, and that list ("run", "dash", "for the door", ...) struck "I've had enough, I walk out" after the
                     # reading had answered it leaving; whether the player leaves is aim_blows' to settle, not a list's

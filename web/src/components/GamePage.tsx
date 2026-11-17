@@ -43,6 +43,7 @@ export function GamePage({ name }: { name: string }) {
   const [game, setGame] = useState<GameInfo | null>(null);
   const [saves, setSaves] = useState<InstanceSummary[] | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
+  const [starting, setStarting] = useState(false);   // FN130: a new game takes seconds (the sheet, the opening); show it, press once
   const [open, setOpen] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [missingGame, setMissingGame] = useState(false);
@@ -123,7 +124,9 @@ export function GamePage({ name }: { name: string }) {
   }
 
   async function start() {
+    if (starting) return;
     setErr(null);
+    setStarting(true);
     try {
       const shown = Object.fromEntries(fields.map((f) => [f.key, valueOf(f)]));   // what the fields show, selects' defaults included
       const v = await api.create(game!.name, shown, on);
@@ -134,6 +137,7 @@ export function GamePage({ name }: { name: string }) {
       let msg = String(e);
       if (m) { try { msg = JSON.parse(m[1]).detail ?? m[1]; } catch { msg = m[1]; } }
       setErr(msg);
+      setStarting(false);
     }
   }
 
@@ -183,9 +187,11 @@ export function GamePage({ name }: { name: string }) {
             </span>
           </div>
         )}
-        <button className="primary" onClick={start} disabled={missing.length > 0} title={missing.length ? `Fill in: ${missing.map((f) => f.label).join(", ")}` : undefined}>
-          Start
+        <button className="primary" onClick={start} disabled={missing.length > 0 || starting} aria-busy={starting}
+          title={missing.length ? `Fill in: ${missing.map((f) => f.label).join(", ")}` : undefined}>
+          {starting ? <>Starting<span className="dots" aria-hidden="true" /></> : "Start"}
         </button>
+        {starting ? <span className="muted starting-note">Setting up the world and your character; this can take a few seconds.</span> : null}
       </div>
     </section>
   );

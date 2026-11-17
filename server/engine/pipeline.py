@@ -2142,6 +2142,14 @@ class Engine:
             if most is not None and adj.time_minutes > most:
                 notes.append(f"pressing turn: {adj.time_minutes} minutes cut to the game's cap of {most}")
                 adj.time_minutes = most
+            # a walk the game itself makes this turn (Parchment's map: FN141, the owner's round of 11-17 charged the reading's
+            # hour for a four-minute walk): the walk's own minutes are the turn's; the game says what the reading's become (its
+            # world turn charges the walk), and no table moves them
+            walk = _hook(game, "walk_minutes", state, adj, default=None) if clock and adj.kind == "action" else None
+            if walk is not None:
+                notes.append(f"a walk the game makes: the reading's {adj.time_minutes} minutes set to {walk}; the walk's own are charged")
+                adj.time_minutes = int(walk)
+                adj.minutes_fixed = True
             # (iv) the game's minutes by kind of turn (time doc §3, D148): a fight, a talk, a search or a walk keeps to its
             # row; waiting and sleeping run to the player's limit (the "until when" question), so their rows only floor
             if clock and adj.kind == "action" and not getattr(adj, "minutes_fixed", False):

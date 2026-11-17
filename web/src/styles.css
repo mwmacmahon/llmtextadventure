@@ -419,3 +419,17 @@ dl.score dd { margin: 0; font-family: var(--pixel-font); font-size: 15px; }
 .scratch-msg-head { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
 .scratch-assistant { background: var(--panel-2); }
 .scratch-draft { border-style: dashed; }
+
+/* FN130: the Start button while a new game is being made */
+.dots::after { content: ""; display: inline-block; width: 1.2em; text-align: left; animation: dots 1.2s steps(4, end) infinite; }
+@keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+.starting-note { display: block; margin-top: 0.4rem; }
+
+/* FN143 (the owner, 11-17: "a pop up window with a very big obvious button"): the map's button and its sheet */
+.map-open-btn { font-size: 16px; font-weight: 700; padding: 8px 18px; border-radius: 10px; background: var(--accent, #6aa0ff);
+  color: #0f1115; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.map-open-btn:hover { filter: brightness(1.1); }
+.overlay-sheet.map-sheet { width: min(1000px, 100%); max-height: 94vh; }
+@media (min-width: 760px) { .overlay-sheet.map-sheet { max-height: 92vh; } }
+.map-sheet .overlay-body { padding: 8px 10px 12px; }
+.map-sheet .map-panel { border: none; padding: 0; background: transparent; }

@@ -1854,3 +1854,21 @@ def test_the_fight_levers_are_there_whenever_someone_is_fought(game):
     assert {"flee", "yield"} <= {c.id for c in game.commands(st)}
     s1, res = cb.run_fight_command(game, st, "flee")
     assert res.ok is not False and s1.player.fighting == [] and s1.combat is None and res.text.startswith("Out of the fight.")
+
+
+def test_flee_rolls_dex_first_and_a_success_is_away_clean(game):
+    """FN134 (the owner, 11-17: "Running away should not always give everyone a free attack, let's roll a dex roll"): d20 + DEX
+    against 12, two more for each foe in reach after the first (at most 16). A success: no blows; a failure: the blows."""
+    clean = blows = 0
+    for n in range(40):
+        st, q = _fight(game, 2)
+        st.player.name = f"Runner{n}"                    # the roll is seeded by the name and the round
+        s1, res = cb.run_fight_command(game, st, "flee")
+        assert "DEX, to slip away:" in res.text and s1.player.fighting == []
+        if "Away clean." in res.text:
+            clean += 1
+            assert "slips clean away" in res.directive and res.hp_taken == 0 and "against AC" not in res.text
+        else:
+            blows += 1
+            assert "gets one blow" in res.directive
+    assert clean and blows

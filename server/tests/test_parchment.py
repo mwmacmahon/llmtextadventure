@@ -44,7 +44,7 @@ def test_a_new_game_has_a_map_and_the_player_is_at_home(engine: Engine):
     game = engine.games["parchment"]
     st = game.load_state(engine.store.load_state(iid))
     assert st.world and st.world["seed"] == 7 and st.world["player"]["tile"] == [0, 0]
-    assert st.player.location == "The village" and game.where(st) == "The village"
+    assert st.player.location == "the tavern" and game.where(st) == "The village"     # FN131: at the tavern's door, in the village
     assert "The old mill" in st.places and "The goblin fort" in st.places
     ui = game.ui(st)
     maps = [w for w in ui.panels if isinstance(w, MapPanel)]
@@ -125,10 +125,10 @@ def _fresh(engine: Engine):
 def test_the_models_get_the_maps_block_in_the_places_lines_stead(engine: Engine):
     game, st = _fresh(engine)
     lines = game._places_line(st).split("\n")
-    assert lines[0].startswith("Where: The village") and lines[-1].startswith("Directions: north,")
+    assert lines[0].startswith("Where: the tavern, at The village") and lines[-1].startswith("Directions: north,")
     assert any(ln.startswith("Near: The old mill, a short walk") for ln in lines)
     assert "minutes" not in game._places_line(st)                     # walk words only (R13), never minutes
-    assert "Where: The village" in game.render_bulletin(st, "") and "Directions:" not in game.render_bulletin(st, "")
+    assert "Where: the tavern, at The village" in game.render_bulletin(st, "") and "Directions:" not in game.render_bulletin(st, "")
     ref = game._ref_places_line(st)
     assert ref.startswith("Where:") and "A move or a location value is one of the Places, or one of the Here line's." in ref
 
@@ -190,8 +190,8 @@ def test_names_are_rolled_from_the_seed_and_kept(engine: Engine):
     names = lambda st: sorted(p["name"] for p in st.world["places"].values())
     assert names(a) == names(b) != names(c)
     assert "The old mill" not in names(a) and any(n.endswith(" Mill") for n in names(a))
-    assert a.player.location == a.world["places"][a.world["home"]]["name"] != "The village"
-    assert any(f.within == a.player.location for f in a.found_places)       # the buildings follow the rolled name
+    assert game.where(a) == a.world["places"][a.world["home"]]["name"] != "The village" and a.player.location == "the tavern"
+    assert any(f.within == game.where(a) for f in a.found_places)           # the buildings follow the rolled name
 
 
 def test_a_list_with_a_game_term_is_refused():
@@ -274,7 +274,12 @@ def test_residents_are_there_on_arrival_and_the_board_pays_in_the_village(engine
     game, st = _fresh(engine)
     jobs = st.flags["jobs"]
     assert [j["form"] for j in jobs] == ["clear", "clear", "kill", "bounty"]
+    assert not any(t.id.startswith("job_") for t in st.threads)              # FN137: nothing known before the board is read
+    assert any(c.id == "read_board" for c in game.commands(st))
+    st, res = game.run_command(st, "read_board", {})
+    assert res.ok and "Clear the farms" in res.directive and res.minutes == 2
     assert any(t.id == "job_1" and t.title == "Clear the farms" for t in st.threads)
+    assert not any(c.id == "read_board" for c in game.commands(st))
     farms = next(k for k, p in st.world["places"].items() if p["name"] == "The farms")
     w = WorldTurn()
     game._arrive(st, w, farms)
@@ -360,3 +365,71 @@ def test_every_start_place_is_reached_in_sensible_time():
             assert route is not None, (seed, spec["id"])
             worst.append((wm.walk_minutes(w, route), seed, spec["id"]))
     assert max(worst)[0] <= 240, sorted(worst)[-3:]
+
+
+def test_a_job_is_known_from_its_giver_too_and_not_paid_unknown(engine: Engine):
+    """FN137 (the owner's round, 11-17: "I started with a bunch of quests despite meeting no NPCs"): a job is the player's
+    once the board is read or its giver met; done unknown, it is not announced or paid until it is known."""
+    import random
+    from engine.game import TurnInfo
+    game, st = _fresh(engine)
+    troll = next(j for j in st.flags["jobs"] if j["form"] == "kill")
+    assert troll["giver"] == "reeve" and not any(t.id == troll["id"] for t in st.threads)
+    st.person("reeve").met = True
+    st = game.after_turn(st, TurnInfo(turn=1, elapsed_minutes=1, rng=random.Random(0)))
+    assert any(t.id == troll["id"] for t in st.threads)
+    farms = st.flags["jobs"][0]
+    farms["status"] = "done"
+    gold = st.item("gold").count
+    from games.hidden.parchment import jobs as jb
+    assert jb.pay(st) == [] and st.item("gold").count == gold and farms["status"] == "done"
+
+
+def test_a_walk_is_the_turns_minutes_and_a_journey_stops_only_where_something_happens(engine: Engine):
+    """FN140, FN141 (the owner's round, 11-17): the reading's hour for a four-minute walk is gone (walk_minutes gives the
+    pipeline 0 and the walk charges its own); legs walk on past waypoints where nothing happens, and none is in the first ten
+    minutes or quarter of the way; the Continue command carries the leg's minutes."""
+    import random
+    from engine import worldmap as wm
+    from games.fantasy.world import WorldTurn
+    game, st = _fresh(engine)
+    far = max((k for k, p in st.world["places"].items() if p["shape"] == "point" and k != st.world["home"]
+               and wm.plan_journey(st.world, k) is not None), key=lambda k: wm.walk_minutes(st.world, wm.find_path(
+                   st.world, tuple(st.world["player"]["tile"]), tuple(st.world["places"][k]["tile"]))))
+    class R:                      # a reading that sets out for the far place
+        kind = "action"; time_minutes = 60; minutes_fixed = False
+        intents = [type("I", (), {"transition": f"move:{st.world['places'][far]['name']}", "goes_to": st.world["places"][far]["name"],
+                                  "action": "go", "targets": []})()]
+    assert game.walk_minutes(st, R()) == 0
+    plan = wm.plan_journey(st.world, far)
+    for i, _, _ in plan["stops"]:
+        assert i >= len(plan["path"]) // 4 and wm.walk_minutes(st.world, plan["path"][:i + 1]) >= wm.STOP_AFTER
+    st.world["player"]["journey"] = plan
+    w = WorldTurn()
+    quiet = random.Random(0)
+    quiet.random = lambda: 0.999  # type: ignore[method-assign]   # no stop's roll says anything happens: walked to the end in one
+    total = game._leg(st, w, quiet, 1, charge=False)
+    assert st.world["player"]["journey"] is None and abs(total - wm.walk_minutes(st.world, plan["path"])) <= len(plan["stops"])   # rounding a leg
+
+
+def test_names_are_short_mostly(engine: Engine):
+    """FN133 (the owner, 11-17: "'Cheeserock Wood of the Wandering Hog' tooooo long"): an "of the" tail is rare, never on the
+    village, and the run-together word is at most 13 letters."""
+    import random
+    from engine import names as rn
+    game = engine.games["parchment"]
+    lists = game.name_lists()
+    if not lists:
+        pytest.skip("no name lists on this machine")
+    rng = random.Random(3)
+    rolled = [rn.place_name(rng, lists, k) for k in ["wood_bright", "village", "bog", "castle", "mill"] * 200]
+    assert sum(" of the " in n for n in rolled) < len(rolled) * 0.06
+    assert not any(" of the " in rn.place_name(rng, lists, "village") for _ in range(300))
+    assert all(len(n.split()[0]) <= 13 for n in rolled)
+
+
+def test_the_map_is_near_the_top(engine: Engine):
+    """FN132 (the owner, 11-17: "buried at the bottom of a long scroll"): the map comes right after the commands."""
+    game, st = _fresh(engine)
+    types = [getattr(w, "type", "") for w in game.ui(st).panels]
+    assert types.index("map") == types.index("commands") + 1
