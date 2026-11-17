@@ -610,8 +610,11 @@ endless ground, camps, wandering, invented places and ground changes held until 
   the engine can take up the slack, so the engine is made tolerant and the text is not lengthened. Owed: Sonnet, and a
   real Sonnet extract before the schema ships. Found on the way: the flee question came back yes on 17 of 92 lines
   with no fight on, and one line looped the reading to its token limit.
-- **Next (FN100, FN101):** Marrowgate's setting moved out of the shared fantasy code into data, text-identical for
-  Marrowgate and held so by its 291 tests; then the Parchment folder, with the map in its state and its side panel.
+- **Marrowgate's setting out of the shared code (FN100): built 11-17**, text-identical (the full suite before and after).
+  The bestiary is still one per process; a second, different one refuses to load (its split is FN112).
+- **Next (FN101):** the Parchment folder, with the map in its state and its side panel. The engine's half of the
+  protocol (the map widget and the prefill in the UI schema) is built; the folder waits on five design calls for a
+  Fable review with the owner.
 - **Names (FN108 to FN111): decided, not built.** Rolled from large word lists, several picks for a big name, per
   game, kept in the save; the lists checked against the game's own terms.
 - **Places the story makes (FN50 to FN55): designed.** Told of a place at all puts it on the map; a secret whereabouts
