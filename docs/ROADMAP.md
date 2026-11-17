@@ -611,7 +611,7 @@ endless ground, camps, wandering, invented places and ground changes held until 
   real Sonnet extract before the schema ships. Found on the way: the flee question came back yes on 17 of 92 lines
   with no fight on, and one line looped the reading to its token limit.
 - **Marrowgate's setting out of the shared code (FN100): built 11-17**, text-identical (the full suite before and after).
-  The bestiary is still one per process; a second, different one refuses to load (its split is FN112).
+  Each fantasy game now holds its own bestiary (FN112, 11-17): a second game's enemies cannot change another's fights.
 - **Next (FN101):** the Parchment folder, with the map in its state and its side panel. The engine's half of the
   protocol (the map widget and the prefill in the UI schema) is built; the folder waits on five design calls for a
   Fable review with the owner.
