@@ -113,7 +113,7 @@ export function ScratchPage() {
     <div className="lobby scratch-page">
       <h1>Scratch pad</h1>
       <p className="muted small">
-        The model on the GPU box ({info.profile}), with no game around it, on slot {info.slot} (the side slot: the three turn roles keep their caches).
+        The model on the GPU box ({info.profile}), with no game around it, on the side slot (slot {info.slot}; the narrator, assistant and referee are on slots 0 to 2 and keep their caches).
         Nothing is kept: Clear or a reload and it is gone. {info.busy && <strong>The box is busy with a turn just now; a call will share it.</strong>}
       </p>
       {err && <div className="error">{err}</div>}

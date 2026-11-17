@@ -38,7 +38,7 @@ you can edit: put words after the model's turn marker to start its reply for it.
 
 ## Slot and limits
 
-- Every call runs on the **side slot** (slot 3, `side_slot`, B405), the slot the game's odd calls already share. The
+- Every call runs on the **side slot** (slot 3 of four, counted from 0: the narrator is 0, the assistant 1, the referee 2; `side_slot`, B405), the slot the game's odd calls already share. The
   narrator, assistant and referee keep their caches; a game running at the same time loses nothing but a share of the GPU.
   The page says when the box is busy with a turn as it opens.
 - The prompt is capped at **24,000 tokens** (counted by the box's own tokenizer), below a slot's 30,720 in the Gemma
