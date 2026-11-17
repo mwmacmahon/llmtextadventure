@@ -364,3 +364,25 @@ def test_the_ladder_shows_strength_and_never_weakness(game):
     assert en.spawn(st, [("bandit", 1)], "elite")[0].name.startswith("Fearsome")
     hps = [en.spawn(st, [("skeleton", 1)], v)[0].combat.hp_max for v in en.LADDER]
     assert hps == sorted(hps) and hps[0] < hps[3] / 2                     # each rung weaker below; feeble about a third
+
+
+def test_one_bestiary_per_process(game, tmp_path):
+    """FN100: the same bestiary again is fine (another game object, a copy of the content); a different one refuses to
+    load rather than silently replacing the first for every game of the family."""
+    same = tmp_path / "same"
+    same.mkdir()
+    (same / "bestiary.yml").write_text((CONTENT / "bestiary.yml").read_text(encoding="utf-8"), encoding="utf-8")
+    before = dict(cb.ENTRIES)
+    cb.load_bestiary(same)
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / "bestiary.yml").write_text("entries:\n  - {id: hedge_wolf, name: a wolf, kind: beast, cr: '1/4', xp: 50}\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="one per process"):
+        cb.load_bestiary(other)
+    assert cb.ENTRIES == before
+
+
+def test_an_empty_scenario_id_is_the_default(game):
+    """FN100: an empty id is the game's DEFAULT_SCENARIO, not whichever file sorts first; an unknown id falls back to it."""
+    assert game.scenario("")["id"] == game.DEFAULT_SCENARIO == "marrowgate"
+    assert game.scenario("no-such-scenario")["id"] == game.DEFAULT_SCENARIO

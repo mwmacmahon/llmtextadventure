@@ -48,6 +48,7 @@ BLOCKS: dict[str, dict[str, Any]] = {"commoner": {"ac": 10, "hp": 4, "attack": 2
 ENTRIES: dict[str, dict[str, Any]] = {}
 ALIASES: dict[str, str] = {}
 UNDEAD: set[str] = set()
+_LOADED: tuple[Any, str] | None = None   # the file the tables were read from and its text (FN100)
 BLOCK_FIELDS = ("ac", "hp", "attack", "damage", "saves", "kind", "actions", "dc", "regen", "regen_unless", "fanatic", "lead", "fixed")
 PERSON_KINDS = ("person", "humanoid", "fey")        # who takes a yield, loses their nerve, is a stranger until named
 
@@ -60,10 +61,18 @@ def load_bestiary(content_dir: Any) -> dict[str, dict[str, Any]]:
     """Read content/bestiary.yml into BLOCKS, ENTRIES, ALIASES and UNDEAD (in place, so every importer sees them)."""
     import yaml
     from pathlib import Path
+    global _LOADED
     path = Path(content_dir) / "bestiary.yml"
     if not path.exists():
         return ENTRIES
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    text = path.read_text(encoding="utf-8")
+    # FN100: one bestiary per process until it is held per game. Every game of the fantasy family reads these module tables,
+    # so a second game with a bestiary of its own would silently replace the first's for both. Refuse that loudly instead;
+    # the same file loaded again (another game object, a test, a copy of the content) is fine.
+    if _LOADED is not None and _LOADED[1] != text:
+        raise ValueError(f"a second, different bestiary ({path}) after {_LOADED[0]}: the bestiary is still one per process (FN100)")
+    _LOADED = (path, text)
+    data = yaml.safe_load(text) or {}
     entries = {str(e["id"]): dict(e) for e in data.get("entries") or []}
     ENTRIES.clear()
     ENTRIES.update(entries)

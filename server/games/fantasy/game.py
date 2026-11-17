@@ -255,6 +255,38 @@ class FantasyGame(GameBase):
     title = "Marrowgate"
     description = "A river city under a fog that never lifts, a tavern, a deck of trouble. A d20, a sheet, hit points, and the Temple's price."
 
+    # ---- the setting's ties in the rules code (FN100, R-G2) ----------------------------------------------------------
+    # Marrowgate's own names and prose, here so a game of the fantasy family set elsewhere (Parchment) changes data and
+    # does not copy methods. Each is read only through `self`; the text for Marrowgate is as it was.
+    DEFAULT_SCENARIO = "marrowgate"            # what an empty scenario id means (was: the first file in scenarios/)
+    SETTING = "Marrowgate"                     # where a death with no place is written as having happened
+    SETTING_LINE = "an adventurer in the city of Marrowgate and the country around it"
+    ENDING = "{name} died at {where} on day {day}. The fog keeps the rest."
+    # B249: on the water, in the wood or the south, word from the city does not reach the player and the deck does not deal
+    FAR_FROM_WORD: frozenset[str] = frozenset(WATER | WOOD | SOUTH)
+    # where a survivor of a fall wakes (D157, kept for old saves): by where they fell, else the Watch if wanted, else the Temple
+    WAKE_BY_REGION: tuple[tuple[frozenset[str], str], ...] = ((frozenset(WATER), "Lantern Row"), (frozenset(WOOD), "Thornhollow"),
+                                                              (frozenset(SOUTH), "Ferry Landing"))
+    WAKE_WANTED = "Watch House"
+    # the carried are raised (D158): the place, its prices, and the lines that tell it
+    RAISE_PLACE = "Temple of the Quiet Flame"
+    RAISE_PRICES = TEMPLE_PRICES
+    RAISE_DEBT = "The Temple of the Quiet Flame: {price}"
+    RAISE_THREAD = "The Temple's price: {price}"
+    RAISE_FLAG = "owes_the_temple"
+    RAISE_THREAD_ID = "t{turn}-the-temple-s-price"
+    RAISE_LOG = "{name} was raised under the Temple of the Quiet Flame. The Flame's price: {price}."
+    CARRIED_DIRECTIVE = ("{name} died of it, and {who} will not leave the body. Write {who} lifting {name} and carrying {name} through "
+                         "the fog toward the Temple of the Quiet Flame, and stop at the Temple door, before any waking.")
+    RAISED_DIRECTIVE = ("{name} wakes on cold stone under the Temple of the Quiet Flame, alive again, at night. A priest of the Flame "
+                        "stands over them and names the price the Flame has set: {price}. It is to be paid later, not now. Write the "
+                        "waking and the price in the priest's own words, and stop.")
+    # the reading's guide to how long a move takes (the adjudication rules' Time line)
+    TRAVEL_TIMES = ("Time: a look around is 2 minutes; a search 15 to 30; a conversation 10 to 20; a street a few minutes, across the city half an hour, "
+                    "the Hill an hour's climb; the Reedway half an hour by boat, the lake an hour, Reed Island and Monastery Isle an hour and a half; "
+                    "the Greywood's edge an hour on foot, Thornhollow an hour and a half, the Barrow an hour past it; the Mire an hour from the Ferry Landing. "
+                    "A short rest is an hour; sleep is six to eight hours; waiting is however long they wait.")
+
     clock = ClockSpec(path="clock", minutes_per_day=1440, cap_minutes=600, scene_mark=4, tasks={      # the record's Time line (D158)
         "fight": TaskRow(least=1, most=3, lost=3),
         "talk": TaskRow(least=5, most=30, lost=15),
@@ -314,8 +346,10 @@ class FantasyGame(GameBase):
 
     # ---- content -----------------------------------------------------------------------------------------------------
     def scenario(self, sid: str = "") -> dict:
+        """A scenario by id; an empty id is the game's DEFAULT_SCENARIO (FN100). An id not found (an old save's, a mod's)
+        still falls back to the default, then to the first file, as before."""
         scs = self.content.scenarios()
-        return scs.get(sid) or next(iter(scs.values()))
+        return scs.get(sid) or scs.get(self.DEFAULT_SCENARIO) or next(iter(scs.values()))
 
     def hooks_content(self) -> dict[str, dict]:
         return self.content.hooks()
@@ -392,7 +426,9 @@ class FantasyGame(GameBase):
         import shutil
         import tempfile
         from .lint import lint
-        sname = next((p.name for p in sorted((Path(self.content_dir) / "scenarios").glob("*.yml"))), "marrowgate.yml")
+        scen = Path(self.content_dir) / "scenarios"
+        sname = (f"{self.DEFAULT_SCENARIO}.yml" if (scen / f"{self.DEFAULT_SCENARIO}.yml").exists()
+                 else next((p.name for p in sorted(scen.glob("*.yml"))), f"{self.DEFAULT_SCENARIO}.yml"))
         with tempfile.TemporaryDirectory() as tmp:
             copy = Path(tmp) / "content"
             shutil.copytree(self.content_dir, copy, ignore=shutil.ignore_patterns("mods"))
@@ -514,7 +550,7 @@ class FantasyGame(GameBase):
         race, klass = p.race.lower(), p.klass.lower()
         if race[:1] in "aeiou":
             text = text.replace("a {race}", "an {race}")       # "an elf mage" (D158: the article follows the race)
-        line = (self.scenario().get("race_lines") or {}).get(p.race, "")       # D167: labels only, one line per race
+        line = (self.scenario(self.DEFAULT_SCENARIO).get("race_lines") or {}).get(p.race, "")       # D167: labels only, one line per race
         art = "an" if race[:1] in "aeiou" else "a"
         gender = (f" {p.name} is {art} {race}: {line}." if line else "") + (f" {p.name} is {p.gender}." if p.gender.strip() else "")
         about = f' The player wrote this about them, and it is true: "{p.about}"' if p.about.strip() else ""
@@ -758,9 +794,9 @@ class FantasyGame(GameBase):
         p = state.player
         within = {f.name: f.within for f in state.found_places}
         at = p.location
-        while at in within and at not in WATER | WOOD | SOUTH:
+        while at in within and at not in self.FAR_FROM_WORD:
             at = within[at]
-        return f"far from word: {p.location}" if at in WATER | WOOD | SOUTH else ""
+        return f"far from word: {p.location}" if at in self.FAR_FROM_WORD else ""
 
     @staticmethod
     def _secret_name(s: FantasyState, q: Person) -> bool:
@@ -1008,15 +1044,12 @@ class FantasyGame(GameBase):
                        f"there, if anyone. This is the end of the story; write nothing after the last breath.")
         elif p.fate == "carried":
             who = p.fate_note or "someone who would not leave them"
-            out.append(f"{p.name} died of it, and {who} will not leave the body. Write {who} lifting {p.name} and carrying {p.name} through "
-                       f"the fog toward the Temple of the Quiet Flame, and stop at the Temple door, before any waking.")
+            out.append(self.CARRIED_DIRECTIVE.format(name=p.name, who=who))
         elif p.fate == "survived":
             out.append(f"{p.name} did not die of it. Hours have passed: they wake {p.fate_note}. They are hurt but alive. Write the waking, "
                        f"what it cost them and how they find out, and stop where they would decide what to do.")
         elif p.fate == "raised":
-            out.append(f"{p.name} wakes on cold stone under the Temple of the Quiet Flame, alive again, at night. A priest of the Flame "
-                       f"stands over them and names the price the Flame has set: {p.fate_note}. It is to be paid later, not now. Write the "
-                       f"waking and the price in the priest's own words, and stop.")
+            out.append(self.RAISED_DIRECTIVE.format(name=p.name, price=p.fate_note))
         if p.location == "Unknown":
             out.append(self.LOST_TRACK.replace("{name}", p.name))
         if p.location == self.DEBUG_ROOM:              # the owner, 11-10 night: "this room never has anyone besides the player and anyone they spawn"
@@ -1067,7 +1100,7 @@ class FantasyGame(GameBase):
     def adjudication_rules(self, state: FantasyState) -> str:
         s, p = state, state.player
         art = "an" if p.race[:1].lower() in "aeiou" else "a"
-        lines = [f"The player is {p.name}, {art} {p.race.lower()} {p.klass.lower()}, an adventurer in the city of Marrowgate and the country around it. "
+        lines = [f"The player is {p.name}, {art} {p.race.lower()} {p.klass.lower()}, {self.SETTING_LINE}. "
                  f"They can go anywhere a person can walk, row or pay to be taken, talk to anyone, fight anyone, and use what they carry.",
                  "", "Stats (modifier in parentheses):"]
         for k in STATS:
@@ -1102,10 +1135,7 @@ class FantasyGame(GameBase):
             *([f"{p.name} is hidden: an attack they make now is from hiding."] if p.hidden_from_others else []),
             "target_entity only for a listed person the player names or the scene identifies; an unnamed stranger has no id, so leave it null.",
             "Stats are exactly the six listed (str, dex, con, int, wis, cha); never invent one.",
-            "Time: a look around is 2 minutes; a search 15 to 30; a conversation 10 to 20; a street a few minutes, across the city half an hour, "
-            "the Hill an hour's climb; the Reedway half an hour by boat, the lake an hour, Reed Island and Monastery Isle an hour and a half; "
-            "the Greywood's edge an hour on foot, Thornhollow an hour and a half, the Barrow an hour past it; the Mire an hour from the Ferry Landing. "
-            "A short rest is an hour; sleep is six to eight hours; waiting is however long they wait.",
+            self.TRAVEL_TIMES,
             "",
             f"What {p.name} carries, what they have left to cast and use, how hurt they are and where they are: the game state block. Read it before ruling something impossible.",
             self._entities_line(s),
@@ -3144,7 +3174,7 @@ class FantasyGame(GameBase):
         # -- the fall, told: the end, the raise, or back to the story
         if p.fate and p.fate_turn < info.turn:
             if p.fate == "dead":
-                s.flags["ending"] = f"{p.name} died at {p.location or 'Marrowgate'} on day {s.clock.day}. The fog keeps the rest."
+                s.flags["ending"] = self.ENDING.format(name=p.name, where=p.location or self.SETTING, day=s.clock.day)
                 return s
             if p.fate == "carried":
                 self._raise(s, info)
@@ -3162,7 +3192,7 @@ class FantasyGame(GameBase):
                                                           for i in (range(q.combat.count) if q.combat.count > 1 else [0])]}]
         p.shown_notes += [self.unnamed(s, n) for n in cb.land(self, s, calls, info.turn, int(getattr(info, "target_offset", 0) or 0), info.rng)]
         if p.fate == "dead" and p.fate_turn < info.turn:                  # a death the narrator was told inline: it ends this turn
-            s.flags["ending"] = f"{p.name} died at {p.location or 'Marrowgate'} on day {s.clock.day}. The fog keeps the rest."
+            s.flags["ending"] = self.ENDING.format(name=p.name, where=p.location or self.SETTING, day=s.clock.day)
             return s
         checks = list(info.calls) + pre_checks
         for c in checks:                                    # B206: a danger the stake named lethal, failed: death now, told inline
@@ -3170,7 +3200,7 @@ class FantasyGame(GameBase):
                 p.hp, p.peril = 0, None
                 p.fate, p.fate_turn, p.fate_roll = "dead", info.turn - 1, str(c.get("cause") or c.get("label") or "")
                 s.flags["cause"] = c.get("death_cause") or f"died trying to {c.get('cause') or c.get('label')}"
-                s.flags["ending"] = f"{p.name} died at {p.location or 'Marrowgate'} on day {s.clock.day}. The fog keeps the rest."
+                s.flags["ending"] = self.ENDING.format(name=p.name, where=p.location or self.SETTING, day=s.clock.day)
                 return s
         held = next((c for c in p.conditions if c.name == "grappled"), None)
         if held is not None and not p.fate:                 # a grab's hold (the owner, 11-10 night): it ends when broken or the grabber is down
@@ -3482,8 +3512,8 @@ class FantasyGame(GameBase):
 
     def _survive(self, s: FantasyState) -> None:
         p = s.player
-        place = ("Lantern Row" if p.location in WATER else "Thornhollow" if p.location in WOOD else "Ferry Landing" if p.location in SOUTH
-                 else "Watch House" if p.heat >= WANTED_AT else "Temple of the Quiet Flame")
+        place = next((wake for region, wake in self.WAKE_BY_REGION if p.location in region), "") or (
+            self.WAKE_WANTED if p.heat >= WANTED_AT else self.RAISE_PLACE)
         fell_at = p.location
         cost = SURVIVED_COSTS[p.downs % len(SURVIVED_COSTS)]
         p.downs += 1
@@ -3535,16 +3565,16 @@ class FantasyGame(GameBase):
 
     def _raise(self, s: FantasyState, info: TurnInfo) -> None:
         p = s.player
-        price = TEMPLE_PRICES[len(p.debts) % len(TEMPLE_PRICES)]
-        p.debts.append(f"The Temple of the Quiet Flame: {price}")
+        price = self.RAISE_PRICES[len(p.debts) % len(self.RAISE_PRICES)]
+        p.debts.append(self.RAISE_DEBT.format(price=price))
         p.carried = False
         p.hp = max(1, p.hp_max // 2)
-        p.location = "Temple of the Quiet Flame"
+        p.location = self.RAISE_PLACE
         p.fate, p.fate_turn, p.fate_note = "raised", info.turn, price
-        s.flags["owes_the_temple"] = True
-        s.threads.append(th.Thread(id=f"t{info.turn}-the-temple-s-price", title=f"The Temple's price: {price}", opened_turn=info.turn))
+        s.flags[self.RAISE_FLAG] = True
+        s.threads.append(th.Thread(id=self.RAISE_THREAD_ID.format(turn=info.turn), title=self.RAISE_THREAD.format(price=price), opened_turn=info.turn))
         self._advance(s, RAISED_HOURS)
-        s.log.append(f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}. {p.name} was raised under the Temple of the Quiet Flame. The Flame's price: {price}.")
+        s.log.append(f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}. " + self.RAISE_LOG.format(name=p.name, price=price))
 
     @staticmethod
     def _advance(s: FantasyState, minutes: int) -> None:
