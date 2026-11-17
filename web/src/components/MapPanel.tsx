@@ -139,21 +139,18 @@ export function MapPanel({ widget, onPick }: { widget: MapWidget; onPick: (text:
         }
       }
     }
-    // region names: written once, on a lit tile of the region nearest the middle of its lit tiles
-    const labels: { x: number; y: number; name: string }[] = [];
+    // region names: written once, on the first of the region's lit tiles (nearest the middle of them first) where the
+    // whole name fits in view over lit ground without covering an icon; the drawing picks, these are the candidates
+    const labels: { at: [number, number][]; name: string }[] = [];
     widget.regions.forEach((r, ri) => {
       const letter = String.fromCharCode(97 + ri);
       const tiles: [number, number][] = [];
       for (const c of widget.chunks)
         for (let i = 0; i < 256; i++) if (c.r[i] === letter && c.g[i] !== "?") tiles.push([c.cx * 16 + (i % 16), c.cy * 16 + Math.floor(i / 16)]);
-      if (!tiles.length) return;
+      if (!tiles.length || !r.name) return;
       const mx = tiles.reduce((a, t) => a + t[0], 0) / tiles.length, my = tiles.reduce((a, t) => a + t[1], 0) / tiles.length;
-      let best = tiles[0], bd = Infinity;
-      for (const t of tiles) {
-        const dd = (t[0] - mx) ** 2 + (t[1] - my) ** 2;
-        if (dd < bd) { bd = dd; best = t; }
-      }
-      labels.push({ x: best[0], y: best[1], name: r.name });
+      const dist = (t: [number, number]) => (t[0] - mx) ** 2 + (t[1] - my) ** 2;
+      labels.push({ at: tiles.sort((a, b) => dist(a) - dist(b)).slice(0, 80), name: r.name });
     });
     return { at, placeAt, stamps, labels };
   }, [widget]);
@@ -241,15 +238,35 @@ export function MapPanel({ widget, onPick }: { widget: MapWidget; onPick: (text:
     };
     // a region's name only where it fits wholly inside lit ground in view; otherwise not drawn (the hover has it)
     ctx.font = font;
+    const icon = (tx: number, ty: number) => d.placeAt.has(key(tx, ty)) || (tx === widget.player.x && ty === widget.player.y);
+    const reach = ik === 2 ? 1 : 0; // a double-size icon covers half a tile round its own
+    // names already on the map (the place the player is at), so a region's name never writes over one
+    const taken: [number, number, number, number][] = [];
+    for (const p of widget.places)
+      if (p.here) {
+        const w = ctx.measureText(p.name).width / 2 + s, cx = ox + (p.x + 0.5) * ts, cy = oy + p.y * ts + (ts * (1 + ik)) / 2 + 3 * s;
+        taken.push([cx - w, cy - 4 * s, cx + w, cy + 4 * s]);
+      }
     for (const l of d.labels) {
-      const cx = ox + (l.x + 0.5) * ts, cy = oy + (l.y + 0.5) * ts;
       const hw = ctx.measureText(l.name).width / 2 + s, hh = 3.5 * s;
-      if (cx - hw < 0 || cx + hw > W || cy - hh < 0 || cy + hh > H) continue;
-      let lit = true;
-      for (let ty = Math.floor((cy - hh - oy) / ts); lit && ty <= Math.floor((cy + hh - oy) / ts); ty++)
-        for (let tx = Math.floor((cx - hw - ox) / ts); tx <= Math.floor((cx + hw - ox) / ts); tx++)
-          if (d.at(tx, ty)[0] === "?") { lit = false; break; }
-      if (lit) text(l.name, cx, cy, "rgba(230,230,230,.85)");
+      for (const [lx, ly] of l.at) {
+        const cx = ox + (lx + 0.5) * ts, cy = oy + (ly + 0.5) * ts;
+        if (cx - hw < 0 || cx + hw > W || cy - hh < 0 || cy + hh > H) continue;
+        if (taken.some(([a, b, c, e]) => cx - hw < c && cx + hw > a && cy - hh < e && cy + hh > b)) continue;
+        let ok = true;
+        const x0 = Math.floor((cx - hw - ox) / ts), x1 = Math.floor((cx + hw - ox) / ts);
+        const y0 = Math.floor((cy - hh - oy) / ts), y1 = Math.floor((cy + hh - oy) / ts);
+        for (let ty = y0 - reach; ok && ty <= y1 + reach; ty++)
+          for (let tx = x0 - reach; tx <= x1 + reach; tx++) {
+            const inside = tx >= x0 && tx <= x1 && ty >= y0 && ty <= y1;
+            if ((inside && d.at(tx, ty)[0] === "?") || icon(tx, ty)) { ok = false; break; }
+          }
+        if (ok) {
+          taken.push([cx - hw, cy - hh, cx + hw, cy + hh]);
+          text(l.name, cx, cy, "rgba(230,230,230,.85)");
+          break;
+        }
+      }
     }
     // the journey: a faint dotted path, its stops marked
     const j = widget.journey;

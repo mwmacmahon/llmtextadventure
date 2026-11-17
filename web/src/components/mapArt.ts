@@ -10,13 +10,13 @@ export const GROUNDS: Record<string, Record<string, Tex>> = {
     // not known: a shade above the panel's own colour, with a faint pattern, so it reads as "not known" and not as empty
     "?": { pal: { a: "#1b1f28", b: "#222733" }, rows: ["aaaaaaaa", "aaabaaaa", "aaaaaaaa", "aaaaaaab", "aaaaaaaa", "abaaaaaa", "aaaaaaaa", "aaaabaaa"] },
     m: { pal: { a: "#437c35", b: "#4d8b3e", c: "#376b2c", d: "#62a04c" }, rows: ["aaabaaaa", "aaaaaaca", "abaaaaaa", "aaaaadaa", "aaaaaaaa", "aacaaaba", "aaaaaaaa", "abaaaaad"] },
-    w: { pal: { a: "#2f6b2a", b: "#3f8a35", c: "#1f4a1c", d: "#66b24e" }, rows: ["aabbaaaa", "abddbaab", "bbbbbaad", "acbbcabb", "aaccaaaa", "aabbaaaa", "baddbaab", "bbbbbbbb"].map((r, i) => (i === 7 ? "caabbcaa" : r)) },
+    w: { pal: { a: "#2f6b2a", b: "#3f8a35", c: "#1f4a1c", d: "#66b24e" }, rows: ["aabbaaaa", "abddbaab", "bbbbbaad", "acbbcabb", "aaccaaaa", "aabbaaaa", "baddbaab", "caabbcaa"] },
     W: { pal: { a: "#1d3f1c", b: "#2a5626", c: "#112a12", d: "#3c7234" }, rows: ["aabbaaaa", "abdbbaab", "bbbbbaaa", "acbbcabb", "aaccaaaa", "aabbaaaa", "abdbbaab", "caabbcaa"] },
     h: { pal: { a: "#6f7f3a", b: "#8a9a4a", c: "#566330", d: "#a4b25e" }, rows: ["aaaaaaaa", "aaabbaaa", "aabddbaa", "abbbbbca", "bbbbbccc", "acccccca", "aaaaaaaa", "aaaaaaaa"] },
     M: { pal: { a: "#6a6f78", b: "#8b919b", c: "#464a52", d: "#d6dae0" }, rows: ["aaaddaaa", "aaabbdaa", "aabbbbca", "abbbbbcc", "bbbbbcca", "bbbccccc", "acccccca", "aaaaaaaa"] },
     b: { pal: { a: "#4a5a30", b: "#3a4826", c: "#5a6a3a", d: "#2f5a58" }, rows: ["aaaaaaaa", "abbaaddd", "aaaaadda", "aaacaaaa", "ddaaaabb", "dddaaabb", "aaaaacaa", "aabaaaaa"] },
-    f: { pal: { a: "#8a7a38", b: "#a08c42", c: "#6c5e2c", d: "#c0a850" }, rows: ["bbbbbbbb", "aaaaaaaa", "cccccccc", "aaaaaaaa", "bbbbbbbb", "aaaaaaaa", "cccccccc", "aaaaaaaa"].map((r, i) => (i === 3 ? "adaadaad" : r)) },
-    "~": { pal: { a: "#2c5a9a", b: "#3a6cb0", c: "#244a82", d: "#7aa8d8" }, rows: ["aaaaaaaa", "aabbaaaa", "aaaaaaaa", "aaaaaabb", "caaaaaaa", "aaaabbaa", "aaaaaaaa", "bbaaaaca"].map((r, i) => (i === 1 ? "aadbaaaa" : r)) },
+    f: { pal: { a: "#8a7a38", b: "#a08c42", c: "#6c5e2c", d: "#c0a850" }, rows: ["bbbbbbbb", "aaaaaaaa", "cccccccc", "adaadaad", "bbbbbbbb", "aaaaaaaa", "cccccccc", "aaaaaaaa"] },
+    "~": { pal: { a: "#2c5a9a", b: "#3a6cb0", c: "#244a82", d: "#7aa8d8" }, rows: ["aaaaaaaa", "aadbaaaa", "aaaaaaaa", "aaaaaabb", "caaaaaaa", "aaaabbaa", "aaaaaaaa", "bbaaaaca"] },
     s: { pal: { a: "#c8b478", b: "#d8c68a", c: "#b09c62", d: "#e8dca8" }, rows: ["aaaaaaaa", "aaabaaaa", "aaaaaaca", "aaaaaaaa", "abaaadaa", "aaaaaaaa", "aaacaaaa", "aaaaaaba"] },
     B: { pal: { a: "#2a2420", b: "#3a3029", c: "#1a1512", d: "#5a3a26" }, rows: ["aaaaaaaa", "abaaaaca", "aaaaaaaa", "aaacaabb", "aaaaaaaa", "dabaaaaa", "aaaaacaa", "aaaaaaaa"] },
     L: { pal: { a: "#c8421c", b: "#e8741e", c: "#8a2a14", d: "#f8c84a" }, rows: ["aabaaaca", "baaadaaa", "aaaabbaa", "caaaaaaa", "aabaaadb", "aaaaaaaa", "dbaacaab", "aaaaaaaa"] },
@@ -33,7 +33,7 @@ export const ICON_PAL: Record<string, string> = {
 
 export const ICONS: Record<string, string[]> = {
   house: ["...KK...", "..KrrK..", ".KrrrrK.", "KrrrrrrK", ".KttttK.", ".KtyKtK.", ".KttKtK.", ".KKKKKK."],
-  village: ["..K..K..", ".KrK.KrK", "KrrrKrrK", "KttKKttK", "KtKKtKtK", "KKKtKKKK".replace("KKKtKKKK", "KttKtKtK"), "KKKKKKKK", "........"],
+  village: ["..K..K..", ".KrK.KrK", "KrrrKrrK", "KttKKttK", "KtKKtKtK", "KttKtKtK", "KKKKKKKK", "........"],
   town: ["...K..K.", "..KsKKsK", "..KsKKsK", ".KKKKKKK", "KrKrrKrK", "KtKttKtK", "KtKtyKtK", "KKKKKKKK"],
   hut: ["........", "...KK...", "..KttK..", ".KttttK.", "KttttttK", ".KnnKnK.", ".KnnKnK.", ".KKKKKK."],
   camp: ["...K....", "..KtK...", ".KtttK.o", "KttKttKo", "KtKKKtKy", "KKKnnKKK", "..nKKn..", "........"],
