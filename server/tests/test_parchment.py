@@ -279,10 +279,10 @@ def test_residents_are_there_on_arrival_and_the_board_pays_in_the_village(engine
     w = WorldTurn()
     game._arrive(st, w, farms)
     rats = [q for q in st.people if q.combat is not None and q.combat.block == "giant_rat"]
-    assert len(rats) == 3 and all(q.location == "The farms" and q.attitude == -3 for q in rats)
-    assert any("Living at The farms: three giant rats" in d for d in w.directives)
+    assert len(rats) == 2 and all(q.location == "The farms" and q.attitude == -3 for q in rats)
+    assert any("Living at The farms: two giant rats" in d for d in w.directives)
     game._arrive(st, w, farms)
-    assert len([q for q in st.people if q.combat is not None and q.combat.block == "giant_rat"]) == 3   # only the first time
+    assert len([q for q in st.people if q.combat is not None and q.combat.block == "giant_rat"]) == 2   # only the first time
     for q in rats:
         q.status = "dead"
     st = game.after_turn(st, TurnInfo(turn=3, elapsed_minutes=1, rng=random.Random(0)))
@@ -318,3 +318,24 @@ def test_a_move_row_never_carries_the_player_a_journeys_way(engine: Engine):
     st = game.after_turn(st, TurnInfo(turn=1, elapsed_minutes=1, rng=random.Random(0)))
     assert st.world["player"]["tile"] == [0, 0] and st.player.location == "The village" and st.flags["far_move_refused"] == 1
 
+
+
+def test_the_villages_people_are_rolled_and_the_rolled_names_survive_a_load(engine: Engine):
+    game = engine.games["parchment"]
+    if not game.name_lists().get("given"):
+        pytest.skip("no name lists on this machine")
+    iid = engine.create_instance("parchment", {**SHEET, "map_seed": 5})
+    st = game.load_state(engine.store.load_state(iid))
+    home = st.world["places"][st.world["home"]]["name"]
+    assert st.city.city_name == home != "The village"
+    keeper = st.person("innkeeper")
+    assert keeper is not None and keeper.name != "rolled" and len(keeper.name.split()) == 2 and keeper.location == "the tavern"
+    assert keeper.name == st.flags["rolled"]["people"]["innkeeper"]
+    names = [q.name for q in st.people if q.id in ("innkeeper", "smith", "storekeeper", "priest", "reeve")]
+    assert len({n.split()[0] for n in names}) == 5                     # no two given names alike
+
+
+def test_a_paper_about_rats_is_no_rats(engine: Engine):
+    game = engine.games["fantasy"]
+    assert not game._creatures("the paper about the rats") and not game._creatures("a sack with rats")
+    assert game._creatures("a cluster of giant rats") and game._creatures("three skeletons")      # B368 kept

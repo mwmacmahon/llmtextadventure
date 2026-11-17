@@ -32,7 +32,7 @@ GAME_TERMS = {"walk", "show", "slot", "hand", "roll", "check", "turn", "move", "
 def check(lists: dict[str, Any]) -> list[str]:
     """What is wrong with a scenario's lists: a word that is a game term, a list too short to roll from, duplicates."""
     out: list[str] = []
-    for key in ("heads", "tails"):
+    for key in ("heads", "tails", *(k for k in ("given", "family") if k in lists)):
         words = [str(w).strip().lower() for w in lists.get(key) or []]
         if len(words) < 20:
             out.append(f"names.{key}: {len(words)} words; at least 20")
@@ -98,3 +98,14 @@ def roll_start(start: dict, lists: dict[str, Any], seed: int) -> dict:
         if p.get("kind") == "hut":
             p["name"] = "A hut called " + p["name"]
     return out
+
+
+def person_name(rng: random.Random, lists: dict[str, Any], taken: set[str] | None = None) -> str:
+    """A person's rolled name: a given name and a family name from the lists ("Mabble Thornwick"); one not yet taken."""
+    taken = taken or set()
+    name = ""
+    for _ in range(30):
+        name = f"{rng.choice(lists['given'])} {rng.choice(lists['family'])}"
+        if name.split()[0].lower() not in {t.split()[0].lower() for t in taken}:
+            return name
+    return name

@@ -98,6 +98,8 @@ def update(game: Any, s: FantasyState) -> list[str]:
     out += _loot(s, [q for q in s.people if q.id in seen and q.id not in set(s.flags.get("looted") or [])])
     residents = s.flags.get("residents") or {}
     for j in jobs:
+        if j.get("at") and j["at"] in residents:
+            j["started"] = True                           # the place has been reached (its residents are out)
         if j["status"] != "open":
             continue
         if j["form"] == "clear" and _dead(s, residents.get(j["at"], [])):
@@ -185,5 +187,8 @@ def sync_threads(s: FantasyState) -> None:
         about = j["line"] + (f" ({j['pay']} gold)" if j["pay"] else "") + (" Done; to be paid back in the village." if j["status"] == "done" else "")
         if j["form"] == "bounty" and j["killed"]:
             about += f" {j['killed']} so far."
-        keep.append(th.Thread(id=j["id"], title=j["title"], status=status, about=about.strip(), who=j["who"]))
+        # the gate-2 rerun: a job stayed "offered" after the player took the paper and went; a job is under way once its place
+        # has been reached or one of its creatures killed (the Quests panel's step, B372)
+        note = "under way" if j.get("started") or j["status"] != "open" or j["killed"] else ""
+        keep.append(th.Thread(id=j["id"], title=j["title"], status=status, about=about.strip(), who=j["who"], note=note))
     s.threads = keep

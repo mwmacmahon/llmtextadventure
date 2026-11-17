@@ -1906,7 +1906,10 @@ class FantasyGame(GameBase):
         """The words' head noun (the last) is a bestiary monster's name in the plural ('a cluster of giant rats', 'two skeletons'),
         not a part of one ('rat skulls', 'a wolf pelt'), and not a person kind."""
         from . import combat as cb
-        words = re.findall(r"[a-z]+", (value or "").lower())
+        # the Parchment gate-2 rerun (11-17): 'the paper about the rats' was filed as a rat swarm in the player's pocket and bit
+        # them every round. The head noun comes before any preposition but "of" ('a cluster of giant rats' stays creatures)
+        head = re.split(r"\s+(?:about|for|from|with|on|in|at|to|by|under|near|over|against|regarding|concerning)\s+", (value or "").lower())[0]
+        words = re.findall(r"[a-z]+", head)
         if not words or not words[-1].endswith("s") or len(words[-1]) < 4:
             return False
         eid = cb.match_entry(words[-1])

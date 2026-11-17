@@ -71,6 +71,16 @@ class ParchmentGame(FantasyGame):
             state.world = wm.new_world(start, seed, str(sc.get("id") or ""))
             state.player.location = self.where(state)
             state.city.city_name = state.player.location          # the village's rolled name is the "city" the fantasy's lines name
+            people: dict[str, str] = {}
+            if lists.get("given") and not setup.get("written_names"):
+                import random
+                prng = random.Random(f"people:{seed}")
+                for q in state.people:
+                    if q.name == "rolled":
+                        q.name = rn.person_name(prng, lists, set(people.values()))
+                        people[q.id] = q.name
+            # the save keeps what was rolled: the fantasy's load reads the scenario's names and the city's again (D158)
+            state.flags["rolled"] = {"city_name": state.city.city_name, "people": people}
             from games.fantasy.state import FoundPlace
             home = self.where(state)
             for spot in start.get("home_spots") or []:     # FN60: the village's buildings, spots of the village (the cold read, 11-17)
@@ -89,6 +99,18 @@ class ParchmentGame(FantasyGame):
         if problems:
             raise ValueError("names.yml: " + "; ".join(problems))
         return lists
+
+    def load_state(self, data: dict[str, Any]) -> FantasyState:
+        """The family's load, then the names this game rolled put back (the load reads the scenario's names again)."""
+        st = super().load_state(data)
+        rolled = st.flags.get("rolled") or {}
+        if rolled.get("city_name"):
+            st.city.city_name = rolled["city_name"]
+        for pid, name in (rolled.get("people") or {}).items():
+            q = st.person(pid)
+            if q is not None:
+                q.name = name
+        return st
 
     def where(self, state: FantasyState) -> str:
         """The player's place as a name, worked out from the tile (R-G3): the place on it, else the region, else the open
@@ -309,7 +331,7 @@ class ParchmentGame(FantasyGame):
                     w.directives.insert(0, f"This turn {s.player.name} heads {way} from {lo(start)} and stops {lo(self._here_words(s))}. "
                                            f"Tell the walk and the place {s.player.name} stops.")
                     w.mechanics.append(f"Journey: {way} from {start}, {walked['minutes']} minutes.")
-                    setattr(w, "extra_minutes", max(0, walked["minutes"] - int(getattr(adj, "time_minutes", 0) or 0)))
+                    self._charge(s, w, max(0, walked["minutes"] - int(getattr(adj, "time_minutes", 0) or 0)))
                 return s, w
         if pid is not None:
             plan = wm.plan_journey(s.world, pid, self._night(s))
@@ -323,10 +345,17 @@ class ParchmentGame(FantasyGame):
                 if walked is not None:
                     s.flags["leg_walked"] = True
                     s.player.location = self.where(s)
-                    setattr(w, "extra_minutes", max(0, walked["minutes"] - int(getattr(adj, "time_minutes", 0) or 0)))
+                    self._charge(s, w, max(0, walked["minutes"] - int(getattr(adj, "time_minutes", 0) or 0)))
                     w.mechanics.append(f"Walk: {start} to {s.player.location}, {walked['minutes']} minutes.")
                     self._arrive(s, w, pid)
         return s, w
+
+    def _charge(self, s: FantasyState, w: Any, minutes: int) -> None:
+        """A walk's minutes beyond the turn's own: the clock moved here and reported to the pipeline (FN120, the gate-2 rounds:
+        a 13-minute walk moved the clock 5, because the pipeline's extra minutes are a report, the clock is the game's)."""
+        if minutes > 0:
+            self._advance(s, minutes)
+            setattr(w, "extra_minutes", int(getattr(w, "extra_minutes", 0) or 0) + minutes)
 
     def _pay_now(self, s: FantasyState, w: Any) -> None:
         """The board's pay, settled before the prose when the player is in the village (the gate-2 round: paid twice when the
@@ -389,7 +418,7 @@ class ParchmentGame(FantasyGame):
         w.mechanics.append(f"Journey: {start} to {leg['stop'][1] if not leg['arrived'] else j['label']}, {total} minutes"
                            + (f"; {event}" if event else "") + ".")
         mins = int(getattr(adj, "time_minutes", 0) or 0) if adj is not None else 0
-        setattr(w, "extra_minutes", max(0, total - mins))
+        self._charge(s, w, max(0, total - mins))
         s.flags["prefill"] = "" if leg["arrived"] else self.CONTINUE.format(label=j["label"])
 
     def _trouble(self, s: FantasyState, rng: Any) -> str:
@@ -450,7 +479,7 @@ class ParchmentGame(FantasyGame):
         label = j["label"]
         self._leg(s, w, rng, 0)
         return s, CommandResult(label="Continue", player_line=f"I go on toward {label}.", summary=f"{s.player.name} goes on toward {label}.",
-                                directive=" ".join(w.directives), text=" ".join(w.mechanics), minutes=int(getattr(w, "extra_minutes", 0) or 0),
+                                directive=" ".join(w.directives), text=" ".join(w.mechanics), minutes=0,   # the leg moved the clock itself
                                 referee_skip=["location"])
 
     def ui(self, state: FantasyState) -> UISchema:
