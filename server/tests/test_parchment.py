@@ -95,15 +95,16 @@ async def test_a_turn_that_moves_the_player_walks_the_tile(engine: Engine):
     game = engine.games["parchment"]
     st = game.load_state(engine.store.load_state(iid))
     before = st.clock.day * 1440 + st.clock.minute
-    st.player.location = "The old mill"                              # what a referee's move row leaves
+    st.player.location = "The farms"                                 # what a referee's move row leaves: a short walk
     st = game.after_turn(st, TurnInfo(turn=1, elapsed_minutes=1, rng=random.Random(0)))
-    mill = next(k for k, p in st.world["places"].items() if p["name"] == "The old mill")
-    assert st.world["player"]["tile"] == st.world["places"][mill]["tile"] and st.world["player"]["came_from"] == [0, 0]
-    assert st.world["known"]["places"][mill]["state"] == "been" and st.player.location == "The old mill"
-    assert st.clock.day * 1440 + st.clock.minute - before >= 10      # the walk's own minutes, not the turn's one
+    farms = next(k for k, p in st.world["places"].items() if p["name"] == "The farms")
+    assert wm.region_at(st.world, *st.world["player"]["tile"]) == farms and st.world["player"]["came_from"] == [0, 0]
+    assert st.world["known"]["places"][farms]["state"] == "been" and st.player.location == "The farms"
+    assert st.clock.day * 1440 + st.clock.minute - before >= 2       # the walk's own minutes, not the turn's one
+    tile = list(st.world["player"]["tile"])
     st.player.location = "the riverbank by the moon"                 # a name the map does not hold, no spot of here
     st = game.after_turn(st, TurnInfo(turn=2, elapsed_minutes=1, rng=random.Random(0)))
-    assert st.player.location == "The old mill" and st.world["player"]["tile"] == st.world["places"][mill]["tile"]
+    assert st.player.location == "The farms" and st.world["player"]["tile"] == tile
 
 
 def test_no_watch_heat_or_renown_in_parchment(engine: Engine):
@@ -151,8 +152,9 @@ def test_a_room_the_story_makes_is_a_spot_of_the_place_and_no_walk(engine: Engin
     from engine.game import TurnInfo
     from games.fantasy.state import FoundPlace
     game, st = _fresh(engine)
-    st.player.location = "The old mill"
-    st = game.after_turn(st, TurnInfo(turn=1, elapsed_minutes=1, rng=random.Random(0)))
+    mill = next(k for k, p in st.world["places"].items() if p["name"] == "The old mill")
+    wm.walk_to(st.world, mill)
+    st.player.location = game.where(st)
     tile = list(st.world["player"]["tile"])
     st.found_places.append(FoundPlace(name="the cellar", within="The old mill"))
     st.player.location = "the cellar"
@@ -250,11 +252,19 @@ def test_a_spot_of_another_place_walks_there_first(engine: Engine):
     import random
     from engine.game import TurnInfo
     game, st = _fresh(engine)
-    st.player.location = "The old mill"
-    st = game.after_turn(st, TurnInfo(turn=1, elapsed_minutes=1, rng=random.Random(0)))
-    st.player.location = "the shrine"                                # a building of the village, from the mill
+    farms = next(k for k, p in st.world["places"].items() if p["name"] == "The farms")
+    wm.walk_to(st.world, farms)
+    st.player.location = game.where(st)
+    st.player.location = "the shrine"                                # a building of the village, from the farms
     st = game.after_turn(st, TurnInfo(turn=2, elapsed_minutes=1, rng=random.Random(0)))
     assert st.world["player"]["tile"] == [0, 0] and st.player.location == "the shrine"
+    I = type("I", (), {})
+    i = I(); i.goes_to, i.transition = "the smithy", ""
+    adj = type("A", (), {})(); adj.intents = [i]
+    mill = next(k for k, p in st.world["places"].items() if p["name"] == "The old mill")
+    wm.walk_to(st.world, mill)
+    st.player.location = game.where(st)
+    assert game._journey_dest(st, adj) == st.world["home"]          # from the mill, the smithy is the village's walk
 
 
 def test_residents_are_there_on_arrival_and_the_board_pays_in_the_village(engine: Engine):
@@ -276,7 +286,35 @@ def test_residents_are_there_on_arrival_and_the_board_pays_in_the_village(engine
     for q in rats:
         q.status = "dead"
     st = game.after_turn(st, TurnInfo(turn=3, elapsed_minutes=1, rng=random.Random(0)))
-    assert jobs and st.flags["jobs"][0]["status"] in ("done", "paid")
-    gold = st.item("gold").count
-    assert st.flags["jobs"][0]["status"] == "paid" and gold == 15 + 15              # the player never left the village tile
+    assert st.flags["jobs"][0]["status"] == "done" and st.item("gold").count == 15     # paid before a prose, never after one
+    w = WorldTurn()
+    game._arrive(st, w, st.world["home"])                                            # back in the village: paid, told, gold skipped
+    assert st.flags["jobs"][0]["status"] == "paid" and st.item("gold").count == 15 + 15
+    assert "gold" in w.skip and any(d.startswith("Settled before this telling: Paid: 15 gold") for d in w.directives)
     assert next(t for t in st.threads if t.id == "job_1").status == "resolved"
+
+
+def test_every_kill_pays_something_once(engine: Engine):
+    import random
+    from engine.game import TurnInfo
+    from games.fantasy.world import WorldTurn
+    game, st = _fresh(engine)
+    farms = next(k for k, p in st.world["places"].items() if p["name"] == "The farms")
+    game._arrive(st, WorldTurn(), farms)
+    rats = [q for q in st.people if q.combat is not None and q.combat.block == "giant_rat"]
+    rats[0].status = "dead"
+    st = game.after_turn(st, TurnInfo(turn=3, elapsed_minutes=1, rng=random.Random(0)))
+    assert st.item("rat_tails") is not None and st.item("rat_tails").count == 1
+    assert any(n.startswith("Loot: 1 rat tail") for n in st.player.shown_notes)
+    st = game.after_turn(st, TurnInfo(turn=4, elapsed_minutes=1, rng=random.Random(0)))
+    assert st.item("rat_tails").count == 1                                # once
+
+
+def test_a_move_row_never_carries_the_player_a_journeys_way(engine: Engine):
+    import random
+    from engine.game import TurnInfo
+    game, st = _fresh(engine)
+    st.player.location = "The goblin fort"                            # what a move row leaves, an hour's walk off
+    st = game.after_turn(st, TurnInfo(turn=1, elapsed_minutes=1, rng=random.Random(0)))
+    assert st.world["player"]["tile"] == [0, 0] and st.player.location == "The village" and st.flags["far_move_refused"] == 1
+

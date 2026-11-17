@@ -72,7 +72,8 @@ def _levers_line(ui: dict) -> str:
         elif p.get("type") == "quests":
             rows = "; ".join(f"{r['title']} [{r['standing']}]" + (f" {r['line']}" if r.get("line") else "") for r in p.get("rows", [])[:8])
             out.append(f"  {p.get('title')}: {rows or 'nothing'}")
-    return ("\nLevers (play --command <id> key=value):\n" + "\n".join(out)) if out else ""
+    pre = (f"\nIn the input box, ready to send as it stands: {ui['prefill']}") if ui.get("prefill") else ""   # MAP-CONTRACT section 4
+    return (("\nLevers (play --command <id> key=value):\n" + "\n".join(out)) if out else "") + pre
 
 
 def play(a: argparse.Namespace) -> int:

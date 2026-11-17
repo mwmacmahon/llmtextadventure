@@ -19,7 +19,14 @@ from typing import Any
 from engine import threads as th
 from engine import worldmap as wm
 from games.fantasy import encounter as en
-from games.fantasy.state import FantasyState
+from games.fantasy.state import FantasyState, Item
+
+# FN66 (loot always; FANTASY_NEXT 2a): what a beast leaves that someone in the village will buy. A humanoid or the dead
+# carry coin instead. The trophies' prices are the bounties' and the shops' business (not built: they sell like any thing).
+TROPHIES = {"giant_rat": "rat tail", "rat_swarm": "rat tail", "wolf": "wolf pelt", "dire_wolf": "dire wolf pelt",
+            "goblin": "goblin ear", "goblin_boss": "goblin chief's ear", "kobold": "kobold tooth", "giant_spider": "spider fang",
+            "giant_frog": "frog leg", "troll": "troll's toenail", "boar": "boar tusk", "black_bear": "bear claw",
+            "swarm_of_bats": "bat wing", "crocodile": "crocodile tooth"}
 
 
 def setup(sc: dict, s: FantasyState) -> None:
@@ -88,6 +95,7 @@ def update(game: Any, s: FantasyState) -> list[str]:
                 if j["form"] == "bounty" and q.combat.block == j["entry"]:
                     j["killed"] += 1
     s.flags["dead_seen"] = sorted(seen)
+    out += _loot(s, [q for q in s.people if q.id in seen and q.id not in set(s.flags.get("looted") or [])])
     residents = s.flags.get("residents") or {}
     for j in jobs:
         if j["status"] != "open":
@@ -99,6 +107,58 @@ def update(game: Any, s: FantasyState) -> list[str]:
                                               and q.combat is not None and q.combat.block == j["entry"]]):
             j["status"] = "done"
             out.append(f"Job done: {j['title']}. {j['who'][:1].upper() + j['who'][1:]} will pay in the village.")
+    sync_threads(s)
+    return out
+
+
+def _loot(s: FantasyState, fallen: list) -> list[str]:
+    """FN66: every creature killed pays something, once: a beast its trophy, anyone else coin by its XP. Into the pockets
+    at once (the player is there; picking over the bodies is not worth a turn of its own)."""
+    import random
+    from games.fantasy import combat as cb
+    looted = list(s.flags.get("looted") or [])
+    got: dict[str, int] = {}
+    coin = 0
+    for q in fallen:
+        looted.append(q.id)
+        if q.combat is None:
+            continue
+        entry = q.combat.block
+        kind = str(cb.bestiary().entries.get(entry, {}).get("kind") or "")
+        rng = random.Random(f"{(s.world or {}).get('seed', 0)}:{q.id}")
+        if entry in TROPHIES and kind not in ("humanoid", "person"):
+            got[TROPHIES[entry]] = got.get(TROPHIES[entry], 0) + 1
+        else:
+            xp = int(q.combat.xp or 10)
+            coin += max(1, xp // 25 + rng.randint(0, 3))
+        if entry in TROPHIES and kind in ("humanoid", "person"):
+            got[TROPHIES[entry]] = got.get(TROPHIES[entry], 0) + 1
+    s.flags["looted"] = looted
+    out = []
+    if coin:
+        gold = s.item("gold")
+        if gold is None:
+            s.inventory.append(Item(id="gold", name="gold", count=coin))
+        else:
+            gold.count += coin
+    for name, n in got.items():
+        iid = name.replace("'", "").replace(" ", "_") + "s"
+        it = s.item(iid)
+        if it is None:
+            s.inventory.append(Item(id=iid, name=name + "s", count=n, note="a trophy; someone in the village pays for these"))
+        else:
+            it.count += n
+    if coin or got:
+        out.append("Loot: " + ", ".join(([f"{coin} gold"] if coin else []) + [f"{n} {k}{'s' if n > 1 else ''}" for k, n in got.items()]) + ".")
+    return out
+
+
+def pay(s: FantasyState) -> list[str]:
+    """Done jobs and bounties owed, paid when the player is on the village's tile and not fighting. Returns the § lines."""
+    jobs = s.flags.get("jobs") or []
+    out: list[str] = []
+    if not jobs or not s.world:
+        return out
     at_home = s.world["player"]["tile"] == s.world["places"][s.world["home"]]["tile"] and not s.player.fighting
     if at_home:
         gold = s.item("gold")
@@ -122,7 +182,7 @@ def sync_threads(s: FantasyState) -> None:
     keep = [t for t in s.threads if not t.id.startswith("job_")]
     for j in jobs:
         status = "resolved" if j["status"] == "paid" else "open"
-        about = j["line"] + (f" ({j['pay']} gold)" if j["pay"] else "") + (" Done: paid in the village." if j["status"] == "done" else "")
+        about = j["line"] + (f" ({j['pay']} gold)" if j["pay"] else "") + (" Done; to be paid back in the village." if j["status"] == "done" else "")
         if j["form"] == "bounty" and j["killed"]:
             about += f" {j['killed']} so far."
         keep.append(th.Thread(id=j["id"], title=j["title"], status=status, about=about.strip(), who=j["who"]))

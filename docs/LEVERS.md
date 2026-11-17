@@ -952,3 +952,27 @@ proprietor's name, as before 11-14).
 
 The reading in two steps with the game's kinds of attempt is the profile module `reading_steps` (§2); the lever phrase
 list is the word guard `lever-phrases` (§8); the street texture gap is the game attribute `texture_gap_turns`.
+
+## Parchment's map levers (added 2026-11-17, on Opus; Fable review: PENDING)
+
+### `roads` (the road dial, FN35)
+
+- **Levels:** `quiet`, `written` (the default), `wild`, chosen at character creation in Parchment (setup field `roads`),
+  kept in the save's flags. It changes only what happens between places: the chance of an event at a journey's stop
+  (times 0.5, 1, 1.5) and the share of those that are trouble (10, 25, 40 per cent); on `quiet` the legs are walked on
+  until one has an event or the arrival (R16).
+- **Set in:** the player's choice; not in Settings yet, not in any profile.
+- **Why it exists:** the owner, 11-15: "how varied the travel experience is as a separate difficulty style slider at
+  character creation ... do you want to fight a lot along the way or get to where you're going basically".
+- **Measured:** the scaling only (a test: over 2,000 rolls each, quiet < written < wild, and quiet's trouble under a quarter
+  of wild's). Not yet seen in a played round. Written to the ledger every action turn (a `map` row: the dial, the tile, the journey).
+- **Helped / did not:** not known yet; first played in the gate-2 round of 11-17 on `written`.
+
+### Stop chances (`worldmap.EVENT_CHANCE`, `LEG_ABOVE`, `MAX_STOPS`)
+
+- **Set in:** `engine/worldmap.py`, the same for every scenario.
+- **Levels:** a crossing 40, a crossroads 35, a region's edge 30, a place passed 25, half way 10 (per hundred, before the
+  dial); night adds 10. A walk over 15 minutes is a journey; at most three stops and the arrival.
+- **Why it exists:** MAP_DESIGN 6.5 (the owner, 11-15: "river crossings, crossroads etc have highest chance of events").
+- **Measured:** nothing; first guesses.
+- **Helped / did not:** not known yet.

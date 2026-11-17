@@ -137,6 +137,12 @@ class ParchmentGame(FantasyGame):
             # a spot of another place (the gate-1 round, 11-17: the mill to "the shrine" left the tile at the mill): walk to the
             # place it is in, then stand in the spot
             pid = wm.place_named(w, spot_of or want)
+            if pid is not None and wm.plan_journey(w, pid, self._night(s)) is not None:
+                # the gate-2 round (11-17): a move row outside a leg carried the player the whole way to the barrow. A move
+                # that would be a journey is never made by a row: the tile stays, the next turn's Where says so (MAP_DESIGN 10)
+                s.flags["far_move_refused"] = int(s.flags.get("far_move_refused") or 0) + 1
+                s.player.location = here
+                return s
             if pid is not None:
                 night = not (360 <= s.clock.minute < 1200)
                 walked = wm.walk_to(w, pid, int(getattr(info, "turn", 0) or 0), night)
@@ -268,7 +274,7 @@ class ParchmentGame(FantasyGame):
         from engine.roles import destination
         for i in getattr(adj, "intents", None) or []:
             d = destination(i).strip()
-            pid = wm.place_named(s.world, d) if d else None
+            pid = (wm.place_named(s.world, d) or wm.place_named(s.world, self._spot_parent(s, d))) if d else None   # a spot: its place
             if pid is not None and pid != wm.place_named(s.world, self.where(s)):
                 return pid
         return None
@@ -278,6 +284,13 @@ class ParchmentGame(FantasyGame):
         starts a journey and walks its first leg; a held journey's leg is walked by the Continue command. The narrator is
         told where this leg ends, and what happened there if the stop's roll says so (FN34)."""
         s, w = super().world_turn(state, adj, player_text, rng, turn, offset)
+        if s.world and not s.player.fighting:
+            # the gate-2 round (11-17): paid 30 for a 15 job, the engine after the prose and the referee from the farmer's coins.
+            # The pay is settled before the prose now, the narrator told, and the referee's gold rows this turn not counted
+            self._pay_now(s, w)
+        if s.world:
+            w.rows.append({"kind": "map", "roads": self.roads(s), "tile": list(s.world["player"]["tile"]),
+                           "journey": (s.world["player"].get("journey") or {}).get("to")})     # FN35: the dial in the ledger each turn
         if not s.world or s.player.fighting or s.player.fate or s.player.peril is not None:
             return s, w
         pid = self._journey_dest(s, adj)
@@ -315,8 +328,19 @@ class ParchmentGame(FantasyGame):
                     self._arrive(s, w, pid)
         return s, w
 
+    def _pay_now(self, s: FantasyState, w: Any) -> None:
+        """The board's pay, settled before the prose when the player is in the village (the gate-2 round: paid twice when the
+        engine paid after the prose and the referee wrote the farmer's coins); the referee's gold rows this turn not counted."""
+        paid = jb.pay(s)
+        if paid:
+            w.directives.append("Settled before this telling: " + " ".join(paid) + " Show it if the scene has room; the sums are the engine's.")
+            w.mechanics += paid
+            w.skip.append("gold")
+
     def _arrive(self, s: FantasyState, w: Any, pid: str) -> None:
-        """FN65: the place's residents, the first time the player comes; the narrator is told who is there."""
+        """FN65: the place's residents, the first time the player comes; the narrator is told who is there. Home: the pay."""
+        if pid == s.world["home"]:
+            self._pay_now(s, w)
         lines = jb.arrive(self, self.scenario(s.city.id), s, pid)
         if lines:
             w.directives.insert(1 if w.directives else 0, " ".join(lines) + " They are there as the player arrives.")
