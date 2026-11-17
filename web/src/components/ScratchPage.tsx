@@ -1,18 +1,27 @@
 import { useEffect, useRef, useState } from "react";
-import { scratchInfo, scratchTemplate, streamScratch, type ScratchDone, type ScratchInfo } from "../api";
+import { scratchInfo, scratchTemplate, streamScratch, type ScratchDone, type ScratchInfo, type ScratchRequest } from "../api";
+import { formatExchange, parseExchange, type Role } from "../scratchText";
 
 const ROLE_ORDER = ["narrator", "assistant", "referee", "summarizer"];
+type Mode = "conversation" | "chat" | "raw";
+type Msg = { id: number; role: Role; content: string };
+let nextId = 1;
+const msg = (role: Role, content: string): Msg => ({ id: nextId++, role, content });
 
-/** The scratch pad (D326): the GPU box's model with no game around it, in dev mode on a local server. Raw: the model continues
- *  the box's own text. Chat: a system text and the box as one user message, the reply under it. Everything lives in this
- *  page's memory only: Clear or a reload and it is gone; the server keeps nothing but a count of tokens. */
+/** The scratch pad (D326): the GPU box's model with no game around it, in dev mode on a local server.
+ *  Conversation (the default): a system text and messages, every one an editable box, the model's replies too.
+ *  Chat: a system text and one user message, the reply under it. Raw: the model continues the box's own text.
+ *  Everything lives in this page's memory only: Clear or a reload and it is gone; the server keeps nothing but a count. */
 export function ScratchPage() {
   const [info, setInfo] = useState<ScratchInfo | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [mode, setMode] = useState<"raw" | "chat">("raw");
-  const [text, setText] = useState("");
+  const [note, setNote] = useState<string | null>(null);
+  const [mode, setMode] = useState<Mode>("conversation");
   const [system, setSystem] = useState("");
-  const [reply, setReply] = useState("");
+  const [messages, setMessages] = useState<Msg[]>([]);
+  const [draft, setDraft] = useState("");                         // conversation: the next user message
+  const [text, setText] = useState("");                           // chat: the user message; raw: the whole text
+  const [reply, setReply] = useState("");                         // chat: the reply, editable
   const [reasoning, setReasoning] = useState("");
   const [preset, setPreset] = useState("custom");
   const [params, setParams] = useState<Record<string, string>>({});
@@ -20,11 +29,14 @@ export function ScratchPage() {
   const [thinking, setThinking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<ScratchDone | null>(null);
-  const [before, setBefore] = useState<string | null>(null);     // the box before the last generation, for Undo
+  const [before, setBefore] = useState<string | null>(null);      // raw: the text before the last generation or wrap, for Undo
+  const [paste, setPaste] = useState<string | null>(null);        // the paste box, when the browser will not read the clipboard
+  const [copyBox, setCopyBox] = useState<string | null>(null);    // the export shown to copy by hand, when it will not write it
   const abort = useRef<AbortController | null>(null);
   const boxRef = useRef<HTMLTextAreaElement>(null);
+  const endRef = useRef<HTMLDivElement>(null);
 
-  const [swapped, setSwapped] = useState<string | null>(null);   // the box's model changed under the page
+  const [swapped, setSwapped] = useState<string | null>(null);    // the box's model changed under the page
   const presetRef = useRef(preset);
   presetRef.current = preset;
   const seen = useRef<string | null>(null);                        // the model (and profile) last read from the box
@@ -75,11 +87,11 @@ export function ScratchPage() {
     setPreset("custom");
   }
 
-  async function generate() {
-    if (busy || !text.trim()) return;
+  /** One call, streamed into `into` piece by piece. Says whether anything came back. */
+  async function call(body: Omit<ScratchRequest, "preset" | "params" | "max_tokens" | "thinking">, into: (acc: string) => void): Promise<boolean> {
     const before0 = seen.current;
-    if (!(await refresh())) return;
-    if (seen.current !== before0) return;      // the model changed: say so and let the person look before sending
+    if (!(await refresh())) return false;
+    if (seen.current !== before0) return false;      // the model changed: say so and let the person look before sending
     setErr(null);
     setDone(null);
     setReasoning("");
@@ -88,18 +100,12 @@ export function ScratchPage() {
     abort.current = ctl;
     const sent: Record<string, number | null> = {};
     for (const [k, v] of Object.entries(params)) if (v.trim() !== "" && !isNaN(Number(v))) sent[k] = Number(v);
-    const start = text;
-    if (mode === "raw") setBefore(start);
-    else setReply("");
     let acc = "";
     try {
-      for await (const ev of streamScratch({ mode, text, system, preset, params: sent, max_tokens: maxTokens, thinking: mode === "chat" && thinking }, ctl.signal)) {
+      for await (const ev of streamScratch({ ...body, preset, params: sent, max_tokens: maxTokens, thinking: body.mode !== "raw" && thinking }, ctl.signal)) {
         if (ev.event === "text") {
           acc += ev.data.t;
-          if (mode === "raw") {
-            setText(start + acc);
-            requestAnimationFrame(() => boxRef.current && (boxRef.current.scrollTop = boxRef.current.scrollHeight));
-          } else setReply(acc);
+          into(acc);
         } else if (ev.event === "reasoning") setReasoning((r) => r + ev.data.t);
         else if (ev.event === "done") setDone(ev.data);
         else if (ev.event === "error") setErr(ev.data.message);
@@ -110,6 +116,48 @@ export function ScratchPage() {
       setBusy(false);
       abort.current = null;
     }
+    return acc.length > 0;
+  }
+
+  /** Conversation: the draft (if any) joins as a user message, then the model's reply streams into a new assistant box. */
+  async function converse(base: Msg[] = messages) {
+    const turns = draft.trim() ? [...base, msg("user", draft)] : base;
+    if (!turns.length || turns[turns.length - 1].role !== "user") {
+      setErr("The last message is the model's. Write a user message below, or use Regenerate.");
+      return;
+    }
+    const answer = msg("assistant", "");
+    setMessages([...turns, answer]);
+    setDraft("");
+    const set = (acc: string) => {
+      setMessages((ms) => ms.map((m) => (m.id === answer.id ? { ...m, content: acc } : m)));
+      requestAnimationFrame(() => endRef.current?.scrollIntoView({ block: "end" }));
+    };
+    const got = await call({ mode: "conversation", text: "", system, messages: turns.map(({ role, content }) => ({ role, content })) }, set);
+    if (!got) setMessages((ms) => ms.filter((m) => m.id !== answer.id));   // nothing came: no empty box left behind
+  }
+
+  function regenerate() {
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== "assistant") return;
+    converse(messages.slice(0, -1));
+  }
+
+  async function generate() {
+    if (busy) return;
+    if (mode === "conversation") return converse();
+    if (!text.trim()) return;
+    if (mode === "chat") {
+      setReply("");
+      await call({ mode: "chat", text, system, messages: [] }, setReply);
+      return;
+    }
+    const start = text;
+    setBefore(start);
+    await call({ mode: "raw", text, system: "", messages: [] }, (acc) => {
+      setText(start + acc);
+      requestAnimationFrame(() => boxRef.current && (boxRef.current.scrollTop = boxRef.current.scrollHeight));
+    });
   }
 
   /** Raw mode: the box (and the system text) put in the loaded model's own chat template, ending where its reply begins, so
@@ -126,18 +174,84 @@ export function ScratchPage() {
     }
   }
 
+  /** Chat: the message and its reply carried on as a conversation. */
+  function toConversation() {
+    const ms = [msg("user", text), ...(reply ? [msg("assistant", reply)] : [])];
+    setMessages(ms);
+    setText("");
+    setReply("");
+    setMode("conversation");
+  }
+
+  // ---- export and import: one text blob <-> the boxes (src/scratchText.ts has the format) -----------------------------
+  function exported(): string {
+    if (mode === "raw") return text;
+    const ms = mode === "conversation"
+      ? [...messages, ...(draft.trim() ? [msg("user", draft)] : [])]
+      : [...(text ? [msg("user", text)] : []), ...(reply ? [msg("assistant", reply)] : [])];
+    return formatExchange({ system, messages: ms.map(({ role, content }) => ({ role, content })) });
+  }
+
+  async function exportClip() {
+    const blob = exported();
+    try {
+      await navigator.clipboard.writeText(blob);
+      setNote("Copied to the clipboard.");
+    } catch {
+      setCopyBox(blob);            // the browser refused (a page not on https): shown to copy by hand
+    }
+  }
+
+  async function importClip() {
+    try {
+      take(await navigator.clipboard.readText());
+    } catch {
+      setPaste("");                // the browser refused: a box to paste into
+    }
+  }
+
+  function take(blob: string) {
+    setPaste(null);
+    const x = parseExchange(blob);
+    if (x) {
+      setSystem(x.system);
+      setMessages(x.messages.map((m) => msg(m.role, m.content)));
+      setDraft("");
+      setMode("conversation");
+      setNote(`Imported ${x.messages.length} message${x.messages.length === 1 ? "" : "s"}${x.system ? " and a system text" : ""}.`);
+    } else if (mode === "conversation") {
+      setDraft(blob);
+      setNote("No ### headers in it: put in the next user message.");
+    } else {
+      setText(blob);
+      setNote("Imported as the text.");
+    }
+  }
+
   function clear() {
     abort.current?.abort();
+    setMessages([]);
+    setDraft("");
     setText("");
     setReply("");
     setReasoning("");
     setDone(null);
     setBefore(null);
     setErr(null);
+    setNote(null);
   }
+
+  const keyGo = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      generate();
+    }
+  };
 
   if (!info) return <div className="lobby">{err ?? "loading…"}</div>;
   const presetNames = [...Object.keys(info.presets)].sort((a, b) => rank(a) - rank(b));
+  const last = messages[messages.length - 1];
+  const canGo = mode === "conversation" ? !!draft.trim() || last?.role === "user" : !!text.trim();
   return (
     <div className="lobby scratch-page">
       <h1>Scratch pad</h1>
@@ -156,10 +270,13 @@ export function ScratchPage() {
       <section className="settings">
         <div className="settings-row">
           <label>
-            <input type="radio" checked={mode === "raw"} onChange={() => setMode("raw")} disabled={busy} /> Raw: the model continues the text, no chat template
+            <input type="radio" checked={mode === "conversation"} onChange={() => setMode("conversation")} disabled={busy} /> Conversation: messages back and forth, every one editable
           </label>
           <label>
             <input type="radio" checked={mode === "chat"} onChange={() => setMode("chat")} disabled={busy} /> Chat: a system text and one user message, as the roles call it
+          </label>
+          <label>
+            <input type="radio" checked={mode === "raw"} onChange={() => setMode("raw")} disabled={busy} /> Raw: the model continues the text, no chat template
           </label>
         </div>
         <div className="settings-row">
@@ -187,14 +304,48 @@ export function ScratchPage() {
         </div>
       </section>
 
-      <textarea className="scratch-system" rows={3} placeholder={mode === "raw" ? "System text (optional; used only by Wrap in template)" : "System text (optional)"} value={system} onChange={(e) => setSystem(e.target.value)} disabled={busy} />
-      <textarea ref={boxRef} className="scratch-box" value={text} onChange={(e) => setText(e.target.value)} readOnly={busy}
-        placeholder={mode === "raw" ? "Text for the model to continue. Ctrl+Enter generates." : "The user message. Ctrl+Enter generates."}
-        onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); generate(); } }} />
+      <textarea className="scratch-system scratch-grow" rows={2} value={system} onChange={(e) => setSystem(e.target.value)} disabled={busy}
+        placeholder={mode === "raw" ? "System text (optional; used only by Wrap in template)" : "System text (optional)"} />
+
+      {mode === "conversation" && (
+        <div className="scratch-thread">
+          {messages.map((m, i) => (
+            <div key={m.id} className={`scratch-msg scratch-${m.role}`}>
+              <div className="scratch-msg-head small">
+                <button className="link small" disabled={busy} title="Switch this message between user and model"
+                  onClick={() => setMessages((ms) => ms.map((x) => (x.id === m.id ? { ...x, role: x.role === "user" ? "assistant" : "user" } : x)))}>
+                  {m.role === "user" ? "user" : "model"}
+                </button>
+                <span className="spacer" />
+                <button className="link small" disabled={busy} title="Delete this message" onClick={() => setMessages((ms) => ms.filter((x) => x.id !== m.id))}>delete</button>
+              </div>
+              <textarea className="scratch-grow" value={m.content} readOnly={busy && i === messages.length - 1}
+                onChange={(e) => setMessages((ms) => ms.map((x) => (x.id === m.id ? { ...x, content: e.target.value } : x)))} />
+            </div>
+          ))}
+          <div className="scratch-msg scratch-user scratch-draft">
+            <div className="scratch-msg-head small muted">next user message</div>
+            <textarea className="scratch-grow" rows={3} value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={keyGo}
+              placeholder={messages.length ? "Your next message. Ctrl+Enter sends; empty sends the conversation as it stands." : "Your first message. Ctrl+Enter sends."} />
+          </div>
+          <div ref={endRef} />
+        </div>
+      )}
+
+      {mode !== "conversation" && (
+        <textarea ref={boxRef} className="scratch-box" value={text} onChange={(e) => setText(e.target.value)} readOnly={busy}
+          placeholder={mode === "raw" ? "Text for the model to continue. Ctrl+Enter generates." : "The user message. Ctrl+Enter generates."}
+          onKeyDown={keyGo} />
+      )}
+
       <div className="settings-row scratch-actions">
-        {busy ? <button onClick={() => abort.current?.abort()}>Stop</button> : <button className="primary" onClick={generate} disabled={!text.trim()}>Generate</button>}
+        {busy ? <button onClick={() => abort.current?.abort()}>Stop</button> : <button className="primary" onClick={generate} disabled={!canGo}>{mode === "conversation" ? "Send" : "Generate"}</button>}
+        {mode === "conversation" && <button onClick={regenerate} disabled={busy || last?.role !== "assistant"} title="Ask again for the last reply">Regenerate</button>}
         {mode === "raw" && <button onClick={wrap} disabled={busy || !text.trim()} title="Put the text (and the system text) in the model's own chat template, ending where its reply begins; then Generate">Wrap in template</button>}
         {mode === "raw" && <button onClick={() => { if (before !== null) { setText(before); setBefore(null); } }} disabled={busy || before === null} title="The text as it was before the last generation or wrap">Undo</button>}
+        {mode === "chat" && reply && !busy && <button onClick={toConversation} title="Carry this message and its reply on as a conversation">Continue as conversation</button>}
+        <button onClick={exportClip} disabled={busy} title="The system text and messages as one text (### headers), to the clipboard">Export</button>
+        <button onClick={importClip} disabled={busy} title="Text with ### system / ### user / ### assistant headers (or a JSON message list) from the clipboard, into the boxes">Import</button>
         <button onClick={clear}>Clear</button>
         <span className="spacer" />
         {done && (
@@ -204,13 +355,38 @@ export function ScratchPage() {
           </span>
         )}
       </div>
+      {note && <div className="muted small">{note} <button className="link small" onClick={() => setNote(null)}>dismiss</button></div>}
+
+      {paste !== null && (
+        <div className="settings">
+          <div className="small">This browser will not read the clipboard here. Paste below, then Import.</div>
+          <textarea className="scratch-grow" rows={6} autoFocus value={paste} onChange={(e) => setPaste(e.target.value)} />
+          <div className="settings-row">
+            <button className="primary" onClick={() => take(paste)} disabled={!paste.trim()}>Import</button>
+            <button onClick={() => setPaste(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {copyBox !== null && (
+        <div className="settings">
+          <div className="small">This browser will not write to the clipboard here. The text is selected: copy it (Cmd+C).</div>
+          <textarea className="scratch-grow" rows={6} readOnly autoFocus value={copyBox} onFocus={(e) => e.currentTarget.select()} />
+          <div className="settings-row"><button onClick={() => setCopyBox(null)}>Close</button></div>
+        </div>
+      )}
+
       {reasoning && (
         <details className="scratch-reasoning">
           <summary className="muted small">thinking ({reasoning.length} characters)</summary>
           <pre>{reasoning}</pre>
         </details>
       )}
-      {mode === "chat" && (reply || busy) && <pre className="scratch-reply">{reply || "…"}</pre>}
+      {mode === "chat" && (reply || busy) && (
+        <div className="scratch-msg scratch-assistant">
+          <div className="scratch-msg-head small muted">model</div>
+          <textarea className="scratch-grow" value={reply || (busy ? "…" : "")} readOnly={busy} onChange={(e) => setReply(e.target.value)} />
+        </div>
+      )}
     </div>
   );
 }

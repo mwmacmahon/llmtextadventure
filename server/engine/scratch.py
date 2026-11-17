@@ -1,7 +1,9 @@
 """The scratch pad (D326): the GPU box's model, hit directly, with no game around it. Dev mode on a server whose roles play on
 the box only; a hosted server has none (the routes answer 404).
 
-Like Oobabooga's Notebook tab: one text, the model continues it. Two ways:
+Like Oobabooga's Notebook tab, three ways:
+  - conversation (the default): a system text and a list of user and assistant messages, each edited in the page as it
+    stands, sent whole through `/v1/chat/completions`; the reply becomes the next assistant message;
   - raw: llama-server's `/completion`, the text as the whole prompt, no chat template;
   - chat: `/v1/chat/completions`, a system text and the text as one user message, as the game's roles call the model.
 The sampling comes from a role as it plays now (the config with the box's profile laid over, `Config.role`) and may be
@@ -36,10 +38,16 @@ SAMPLERS = ("temperature", "top_p", "top_k", "min_p", "repeat_penalty", "presenc
             "xtc_probability", "xtc_threshold", "top_n_sigma", "dynatemp_range")
 
 
+class Turn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
 class ScratchInput(BaseModel):
-    mode: Literal["raw", "chat"] = "raw"
-    text: str
+    mode: Literal["conversation", "chat", "raw"] = "conversation"
+    text: str = ""
     system: str = ""
+    messages: list[Turn] = Field(default_factory=list)   # conversation: the whole exchange so far, every message as edited
     preset: str = "custom"               # only for the count-only log line
     params: dict[str, float | int | None] = Field(default_factory=dict)
     max_tokens: int = 512
@@ -125,7 +133,8 @@ def _body(cfg: Config, req: ScratchInput) -> tuple[str, dict]:
     common = {"stream": True, "cache_prompt": True, "id_slot": cfg.side_slot, **params}
     if req.mode == "raw":
         return "/completion", {**common, "prompt": req.text, "n_predict": n}
-    msgs = ([{"role": "system", "content": req.system}] if req.system.strip() else []) + [{"role": "user", "content": req.text}]
+    turns = [t.model_dump() for t in req.messages] if req.mode == "conversation" else [{"role": "user", "content": req.text}]
+    msgs = ([{"role": "system", "content": req.system}] if req.system.strip() else []) + turns
     return "/v1/chat/completions", {**common, "messages": msgs, "max_tokens": n,
                                     "chat_template_kwargs": {"enable_thinking": bool(req.thinking)}}
 
@@ -133,7 +142,11 @@ def _body(cfg: Config, req: ScratchInput) -> tuple[str, dict]:
 async def _count(client: httpx.AsyncClient, req: ScratchInput) -> int | None:
     """The prompt's tokens by the server's own tokenizer (the chat form counted on its plain text: close enough for the cap)."""
     try:
-        r = await client.post("/tokenize", json={"content": (req.system + "\n" + req.text) if req.mode == "chat" else req.text}, timeout=20)
+        if req.mode == "raw":
+            content = req.text
+        else:
+            content = "\n".join([req.system, *([t.content for t in req.messages] if req.mode == "conversation" else [req.text])])
+        r = await client.post("/tokenize", json={"content": content}, timeout=20)
         return len(r.json().get("tokens") or []) if r.status_code == 200 else None
     except Exception:  # noqa: BLE001 - no count, no cap from here: the server's own context limit still holds
         return None

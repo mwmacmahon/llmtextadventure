@@ -412,3 +412,10 @@ dl.score dd { margin: 0; font-family: var(--pixel-font); font-size: 15px; }
 .scratch-system { width: 100%; resize: vertical; font-family: ui-monospace, Menlo, monospace; font-size: 13px; margin-bottom: 8px; }
 .scratch-actions { margin: 8px 0; }
 .scratch-reply, .scratch-reasoning pre { white-space: pre-wrap; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 13px; }
+.scratch-grow { width: 100%; field-sizing: content; min-height: 3em; max-height: 60vh; resize: vertical; font-family: ui-monospace, Menlo, monospace; font-size: 13px; line-height: 1.45; }
+.scratch-thread { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
+.scratch-msg { border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; background: var(--panel); }
+.scratch-msg textarea { border: none; background: transparent; padding: 2px 0; }
+.scratch-msg-head { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+.scratch-assistant { background: var(--panel-2); }
+.scratch-draft { border-style: dashed; }

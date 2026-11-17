@@ -408,6 +408,8 @@ async def scratch_info(request: Request):
 async def scratch_run(body: scratch.ScratchInput, request: Request):
     """Nothing kept: no store, no ledger, never the text in a log (one count-only line per call)."""
     _scratch_gate(request)
+    if body.mode == "conversation" and (not body.messages or body.messages[-1].role != "user"):
+        raise HTTPException(422, "a conversation is sent with a user message last")
     return _sse(scratch.run(engine.cfg, body))
 
 

@@ -14,20 +14,47 @@ Built 2026-11-17 (D326). Code: `server/engine/scratch.py`, the routes `/api/scra
 
 ## The page
 
+Three modes, in this order; Conversation is the default.
+
 | Part | What it does |
 |---|---|
+| **Conversation** | A system text, then the messages so far, each in its own editable box, the model's replies too; then a box for your next message. **Send** (Ctrl+Enter) adds your message and streams the reply into a new box. Everything is sent as it stands in the boxes, so a reply you rewrite is what the model sees it said. Each box: **user / model** switches whose message it is, **delete** takes it out. **Regenerate** asks again for the last reply. Sending with the next-message box empty sends the conversation as it stands (it must end on a user message). |
+| **Chat** | An optional system text and the box as one user message (`/v1/chat/completions`), as the game's roles call the model. The reply shows in an editable box under it. **Continue as conversation** carries both on into Conversation. |
 | **Raw** | The box's text is the whole prompt (`/completion`, no chat template); the model continues it, into the same box. |
-| **Chat** | An optional system text and the box as one user message (`/v1/chat/completions`), as the game's roles call the model. The reply shows under the box, so the box stays your message. |
 | **Preset** | Each box role's sampling as it plays now (the config with the box's profile laid over): narrator, assistant, referee, summarizer. Fills the fields below; editing any field makes it "custom". |
 | **Sampler fields** | The samplers the game itself sends (temperature, top_p, top_k, min_p, the penalties, DRY, XTC, top-nσ, dynamic temperature). Empty is the server's own default. |
 | **max tokens** | The longest reply (at most 8,192). |
-| **thinking** | Chat: the template's thinking switch (the thinking shows folded under the box). Raw: whether **Wrap** opens the model's thinking. |
+| **thinking** | Conversation and Chat: the template's thinking switch (the thinking shows folded under the boxes). Raw: whether **Wrap** opens the model's thinking. |
 | **Wrap in template** | Raw only. Puts the box (and the system text, if any) in the loaded model's own chat template, ending where the model's reply begins (llama-server's `/apply-template`). Then **Generate** continues it as the model's answer. |
-| **Generate** / Ctrl+Enter | Streams the reply in. |
-| **Stop** | Ends the call; the box stops writing at once (the request is closed). |
+| **Stop** | Ends the call; the box stops writing at once (the request is closed). What came so far stays. |
 | **Undo** | Raw only: the text as it was before the last generation or wrap. |
+| **Export** | The system text and the messages as one text (the format below), to the clipboard. Raw: the text as it is. |
+| **Import** | Text from the clipboard into the boxes: with headers (or a JSON message list) it becomes the system text and the messages, in Conversation; without, it goes in the box you are on (Conversation: the next message). |
 | **Clear** | Empties everything. |
-| The line under the box | Prompt tokens (how many were cached), tokens written, speed, time, and how it ended (`stop`, `eos`, `limit`, `cancelled`). |
+| The line under the boxes | Prompt tokens (how many were cached), tokens written, speed, time, and how it ended (`stop`, `eos`, `limit`, `cancelled`). |
+
+### The export format
+
+```
+### system
+You are a pirate.
+
+### user
+What is your name?
+
+### assistant
+Arr, Captain Bluebottle.
+```
+
+A header is a line of its own: `###`, then `system`, `user` or `assistant` (`model` is read as `assistant`, any case).
+The blank lines round a message are not part of it; its own lines and spaces are kept. Import also takes a JSON list of
+`{"role", "content"}` (or `{"messages": [...]}`), the shape chat APIs log. A message that itself holds a line like
+`### user` would split there on import. The format lives in `web/src/scratchText.ts`; its round-trip check is
+`node --experimental-strip-types web/checks/scratchText.check.ts`.
+
+Over plain `http://` (a port address such as `http://dadmini.local:8013`) the browser does not let a page use the
+clipboard: Export then shows the text selected, to copy by hand, and Import opens a box to paste into. Over the
+`https://` names both go straight to the clipboard.
 
 ## Raw mode: wrap first for an instruction-tuned model
 

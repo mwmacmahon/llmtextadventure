@@ -143,3 +143,22 @@ def test_wrap_in_the_models_template():
     assert asyncio.run(go()).endswith("<|turn>model\n")
     assert seen["path"] == "/apply-template" and seen["body"]["messages"][0]["role"] == "system"
     assert seen["body"]["chat_template_kwargs"] == {"enable_thinking": False}
+
+
+def test_conversation_sends_every_message_as_edited():
+    seen = {}
+
+    def handler(request: httpx.Request):
+        if request.url.path in ("/props", "/tokenize"):
+            return httpx.Response(404)
+        seen["path"], seen["body"] = request.url.path, json.loads(request.content)
+        return httpx.Response(200, content=sse({"choices": [{"delta": {"content": "Two."}, "finish_reason": "stop"}]}))
+
+    req = scratch.ScratchInput(system="Count.", messages=[{"role": "user", "content": "one"}, {"role": "assistant", "content": "ONE (edited)"},
+                                                          {"role": "user", "content": "next"}])
+    assert req.mode == "conversation"
+    evs = run(local_cfg(), req, handler)
+    assert seen["path"] == "/v1/chat/completions"
+    assert seen["body"]["messages"] == [{"role": "system", "content": "Count."}, {"role": "user", "content": "one"},
+                                        {"role": "assistant", "content": "ONE (edited)"}, {"role": "user", "content": "next"}]
+    assert [e["event"] for e in evs] == ["text", "done"]

@@ -348,7 +348,7 @@ export function streamCommand(id: string, command: string, args: Record<string, 
 // ---- the scratch pad (D326): the box's model with no game around it (dev mode, a local server only) ----------------------
 export type ScratchPreset = { params: Record<string, number>; max_tokens: number; thinking: boolean };
 export type ScratchInfo = { slot: number; max_prompt: number; max_new: number; samplers: string[]; presets: Record<string, ScratchPreset>; profile: string; model: string | null; slot_ctx: number | null; busy: boolean | null };
-export type ScratchRequest = { mode: "raw" | "chat"; text: string; system: string; preset: string; params: Record<string, number | null>; max_tokens: number; thinking: boolean };
+export type ScratchRequest = { mode: "conversation" | "chat" | "raw"; text: string; system: string; messages: { role: "user" | "assistant"; content: string }[]; preset: string; params: Record<string, number | null>; max_tokens: number; thinking: boolean };
 export type ScratchDone = { prompt_tokens: number | null; cached: number | null; new_tokens: number | null; per_second: number | null; stop: string; ms: number };
 export type ScratchEvent =
   | { event: "text"; data: { t: string } }
