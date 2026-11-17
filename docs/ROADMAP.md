@@ -612,9 +612,10 @@ endless ground, camps, wandering, invented places and ground changes held until 
   with no fight on, and one line looped the reading to its token limit.
 - **Marrowgate's setting out of the shared code (FN100): built 11-17**, text-identical (the full suite before and after).
   Each fantasy game now holds its own bestiary (FN112, 11-17): a second game's enemies cannot change another's fights.
-- **Next (FN101):** the Parchment folder, with the map in its state and its side panel. The engine's half of the
-  protocol (the map widget and the prefill in the UI schema) is built; the folder waits on five design calls for a
-  Fable review with the owner.
+- **Parchment (FN101): built 11-17** (hidden, dev mode only): the map rolled at a new game, the player's place named
+  from the tile, the map in the side panel, no Watch, heat or renown; a turn that moves the player to a known place walks
+  the tile there and charges the walk (seen on Gemma). **Next:** the per-turn block, the "you do not know where that is"
+  question, spots inside a place; then gate 1.
 - **Names (FN108 to FN111): decided, not built.** Rolled from large word lists, several picks for a big name, per
   game, kept in the save; the lists checked against the game's own terms.
 - **Places the story makes (FN50 to FN55): designed.** Told of a place at all puts it on the map; a secret whereabouts
