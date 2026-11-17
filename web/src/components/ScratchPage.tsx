@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { scratchInfo, streamScratch, type ScratchDone, type ScratchInfo } from "../api";
+import { scratchInfo, scratchTemplate, streamScratch, type ScratchDone, type ScratchInfo } from "../api";
 
 const ROLE_ORDER = ["narrator", "assistant", "referee", "summarizer"];
 
@@ -83,6 +83,20 @@ export function ScratchPage() {
     }
   }
 
+  /** Raw mode: the box (and the system text) put in the loaded model's own chat template, ending where its reply begins, so
+   *  Generate continues it as the model's answer. An instruction-tuned model loops in raw text outside it (D326). */
+  async function wrap() {
+    if (busy || !text.trim()) return;
+    setErr(null);
+    try {
+      const { prompt } = await scratchTemplate(text, system, thinking);
+      setBefore(text);
+      setText(prompt);
+    } catch (e) {
+      setErr(String(e));
+    }
+  }
+
   function clear() {
     abort.current?.abort();
     setText("");
@@ -124,11 +138,9 @@ export function ScratchPage() {
           <label>
             max tokens <input type="number" className="scratch-num" min={1} max={info.max_new} value={maxTokens} onChange={(e) => { setMaxTokens(Number(e.target.value)); setPreset("custom"); }} />
           </label>
-          {mode === "chat" && (
-            <label>
-              <input type="checkbox" checked={thinking} onChange={(e) => { setThinking(e.target.checked); setPreset("custom"); }} /> thinking
-            </label>
-          )}
+          <label title={mode === "raw" ? "raw mode: whether Wrap opens the model's thinking" : ""}>
+            <input type="checkbox" checked={thinking} onChange={(e) => { setThinking(e.target.checked); setPreset("custom"); }} /> thinking
+          </label>
         </div>
         <div className="scratch-params">
           {info.samplers.map((k) => (
@@ -140,15 +152,14 @@ export function ScratchPage() {
         </div>
       </section>
 
-      {mode === "chat" && (
-        <textarea className="scratch-system" rows={3} placeholder="System text (optional)" value={system} onChange={(e) => setSystem(e.target.value)} disabled={busy} />
-      )}
+      <textarea className="scratch-system" rows={3} placeholder={mode === "raw" ? "System text (optional; used only by Wrap in template)" : "System text (optional)"} value={system} onChange={(e) => setSystem(e.target.value)} disabled={busy} />
       <textarea ref={boxRef} className="scratch-box" value={text} onChange={(e) => setText(e.target.value)} readOnly={busy}
         placeholder={mode === "raw" ? "Text for the model to continue. Ctrl+Enter generates." : "The user message. Ctrl+Enter generates."}
         onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); generate(); } }} />
       <div className="settings-row scratch-actions">
         {busy ? <button onClick={() => abort.current?.abort()}>Stop</button> : <button className="primary" onClick={generate} disabled={!text.trim()}>Generate</button>}
-        {mode === "raw" && <button onClick={() => { if (before !== null) { setText(before); setBefore(null); } }} disabled={busy || before === null} title="The text as it was before the last generation">Undo</button>}
+        {mode === "raw" && <button onClick={wrap} disabled={busy || !text.trim()} title="Put the text (and the system text) in the model's own chat template, ending where its reply begins; then Generate">Wrap in template</button>}
+        {mode === "raw" && <button onClick={() => { if (before !== null) { setText(before); setBefore(null); } }} disabled={busy || before === null} title="The text as it was before the last generation or wrap">Undo</button>}
         <button onClick={clear}>Clear</button>
         <span className="spacer" />
         {done && (

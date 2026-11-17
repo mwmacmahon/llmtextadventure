@@ -356,6 +356,8 @@ export type ScratchEvent =
   | { event: "done"; data: ScratchDone }
   | { event: "error"; data: { message: string } };
 
+export const scratchTemplate = (text: string, system: string, thinking: boolean) =>
+  req("/api/scratch/template", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ text, system, thinking }) }).then((r) => j<{ prompt: string }>(r));
 export const scratchInfo = () => req("/api/scratch").then((r) => j<ScratchInfo>(r));
 export function streamScratch(body: ScratchRequest, signal?: AbortSignal): AsyncGenerator<ScratchEvent> {
   return streamSse<ScratchEvent>("/api/scratch", body, signal);

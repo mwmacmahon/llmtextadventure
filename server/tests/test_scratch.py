@@ -101,3 +101,17 @@ def test_prompt_cap():
 
     evs = run(local_cfg(), scratch.ScratchInput(text="x"), handler)
     assert [e["event"] for e in evs] == ["error"]
+
+
+def test_wrap_in_the_models_template():
+    seen = {}
+
+    def handler(request: httpx.Request):
+        seen["path"], seen["body"] = request.url.path, json.loads(request.content)
+        return httpx.Response(200, json={"prompt": "<|turn>user\nhi<turn|>\n<|turn>model\n"})
+
+    async def go():
+        return await scratch.template(local_cfg(), scratch.TemplateInput(text="hi", system="Be brief."), transport=httpx.MockTransport(handler))
+    assert asyncio.run(go()).endswith("<|turn>model\n")
+    assert seen["path"] == "/apply-template" and seen["body"]["messages"][0]["role"] == "system"
+    assert seen["body"]["chat_template_kwargs"] == {"enable_thinking": False}

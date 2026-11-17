@@ -79,6 +79,23 @@ async def info(cfg: Config, transport: httpx.AsyncBaseTransport | None = None) -
             "presets": presets(cfg), "profile": cfg.profile_label, "busy": busy}
 
 
+class TemplateInput(BaseModel):
+    text: str
+    system: str = ""
+    thinking: bool = False
+
+
+async def template(cfg: Config, req: TemplateInput, transport: httpx.AsyncBaseTransport | None = None) -> str:
+    """The text as one user message (and the system text, if any) in the loaded model's own chat template, ending where the
+    model's reply begins (llama-server's /apply-template): raw mode then continues it as the model's answer. Gemma 4 loops in
+    raw continuation outside its template once sampled (D326); inside it, it writes as in chat."""
+    msgs = ([{"role": "system", "content": req.system}] if req.system.strip() else []) + [{"role": "user", "content": req.text}]
+    async with httpx.AsyncClient(base_url=_base(cfg), timeout=20, transport=transport) as client:
+        r = await client.post("/apply-template", json={"messages": msgs, "chat_template_kwargs": {"enable_thinking": bool(req.thinking)}})
+        r.raise_for_status()
+        return r.json()["prompt"]
+
+
 def _body(cfg: Config, req: ScratchInput) -> tuple[str, dict]:
     params = {k: v for k, v in req.params.items() if k in SAMPLERS and v is not None}
     n = max(1, min(int(req.max_tokens), MAX_NEW))

@@ -411,6 +411,16 @@ async def scratch_run(body: scratch.ScratchInput, request: Request):
     return _sse(scratch.run(engine.cfg, body))
 
 
+@app.post("/api/scratch/template")
+async def scratch_template(body: scratch.TemplateInput, request: Request):
+    """The text wrapped in the loaded model's chat template, for raw mode (D326). Nothing kept."""
+    _scratch_gate(request)
+    try:
+        return {"prompt": await scratch.template(engine.cfg, body)}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"the box could not apply its template: {type(e).__name__}")
+
+
 # ---- the profile picker (Stage 3, engine/picker.py): the profiles, one's card, the switch -------------------
 class SwitchInput(BaseModel):
     name: str

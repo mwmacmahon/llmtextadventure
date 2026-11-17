@@ -6,7 +6,7 @@ moves or stops a server.
 ## Three kinds
 
 - **A player's server.** Someone is playing on it. Pinned to a commit in a worktree of its own, with its own data folder.
-  Dev mode is off (`TA_DEV_MODE=off`): no dev switch in Settings, and hidden games are never loaded. **Only the owner moves it**,
+  Dev mode is off (`TA_DEV_MODE=off`): no dev switch in Settings, hidden games are never loaded, and no scratch pad (docs/SCRATCH.md). **Only the owner moves it**,
   deliberately, with the update script after the suite passes. A build never restarts it.
 - **The rounds servers.** The build chat plays rounds on them and restarts them on every build. They run from the shared
   checkout and the shared store. Nobody plays a real game on them.

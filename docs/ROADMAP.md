@@ -553,7 +553,8 @@ what the store knows (did the player move, is a blow's target a person, how ofte
 template) or chat (a system text and one user message, the reply under it). A preset per role fills the sampling as the
 profile plays it; every field editable. On the side slot, so the turn roles keep their caches; the prompt capped at 24,000
 tokens. Nothing kept: the text lives in the page's memory only; the server logs one count-only line per call
-(`scratch.call`). **Left:** a template helper for raw mode (Gemma 4 loops in raw continuation once sampled; see D326).
+(`scratch.call`). **Wrap in template** (raw mode: the text put in the model's own chat template, so Gemma writes instead
+of looping; D326). The guide: docs/SCRATCH.md.
 
 **Running.** **Left.**
 - Nineteen test files load the gitignored `notes/content`, so a fresh clone cannot run them (R5-1031).
