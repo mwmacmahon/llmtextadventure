@@ -24,6 +24,23 @@ the laptop, and the laptop's store is a separate copy from that night on.
   only on the home network or over the owner's private network, never from the internet. The port addresses
   (`http://dadmini.local:<port>`) still work.
 
+  **How a request gets there** (the owner's "Mac mini plan" doc has the full check list; each step can fail alone):
+  1. The names resolve to `192.168.0.56`, the mini's reserved home address; away from home Tailscale carries it (the
+     mini advertises `192.168.0.56/32`).
+  2. The browser connects on 443 (80 for `http://`).
+  3. **pf forwards 443 → 8443 and 80 → 8080** (`/etc/pf.anchors/caddy`, anchor `com.apple/caddy`). Only while pf is
+     switched on: the boot job `/Library/LaunchDaemons/com.caddy.pf.plist` runs `pfctl -E -a com.apple/caddy -f
+     /etc/pf.anchors/caddy`; the `-E` turns pf on (macOS boots with it off). The mini's own traffic is not forwarded:
+     test 443 from another machine (`ssh gumbo`), never from the mini.
+  4. Caddy (`com.dadbook.caddy`, run as dadbook, so it cannot bind 443 itself) listens on 8443 and 8080, holds the
+     certificates, redirects http to https, and picks the game by name. It answers only to a site name, so a test
+     against the bare address fails even when all is well: use `curl --resolve <name>:8443:192.168.0.56 https://<name>:8443/`.
+  5. The game service on its port (table below).
+
+  **2026-11-17: every name down after a restart** (10:30, the macOS update). The boot job loaded the rule without `-E`, so
+  pf stayed off: 443 and 80 went nowhere while Caddy and the games answered. Fixed by `sudo pfctl -E ...` and `-E` added
+  to the boot job (the owner ran both). The port addresses kept working meanwhile.
+
   | Address | Service | Port | What |
   |---|---|---|---|
   | `https://textadventure.cyramili.com` | `lilith` (`com.dadbook.textadventure.lilith`) | 8016 | Lilith's |
