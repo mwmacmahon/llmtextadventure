@@ -234,3 +234,49 @@ def test_the_road_dial_is_a_choice_at_creation_and_scales_the_roll():
     assert hits["quiet"] < hits["written"] < hits["wild"]
     trouble = {r: sum(1 for k in range(4000) if wm.leg_event(random.Random(k), "crossing", r) == "trouble") for r in ("quiet", "wild")}
     assert trouble["quiet"] * 4 < trouble["wild"]
+
+
+def test_a_direction_leads_to_the_next_place_that_way_or_into_the_country(engine: Engine):
+    game, st = _fresh(engine)
+    fort = next(k for k, p in st.world["places"].items() if p["name"] == "The goblin fort")
+    way = wm.compass(st.world["player"]["tile"], st.world["places"][fort]["tile"])
+    pid, tile = wm.toward(st.world, way)
+    assert pid is not None and st.world["places"][pid]["shape"] == "point"
+    pid2, tile2 = wm.toward(st.world, "back")
+    assert (pid2, tile2) == (None, None)                           # no walk yet, nowhere to go back to
+
+
+def test_a_spot_of_another_place_walks_there_first(engine: Engine):
+    import random
+    from engine.game import TurnInfo
+    game, st = _fresh(engine)
+    st.player.location = "The old mill"
+    st = game.after_turn(st, TurnInfo(turn=1, elapsed_minutes=1, rng=random.Random(0)))
+    st.player.location = "the shrine"                                # a building of the village, from the mill
+    st = game.after_turn(st, TurnInfo(turn=2, elapsed_minutes=1, rng=random.Random(0)))
+    assert st.world["player"]["tile"] == [0, 0] and st.player.location == "the shrine"
+
+
+def test_residents_are_there_on_arrival_and_the_board_pays_in_the_village(engine: Engine):
+    import random
+    from engine.game import TurnInfo
+    from games.fantasy.world import WorldTurn
+    game, st = _fresh(engine)
+    jobs = st.flags["jobs"]
+    assert [j["form"] for j in jobs] == ["clear", "clear", "kill", "bounty"]
+    assert any(t.id == "job_1" and t.title == "Clear the farms" for t in st.threads)
+    farms = next(k for k, p in st.world["places"].items() if p["name"] == "The farms")
+    w = WorldTurn()
+    game._arrive(st, w, farms)
+    rats = [q for q in st.people if q.combat is not None and q.combat.block == "giant_rat"]
+    assert len(rats) == 3 and all(q.location == "The farms" and q.attitude == -3 for q in rats)
+    assert any("Living at The farms: three giant rats" in d for d in w.directives)
+    game._arrive(st, w, farms)
+    assert len([q for q in st.people if q.combat is not None and q.combat.block == "giant_rat"]) == 3   # only the first time
+    for q in rats:
+        q.status = "dead"
+    st = game.after_turn(st, TurnInfo(turn=3, elapsed_minutes=1, rng=random.Random(0)))
+    assert jobs and st.flags["jobs"][0]["status"] in ("done", "paid")
+    gold = st.item("gold").count
+    assert st.flags["jobs"][0]["status"] == "paid" and gold == 15 + 15              # the player never left the village tile
+    assert next(t for t in st.threads if t.id == "job_1").status == "resolved"

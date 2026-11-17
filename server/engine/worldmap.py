@@ -768,6 +768,58 @@ def leg_event(rng: random.Random, kind: str, roads: str = "written", night: bool
     return "something small" if rng.random() < 0.4 else "sight"
 
 
+# ---- wandering (FN37, in part; MAP_DESIGN 6.2: one rule for a direction)
+
+WANDER_TILES = 8         # a direction with no known place that way: about two kilometres, or less where the ground ends
+
+
+def toward(world: dict, direction: str) -> tuple[str | None, list | None]:
+    """Where a direction leads: (a known place's id) when one lies within a narrow cone that way and within ten
+    kilometres, nearest first; else (None, a tile) up to WANDER_TILES that way over ground that can be walked; "back" is
+    the tile the last walk began from. (None, None) when nothing can be walked that way."""
+    here = tuple(world["player"]["tile"])
+    d = direction.strip().lower()
+    if d == "back":
+        b = world["player"].get("came_from")
+        return (None, list(b)) if b else (None, None)
+    if d not in COMPASS8:
+        return None, None
+    best = None
+    for pid in world["known"]["places"]:
+        p = world["places"].get(pid)
+        if p is None or p.get("removed") or p.get("pinned") or p["shape"] != "point" or tuple(p["tile"]) == here:
+            continue
+        if compass(here, p["tile"]) != d:
+            continue
+        dist = _dist(here, tuple(p["tile"]))
+        if dist <= 40 and (best is None or dist < best[0]):
+            best = (dist, pid)
+    if best:
+        return best[1], None
+    ang = math.radians(COMPASS8.index(d) * 45)
+    last = None
+    for k in range(1, WANDER_TILES + 1):
+        t = (here[0] + round(math.sin(ang) * k), here[1] - round(math.cos(ang) * k))
+        g = ground_at(world, *t)
+        if g is None or WALK.get(g, 999) >= 900:
+            break
+        last = t
+    return (None, list(last)) if last else (None, None)
+
+
+def walk_to_tile(world: dict, to, night: bool = False) -> dict | None:
+    """Walk to a tile that is no place (wandering): the quickest known way there, ground lit, the tile moved."""
+    here = tuple(world["player"]["tile"])
+    path = find_path(world, here, tuple(to))
+    if path is None:
+        return None
+    for t in path:
+        light(world, *t, LIT_WALK + 1)
+    world["player"]["came_from"] = list(here)
+    world["player"]["tile"] = list(to)
+    return {"path": [list(t) for t in path], "minutes": walk_minutes(world, path, night) if len(path) > 1 else 0}
+
+
 # ---- what the models are told each turn (MAP_DESIGN 6.7, draft 5; FN32)
 
 GROUND_WORDS = {"m": "on open meadow", "f": "among fields", "s": "on the shore", "w": "under bright trees", "W": "under dark trees",

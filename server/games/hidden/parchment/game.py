@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from engine import names as rn
+from . import jobs as jb
 from engine import worldmap as wm
 from engine.game import ListPanel, MapPanel, UISchema
 from games.fantasy.game import FantasyGame
@@ -74,6 +75,7 @@ class ParchmentGame(FantasyGame):
             home = self.where(state)
             for spot in start.get("home_spots") or []:     # FN60: the village's buildings, spots of the village (the cold read, 11-17)
                 state.found_places.append(FoundPlace(name=str(spot), within=home))
+            jb.setup(sc, state)                              # FN62, FN63: the board
         return title, state
 
     def name_lists(self) -> dict:
@@ -113,6 +115,14 @@ class ParchmentGame(FantasyGame):
         w = s.world
         if not w or s.player.fate:
             return s
+        s = self._settle_place(s, info)
+        for line in jb.update(self, s):
+            s.player.shown_notes.append(line)
+        return s
+
+    def _settle_place(self, s: FantasyState, info: Any) -> FantasyState:
+        """The tile and the place's name after a turn (R-G3), the walk a turn's move asks for, R1 on a leg's turn."""
+        w = s.world
         if s.flags.pop("leg_walked", False):
             # R1: on a leg's turn the tile is the truth; a move row naming the journey's end or any place on it (the narrator
             # told the arrival early) is not applied, and counted
@@ -122,8 +132,11 @@ class ParchmentGame(FantasyGame):
             s.player.visited.setdefault(s.player.location, s.clock.day * 1440 + s.clock.minute)
             return s
         here, want = self.where(s), s.player.location
+        spot_of = self._spot_parent(s, want)
         if want and want.lower() != here.lower() and not self._same_spot(s, want, here):
-            pid = wm.place_named(w, want)
+            # a spot of another place (the gate-1 round, 11-17: the mill to "the shrine" left the tile at the mill): walk to the
+            # place it is in, then stand in the spot
+            pid = wm.place_named(w, spot_of or want)
             if pid is not None:
                 night = not (360 <= s.clock.minute < 1200)
                 walked = wm.walk_to(w, pid, int(getattr(info, "turn", 0) or 0), night)
@@ -131,7 +144,7 @@ class ParchmentGame(FantasyGame):
                     extra = int(walked["minutes"]) - int(getattr(info, "elapsed_minutes", 0) or 0)
                     if extra > 0:
                         self._advance(s, extra)
-                    s.player.location = self.where(s)
+                    s.player.location = want if spot_of and spot_of.lower() == self.where(s).lower() else self.where(s)
                     s.player.visited[s.player.location] = s.clock.day * 1440 + s.clock.minute
                 else:
                     s.flags["no_way_count"] = int(s.flags.get("no_way_count") or 0) + 1   # the travel question (FN39) will ask
@@ -143,6 +156,18 @@ class ParchmentGame(FantasyGame):
     # ---- what the models are told (FN32; MAP_DESIGN 6.7) ----------------------------------------------------------------
     def _night(self, s: FantasyState) -> bool:
         return not (360 <= s.clock.minute < 1200)
+
+    def _spot_parent(self, s: FantasyState, name: str) -> str:
+        """The map place a found place (a spot) lies in, following `within` up; '' when the name is no spot."""
+        within = {f.name.lower(): f.within for f in s.found_places}
+        at, seen = (name or "").lower(), set()
+        while at in within and at not in seen:
+            seen.add(at)
+            up = within[at]
+            if s.world and wm.place_named(s.world, up):
+                return up
+            at = (up or "").lower()
+        return ""
 
     def _spots(self, s: FantasyState) -> list[str]:
         """FN27: the spots of the place the tile is on: the rooms and corners the story made inside it (the referee's
@@ -222,6 +247,22 @@ class ParchmentGame(FantasyGame):
         r = str((s.flags.get("roads") or "written")).lower()
         return r if r in wm.ROADS else "written"
 
+    def _direction(self, adj: Any) -> str:
+        """The direction the reading sends the player, when its destination is one (north ... north-west, back)."""
+        from engine.roles import destination
+        for i in getattr(adj, "intents", None) or []:
+            d = destination(i).strip().lower()
+            if d in wm.COMPASS8 or d == "back":
+                return d
+        return ""
+
+    def _here_words(self, s: FantasyState) -> str:
+        """Where the tile is, as words for a line: "at the Bobbin Mill", "in the Fungussop Wood", "in open country"."""
+        x, y = s.world["player"]["tile"]
+        if wm.place_at(s.world, x, y):
+            return "at " + self.where(s)
+        return ("in " + self.where(s)) if wm.region_at(s.world, x, y) else ("in open country, " + wm.GROUND_WORDS.get(wm.ground_at(s.world, x, y) or "", "").strip())
+
     def _journey_dest(self, s: FantasyState, adj: Any) -> str | None:
         """The known place the reading sends the player to this turn, when it is a journey (longer than a turn's walk)."""
         from engine.roles import destination
@@ -240,12 +281,45 @@ class ParchmentGame(FantasyGame):
         if not s.world or s.player.fighting or s.player.fate or s.player.peril is not None:
             return s, w
         pid = self._journey_dest(s, adj)
+        way = self._direction(adj) if pid is None else ""
+        if way:
+            # FN37 (the gate-1 round, 11-17: "I head north along the road" moved nothing): a direction leads to the next known
+            # place that way, as a journey; else into the country that way, a walk of its own
+            pid, tile = wm.toward(s.world, way)
+            if pid is None and tile is not None:
+                start = self.where(s)
+                walked = wm.walk_to_tile(s.world, tile, self._night(s))
+                if walked is not None:
+                    s.flags["leg_walked"] = True
+                    s.player.location = self.where(s)
+                    lo = wm._lower_the
+                    w.directives.insert(0, f"This turn {s.player.name} heads {way} from {lo(start)} and stops {lo(self._here_words(s))}. "
+                                           f"Tell the walk and the place {s.player.name} stops.")
+                    w.mechanics.append(f"Journey: {way} from {start}, {walked['minutes']} minutes.")
+                    setattr(w, "extra_minutes", max(0, walked["minutes"] - int(getattr(adj, "time_minutes", 0) or 0)))
+                return s, w
         if pid is not None:
             plan = wm.plan_journey(s.world, pid, self._night(s))
             if plan is not None:
                 s.world["player"]["journey"] = plan
                 self._leg(s, w, rng, turn, adj)
+            else:
+                # a short walk (a quarter hour or less) is walked before the prose as well, so who lives there is there
+                start = self.where(s)
+                walked = wm.walk_to(s.world, pid, turn, self._night(s))
+                if walked is not None:
+                    s.flags["leg_walked"] = True
+                    s.player.location = self.where(s)
+                    setattr(w, "extra_minutes", max(0, walked["minutes"] - int(getattr(adj, "time_minutes", 0) or 0)))
+                    w.mechanics.append(f"Walk: {start} to {s.player.location}, {walked['minutes']} minutes.")
+                    self._arrive(s, w, pid)
         return s, w
+
+    def _arrive(self, s: FantasyState, w: Any, pid: str) -> None:
+        """FN65: the place's residents, the first time the player comes; the narrator is told who is there."""
+        lines = jb.arrive(self, self.scenario(s.city.id), s, pid)
+        if lines:
+            w.directives.insert(1 if w.directives else 0, " ".join(lines) + " They are there as the player arrives.")
 
     def _leg(self, s: FantasyState, w: Any, rng: Any, turn: int, adj: Any = None) -> None:
         """Walk the held journey's next leg now, before the prose, and tell the narrator what it is (R1: the leg's end in one
@@ -271,6 +345,7 @@ class ParchmentGame(FantasyGame):
         # the wording after a cold read (11-17): the goal before the distance, no "on the way to"; the arrival shows the place
         if leg["arrived"]:
             line = f"This turn {n} walks from {frm} and arrives at {dest}: the last of the way, then {dest} as {n} sees it."
+            arrived_at = j["to"]
         elif leg["stop"][0] == "midpoint":
             line = f"This turn {n} walks from {frm} and stops half way; {dest} is still {wm.walk_word(leg['left'])} on. Tell the walk and the place {n} stops."
         else:
@@ -285,6 +360,8 @@ class ParchmentGame(FantasyGame):
             if spawned:
                 line += f" {spawned[:1].upper() + spawned[1:]} is there, close by. Show it, and stop while {n} can still choose."
         w.directives.insert(0, line)
+        if leg["arrived"]:
+            self._arrive(s, w, arrived_at)
         w.mechanics.append(f"Journey: {start} to {leg['stop'][1] if not leg['arrived'] else j['label']}, {total} minutes"
                            + (f"; {event}" if event else "") + ".")
         mins = int(getattr(adj, "time_minutes", 0) or 0) if adj is not None else 0
