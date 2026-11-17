@@ -1665,7 +1665,7 @@ class FantasyGame(GameBase):
             return False
         from . import features as ft
         own = {fid for fid, f in ft.specs(self, p).items() if f.get("kind") in ("heal", "buff", "turn")}
-        return command_id in self.FIRST_LEVERS or command_id in own
+        return command_id in self.FIRST_LEVERS or command_id in own or command_id == "use_item"     # FN144: a thing used acts first
 
     def turn_limits(self, state: FantasyState, adj: Any = None) -> dict:
         """The pipeline's one hook for what a pressing turn allows (the debt review, 11-10 night: three hooks answered it):
@@ -2698,6 +2698,14 @@ class FantasyGame(GameBase):
                 iid = f"{iid}_{len(s.inventory)}"
             s.inventory.append(Item(id=iid, name=value.strip()[:50], count=max(1, count or 1), note=clip_words("" if count else note.strip(), 80)))
             w.note(f"inventory += {value.strip()!r}")
+            # FN144 (the owner, 11-17, on the ghost bell: "best of all just has a use that may or may not come in handy"): a thing the
+            # story made, taken into the pockets, has a hidden roll; about a third are curios with a use, found out by using them
+            from . import items as itm
+            import random as _r
+            got = itm.curio_for(self, _r.Random(f"curio:{s.clock.day}:{s.clock.minute}:{value}"), value) if not count else None
+            if got:
+                itm.give_use(self, s.inventory[-1], got)
+                w.note(f"{value.strip()!r} has a use (hidden): {got}")
             return True
         holder = s.person(where) or self._same_person(s, where_)
         place = None if holder else self._place(s, where_)
@@ -3407,6 +3415,10 @@ class FantasyGame(GameBase):
             for c in p.counts:
                 if c.refill in ("long", "short"):
                     c.value = c.max
+            from . import items as itm
+            back = itm.recharge(self, s)                 # FN144: wands and curios that come back with a night's rest
+            if back:
+                p.shown_notes.append("Back after the rest: " + ", ".join(back) + ".")
         else:
             p.hp = min(p.hp_max, p.hp + max(1, 3 + p.stats.get("con", 0)))
             for c in p.counts:
@@ -3838,6 +3850,19 @@ class FantasyGame(GameBase):
                                    words=["take the job", "take your job", "take the work", "take it on", "i'll do it", "i will do it",
                                           "i'll take it", "i'll take the", "i accept", "count me in", "you have a deal", "it's a deal", "i'm in",
                                           "i'll help", "i'll find her", "i'll find him", "i'll clear"]))
+        # FN144 (the owner, 11-17: "full of magical etc items"): the things with a use, one chip (typed words route to it)
+        from . import items as itm
+        can = itm.usable(self, state)
+        if can:
+            params = [Param(name="item", label="Thing", options=[Option(id=it.id, label=it.render() + (f" ({it.charges} left)" if it.charges is not None else ""))
+                                                                  for it in can])]
+            foes = [q for q in (_cbm.living_enemies(self, state) if state.player.fighting else [])]
+            if foes:
+                params.append(Param(name="at", label="At", options=[Option(id=q.id, label=q.name) for q in foes], default=foes[0].id))
+            out.append(CommandSpec(id="use_item", label="Use", mode="narrated", params=params,
+                                   hint="Use a carried thing that has a use (drink, throw, read, point, ring, blow, wear, and so on). Pick the "
+                                        "option the player means even when they describe it loosely (\"the red potion\" for a vial of red). In a "
+                                        "fight, set At to the foe it is thrown or pointed at."))
         # the owner, 11-10 late: "Really need an equipped panel somewhere in ui and ability to equip unequip"
         put_on, take_off = gear.options(state, True), gear.options(state, False)
         if put_on:
@@ -3878,6 +3903,9 @@ class FantasyGame(GameBase):
                             cards=[Chip(label=k, value=t) for k, t in cards], pick=pick)
 
     def run_command(self, state: FantasyState, command_id: str, args: dict[str, Any]) -> tuple[FantasyState, CommandResult]:
+        if command_id == "use_item":                     # FN144
+            from . import items as itm
+            return itm.use(self, state, args)
         s = state.model_copy(deep=True)
         p = s.player
         if command_id == "rest":

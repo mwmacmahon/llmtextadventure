@@ -67,6 +67,9 @@ class Item(BaseModel):
     place: str = ""                 # things only: the place it lies in
     held_by: str = ""               # things only: the person (id) who has it
     equipped: bool = False          # worn (body armour, a shield) or in hand (a weapon): one of each, gear.py
+    ref: str = ""                   # FN144: the game's catalogue id (items.yml) when the thing has a use
+    known: bool = True              # FN144: a found magic thing shows its look as its name until used or bought
+    charges: int | None = None      # FN144: a wand's or a curio's uses left (None: used up by count)
 
     def render(self) -> str:
         if self.id == "gold":
@@ -168,6 +171,7 @@ class CombatState(BaseModel):
     free_turns: int = 0                                    # turns of free actions only in a row (no NPC acts beyond talking)
     joined_at: dict[str, int] = Field(default_factory=dict)  # id -> their attitude when first counted in the fight (a rise ends theirs)
     bodies_paid: dict[str, int] = Field(default_factory=dict)  # band id -> bodies already counted for XP (each body as it falls)
+    item_strike: dict | None = None                        # FN144: a thrown or fired thing this turn, planned first in the round
 
 
 class Person(BaseModel):

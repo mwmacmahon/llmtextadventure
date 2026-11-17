@@ -96,7 +96,7 @@ def update(game: Any, s: FantasyState) -> list[str]:
                 if j["form"] == "bounty" and q.combat.block == j["entry"]:
                     j["killed"] += 1
     s.flags["dead_seen"] = sorted(seen)
-    out += _loot(s, [q for q in s.people if q.id in seen and q.id not in set(s.flags.get("looted") or [])])
+    out += _loot(s, [q for q in s.people if q.id in seen and q.id not in set(s.flags.get("looted") or [])], game)
     residents = s.flags.get("residents") or {}
     for j in jobs:
         if j.get("at") and j["at"] in residents:
@@ -106,15 +106,17 @@ def update(game: Any, s: FantasyState) -> list[str]:
         if j["form"] == "clear" and _dead(s, residents.get(j["at"], [])):
             j["status"] = "done"
             out += [f"Job done: {j['title']}. {j['who'][:1].upper() + j['who'][1:]} will pay in the village."] if known(s, j) else []
+            out += cache(game, s, j)
         elif j["form"] == "kill" and _dead(s, [x for x in residents.get(j["at"], []) if (q := s.person(x)) is not None
                                               and q.combat is not None and q.combat.block == j["entry"]]):
             j["status"] = "done"
             out += [f"Job done: {j['title']}. {j['who'][:1].upper() + j['who'][1:]} will pay in the village."] if known(s, j) else []
+            out += cache(game, s, j)
     sync_threads(s)
     return out
 
 
-def _loot(s: FantasyState, fallen: list) -> list[str]:
+def _loot(s: FantasyState, fallen: list, game: Any = None) -> list[str]:
     """FN66: every creature killed pays something, once: a beast its trophy, anyone else coin by its XP. Into the pockets
     at once (the player is there; picking over the bodies is not worth a turn of its own)."""
     import random
@@ -122,6 +124,7 @@ def _loot(s: FantasyState, fallen: list) -> list[str]:
     looted = list(s.flags.get("looted") or [])
     got: dict[str, int] = {}
     coin = 0
+    found: list[str] = []                               # FN144: a thing with a use, now and then, found on them (by its look)
     for q in fallen:
         looted.append(q.id)
         if q.combat is None:
@@ -136,6 +139,11 @@ def _loot(s: FantasyState, fallen: list) -> list[str]:
             coin += max(1, xp // 25 + rng.randint(0, 3))
         if entry in TROPHIES and kind in ("humanoid", "person"):
             got[TROPHIES[entry]] = got.get(TROPHIES[entry], 0) + 1
+        if game is not None:
+            from games.fantasy import items as itm
+            ref = itm.drop(game, rng, int(q.combat.xp or 10), kind in ("humanoid", "person"))
+            if ref:
+                found.append(itm.add(game, s, ref).name)
     s.flags["looted"] = looted
     out = []
     if coin:
@@ -151,9 +159,23 @@ def _loot(s: FantasyState, fallen: list) -> list[str]:
             s.inventory.append(Item(id=iid, name=name, count=n, note="a trophy; someone in the village pays for these"))
         else:
             it.count += n
-    if coin or got:
-        out.append("Loot: " + ", ".join(([f"{coin} gold"] if coin else []) + [f"{n} {k}{'s' if n > 1 else ''}" for k, n in got.items()]) + ".")
+    if coin or got or found:
+        out.append("Loot: " + ", ".join(([f"{coin} gold"] if coin else []) + [f"{n} {k}{'s' if n > 1 else ''}" for k, n in got.items()] + found) + ".")
     return out
+
+
+def cache(game: Any, s: FantasyState, j: dict) -> list[str]:
+    """FN144: a cleared place gives up what its creatures kept: one thing with a use, better for a bigger job."""
+    import random
+    from games.fantasy import items as itm
+    if not itm.catalogue(game):
+        return []
+    rng = random.Random(f"{(s.world or {}).get('seed', 0)}:cache:{j['id']}")
+    ref = itm.roll(game, rng, "uncommon" if j["pay"] >= 40 else "common")
+    if not ref:
+        return []
+    it = itm.add(game, s, ref)
+    return [f"Found where they kept their things: {it.name}."]
 
 
 def pay(s: FantasyState) -> list[str]:

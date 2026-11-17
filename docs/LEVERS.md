@@ -991,3 +991,16 @@ list is the word guard `lever-phrases` (§8); the street texture gap is the game
   or something to see if you can slip away cleanly first."
 - **Measured:** a test (40 seeded runs, both outcomes seen). Not played yet.
 - **Helped / did not:** not known yet.
+
+### Items with uses (`games/fantasy/items.py`, FN144)
+
+- **Set in:** the game's catalogue (`items.yml` beside its scenarios; Parchment's first, 30 things) and these dials in code:
+  the narrator's odd pocketed thing has a use 35 per cent (`CURIO_CHANCE`, a game attribute); a kill drops a thing: a strong
+  foe (XP 100 or more) half the time, uncommon; a person 20 per cent, common (`items.drop`); a cleared job's place leaves one
+  (uncommon for a job paying 40 or more); a road stop's small find is a real thing lying there 60 per cent (Parchment `_lay_find`).
+  Prices are the scenario's `shops:`; selling is half the catalogue value, trophies by `TROPHY_PRICE`.
+- **Levels:** effects heal, buff, power, strike, escape (the grammar in the module's docstring).
+- **Why it exists:** the owner, 11-17: "The game should be full of magical etc items ... Combat items are always fun and
+  interesting. Potions are always good too." The ghost bell (the narrator's invention, nothing behind it) began it.
+- **Measured:** tests only (six). Not played yet.
+- **Helped / did not:** not known yet.

@@ -533,7 +533,10 @@ def plan_round(game: Any, s: FantasyState, adj: Any, player_text: str, turn: int
         s.combat = CombatState(round=0, since_turn=turn)
     c = s.combat
     plan: list[dict] = []
-    att = player_attack(adj)
+    if c.item_strike:                       # FN144: the thing the player used this turn goes first, the round's own dice
+        plan.append({"key": "item", "side": "item", "who": "player", **c.item_strike})
+        c.item_strike = None
+    att = player_attack(adj) if not plan else None
     if att:
         att["targets"] = list(dict.fromkeys(att["targets"]))           # one target named twice is one target
         targets = [t for t in att["targets"] if (q := s.person(t)) is not None and q.id in p.fighting] or ([c.target] if c.target in p.fighting else [])
@@ -705,6 +708,9 @@ def resolve(game: Any, s: FantasyState, entry: dict, rng: Any, offset: int, tall
     p = s.player
     shift = diff_shift(offset)
     tally.setdefault("acted_keys", []).append(entry["key"])
+    if entry["side"] == "item":
+        from .items import resolve_strike
+        return resolve_strike(game, s, entry, rng, tally)
     if entry["side"] in ("player", "ally"):
         return resolve_attack(game, s, entry, rng, offset, tally)
     q = s.person(entry["who"])
@@ -1181,7 +1187,7 @@ def fight_panel(game: Any, s: FantasyState) -> list:
     return [MeterGroup(title=title, meters=meters, place="main", pinned=True)]     # B287: flee and yield are typed, no buttons
 
 
-def run_fight_command(game: Any, state: FantasyState, command_id: str) -> tuple[FantasyState, Any]:
+def run_fight_command(game: Any, state: FantasyState, command_id: str, clean: bool = False) -> tuple[FantasyState, Any]:
     """Flee: breaking contact. First a Dexterity roll to slip away (FN134, the owner 11-17: "Running away should not always give
     everyone a free attack"): d20 + DEX against 12, two more for each foe in reach after the first (at most 16); a success is
     away clean. A failure: one free blow from each enemy within reach as the player goes (rolled now, landed now).
@@ -1208,9 +1214,12 @@ def run_fight_command(game: Any, state: FantasyState, command_id: str) -> tuple[
         dex = int(p.stats.get("dex", 0))
         dc = min(16, 12 + 2 * max(0, reach - 1))
         die = rng.randint(1, 20)
-        clean = die != 1 and (die == 20 or die + dex >= dc)
-        lines.append(f"DEX, to slip away: {die} {'+' if dex >= 0 else '-'} {abs(dex)} (DEX {dex:+d}) = {die + dex} against {dc}"
-                     + (f" ({reach} in reach)" if reach > 1 else "") + (". Away clean." if clean else ". Not clean: they get their blows."))
+        if clean:                                       # FN144: a thing that gets the player away (a smoke bomb): no roll
+            lines.append("Away clean, no roll.")
+        else:
+            clean = die != 1 and (die == 20 or die + dex >= dc)
+            lines.append(f"DEX, to slip away: {die} {'+' if dex >= 0 else '-'} {abs(dex)} (DEX {dex:+d}) = {die + dex} against {dc}"
+                         + (f" ({reach} in reach)" if reach > 1 else "") + (". Away clean." if clean else ". Not clean: they get their blows."))
         for q in ([] if clean else living_enemies(game, s)):
             for body in bodies(q)[:2]:                  # B321: at most two of a band reach the one running (the lever's hint says so)
                 b = ensure_block(q)

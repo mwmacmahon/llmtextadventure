@@ -432,6 +432,7 @@ class ParchmentGame(FantasyGame):
         if event == "sight":
             line += f" Something happens there: {self._happening(s, rng, 'sight', night)}. Tell the happening in a line or two, then stop."
         elif event == "something small":
+            self._lay_find(s, rng)
             line += (f" There, {self._happening(s, rng, 'small', night)}. Tell the walk, then that; do not say what it is and do not have {n} "
                      "touch it; stop.")
         elif event == "trouble":
@@ -448,6 +449,19 @@ class ParchmentGame(FantasyGame):
             self._charge(s, w, max(0, total - mins))
         s.flags["prefill"] = "" if leg["arrived"] else self.CONTINUE.format(label=j["label"])
         return total
+
+    def _lay_find(self, s: FantasyState, rng: Any) -> None:
+        """FN144: a small find at a stop is a real thing lying there most times (a catalogue thing by its look), for the player
+        to pick up or leave; the narrator sees it among the things here."""
+        from games.fantasy import items as itm
+        if not itm.catalogue(self) or rng.random() >= 0.6:
+            return
+        ref = itm.roll(self, rng, "uncommon" if rng.random() < 0.2 else "common")
+        if ref:
+            it = itm.make(self, ref)
+            it.place = s.player.location
+            it.id = it.id if s.thing(it.id) is None else f"{it.id}_{len(s.things)}"
+            s.things.append(it)
 
     def road_events(self) -> dict:
         """FN140: the library of small happenings at a journey's stops (`road_events.yml` beside the scenarios): for each
@@ -502,8 +516,89 @@ class ParchmentGame(FantasyGame):
         return bool(s.world) and not s.player.fighting and not s.player.fate and \
             s.world["player"]["tile"] == s.world["places"][s.world["home"]]["tile"] and jb.board_unread(s)
 
+    # ---- the shops (FN144; the scenario's `shops:`, spot -> {item id: price}) ------------------------------------------------
+    TROPHY_PRICE = {"rat tail": 1, "wolf pelt": 4, "dire wolf pelt": 10, "goblin ear": 2, "goblin chief's ear": 10, "kobold tooth": 1,
+                    "spider fang": 4, "frog leg": 1, "troll's toenail": 20, "boar tusk": 3, "bear claw": 6, "bat wing": 1, "crocodile tooth": 5}
+
+    def _shop(self, s: FantasyState) -> dict | None:
+        """The shop the player stands in, when not fighting: {stock: {id: price}, buys: bool}."""
+        if s.player.fighting or s.player.fate:
+            return None
+        shops = self.scenario(s.city.id).get("shops") or {}
+        sh = shops.get((s.player.location or "").lower()) or shops.get(s.player.location or "")
+        return sh if isinstance(sh, dict) else None
+
+    def _sellable(self, s: FantasyState) -> list[tuple[Any, int]]:
+        from games.fantasy import items as itm
+        out = []
+        for it in s.inventory:
+            price = itm.value_of(self, it) // 2 or self.TROPHY_PRICE.get(it.name.lower(), 0)
+            if price and not it.equipped:
+                out.append((it, price))
+        return out
+
+    def _shop_commands(self, s: FantasyState) -> list:
+        from engine.game import CommandSpec, Option, Param
+        from games.fantasy import items as itm
+        sh = self._shop(s)
+        if sh is None:
+            return []
+        out = []
+        stock = itm.shop_lines(self, {str(k): int(v) for k, v in (sh.get("stock") or {}).items()})
+        if stock:
+            out.append(CommandSpec(id="buy", label="Buy", mode="narrated", hint="Buy something this shop sells, at its price.",
+                                   params=[Param(name="item", label="Item", options=[Option(id=r, label=f"{n}, {pr} gold") for r, n, pr in stock])]))
+        sell = self._sellable(s) if sh.get("buys") else []
+        if sell:
+            out.append(CommandSpec(id="sell", label="Sell", mode="narrated", hint="Sell a thing to this shop: trophies, potions, curios.",
+                                   params=[Param(name="item", label="Thing", options=[Option(id=it.id, label=f"{it.render()}, {pr} gold each") for it, pr in sell])]))
+        return out
+
+    def _trade(self, state: FantasyState, command_id: str, args: dict[str, Any]):
+        from engine.game import CommandResult
+        from games.fantasy import items as itm
+        s = state.model_copy(deep=True)
+        p = s.player
+        sh = self._shop(s)
+        gold = s.item("gold")
+        if sh is None:
+            return state, CommandResult(ok=False, label=command_id.capitalize(), text="There is no shop here.")
+        if command_id == "buy":
+            ref = str(args.get("item") or "")
+            price = int((sh.get("stock") or {}).get(ref, 0))
+            if not price or ref not in itm.catalogue(self):
+                return state, CommandResult(ok=False, label="Buy", text="Not sold here.")
+            if gold is None or gold.count < price:
+                return state, CommandResult(ok=False, label="Buy", text=f"That costs {price} gold; {p.name} has {gold.count if gold else 0}.")
+            gold.count -= price
+            it = itm.add(self, s, ref, known=True)
+            line = f"Bought: {it.name}, {price} gold ({gold.count} left)."
+            return s, CommandResult(label="Buy", text=line, player_line=f"I buy {itm._a(it.name)}.", summary=f"{p.name} buys {itm._a(it.name)}.",
+                                    directive=f"The sale is done: {p.name} pays {price} gold and is handed {itm._a(it.name)}. The price and the deal stand. A line or two.",
+                                    minutes=2, referee_skip=["gold", "inventory"])
+        it = next((x for x, _ in self._sellable(s) if x.id == str(args.get("item") or "")), None)
+        if it is None or not sh.get("buys"):
+            return state, CommandResult(ok=False, label="Sell", text="They do not buy that here.")
+        price = dict((x.id, pr) for x, pr in self._sellable(s))[it.id]
+        n = it.count if it.charges is None and it.ref == "" else 1          # trophies go as a lot; a magic thing one at a time
+        e = itm.entry_of(self, it)
+        news = f" The keeper recognises it and names it: {itm._a(e['name'])}." if e and not it.known else ""
+        name = it.render() if n > 1 else itm._a(it.name)
+        it.count -= n
+        if it.count <= 0:
+            s.inventory = [x for x in s.inventory if x is not it]
+        if gold is None:
+            from games.fantasy.state import Item
+            gold = Item(id="gold", name="gold", count=0)
+            s.inventory.append(gold)
+        gold.count += price * n
+        line = f"Sold: {name}, {price * n} gold.{news}"
+        return s, CommandResult(label="Sell", text=line, player_line=f"I sell {name}.", summary=f"{p.name} sells {name}.",
+                                directive=f"The sale is done: {p.name} sells {name} for {price * n} gold, paid over; the price stands.{news} A line or two.",
+                                minutes=2, referee_skip=["gold", "inventory"])
+
     def commands(self, state: FantasyState) -> list:
-        out = list(super().commands(state))
+        out = list(super().commands(state)) + self._shop_commands(state)
         if self._board_here(state):
             from engine.game import CommandSpec
             out.append(CommandSpec(id="read_board", label="Read the board", mode="narrated",
@@ -525,6 +620,8 @@ class ParchmentGame(FantasyGame):
     def run_command(self, state: FantasyState, command_id: str, args: dict[str, Any]):
         if command_id == "read_board":
             return self._read_board(state)
+        if command_id in ("buy", "sell"):
+            return self._trade(state, command_id, args)
         if command_id != "continue_journey":
             return super().run_command(state, command_id, args)
         from engine.game import CommandResult
