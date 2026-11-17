@@ -506,6 +506,23 @@ placed once, by block, with the testing owed in order, at the top of CLOWN_ROADM
 proposed there: the rest of the owner's and the player's notes; free testing (Ask canon, the opening read cold by a
 subagent, the staged scenes); the clock rebuilt whole; the opening and the screen; a newcomer round and the owner's
 playtest; then B411, C129, C130.
+**The owner's sketches and rulings of 11-16 (C159 to C171), recorded, none built.** The week becomes a chart to paint:
+days across, parts of the day down, one activity a cell, filled by picking an activity and dragging; for the pupil in
+training only, every other pupil given one word (earn, train, balanced); a pupil's last chart remembered; a tutorial
+owed. The proprietor has a row of his own. Rest is planned, in a fourth row for the early night; the late night is for
+sleep and is not planned, though a turn can be played in it. The boat and the bookings each open as a window over most
+of the screen, a card a choice, each card folding, with art, name, tags and a button, a locked card saying why. Art on
+the cards. The pupils' deck cut from sixty to about twenty-four, picked by the owner and the first player. The clock in
+am and pm; seasons of twenty-eight days; birthdays. Training told as a result with no scene unless one is unlocked.
+Side tasks in the daytime before a booking that pay at the show. The proprietor as judge when a rule of the house is
+broken. A further meter per pupil in the kept wording only. **What these drop:** the plan as two slots Monday to
+Saturday, the evening and Sunday as nobody's to plan, the day-parts side panel of 11-14, the telling of every practice
+turn, the present tiredness numbers. **The web client has neither a grid to paint on nor a window over the screen:**
+both are new client work, beside the map panel (area 19), which shows how a large widget is added. **Next, on the
+owner's word:** one design for the clock, the chart, the proprietor's row and the two windows, with a clickable
+mock-up for him and the first player before any code; he has said more notes are coming.
+**On the Mac mini since 11-17:** the owner's games on Gemma and the Sonnet rounds are services (`docs/SERVERS.md`); the
+builder's test server is started by hand when a build needs it.
 **Left:** the owner's word on how short and a judged trial of the lengths; the simulator's calibration grids; a round on the four-part
 day when live play resumes; the save's growth (C97, every game); the content pass; the C-lines in its own roadmap.
 

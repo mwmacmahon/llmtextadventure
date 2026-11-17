@@ -20,7 +20,7 @@ what; whoever changes a thread's state changes its row in the same commit. The w
 |---|---|---|---|---|---|
 | The next fantasy game (Parchment) and the world map: engine, reading, registers | "Fantasy Text Adventure - dadmini" | `notes/FANTASY_ROADMAP.md` (FN ids); ROADMAP area 19 | the contract, the start-area generator, paths and the where probe are built and pushed; no game calls the map | housekeeping in `notes/` (the decision numbers that clash, the design files made true), then Marrowgate's setting out of the shared code (FN100), then the new game's folder (FN101) | the questions listed in `notes/HANDOFF-2026-11-16-fantasy-main.md` section 5; none blocks |
 | The map panel (web) | "Map panel continuation" | the same work list, FN20 to FN26 | built, merged, checked on the mini on its demo page; never run in a live game | nothing until a game sends the map; then the live wiring | redraw four weak icons? delete the old panel branch? a look on a phone |
-| The hidden game and Ask mode | "Fantasy Text Adventure continuation 2" | its own roadmap (gitignored); ROADMAP areas 2 and 15 | the owner's rulings on the clock, the week's chart and the two windows are recorded; none built | one design for the clock, the chart and the windows, with a mock-up | whether to write that design now or after more notes |
+| The hidden game and Ask mode | "Fantasy Text Adventure continuation 2" | its own roadmap (gitignored); ROADMAP areas 2 and 15 | the owner's rulings on the clock, the week's chart and the two windows are recorded (C143 to C147, C159 to C171; rolled up in ROADMAP area 15 on 11-17); none built. Checked on the mini 11-17: the notes, the content, the store and the memory came across; the worktree is level with `2.0` | one design for the clock, the chart and the windows, with a mock-up; the free tests (Ask canon B416, the opening read cold) when he says | whether to write that design now or after more notes; whether to run the free tests; the pick of about twenty-four pupils; the open questions in the handoff note, section 6 |
 | The machine: servers, the box, sign-in | this session, as it comes up | `docs/SERVERS.md` | :8013, :8014 and :8016 run on the mini as services behind HTTPS names (11-17, set up in the owner's hosting chat; `docs/SERVERS.md`); the box answers by its model port and by ssh | - | a turn played on her address; the address tried from outside the house |
 | Hosting by name (HTTPS on the owner's domain, a reverse proxy) | another chat of the owner's, not one of the three above | the owner's "Mac mini plan" doc | the three game addresses work at home (11-17) | the family sites, later | - |
 
@@ -32,19 +32,20 @@ Rules between the threads, so they do not collide:
 - A session commits in its own worktree and fast-forwards local `2.0`; pushing is on the owner's word.
 - The fantasy order below stands; its steps 0 to 2 are done.
 
-## Where we are (2026-11-16)
+## Where we are (2026-11-17)
 
 Everything below this section is the page as it stood on 11-09 and is behind; it is kept until the next full re-cut.
 
 - **The fantasy game:** Marrowgate's setting was set aside on 11-15. The next game (a village in the woods, a rolled
   world map the engine owns) is designed and not built. Its work list is `notes/FANTASY_ROADMAP.md` (FN1 to FN96), rolled
   up in ROADMAP area 19.
-- **The hidden game:** a newcomer's first game (11-15) was read whole and the owner's first rulings on the clock are in,
-  with more notes to come; nothing of the clock or the opening is built before they do. Every open line and the testing
-  owed are placed in order at the top of its roadmap (gitignored), rolled up in ROADMAP area 15. Proposed order: the notes;
-  free testing (the Ask canon loop B416, the opening read cold, the staged scenes); the clock rebuilt whole; the opening
-  and the screen; a newcomer round and the owner's playtest; then B411, C129, C130.
-- **Her server:** where it was; moved only on the owner's word.
+- **The hidden game:** a newcomer's first game (11-15) was read whole and the owner's rulings on the clock are in; his
+  sketches and rulings of 11-16 (the week as a chart to paint, the two windows, the smaller deck, seasons; C159 to C171)
+  are recorded and none is built. Every open line and the testing owed are placed in order at the top of its roadmap
+  (gitignored), rolled up in ROADMAP area 15. Proposed order: one design for the clock, the chart and the windows with a
+  mock-up, on his word; free testing (the Ask canon loop B416, the opening read cold, the staged scenes); the clock and
+  the screen built; a newcomer round and the owner's playtest; then B411, C129, C130.
+- **Her server:** a service on the Mac mini at its own address since 11-17 (`docs/SERVERS.md`), at the commit it was; moved only on the owner's word.
 
 **The fantasy order, proposed 11-16, waiting on the owner's go-ahead:**
 0. Before any code: the map design read cold, the clarify counts, where the new game lives (FN1 to FN4). A day.
