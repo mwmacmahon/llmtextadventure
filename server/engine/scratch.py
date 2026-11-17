@@ -83,7 +83,7 @@ def presets(cfg: Config) -> dict[str, dict[str, Any]]:
 async def box(cfg: Config, transport: httpx.AsyncBaseTransport | None = None) -> dict[str, Any]:
     """What the box has loaded now (its /props): the model file and one slot's context. The model can be swapped under a
     running server (another profile), so this is asked every time, never kept."""
-    out: dict[str, Any] = {"model": None, "slot_ctx": None, "slots": None}
+    out: dict[str, Any] = {"model": None, "slot_ctx": None, "slots": None, "sleeping": None}
     try:
         async with httpx.AsyncClient(base_url=_base(cfg), timeout=5, transport=transport) as client:
             r = await client.get("/props")
@@ -92,6 +92,7 @@ async def box(cfg: Config, transport: httpx.AsyncBaseTransport | None = None) ->
                 out["model"] = (p.get("model_path") or "").rsplit("/", 1)[-1].removesuffix(".gguf") or None
                 out["slot_ctx"] = int((p.get("default_generation_settings") or {}).get("n_ctx") or 0) or None
                 out["slots"] = p.get("total_slots")
+                out["sleeping"] = p.get("is_sleeping")
     except Exception:  # noqa: BLE001 - the page says the box did not answer
         pass
     return out
@@ -107,7 +108,7 @@ async def info(cfg: Config, transport: httpx.AsyncBaseTransport | None = None) -
     b = await box(cfg, transport)
     busy = await profiles.slots_busy(base, transport=transport) if base else None
     return {"slot": cfg.side_slot, "max_prompt": max_prompt(b["slot_ctx"], 0), "max_new": MAX_NEW, "samplers": list(SAMPLERS),
-            "presets": presets(cfg), "profile": cfg.profile_label, "model": b["model"], "slot_ctx": b["slot_ctx"], "busy": busy}
+            "presets": presets(cfg), "profile": cfg.profile_label, "model": b["model"], "slot_ctx": b["slot_ctx"], "sleeping": b["sleeping"], "busy": busy}
 
 
 class TemplateInput(BaseModel):

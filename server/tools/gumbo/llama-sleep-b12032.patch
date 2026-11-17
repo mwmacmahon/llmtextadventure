@@ -1,0 +1,123 @@
+--- a/tools/server/server-queue.h
++++ b/tools/server/server-queue.h
+@@ -18,6 +18,7 @@
+     bool running  = false;
+     bool sleeping = false;
+     bool req_stop_sleeping = false;
++    bool req_sleep_now = false; // TEXTADVENTURE-SLEEP-PATCH: POST /sleep asked for the idle sleep now
+     int64_t time_last_task = 0;
+ 
+     // queues
+@@ -69,6 +70,10 @@
+     // returns immediately if not sleeping
+     void wait_until_no_sleep();
+ 
++    // TEXTADVENTURE-SLEEP-PATCH: enter the idle sleep at the next idle moment, as --sleep-idle-seconds would; a task that resets the
++    // idle timer before then cancels it (so it never lands in the middle of work). Ignored when idle sleep is off.
++    void request_sleep();
++
+     bool is_sleeping() {
+         std::unique_lock<std::mutex> lock(mutex_tasks);
+         return sleeping;
+--- a/tools/server/server-queue.cpp
++++ b/tools/server/server-queue.cpp
+@@ -42,6 +42,7 @@
+     }
+     if (reset_timer) {
+         time_last_task = ggml_time_ms();
++        req_sleep_now = false; // TEXTADVENTURE-SLEEP-PATCH: work came first
+     }
+     condition_tasks.notify_one();
+     return task_id;
+@@ -68,6 +69,7 @@
+     }
+     if (reset_timer) {
+         time_last_task = ggml_time_ms();
++        req_sleep_now = false; // TEXTADVENTURE-SLEEP-PATCH: work came first
+     }
+     condition_tasks.notify_one();
+     return 0;
+@@ -275,6 +277,12 @@
+     }
+ }
+ 
++void server_queue::request_sleep() { // TEXTADVENTURE-SLEEP-PATCH
++    std::unique_lock<std::mutex> lock(mutex_tasks);
++    req_sleep_now = true;
++    condition_tasks.notify_all();
++}
++
+ void server_queue::start_loop(int64_t idle_sleep_ms) {
+     running = true;
+     time_last_task = ggml_time_ms();
+@@ -292,6 +300,9 @@
+         if (idle_sleep_ms < 0) {
+             return false;
+         }
++        if (req_sleep_now) { // TEXTADVENTURE-SLEEP-PATCH
++            return true;
++        }
+         int64_t now = ggml_time_ms();
+         return (now - time_last_task) >= idle_sleep_ms;
+     };
+@@ -326,6 +337,7 @@
+             // no tasks, check for sleeping state
+             if (should_sleep()) {
+                 QUE_INF("%s", "entering sleeping state\n");
++                req_sleep_now = false; // TEXTADVENTURE-SLEEP-PATCH
+                 sleeping = true;
+                 // Call order cb0 -> cb1 -> cb{N}
+                 for (auto & cb : callback_sleeping_state) {
+@@ -352,7 +364,7 @@
+             } else {
+                 // wait for new tasks or timeout for checking sleeping condition
+                 bool res = condition_tasks.wait_for(lock, max_wait_time, [&]{
+-                    return (!queue_tasks.empty() || !running);
++                    return (!queue_tasks.empty() || !running || req_sleep_now); // TEXTADVENTURE-SLEEP-PATCH: wake to sleep at once
+                 });
+                 if (res) {
+                     break; // new task arrived or terminate
+--- a/tools/server/server-context.h
++++ b/tools/server/server-context.h
+@@ -113,6 +113,7 @@
+     server_http_context::handler_t post_slots;
+     server_http_context::handler_t get_props;
+     server_http_context::handler_t post_props;
++    server_http_context::handler_t post_sleep; // TEXTADVENTURE-SLEEP-PATCH
+     server_http_context::handler_t post_infill;
+     server_http_context::handler_t post_completions;
+     server_http_context::handler_t post_completions_oai;
+--- a/tools/server/server-context.cpp
++++ b/tools/server/server-context.cpp
+@@ -5888,6 +5888,21 @@
+         return res;
+     };
+ 
++    // TEXTADVENTURE-SLEEP-PATCH: POST /sleep, the idle sleep now (drops the model from VRAM; the next request reloads it)
++    this->post_sleep = [this](const server_http_req &) {
++        auto res = create_response(true); // never wakes a sleeping server
++        if (params.sleep_idle_seconds < 0) {
++            res->error(format_error_response("idle sleep is off: start the server with --sleep-idle-seconds", ERROR_TYPE_NOT_SUPPORTED));
++            return res;
++        }
++        const bool was = queue_tasks.is_sleeping();
++        if (!was) {
++            queue_tasks.request_sleep();
++        }
++        res->ok({{ "success", true }, { "was_sleeping", was }});
++        return res;
++    };
++
+     this->post_infill = [this](const server_http_req & req) {
+         auto res = create_response();
+         // check model compatibility
+--- a/tools/server/server.cpp
++++ b/tools/server/server.cpp
+@@ -173,6 +173,7 @@
+     ctx_http.get ("/metrics",                  ex_wrapper(routes.get_metrics));
+     ctx_http.get ("/props",                    ex_wrapper(routes.get_props));
+     ctx_http.post("/props",                    ex_wrapper(routes.post_props));
++    ctx_http.post("/sleep",                    ex_wrapper(routes.post_sleep)); // TEXTADVENTURE-SLEEP-PATCH
+     ctx_http.get ("/models",                   ex_wrapper(routes.get_models));
+     ctx_http.get ("/v1/models",                ex_wrapper(routes.get_models));
+     ctx_http.post("/completion",               ex_wrapper(routes.post_completions)); // legacy

@@ -58,6 +58,8 @@ the laptop, and the laptop's store is a separate copy from that night on.
   screen; `ant auth status` to check). No API key in the environment or the repo-root `.env`: one there outranks the
   profile. A profile is never copied between machines.
 - **The box** answers the mini on :8280 (the model) and :8281 (the helper), and by `ssh gumbo` with the mini's own key.
+  Its llama.cpp (b12032) carries the game's sleep patch (`POST /sleep`, the **Unload model** button, D327): any llama.cpp
+  upgrade must apply it again, by [LLAMA-SLEEP-PATCH.md](LLAMA-SLEEP-PATCH.md).
 - **Dev servers by name.** A Vite dev server answers localhost and plain IP addresses; any other host name must be listed
   in `DEV_ALLOWED_HOSTS` (comma separated, a leading dot for every subdomain), from the environment or the gitignored
   `web/.env`. Each checkout or worktree that runs a dev server needs its own `web/.env`. The built app served by a game

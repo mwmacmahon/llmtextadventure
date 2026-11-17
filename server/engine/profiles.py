@@ -380,6 +380,30 @@ async def slots_busy(llama_url: str, transport: Any = None, timeout: float = 3.0
         return None
 
 
+PATCH_DOC = "docs/LLAMA-SLEEP-PATCH.md"
+
+
+async def box_sleep(llama_url: str, transport: Any = None, timeout: float = 5.0) -> tuple[str, str]:
+    """Unload the model now: `POST /sleep` on llama-server, the same sleep its idle timer (--sleep-idle-seconds) starts, so
+    the next request reloads it by itself. The route is NOT in llama.cpp: it is the game's own patch
+    (server/tools/gumbo/apply_sleep_patch.py, docs/LLAMA-SLEEP-PATCH.md), lost on every llama.cpp upgrade until applied
+    again. Returns (outcome, message): outcome "asleep" | "already" | "no_route" (the build lacks the patch) | "refused" |
+    "unreachable"."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=timeout, transport=transport) as c:
+            r = await c.post(f"{llama_url.rstrip('/')}/sleep")
+    except Exception as e:  # noqa: BLE001
+        return "unreachable", f"The box did not answer ({type(e).__name__})."
+    if r.status_code == 404:
+        return "no_route", ("This llama.cpp build has no /sleep: the game's patch is missing (lost with a llama.cpp upgrade?). "
+                            f"Apply server/tools/gumbo/apply_sleep_patch.py and rebuild: {PATCH_DOC}.")
+    if r.status_code != 200:
+        return "refused", f"The box refused ({r.status_code}): {r.text[:200]}"
+    was = bool((r.json() or {}).get("was_sleeping")) if r.headers.get("content-type", "").startswith("application/json") else False
+    return ("already", "The model was already unloaded.") if was else ("asleep", "The model is unloaded; the next request loads it again.")
+
+
 async def box_use(p: Profile, transport: Any = None, timeout: float = 20.0) -> tuple[int, dict]:
     """`POST {helper}/use` with the profile's model and server block, as `tools/llm.py use` sends it: the helper writes it
     on the box and restarts llama-server on it. (0, {error}) when the helper does not answer."""

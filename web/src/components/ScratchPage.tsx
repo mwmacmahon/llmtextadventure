@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { scratchInfo, scratchTemplate, streamScratch, type ScratchDone, type ScratchInfo, type ScratchRequest } from "../api";
 import { formatExchange, parseExchange, type Role } from "../scratchText";
+import { UnloadButton } from "./UnloadButton";
 
 const ROLE_ORDER = ["narrator", "assistant", "referee", "summarizer"];
 type Mode = "conversation" | "chat" | "raw";
@@ -260,6 +261,10 @@ export function ScratchPage() {
         {info.slot_ctx ? `, ${info.slot_ctx.toLocaleString()} tokens a slot` : ""}; prompts up to {info.max_prompt.toLocaleString()} tokens), with no game around it, on the side slot (slot {info.slot}; the narrator, assistant and referee are on slots 0 to 2 and keep their caches).
         Nothing is kept: Clear or a reload and it is gone. {info.busy && <strong>The box is busy with a turn just now; a call will share it.</strong>}
       </p>
+      <div className="settings-row small">
+        <span>The model is {info.sleeping ? <strong>unloaded</strong> : info.sleeping === false ? <strong>loaded</strong> : "(the box did not say)"}{info.sleeping ? " (the next call loads it, about 10 s)" : ""}.</span>
+        <UnloadButton sleeping={info.sleeping} onDone={() => refresh()} />
+      </div>
       {err && <div className="error">{err}</div>}
       {swapped && (
         <div className="error">

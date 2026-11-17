@@ -151,3 +151,19 @@ def test_side_calls_never_run_on_a_turn_roles_slot():
     for fn in ("_quest_check", "_beat_check", "_summarize"):                           # each of these asks for the side role
         body = src[src.index(f"async def {fn}("):][:900]
         assert "_side_role(" in body, fn
+
+
+# ---- the unload button (D327): POST /sleep, the game's own llama.cpp patch -------------------------------------------
+
+def test_box_sleep_outcomes():
+    import asyncio
+    import httpx
+
+    def run(handler):
+        return asyncio.run(profiles.box_sleep("http://box:8280", transport=httpx.MockTransport(handler)))
+
+    assert run(lambda r: httpx.Response(200, json={"success": True, "was_sleeping": False}))[0] == "asleep"
+    assert run(lambda r: httpx.Response(200, json={"success": True, "was_sleeping": True}))[0] == "already"
+    outcome, message = run(lambda r: httpx.Response(404, text="not found"))
+    assert outcome == "no_route" and "LLAMA-SLEEP-PATCH.md" in message and "apply_sleep_patch.py" in message   # the upgrade that lost the patch says so
+    assert run(lambda r: httpx.Response(501, json={"error": "idle sleep is off"}))[0] == "refused"

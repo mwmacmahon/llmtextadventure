@@ -15,6 +15,8 @@ ExecStart=%h/textadventure/llama-game.sh
 Restart=on-failure
 RestartSec=5
 # llama.cpp b12032 (2026-11-01), built beside the old b8580 (~/llms/llama.cpp); delete this line to go back.
+# b12032 carries the game's sleep patch (POST /sleep, the Unload model button, D327). A new build here needs it applied
+# again BEFORE it is pointed at: docs/LLAMA-SLEEP-PATCH.md (apply_sleep_patch.py); b8580 has none.
 Environment=LLAMA_BIN=%h/llms/llama.cpp-b12032/build/bin/llama-server
 # The model is chosen by profile (profiles/*.env, profiles/ACTIVE; swap with server/tools/llm.py from the
 # game's machine), not here. Defaults a profile does not set can still be overridden here, e.g.:

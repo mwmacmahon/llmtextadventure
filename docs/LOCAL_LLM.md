@@ -41,6 +41,11 @@ latency and the stop sequence does not apply inside the thinking block.
 
 ## Running it
 
+> **Upgrading llama.cpp? The game patches it.** The box's llama.cpp (b12032) carries the game's own `POST /sleep` route,
+> which the **Unload model** button needs (D327). A new llama.cpp build does not have it: apply it again first, by the
+> checklist in [LLAMA-SLEEP-PATCH.md](LLAMA-SLEEP-PATCH.md) (`server/tools/gumbo/apply_sleep_patch.py`). Without it only
+> the button fails (it says so, and `llama-game.sh` logs a WARNING at every start).
+
 The game has its own llama-server on the GPU box, separate from bruba's `llm-manager` (which stays
 untouched): `server/tools/gumbo/llama-game.sh`, its helper `gpu-yield.py`, and the optional user
 unit `textadventure-llm.service`. It listens on **8280** (bruba's manager and servers use

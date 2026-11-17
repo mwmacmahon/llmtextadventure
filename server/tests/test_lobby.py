@@ -436,3 +436,8 @@ def test_scratch_pad_only_in_dev_mode_on_a_local_server(client, engine: Engine, 
     monkeypatch.setattr(scratch, "info", info)
     assert client.get("/api/scratch", headers=DEV).json() == {"presets": {}}
     assert client.get("/api/scratch").status_code == 404                 # still never without dev mode
+
+
+def test_unload_button_only_in_dev_mode_on_a_local_server(client):
+    assert client.post("/api/box/unload").status_code == 404
+    assert client.post("/api/box/unload", headers=DEV).status_code == 404     # every role on the fake provider: no box

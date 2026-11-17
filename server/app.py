@@ -423,6 +423,23 @@ async def scratch_template(body: scratch.TemplateInput, request: Request):
         raise HTTPException(502, f"the box could not apply its template: {type(e).__name__}")
 
 
+@app.post("/api/box/unload")
+async def box_unload(request: Request):
+    """Dev mode, a server playing on the box: the model unloaded now instead of after the 10-minute idle sleep (D327). Refused
+    while the box is answering a request (a turn in flight on any server sharing it)."""
+    if not dev_mode(request) or not engine.cfg.local:
+        raise HTTPException(404, "no box here")
+    from engine import profiles as profiles_mod
+    url = picker.llama_url(engine.cfg)
+    if await profiles_mod.slots_busy(url, transport=engine.box_transport):
+        raise HTTPException(409, "The box is answering a request just now (a turn?); try again when it is done.")
+    outcome, message = await profiles_mod.box_sleep(url, transport=engine.box_transport)
+    log.info("box.unload " + logs.kv(outcome=outcome))
+    if outcome in ("no_route", "unreachable", "refused"):
+        raise HTTPException(501 if outcome == "no_route" else 502, message)
+    return {"outcome": outcome, "message": message}
+
+
 # ---- the profile picker (Stage 3, engine/picker.py): the profiles, one's card, the switch -------------------
 class SwitchInput(BaseModel):
     name: str

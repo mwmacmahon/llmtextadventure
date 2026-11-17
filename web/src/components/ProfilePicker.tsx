@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type ProfileCard, type ProfileList, type TurnCost } from "../api";
+import { api, devMode, type ProfileCard, type ProfileList, type TurnCost } from "../api";
+import { UnloadButton } from "./UnloadButton";
 
 const ROLE_ORDER = ["narrator", "assistant", "referee", "summarizer"];
 
@@ -33,7 +34,7 @@ function Cost({ cost }: { cost: TurnCost }) {
   );
 }
 
-function Card({ card }: { card: ProfileCard }) {
+function Card({ card, onChanged }: { card: ProfileCard; onChanged?: () => void }) {
   const rank = (n: string) => (ROLE_ORDER.includes(n) ? ROLE_ORDER.indexOf(n) : ROLE_ORDER.length);
   const roles = Object.entries(card.roles).sort(([a], [b]) => rank(a) - rank(b));
   const offsets = Object.entries(card.dials.target_offset);
@@ -121,6 +122,7 @@ function Card({ card }: { card: ProfileCard }) {
               {card.box.requested_ctx != null ? ` · context asked for: ${card.box.requested_ctx}` : ""}
             </span>
           )}
+          {card.local && devMode.on() && !card.box.loading && <UnloadButton onDone={onChanged} />}
         </div>
       )}
 
@@ -222,7 +224,7 @@ export function ProfilePicker({ onSwitched }: { onSwitched: () => void }) {
         <div className="error small">{list.errors.map((e) => `${e.name}: ${e.error}`).join("; ")}</div>
       )}
       {err && <div className="error small">{err}</div>}
-      {card ? <Card card={card} /> : selected ? <div className="muted small">loading the card…</div> : null}
+      {card ? <Card card={card} onChanged={() => selected && api.profile(selected).then(setCard).catch(() => {})} /> : selected ? <div className="muted small">loading the card…</div> : null}
     </div>
   );
 }

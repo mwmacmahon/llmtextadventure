@@ -452,6 +452,11 @@ One local model serves every role on one GPU in sequence: Gemma 4 31B on gumbo (
 (:8014). Hosted and local differ by profile, never by code path. Design: LOCAL_LLM.md; the trials and models reports;
 D98, D101.
 
+**Built 11-17 (D327): Unload model.** A button (Settings' profile card in dev mode; the scratch pad) frees the GPU now
+instead of after llama-server's 10 idle minutes; the next request loads the model again (8 s for Gemma). It needs the
+game's own patch to the box's llama.cpp (`POST /sleep`): **every llama.cpp upgrade must re-apply it**, by
+docs/LLAMA-SLEEP-PATCH.md; `llama-game.sh` warns at start when it is missing.
+
 **Running.** **Left.**
 - The local provider's schema required list and object fields only, so Gemma skipped the edge (B213): fixed 11-09 by
   requiring part seven's five fields by name; any new scalar field a role needs goes on that list.

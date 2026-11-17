@@ -31,6 +31,7 @@ Three modes, in this order; Conversation is the default.
 | **Export** | The system text and the messages as one text (the format below), to the clipboard. Raw: the text as it is. |
 | **Import** | Text from the clipboard into the boxes: with headers (or a JSON message list) it becomes the system text and the messages, in Conversation; without, it goes in the box you are on (Conversation: the next message). |
 | **Clear** | Empties everything. |
+| **Unload model** | At the top, beside whether the model is loaded now: frees the GPU at once instead of after the box's 10 idle minutes; the next call loads it again (about 10 s). Refused while the box is answering a request. Needs the game's llama.cpp patch: [LLAMA-SLEEP-PATCH.md](LLAMA-SLEEP-PATCH.md) (the same button is on Settings' profile card). |
 | The line under the boxes | Prompt tokens (how many were cached), tokens written, speed, time, and how it ended (`stop`, `eos`, `limit`, `cancelled`). |
 
 ### The export format

@@ -59,6 +59,12 @@ load_profile() {                 # the defaults, then the active profile over th
 }
 
 [ -x "$LLAMA_BIN" ] || { echo "no llama-server at $LLAMA_BIN" >&2; exit 1; }
+# D327: the game's "Unload model" button calls POST /sleep, which is NOT in llama.cpp: it is the game's own patch
+# (apply_sleep_patch.py beside this script; docs/LLAMA-SLEEP-PATCH.md). Every llama.cpp upgrade loses it. The patch's own
+# error text is the mark (the route lives in libllama-server-impl.so beside the binary); no mark, a loud line at every start.
+if ! grep -qa "idle sleep is off: start the server with --sleep-idle-seconds" "$LLAMA_BIN" "$(dirname "$LLAMA_BIN")"/libllama-server-impl.so* 2>/dev/null; then
+  echo "WARNING: $LLAMA_BIN has no /sleep route (the game's sleep patch): the Unload model button will fail until it is re-applied. See docs/LLAMA-SLEEP-PATCH.md in the game's repo." >&2
+fi
 if "$LLAMA_BIN" --help 2>&1 | grep -q -- "--checkpoint-every-n-tokens"; then CKPT_FLAG=--checkpoint-every-n-tokens
 else CKPT_FLAG=--checkpoint-min-step; fi
 
