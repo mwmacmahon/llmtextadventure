@@ -230,7 +230,8 @@ def test_no_shipped_game_is_hidden_and_hidden_ones_live_only_in_the_gitignored_f
         # with the owner's mod always on (clown_after_dark) keeps the switch
         assert g.hidden == (type(g).__module__.startswith("games.hidden.") and g.name != "clown"), g.name
     lines = (Path(__file__).resolve().parents[2] / ".gitignore").read_text().splitlines()
-    assert "server/games/hidden/*" in lines and "!server/games/hidden/clown/" in lines
+    # Parchment (D316) is in the repo too while it is built, and hidden like the rest of the folder
+    assert "server/games/hidden/*" in lines and "!server/games/hidden/clown/" in lines and "!server/games/hidden/parchment/" in lines
 
 
 def test_the_pin_comes_from_the_environment_too(monkeypatch):

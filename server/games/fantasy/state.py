@@ -395,10 +395,13 @@ class FantasyState(BaseModel):
     combat: CombatState | None = None  # part fifteen §3: a fight in progress
     encounters: dict[str, dict] = Field(default_factory=dict)   # part sixteen §3: place -> the generator's ranked fights for this party there
     offer: dict = Field(default_factory=dict)                   # part sixteen §4: who might come at the player here (ids, entry, variant)
+    world: dict[str, Any] | None = None   # the world map (docs/MAP-CONTRACT.md section 2): Parchment's; None in Marrowgate's saves
 
     @property
     def places(self) -> list[str]:
-        return list(self.city.locations) + [f.name for f in self.found_places]
+        known = [str(self.world["places"][pid]["name"]) for pid in (self.world or {}).get("known", {}).get("places", {})
+                 if pid in self.world["places"]] if self.world else []
+        return list(self.city.locations) + known + [f.name for f in self.found_places]
 
     @property
     def cast(self) -> list[Person]:

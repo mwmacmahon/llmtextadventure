@@ -271,6 +271,7 @@ class FantasyGame(GameBase):
     SETTING = "Marrowgate"                     # where a death with no place is written as having happened
     SETTING_LINE = "an adventurer in the city of Marrowgate and the country around it"
     ENDING = "{name} died at {where} on day {day}. The fog keeps the rest."
+    START_LOG = "{name} takes a room at the Drowned Lantern."
     # B249: on the water, in the wood or the south, word from the city does not reach the player and the deck does not deal
     FAR_FROM_WORD: frozenset[str] = frozenset(WATER | WOOD | SOUTH)
     # where a survivor of a fall wakes (D157, kept for old saves): by where they fell, else the Watch if wanted, else the Temple
@@ -341,13 +342,15 @@ class FantasyGame(GameBase):
         from . import combat as _cb
         self.bestiary = _cb.load_bestiary(content_dir)      # part sixteen §1: every enemy in the world; this game's own (FN112)
         self._classes: tuple[float, dict[str, cl.ClassDef]] | None = None
+        # the family's shared files (the classes, the conditions) where a game of the family writes none of its own (Parchment)
+        self.shared_dir = content_dir if (content_dir / "classes").is_dir() else _cbm.FAMILY_DIR
 
     def classes(self) -> dict[str, cl.ClassDef]:
         """The class files (B92), read again when one changes."""
-        folder = self.content_dir / "classes"
+        folder = self.shared_dir / "classes"
         stamp = max((f.stat().st_mtime for f in folder.glob("*.yml")), default=0.0) if folder.is_dir() else 0.0
         if self._classes is None or self._classes[0] != stamp:
-            self._classes = (stamp, cl.load(self.content_dir))
+            self._classes = (stamp, cl.load(self.shared_dir))
         return self._classes[1]
 
     def class_of(self, p: Player) -> cl.ClassDef | None:
@@ -468,7 +471,7 @@ class FantasyGame(GameBase):
             city=city_from(sc), clock=clock, player=player, inventory=inv,
             things=[Item(**{k: v for k, v in t.items() if k in Item.model_fields}) for t in sc.get("things") or []],
             people=[dk.person_from(p) for p in sc.get("people") or []],
-            log=[f"Day {clock.day} {clock.minute // 60:02d}:{clock.minute % 60:02d}. {player.name} takes a room at the Drowned Lantern."],
+            log=[f"Day {clock.day} {clock.minute // 60:02d}:{clock.minute % 60:02d}. " + self.START_LOG.format(name=player.name)],
             hidden=Hidden(events=events, spontaneous=[Spontaneous.model_validate(x) for x in sc.get("spontaneous") or []],
                           pending=[Pending.model_validate(x) for x in sc.get("pending") or []],
                           facts=list(sc.get("hidden_facts") or []), terms=list(sc.get("secret_terms") or [])),
@@ -1213,7 +1216,7 @@ class FantasyGame(GameBase):
             "this turn that changes how they treat the player. A tense talk is no change. hostile is only for one who will now attack "
             f"{p.name} on sight; angry is one set against {p.name} who will not strike the first blow.",
             f"- set player.conditions +<name> / -<name>: a condition on {p.name}. Conditions are only these names: "
-            + ", ".join([*cn.load(self.content_dir), "lost an eye", "lost a hand", "lost an ear"]) + ". Write the name alone; the game knows "
+            + ", ".join([*cn.load(self.shared_dir), "lost an eye", "lost a hand", "lost an ear"]) + ". Write the name alone; the game knows "
             f"what each one does and how long it lasts. For enthralled or grappled, the note says who holds {p.name}. -<name> when the prose "
             "ends one (dry clothes by a fire, a healer's work, breaking free). An injury goes in the same row as +<the injury in a few words>; "
             "it comes off (-<the injury>) only when the prose treats it, with how in the note. A lost eye, hand or ear never comes off.",
@@ -1526,7 +1529,7 @@ class FantasyGame(GameBase):
 
     def _land_condition(self, s: FantasyState, name: str, by: str = "") -> None:
         """A condition the engine sets (a song, a hazard): the table's row, with its compulsion's `by` (B96, part four §6)."""
-        row = cn.match(cn.load(self.content_dir), name, exact=True)
+        row = cn.match(cn.load(self.shared_dir), name, exact=True)
         if row is None or s.player.has_condition(row.name):
             return
         compelled = dict(row.compelled, by=by or row.compelled.get("by", "")) if row.compelled is not None else None
@@ -2471,7 +2474,7 @@ class FantasyGame(GameBase):
             return True
         if not name:
             return True
-        table = cn.load(self.content_dir)
+        table = cn.load(self.shared_dir)
         if removing:
             row = cn.match(table, name)
             c = next((c for c in p.conditions if c.name == name or (row is not None and c.name == row.name)), None)

@@ -34,6 +34,7 @@ notes/content/*/mods/*
 server/games/hidden/*
 !server/games/hidden/__init__.py
 !server/games/hidden/clown/
+!server/games/hidden/parchment/
 
 # Legacy on-disk leftovers from the 2023 codebase (kept out of main)
 /chat_histories/
