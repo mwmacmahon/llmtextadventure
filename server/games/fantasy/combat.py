@@ -559,8 +559,15 @@ def plan_round(game: Any, s: FantasyState, adj: Any, player_text: str, turn: int
         ally, _, target = str(o).partition(":")                             # "hazel: skeleton" (a flat string keeps the grammar small)
         if ally.strip() and target.strip():
             c.orders[ally.strip().lower()] = target.strip().lower()
+    struck = set(plan[0]["targets"]) if plan and plan[0].get("side") == "player" else set()
     for q in foes:
         b = ensure_block(q)
+        if "turned" in (q.condition or ""):
+            # B419 (11-17, battle2): turned dead act no more ("their actions do not fire, they keep away"); struck by the player,
+            # the turning on that one breaks, as the SRD has it, and it fights again
+            if q.id not in struck:
+                continue
+            q.condition = re.sub(r"\bturned\b[,;]?\s*", "", q.condition).strip(" ,;")
         for body in bodies(q):
             if s.combat.surprise == "player" and q.id == c.target and c.round == 0:
                 continue                                              # struck from hiding: the target loses its first action
@@ -710,8 +717,8 @@ def resolve(game: Any, s: FantasyState, entry: dict, rng: Any, offset: int, tall
     data: dict[str, Any] = {"verb": "ENEMY", "who": q.id, "move": kind, "label": whose, "join": q.id, "key": entry["key"]}
     tally.setdefault("acted", []).append(q.id)
     tgt_ally = s.person(entry["target"]) if entry["target"] != "player" else None
-    if tgt_ally is not None and not bodies(tgt_ally):
-        tgt_ally = None
+    if tgt_ally is not None and (not bodies(tgt_ally) or hp_now(tgt_ally, 0, tally) <= 0):
+        tgt_ally = None              # B420: an ally already down this round is not struck again (Maud took a second blow at -4)
     if kind in ("strike", "drain") and tgt_ally is not None:
         tb = ensure_block(tgt_ally)
         res = attack_roll(rng, int(a.get("attack", b.attack or 2)) + shift, tb.ac or 10)
@@ -720,7 +727,9 @@ def resolve(game: Any, s: FantasyState, entry: dict, rng: Any, offset: int, tall
         n, _ = roll_dice(rng, b.damage or "1d4", res.crit)
         tally.setdefault("hits", []).append({"pid": tgt_ally.id, "body": 0, "dmg": n})
         left = hp_now(tgt_ally, 0, tally)
-        word = "down" if left <= 0 else hp_word(left, tb.hp_max or 1)
+        # B420 (11-17, battle2 T3): the line said "down" at any hit points under one, while the landing kills on the SRD's massive
+        # damage (what is left over reaches their full hit points): the panel said dead and the prose had her breathing
+        word = ("dead" if -left >= (tb.hp_max or 1) else "down") if left <= 0 else hp_word(left, tb.hp_max or 1)
         data.update(ally_hit=tgt_ally.id, dmg=n)
         return {"text": f"{whose} at {tgt_ally.name}: it lands, {n} damage; {tgt_ally.name} is {word}. Play it landing, and go on.",
                 "mechanic": enemy_line(f"{whose} at {tgt_ally.name}", res, n, f"{tgt_ally.name} is {word}"), "data": data}

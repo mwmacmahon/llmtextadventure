@@ -1647,6 +1647,18 @@ class FantasyGame(GameBase):
         from . import telling
         return telling.kind(state, adj, res, level)
 
+    FIRST_LEVERS = ("rage", "lay_on_hands", "second_wind")
+
+    def lever_first(self, state: FantasyState, command_id: str) -> bool:
+        """B418 (11-17): in a fight, the player's own act this turn lands before the enemies' round (the round's order is the player
+        first, D240): a heal, Rage, Second Wind, a buff, turning the dead. Out of a fight a lever keeps its place after the prose."""
+        p = state.player
+        if not p.fighting:
+            return False
+        from . import features as ft
+        own = {fid for fid, f in ft.specs(self, p).items() if f.get("kind") in ("heal", "buff", "turn")}
+        return command_id in self.FIRST_LEVERS or command_id in own
+
     def turn_limits(self, state: FantasyState, adj: Any = None) -> dict:
         """The pipeline's one hook for what a pressing turn allows (the debt review, 11-10 night: three hooks answered it):
         `calls`, the narrator's call cap (0 on a DEBUG turn); `minutes`, the turn's most (a peril, a grab or a fight: one,

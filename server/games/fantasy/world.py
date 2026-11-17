@@ -1170,7 +1170,11 @@ def land(game: Any, s: FantasyState, calls: list[dict], turn: int) -> list[str]:
             stamp = f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}."
             s.log.append(f"{stamp} {p.name} died: {why}.")
             continue
-        if c.get("peril") and p.peril is None:
+        # B422 (11-17, street T12 and T13): the siren's hold failed twice ("pulling down") and nothing happened: the cold's
+        # freezing held the one peril slot, so the drowning was dropped without a word. Dragged under the water outranks the cold
+        # (the cold stays on as its condition); any other peril still waits for the slot to be free
+        water = ("holding_breath", "drowning")
+        if c.get("peril") and (p.peril is None or (c["peril"] in water and p.peril.kind not in water)):
             open_peril(s, c["peril"], by=c.get("by") or "")
             notes.append("WARNING: " + PERILS.get(p.peril.kind, {}).get("warn", f"{p.peril.kind}!"))
         if c.get("condition") and not p.has_condition(c["condition"]):

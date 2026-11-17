@@ -1127,12 +1127,31 @@ class Engine:
         # id and arguments, and the ids of the levers the reading picked (played by the narrator, committed after the prose)
         res["command"] = {"id": command[0], "args": dict(command[1] or {})} if (command is not None and cmd_result is not None) else None
         res["levers"] = [lv.id for lv in levers if not lv.blocked]
+        # B418 (11-17, three Gemma fight rounds): a lever that is the player's own act in a fight (a heal, Rage, turning the dead)
+        # was committed after the prose, so the round rolled before it struck first: a paladin at 3 hit points laid on hands and
+        # died of the blow the heal would have outlasted. A game may say a lever acts first (`lever_first`): it is committed now,
+        # before the world's round, and no referee can undo it afterwards (it happened, as the round's blows did)
+        early: list[str] = []
+        for lv in levers:
+            if not lv.blocked and _hook(game, "lever_first", state, lv.id, default=False):
+                state, out = self._commit_lever(game, state, lv, [], iid, turn, ledger)
+                if out is not None:
+                    lv.committed = out
+                    if out["status"] == "applied":
+                        early.append(out["text"])
+        if early:
+            res["state"] = state
         # ---- 2b. the world acts (part four, D176): the game's own rolls before the prose (a peril's
         #          countdown, the enemies' moves); the narrator is told each in THIS TURN, the § lines follow the prose
         world = None
         if hasattr(game, "world_turn") and (adj is None or adj.kind in ("action", "trivial")):
             state, world = game.world_turn(state, adj, player_text or "", rng_for(iid, turn, "world"), turn, self.target_offset(game, iid))
             res["state"] = state
+            if early:                                     # B418: shown first, before the round's blows, as it happened
+                world.mechanics[:0] = early
+                for lv in levers:
+                    if lv.committed is not None and lv.committed.get("text") in early:
+                        lv.committed = {**lv.committed, "shown": True}
             if getattr(world, "replaces", None):         # B322: the game's standing lines this turn's world supersedes
                 res["directives"] = [d for d in res["directives"] if not d.startswith(tuple(world.replaces))]
             if world.directives:
@@ -1484,6 +1503,8 @@ class Engine:
             yield {"event": "mechanic", "data": {"turn": turn, "text": cmd_result.shown, "data": {"command": True}}}
             narration_stored = with_mechanic(narration_stored, cmd_result.shown)
         for lv, out in zip(levers, lever_outcomes):
+            if out.get("shown"):                            # B418: already among the world's lines, before the round
+                continue
             yield {"event": "mechanic", "data": {"turn": turn, "text": out["text"], "data": {"lever": lv.id, "status": out["status"]}}}
             narration_stored = with_mechanic(narration_stored, out["text"])
         capped_line = _hook(game, "turn_cap_line", state, default=None) if res.get("turn_capped") else None   # round 6: a typed wait of days
@@ -2014,6 +2035,8 @@ class Engine:
         refusal now (the world moved under it) counts as blocked. The outcome is the player's § line."""
         if lever is None:
             return state, None
+        if lever.committed is not None:                    # B418: committed before the round; the outcome stands
+            return state, lever.committed
         if lever.blocked:
             return state, {"id": lever.id, "status": "blocked", "text": f"{lever.label}: {lever.preview.text.strip()}"}
         veto = next((v for v in vetoes if v.split(":", 1)[0].strip().lower() == lever.id.lower()), None)
@@ -3216,6 +3239,7 @@ class PendingLever:
     preview: CommandResult
     directive: str
     blocked: bool = False
+    committed: dict[str, Any] | None = None     # B418: committed before the world's round (the game's `lever_first`); its outcome
 
 
 def _pending_block(game: Any, state: BaseModel, audience: str) -> str:
