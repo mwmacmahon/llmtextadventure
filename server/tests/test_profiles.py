@@ -167,3 +167,19 @@ def test_box_sleep_outcomes():
     outcome, message = run(lambda r: httpx.Response(404, text="not found"))
     assert outcome == "no_route" and "LLAMA-SLEEP-PATCH.md" in message and "apply_sleep_patch.py" in message   # the upgrade that lost the patch says so
     assert run(lambda r: httpx.Response(501, json={"error": "idle sleep is off"}))[0] == "refused"
+
+
+def test_a_sleeping_box_is_not_busy_and_is_not_woken():
+    """b12032: GET /slots wakes a sleeping server (reloads the model); /props does not. Asleep is answered from /props alone."""
+    import asyncio
+    import httpx
+    asked = []
+
+    def handler(r: httpx.Request):
+        asked.append(r.url.path)
+        if r.url.path == "/props":
+            return httpx.Response(200, json={"is_sleeping": True})
+        return httpx.Response(200, json=[{"id": 0, "is_processing": True}])
+
+    assert asyncio.run(profiles.slots_busy("http://box:8280", transport=httpx.MockTransport(handler))) is False
+    assert asked == ["/props"]                       # never /slots: that would load the model again

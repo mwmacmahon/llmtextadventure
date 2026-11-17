@@ -61,6 +61,15 @@ In the repo, `server/tools/gumbo/`:
 - `llama-game.sh`: at every start, looks for the patch's own error text in the server library and logs
   `WARNING: ... has no /sleep route` when it is missing (in `journalctl --user -u textadventure-llm`).
 
+## What wakes a sleeping server (b12032, measured 2026-11-17)
+
+Any request that needs the model's context wakes it and reloads the model (8 s for Gemma 4 31B), including ones that only
+look: **`GET /slots` wakes it**. `GET /props`, `GET /health` and `POST /sleep` itself do not (they are answered from a
+cache or bypass the sleep). The game's busy check (`profiles.slots_busy`) therefore asks `/props` first and treats asleep
+as idle, never touching `/slots` then; before 11-17 every busy check (the profile switch, the scratch pad, the button)
+woke an unloaded model. Anything new that watches the box must do the same: `/props` for state, never `/slots` on a
+sleeping server. Re-check this list on a new llama.cpp: which routes bypass the sleep can change.
+
 ## Upgrading llama.cpp: the checklist
 
 1. Build the new llama.cpp **beside** the old one (as b12032 was beside b8580), e.g. `~/llms/llama.cpp-bNNNNN`.
@@ -80,10 +89,11 @@ In the repo, `server/tools/gumbo/`:
    `profiles.box_sleep` (`server/engine/profiles.py`) and retire the patch.
 4. Point the service at the new build (`LLAMA_BIN` in `textadventure-llm.service`, repo copy and the box's
    `~/.config/systemd/user/` copy), `systemctl --user daemon-reload`, restart **only when no turn is in flight**
-   (`curl -s localhost:8280/slots`: no `"is_processing": true`).
+   (`curl -s localhost:8280/props | grep -o '"is_sleeping":[a-z]*'` first: asleep is idle; awake, then
+   `curl -s localhost:8280/slots` shows no `"is_processing": true`. Not `/slots` on a sleeping server: it wakes it, below).
 5. Check the start log has **no** `WARNING ... no /sleep route`:
    `journalctl --user -u textadventure-llm -n 20 --no-pager`.
-6. Check the route on the box:
+6. Check the route on the box (and that `/props` still does not wake it, while `/slots` may):
    ```
    curl -s -X POST localhost:8280/sleep                    # {"success":true,"was_sleeping":false}
    sleep 2; curl -s localhost:8280/props | grep -o '"is_sleeping":[a-z]*'      # true
@@ -108,7 +118,8 @@ files. Without the patch everything but the button works; the button then says t
 - `profiles.box_sleep` (`server/engine/profiles.py`): `POST /sleep`; a 404 is read as "this build has no patch" and the
   message names this page and the script.
 - `POST /api/box/unload` (`server/app.py`): dev mode on a server whose roles play on the box only (404 otherwise);
-  refused with 409 while any slot is processing (`/slots`), since the box is shared by :8013, :8018 and any probe; one
+  refused with 409 while any slot is processing (`profiles.slots_busy`: `/props` first, `/slots` only when awake), since
+  the box is shared by :8013, :8018 and any probe; one
   log line `box.unload outcome=...`.
 - The button (`web/src/components/UnloadButton.tsx`): in Settings on the profile card's "The box" line (dev mode), and
   at the top of the scratch pad, which also shows whether the model is loaded or unloaded.

@@ -366,10 +366,16 @@ async def box_report(llama_url: str | None, transport: Any = None, timeout: floa
 
 
 async def slots_busy(llama_url: str, transport: Any = None, timeout: float = 3.0) -> bool | None:
-    """Whether llama-server is answering a request now (`GET /slots`, any slot `is_processing`); None when it cannot say."""
+    """Whether llama-server is answering a request now (`GET /slots`, any slot `is_processing`); None when it cannot say.
+    Asleep is not busy, and asked first: on b12032 `GET /slots` WAKES a sleeping server (it reloads the model, 8 s, measured
+    2026-11-17), while `GET /props` answers from a cache without waking it. Before this, every busy check (the profile
+    switch, the scratch pad, the unload button) loaded a sleeping model again."""
     import httpx
     try:
         async with httpx.AsyncClient(timeout=timeout, transport=transport) as c:
+            p = await c.get(f"{llama_url.rstrip('/')}/props")
+            if p.status_code == 200 and (p.json() or {}).get("is_sleeping"):
+                return False
             r = await c.get(f"{llama_url.rstrip('/')}/slots")
             if r.status_code != 200:
                 return None
