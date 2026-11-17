@@ -208,13 +208,35 @@ class Commands(BaseModel):
     items: list[CommandSpec]
 
 
-Widget = StatusStrip | Meter | MeterGroup | Table | EntityCards | ListPanel | LogPanel | Choices | Commands | QuestPanel
+class MapPanel(BaseModel):
+    """The world map (docs/MAP-CONTRACT.md section 3, version 1): built whole each turn by `engine.worldmap.panel()` and
+    drawn by the web's MapPanel. Only what the player knows: ground not lit is '?', a place not known is absent. The
+    nested shapes are the contract's and are passed through as built."""
+    type: Literal["map"] = "map"
+    place: Literal["side", "main"] = "side"
+    pinned: bool = False
+    title: str | None = "Map"
+    v: int = 1
+    palette: str = "forest"
+    tile_m: int = 250
+    player: dict[str, int]
+    chunks: list[dict[str, Any]] = Field(default_factory=list)
+    regions: list[dict[str, Any]] = Field(default_factory=list)
+    places: list[dict[str, Any]] = Field(default_factory=list)
+    lines: list[dict[str, Any]] = Field(default_factory=list)
+    journey: dict[str, Any] | None = None
+    unplaced: list[str] = Field(default_factory=list)
+    spots: list[dict[str, Any]] = Field(default_factory=list)
+
+
+Widget = StatusStrip | Meter | MeterGroup | Table | EntityCards | ListPanel | LogPanel | Choices | Commands | QuestPanel | MapPanel
 
 
 class UISchema(BaseModel):
     phase: str = "narrate"
     free_text: bool = True
     placeholder: str = "What do you do?"
+    prefill: str | None = None     # MAP-CONTRACT section 4: fills an empty input box, selected (a journey's "Continue to ...")
     panels: list[Widget] = Field(default_factory=list)
 
 

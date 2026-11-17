@@ -114,3 +114,16 @@ def test_no_time_is_shown_across_ground_the_player_has_not_seen():
     widget = wm.panel(world)
     assert next(p for p in widget["places"] if p["id"] == "fort")["way"].endswith("by the north road")
     assert next(p for p in widget["places"] if p["id"] == "city")["way"] is None
+
+
+def test_the_panel_goes_through_the_ui_schema_unchanged():
+    """FN101 (the engine's half of the contract): the map widget and the prefill are part of the UI schema, and what
+    worldmap.panel() builds comes out of the schema exactly as it went in."""
+    from engine.game import MapPanel, UISchema
+    world = wm.new_world(START, 11, "test")
+    widget = wm.panel(world)
+    ui = UISchema(panels=[widget], prefill="Continue to the mill (10 minutes)")
+    out = ui.model_dump()
+    assert isinstance(ui.panels[0], MapPanel)
+    assert out["panels"][0] == {**widget, "pinned": False}
+    assert out["prefill"] == "Continue to the mill (10 minutes)" and UISchema().model_dump()["prefill"] is None
