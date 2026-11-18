@@ -1007,3 +1007,14 @@ list is the word guard `lever-phrases` (§8); the street texture gap is the game
   interesting. Potions are always good too." The ghost bell (the narrator's invention, nothing behind it) began it.
 - **Measured:** tests only (six). Not played yet.
 - **Helped / did not:** not known yet.
+
+### Foreboding and the shops' prices (Parchment, FN148, FN151)
+
+- **Set in:** `games/hidden/parchment/company.py` (`DEADLY`, the SRD's deadly XP per level; a companion counts as one more)
+  and the scenario's `shops:` (`stock`, `gear`, `services` with prices).
+- **Levels:** foreboding when a place's residents' XP is over the party's deadly total (level 1 alone: 100; the barrow's
+  three skeletons and a wight are). Prices: potions 12 to 80, the smith's arms 2 to 50 and armour 10 to 500, fine weapons
+  120 to 180; the shrine's healing 10, naming 5, blessing 15; a room 2, a round 5.
+- **Why it exists:** the owner, 11-18: "no limits but ... a sense of foreboding"; "a use for all that gold".
+- **Measured:** tests only. The simulator (FN152) is where the prices and the threshold get tuned.
+- **Helped / did not:** not known yet.

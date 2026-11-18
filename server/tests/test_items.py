@@ -211,3 +211,32 @@ def test_most_curios_come_from_the_loot_and_their_object_is_made_too(engine):
     other = itm.loot_curio(game, st, random.Random(n - 1), "cache")
     st = game.side_answer(st, game.side_asks(st, "")[0]["key"], None)
     assert other.ref in itm.catalogue(game) and other.name == itm.catalogue(game)[other.ref]["look"]
+
+
+def test_the_town_gives_gold_a_use(engine):
+    """FN151 (the owner, 11-18: "make sure there's shopping in town that gives player a use for all that gold"): the smith sells
+    arms and armour that gear reads (a fine weapon is +1), the shrine heals, names found things and blesses, the tavern rents
+    a room and stands a round."""
+    from games.fantasy import gear
+    from games.fantasy import items as itm
+    game, st = _fresh(engine)
+    st.item("gold").count = 1000
+    st.player.location = "the smithy"
+    buy = next(c for c in game.commands(st) if c.id == "buy")
+    assert any(o.id == "gear:plate" for o in buy.params[0].options)
+    s2, res = game.run_command(st, "buy", {"item": "gear:plate"})
+    assert res.ok and s2.item("gold").count == 500
+    plate = next(x for x in s2.inventory if x.name == "plate")
+    assert gear.body_of(plate)[0] == 6
+    s2.player.location = "the shrine"
+    s2.player.hp = 2
+    unknown = itm.add(game, s2, "potion_of_giant_strength")
+    s3, res = game.run_command(s2, "service", {"what": "healing"})
+    assert res.ok and s3.player.hp == s3.player.hp_max
+    s4, res = game.run_command(s3, "service", {"what": "identify"})
+    assert "potion of giant strength" in res.text and next(x for x in s4.inventory if x.ref == "potion_of_giant_strength").known
+    s5, res = game.run_command(s4, "service", {"what": "blessing"})
+    assert any(c.name == "blessed" for c in s5.player.conditions)
+    s5.player.location = "the tavern"
+    s6, res = game.run_command(s5, "service", {"what": "room"})
+    assert res.ok and s6.player.resting == "long"

@@ -647,8 +647,12 @@ endless ground, camps, wandering, invented places and ground changes held until 
   known by their look until used; drops, caches, road finds, shops that sell and buy. Curios, very rare and mostly from
   the loot, get their object and a narrative power from a side call (the owner: "narrative power"), probed on Gemma. The rogue's
   smoke is five smoke bombs and the rogue finds a little more. Slice 2: worn things (rings, +1 weapons), a potion on an ally.
-- **Next:** Fable's review of everything built on Opus (11-18); the owner plays a new game on :8013; then the engine's
-  questions with buttons (FN39), fetch and find jobs, roads and rivers by name, items slice 2; gate 3 on the owner's word.
+- **Company, foreboding and shopping (FN148 to FN151; D331, D332): built 11-18.** The start inside the tavern; three new
+  adventurers who wave the player over at the board, one at a time comes along and follows; a system line of foreboding
+  for a place beyond the party; the smith's arms and armour, the shrine's and the tavern's paid services. The owner's
+  answers to FN104 are logged (FN155 to FN157: time on foot, loose place matching, the wronged turn hostile).
+- **Next (the owner, 11-18: "give fable a head start"):** a sidebar of pop-outs (FN154) and the paper doll with equipment
+  slots and worn magic things (FN153); the Parchment simulator (FN152); FN155 to FN157; Fable reviews alongside.
 - **Names (FN108 to FN111): built 11-17**, short since the owner's round (FN133). Rolled from large word lists per game,
   kept in the save; the lists checked against the game's own terms.
 - **Places the story makes (FN50 to FN55): designed.** Told of a place at all puts it on the map; a secret whereabouts

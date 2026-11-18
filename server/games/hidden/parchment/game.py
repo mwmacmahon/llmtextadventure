@@ -14,11 +14,13 @@ machinery is wanted in the first slice (R-G4: no heat, no renown, no Watch, no T
 """
 from __future__ import annotations
 
+import re
 import secrets
 from pathlib import Path
 from typing import Any
 
 from engine import names as rn
+from . import company as co
 from . import jobs as jb
 from engine import worldmap as wm
 from engine.game import ListPanel, MapPanel, UISchema
@@ -79,6 +81,23 @@ class ParchmentGame(FantasyGame):
                     if q.name == "rolled":
                         q.name = rn.person_name(prng, lists, set(people.values()))
                         people[q.id] = q.name
+            # FN149: the crew at their table in the tavern, each with a rolled name
+            if sc.get("crew"):
+                import random
+                crng = random.Random(f"crew:{seed}")
+                first = (state.player.name.split() or [""])[0].lower()
+                cnames = []
+                for c in sc["crew"]:
+                    nm = str(c.get("name") or "")
+                    if lists.get("given") and not setup.get("written_names"):
+                        for _ in range(20):                  # the crew smoke (11-18): never the player's own first name
+                            nm = rn.person_name(crng, lists, set(people.values()) | set(cnames))
+                            if nm.split()[0].lower() != first:
+                                break
+                    cnames.append(nm)
+                co.make_crew(sc, state, cnames)
+                for q in co.crew(state):
+                    people[q.id] = q.name
             # the save keeps what was rolled: the fantasy's load reads the scenario's names and the city's again (D158)
             state.flags["rolled"] = {"city_name": state.city.city_name, "people": people}
             from games.fantasy.state import FoundPlace
@@ -140,6 +159,7 @@ class ParchmentGame(FantasyGame):
         if not w or s.player.fate:
             return s
         s = self._settle_place(s, info)
+        co.keep_with(s)                                  # FN149: the companion follows
         for line in jb.update(self, s):
             s.player.shown_notes.append(line)
         return s
@@ -307,6 +327,7 @@ class ParchmentGame(FantasyGame):
         """The family's world turn, then the journey: a turn that sets out for a known place more than a quarter hour off
         starts a journey and walks its first leg; a held journey's leg is walked by the Continue command. The narrator is
         told where this leg ends, and what happened there if the stop's roll says so (FN34)."""
+        co.keep_with(state)                              # FN149: the companion is here before the prose
         s, w = super().world_turn(state, adj, player_text, rng, turn, offset)
         if s.world and not s.player.fighting:
             # the gate-2 round (11-17): paid 30 for a 15 job, the engine after the prose and the referee from the farmer's coins.
@@ -336,6 +357,9 @@ class ParchmentGame(FantasyGame):
                     self._charge(s, w, max(0, walked["minutes"] - int(getattr(adj, "time_minutes", 0) or 0)))
                 return s, w
         if pid is not None:
+            fb = co.foreboding(self.scenario(s.city.id), s, pid, False)     # FN148: setting out for a place beyond the party
+            if fb:
+                w.mechanics.append(fb)
             plan = wm.plan_journey(s.world, pid, self._night(s))
             if plan is not None:
                 s.world["player"]["journey"] = plan
@@ -391,6 +415,11 @@ class ParchmentGame(FantasyGame):
         """FN65: the place's residents, the first time the player comes; the narrator is told who is there. Home: the pay."""
         if pid == s.world["home"]:
             self._pay_now(s, w)
+        fb = co.foreboding(self.scenario(s.city.id), s, pid, True)          # FN148: arriving at a place beyond the party
+        if fb:
+            w.mechanics.append(fb)
+            w.directives.append(f"{s.player.name} senses foreboding here: let the place feel dangerous. {s.player.name} does not turn back "
+                                "or decide anything.")
         lines = jb.arrive(self, self.scenario(s.city.id), s, pid)
         if lines:
             w.directives.insert(1 if w.directives else 0, " ".join(lines) + " They are there as the player arrives.")
@@ -545,9 +574,16 @@ class ParchmentGame(FantasyGame):
             return []
         out = []
         stock = itm.shop_lines(self, {str(k): int(v) for k, v in (sh.get("stock") or {}).items()})
-        if stock:
+        # FN151 (the owner, 11-18: "shopping in town that gives player a use for all that gold"): arms and armour by name (gear
+        # reads them by their names), and a shop's services
+        gear = [(f"gear:{k}", str(k), int(v)) for k, v in (sh.get("gear") or {}).items()]
+        if stock or gear:
             out.append(CommandSpec(id="buy", label="Buy", mode="narrated", hint="Buy something this shop sells, at its price.",
-                                   params=[Param(name="item", label="Item", options=[Option(id=r, label=f"{n}, {pr} gold") for r, n, pr in stock])]))
+                                   params=[Param(name="item", label="Item", options=[Option(id=r, label=f"{n}, {pr} gold") for r, n, pr in stock + gear])]))
+        services = [(str(k), str(v.get("label") or k), int(v.get("price") or 0)) for k, v in (sh.get("services") or {}).items() if isinstance(v, dict)]
+        if services:
+            out.append(CommandSpec(id="service", label="Pay for", mode="narrated", hint="Pay for something this place does: a room, a round, healing, a blessing.",
+                                   params=[Param(name="what", label="What", options=[Option(id=k, label=f"{lb}, {pr} gold") for k, lb, pr in services])]))
         sell = self._sellable(s) if sh.get("buys") else []
         if sell:
             out.append(CommandSpec(id="sell", label="Sell", mode="narrated", hint="Sell a thing to this shop: trophies, potions, curios.",
@@ -563,6 +599,24 @@ class ParchmentGame(FantasyGame):
         gold = s.item("gold")
         if sh is None:
             return state, CommandResult(ok=False, label=command_id.capitalize(), text="There is no shop here.")
+        if command_id == "service":
+            return self._service(s, sh, str(args.get("what") or ""))
+        if command_id == "buy" and str(args.get("item") or "").startswith("gear:"):
+            name = str(args["item"])[5:]
+            price = int((sh.get("gear") or {}).get(name, 0))
+            if not price:
+                return state, CommandResult(ok=False, label="Buy", text="Not sold here.")
+            if gold is None or gold.count < price:
+                return state, CommandResult(ok=False, label="Buy", text=f"That costs {price} gold; {p.name} has {gold.count if gold else 0}.")
+            gold.count -= price
+            from games.fantasy.state import Item
+            iid = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+            iid = iid if s.item(iid) is None else f"{iid}_{len(s.inventory)}"
+            s.inventory.append(Item(id=iid, name=name, note="new from the smith"))
+            line = f"Bought: {name}, {price} gold ({gold.count} left). Equip it from the sheet."
+            return s, CommandResult(label="Buy", text=line, player_line=f"I buy {itm._a(name)}.", summary=f"{p.name} buys {itm._a(name)}.",
+                                    directive=f"The sale is done: {p.name} pays {price} gold and is handed {itm._a(name)}. The price and the deal stand. A line or two.",
+                                    minutes=5, referee_skip=["gold", "inventory"])
         if command_id == "buy":
             ref = str(args.get("item") or "")
             price = int((sh.get("stock") or {}).get(ref, 0))
@@ -597,12 +651,111 @@ class ParchmentGame(FantasyGame):
                                 directive=f"The sale is done: {p.name} sells {name} for {price * n} gold, paid over; the price stands.{news} A line or two.",
                                 minutes=2, referee_skip=["gold", "inventory"])
 
+    def _company_commands(self, s: FantasyState) -> list:
+        """FN149: ask one of the crew along (one at a time); part ways with the one along."""
+        from engine.game import CommandSpec, Option, Param
+        out = []
+        can = co.can_ask(s)
+        if can:
+            out.append(CommandSpec(id="ask_along", label="Invite along", mode="narrated",
+                                   hint="Invite one of the tavern's new adventurers to travel and fight with the player (hire, recruit, "
+                                        "\"come with me\", \"join me\"); match by name or trade. Not for asking them questions or chatting. "
+                                        "One at a time: if several are named, take the first.",
+                                   # the crew smoke (11-18): the reading picked the command with no one named and it was refused;
+                                   # must_name fills it from the reading's own ids or a name in its words, the trade first so
+                                   # "ask the archer" finds her
+                                   params=[Param(name="who", label="Who", must_name=True,
+                                                 options=[Option(id=q.id, label=f"{re.sub(r'^(a|an) ', 'the ', q.role)} ({q.name})") for q in can])]))
+        q = co.companion(s)
+        if q is not None and not s.player.fighting:
+            out.append(CommandSpec(id="part_ways", label=f"Part ways with {q.name}", mode="narrated",
+                                   hint=f"Part ways with {q.name}: they go back to the tavern, and another of the crew can come along instead."))
+        return out
+
+    def _company_run(self, state: FantasyState, command_id: str, args: dict[str, Any]):
+        from engine.game import CommandResult
+        s = state.model_copy(deep=True)
+        n = s.player.name
+        if command_id == "ask_along":
+            q = next((x for x in co.can_ask(s) if x.id == str(args.get("who") or "")), None)
+            if q is None:
+                return state, CommandResult(ok=False, label="Invite along", text="Nobody of the crew here to ask, or one is already along.")
+            s.flags["companion"] = q.id
+            q.met = True
+            co.keep_with(s)
+            return s, CommandResult(label="Invite along", text=f"{q.name} comes along.", player_line=f"I ask {q.name} to come along with me.",
+                                    summary=f"{n} asks {q.name} to come along.", entities=[q.id],
+                                    directive=(f"{n} asks {q.name} to come along, and {q.name} agrees: from now on {q.name} travels and fights at "
+                                               f"{n}'s side. A line or two of them settling it, with no pay or terms beyond that, and stop."),
+                                    minutes=2)
+        q = co.companion(s)
+        if q is None:
+            return state, CommandResult(ok=False, label="Part ways", text="Nobody is along.")
+        s.flags.pop("companion", None)
+        q.fights_beside = False
+        q.location = "the tavern"
+        s.player.with_them = [x for x in s.player.with_them if x != q.id]
+        return s, CommandResult(label="Part ways", text=f"{q.name} goes back to the tavern.", player_line=f"I part ways with {q.name}.",
+                                summary=f"{n} parts ways with {q.name}.", entities=[q.id],
+                                directive=f"{n} and {q.name} part on good terms, and {q.name} sets off back to the tavern and leaves the scene. A line or two, and stop.",
+                                minutes=1)
+
+    def _service(self, s: FantasyState, sh: dict, what: str):
+        """FN151: a place's service, paid: the engine does what it says (`does`: heal, identify, bless, rest, round)."""
+        from engine.game import CommandResult
+        from games.fantasy import items as itm
+        from games.fantasy.state import Condition
+        p = s.player
+        sv = (sh.get("services") or {}).get(what)
+        gold = s.item("gold")
+        if not isinstance(sv, dict):
+            return s, CommandResult(ok=False, label="Pay for", text="Not done here.")
+        price, label, does = int(sv.get("price") or 0), str(sv.get("label") or what), str(sv.get("does") or "")
+        if gold is None or gold.count < price:
+            return s, CommandResult(ok=False, label="Pay for", text=f"That costs {price} gold; {p.name} has {gold.count if gold else 0}.")
+        gold.count -= price
+        minutes, extra = int(sv.get("minutes") or 10), ""
+        if does == "heal":
+            got = p.hp_max - p.hp
+            p.hp = p.hp_max
+            if p.peril is not None and p.peril.kind == "bleeding":
+                p.peril = None
+            extra = f"{got} hit points back, wounds bound."
+        elif does == "identify":
+            named = []
+            for it in s.inventory:
+                e = itm.entry_of(self, it)
+                if e and not it.known:
+                    named.append(f"{it.name} is {itm._a(e['name'])}")
+                    it.known, it.name, it.note = True, e["name"], str(e.get("about") or "")
+            extra = ("; ".join(named) + ".") if named else "nothing carried needs naming (a curio's secret is beyond the shrine)."
+        elif does == "bless":
+            now = s.clock.day * 1440 + s.clock.minute
+            p.conditions = [c for c in p.conditions if c.name != "blessed"]
+            p.conditions.append(Condition(name="blessed", source="engine", stat=str(sv.get("stat") or "wis"), mod=int(sv.get("mod") or 1),
+                                          duration="minutes", expires_at=now + int(sv.get("lasts") or 1440)))
+            extra = "blessed for a day."
+        elif does == "rest":
+            p.resting = "long"
+            from engine.pipeline import to_morning
+            minutes = to_morning(s.clock.minute) or 480
+            extra = "a bed for the night."
+        elif does == "round":
+            here = [q for q in s.people if q.status == "alive" and q.location.lower() == (p.location or "").lower() and q.attitude > -2]
+            for q in here:
+                q.attitude = min(3, q.attitude + 1)
+            extra = f"the room warms to {p.name}."
+        line = f"Paid: {label}, {price} gold ({gold.count} left). {extra}"
+        return s, CommandResult(label="Pay for", text=line, player_line=f"I pay for {label.lower()}.", summary=f"{p.name} pays for {label.lower()}.",
+                                directive=f"{p.name} pays {price} gold for {label.lower()}; it is done ({extra}) {sv.get('told') or ''} A line or two, then stop.",
+                                minutes=minutes, referee_skip=["gold", "hp"])
+
     def commands(self, state: FantasyState) -> list:
-        out = list(super().commands(state)) + self._shop_commands(state)
+        out = list(super().commands(state)) + self._shop_commands(state) + self._company_commands(state)
         if self._board_here(state):
             from engine.game import CommandSpec
             out.append(CommandSpec(id="read_board", label="Read the board", mode="narrated",
-                                   hint="Read the papers pinned to the board by the tavern door: the village's jobs."))
+                                   hint="Read the papers pinned to the board near the bar in the tavern: the village's jobs."))
         j = self._journey_open(state)
         if j:
             from engine.game import CommandSpec
@@ -620,8 +773,10 @@ class ParchmentGame(FantasyGame):
     def run_command(self, state: FantasyState, command_id: str, args: dict[str, Any]):
         if command_id == "read_board":
             return self._read_board(state)
-        if command_id in ("buy", "sell"):
+        if command_id in ("buy", "sell", "service"):
             return self._trade(state, command_id, args)
+        if command_id in ("ask_along", "part_ways"):
+            return self._company_run(state, command_id, args)
         if command_id != "continue_journey":
             return super().run_command(state, command_id, args)
         from engine.game import CommandResult
@@ -651,11 +806,12 @@ class ParchmentGame(FantasyGame):
         papers = jb.read_board(s)
         n = s.player.name
         say = ("; ".join(papers) + ".") if papers else "nothing still wanted."
+        called = co.call_over(s)                         # FN149: the first read, one of the crew calls the player over
         return s, CommandResult(label="Read the board", player_line="I read the papers on the board.",
-                                summary=f"{n} reads the papers pinned to the board by the tavern door.",
-                                directive=(f"{n} reads the board by the tavern door. The papers pinned there say: {say} Tell each paper in one "
+                                summary=f"{n} reads the papers pinned to the board by the bar.",
+                                directive=(f"{n} reads the board by the bar. The papers pinned there say: {say} Tell each paper in one "
                                            f"line, as its poster might word it, keeping the price; add no papers and no details; {n} takes "
-                                           "nothing yet."),
+                                           "nothing yet." + (" " + called if called else "")),
                                 text="The board: " + say, minutes=2)
 
     def ui(self, state: FantasyState) -> UISchema:

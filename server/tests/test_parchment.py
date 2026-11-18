@@ -433,3 +433,45 @@ def test_the_map_is_near_the_top(engine: Engine):
     game, st = _fresh(engine)
     types = [getattr(w, "type", "") for w in game.ui(st).panels]
     assert types.index("map") == types.index("commands") + 1
+
+
+def test_the_crew_in_the_tavern_one_comes_along_at_a_time_and_follows(engine: Engine):
+    """FN149 (the owner, 11-18, for Lilith: company; "start inside the inn ... notice board near the bar ... when you look at
+    it someone gets your attention ... a few people at a table who are adventurers also new in the area and each amenable (but
+    just one at a time from this crew)")."""
+    from games.hidden.parchment import company as co
+    game, st = _fresh(engine)
+    crew = co.crew(st)
+    assert len(crew) == 3 and all(q.location == "the tavern" and q.attitude == 1 for q in crew)
+    s1, res = game.run_command(st, "read_board", {})
+    assert "wave Wenna over" in res.directive and "No one joins Wenna yet" in res.directive and s1.flags["crew_called"]
+    s1b, res = game.run_command(s1, "read_board", {}) if any(c.id == "read_board" for c in game.commands(s1)) else (s1, None)
+    ask = next(c for c in game.commands(s1) if c.id == "ask_along")
+    assert len(ask.params[0].options) == 3
+    s2, res = game.run_command(s1, "ask_along", {"who": crew[1].id})
+    assert res.ok and s2.flags["companion"] == crew[1].id and crew[1].id in s2.player.with_them
+    assert not any(c.id == "ask_along" for c in game.commands(s2))                         # one at a time
+    assert any(c.id == "part_ways" for c in game.commands(s2))
+    q = s2.person(crew[1].id)
+    assert q.fights_beside and q.attitude >= 2
+    from games.fantasy import combat as cb
+    assert any(x.id == q.id for x in cb.party(s2))
+    s2.player.location, s2.player.with_them = "The farms", []                              # walked off; the rows left them out
+    co.keep_with(s2)
+    assert q.location == "The farms" and q.id in s2.player.with_them
+    s3, res = game.run_command(s2, "part_ways", {})
+    assert res.ok and "companion" not in s3.flags and s3.person(q.id).location == "the tavern"
+
+
+def test_a_place_beyond_the_party_gives_a_sense_of_foreboding_once(engine: Engine):
+    """FN148 (the owner, 11-18: "no limits but ... a system message about having a sense of foreboding"): the barrow's dead are
+    beyond a level-1 player; setting out says so once, arriving once; the farms' rats do not."""
+    from games.hidden.parchment import company as co
+    game, st = _fresh(engine)
+    sc = game.scenario(st.city.id)
+    barrow = next(k for k, p in st.world["places"].items() if p["kind"] == "grave")
+    farms = next(k for k, p in st.world["places"].items() if p["kind"] == "farmland")
+    assert co.foreboding(sc, st, barrow, False).startswith("A sense of foreboding: whatever is at")
+    assert co.foreboding(sc, st, barrow, False) == ""
+    assert co.foreboding(sc, st, barrow, True).startswith("A sense of foreboding: whatever is at")
+    assert co.foreboding(sc, st, farms, True) == ""
