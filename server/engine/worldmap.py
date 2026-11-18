@@ -645,8 +645,11 @@ def place_named(world: dict, name: str) -> str | None:
         return words[0]
     if words:
         return None
-    loose = place_candidates(world, name)
-    return loose[0] if len(loose) == 1 else None
+    # the review (11-18): a loose match is never the place by itself ("the forest" walked to the fort, "the hill" to the mill):
+    # only a misspelling of the whole name is; anything looser is a candidate for the engine's question
+    import difflib
+    near = [pid for pid in known if difflib.SequenceMatcher(None, want, _plain(world["places"][pid]["name"])).ratio() >= 0.88]
+    return near[0] if len(near) == 1 else None
 
 
 _SMALL = {"of", "the", "a", "an", "to", "at", "in", "on", "by", "old", "new", "little", "big", "great"}
@@ -667,15 +670,19 @@ def place_candidates(world: dict, name: str) -> list[str]:
         full = _plain(world["places"][pid]["name"])
         toks = [t for t in full.split() if t not in _SMALL]
         whole = difflib.SequenceMatcher(None, want, full).ratio()
-        # each word typed against its best word of the name, averaged: "Magpierumbel mill" is the Magpierumble Mill (0.96),
-        # not the Oakfizzle Mill (0.65), though both are mills
-        per = (sum(max((difflib.SequenceMatcher(None, a, b).ratio() for b in toks), default=0.0) for a in wtoks) / len(wtoks)) if wtoks else 0.0
-        score = max(whole, per)
-        if score >= 0.7:                                  # "smithy" is not "city" (0.6)
+        # a word counts when it is the name's word, or a long word misspelt (the review, 11-18: at 0.7 a word, "ford" was the
+        # fort, "hill" the mill, "kettle" the Kettlewick Mill): equal, or 0.85 alike at six letters or more
+        def alike(a: str, b: str) -> float:
+            if a == b:
+                return 1.0
+            r = difflib.SequenceMatcher(None, a, b).ratio()
+            return r if r >= 0.85 and min(len(a), len(b)) >= 6 else 0.0
+        hits = [max((alike(a, b) for b in toks), default=0.0) for a in wtoks]
+        per = (sum(hits) / len(hits)) if hits and any(hits) else 0.0
+        score = max(whole if whole >= 0.8 else 0.0, per)
+        if score >= 0.5:                                  # at least half the words typed are the name's
             scored.append((score, pid))
     scored.sort(key=lambda x: -x[0])
-    if scored and len(scored) > 1 and scored[0][0] >= 0.85 and scored[0][0] - scored[1][0] >= 0.1:
-        return [scored[0][1]]                             # one clearly best (a near-exact spelling beats a shared word)
     return [pid for _, pid in scored]
 
 
@@ -685,26 +692,33 @@ def line_named(world: dict, name: str) -> str | None:
     return next((lid for lid, ln in world["lines"].items() if ln.get("name") and _plain(ln["name"]) == want), None)
 
 
+def goal_tile(world: dict, pid: str) -> tuple | None:
+    """The tile a walk to a place ends on: a point's own; a region's nearest tile that is no place's (the player's own when
+    they stand in it on open ground). None when the region has no rolled tile."""
+    p = world["places"][pid]
+    here = tuple(world["player"]["tile"])
+    if p["shape"] == "point":
+        return tuple(p["tile"])
+    tiles = [(x, y) for key in world["chunks"] for x0, y0 in [tuple(int(v) * CHUNK for v in key.split(","))]
+             for i in range(CHUNK * CHUNK) for x, y in [(x0 + i % CHUNK, y0 + i // CHUNK)] if region_at(world, x, y) == pid]
+    if not tiles:
+        return None
+    if here in tiles and not place_at(world, *here):
+        return here
+    # the gate-2 third run: standing on the bridge inside the wood, "head into the wood" walked nowhere; the walk goes to
+    # the nearest tile of the region that is no place's
+    free = [t for t in tiles if not place_at(world, *t) and t != here] or tiles
+    return min(free, key=lambda t: _dist(t, here))
+
+
 def walk_to(world: dict, pid: str, turn: int = 0, night: bool = False) -> dict | None:
     """The player walks to a known place by the quickest way they know: the tile moves, the ground either side of the path
     is lit, and the place becomes one they have been to. Returns the path and its minutes, or None when there is no way
     (water with no crossing they know, unrolled ground) and nothing moves. A region's walk ends on its nearest tile."""
-    p = world["places"][pid]
     here = tuple(world["player"]["tile"])
-    if p["shape"] == "point":
-        to = tuple(p["tile"])
-    else:
-        tiles = [(x, y) for key in world["chunks"] for x0, y0 in [tuple(int(v) * CHUNK for v in key.split(","))]
-                 for i in range(CHUNK * CHUNK) for x, y in [(x0 + i % CHUNK, y0 + i // CHUNK)] if region_at(world, x, y) == pid]
-        if not tiles:
-            return None
-        if here in tiles and not place_at(world, *here):
-            to = here
-        else:
-            # the gate-2 third run: standing on the bridge inside the wood, "head into the wood" walked nowhere; the walk goes to
-            # the nearest tile of the region that is no place's
-            free = [t for t in tiles if not place_at(world, *t) and t != here] or tiles
-            to = min(free, key=lambda t: _dist(t, here))
+    to = goal_tile(world, pid)
+    if to is None:
+        return None
     if to == here:
         path = [list(here)]
     else:
@@ -767,11 +781,14 @@ def _stops(world: dict, path: list) -> list[tuple[int, str, str]]:
 def plan_journey(world: dict, pid: str, night: bool = False) -> dict | None:
     """A journey to a known place: the path, its stops (index, kind, what) and the minutes; None when there is no way or the
     walk is short enough for one turn (walk_to then does it)."""
+    # the review (11-18): a region was never a journey, so "I go to the bog" (2.7 km) was one turn with no stops, and a
+    # referee's move row to a far wood was never refused; a region's journey ends on its nearest tile, as its walk does
     p = world["places"][pid]
     here = tuple(world["player"]["tile"])
-    if p["shape"] != "point":
+    goal = goal_tile(world, pid)
+    if goal is None or goal == here:
         return None
-    path = find_path(world, here, tuple(p["tile"]))
+    path = find_path(world, here, goal)
     if path is None or len(path) < 2:
         return None
     if walk_minutes(world, path, night) <= LEG_ABOVE:
@@ -789,7 +806,10 @@ def walk_leg(world: dict, turn: int = 0, night: bool = False) -> dict | None:
         return None
     path = [tuple(t) for t in j["path"]]
     here = tuple(world["player"]["tile"])
-    at = path.index(here) if here in path else 0
+    if here not in path:                    # the review (11-18): off the path, Continue jumped the tile to the journey's start
+        world["player"]["journey"] = None   # and walked the whole way; a journey left is over (the game plans a new one)
+        return None
+    at = path.index(here)
     ahead = [s for s in j["stops"] if s[0] > at]
     end = ahead[0][0] if ahead else len(path) - 1
     seg = path[at:end + 1]

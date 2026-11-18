@@ -2806,6 +2806,7 @@ class FantasyGame(GameBase):
         it.place, it.held_by = (place or "", "") if holder is None else ("", holder.id)
         if carried:
             s.inventory.remove(it)
+            it.equipped = False                              # the review: a thing that leaves the pockets is no longer worn
             if s.thing(it.id) is not None:
                 it.id = f"{it.id}_{len(s.things)}"
             s.things.append(it)
@@ -3296,6 +3297,9 @@ class FantasyGame(GameBase):
         elif s.flags.get("wanted_by_the_watch"):
             s.flags["wanted_by_the_watch"] = False
         self._expire_conditions(s, now)
+        from . import gear as _gear, items as _itm
+        _gear.sync_worn(s)                                # the review (11-18): a worn thing lost, sold or taken leaves no modifier behind
+        _itm.sync_hidden(s)                               # ... and a hiding potion hides exactly as long as it lasts
         # -- rests
         if p.hp > 0 and not p.fate:
             self._rest(s, info)

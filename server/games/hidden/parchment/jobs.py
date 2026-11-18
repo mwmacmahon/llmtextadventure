@@ -81,6 +81,11 @@ def _dead(s: FantasyState, ids: list[str]) -> bool:
     return bool(ids) and all((q := s.person(x)) is None or q.status != "alive" for x in ids)
 
 
+def _killed(s: FantasyState, ids: list[str]) -> bool:
+    """A kill job's test: every one of them dead (driven off is not killed; a place is clear when none is left alive there)."""
+    return bool(ids) and all((q := s.person(x)) is not None and q.status == "dead" for x in ids)
+
+
 def update(game: Any, s: FantasyState) -> list[str]:
     """After a turn: count the kills, mark the jobs done, pay the done ones if the player is in the village. Returns the §
     lines for the player."""
@@ -90,7 +95,9 @@ def update(game: Any, s: FantasyState) -> list[str]:
     out: list[str] = []
     seen = set(s.flags.get("dead_seen") or [])
     for q in s.people:
-        if q.status != "alive" and q.id not in seen and q.combat is not None:
+        # the review (11-18): any status but alive counted as a kill (a goblin driven off, status gone, paid its bounty and
+        # left an ear): a kill is the dead
+        if q.status == "dead" and q.id not in seen and q.combat is not None:
             seen.add(q.id)
             for j in jobs:
                 if j["form"] == "bounty" and q.combat.block == j["entry"]:
@@ -107,8 +114,8 @@ def update(game: Any, s: FantasyState) -> list[str]:
             j["status"] = "done"
             out += [f"Job done: {j['title']}. {j['who'][:1].upper() + j['who'][1:]} will pay in the village."] if known(s, j) else []
             out += cache(game, s, j)
-        elif j["form"] == "kill" and _dead(s, [x for x in residents.get(j["at"], []) if (q := s.person(x)) is not None
-                                              and q.combat is not None and q.combat.block == j["entry"]]):
+        elif j["form"] == "kill" and _killed(s, [x for x in residents.get(j["at"], []) if (q := s.person(x)) is not None
+                                                and q.combat is not None and q.combat.block == j["entry"]]):
             j["status"] = "done"
             out += [f"Job done: {j['title']}. {j['who'][:1].upper() + j['who'][1:]} will pay in the village."] if known(s, j) else []
             out += cache(game, s, j)
@@ -195,7 +202,10 @@ def pay(s: FantasyState) -> list[str]:
                 continue
             owed = j["pay"] if j["status"] == "done" else 0
             owed += max(0, j["killed"] - j["paid"]) * j["each"] if j["form"] == "bounty" else 0
-            if owed and gold is not None:
+            if owed and gold is None:                     # the review: no purse yet is no reason not to be paid
+                gold = Item(id="gold", name="gold", count=0)
+                s.inventory.append(gold)
+            if owed:
                 gold.count += owed
                 j["paid"] = j["killed"] if j["form"] == "bounty" else j["paid"]
                 if j["status"] == "done":

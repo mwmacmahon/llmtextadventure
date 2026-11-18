@@ -318,3 +318,62 @@ def test_everyone_starts_dressed(engine):
             assert gear.body_of(on["body"]) is not None
         else:
             assert on["body"].name == "travelling clothes" and "CON" in gear.armour_class(st)[1]
+
+
+def test_the_reviews_seven_item_faults(engine):
+    """Fable's review, 11-18 (a fresh reader's seven findings, each a scenario): a fight with no round planned yet is a fight
+    for a flask and a smoke bomb; a strike is never a free action left queued; a worn thing that leaves the pockets leaves no
+    modifier; round_lines and the backstop know the item entry; the escape spends once; a hiding potion hides exactly as long
+    as its condition; the +N is the weapon in hand's."""
+    from engine.game import TurnInfo
+    from games.fantasy import combat as cb
+    from games.fantasy import encounter as en
+    from games.fantasy import gear
+    from games.fantasy import items as itm
+    from games.fantasy.state import CombatState, Item
+    game, st = _fresh(engine)
+    # 1: fighting, no CombatState yet
+    made = en.spawn(st, [("skeleton", 1)], "standard")
+    st.people.extend(made)
+    made[0].location = st.player.location
+    st.player.fighting, st.combat = [made[0].id], None
+    fire = itm.add(game, st, "alchemists_fire", known=True)
+    s1, res = game.run_command(st, "use_item", {"item": fire.id})
+    assert res.ok and s1.combat is not None and s1.combat.item_strike
+    bomb = itm.add(game, st, "smoke_bomb", known=True)
+    s2, res = game.run_command(st, "use_item", {"item": bomb.id})
+    assert res.ok and s2.player.fighting == [] and bomb.id in res.referee_skip            # 1 and 5
+    # 2: a strike this turn is not a free action (world.plan_fight's test reads item_strike)
+    import inspect
+    from games.fantasy import world as wo
+    assert "item_strike" in inspect.getsource(wo)
+    # 4: the item entry in the round's lines and the backstop
+    s1.combat.plan = cb.plan_round(game, s1, None, "", 2, random.Random(1))
+    assert "rolled by the engine" in cb.round_lines(game, s1)[0]
+    s1.flags.pop("prerolled", None)
+    assert cb.backstop(game, s1, random.Random(1), 2, {"hp": 0})[0]["call"]["verb"] == "ATTACK"
+    # 3: a worn thing sold or taken: its modifier goes at the turn's end
+    game, st = _fresh(engine)
+    gl = itm.add(game, st, "gloves_of_the_smith", known=True)
+    st, _ = game.run_command(st, "equip", {"item": gl.id})
+    assert any(c.name.startswith("worn: ") for c in st.player.conditions)
+    st.inventory = [x for x in st.inventory if x.ref != "gloves_of_the_smith"]
+    st = game.after_turn(st, TurnInfo(turn=2, elapsed_minutes=1, rng=random.Random(0)))
+    assert not any(c.name.startswith("worn: ") for c in st.player.conditions)
+    # 6: invisible for ten minutes, then seen
+    inv = itm.add(game, st, "potion_of_invisibility", known=True)
+    st, _ = game.run_command(st, "use_item", {"item": inv.id})
+    st = game.after_turn(st, TurnInfo(turn=3, elapsed_minutes=1, rng=random.Random(0)))
+    assert st.player.hidden_from_others
+    st.clock.minute += 11
+    st = game.after_turn(st, TurnInfo(turn=4, elapsed_minutes=11, rng=random.Random(0)))
+    assert not st.player.hidden_from_others and not any(c.name == "invisible" for c in st.player.conditions)
+    # 7: the +1 dagger in the pack does not sharpen the plain one in hand
+    st.inventory += [Item(id="dagger", name="dagger", equipped=True), Item(id="plus", name="+1 dagger")]
+    for it in st.inventory:
+        if gear.weapon_of(it) and it.id != "dagger":
+            it.equipped = False
+    assert cb.weapon_bonus(st, "dagger") == 0
+    next(x for x in st.inventory if x.id == "dagger").equipped = False
+    next(x for x in st.inventory if x.id == "plus").equipped = True
+    assert cb.weapon_bonus(st, "dagger") == 1

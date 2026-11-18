@@ -902,7 +902,8 @@ def plan_fight(game: Any, s: FantasyState, adj: Any, player_text: str, rng: Any,
         s.combat = CombatState(round=0, since_turn=turn, surprise="player" if p.hidden_from_others and cb.player_attack(adj) else "")
     intents = getattr(adj, "intents", None) or []
     free = (getattr(adj, "kind", "") == "action" and intents and not cb.player_attack(adj) and not any(getattr(i, "check", None) for i in intents)
-            and int(getattr(adj, "time_minutes", 0) or 0) == 0)            # a free action is no check and no time (the assistant's rule)
+            and int(getattr(adj, "time_minutes", 0) or 0) == 0             # a free action is no check and no time (the assistant's rule)
+            and not s.combat.item_strike)                                  # the review (11-18): a thing thrown this turn is the turn's act
     if free and s.combat.free_turns < 2:
         s.combat.free_turns += 1
         s.combat.plan = []

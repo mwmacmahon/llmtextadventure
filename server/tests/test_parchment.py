@@ -474,3 +474,46 @@ def test_a_place_beyond_the_party_gives_a_sense_of_foreboding_once(engine: Engin
     assert co.foreboding(sc, st, barrow, False) == ""
     assert co.foreboding(sc, st, barrow, True).startswith("A sense of foreboding: whatever is at")
     assert co.foreboding(sc, st, farms, True) == ""
+
+
+def test_the_reviews_journey_and_job_faults(engine: Engine):
+    """Fable's review, 11-18 (a fresh reader's findings, each a scenario): a journey left is not continued from its start; a
+    far region is a journey; whoever lives at a place passed is there and stops the walk; a foe driven off is no kill; the
+    Continue command hands the pay's gold skip to the referee; one loose match is asked about."""
+    import random
+    from engine.game import TurnInfo
+    from games.fantasy.world import WorldTurn
+    from games.hidden.parchment import jobs as jb
+    game, st = _fresh(engine)
+    fort = next(k for k, p in st.world["places"].items() if p["name"] == "The goblin fort")
+    plan = wm.plan_journey(st.world, fort)
+    assert plan is not None
+    st.world["player"]["journey"] = plan
+    st.world["player"]["tile"] = [9, 9]                                   # wandered off the path
+    assert game._journey_open(st) is None and not any(c.id == "continue_journey" for c in game.commands(st))
+    assert wm.walk_leg(st.world) is None and st.world["player"]["journey"] is None and st.world["player"]["tile"] == [9, 9]
+    # a far region is a journey, a near one a walk
+    game, st = _fresh(engine)
+    bog = next(k for k, p in st.world["places"].items() if p["name"] == "The bog")
+    assert wm.plan_journey(st.world, bog) is not None
+    # the troll is at the bridge when a journey passes it
+    bridge = next(k for k, p in st.world["places"].items() if p["kind"] == "bridge")
+    st.world["player"]["tile"] = list(st.world["places"][bridge]["tile"])
+    assert game._pid_here(st) == bridge
+    lines = jb.arrive(game, game.scenario(st.city.id), st, bridge)
+    assert lines and game._hostile_residents(st, bridge)
+    # driven off is not killed
+    troll = game._hostile_residents(st, bridge)[0]
+    troll.status = "gone"
+    st = game.after_turn(st, TurnInfo(turn=2, elapsed_minutes=1, rng=random.Random(0)))
+    job = next(j for j in st.flags["jobs"] if j["form"] == "kill")
+    assert job["status"] == "open" and not any(x.name == "troll's toenail" for x in st.inventory)
+    st.person(troll.id).status = "dead"
+    st = game.after_turn(st, TurnInfo(turn=3, elapsed_minutes=1, rng=random.Random(0)))
+    assert next(j for j in st.flags["jobs"] if j["form"] == "kill")["status"] == "done"
+    # one loose match is a question
+    A = type("A", (), {})
+    i = A(); i.goes_to, i.transition = "the troll bridge", ""
+    adj = A(); adj.intents = [i]
+    q = game.ask_first(st, adj, "")
+    assert q and q.startswith("Do you mean the stone bridge")

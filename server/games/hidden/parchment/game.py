@@ -186,9 +186,17 @@ class ParchmentGame(FantasyGame):
         if s.flags.pop("leg_walked", False):
             # R1: on a leg's turn the tile is the truth; a move row naming the journey's end or any place on it (the narrator
             # told the arrival early) is not applied, and counted
-            if (s.player.location or "").lower() != self.where(s).lower():
-                s.flags["leg_move_ignored"] = int(s.flags.get("leg_move_ignored") or 0) + 1
-            s.player.location = self.where(s)
+            here = self.where(s)
+            spot = s.flags.pop("dest_spot", "") or ""
+            at = s.player.location or ""
+            if at.lower() != here.lower() and self._spot_parent(s, at).lower() == here.lower():
+                pass                                      # the review (11-18): the referee put the player in a spot of the place walked to: kept
+            elif spot and self._spot_parent(s, spot).lower() == here.lower():
+                s.player.location = spot                  # "I go to the smithy" from the mill: at the village, in the smithy
+            else:
+                if at.lower() != here.lower():
+                    s.flags["leg_move_ignored"] = int(s.flags.get("leg_move_ignored") or 0) + 1
+                s.player.location = here
             s.player.visited.setdefault(s.player.location, s.clock.day * 1440 + s.clock.minute)
             return s
         here, want = self.where(s), s.player.location
@@ -212,6 +220,7 @@ class ParchmentGame(FantasyGame):
                         self._advance(s, extra)
                     s.player.location = want if spot_of and spot_of.lower() == self.where(s).lower() else self.where(s)
                     s.player.visited[s.player.location] = s.clock.day * 1440 + s.clock.minute
+                    jb.arrive(self, self.scenario(s.city.id), s, pid)    # the review: who lives there is there, by any way in
                 else:
                     s.flags["no_way_count"] = int(s.flags.get("no_way_count") or 0) + 1   # the travel question (FN39) will ask
                     s.player.location = here
@@ -274,7 +283,19 @@ class ParchmentGame(FantasyGame):
         """The narrator's block, with where the player stands on the map and what is near."""
         text = super().render_bulletin(state, player_text, engine)
         lines = [ln for ln in self._map_lines(state) if ln.startswith(("Where:", "Near:", "Roads and rivers:"))]
-        return text + ("\n" + "\n".join(lines) if lines else "")
+        sale = self._for_sale(state)                     # the review (11-18): a seller asked a price has the engine's to say
+        return text + ("\n" + "\n".join(lines + ([sale] if sale else [])) if lines or sale else "")
+
+    def _for_sale(self, s: FantasyState) -> str:
+        """Where the player stands in a shop: what it sells and does, with the engine's prices, for the narrator."""
+        from games.fantasy import items as itm
+        sh = self._shop(s)
+        if sh is None:
+            return ""
+        rows = [f"{n} {pr}" for _, n, pr in itm.shop_lines(self, {str(k): int(v) for k, v in (sh.get("stock") or {}).items()})]
+        rows += [f"{k} {int(v)}" for k, v in (sh.get("gear") or {}).items()]
+        rows += [f"{str(v.get('label') or k).lower()} {int(v.get('price') or 0)}" for k, v in (sh.get("services") or {}).items() if isinstance(v, dict)]
+        return ("For sale here (gold; the engine's prices): " + "; ".join(rows) + ".") if rows else ""
 
     # ---- the engine asks (FN44; MAP_DESIGN 6.3, 6.4) ---------------------------------------------------------------------
     NOT_KNOWN = ("You do not know where {name} is, so you have not set off. Ask someone the way, or name a direction to head off in "
@@ -299,6 +320,8 @@ class ParchmentGame(FantasyGame):
             if d.lower() in [x.lower() for x in wm.DIRECTIONS] or wm.line_named(s.world, d):
                 continue                                  # a direction, a road or the river is wandering (FN37), not a place
             maybe = wm.place_candidates(s.world, d)       # FN156: several known places it may mean: they are the question's choices
+            if len(maybe) == 1:                           # the review (11-18): one loose match is asked about, never walked to
+                return f"Do you mean {wm._lower_the(s.world['places'][maybe[0]]['name'])}? You have not set off yet."
             if len(maybe) > 1:
                 names = [s.world["places"][pid]["name"] for pid in maybe[:4]]
                 return f"Which place do you mean: {', '.join(names[:-1])} or {names[-1]}? You have not set off yet."
@@ -340,6 +363,8 @@ class ParchmentGame(FantasyGame):
             d = destination(i).strip()
             parent = self._spot_parent(s, d) if d else ""                 # a spot by its exact name first, before any loose match
             pid = (wm.place_named(s.world, parent) if parent else wm.place_named(s.world, d)) if d else None
+            if parent and pid is not None:
+                s.flags["dest_spot"] = next((f.name for f in s.found_places if f.name.lower() == d.lower()), d)
             if pid is not None and pid != wm.place_named(s.world, self.where(s)):
                 return pid
         return None
@@ -354,6 +379,14 @@ class ParchmentGame(FantasyGame):
             # the gate-2 round (11-17): paid 30 for a 15 job, the engine after the prose and the referee from the farmer's coins.
             # The pay is settled before the prose now, the narrator told, and the referee's gold rows this turn not counted
             self._pay_now(s, w)
+        # the review (11-18; the owner's rule: a rule that leans on a hard reading is counted): while a curio is awake the
+        # reading is told an attempt using it needs no check; each such turn is written down with what the reading assessed
+        from games.fantasy import items as itm
+        awake = [it.name for it in s.inventory if (it.power or {}).get("awake_until", 0) > s.clock.day * 1440 + s.clock.minute]
+        if awake:
+            w.rows.append({"kind": "curio_awake", "curios": awake,
+                           "checks": [str(getattr(getattr(i, "check", None), "label", "")) for i in (getattr(adj, "intents", None) or [])
+                                      if getattr(i, "check", None) is not None]})
         if s.world:
             w.rows.append({"kind": "map", "roads": self.roads(s), "tile": list(s.world["player"]["tile"]),
                            "journey": (s.world["player"].get("journey") or {}).get("to")})     # FN35: the dial in the ledger each turn
@@ -395,6 +428,8 @@ class ParchmentGame(FantasyGame):
                     self._charge(s, w, max(0, walked["minutes"] - int(getattr(adj, "time_minutes", 0) or 0)))
                     w.mechanics.append(f"Walk: {start} to {s.player.location}, {walked['minutes']} minutes.")
                     self._arrive(s, w, pid)
+                    s.world["player"]["journey"] = None    # the review: arrived by a short walk, any held journey is over
+        co.keep_with(s)                                  # the review: the companion is where the walk ended, for the prose
         return s, w
 
     def walk_minutes(self, state: FantasyState, adj: Any) -> int | None:
@@ -406,11 +441,9 @@ class ParchmentGame(FantasyGame):
             return None
         pid = self._journey_dest(s, adj)
         if pid is not None:
-            p = s.world["places"][pid]
-            if p["shape"] != "point":
-                return 0
             here = tuple(s.world["player"]["tile"])
-            return 0 if tuple(p["tile"]) != here and wm.find_path(s.world, here, tuple(p["tile"])) is not None else None
+            goal = wm.goal_tile(s.world, pid)              # the review: a region too, and only when there is a way to walk
+            return 0 if goal is not None and goal != here and wm.find_path(s.world, here, goal) is not None else None
         way = self._direction(adj)
         if way and wm.toward(s.world, way) != (None, None):
             return 0
@@ -461,6 +494,14 @@ class ParchmentGame(FantasyGame):
                 return 0
             total += leg["minutes"]
             event = None if leg["arrived"] else wm.leg_event(rng, leg["stop"][0], self.roads(s), night)
+            # the review (11-18): a place on the way had no residents unless it was the journey's end (the troll was not at the
+            # bridge a journey crossed). Whoever lives at a place passed is there, and nobody walks past the hostile
+            met = []
+            pid_here = self._pid_here(s)
+            if not leg["arrived"] and pid_here and pid_here != j["to"]:
+                met = jb.arrive(self, self.scenario(s.city.id), s, pid_here)
+                if met or self._hostile_residents(s, pid_here):
+                    event = event or "who lives here"
             told.append((leg, event))
             if leg["arrived"] or event:
                 break
@@ -490,6 +531,8 @@ class ParchmentGame(FantasyGame):
             if spawned:
                 line += f" {spawned[:1].upper() + spawned[1:]} is there, close by. Show it, and stop while {n} can still choose."
         w.directives.insert(0, line)
+        if met:
+            w.directives.insert(1, " ".join(met) + " They are there as the player comes up.")
         if leg["arrived"]:
             self._arrive(s, w, arrived_at)
         w.mechanics.append(f"Journey: {start} to {leg['stop'][1] if not leg['arrived'] else j['label']}, {total} minutes"
@@ -556,10 +599,21 @@ class ParchmentGame(FantasyGame):
         called = str(x.get("called") or x.get("name") or eid).strip()
         return called if called.lower().startswith(("a ", "an ")) else (("an " if called[:1].lower() in "aeiou" else "a ") + called.lower())
 
+    def _pid_here(self, s: FantasyState) -> str | None:
+        """The id of the point place on the player's tile, or None."""
+        t = list(s.world["player"]["tile"])
+        return next((pid for pid, p in s.world["places"].items() if p.get("shape") == "point" and list(p.get("tile") or []) == t), None)
+
+    def _hostile_residents(self, s: FantasyState, pid: str) -> list:
+        return [q for x in (s.flags.get("residents") or {}).get(pid, []) if (q := s.person(x)) is not None and q.status == "alive"
+                and q.attitude <= -2]
+
     def _journey_open(self, s: FantasyState) -> dict | None:
         j = (s.world or {}).get("player", {}).get("journey")
         hostile = any(q.status == "alive" and q.attitude <= -3 and self._same_spot(s, q.location, s.player.location) for q in s.people)
-        return j if j and not s.player.fighting and not hostile and not s.player.fate else None
+        # the review (11-18): a journey the player has wandered off is not offered (Continue had jumped the tile back to its start)
+        on_path = bool(j) and list(s.world["player"]["tile"]) in [list(t) for t in j["path"]]
+        return j if j and on_path and not s.player.fighting and not hostile and not s.player.fate else None
 
     def _board_here(self, s: FantasyState) -> bool:
         """FN137: the board can be read: the player is in the village, not fighting, and some job on it is not known yet."""
@@ -815,7 +869,8 @@ class ParchmentGame(FantasyGame):
         # command's own, so the turn shows them and the clock moves once
         return s, CommandResult(label="Continue", player_line=f"I go on toward {label}.", summary=f"{s.player.name} goes on toward {label}.",
                                 directive=" ".join(w.directives), text=" ".join(w.mechanics), minutes=max(1, minutes),
-                                referee_skip=["location"])
+                                # the review (11-18): the leg's own skips (the pay's gold on arriving home) were thrown away
+                                referee_skip=["location", *w.skip])
 
     def _read_board(self, state: FantasyState):
         """FN137: the board by the tavern door read. Its jobs become the player's to see (the Quests panel), and the narrator

@@ -281,7 +281,11 @@ def weapons_carried(s: FantasyState) -> list[tuple[str, str, str]]:
 def weapon_bonus(s: FantasyState, weapon: str) -> int:
     """The make of the carried weapon of that kind (a fine rapier: +1), from its name; 0 for plain steel or a fist."""
     best = 0
-    for it in s.inventory:
+    # the review (11-18): the bonus was read from any carried thing of that kind (a plain dagger in hand struck as the +1
+    # dagger in the pack): the one in hand when one of that kind is in hand, else any carried (a thrown javelin)
+    of_kind = [it for it in s.inventory if weapon and weapon in it.name.lower() and it.count != 0]
+    in_hand = [it for it in of_kind if it.equipped]
+    for it in (in_hand or of_kind):
         n = it.name.lower()
         if weapon and weapon in n and it.count != 0:
             best = max(best, max((v for w, v in QUALITY.items() if re.search(rf"\b{re.escape(w)}\b", n)), default=0))
@@ -644,6 +648,9 @@ def round_lines(game: Any, s: FantasyState) -> list[str]:
         return []
     rows = []
     for e in c.plan:
+        if e["side"] == "item":                           # the review (11-18): a thing used is rolled by the engine, never called
+            rows.append(f"{p.name}'s {e.get('name', 'thing')}: rolled by the engine")
+            continue
         if e["side"] == "player":
             names = ", ".join(s.person(t).name if s.person(t) else t for t in e["targets"])
             from . import features as ft
@@ -1032,8 +1039,8 @@ def backstop(game: Any, s: FantasyState, rng: Any, offset: int, tally: dict) -> 
             continue
         r["data"]["backstop"] = True
         r["data"]["line"] = r.get("mechanic", "")                      # the dice, for the player's row (the live round saw none)
-        verb = {"player": "ATTACK", "ally": "ALLY", "enemy": "ENEMY"}[e["side"]]
-        ref = e["targets"][0] if e["side"] == "player" else e["who"]
+        verb = {"player": "ATTACK", "ally": "ALLY", "enemy": "ENEMY", "item": "ATTACK"}[e["side"]]
+        ref = e["targets"][0] if e["side"] == "player" else (e.get("target") or "") if e["side"] == "item" else e["who"]
         out.append({"call": {"verb": verb, "raw": f"{verb} {ref}", "ref": ref}, "result": r["data"], "mechanic": r.get("mechanic", ""),
                     "backstop": True, "told": r["text"]})
         if r["data"].get("kills"):

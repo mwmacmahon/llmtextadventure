@@ -124,7 +124,12 @@ def use(game: Any, state: FantasyState, args: dict) -> tuple[FantasyState, Any]:
     e = entry_of(game, it)
     u = dict(e.get("use") or {})
     kind = u.get("kind")
-    fighting = bool(p.fighting) and s.combat is not None
+    # the review (11-18): someone is fought and no round has been planned yet (B400's state: foes joined after the prose):
+    # that is a fight; the old test refused a flask and let a smoke bomb "hide" the player in the middle of one
+    fighting = bool(p.fighting)
+    if fighting and s.combat is None:
+        from .state import CombatState
+        s.combat = CombatState(round=0)
     if kind == "strike" and not fighting:
         return state, CommandResult(ok=False, label="Use", text=f"{e['name']}: something for a fight; there is none now.")
     was = it.name
@@ -157,7 +162,8 @@ def use(game: Any, state: FantasyState, args: dict) -> tuple[FantasyState, Any]:
         cname = str(u.get("condition") or e["name"])
         p.conditions = [c for c in p.conditions if c.name != cname]
         p.conditions.append(Condition(name=cname, source="engine", stat=str(u.get("stat") or ""), mod=int(u.get("mod") or 0),
-                                      duration="minutes", expires_at=now + int(u.get("minutes") or 10)))
+                                      duration="minutes", expires_at=now + int(u.get("minutes") or 10),
+                                      words=[HIDES] if u.get("flag") == "hidden" else []))
         if u.get("flag") == "hidden":
             p.hidden_from_others = True
         mins = int(u.get("minutes") or 10)
@@ -180,6 +186,7 @@ def use(game: Any, state: FantasyState, args: dict) -> tuple[FantasyState, Any]:
         res.label, res.player_line = "Use", f"I use the {e['name'].lower()}."
         res.text = f"{e['name']}{spent}: away clean.{news} " + res.text
         res.directive = f"{p.name} {verb} {_a(was)}: {u.get('told') or 'and is gone from the fight'}. " + res.directive
+        res.referee_skip = list(res.referee_skip) + [it.id, f"{it.id}.count", f"inventory.{it.id}"]    # the review: spent once
         return s2, res
     else:
         return state, CommandResult(ok=False, label="Use", text=f"{e['name']} does nothing the game knows of yet.")
@@ -195,6 +202,21 @@ def use(game: Any, state: FantasyState, args: dict) -> tuple[FantasyState, Any]:
                             directive=directive, minutes=1,
                             # the engine spent it: the referee's own count-down of the same thing is not a second one
                             referee_skip=(["hp"] if kind == "heal" else []) + [it.id, f"{it.id}.count", f"inventory.{it.id}"])
+
+
+HIDES = "(hides the bearer)"      # a condition's marker: while it lasts the player is unseen; when it ends, seen again
+
+
+def sync_hidden(s: FantasyState) -> None:
+    """The review (11-18): a potion of invisibility set the hidden flag and nothing tied it to the condition: it outlived the
+    ten minutes, or was lost on a move with the condition still showing. While a hiding condition lasts the player is
+    unseen; the turn it ends, seen."""
+    on = any(HIDES in (c.words or []) for c in s.player.conditions)
+    if on:
+        s.player.hidden_from_others = True
+        s.flags["item_hidden"] = True
+    elif s.flags.pop("item_hidden", None):
+        s.player.hidden_from_others = False
 
 
 def _a(name: str) -> str:

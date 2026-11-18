@@ -136,6 +136,11 @@ def test_a_place_name_is_matched_loosely_against_the_known_places():
                     "bog": {"name": "The Tinfudge Bog"}, "fort": {"name": "The Nailmound Fort"}},
          "known": {"places": {"mill": {}, "mill2": {}, "bog": {}}}}
     assert wm.place_named(w, "the Magpierumbel mill") == "mill"
-    assert wm.place_named(w, "Tinfudge marsh bog") == "bog"
+    # the review (11-18): a loose match is a candidate for the question, never the place by itself
+    assert wm.place_named(w, "Tinfudge marsh bog") is None and wm.place_candidates(w, "Tinfudge marsh bog") == ["bog"]
     assert set(wm.place_candidates(w, "the old mill")) == {"mill", "mill2"} and wm.place_named(w, "the old mill") is None
+    w2 = {"places": {"fort": {"name": "Gristlemoor Fort"}, "mill": {"name": "Kettlewick Mill"}}, "known": {"places": {"fort": {}, "mill": {}}}}
+    for word in ("the ford", "the forest", "the hill", "the miller", "the kettle"):     # ordinary words are no place
+        assert wm.place_named(w2, word) is None and wm.place_candidates(w2, word) == [], word
+    assert wm.place_named(w2, "the Gristledew Mill") is None and wm.place_candidates(w2, "the Gristledew Mill") == ["mill"]
     assert wm.place_named(w, "Nailmound Fort") is None                      # not known to the player
