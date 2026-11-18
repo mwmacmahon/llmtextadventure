@@ -116,7 +116,7 @@ def use(game: Any, state: FantasyState, args: dict) -> tuple[FantasyState, Any]:
     u = dict(e.get("use") or {})
     kind = u.get("kind")
     fighting = bool(p.fighting) and s.combat is not None
-    if kind in ("strike", "escape") and not fighting:
+    if kind == "strike" and not fighting:
         return state, CommandResult(ok=False, label="Use", text=f"{e['name']}: something for a fight; there is none now.")
     was = it.name
     news = "" if it.known else f" It was {_a(e['name'])}."
@@ -161,6 +161,10 @@ def use(game: Any, state: FantasyState, args: dict) -> tuple[FantasyState, Any]:
         s.combat.item_strike = {"ref": e["id"], "name": e["name"], "target": target, **{k: u[k] for k in ("dice", "all", "attack", "save", "dc", "undead", "damage_word") if k in u}}
         line = f"{e['name']}, used{spent}.{news}"
         told = "the round's dice say what it does"
+    elif kind == "escape" and not fighting:
+        p.hidden_from_others = True                      # FN145: out of a fight it hides the player (the rogue's smoke)
+        line = f"{e['name']}: gone from the scene, unseen.{spent}{news}"
+        told = str(u.get("away") or "the player slips out of the scene unseen, and comes out a little way off; say where, and stop")
     elif kind == "escape":
         from .combat import run_fight_command
         s2, res = run_fight_command(game, s, "flee", clean=True)
@@ -247,23 +251,29 @@ def resolve_strike(game: Any, s: FantasyState, entry: dict, rng: Any, tally: dic
 
 # ---- where things come from --------------------------------------------------------------------------------------------
 
-def drop(game: Any, rng: Any, xp: int, person: bool) -> str | None:
+def find_bonus(s: FantasyState | None) -> float:
+    """FN146 (the owner, 11-17: "rogue should have a small bonus to find magic items"): the sheet's `magic_finds:N` effect,
+    N points on every roll for a thing with a use (a kill's drop, a road find, the narrator's odd thing)."""
+    return (s.player.effect("magic_finds") / 100.0) if s is not None else 0.0
+
+
+def drop(game: Any, rng: Any, xp: int, person: bool, s: FantasyState | None = None) -> str | None:
     """A kill's chance of a thing: people carry a potion or a flask now and then; a strong foe something better."""
     if not catalogue(game):
         return None
-    if xp >= 100 and rng.random() < 0.5:
+    if xp >= 100 and rng.random() < 0.5 + find_bonus(s):
         return roll(game, rng, "uncommon")
-    if person and rng.random() < 0.2:
+    if person and rng.random() < 0.2 + find_bonus(s):
         return roll(game, rng, "common", ("potion", "throwable", "scroll"))
     return None
 
 
-def curio_for(game: Any, rng: Any, name: str) -> str | None:
+def curio_for(game: Any, rng: Any, name: str, s: FantasyState | None = None) -> str | None:
     """The narrator's own odd thing put in the pockets (the ghost bell, 11-17): a hidden roll. About a third have a use, a
     curio whose `forms` are in its name first, else any curio; the rest are plain. None: plain."""
     cat = catalogue(game)
     curios = [e for e in cat.values() if e.get("kind") == "curio"]
-    if not curios or rng.random() >= float(getattr(game, "CURIO_CHANCE", 0.35)):
+    if not curios or rng.random() >= float(getattr(game, "CURIO_CHANCE", 0.35)) + find_bonus(s):
         return None
     low = name.lower()
     fit = [e for e in curios if any(re.search(rf"\b{re.escape(str(f).lower())}s?\b", low) for f in e.get("forms") or [])]
@@ -275,6 +285,24 @@ def give_use(game: Any, it: Item, ref: str) -> None:
     e = catalogue(game)[ref]
     it.ref, it.known = ref, False
     it.charges = int(e["charges"]) if e.get("charges") else None
+
+
+def replaced_features(game: Any) -> set[str]:
+    """FN145 (the owner, 11-17: "The rogue starts with some kind of smoke bomb things, those need to be part of the system"):
+    the class features a catalogue entry stands in for (`replaces: smoke_pellets`)."""
+    return {str(e["replaces"]) for e in catalogue(game).values() if e.get("replaces")}
+
+
+def kit_from_features(game: Any, s: FantasyState) -> None:
+    """At a new game: a replaced feature's uses become that many of the thing, and its count goes."""
+    for e in catalogue(game).values():
+        fid = e.get("replaces")
+        c = s.player.count(str(fid)) if fid else None
+        if c is not None:
+            n = int(e.get("start_count") or c.value)      # the owner, 11-17: the rogue's five, "to make up for it being one off"
+            if n > 0:
+                add(game, s, e["id"], known=True, count=n)
+            s.player.counts = [x for x in s.player.counts if x is not c]
 
 
 def recharge(game: Any, s: FantasyState) -> list[str]:

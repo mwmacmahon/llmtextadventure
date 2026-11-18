@@ -487,6 +487,8 @@ class FantasyGame(GameBase):
         if sc0.get("start_hidden"):                      # content may open with the player unseen (B92)
             state.player.hidden_from_others = True
         self._purse(state)
+        from . import items as itm
+        itm.kit_from_features(self, state)                # FN145: a class's own consumables (the rogue's smoke) as the game's things
         state.places_heard_of = [pl for pl in sc0.get("places_heard_of") or [] if pl in state.places and pl not in state.player.visited]
         if sc0.get("opening_text"):                      # B51 (D167): the opening is shown at turn 0; its event is played
             for e in state.hidden.events:
@@ -2702,7 +2704,7 @@ class FantasyGame(GameBase):
             # story made, taken into the pockets, has a hidden roll; about a third are curios with a use, found out by using them
             from . import items as itm
             import random as _r
-            got = itm.curio_for(self, _r.Random(f"curio:{s.clock.day}:{s.clock.minute}:{value}"), value) if not count else None
+            got = itm.curio_for(self, _r.Random(f"curio:{s.clock.day}:{s.clock.minute}:{value}"), value, s) if not count else None
             if got:
                 itm.give_use(self, s.inventory[-1], got)
                 w.note(f"{value.strip()!r} has a use (hidden): {got}")

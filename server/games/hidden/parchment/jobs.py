@@ -141,7 +141,7 @@ def _loot(s: FantasyState, fallen: list, game: Any = None) -> list[str]:
             got[TROPHIES[entry]] = got.get(TROPHIES[entry], 0) + 1
         if game is not None:
             from games.fantasy import items as itm
-            ref = itm.drop(game, rng, int(q.combat.xp or 10), kind in ("humanoid", "person"))
+            ref = itm.drop(game, rng, int(q.combat.xp or 10), kind in ("humanoid", "person"), s)
             if ref:
                 found.append(itm.add(game, s, ref).name)
     s.flags["looted"] = looted

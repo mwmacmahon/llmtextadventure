@@ -146,3 +146,17 @@ def test_kills_and_cleared_jobs_give_things(engine):
     j = st.flags["jobs"][0]
     lines = jb.cache(game, st, j)
     assert lines and lines[0].startswith("Found where they kept their things:") and any(x.ref for x in st.inventory)
+
+
+def test_the_rogues_smoke_is_the_games_smoke_bombs(engine):
+    """FN145 (the owner, 11-17: "The rogue starts with some kind of smoke bomb things, those need to be part of the system"):
+    with a catalogue entry that `replaces: smoke_pellets`, a rogue starts with that many smoke bombs and no pellets feature;
+    out of a fight one hides the player from the scene."""
+    game = engine.games["parchment"]
+    st = game.load_state(engine.store.load_state(engine.create_instance("parchment", {**SHEET, "klass": "Rogue", "map_seed": 7,
+                                                                                         "written_names": True})))
+    bombs = next(x for x in st.inventory if x.ref == "smoke_bomb")
+    assert bombs.count == 5 and bombs.known and st.player.effect("magic_finds") == 10 and st.player.count("smoke_pellets") is None
+    assert not any(c.id == "smoke_pellets" for c in game.commands(st))
+    s2, res = game.run_command(st, "use_item", {"item": bombs.id})
+    assert res.ok and s2.player.hidden_from_others and "gone from the scene" in res.directive

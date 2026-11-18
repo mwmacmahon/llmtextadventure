@@ -999,6 +999,8 @@ list is the word guard `lever-phrases` (§8); the street texture gap is the game
   foe (XP 100 or more) half the time, uncommon; a person 20 per cent, common (`items.drop`); a cleared job's place leaves one
   (uncommon for a job paying 40 or more); a road stop's small find is a real thing lying there 60 per cent (Parchment `_lay_find`).
   Prices are the scenario's `shops:`; selling is half the catalogue value, trophies by `TROPHY_PRICE`.
+  A class's `magic_finds:N` effect adds N points to the drop, road-find and odd-thing rolls (the rogue: 10, FN146). A
+  catalogue entry may stand in for a class feature (`replaces`, with `start_count`): the rogue starts with five smoke bombs (FN145).
 - **Levels:** effects heal, buff, power, strike, escape (the grammar in the module's docstring).
 - **Why it exists:** the owner, 11-17: "The game should be full of magical etc items ... Combat items are always fun and
   interesting. Potions are always good too." The ghost bell (the narrator's invention, nothing behind it) began it.

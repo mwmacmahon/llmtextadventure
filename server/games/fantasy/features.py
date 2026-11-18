@@ -34,10 +34,12 @@ def specs(game: Any, p: Any) -> dict[str, dict]:
     out: dict[str, dict] = {}
     if cd is None:
         return out
+    from .items import replaced_features
+    gone = replaced_features(game)                       # FN145: a feature the game's catalogue makes a thing (the rogue's smoke)
     for lv in range(1, p.level + 1):
         for f in cd.features_at(lv):
             spec = getattr(f, "feature", None)
-            if spec:
+            if spec and f.id not in gone:
                 prev = out.get(f.id, {})
                 out[f.id] = {**prev, **spec, "id": f.id, "name": f.name or prev.get("name", f.id), "text": f.text or prev.get("text", ""),
                              "count": (f.count.id or f.id) if f.count else spec.get("count", prev.get("count", f.id))}

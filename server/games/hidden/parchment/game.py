@@ -454,7 +454,7 @@ class ParchmentGame(FantasyGame):
         """FN144: a small find at a stop is a real thing lying there most times (a catalogue thing by its look), for the player
         to pick up or leave; the narrator sees it among the things here."""
         from games.fantasy import items as itm
-        if not itm.catalogue(self) or rng.random() >= 0.6:
+        if not itm.catalogue(self) or rng.random() >= 0.6 + itm.find_bonus(s):
             return
         ref = itm.roll(self, rng, "uncommon" if rng.random() < 0.2 else "common")
         if ref:
