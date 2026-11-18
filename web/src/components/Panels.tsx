@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { MapPanel } from "./MapPanel";
+import { PaperDoll } from "./PaperDoll";
 import type { Chip, CommandSpec, EntityCard, MeterWidget, Widget } from "../api";
 
 type OnCommand = (command: string, args: Record<string, unknown>) => void;
@@ -34,6 +35,8 @@ function Panel({ w, onChoice, onCommand, onPick, busy, ended }: { w: Widget; onC
   switch (w.type) {
     case "map":
       return <MapPanel widget={w} onPick={(t) => onPick?.(t)} />;
+    case "paper_doll":
+      return <PaperDoll widget={w} onCommand={onCommand} busy={busy || ended} />;
     case "commands":
       if (!w.items.length) return null;
       return (

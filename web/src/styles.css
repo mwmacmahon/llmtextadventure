@@ -433,3 +433,23 @@ dl.score dd { margin: 0; font-family: var(--pixel-font); font-size: 15px; }
 @media (min-width: 760px) { .overlay-sheet.map-sheet { max-height: 92vh; } }
 .map-sheet .overlay-body { padding: 8px 10px 12px; }
 .map-sheet .map-panel { border: none; padding: 0; background: transparent; }
+
+/* FN154: the pop-out buttons (the map's look, quieter) and their sheet */
+.pop-btn { background: var(--panel-2, #2a2f3a); color: inherit; border: 1px solid var(--border, rgba(127,127,127,.35)); }
+.overlay-sheet.pop-sheet { width: min(760px, 100%); }
+
+/* FN153: the paper doll */
+.doll-grid { position: relative; display: grid; grid-template-columns: 1fr 1fr 1fr; grid-auto-rows: minmax(52px, auto); gap: 8px; margin: 6px 0 10px; }
+.doll-figure { position: absolute; left: 33%; width: 34%; top: 0; bottom: 0; opacity: .18; pointer-events: none; fill: currentColor; }
+.doll-slot { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 6px 8px;
+  border-radius: 8px; border: 1px dashed var(--border, rgba(127,127,127,.4)); background: transparent; color: inherit; cursor: pointer; min-width: 0; }
+.doll-slot.full { border-style: solid; background: var(--panel-2, rgba(127,127,127,.08)); }
+.doll-slot.can:not(.full) { border-color: var(--accent, #6aa0ff); }
+.doll-slot.on { outline: 2px solid var(--accent, #6aa0ff); }
+.doll-slot-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; opacity: .7; }
+.doll-slot-item { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.doll-pick { border: 1px solid var(--border, rgba(127,127,127,.35)); border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; }
+.doll-pick-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.doll-pick-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0; }
+.doll-pick-sub { margin-top: 6px; }
+.doll-sum { border-top: 1px solid var(--border, rgba(127,127,127,.25)); padding-top: 6px; }

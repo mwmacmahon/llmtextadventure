@@ -285,6 +285,9 @@ def weapon_bonus(s: FantasyState, weapon: str) -> int:
         n = it.name.lower()
         if weapon and weapon in n and it.count != 0:
             best = max(best, max((v for w, v in QUALITY.items() if re.search(rf"\b{re.escape(w)}\b", n)), default=0))
+            plus = re.search(r"(?<![\w+])\+([1-3])\b", n)          # FN153: a magic weapon named "+1 longsword" (+1 to +3)
+            if plus:
+                best = max(best, int(plus.group(1)))
     return best
 
 

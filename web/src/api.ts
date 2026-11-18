@@ -22,7 +22,9 @@ export type MeterWidget = {
 
 // Where a panel is drawn and whether it stays put: `place` "side" (the default column) or "main" (the centre pane under the
 // story, the clown's hand); `pinned` keeps it at the top of its column while the rest scrolls (the girl in training).
-export type Placed = { place?: "side" | "main"; pinned?: boolean };
+// FN154 (the owner, 11-18: "making more menus pop out will make sidebar much more readable"): `place` "popout" puts the panel
+// behind a big button under the input box, one button for each `group`, opening its panels in a sheet like the Timeline.
+export type Placed = { place?: "side" | "main" | "popout"; group?: string; pinned?: boolean };
 // The world map (docs/MAP-CONTRACT.md section 3): only what the player knows; ground not lit is "?".
 export type MapPlace = {
   id: string; name: string; kind: string; x: number; y: number; state: "heard" | "been"; told: string[];
@@ -37,8 +39,13 @@ export type MapWidget = {
   journey: { to: string | null; label: string; path: [number, number][]; stops: [number, number][] } | null;
   unplaced: string[]; spots: { name: string; here: boolean }[];
 };
+// FN153: the paper doll's slots, each with what is in it and what the pockets hold for it
+export type DollThing = { id: string; name: string; gives?: string | null; can_remove?: boolean };
+export type DollSlot = { id: string; label: string; item: DollThing | null; options: DollThing[] };
+export type PaperDollWidget = { type: "paper_doll"; title: string; slots: DollSlot[]; ac: number; ac_how: string; gives: string[] };
 export type Widget = Placed & (
   | MapWidget
+  | PaperDollWidget
   | { type: "status_strip"; chips: Chip[] }
   | MeterWidget
   | { type: "meter_group"; title?: string | null; meters: MeterWidget[] }

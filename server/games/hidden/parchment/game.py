@@ -843,7 +843,44 @@ class ParchmentGame(FantasyGame):
             # the commands, before the sheet
             at = next((i + 1 for i, w in enumerate(rest) if getattr(w, "type", "") == "commands"), min(3, len(rest)))
             out.panels = rest[:at] + [panel] + rest[at:]
+        out.panels = [self._doll(state) if isinstance(w, ListPanel) and w.title == "Equipped" else w for w in out.panels]
+        return self._popouts(out)
+
+    # FN154 (the owner, 11-18: "making more menus pop out will make sidebar much more readable"): the side keeps the strip, the
+    # meters and the command chips; the rest open from big buttons under the input box, by group
+    POPOUT = {"Character": "Character", "In your words": "Character", "Abilities": "Character", "Counts": "Character",
+              "Equipment": "Equipment", "Pockets": "Pockets", "People": "People", "Quests": "Quests"}
+
+    def _popouts(self, out: UISchema) -> UISchema:
+        for w in out.panels:
+            t = getattr(w, "type", "")
+            title = getattr(w, "title", None) or ""
+            if t == "map":
+                w.place, w.group = "popout", "Map"
+            elif title in self.POPOUT and t != "commands":
+                w.place, w.group = "popout", self.POPOUT[title]
         return out
+
+    def _doll(self, s: FantasyState):
+        """FN153: the paper doll from gear: each slot's thing, and what the pockets hold for it."""
+        from engine.game import DollSlot, DollThing, PaperDoll
+        from games.fantasy import gear
+        on = gear.worn(s)
+        ac, how = gear.armour_class(s)
+        slots = [("main_hand", "Main hand", "weapon"), ("off_hand", "Off hand", "shield"), ("body", "Body", "body"), ("head", "Head", "head"),
+                 ("neck", "Neck", "neck"), ("cloak", "Cloak", "cloak"), ("hands", "Hands", "hands"), ("ring_1", "Ring", "ring"),
+                 ("ring_2", "Ring", "ring"), ("feet", "Feet", "feet")]
+        out, gives = [], []
+        for sid, label, kind in slots:
+            key = {"main_hand": "weapon", "off_hand": "shield", "ring_1": "ring", "ring_2": "ring_2"}.get(sid, kind)
+            it = on.get(key)
+            here = DollThing(id=it.id, name=it.render(), gives=gear.worn_gives(it) or None) if it is not None else None
+            if it is not None and gear.worn_gives(it):
+                gives.append(f"{it.render()}: {gear.worn_gives(it)}")
+            opts = [DollThing(id=x.id, name=x.render(), gives=gear.worn_gives(x) or None) for x in s.inventory
+                    if not x.equipped and gear.slot_of(x) == kind]
+            out.append(DollSlot(id=sid, label=label, item=here, options=opts))
+        return PaperDoll(title="Equipment", slots=out, ac=ac, ac_how=how, gives=gives)
 
 
 def make_game(content_root: Path) -> ParchmentGame:

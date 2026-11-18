@@ -56,9 +56,13 @@ def make(game: Any, ref: str, known: bool = False, count: int = 1) -> Item:
     """A catalogue item as a thing in the pockets: named if known, else by its look."""
     e = catalogue(game)[ref]
     name = e["name"] if known or not e.get("look") else e["look"]
-    return Item(id=_slug(name), name=name, count=count, ref=ref, known=known or not e.get("look"),
-                charges=int(e["charges"]) if e.get("charges") else None,
-                note=str(e.get("about") or "") if known else "")
+    it = Item(id=_slug(name), name=name, count=count, ref=ref, known=known or not e.get("look"),
+              charges=int(e["charges"]) if e.get("charges") else None,
+              note=str(e.get("about") or "") if known else "")
+    if e.get("kind") == "worn":                       # FN153: a worn thing knows its slot and what it gives, without the catalogue
+        it.slot = str(e.get("slot") or "")
+        it.wear = {**(e.get("worn") or {}), "name": e["name"], "about": str(e.get("about") or "")}
+    return it
 
 
 def _slug(name: str) -> str:
@@ -67,8 +71,9 @@ def _slug(name: str) -> str:
 
 def add(game: Any, s: FantasyState, ref: str, known: bool = False, count: int = 1) -> Item:
     """Into the pockets: stacked on a carried one of the same ref and knownness, else a new line."""
+    stacks = catalogue(game).get(ref, {}).get("kind") not in ("worn", "arms")       # a ring, a sword: one each
     for it in s.inventory:
-        if it.ref == ref and it.known == known and it.charges is None:
+        if stacks and it.ref == ref and it.known == known and it.charges is None:
             it.count += count
             return it
     it = make(game, ref, known, count)
@@ -508,9 +513,11 @@ def use_power(game: Any, state: FantasyState, it: Item, s: FantasyState) -> Any:
 
 
 def awake_notes(s: FantasyState) -> list[str]:
-    """The reading's word while a curio is awake: an attempt its power covers needs no check."""
+    """The reading's word while a curio is awake: an attempt its power covers needs no check. And a worn thing's standing
+    power (FN153), while it is worn."""
     now = s.clock.day * DAY + s.clock.minute
-    out = []
+    out = [f"{s.player.name} wears {_a(it.name)}: {s.player.name} {(it.wear or {})['power']['told']}."
+           for it in s.inventory if it.equipped and ((it.wear or {}).get("power") or {}).get("told")]
     for it in s.inventory:
         pw = it.power or {}
         if pw.get("awake_until", 0) > now and pw.get("covers"):

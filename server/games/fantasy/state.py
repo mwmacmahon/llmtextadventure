@@ -71,6 +71,8 @@ class Item(BaseModel):
     known: bool = True              # FN144: a found magic thing shows its look as its name until used or bought
     charges: int | None = None      # FN144: a wand's or a curio's uses left (None: used up by count)
     power: dict | None = None       # FN147: a made curio's power (the side call's): told, covers, price, true name, max uses
+    slot: str = ""                  # FN153: a worn thing's slot (head, neck, cloak, hands, feet, ring), from the catalogue
+    wear: dict | None = None        # FN153: what it gives while worn (ac, stat and mod, a power) and its true name
 
     def render(self) -> str:
         if self.id == "gold":

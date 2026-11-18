@@ -240,3 +240,45 @@ def test_the_town_gives_gold_a_use(engine):
     s5.player.location = "the tavern"
     s6, res = game.run_command(s5, "service", {"what": "room"})
     assert res.ok and s6.player.resting == "long"
+
+
+def test_the_paper_doll_worn_things_and_two_rings(engine):
+    """FN153 (the owner, 11-18: "equipment slots on a paper doll"): worn things take their slot, are named when first worn,
+    give armour class, a stat on checks or a standing power while worn, and two rings fit; a +1 weapon is +1."""
+    from games.fantasy import combat as cb
+    from games.fantasy import gear
+    from games.fantasy import items as itm
+    game, st = _fresh(engine)
+    ac0 = gear.armour_class(st)[0]
+    r1 = itm.add(game, st, "ring_of_protection")
+    assert r1.slot == "ring" and not r1.known
+    doll = next(w for w in game.ui(st).panels if getattr(w, "type", "") == "paper_doll")
+    assert doll.place == "popout" and doll.group == "Equipment"
+    ring_slot = next(x for x in doll.slots if x.id == "ring_1")
+    assert any(o.id == r1.id for o in ring_slot.options)
+    s2, res = game.run_command(st, "equip", {"item": r1.id})
+    assert "It is ring of protection" in res.text and gear.armour_class(s2)[0] == ac0 + 1
+    gl = itm.add(game, s2, "gloves_of_the_smith")
+    s3, _ = game.run_command(s2, "equip", {"item": gl.id})
+    assert any(c.name.startswith("worn: ") and c.stat == "str" and c.mod == 1 for c in s3.player.conditions)
+    am = itm.add(game, s3, "amulet_of_the_night_eye")
+    s4, _ = game.run_command(s3, "equip", {"item": am.id})
+    assert any("sees in darkness" in n for n in game.assistant_notes(s4))
+    s5, _ = game.run_command(s4, "unequip", {"item": next(x for x in s4.inventory if x.ref == "gloves_of_the_smith").id})
+    assert not any(c.stat == "str" and c.name.startswith("worn: ") for c in s5.player.conditions)
+    r2 = itm.add(game, s5, "ring_of_protection", known=True)
+    s6, _ = game.run_command(s5, "equip", {"item": r2.id})
+    assert len([x for x in s6.inventory if x.equipped and x.slot == "ring"]) == 2 and gear.armour_class(s6)[0] == ac0 + 2
+    sword = itm.add(game, s6, "plus_one_longsword", known=True)
+    assert cb.weapon_bonus(s6, "longsword") == 1 and gear.slot_of(sword) == "weapon"
+
+
+def test_the_side_keeps_the_strip_and_the_rest_pops_out(engine):
+    """FN154 (the owner, 11-18): the map, the doll, pockets, character, people and quests open from buttons; the strip, the
+    meters and the commands stay at the side."""
+    game, st = _fresh(engine)
+    panels = game.ui(st).panels
+    side = [getattr(w, "type", "") for w in panels if getattr(w, "place", "side") == "side"]
+    groups = {getattr(w, "group", "") for w in panels if getattr(w, "place", "") == "popout"}
+    assert "commands" in side and "status_strip" in side and "map" not in side and "paper_doll" not in side
+    assert {"Map", "Equipment", "Pockets", "Character", "Quests"} <= groups

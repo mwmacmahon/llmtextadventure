@@ -38,14 +38,16 @@ class Chip(BaseModel):
 
 class StatusStrip(BaseModel):
     type: Literal["status_strip"] = "status_strip"
-    place: Literal["side", "main"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    place: Literal["side", "main", "popout"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    group: str = ""                            # FN154: with place "popout", the button (and sheet) it opens under
     pinned: bool = False                       # stays at the top of its column while the rest scrolls (the girl in training)
     chips: list[Chip]
 
 
 class Meter(BaseModel):
     type: Literal["meter"] = "meter"
-    place: Literal["side", "main"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    place: Literal["side", "main", "popout"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    group: str = ""                            # FN154: with place "popout", the button (and sheet) it opens under
     pinned: bool = False                       # stays at the top of its column while the rest scrolls (the girl in training)
     label: str
     value: float
@@ -61,7 +63,8 @@ class Meter(BaseModel):
 class MeterGroup(BaseModel):
     """Small meters side by side in one panel (the fantasy's renown and heat)."""
     type: Literal["meter_group"] = "meter_group"
-    place: Literal["side", "main"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    place: Literal["side", "main", "popout"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    group: str = ""                            # FN154: with place "popout", the button (and sheet) it opens under
     pinned: bool = False                       # stays at the top of its column while the rest scrolls (the girl in training)
     title: str | None = None
     meters: list[Meter]
@@ -74,7 +77,8 @@ class TableCell(BaseModel):
 
 class Table(BaseModel):
     type: Literal["table"] = "table"
-    place: Literal["side", "main"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    place: Literal["side", "main", "popout"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    group: str = ""                            # FN154: with place "popout", the button (and sheet) it opens under
     pinned: bool = False                       # stays at the top of its column while the rest scrolls (the girl in training)
     title: str
     columns: list[str]
@@ -92,7 +96,8 @@ class EntityCard(BaseModel):
 
 class EntityCards(BaseModel):
     type: Literal["entity_cards"] = "entity_cards"
-    place: Literal["side", "main"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    place: Literal["side", "main", "popout"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    group: str = ""                            # FN154: with place "popout", the button (and sheet) it opens under
     pinned: bool = False                       # stays at the top of its column while the rest scrolls (the girl in training)
     title: str
     cards: list[EntityCard]
@@ -100,7 +105,8 @@ class EntityCards(BaseModel):
 
 class ListPanel(BaseModel):
     type: Literal["list"] = "list"
-    place: Literal["side", "main"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    place: Literal["side", "main", "popout"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    group: str = ""                            # FN154: with place "popout", the button (and sheet) it opens under
     pinned: bool = False                       # stays at the top of its column while the rest scrolls (the girl in training)
     title: str
     items: list[Chip]
@@ -111,7 +117,8 @@ class ListPanel(BaseModel):
 
 class LogPanel(BaseModel):
     type: Literal["log"] = "log"
-    place: Literal["side", "main"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    place: Literal["side", "main", "popout"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    group: str = ""                            # FN154: with place "popout", the button (and sheet) it opens under
     pinned: bool = False                       # stays at the top of its column while the rest scrolls (the girl in training)
     title: str
     lines: list[str]
@@ -127,7 +134,8 @@ class Choice(BaseModel):
 
 class Choices(BaseModel):
     type: Literal["choices"] = "choices"
-    place: Literal["side", "main"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    place: Literal["side", "main", "popout"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    group: str = ""                            # FN154: with place "popout", the button (and sheet) it opens under
     pinned: bool = False                       # stays at the top of its column while the rest scrolls (the girl in training)
     title: str | None = None
     choices: list[Choice]
@@ -194,7 +202,8 @@ class QuestRow(BaseModel):
 
 class QuestPanel(BaseModel):
     type: Literal["quests"] = "quests"
-    place: Literal["side", "main"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    place: Literal["side", "main", "popout"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    group: str = ""                            # FN154: with place "popout", the button (and sheet) it opens under
     pinned: bool = False                       # stays at the top of its column while the rest scrolls (the girl in training)
     title: str
     rows: list[QuestRow]
@@ -202,7 +211,8 @@ class QuestPanel(BaseModel):
 
 class Commands(BaseModel):
     type: Literal["commands"] = "commands"
-    place: Literal["side", "main"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    place: Literal["side", "main", "popout"] = "side"   # where the client draws it: the side column, or the centre pane under the story (the clown's hand)
+    group: str = ""                            # FN154: with place "popout", the button (and sheet) it opens under
     pinned: bool = False                       # stays at the top of its column while the rest scrolls (the girl in training)
     title: str | None = None
     items: list[CommandSpec]
@@ -213,7 +223,8 @@ class MapPanel(BaseModel):
     drawn by the web's MapPanel. Only what the player knows: ground not lit is '?', a place not known is absent. The
     nested shapes are the contract's and are passed through as built."""
     type: Literal["map"] = "map"
-    place: Literal["side", "main"] = "side"
+    place: Literal["side", "main", "popout"] = "side"
+    group: str = ""                            # FN154: with place "popout", the button (and sheet) it opens under
     pinned: bool = False
     title: str | None = "Map"
     v: int = 1
@@ -229,7 +240,35 @@ class MapPanel(BaseModel):
     spots: list[dict[str, Any]] = Field(default_factory=list)
 
 
-Widget = StatusStrip | Meter | MeterGroup | Table | EntityCards | ListPanel | LogPanel | Choices | Commands | QuestPanel | MapPanel
+class DollThing(BaseModel):
+    id: str
+    name: str
+    gives: str | None = None
+    can_remove: bool = True
+
+
+class DollSlot(BaseModel):
+    id: str                                   # main_hand, off_hand, body, head, neck, cloak, hands, ring_1, ring_2, feet
+    label: str
+    item: DollThing | None = None
+    options: list[DollThing] = Field(default_factory=list)
+
+
+class PaperDoll(BaseModel):
+    """FN153 (the owner, 11-18: "a better equipment menu with equipment slots on a paper doll"): the worn slots round a figure;
+    the client sends the game's own equip and unequip commands."""
+    type: Literal["paper_doll"] = "paper_doll"
+    place: Literal["side", "main", "popout"] = "side"
+    group: str = ""
+    pinned: bool = False
+    title: str = "Equipment"
+    slots: list[DollSlot] = Field(default_factory=list)
+    ac: int = 10
+    ac_how: str = ""
+    gives: list[str] = Field(default_factory=list)
+
+
+Widget = StatusStrip | Meter | MeterGroup | Table | EntityCards | ListPanel | LogPanel | Choices | Commands | QuestPanel | MapPanel | PaperDoll
 
 
 class UISchema(BaseModel):

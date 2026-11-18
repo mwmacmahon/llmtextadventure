@@ -82,7 +82,8 @@ function Game({ id }: { id: string }) {
   const [hideUndone, setHideUndone] = useState(prefs.hideUndone());
   const [death, setDeath] = useState<GraveCard | null>(null);
   const [overlay, setOverlay] = useState<"timeline" | "journal" | null>(null);    // B261: the Timeline overlay and its tab
-  const [mapOpen, setMapOpen] = useState(false);   // FN143 (the owner, 11-17): the map in a pop-up, a big button to open it
+  const [mapOpen, setMapOpen] = useState(false);
+  const [popGroup, setPopGroup] = useState<string | null>(null);   // FN154: the pop-out sheet open now, by its group   // FN143 (the owner, 11-17): the map in a pop-up, a big button to open it
   const [panelsOpen, setPanelsOpen] = useState(prefs.phonePanelsOpen());          // B282: at phone width the story gets the screen
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -225,6 +226,14 @@ function Game({ id }: { id: string }) {
   }, [prefill, view?.turn]);   // FN142: the same "Continue to ..." on the next leg fills the box again
   const hasTimeline = !!view && view.ui.panels.some((w) => w.type === "log" && w.timeline);
   const mapWidget = (view?.ui.panels.find((w) => w.type === "map") ?? null) as (MapWidget & { type: "map" }) | null;
+  // FN154: the pop-out groups, in the order the game lists their panels (the map has its own button and sheet)
+  const popGroups = !view ? [] : [...new Set(view.ui.panels.filter((w) => w.place === "popout" && w.type !== "map").map((w) => w.group || "More"))];
+  useEffect(() => {
+    if (!popGroup) return;
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setPopGroup(null); };
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [popGroup]);
   useEffect(() => {
     if (!mapOpen) return;
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setMapOpen(false); };
@@ -435,6 +444,9 @@ function Game({ id }: { id: string }) {
               <span aria-hidden="true">🗺</span> Map
             </button>
           )}
+          {popGroups.map((g) => (
+            <button key={g} type="button" className="map-open-btn pop-btn" onClick={() => setPopGroup(g)}>{g}</button>
+          ))}
           <button type="button" className="check-chip small panels-toggle" aria-expanded={panelsOpen}
             onClick={() => { setPanelsOpen(!panelsOpen); prefs.setPhonePanelsOpen(!panelsOpen); }}>
             {panelsOpen ? "Hide panels" : "Panels"}
@@ -452,6 +464,22 @@ function Game({ id }: { id: string }) {
         </div>
       </footer>
       {overlay && <Timeline panels={view.ui.panels} tab={overlay} onTab={setOverlay} onClose={() => setOverlay(null)} />}
+      {popGroup && (
+        <div className="overlay" onClick={() => setPopGroup(null)}>
+          <div className="overlay-sheet pop-sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={popGroup}>
+            <div className="overlay-head">
+              <strong>{popGroup}</strong>
+              <span className="spacer" />
+              <button onClick={() => setPopGroup(null)}>close</button>
+            </div>
+            <div className="overlay-body">
+              <Panels panels={view.ui.panels.filter((w) => w.place === "popout" && (w.group || "More") === popGroup)}
+                onChoice={(cmd) => { setPopGroup(null); send(cmd); }} onCommand={(c, a) => { setPopGroup(null); sendCommand(c, a); }}
+                onPick={(t) => { setInput(t); setPopGroup(null); }} busy={streaming !== null} ended={!!view.ending} />
+            </div>
+          </div>
+        </div>
+      )}
       {mapOpen && mapWidget && (
         <div className="overlay" onClick={() => setMapOpen(false)}>
           <div className="overlay-sheet map-sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Map">

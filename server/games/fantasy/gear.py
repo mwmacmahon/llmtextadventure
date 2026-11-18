@@ -53,8 +53,14 @@ def weapon_of(it: Item) -> str:
     return ""
 
 
+WORN_SLOTS = ("head", "neck", "cloak", "hands", "feet", "ring")      # FN153: worn magic things (the catalogue's `slot`)
+RINGS = 2
+
+
 def slot_of(it: Item) -> str:
-    """'body', 'shield', 'weapon' or '' (nothing to wear or hold)."""
+    """'body', 'shield', 'weapon', a worn thing's slot (head ... ring), or '' (nothing to wear or hold)."""
+    if getattr(it, "slot", "") in WORN_SLOTS and it.count != 0:
+        return it.slot
     if body_of(it) is not None:
         return "body"
     if is_shield(it):
@@ -86,9 +92,40 @@ def worn(s: FantasyState) -> dict[str, Item]:
     out: dict[str, Item] = {}
     for it in s.inventory:
         slot = slot_of(it) if it.equipped else ""
+        if slot == "ring" and "ring" in out:
+            slot = "ring_2"                               # FN153: two rings
         if slot and slot not in out:
             out[slot] = it
     return out
+
+
+def worn_gives(it: Item) -> str:
+    """What a worn thing gives, in words for the doll: "armour class +1", "DEX +1", its power."""
+    w = it.wear or {}
+    bits = []
+    if w.get("ac"):
+        bits.append(f"armour class +{int(w['ac'])}")
+    if w.get("stat") and w.get("mod"):
+        bits.append(f"{str(w['stat']).upper()} {int(w['mod']):+d}")
+    if (w.get("power") or {}).get("told"):
+        bits.append(str(w["power"]["told"]))
+    return "; ".join(bits)
+
+
+def sync_worn(s: FantasyState) -> None:
+    """FN153: what worn things give, as standing conditions (a stat's modifier on checks, a power by its name) while they are
+    worn; taken off, gone. Their armour is read by armour_class."""
+    from .state import Condition
+    keep = [c for c in s.player.conditions if not c.name.startswith("worn: ")]
+    for slot, it in worn(s).items():
+        w = it.wear or {}
+        if slot in ("body", "shield", "weapon") or not w:
+            continue
+        pw = w.get("power") or {}
+        if (w.get("stat") and w.get("mod")) or pw.get("condition"):
+            keep.append(Condition(name=f"worn: {pw.get('condition') or it.name}", source="engine", stat=str(w.get("stat") or ""),
+                                  mod=int(w.get("mod") or 0), duration="lasting"))
+    s.player.conditions = keep
 
 
 def settle(s: FantasyState) -> None:
@@ -108,12 +145,14 @@ def armour_class(s: FantasyState) -> tuple[int, str]:
     dex = p.stats.get("dex", 0)
     body = body_of(w["body"])[0] if "body" in w else 0
     shield = SHIELD_AC if "shield" in w else 0
+    magic = [(it.wear or {}).get("name") or it.name for k, it in w.items() if k not in ("body", "shield", "weapon") and (it.wear or {}).get("ac")]
+    extra = sum(int((it.wear or {}).get("ac") or 0) for k, it in w.items() if k not in ("body", "shield", "weapon"))
     # the Barbarian's Unarmored Defense (round 17, 5d85334fc803: AC 11 with no armour, three drowned hit six of seven): with no
     # body armour worn, CON adds to it; the class file's effect `unarmored_con`
     con = p.stats.get("con", 0) if "body" not in w and p.effect("unarmored_con") else 0
     how = (f"10 + DEX {dex:+d}" + (f" + CON {con:+d} (unarmoured)" if con else "") + (f" + {w['body'].name} {body}" if body else "")
-           + (f" + shield {shield}" if shield else ""))
-    return 10 + dex + con + body + shield, how
+           + (f" + shield {shield}" if shield else "") + (f" + {', '.join(magic)} {extra}" if extra else ""))
+    return 10 + dex + con + body + shield + extra, how
 
 
 def armour_steps(s: FantasyState) -> int:
@@ -142,12 +181,19 @@ def change(game: Any, state: FantasyState, item_id: str, on: bool) -> tuple[Fant
         if not it.equipped:
             return state, f"{it.name} is not worn.", False
         it.equipped = False
+        sync_worn(s)
         return s, f"{it.name}: " + ("taken off" if slot != "weapon" else "put away") + ".", True
     if it.equipped:
         return state, f"{it.name} is already {'worn' if slot != 'weapon' else 'in hand'}.", False
     if slot in ("body", "shield") and (s.player.fighting or s.player.peril is not None):
         return state, f"Not now: {'armour takes minutes of buckles' if slot == 'body' else 'there is no time to strap a shield on'}.", False
     was = [x for x in s.inventory if x.equipped and slot_of(x) == slot]
+    if slot == "ring":
+        was = was[:1] if len(was) >= RINGS else []        # FN153: a third ring takes the first one's place
+    news = ""
+    if (it.wear or {}).get("name") and not it.known:      # worn once, a found thing is named (FN144's rule for using it)
+        news = f" It is {it.wear['name']}."
+        it.name, it.known, it.note = it.wear["name"], True, str(it.wear.get("about") or "")
     if slot == "weapon" and weapon_of(it) in TWO_HANDED:          # two hands: the shield comes off
         was += [x for x in s.inventory if x.equipped and slot_of(x) == "shield"]
     if slot == "shield":                                          # a shield arm: a two-handed weapon is put away
@@ -155,8 +201,9 @@ def change(game: Any, state: FantasyState, item_id: str, on: bool) -> tuple[Fant
     for x in was:
         x.equipped = False
     it.equipped = True
+    sync_worn(s)
     verb = "in hand" if slot == "weapon" else "worn"
-    return s, f"{it.name}: {verb}" + (f" ({', '.join(x.name for x in was)} off)" if was else "") + ".", True
+    return s, f"{it.name}: {verb}" + (f" ({', '.join(x.name for x in was)} off)" if was else "") + "." + news, True
 
 
 def lines(s: FantasyState) -> list[tuple[str, str]]:
