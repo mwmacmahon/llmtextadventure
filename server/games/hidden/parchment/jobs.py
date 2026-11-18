@@ -144,6 +144,10 @@ def _loot(s: FantasyState, fallen: list, game: Any = None) -> list[str]:
             ref = itm.drop(game, rng, int(q.combat.xp or 10), kind in ("humanoid", "person"), s)
             if ref:
                 found.append(itm.add(game, s, ref).name)
+            elif int(q.combat.xp or 10) >= 50:                       # FN147: a curio now and then from something worth fighting
+                odd = itm.loot_curio(game, s, rng, "drop")
+                if odd is not None:
+                    found.append(odd.name)
     s.flags["looted"] = looted
     out = []
     if coin:
@@ -171,11 +175,10 @@ def cache(game: Any, s: FantasyState, j: dict) -> list[str]:
     if not itm.catalogue(game):
         return []
     rng = random.Random(f"{(s.world or {}).get('seed', 0)}:cache:{j['id']}")
+    odd = itm.loot_curio(game, s, rng, "cache")                   # FN147: rarely, among their things, a curio
     ref = itm.roll(game, rng, "uncommon" if j["pay"] >= 40 else "common")
-    if not ref:
-        return []
-    it = itm.add(game, s, ref)
-    return [f"Found where they kept their things: {it.name}."]
+    got = ([itm.add(game, s, ref).name] if ref else []) + ([odd.name] if odd is not None else [])
+    return [f"Found where they kept their things: {', '.join(got)}."] if got else []
 
 
 def pay(s: FantasyState) -> list[str]:

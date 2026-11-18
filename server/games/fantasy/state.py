@@ -70,6 +70,7 @@ class Item(BaseModel):
     ref: str = ""                   # FN144: the game's catalogue id (items.yml) when the thing has a use
     known: bool = True              # FN144: a found magic thing shows its look as its name until used or bought
     charges: int | None = None      # FN144: a wand's or a curio's uses left (None: used up by count)
+    power: dict | None = None       # FN147: a made curio's power (the side call's): told, covers, price, true name, max uses
 
     def render(self) -> str:
         if self.id == "gold":

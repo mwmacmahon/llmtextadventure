@@ -105,19 +105,45 @@ def test_a_smoke_bomb_gets_away_clean_and_a_power_is_a_timed_condition(engine):
     assert next(x for x in s3.inventory if x.ref == "ghost_bell").charges == 2
 
 
-def test_the_narrators_odd_bell_can_take_the_ghost_bells_use_and_charges_come_back_with_rest(engine):
+def test_a_made_curio_gets_a_narrative_power_from_a_side_call_and_wakes_on_first_use(engine):
+    """FN147 (the owner, 11-17: a roll, then "the assistant or something takes a pass to come up with a narrative special
+    ability"; "if it's just like healing etc ... normal magic items"): about a third of the story's odd things are curios; one
+    side call writes the power; the first use names it; while awake, the reading is told an attempt it covers needs no check;
+    the uses come back with a night's rest; no answer falls back to the catalogue curio its name fits."""
     from games.fantasy import items as itm
-    game, st = _fresh(engine)
-    hits = [itm.curio_for(game, random.Random(n), "a tarnished silver bell") for n in range(200)]
-    have = [h for h in hits if h]
-    assert 0.2 < len(have) / len(hits) < 0.5 and set(have) == {"ghost_bell"}               # about a third; a bell is the ghost bell
     from games.fantasy.state import Item
+    game, st = _fresh(engine)
+    marks = []
+    for n in range(200):
+        x = Item(id="bell", name="a tarnished silver bell")
+        marks.append(itm.mark_curio(game, x, st, random.Random(n)))
+    assert 0 < sum(marks) / len(marks) < 0.12                      # the story's own odd thing: rarely (the owner: "very rare")
     bell = Item(id="tarnished_silver_bell", name="a tarnished silver bell")
     st.inventory.append(bell)
-    itm.give_use(game, bell, "ghost_bell")
-    assert bell.charges == 3 and not bell.known and bell.name == "a tarnished silver bell"
-    bell.charges = 0
-    assert itm.recharge(game, st) == ["a tarnished silver bell"] and bell.charges == 3
+    n = 0
+    while not itm.mark_curio(game, bell, st, random.Random(n)):
+        n += 1
+    assert bell.power["pending"] and bell.power["fallback"] == "ghost_bell" and not itm.usable(game, st)
+    ask = game.side_asks(st, "You prise a bell from the altar's crack.")[0]
+    assert ask["key"] == "curio:tarnished_silver_bell" and [f[0] for f in ask["fields"]][:2] == ["why", "power"]
+    assert "not heal, hurt, protect" in ask["system"] and ask["system"].count("\n- a ") == 2
+    st = game.side_answer(st, ask["key"], {"why": "an altar bell", "power": "Rung over a grave, it wakes the one buried there to answer three questions",
+                                            "covers": "questioning the buried dead", "price": "your breath frosts for an hour",
+                                            "name": "the sexton's bell"})
+    assert bell.power["max"] in (1, 3) and bell.charges == bell.power["max"] and itm.usable(game, st) == [bell]
+    s2, res = game.run_command(st, "use_item", {"item": bell.id})
+    assert res.ok and "it is the sexton's bell: Rung over a grave" in res.directive and "Show the catch: your breath frosts" in res.directive
+    b2 = next(x for x in s2.inventory if x.id == bell.id)
+    assert b2.known and b2.charges == b2.power["max"] - 1 and any("succeeds without a check" in n for n in game.assistant_notes(s2))
+    assert itm.recharge(game, s2) == ["a tarnished silver bell"] and b2.charges == b2.power["max"]
+    # no answer: the catalogue curio its name fits
+    other = Item(id="whistle", name="a bone whistle")
+    st.inventory.append(other)
+    n = 0
+    while not itm.mark_curio(game, other, st, random.Random(n)):
+        n += 1
+    st = game.side_answer(st, "curio:whistle", None)
+    assert other.ref == "whistle_of_beasts" and other.power is None and other.charges == 3
 
 
 def test_the_shops_sell_and_buy(engine):
@@ -160,3 +186,28 @@ def test_the_rogues_smoke_is_the_games_smoke_bombs(engine):
     assert not any(c.id == "smoke_pellets" for c in game.commands(st))
     s2, res = game.run_command(st, "use_item", {"item": bombs.id})
     assert res.ok and s2.player.hidden_from_others and "gone from the scene" in res.directive
+
+
+
+def test_most_curios_come_from_the_loot_and_their_object_is_made_too(engine):
+    """FN147 (the owner, 11-17: "it probably mostly shows up as a loot table item, just one that prompts narrator to make it
+    up"): a cache or a strong foe's drop now and then gives an odd thing whose object and power the side call makes at the
+    turn's end; the Loot line says what it turned out to be; no answer gives a catalogue curio by its look."""
+    from games.fantasy import items as itm
+    game, st = _fresh(engine)
+    odd = None
+    n = 0
+    while odd is None:
+        odd = itm.loot_curio(game, st, random.Random(n), "cache")
+        n += 1
+    assert odd.name == itm.ODD and odd.power["make_object"]
+    st.player.shown_notes.append(f"Found where they kept their things: a potion, {itm.ODD}.")
+    ask = game.side_asks(st, "")[0]
+    assert ask["fields"][0][0] == "object"
+    st = game.side_answer(st, ask["key"], {"object": "a cracked glass marble with a moth inside", "why": "x", "power": "Rolled across a floor, it stops where something was buried",
+                                            "covers": "finding what was buried in a room", "price": "a moth's wing-dust on the fingers", "name": "the moth marble"})
+    assert odd.name == "a cracked glass marble with a moth inside" and odd.power["covers"] == "finding what was buried in a room"
+    assert st.player.shown_notes[-1].endswith("a cracked glass marble with a moth inside.")
+    other = itm.loot_curio(game, st, random.Random(n - 1), "cache")
+    st = game.side_answer(st, game.side_asks(st, "")[0]["key"], None)
+    assert other.ref in itm.catalogue(game) and other.name == itm.catalogue(game)[other.ref]["look"]

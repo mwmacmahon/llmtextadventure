@@ -96,6 +96,8 @@ def usable(game: Any, s: FantasyState) -> list[Item]:
         e = entry_of(game, it)
         if e and e.get("use") and (it.charges is None or it.charges > 0) and it.count > 0:
             out.append(it)
+        elif it.power and not it.power.get("pending") and (it.charges or 0) > 0:      # FN147: a made curio
+            out.append(it)
     return out
 
 
@@ -112,6 +114,8 @@ def use(game: Any, state: FantasyState, args: dict) -> tuple[FantasyState, Any]:
     it = next((x for x in usable(game, s) if x.id == ref), None) or next((x for x in usable(game, s) if x.name.lower() == ref.lower()), None)
     if it is None:
         return state, CommandResult(ok=False, label="Use", text="Nothing like that with a use left in the pockets.")
+    if it.power:
+        return use_power(game, state, it, s)
     e = entry_of(game, it)
     u = dict(e.get("use") or {})
     kind = u.get("kind")
@@ -268,18 +272,6 @@ def drop(game: Any, rng: Any, xp: int, person: bool, s: FantasyState | None = No
     return None
 
 
-def curio_for(game: Any, rng: Any, name: str, s: FantasyState | None = None) -> str | None:
-    """The narrator's own odd thing put in the pockets (the ghost bell, 11-17): a hidden roll. About a third have a use, a
-    curio whose `forms` are in its name first, else any curio; the rest are plain. None: plain."""
-    cat = catalogue(game)
-    curios = [e for e in cat.values() if e.get("kind") == "curio"]
-    if not curios or rng.random() >= float(getattr(game, "CURIO_CHANCE", 0.35)) + find_bonus(s):
-        return None
-    low = name.lower()
-    fit = [e for e in curios if any(re.search(rf"\b{re.escape(str(f).lower())}s?\b", low) for f in e.get("forms") or [])]
-    return rng.choice(fit or curios)["id"]
-
-
 def give_use(game: Any, it: Item, ref: str) -> None:
     """A thing the narrator made takes a curio's use: kept as the narrator named it, unknown until used."""
     e = catalogue(game)[ref]
@@ -313,6 +305,9 @@ def recharge(game: Any, s: FantasyState) -> list[str]:
         if e and e.get("recharge") == "rest" and e.get("charges") and (it.charges or 0) < int(e["charges"]):
             it.charges = int(e["charges"])
             out.append(it.name)
+        elif it.power and it.power.get("max") and (it.charges or 0) < int(it.power["max"]):
+            it.charges = int(it.power["max"])
+            out.append(it.name)
     return out
 
 
@@ -325,3 +320,201 @@ def shop_lines(game: Any, stock: dict[str, int]) -> list[tuple[str, str, int]]:
 def value_of(game: Any, it: Item) -> int:
     e = entry_of(game, it)
     return int(e.get("value") or 0) if e else 0
+
+
+# ---- made curios (FN147) -------------------------------------------------------------------------------------------------
+# The owner, 11-17: "a roll to see if the special object is magical / notable at all, and if so the assistant or something
+# takes a pass to come up with a narrative special ability" ... "If it's just like healing etc I think you're just back in the
+# realm of normal magic items." A thing the story made, taken into the pockets, rolls; a curio gets its power from one side
+# call (the referee's model, after the rows), written inside these bounds; the engine keeps it, counts its uses, and while it
+# is awake an attempt it covers needs no roll. The catalogue's curios are the examples and the fallback.
+
+CURIO_SYSTEM = """You give a found object in a fantasy adventure its hidden power. The object is real and the player carries it; \
+the power is a secret until they first use it.
+
+The power must:
+- be one specific, strange ability that fits the object and how it was found;
+- be narrow: one kind of target, in one kind of place or under one condition;
+- work only when the object is used, for a short while;
+- work on the story, not on numbers: something the bearer can see, follow, call, calm, wake, ask or reach (not only voices or echoes);
+- not heal, hurt, protect, hide the bearer, open any lock, or add to any roll or stat, and not end a fight by itself;
+- not reveal secrets outright: it can let someone or something be asked, heard or followed, never simply tell the truth.
+
+The catch is a sign anyone could notice or a passing discomfort (a cold hand, a smell, a whisper); never damage, a lost roll,
+a lost memory, or something coming for the bearer."""
+
+# FN147, the cold read (11-17): four fixed examples, three about the dead, would be copied; two of these a call, by the thing
+CURIO_EXAMPLES = [
+    "a bone whistle: blown, the animals in earshot understand the bearer and answer as beasts would",
+    "a cracked hand mirror: held up to a sleeper, it shows the dream they are having",
+    "a brass compass with no letters: opened, its needle points the way to one lost thing the bearer names, if it is within a day's walk",
+    "a jar of river water: poured on a road, it shows the footprints of the last one to pass, glowing for a minute",
+    "a stone with a hole through it: looked through at a door, it shows who last went through it",
+    "a dried rose: held under a person's nose, it makes them remember aloud the last time they were in love",
+    "a tin soldier: set on a table, it marches toward the one in the room who means the bearer harm, then falls over",
+    "a candle stub: lit in a house, the house's own creaks and settlings can be heard as words about who lives there",
+    "a fishhook on a string: dropped in still water, it brings up one thing lost in it, if anything was",
+    "a child's spinning top: spun, everyone watching it forgets for a moment what they were saying",
+]
+
+
+# the owner, 11-17: "curios should still probably be told as very rare, and in practicality it probably mostly shows up as a
+# loot table item, just one that prompts narrator to make it up". The story's own odd thing is a curio rarely; the loot's
+# rolls make most of them (a strong foe's drop, a cleared place's cache), object and power both made by the side call
+CURIO_CHANCE = 0.05          # the story's own odd thing, pocketed (the rogue's eye adds a fifth of its points)
+LOOT_CURIO = {"drop": 0.08, "cache": 0.15}
+ODD = "an odd thing"         # a loot curio's name until its object is made (the same turn, at the turn's end)
+
+
+def mark_curio(game: Any, it: Item, s: FantasyState, rng: Any) -> bool:
+    """The hidden roll for a thing the story made: rarely a curio (the rogue's eye adds a little). Marked to be made."""
+    if not catalogue(game) or rng.random() >= float(getattr(game, "CURIO_CHANCE", CURIO_CHANCE)) + find_bonus(s) / 5:
+        return False
+    it.ref, it.known = "curio", False
+    it.power = {"pending": True, "where": s.player.location, "fallback": _forms_match(game, it.name, rng) or ""}
+    return True
+
+
+def loot_curio(game: Any, s: FantasyState, rng: Any, source: str) -> Item | None:
+    """A curio from the loot (`source`: drop, cache): an odd thing in the pockets whose object and power the side call makes."""
+    if not catalogue(game) or rng.random() >= LOOT_CURIO.get(source, 0) + find_bonus(s) / 5:
+        return None
+    n = sum(1 for x in s.inventory if x.id.startswith("odd_thing"))
+    it = Item(id=f"odd_thing_{n + 1}", name=ODD, ref="curio", known=False)
+    curios = [e["id"] for e in catalogue(game).values() if e.get("kind") == "curio"]
+    it.power = {"pending": True, "make_object": True, "where": s.player.location, "fallback": rng.choice(curios) if curios else ""}
+    s.inventory.append(it)
+    return it
+
+
+def _forms_match(game: Any, name: str, rng: Any) -> str | None:
+    curios = [e for e in catalogue(game).values() if e.get("kind") == "curio"]
+    low = name.lower()
+    fit = [e for e in curios if any(re.search(rf"\b{re.escape(str(f).lower())}s?\b", low) for f in e.get("forms") or [])]
+    return rng.choice(fit or curios)["id"] if (fit or curios) else None
+
+
+# the loot probe (11-17): with the object free too, Gemma made five of five "heavy iron", "pressed against", "hear", "the smell
+# of"; the engine rolls the variety, the model writes inside it
+CURIO_STUFF = ["bone", "glass", "cloth", "wood", "feather", "wax", "shell", "clay", "bronze", "horn", "paper", "stone", "silver",
+               "thread", "leather", "a dried plant", "a tooth", "hair", "copper", "pewter"]
+CURIO_DOES = ["see something others cannot", "follow a trail", "call something to the bearer", "calm one creature", "wake something",
+              "ask a question of something that cannot usually answer", "reach a place or person", "know when a thing is near",
+              "make something show itself", "find one lost thing", "turn aside one creature's attention", "learn where something came from"]
+CURIO_CATCH = ["a sound", "a sight others notice", "a feeling on the skin", "a taste", "a small mess", "a brief clumsiness",
+               "a change in the weather close by", "an animal's interest", "a moment of forgetfulness about something trivial"]
+
+
+def side_asks(game: Any, s: FantasyState, narration: str = "") -> list[dict]:
+    """A curio waiting for its power: one question to the side slot."""
+    for it in s.inventory:
+        if it.power and it.power.get("pending"):
+            make = bool(it.power.get("make_object"))
+            user = ((f"THE OBJECT: not yet made; it was found on or among what was left at {it.power.get('where') or s.player.location}\n" if make else
+                     f"THE OBJECT: {it.name}" + (f" ({it.note})" if it.note else "") + f"\nWHERE IT WAS FOUND: {it.power.get('where') or s.player.location}\n")
+                    + f"HOW THE STORY TOLD IT:\n{(narration or '').strip()[-1200:]}\n\n"
+                    "Answer in this order.\n"
+                    + ("object: the thing itself as the player finds it, a few plain words with its look (\"a cracked glass marble\"); "
+                       "small enough to carry, odd enough to keep.\n" if make else ""))
+            user += ("why: a sentence on what about this object and where it was found suggests its power.\n"
+                    "power: one sentence, how it is used and what it then does, beginning with the use (\"Blown, ...\", \"Held up to ...\").\n"
+                    "covers: what the bearer does with it, as a verb in -ing and its target, no wider than the power (\"tracking the last "
+                    "one down a road\").\n"
+                    "price: the catch each time it is used, in a few words.\n"
+                    "name: its true name, two to four words.")
+            r = random.Random(f"examples:{it.id}:{it.name}:{it.power.get('where')}")
+            pick = r.sample(CURIO_EXAMPLES, 2)
+            user += (f"\n\nThis one, rolled: " + (f"it is made mostly of {r.choice(CURIO_STUFF)}; " if make else "")
+                     + f"its power lets the bearer {r.choice(CURIO_DOES)}; its catch is {r.choice(CURIO_CATCH)}.")
+            system = CURIO_SYSTEM + "\n\nExamples of the kind (make a new one for this object; do not reuse these):\n" + "\n".join(f"- {x}" for x in pick)
+            return [{"key": f"curio:{it.id}", "system": system, "user": user,
+                     "fields": ([["object", None]] if make else []) + [["why", None], ["power", None], ["covers", None], ["price", None], ["name", None]]}]
+    return []
+
+
+def side_answer(game: Any, s: FantasyState, key: str, out: dict | None) -> FantasyState:
+    """The made power kept on the thing; on no answer, the catalogue curio its name fits (the fallback)."""
+    iid = key.split(":", 1)[1] if key.startswith("curio:") else ""
+    it = next((x for x in s.inventory if x.id == iid and x.power and x.power.get("pending")), None)
+    if it is None:
+        return s
+    good = out and str(out.get("power") or "").strip() and str(out.get("covers") or "").strip()
+    if it.power.get("make_object"):
+        made = str((out or {}).get("object") or "").strip().rstrip(".") if good else ""
+        if not made:                                     # no answer: the fallback curio, found as its look
+            ref = it.power.get("fallback") or ""
+            it.power = None
+            if ref in catalogue(game):
+                e = catalogue(game)[ref]
+                give_use(game, it, ref)
+                made = e.get("look") or e["name"]
+            else:
+                it.ref, made = "", "a small odd trinket"
+        _rename_odd(s, it, made)
+        if not good:
+            return s
+    if not good:
+        ref = it.power.get("fallback") or ""
+        it.power = None
+        if ref in catalogue(game):
+            give_use(game, it, ref)
+        else:
+            it.ref = ""
+        return s
+    # the uses are the engine's (the probe, 11-17: Gemma chose three a day for all five): once a day mostly, three now and then
+    n = 3 if random.Random(f"uses:{it.id}:{it.name}").random() < 0.3 else 1
+    price = str(out.get("price") or "").strip()
+    it.power = {"told": str(out["power"]).strip().rstrip(".") + ".", "covers": str(out["covers"]).strip().rstrip("."),
+                "price": "" if price.lower() in ("none", "no", "nothing", "") else price.rstrip("."),
+                "true_name": str(out.get("name") or "").strip() or it.name, "max": n}
+    it.ref, it.charges = "curio", n
+    return s
+
+
+def _awake_line(name: str) -> str:
+    return re.sub(r"^(a|an|the|some)\s+", "", name.strip(), flags=re.I)
+
+
+def _rename_odd(s: FantasyState, it: Item, made: str) -> None:
+    """The loot curio's object made: its name, and the turn's Loot line that said "an odd thing" says what it is."""
+    it.name = made[:60]
+    s.player.shown_notes = [ln.replace(ODD, it.name, 1) if ODD in ln else ln for ln in s.player.shown_notes]
+
+
+def use_power(game: Any, state: FantasyState, it: Item, s: FantasyState) -> Any:
+    """A made curio used: a use spent, its power awake for the scene (about ten minutes), named the first time."""
+    from engine.game import CommandResult
+    p = s.player
+    pw = it.power or {}
+    first = not it.known
+    it.known = True
+    it.charges = (it.charges or 0) - 1
+    now = s.clock.day * DAY + s.clock.minute
+    pw["awake_until"] = now + 10
+    cname = pw["covers"]
+    p.conditions = [c for c in p.conditions if c.name != cname]
+    p.conditions.append(Condition(name=cname, source="engine", duration="minutes", expires_at=now + 10))
+    if first:
+        it.note = f"{pw['true_name']}: {pw['told']}"                    # the sheet shows what it turned out to be
+    left = f" ({it.charges} left before a night's rest)"
+    line = (f"{it.name}: it wakes. {pw['told']}" if first else f"{it.name}: awake.") + left
+    directive = (f"{p.name} uses {_the(it.name)}." + (f" It wakes for the first time; it is {pw['true_name']}: {pw['told']}" if first
+                                                     else f" Its power: {pw['told']}")
+                 + (f" Show the catch: {pw['price']}." if pw.get("price") else "")
+                 + " If nothing here fits the power, say in a line that it stirs and finds nothing. A line or two. If the player asked for "
+                 "something else this turn, play it; if not, stop.")
+    return s, CommandResult(label="Use", text=line, player_line=f"I use {_the(it.name)}.", summary=f"{p.name} uses {_the(it.name)}.",
+                            directive=directive, minutes=1, referee_skip=[it.id, f"{it.id}.count", f"inventory.{it.id}"])
+
+
+def awake_notes(s: FantasyState) -> list[str]:
+    """The reading's word while a curio is awake: an attempt its power covers needs no check."""
+    now = s.clock.day * DAY + s.clock.minute
+    out = []
+    for it in s.inventory:
+        pw = it.power or {}
+        if pw.get("awake_until", 0) > now and pw.get("covers"):
+            out.append(f"{s.player.name}'s {_awake_line(it.name)} is awake: {pw['told']} An attempt that uses this power for what it says "
+                       f"({pw['covers']}) succeeds without a check, and gets only what the power gives. Attempts near it, or not using it, are "
+                       "judged as usual.")
+    return out

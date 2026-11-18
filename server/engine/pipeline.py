@@ -1539,6 +1539,15 @@ class Engine:
                 ledger("drift", {"changes": drift_lines})
                 log.info("step " + logs.kv(iid=iid, turn=turn, step="drift", changes=len(drift_lines)))
             state = drifted
+        # FN147: a game's own small questions at the turn's end, after the rows and the game's own after-turn (a curio the
+        # story made, or one the loot rolled, gets its object and power here, on the side slot, two at most a turn)
+        for ask in (_hook(game, "side_asks", state, narration_stored or "", default=[]) or [])[:2]:
+            try:
+                answer, smeta = await self._side_ask(iid, ask)
+            except Exception as e:  # noqa: BLE001 - the game has a fallback; the turn stands without it
+                answer, smeta = None, {"error": repr(e)[:300]}
+            state = _hook(game, "side_answer", state, ask["key"], answer, default=state) or state
+            ledger("side_ask", {"key": ask["key"], "answer": answer, "_call": smeta})
         self.store.save_snapshot(iid, turn, state.model_dump(mode="json"))
         log.info("turn.done " + logs.kv(iid=iid, turn=turn, seconds=time.monotonic() - t_turn, ending=_hook(game, "ending", state)))
         try:                                          # the graveyard (B81): the moment a death lands, before any undo can happen
@@ -2575,6 +2584,20 @@ class Engine:
         out, usage = await provider.extract(role, system, msgs, schema)
         meta = {"provider": provider.name, "model": usage.extra.get("model") or role.model, "seconds": round(time.monotonic() - t0, 2), "usage": asdict(usage)}
         return str(out.ending), str(out.why or "")[:300], meta
+
+    async def _side_ask(self, iid: str, ask: dict) -> tuple[dict, dict]:
+        """FN147: a game's own question to the referee's model on the side slot: `system`, `user`, and `fields` as
+        [name, choices or None] in the order asked (the reasons first, as the other side checks). Returns the answers."""
+        role = self._side_role("referee")
+        provider = self._provider(role, iid, "referee")
+        spec = {}
+        for name, choices in ask["fields"]:
+            spec[name] = ((Literal[tuple(choices)], ...) if choices else (str, ...))    # type: ignore[valid-type]
+        schema = create_model("SideAsk", **spec)
+        t0 = time.monotonic()
+        out, usage = await provider.extract(role, ask["system"], [Msg("user", ask["user"])], schema)
+        meta = {"provider": provider.name, "model": usage.extra.get("model") or role.model, "seconds": round(time.monotonic() - t0, 2), "usage": asdict(usage)}
+        return {k: str(getattr(out, k, "") or "")[:300] for k, _ in ask["fields"]}, meta
 
     async def _beat_check(self, iid: str, c: dict, narration: str) -> tuple[bool, str, dict]:
         """B242 (K3): one short question to the referee's model about a beat the engine thinks is told again."""

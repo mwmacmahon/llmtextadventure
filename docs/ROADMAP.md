@@ -589,9 +589,10 @@ engine makes and the narrator names what it invents. The design is `notes/FANTAS
 `notes/MAP_DESIGN.md` (draft 5 of 11-17, with the cold read's 25 rulings and the probe folded in; D307 to D309, D314 to
 D317); the shapes of the save and the panel are `docs/MAP-CONTRACT.md`. **The work list, one line per piece with an id
 and a state, is `notes/FANTASY_ROADMAP.md` (FN1 to FN111), written 11-16 before any code at the owner's word (D310).** A
-line leaves it only when built and seen in a played round. This section is its roll-up. **State on 11-17: the
-generator, paths and the panel are built and tested; no game calls the map, and nothing has been seen in a played
-round.**
+line leaves it only when built and seen in a played round. This section is its roll-up. **State at the end of 11-17: Parchment is built and played on Gemma (gates 1 and 2,
+then the owner's own first round from outside the house on :8013); his thirteen points are built, and so is the first
+slice of items with uses. Everything since 11-17 morning was built on Opus and waits for Fable's review
+(`notes/HANDOFF-2026-11-18-for-fable.md`, section 0 first).**
 
 How it is being built (the owner's go-ahead, 11-16): the contract between engine and panel first; then the engine, the
 panel and the model questions in parallel; three gates where the owner looks (a real game with the map in the side
@@ -634,10 +635,22 @@ endless ground, camps, wandering, invented places and ground changes held until 
   residents on first arrival, Parchment's own bestiary, the job board paid in the village, loot on every kill (FN62, FN63,
   FN65, FN66, all in part); the village's people. Played: a gate-1 round and three gate-2 rounds on Gemma, each one's faults
   fixed the same hour (FN113 to FN125). Model-facing text read cold before shipping, twice.
-- **Next:** gate 2 seen clean; then the owner's look (gate 1) and the rest of the slice (fetch and find jobs, shops, the
-  owner's open questions FN104, FN122).
-- **Names (FN108 to FN111): decided, not built.** Rolled from large word lists, several picks for a big name, per
-  game, kept in the save; the lists checked against the game's own terms.
+- **The owner's own round (11-17, FN130 to FN143; D328): built the same evening.** A Starting state on new game; the start
+  at the tavern's door; the map near the top and in a pop-up behind a big Map button; short names (the "of the" tail 4 per
+  cent); Flee rolls DEX first, a success away clean (the family's rule); a tap on a road names it; `/ask`; jobs known only
+  once the board is read or the giver met; the referee's thing rule test-first; a journey stops only where something
+  happens, never in its first ten minutes, from a library of road happenings; the walk's own minutes on the clock; Continue
+  pre-filled on every leg.
+- **Items with uses (FN144 to FN147; D329, D330; `notes/ITEMS_DESIGN.md`): slice 1 built 11-17.** A catalogue per game
+  (Parchment's: potions, throwables, scrolls, wands, charms, curios) with five effects the engine applies (heal, buff,
+  power, strike, escape); one Use command (in a fight it acts first and a strike is the round's first entry); found things
+  known by their look until used; drops, caches, road finds, shops that sell and buy. Curios, very rare and mostly from
+  the loot, get their object and a narrative power from a side call (the owner: "narrative power"), probed on Gemma. The rogue's
+  smoke is five smoke bombs and the rogue finds a little more. Slice 2: worn things (rings, +1 weapons), a potion on an ally.
+- **Next:** Fable's review of everything built on Opus (11-18); the owner plays a new game on :8013; then the engine's
+  questions with buttons (FN39), fetch and find jobs, roads and rivers by name, items slice 2; gate 3 on the owner's word.
+- **Names (FN108 to FN111): built 11-17**, short since the owner's round (FN133). Rolled from large word lists per game,
+  kept in the save; the lists checked against the game's own terms.
 - **Places the story makes (FN50 to FN55): designed.** Told of a place at all puts it on the map; a secret whereabouts
   only by the scenario's mark or the telling saying so; an invented place by a pick-one form, the engine choosing the
   tile; lasting damage as a change on top of the rolled world; every assumption about a model counted.

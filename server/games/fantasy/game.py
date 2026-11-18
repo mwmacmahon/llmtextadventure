@@ -2702,12 +2702,11 @@ class FantasyGame(GameBase):
             w.note(f"inventory += {value.strip()!r}")
             # FN144 (the owner, 11-17, on the ghost bell: "best of all just has a use that may or may not come in handy"): a thing the
             # story made, taken into the pockets, has a hidden roll; about a third are curios with a use, found out by using them
+            # FN147: a curio's power is made for it by a side call after the rows (the owner: not premade, not a stat)
             from . import items as itm
             import random as _r
-            got = itm.curio_for(self, _r.Random(f"curio:{s.clock.day}:{s.clock.minute}:{value}"), value, s) if not count else None
-            if got:
-                itm.give_use(self, s.inventory[-1], got)
-                w.note(f"{value.strip()!r} has a use (hidden): {got}")
+            if not count and itm.mark_curio(self, s.inventory[-1], s, _r.Random(f"curio:{s.clock.day}:{s.clock.minute}:{value}")):
+                w.note(f"{value.strip()!r} is a curio (hidden); its power is made after this turn's rows")
             return True
         holder = s.person(where) or self._same_person(s, where_)
         place = None if holder else self._place(s, where_)
@@ -3757,13 +3756,22 @@ class FantasyGame(GameBase):
         "held": ("tries to break free (pulling, twisting, shoving off what holds them)", "a STR or DEX check, whichever fits", ""),
     }
 
+    def side_asks(self, state: FantasyState, narration: str = "") -> list[dict]:
+        from . import items as itm
+        return itm.side_asks(self, state, narration)
+
+    def side_answer(self, state: FantasyState, key: str, answer: dict | None) -> FantasyState:
+        from . import items as itm
+        return itm.side_answer(self, state, key, answer)
+
     def assistant_notes(self, state: FantasyState) -> list[str]:
         """The reading's note while the player is in a peril or held: the attempt to get out gets the way out's check, labelled
         'way out:' plus the player's own words, which the engine counts (world.way_out)."""
         p = state.player
         if p.fate:
             return []
-        out = []
+        from . import items as itm
+        out = itm.awake_notes(state)                 # FN147: an awake curio's power
         tail = ("Shouting, calling for help or praying, with nothing else, gets no check. Any other check this turn (looking, "
                 "searching) keeps its usual label, without 'way out:'.")
         if p.peril is not None and p.peril.kind in self.PERIL_ASK:

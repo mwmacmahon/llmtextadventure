@@ -18,7 +18,7 @@ what; whoever changes a thread's state changes its row in the same commit. The w
 
 | Thread | Session | Register | State | Next | Waiting on the owner |
 |---|---|---|---|---|---|
-| The next fantasy game (Parchment) and the world map: engine, reading, registers | "Fantasy Text Adventure - dadmini" | `notes/FANTASY_ROADMAP.md` (FN ids); ROADMAP area 19 | built and played on Gemma on 11-17, on Opus (gates 1 and 2: the map, walking, journeys in legs, the board, rolled names, the village's people); every call listed for Fable's review in `notes/HANDOFF-2026-11-18-for-fable.md` | buttons on the engine's question, fetch and find jobs, shops, roads and rivers by name, then gate 3 | FN122 (day-one barrow deaths), the content written on Opus, FN104, FN94, FN95; Lilith's two answers |
+| The next fantasy game (Parchment) and the world map: engine, reading, registers | "Fantasy Text Adventure - dadmini" | `notes/FANTASY_ROADMAP.md` (FN ids); ROADMAP area 19 | built and played on Gemma on 11-17, on Opus (gates 1 and 2; then the owner's own round on :8013 and his thirteen points built, D328; items with uses slice 1 and made curios with narrative powers, D329, D330); live on :8013 in dev mode; every call listed for Fable's review in `notes/HANDOFF-2026-11-18-for-fable.md` | Fable's review (11-18); the owner's next round; buttons on the engine's question, fetch and find jobs, roads and rivers by name, items slice 2; then gate 3 | FN122 (day-one barrow deaths), the content written on Opus, FN104, FN94, FN95; Lilith's two answers |
 | The map panel (web) | "Map panel continuation" | the same work list, FN20 to FN26 | built, merged, checked on the mini on its demo page; never run in a live game | nothing until a game sends the map; then the live wiring | redraw four weak icons? delete the old panel branch? a look on a phone |
 | The hidden game and Ask mode | "Fantasy Text Adventure continuation 2" | its own roadmap (gitignored); ROADMAP areas 2 and 15 | the owner's rulings on the clock, the week's chart and the two windows are recorded (C143 to C147, C159 to C171; rolled up in ROADMAP area 15 on 11-17); none built. Checked on the mini 11-17: the notes, the content, the store and the memory came across; the worktree is level with `2.0` | one design for the clock, the chart and the windows, with a mock-up; the free tests (Ask canon B416, the opening read cold) when he says | whether to write that design now or after more notes; whether to run the free tests; the pick of about twenty-four pupils; the open questions in the handoff note, section 6 |
 | The machine: servers, the box, sign-in | this session, as it comes up | `docs/SERVERS.md` | :8013, :8014 and :8016 run on the mini as services behind HTTPS names (11-17, set up in the owner's hosting chat; `docs/SERVERS.md`); the box answers by its model port and by ssh | - | a turn played on her address; the address tried from outside the house |
@@ -61,7 +61,10 @@ Everything below this section is the page as it stood on 11-09 and is behind; it
 4. Journeys in legs, the road dial (FN33 to FN35): **built 11-17**, three gate-2 rounds on Gemma, faults fixed each time; the
    engine's questions with buttons (FN39) not built. Gate 2.
 4a. The name roller (FN108): **built 11-17** (places and people).
-5. The slice: the village, three places, the job board, loot, character creation (FN60 to FN63, FN66, FN71, FN80).
+4b. The owner's own round (FN130 to FN143) and items with uses (FN144 to FN147): **built 11-17**, live on :8013 (dev mode);
+    Fable's review 11-18.
+5. The slice: the village, three places, the job board, loot, character creation (FN60 to FN63, FN66, FN71, FN80). Board,
+   loot, shops and items built; fetch and find jobs owed.
 6. Its first player plays fifteen minutes (FN81, FN82). Gate 3.
 7. The ground beyond in chunks, long journeys, wandering (FN13 to FN15, FN36, FN37).
 8. The place-form probe, the reading on Sonnet, invented places, changes (FN41 to FN43, FN50 to FN55, FN107). The where
