@@ -125,7 +125,7 @@ def test_the_panel_goes_through_the_ui_schema_unchanged():
     ui = UISchema(panels=[widget], prefill="Continue to the mill (10 minutes)")
     out = ui.model_dump()
     assert isinstance(ui.panels[0], MapPanel)
-    assert out["panels"][0] == {**widget, "pinned": False}
+    assert out["panels"][0] == {**widget, "pinned": False, "group": ""}          # FN154: every widget has a pop-out group
     assert out["prefill"] == "Continue to the mill (10 minutes)" and UISchema().model_dump()["prefill"] is None
 
 
