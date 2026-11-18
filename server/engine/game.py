@@ -187,6 +187,8 @@ class CommandSpec(BaseModel):
     words: list[str] = Field(default_factory=list)   # typed use: the input must contain one of these (a word start) for the adjudicator's pick to count
     decides: bool = False           # B289: a typed pick settles the attempt itself (Flee, Yield): the reading's checks go
     enabled: bool = True            # the panel shows it greyed when False (Level up before the XP is there); the engine still refuses
+    quiet: bool = False             # B423: an engine command that only edits a plan: no turn of its own, no transcript rows, no new snapshot; the
+                                    # latest turn's saved state is replaced in place (a paint on a chart). Undo goes past it with the turn it sits on
     panel: "CommandPanel | None" = None   # a command that opens a panel of its own (the level-up screen, B92) instead of selects
 
 

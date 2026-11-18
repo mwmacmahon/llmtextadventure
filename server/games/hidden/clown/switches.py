@@ -28,7 +28,7 @@ SWITCHES: dict[str, tuple[bool, str]] = {
     "outing_ask": (True, "the owner, 11-14 (C126): a trip out asks first, in the engine's words (\"Spend the rest of the morning out in the town?\"), and yes spends the part of the day; not asked when a show of the house is due in it"),
     "day_strip": (True, "the owner, 11-14 (C126): the panel shows the four parts of the day as chips, the one in hand marked with the hour it ends, and the Time chip says what a trip or a session costs"),
     "her_floor": (True, "the readers, rounds 5 and 6 of 11-14: three of four shows were the proprietor stepping in to cover for the girl; a show gone to is hers unless the player's words put the proprietor on the floor"),
-    "screen_v2": (False, "D221C, the owner's screen of 11-17 and 11-18 (docs/PLANNER-CONTRACT.md): the girls as a roster, one line each opening her own window; the boat and the week's offers as cards in pop-outs; the proprietor's and the house's own windows. Off until the owner tries it: his live games keep the old panels"),
+    "screen_v2": (True, "D221C, the owner's screen of 11-17 and 11-18 (docs/PLANNER-CONTRACT.md): the girls as a roster, one line each opening her own window; the boat and the week's offers as cards in pop-outs; the proprietor's and the house's own windows. On since 11-19 at the owner's word; off brings the old panels back"),
     "axis_note": (True, "the long round of 11-14 (6 standing rows in 57 turns): the referee is told when the proprietor dealt directly with a girl, and asked for her love, respect and fear"),
 }
 

@@ -42,6 +42,13 @@ def engine(tmp_path: Path) -> Engine:
     return Engine(cfg, Store(tmp_path / "t.sqlite3"), load_games(cfg.resolve(cfg.server.content_root)))
 
 
+@pytest.fixture
+def old_screen(monkeypatch):
+    """The panels before the screen of 11-18 (switch screen_v2 off): these tests read facts off the old panels, which the switch
+    still serves. The new screen has its own test at the end of the file."""
+    monkeypatch.setenv("TA_CLOWN_SWITCHES", "screen_v2=off")
+
+
 def new(game: ClownGame, challenges: bool = False, **over):
     """A fresh game; the nights' random challenges off unless a test asks (D215C), so a test's sums are its own."""
     st = game.new_instance({**SETUP, **over})[1]
@@ -460,6 +467,7 @@ def test_the_second_girl_arrives_when_her_flag_lands(game: ClownGame):
     assert any("asking to be taken on" in ln for ln in st.log)
 
 
+@pytest.mark.usefixtures("old_screen")
 def test_a_girl_at_the_door_waits_until_taken_on_by_a_talk_and_the_roster_says_so(game: ClownGame):
     st = new(game)
     st.flags["second_girl_come"] = True
@@ -565,6 +573,7 @@ def test_the_bench_trains_a_little_at_her_own_booking_and_the_student_gets_a_boo
     assert any("on her own for her booking" in ln for ln in s3.house.report_numbers)
 
 
+@pytest.mark.usefixtures("old_screen")
 def test_a_job_in_town_pays_a_little_and_raises_her_diligence_which_helps_every_slot(game: ClownGame):
     st = new(game)
     st, _ = game.run_command(st, "plan", {"slot": "mornings", "skill": "work"})
@@ -700,6 +709,21 @@ async def test_a_turn_through_the_pipeline(engine: Engine):
     assert events[-1]["event"] == "done", [ev["event"] for ev in events]
     st = engine.games["clown"].load_state(engine.store.load_state(iid))
     assert st.plan.mornings == "pratfalls" and st.now_abs == before
+    # B423: the same lever marked quiet is no turn: the state is edited in place, with no transcript row and no new snapshot
+    g = engine.games["clown"]
+    real = g.commands
+    g.commands = lambda s: [c.model_copy(update={"quiet": c.id == "plan"}) for c in real(s)]   # type: ignore[method-assign]
+    try:
+        turn0, rows0 = engine.store.latest_turn(iid), len(engine.store.transcript(iid, undone=True))
+        snaps0 = engine.store.conn.execute("SELECT COUNT(*) FROM snapshot WHERE instance_id=?", (iid,)).fetchone()[0]
+        events = [ev async for ev in engine.run_turn(iid, command=("plan", {"slot": "afternoons", "skill": "rest"}))]
+        assert events[-1]["event"] == "done" and events[-1]["data"]["turn"] == turn0
+        st = g.load_state(engine.store.load_state(iid))
+        assert st.plan.afternoons == "rest" and st.plan.mornings == "pratfalls"
+        assert engine.store.latest_turn(iid) == turn0 and len(engine.store.transcript(iid, undone=True)) == rows0
+        assert engine.store.conn.execute("SELECT COUNT(*) FROM snapshot WHERE instance_id=?", (iid,)).fetchone()[0] == snaps0
+    finally:
+        g.commands = real   # type: ignore[method-assign]
     assert engine.games["clown"].hidden is False and engine.games["clown_after_dark"].hidden is True
 
 
@@ -921,6 +945,7 @@ def test_the_youth_bucket_never_draws_what_it_forbids_and_the_lint_catches_a_car
     assert hb.girl_file_lines(hb.make_girl(youth[0], deck, new(game).scenario, random.Random(1), 1, 25), deck)[-1].strip().startswith("She is a child")
 
 
+@pytest.mark.usefixtures("old_screen")
 def test_the_contract_value_is_her_worth_as_a_performer_and_a_sale_pays_a_share_and_she_is_gone(game: ClownGame):
     from games.hidden.clown.state import Girl
     g = Girl(id="x", name="X", skills={"a": 10, "b": 30, "c": 50})
@@ -1118,6 +1143,7 @@ def test_dear_contracts_and_the_rooms_the_take_refuses_when_full_and_a_written_g
     assert game.load_state(data).house.rooms == int(dk.dial(st, "rooms"))
 
 
+@pytest.mark.usefixtures("old_screen")
 def test_the_house_is_the_upgrade_tree_rooms_and_cards_in_the_hand(game: ClownGame):
     st = new(game)
     ups = {u["id"]: u for u in st.scenario.upgrades}
@@ -1239,6 +1265,7 @@ def test_a_show_is_not_paid_by_the_prose_at_its_hour_either(game: ClownGame):
     assert s.house.money == money
 
 
+@pytest.mark.usefixtures("old_screen")
 def test_the_board_shows_the_week_and_day_a_book_would_set(game: ClownGame):
     st = _offer(game, new(game))
     h = st.hook("rope_walk_birthday")
@@ -2383,6 +2410,7 @@ def test_the_loan_is_paid_back_at_least_half_as_much_again(game):
     assert weekly * weeks >= 1.5 * gold
 
 
+@pytest.mark.usefixtures("old_screen")
 def test_a_girls_panel_says_what_she_is_doing_and_no_place(game):
     """The owner, 11-14: finding people is no part of this game, and the place shown was often wrong. A girl's card and the
     trainee's own panel say what she is at this part of the day, from the plan and the bookings."""
@@ -2430,8 +2458,9 @@ def test_an_offer_is_in_hand_from_the_turn_its_caller_comes(game):
 
 # ---- the screen of 11-18 (D221C; docs/PLANNER-CONTRACT.md) --------------------------------------------------------------
 
-def test_the_new_screen_is_off_by_default_and_whole_when_on(game: ClownGame, monkeypatch):
+def test_the_new_screen_is_whole_and_its_switch_brings_the_old_one_back(game: ClownGame, monkeypatch):
     st = new(game)
+    monkeypatch.setenv("TA_CLOWN_SWITCHES", "screen_v2=off")
     assert not {p.type for p in game.ui(st).panels} & {"roster", "cards", "profile"}
     monkeypatch.setenv("TA_CLOWN_SWITCHES", "screen_v2=on")
     ui = game.ui(st)

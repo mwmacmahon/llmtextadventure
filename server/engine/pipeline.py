@@ -966,6 +966,15 @@ class Engine:
                 yield {"event": "command", "data": {"ok": False, "text": cmd_result.text, "mode": spec.mode, "label": cmd_result.label or spec.label}}
                 return
             label = cmd_result.label or spec.label
+            if spec.mode == "engine" and spec.quiet:
+                # B423: a plan edit is no turn. The state saved for the latest turn is replaced with the edited one; nothing is
+                # written to the transcript or the ledger, and no snapshot is added (a snapshot is the whole state, about 100 KB).
+                self.store.save_snapshot(iid, turn - 1, state.model_dump(mode="json"))
+                log.info("command.quiet " + logs.kv(iid=iid, turn=turn - 1, id=cid))
+                yield {"event": "command", "data": {"ok": True, "text": cmd_result.text, "mode": spec.mode, "label": label, "turn": turn - 1, "quiet": True}}
+                yield {"event": "done", "data": {"turn": turn - 1, "text": cmd_result.text, "note": None, "model": None, "usage": {}, "seconds": 0,
+                                                 "mechanics": None, "ending": _hook(game, "ending", state), "ui": game.ui(state).model_dump(mode="json")}}
+                return
             if cmd_result.log_line:
                 doc = state.model_dump(mode="json")
                 sp.append(doc, getattr(game, "log_path", "log"), f"{_clock_text(game, doc)}{unstamped(cmd_result.log_line)}")
