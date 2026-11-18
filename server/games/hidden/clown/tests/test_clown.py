@@ -2426,3 +2426,32 @@ def test_an_offer_is_in_hand_from_the_turn_its_caller_comes(game):
     next(e for e in st.hidden.events if e.id == f"{h.id}_reach").fired = True
     block = game.render_bulletin(st, "")
     assert "Offers in hand, heard and not yet booked: " in block and h.title in block.split("Offers in hand, heard and not yet booked: ")[1].split(". A show exists")[0]
+
+
+# ---- the screen of 11-18 (D221C; docs/PLANNER-CONTRACT.md) --------------------------------------------------------------
+
+def test_the_new_screen_is_off_by_default_and_whole_when_on(game: ClownGame, monkeypatch):
+    st = new(game)
+    assert not {p.type for p in game.ui(st).panels} & {"roster", "cards", "profile"}
+    monkeypatch.setenv("TA_CLOWN_SWITCHES", "screen_v2=on")
+    ui = game.ui(st)
+    kinds = [p.type for p in ui.panels]
+    assert "profile" in kinds and kinds.count("profile") == 2
+    assert "entity_cards" not in [p.type for p in ui.panels if getattr(p, "title", "") == "The girls"]
+    # every action a panel offers is one of the game's own commands, so a click is a lever the engine already checks
+    known = {"take", "book", "equip", "switch", "better", "upgrade"}
+    acts = []
+    for p in ui.panels:
+        d = p.model_dump(mode="json")
+        stack = [d]
+        while stack:
+            x = stack.pop()
+            if isinstance(x, dict):
+                if "command" in x and "args" in x and "label" in x:
+                    acts.append(x["command"])
+                stack.extend(x.values())
+            elif isinstance(x, list):
+                stack.extend(x)
+    assert acts and set(acts) <= known, set(acts) - known
+    UISchema_round = type(ui).model_validate(ui.model_dump(mode="json"))
+    assert [p.type for p in UISchema_round.panels] == kinds

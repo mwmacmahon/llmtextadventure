@@ -43,9 +43,48 @@ export type MapWidget = {
 export type DollThing = { id: string; name: string; gives?: string | null; can_remove?: boolean };
 export type DollSlot = { id: string; label: string; item: DollThing | null; options: DollThing[] };
 export type PaperDollWidget = { type: "paper_doll"; title: string; slots: DollSlot[]; ac: number; ac_how: string; gives: string[] };
+// docs/PLANNER-CONTRACT.md: the paint chart, the cards, the roster and the detail (C159, C162, C175, C176)
+export type Art = { key: string; url?: string | null; hint?: Record<string, string> };
+export type PlanCell = { v: string | null; state: "past" | "now" | "open" | "fixed"; label?: string; note?: string; mark?: "spark" | null };
+export type PlanChoice = { id: string; label: string; short: string; group: string; colour: string; hint?: string; where?: number[] | null };
+export type PlanBars = { label: string; sub?: string; values: (number | null)[]; max: number; warn: number; bad: number };
+export type ChartWidget = {
+  type: "chart"; title: string; who: string; art?: Art | null;
+  columns: { id: string; label: string; sub?: string; today?: boolean }[];
+  rows: { id: string; label: string; sub?: string; paintable: boolean }[];
+  cells: PlanCell[]; choices: PlanChoice[]; erase: boolean;
+  command: string; args: Record<string, unknown>; bars?: PlanBars | null; under?: string[];
+};
+export type PlanAction = { label: string; command: string; args: Record<string, unknown>; enabled: boolean; why?: string };
+export type PlanMeter = { label: string; value: number; max: number };
+export type PlanCard = {
+  id: string; title: string; meta?: string; art?: Art | null; folded?: boolean; locked?: string;
+  quote?: string; text?: string; tags?: { text: string; tone?: "want" | "miss" | "" }[];
+  bars?: { label: string; value: number; max: number; colour?: string }[]; note?: string;
+  pick?: { label: string; param: string; options: { id: string; label: string; disabled?: boolean }[] } | null;
+  action?: PlanAction | null; done?: string;
+};
+export type CardsWidget = { type: "cards"; title: string; sub?: string; foot?: string; cards: PlanCard[] };
+export type DetailSection =
+  | { kind: "bars"; title?: string; rows: { label: string; value: number; max: number; colour?: string; note?: string }[] }
+  | { kind: "rows"; title?: string; rows: { label: string; value: string }[] }
+  | { kind: "text"; title?: string; text: string }
+  | { kind: "items"; title?: string; items: { name: string; lines: string[]; action?: PlanAction | null }[] }
+  | { kind: "choice"; title?: string; text?: string; options: { id: string; label: string; on: boolean }[]; command: string; param: string; args?: Record<string, unknown> }
+  | { kind: "actions"; title?: string; items: PlanAction[] };
+export type Detail = {
+  title: string; sub?: string; art?: Art | null; quote?: string; tags?: string[]; meter?: PlanMeter | null;
+  tabs: { id: string; label: string; sections: DetailSection[] }[];
+};
+export type RosterWidget = { type: "roster"; title: string; items: { id: string; name: string; art?: Art | null; badge?: string; line?: string; meter?: PlanMeter | null; detail: Detail }[] };
+export type ProfileWidget = { type: "profile"; detail: Detail };
 export type Widget = Placed & (
   | MapWidget
   | PaperDollWidget
+  | ChartWidget
+  | CardsWidget
+  | RosterWidget
+  | ProfileWidget
   | { type: "status_strip"; chips: Chip[] }
   | MeterWidget
   | { type: "meter_group"; title?: string | null; meters: MeterWidget[] }

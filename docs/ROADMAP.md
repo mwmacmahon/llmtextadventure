@@ -526,6 +526,14 @@ turn, the present tiredness numbers. **The web client has neither a grid to pain
 both are new client work, beside the map panel (area 19), which shows how a large widget is added. **Next, on the
 owner's word:** one design for the clock, the chart, the proprietor's row and the two windows, with a clickable
 mock-up for him and the first player before any code; he has said more notes are coming.
+**11-17 and 11-18, the screen (D220C; C172 to C176):** a clickable mock-up of the whole screen, revised with the owner
+line by line: the chart for the pupil in training, unannounced scenes (a spark on her blocks, played only when the
+proprietor is with her), the proprietor's plan only on the skip menu with each session place keeping hours, the grid
+lighting what is possible where, windows for detail (a pupil's skills, feelings, gear and week) with one line a pupil in
+the side column, and the map, the proprietor's and the house's screens. **Built 11-18:** the client's panels for all of
+it, every game's, against `docs/PLANNER-CONTRACT.md` (a chart to paint, cards, a roster, a profile), with the engine's
+models and a demo page; no game sends them yet. Next: the hidden game sends them, then the clock rebuilt (block A),
+which the chart's parts and the skip menu wait on. A town map is C172, later.
 **On the Mac mini since 11-17:** the owner's games on Gemma and the Sonnet rounds are services (`docs/SERVERS.md`); the
 builder's test server is started by hand when a build needs it.
 **Left:** the owner's word on how short and a judged trial of the lengths; the simulator's calibration grids; a round on the four-part

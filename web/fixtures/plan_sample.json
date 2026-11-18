@@ -1,0 +1,1055 @@
+{
+ "note": "Made-up sample for the planner panels (docs/PLANNER-CONTRACT.md). No game's content.",
+ "chart": {
+  "type": "chart",
+  "place": "main",
+  "title": "The week",
+  "who": "Wren Talbot is in her apprenticeship; the others go by their word",
+  "art": {
+   "key": "wren",
+   "hint": {
+    "hair": "#5a3a22",
+    "style": "crop",
+    "coat": "#3f5f8a"
+   }
+  },
+  "columns": [
+   {
+    "id": "mon",
+    "label": "Mon",
+    "sub": "1 Har",
+    "today": false
+   },
+   {
+    "id": "tue",
+    "label": "Tue",
+    "sub": "2 Har",
+    "today": true
+   },
+   {
+    "id": "wed",
+    "label": "Wed",
+    "sub": "3 Har",
+    "today": false
+   },
+   {
+    "id": "thu",
+    "label": "Thu",
+    "sub": "4 Har",
+    "today": false
+   },
+   {
+    "id": "fri",
+    "label": "Fri",
+    "sub": "5 Har",
+    "today": false
+   },
+   {
+    "id": "sat",
+    "label": "Sat",
+    "sub": "6 Har",
+    "today": false
+   },
+   {
+    "id": "sun",
+    "label": "Sun",
+    "sub": "7 Har",
+    "today": false
+   }
+  ],
+  "rows": [
+   {
+    "id": "morning",
+    "label": "Morning",
+    "sub": "7 am to noon",
+    "paintable": true
+   },
+   {
+    "id": "afternoon",
+    "label": "Afternoon",
+    "sub": "noon to 5 pm",
+    "paintable": true
+   },
+   {
+    "id": "evening",
+    "label": "Evening",
+    "sub": "5 to 9 pm",
+    "paintable": true
+   },
+   {
+    "id": "early",
+    "label": "Early night",
+    "sub": "9 pm to midnight",
+    "paintable": true
+   },
+   {
+    "id": "late",
+    "label": "Late night",
+    "sub": "sleep, not planned",
+    "paintable": false
+   }
+  ],
+  "cells": [
+   {
+    "v": "forge",
+    "state": "past",
+    "label": "",
+    "note": "",
+    "mark": null
+   },
+   {
+    "v": "forge",
+    "state": "now",
+    "label": "",
+    "note": "",
+    "mark": null
+   },
+   {
+    "v": "file",
+    "state": "open",
+    "label": "",
+    "note": "",
+    "mark": null
+   },
+   {
+    "v": "forge",
+    "state": "open",
+    "label": "",
+    "note": "",
+    "mark": "spark"
+   },
+   {
+    "v": "polish",
+    "state": "open",
+    "label": "",
+    "note": "",
+    "mark": null
+   },
+   {
+    "v": "forge",
+    "state": "open",
+    "label": "",
+    "note": "",
+    "mark": "spark"
+   },
+   {
+    "v": "rest",
+    "state": "open",
+    "label": "",
+    "note": "",
+    "mark": null
+   },
+   {
+    "v": "file",
+    "state": "past",
+    "label": "",
+    "note": "",
+    "mark": null
+   },
+   {
+    "v": "polish",
+    "state": "open",
+    "label": "",
+    "note": "",
+    "mark": null
+   },
+   {
+    "v": "file",
+    "state": "open",
+    "label": "",
+    "note": "",
+    "mark": null
+   },
+   {
+    "v": "polish",
+    "state": "open",
+    "label": "",
+    "note": "",
+    "mark": null
+   },
+   {
+    "v": "file",
+    "state": "open",
+    "label": "",
+    "note": "",
+    "mark": null
+   },
+   {
+    "v": "polish",
+    "state": "open",
+    "label": "",
+    "note": "",
+    "mark": null
+   },
+   {
+    "v": "rest",
+    "state": "open",
+    "label": "",
+    "note": "",
+    "mark": null
+   },
+   {
+    "v": "errand",
+    "state": "past",
+    "label": "",
+    "note": "",
+    "mark": null
+   },
+   {
+    "v": "errand",
+    "state": "open",
+    "label": "",
+    "note": "",
+    "mark": null
+   },
+   {
+    "v": "errand",
+    "state": "open",
+    "label": "",
+    "note": "",
+    "mark": null
+   },
+   {
+    "v": "errand",
+    "state": "open",
+    "label": "",
+    "note": "",
+    "mark": null
+   },
+   {
+    "v": null,
+    "state": "fixed",
+    "label": "Fair",
+    "note": "The harvest fair stall, 6 pm: fixed by the booking",
+    "mark": null
+   },
+   {
+    "v": "free",
+    "state": "open",
+    "label": "",
+    "note": "",
+    "mark": null
+   },
+   {
+    "v": "free",
+    "state": "open",
+    "label": "",
+    "note": "",
+    "mark": null
+   },
+   {
+    "v": "free",
+    "state": "past",
+    "label": "",
+    "note": "",
+    "mark": null
+   },
+   {
+    "v": "free",
+    "state": "open",
+    "label": "",
+    "note": "",
+    "mark": null
+   },
+   {
+    "v": "free",
+    "state": "open",
+    "label": "",
+    "note": "",
+    "mark": null
+   },
+   {
+    "v": "free",
+    "state": "open",
+    "label": "",
+    "note": "",
+    "mark": null
+   },
+   {
+    "v": "free",
+    "state": "open",
+    "label": "",
+    "note": "",
+    "mark": null
+   },
+   {
+    "v": "free",
+    "state": "open",
+    "label": "",
+    "note": "",
+    "mark": null
+   },
+   {
+    "v": "free",
+    "state": "open",
+    "label": "",
+    "note": "",
+    "mark": null
+   },
+   {
+    "v": null,
+    "state": "past",
+    "label": "z",
+    "note": "Sleep. If something happens in the night, it stops here and you play it.",
+    "mark": null
+   },
+   {
+    "v": null,
+    "state": "open",
+    "label": "z",
+    "note": "Sleep. If something happens in the night, it stops here and you play it.",
+    "mark": null
+   },
+   {
+    "v": null,
+    "state": "open",
+    "label": "z",
+    "note": "Sleep. If something happens in the night, it stops here and you play it.",
+    "mark": null
+   },
+   {
+    "v": null,
+    "state": "open",
+    "label": "z",
+    "note": "Sleep. If something happens in the night, it stops here and you play it.",
+    "mark": null
+   },
+   {
+    "v": null,
+    "state": "open",
+    "label": "z",
+    "note": "Sleep. If something happens in the night, it stops here and you play it.",
+    "mark": null
+   },
+   {
+    "v": null,
+    "state": "open",
+    "label": "z",
+    "note": "Sleep. If something happens in the night, it stops here and you play it.",
+    "mark": null
+   },
+   {
+    "v": null,
+    "state": "open",
+    "label": "z",
+    "note": "Sleep. If something happens in the night, it stops here and you play it.",
+    "mark": null
+   }
+  ],
+  "choices": [
+   {
+    "id": "forge",
+    "label": "Forging",
+    "short": "Forg",
+    "group": "Craft",
+    "colour": "#e08a4f",
+    "hint": "At the forge."
+   },
+   {
+    "id": "file",
+    "label": "Filing",
+    "short": "File",
+    "group": "Craft",
+    "colour": "#b58cf0",
+    "hint": "Fine work at the bench."
+   },
+   {
+    "id": "polish",
+    "label": "Polishing",
+    "short": "Pol",
+    "group": "Craft",
+    "colour": "#4fc1b0",
+    "hint": "Finishing."
+   },
+   {
+    "id": "lesson",
+    "label": "Lesson with the master",
+    "short": "Less",
+    "group": "Craft",
+    "colour": "#7dcfff",
+    "hint": "The master teaches Monday, Wednesday and Friday mornings.",
+    "where": [
+     0,
+     2,
+     4
+    ]
+   },
+   {
+    "id": "errand",
+    "label": "Errands (earn)",
+    "short": "Earn",
+    "group": "Other",
+    "colour": "#d9b44a",
+    "hint": "Paid errands in the town."
+   },
+   {
+    "id": "rest",
+    "label": "Rest",
+    "short": "Rest",
+    "group": "Other",
+    "colour": "#5f7196",
+    "hint": "Rest."
+   },
+   {
+    "id": "free",
+    "label": "Free time",
+    "short": "Free",
+    "group": "Other",
+    "colour": "#6fae5c",
+    "hint": "Her own time."
+   }
+  ],
+  "erase": true,
+  "command": "plan_week",
+  "args": {
+   "who": "wren"
+  },
+  "bars": {
+   "label": "Tiredness",
+   "sub": "at bedtime",
+   "values": [
+    null,
+    26,
+    24,
+    22,
+    20,
+    6,
+    0
+   ],
+   "max": 100,
+   "warn": 55,
+   "bad": 80
+  },
+  "under": [
+   "By Sunday night, if the week goes to plan: Forging +12, Filing +9, Polishing +6; 40 coins from errands."
+  ]
+ },
+ "cards": {
+  "type": "cards",
+  "place": "popout",
+  "group": "Offers",
+  "title": "This week's offers",
+  "sub": "Pick who goes and take it on; it then sits in her week.",
+  "foot": "A locked offer says what it needs.",
+  "cards": [
+   {
+    "id": "gate",
+    "title": "Mrs Hale",
+    "meta": "A garden gate \u00b7 Thursday \u00b7 30 coins",
+    "art": {
+     "key": "hale",
+     "hint": {
+      "style": "bun",
+      "extra": "fur"
+     }
+    },
+    "folded": true,
+    "locked": "",
+    "quote": "",
+    "text": "A gate with a rose on it, by the end of the week.",
+    "tags": [
+     {
+      "text": "wants Forging 25+",
+      "tone": "want"
+     }
+    ],
+    "bars": [],
+    "note": "",
+    "pick": {
+     "label": "Who goes",
+     "param": "girl",
+     "options": [
+      {
+       "id": "wren",
+       "label": "Wren (Forging 33)",
+       "disabled": false
+      },
+      {
+       "id": "tam",
+       "label": "Tam (Forging 12): not enough",
+       "disabled": true
+      }
+     ]
+    },
+    "action": {
+     "label": "Take it on \u00b7 30 coins",
+     "command": "take_offer",
+     "args": {
+      "offer": "gate"
+     },
+     "enabled": true,
+     "why": ""
+    },
+    "done": ""
+   },
+   {
+    "id": "bell",
+    "title": "The vicar",
+    "meta": "A new bell clapper \u00b7 Saturday \u00b7 60 coins",
+    "art": {
+     "key": "vicar",
+     "hint": {
+      "style": "crop",
+      "extra": "spectacles"
+     }
+    },
+    "folded": false,
+    "locked": "Needs someone with Casting 40 or more. The best in the shop is Tam, with 18.",
+    "quote": "",
+    "text": "The old one cracked at Easter.",
+    "tags": [
+     {
+      "text": "wants Casting 40+",
+      "tone": "miss"
+     }
+    ],
+    "bars": [],
+    "note": "Before the day: weigh the old clapper (needs Filing 20+). Done, the work is a step better.",
+    "pick": null,
+    "action": {
+     "label": "Locked",
+     "command": "take_offer",
+     "args": {
+      "offer": "bell"
+     },
+     "enabled": false,
+     "why": ""
+    },
+    "done": ""
+   },
+   {
+    "id": "tam_new",
+    "title": "Tam Ashby",
+    "meta": "19 \u00b7 from the mill \u00b7 150 coins",
+    "art": {
+     "key": "tam",
+     "hint": {
+      "style": "curls",
+      "hair": "#e0c060"
+     }
+    },
+    "folded": false,
+    "locked": "",
+    "quote": "I can lift anything you can.",
+    "text": "Put off at the mill for arguing with the foreman, and right.",
+    "tags": [
+     {
+      "text": "strong",
+      "tone": "want"
+     },
+     {
+      "text": "wants money",
+      "tone": ""
+     }
+    ],
+    "bars": [
+     {
+      "label": "Forging",
+      "value": 12,
+      "max": 100,
+      "colour": "#e08a4f"
+     },
+     {
+      "label": "Casting",
+      "value": 18,
+      "max": 100,
+      "colour": "#b58cf0"
+     }
+    ],
+    "note": "",
+    "pick": null,
+    "action": null,
+    "done": "Taken: she starts on Monday"
+   }
+  ]
+ },
+ "roster": {
+  "type": "roster",
+  "title": "The shop",
+  "items": [
+   {
+    "id": "wren",
+    "name": "Wren Talbot",
+    "art": {
+     "key": "wren",
+     "hint": {
+      "hair": "#5a3a22",
+      "style": "crop",
+      "coat": "#3f5f8a"
+     }
+    },
+    "badge": "apprentice",
+    "line": "at the forge",
+    "meter": {
+     "label": "Tired",
+     "value": 18,
+     "max": 100
+    },
+    "detail": {
+     "title": "Wren Talbot",
+     "sub": "20 \u00b7 from the docks \u00b7 eager",
+     "art": {
+      "key": "wren",
+      "hint": {
+       "hair": "#5a3a22",
+       "style": "crop",
+       "coat": "#3f5f8a"
+      }
+     },
+     "quote": "Teach me something that pays.",
+     "tags": [
+      "quick",
+      "stubborn"
+     ],
+     "meter": {
+      "label": "Tired",
+      "value": 18,
+      "max": 100
+     },
+     "tabs": [
+      {
+       "id": "skills",
+       "label": "Skills",
+       "sections": [
+        {
+         "kind": "bars",
+         "title": "Craft",
+         "rows": [
+          {
+           "label": "Forging",
+           "value": 33,
+           "max": 100,
+           "colour": "#e08a4f",
+           "note": ""
+          },
+          {
+           "label": "Filing",
+           "value": 21,
+           "max": 100,
+           "colour": "#b58cf0",
+           "note": ""
+          },
+          {
+           "label": "Polishing",
+           "value": 14,
+           "max": 100,
+           "colour": "#4fc1b0",
+           "note": ""
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "feel",
+       "label": "Feelings",
+       "sections": [
+        {
+         "kind": "bars",
+         "title": "Towards you",
+         "rows": [
+          {
+           "label": "Love",
+           "value": 40,
+           "max": 100,
+           "colour": "#e07aa8",
+           "note": "fond of you"
+          },
+          {
+           "label": "Respect",
+           "value": 55,
+           "max": 100,
+           "colour": "#7aa2f7",
+           "note": "respects you"
+          }
+         ]
+        },
+        {
+         "kind": "text",
+         "title": "What you know of her",
+         "text": "Her brother owes the mill a week's wages."
+        }
+       ]
+      },
+      {
+       "id": "gear",
+       "label": "Gear",
+       "sections": [
+        {
+         "kind": "items",
+         "title": "What she has",
+         "items": [
+          {
+           "name": "A good apron",
+           "lines": [
+            "+1 to Forging",
+            "Worn 3 of 12 weeks"
+           ],
+           "action": null
+          }
+         ]
+        },
+        {
+         "kind": "items",
+         "title": "Buy for her",
+         "items": [
+          {
+           "name": "Tongs and a hammer",
+           "lines": [
+            "+1 to Forging and Casting"
+           ],
+           "action": {
+            "label": "Buy \u00b7 40 coins",
+            "command": "buy_gear",
+            "args": {
+             "girl": "wren",
+             "gear": "tongs"
+            },
+            "enabled": true,
+            "why": ""
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "week",
+       "label": "Her week",
+       "sections": [
+        {
+         "kind": "choice",
+         "title": "Her word for the week",
+         "text": "Earn: errands for money. Train: practise alone. Balanced: some of each.",
+         "options": [
+          {
+           "id": "earn",
+           "label": "Earn",
+           "on": false
+          },
+          {
+           "id": "train",
+           "label": "Train",
+           "on": true
+          },
+          {
+           "id": "balanced",
+           "label": "Balanced",
+           "on": false
+          }
+         ],
+         "command": "set_word",
+         "param": "word",
+         "args": {
+          "girl": "wren"
+         }
+        },
+        {
+         "kind": "actions",
+         "title": "",
+         "items": [
+          {
+           "label": "Make her the apprentice",
+           "command": "switch",
+           "args": {
+            "girl": "wren"
+           },
+           "enabled": true,
+           "why": ""
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   },
+   {
+    "id": "tam",
+    "name": "Tam Ashby",
+    "art": {
+     "key": "tam",
+     "hint": {
+      "style": "curls",
+      "hair": "#e0c060"
+     }
+    },
+    "badge": "train",
+    "line": "practising alone",
+    "meter": {
+     "label": "Tired",
+     "value": 30,
+     "max": 100
+    },
+    "detail": {
+     "title": "Tam Ashby",
+     "sub": "19 \u00b7 from the mill \u00b7 steady",
+     "art": {
+      "key": "tam",
+      "hint": {
+       "style": "curls",
+       "hair": "#e0c060"
+      }
+     },
+     "quote": "I can lift anything you can.",
+     "tags": [
+      "strong"
+     ],
+     "meter": {
+      "label": "Tired",
+      "value": 30,
+      "max": 100
+     },
+     "tabs": [
+      {
+       "id": "skills",
+       "label": "Skills",
+       "sections": [
+        {
+         "kind": "bars",
+         "title": "Craft",
+         "rows": [
+          {
+           "label": "Forging",
+           "value": 33,
+           "max": 100,
+           "colour": "#e08a4f",
+           "note": ""
+          },
+          {
+           "label": "Filing",
+           "value": 21,
+           "max": 100,
+           "colour": "#b58cf0",
+           "note": ""
+          },
+          {
+           "label": "Polishing",
+           "value": 14,
+           "max": 100,
+           "colour": "#4fc1b0",
+           "note": ""
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "feel",
+       "label": "Feelings",
+       "sections": [
+        {
+         "kind": "bars",
+         "title": "Towards you",
+         "rows": [
+          {
+           "label": "Love",
+           "value": 40,
+           "max": 100,
+           "colour": "#e07aa8",
+           "note": "fond of you"
+          },
+          {
+           "label": "Respect",
+           "value": 55,
+           "max": 100,
+           "colour": "#7aa2f7",
+           "note": "respects you"
+          }
+         ]
+        },
+        {
+         "kind": "text",
+         "title": "What you know of her",
+         "text": "Her brother owes the mill a week's wages."
+        }
+       ]
+      },
+      {
+       "id": "gear",
+       "label": "Gear",
+       "sections": [
+        {
+         "kind": "items",
+         "title": "What she has",
+         "items": [
+          {
+           "name": "A good apron",
+           "lines": [
+            "+1 to Forging",
+            "Worn 3 of 12 weeks"
+           ],
+           "action": null
+          }
+         ]
+        },
+        {
+         "kind": "items",
+         "title": "Buy for her",
+         "items": [
+          {
+           "name": "Tongs and a hammer",
+           "lines": [
+            "+1 to Forging and Casting"
+           ],
+           "action": {
+            "label": "Buy \u00b7 40 coins",
+            "command": "buy_gear",
+            "args": {
+             "girl": "tam",
+             "gear": "tongs"
+            },
+            "enabled": true,
+            "why": ""
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "week",
+       "label": "Her week",
+       "sections": [
+        {
+         "kind": "choice",
+         "title": "Her word for the week",
+         "text": "Earn: errands for money. Train: practise alone. Balanced: some of each.",
+         "options": [
+          {
+           "id": "earn",
+           "label": "Earn",
+           "on": false
+          },
+          {
+           "id": "train",
+           "label": "Train",
+           "on": true
+          },
+          {
+           "id": "balanced",
+           "label": "Balanced",
+           "on": false
+          }
+         ],
+         "command": "set_word",
+         "param": "word",
+         "args": {
+          "girl": "tam"
+         }
+        },
+        {
+         "kind": "actions",
+         "title": "",
+         "items": [
+          {
+           "label": "Make her the apprentice",
+           "command": "switch",
+           "args": {
+            "girl": "tam"
+           },
+           "enabled": true,
+           "why": ""
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "profile": {
+  "type": "profile",
+  "place": "popout",
+  "group": "The shop",
+  "detail": {
+   "title": "The shop",
+   "sub": "Week 1 of Harvest",
+   "art": null,
+   "quote": "",
+   "tags": [],
+   "meter": null,
+   "tabs": [
+    {
+     "id": "rooms",
+     "label": "Rooms",
+     "sections": [
+      {
+       "kind": "rows",
+       "title": "The house",
+       "rows": [
+        {
+         "label": "Beds",
+         "value": "2 of 2"
+        },
+        {
+         "label": "Forge",
+         "value": "one fire"
+        }
+       ]
+      },
+      {
+       "kind": "items",
+       "title": "Build",
+       "items": [
+        {
+         "name": "A second fire",
+         "lines": [
+          "+1 apprentice at the forge",
+          "Takes about a week"
+         ],
+         "action": {
+          "label": "Build \u00b7 120 coins",
+          "command": "upgrade",
+          "args": {
+           "id": "fire"
+          },
+          "enabled": true,
+          "why": ""
+         }
+        },
+        {
+         "name": "A loft for a bed",
+         "lines": [
+          "+1 bed"
+         ],
+         "action": {
+          "label": "Build \u00b7 220 coins",
+          "command": "upgrade",
+          "args": {
+           "id": "loft"
+          },
+          "enabled": false,
+          "why": "You have 150 coins."
+         }
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "money",
+     "label": "Money",
+     "sections": [
+      {
+       "kind": "rows",
+       "title": "This week",
+       "rows": [
+        {
+         "label": "In the box",
+         "value": "150 coins"
+        },
+        {
+         "label": "Rent",
+         "value": "60 coins on Sunday"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ }
+}

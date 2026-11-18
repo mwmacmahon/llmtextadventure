@@ -13,7 +13,7 @@ from __future__ import annotations
 import random
 import re
 from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Annotated, Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -268,7 +268,259 @@ class PaperDoll(BaseModel):
     gives: list[str] = Field(default_factory=list)
 
 
-Widget = StatusStrip | Meter | MeterGroup | Table | EntityCards | ListPanel | LogPanel | Choices | Commands | QuestPanel | MapPanel | PaperDoll
+# ---- the planner, cards and detail panels (docs/PLANNER-CONTRACT.md, version 1; every game's, none sends them yet) ----
+
+class Art(BaseModel):
+    """A picture, or with no url a stand-in the client draws from the hint (skin, hair, style, coat, nose, extra) or the key."""
+    key: str
+    url: str | None = None
+    hint: dict[str, str] = Field(default_factory=dict)
+
+
+class PlanCell(BaseModel):
+    v: str | None = None
+    state: Literal["past", "now", "open", "fixed"] = "open"
+    label: str = ""
+    note: str = ""
+    mark: Literal["spark"] | None = None      # something may happen here if the player is present; the engine decides
+
+
+class PlanChoice(BaseModel):
+    id: str
+    label: str
+    short: str
+    group: str
+    colour: str
+    hint: str = ""
+    where: list[int] | None = None            # the cells it may go in (C175); None: every open cell
+
+
+class PlanColumn(BaseModel):
+    id: str
+    label: str
+    sub: str = ""
+    today: bool = False
+
+
+class PlanRow(BaseModel):
+    id: str
+    label: str
+    sub: str = ""
+    paintable: bool = True
+
+
+class PlanBars(BaseModel):
+    label: str
+    sub: str = ""
+    values: list[int | None]
+    max: int = 100
+    warn: int = 55
+    bad: int = 80
+
+
+class Chart(BaseModel):
+    """The paint chart (contract section 2): rows by columns, row-major cells; a paint sends `command` with args and
+    {cells: {index: choice id or None}}, only the changed cells."""
+    type: Literal["chart"] = "chart"
+    place: Literal["side", "main", "popout"] = "main"
+    group: str = ""
+    pinned: bool = False
+    title: str
+    who: str = ""
+    art: Art | None = None
+    columns: list[PlanColumn]
+    rows: list[PlanRow]
+    cells: list[PlanCell]
+    choices: list[PlanChoice]
+    erase: bool = True
+    command: str
+    args: dict[str, Any] = Field(default_factory=dict)
+    bars: PlanBars | None = None
+    under: list[str] = Field(default_factory=list)
+
+
+class PlanAction(BaseModel):
+    label: str
+    command: str
+    args: dict[str, Any] = Field(default_factory=dict)
+    enabled: bool = True
+    why: str = ""
+
+
+class PlanTag(BaseModel):
+    text: str
+    tone: Literal["want", "miss", ""] = ""
+
+
+class PlanBar(BaseModel):
+    label: str
+    value: int
+    max: int = 100
+    colour: str = ""
+
+
+class PlanPickOption(BaseModel):
+    id: str
+    label: str
+    disabled: bool = False
+
+
+class PlanPick(BaseModel):
+    label: str
+    param: str
+    options: list[PlanPickOption]
+
+
+class PlanCard(BaseModel):
+    id: str
+    title: str
+    meta: str = ""
+    art: Art | None = None
+    folded: bool = False
+    locked: str = ""                          # why, in words, when locked (C129)
+    quote: str = ""
+    text: str = ""
+    tags: list[PlanTag] = Field(default_factory=list)
+    bars: list[PlanBar] = Field(default_factory=list)
+    note: str = ""
+    pick: PlanPick | None = None
+    action: PlanAction | None = None
+    done: str = ""
+
+
+class Cards(BaseModel):
+    """A hand of cards that fold (contract section 3), usually in a pop-out: the boat, the bookings."""
+    type: Literal["cards"] = "cards"
+    place: Literal["side", "main", "popout"] = "popout"
+    group: str = ""
+    pinned: bool = False
+    title: str
+    sub: str = ""
+    foot: str = ""
+    cards: list[PlanCard]
+
+
+class PlanMeter(BaseModel):
+    label: str
+    value: int
+    max: int = 100
+
+
+class BarRow(BaseModel):
+    label: str
+    value: int
+    max: int = 100
+    colour: str = ""
+    note: str = ""
+
+
+class KVRow(BaseModel):
+    label: str
+    value: str
+
+
+class DetailItem(BaseModel):
+    name: str
+    lines: list[str] = Field(default_factory=list)
+    action: PlanAction | None = None
+
+
+class ChoiceOption(BaseModel):
+    id: str
+    label: str
+    on: bool = False
+
+
+class BarsSection(BaseModel):
+    kind: Literal["bars"] = "bars"
+    title: str = ""
+    rows: list[BarRow]
+
+
+class RowsSection(BaseModel):
+    kind: Literal["rows"] = "rows"
+    title: str = ""
+    rows: list[KVRow]
+
+
+class TextSection(BaseModel):
+    kind: Literal["text"] = "text"
+    title: str = ""
+    text: str
+
+
+class ItemsSection(BaseModel):
+    kind: Literal["items"] = "items"
+    title: str = ""
+    items: list[DetailItem]
+
+
+class ChoiceSection(BaseModel):
+    kind: Literal["choice"] = "choice"
+    title: str = ""
+    text: str = ""
+    options: list[ChoiceOption]
+    command: str
+    param: str
+    args: dict[str, Any] = Field(default_factory=dict)
+
+
+class ActionsSection(BaseModel):
+    kind: Literal["actions"] = "actions"
+    title: str = ""
+    items: list[PlanAction]
+
+
+DetailSection = Annotated[BarsSection | RowsSection | TextSection | ItemsSection | ChoiceSection | ActionsSection, Field(discriminator="kind")]
+
+
+class DetailTab(BaseModel):
+    id: str
+    label: str
+    sections: list[DetailSection] = Field(default_factory=list)
+
+
+class Detail(BaseModel):
+    """A person's or a thing's own window (contract section 4; C176)."""
+    title: str
+    sub: str = ""
+    art: Art | None = None
+    quote: str = ""
+    tags: list[str] = Field(default_factory=list)
+    meter: PlanMeter | None = None
+    tabs: list[DetailTab] = Field(default_factory=list)
+
+
+class RosterItem(BaseModel):
+    id: str
+    name: str
+    art: Art | None = None
+    badge: str = ""
+    line: str = ""
+    meter: PlanMeter | None = None
+    detail: Detail
+
+
+class Roster(BaseModel):
+    """One line a person in the side column, each opening its detail over the screen (C176)."""
+    type: Literal["roster"] = "roster"
+    place: Literal["side", "main", "popout"] = "side"
+    group: str = ""
+    pinned: bool = False
+    title: str
+    items: list[RosterItem]
+
+
+class Profile(BaseModel):
+    """A detail drawn in place, for a pop-out (the player's own screen, the house)."""
+    type: Literal["profile"] = "profile"
+    place: Literal["side", "main", "popout"] = "popout"
+    group: str = ""
+    pinned: bool = False
+    detail: Detail
+
+
+Widget = StatusStrip | Meter | MeterGroup | Table | EntityCards | ListPanel | LogPanel | Choices | Commands | QuestPanel | MapPanel | PaperDoll | Chart | Cards | Roster | Profile
 
 
 class UISchema(BaseModel):

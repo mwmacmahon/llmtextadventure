@@ -18,6 +18,8 @@ from engine import threads as th
 from engine.events import Event, next_moment, clock_text as ev_clock_text
 from engine.game import (Chip, ClockSpec, CommandResult, CommandSpec, Commands, EntityCard, EntityCards, GameBase, ListPanel, LogPanel,
                          Meter, MeterGroup, Option, Param, QuestPanel, QuestRow, StatusStrip, Table, TableCell, TaskRow, TurnInfo, UISchema)
+from engine.game import (ActionsSection, Art, BarRow, BarsSection, Cards, Detail, DetailItem, DetailTab, ItemsSection, KVRow, PlanAction,  # docs/PLANNER-CONTRACT.md
+                         PlanBar, PlanCard, PlanMeter, PlanPick, PlanPickOption, PlanTag, Profile, Roster, RosterItem, RowsSection, TextSection)
 from engine.gamekit import Clock, Writer, flags_named, quest_line
 from engine.mechanics import CheckRequest, Modifier
 from engine.pipeline import next_block
@@ -3950,6 +3952,123 @@ class ClownGame(GameBase):
     FATIGUE_TONES = {"fresh": "ok", "tired": "ok", "worn": "warn", "spent": "bad"}
     SKILL_TONES = {"clumsy": "neutral", "passable": "info", "sound": "ok", "finished": "ok"}
 
+    # ---- the screen of 11-18 (D221C; docs/PLANNER-CONTRACT.md): switch screen_v2 ----------------------------------------
+    AXIS_COLOURS = {"love": "#e07aa8", "respect": "#7aa2f7", "fear": "#f7768e"}
+    GROUP_COLOURS = ("#e08a4f", "#b58cf0", "#4fc1b0", "#e07aa8")
+
+    def _girl_detail(self, s: ClownState, x: Girl) -> Detail:
+        """A girl's own window (C176): her skills by group, her feelings towards the proprietor, her gear, her week."""
+        wd = x.words()
+        tabs: list[DetailTab] = []
+        skills = []
+        for gi, (grp, ids) in enumerate(s.scenario.skills.items()):
+            colour = self.GROUP_COLOURS[gi % len(self.GROUP_COLOURS)]
+            skills.append(BarsSection(title=grp, rows=[BarRow(label=nm, value=x.skills.get(k, 0), colour=colour,
+                                                              note=(f"+{x.week_gains[k]} this week; " if x.week_gains.get(k) else "") + x.tier(k)) for k, nm in ids.items()]))
+        skills.append(RowsSection(title="At work", rows=[KVRow(label="Diligence", value=f"{x.diligence} ({x.diligence_word})"),
+                                                         KVRow(label="Contract", value=f"{self.contract_value_of(s, x)} gold")]))
+        tabs.append(DetailTab(id="skills", label="Skills", sections=skills))
+        feel = [BarsSection(title="Towards you", rows=[BarRow(label=a.capitalize(), value=getattr(x, a) + 5, max=10, colour=self.AXIS_COLOURS[a], note=wd[a])
+                                                       for a in ("love", "respect", "fear")])]
+        known = [sec.what for sec in x.secrets if sec.known] + list(x.facts[-6:])[::-1]
+        feel.append(TextSection(title="What you know of her", text=" · ".join(known) if known else "Nothing yet beyond what she has shown."))
+        tabs.append(DetailTab(id="feel", label="Feelings", sections=feel))
+        gl = self.gear_list(s)
+        has = [DetailItem(name=str((gl.get(gid) or {}).get("name", gid)), lines=[f"{left} shows left"]) for gid, left in x.gear.items()]
+        avail = [it for it in gl.values() if str(it["id"]) not in x.gear and s.house.renown >= int(it.get("renown_needed", 0) or 0)
+                 and (not it.get("favour_needed") or self._favour_open_for(s, str(it["favour_needed"])))]
+        buy = [DetailItem(name=str(it["name"]), lines=[f"+{int(it.get('bonus', 1))} to " + ", ".join(self.skill_name(k) for k in it.get("skills") or [])],
+                          action=PlanAction(label=f"Buy · {int(it['cost'])} gold", command="equip", args={"girl": x.id, "item": str(it["id"])},
+                                            enabled=int(it["cost"]) <= s.house.money, why="" if int(it["cost"]) <= s.house.money else f"The house has {s.house.money} gold."))
+               for it in avail]
+        tabs.append(DetailTab(id="gear", label="Gear", sections=[ItemsSection(title="What she has", items=has) if has else TextSection(title="What she has", text="Nothing yet."),
+                                                               ItemsSection(title="Buy for her", items=buy)]))
+        week: list[Any] = []
+        shows = [y for y in s.shows if y.girl == x.id and not y.result]
+        if shows:
+            week.append(RowsSection(title="Booked", rows=[KVRow(label=y.title, value=f"{WEEKDAYS[weekday(y.at_abs // DAY)]} {hhmm(y.at_abs % DAY)}") for y in shows]))
+        if x.id == s.active:
+            week.append(TextSection(title="Her week", text="She is in training: her week is the plan."))
+        else:
+            week.append(TextSection(title="Her week", text=self._bench_doing(s, x).capitalize() + "."))
+            week.append(ActionsSection(items=[PlanAction(label="Train her instead", command="switch", args={"girl": x.id})]))
+        tabs.append(DetailTab(id="week", label="Her week", sections=week))
+        return Detail(title=x.name, sub=f"{x.age} · {x.mood or 'settled'}" + (" · in training" if x.id == s.active else " · a graduate" if x.graduated else ""),
+                      art=Art(key=x.id, hint={"nose": "red"}), quote="", tags=list(x.traits),
+                      meter=PlanMeter(label="Tired", value=x.fatigue), tabs=tabs)
+
+    def _screen_panels(self, s: ClownState) -> list[Any]:
+        """The roster, the boat and the bookings as cards, and the proprietor's and the house's own windows (C162, C176)."""
+        h, p = s.house, s.player
+        out: list[Any] = []
+        items = [RosterItem(id=x.id, name=x.name, art=Art(key=x.id, hint={"nose": "red"}),
+                            badge="in training" if x.id == s.active else "graduate" if x.graduated else "",
+                            line=self._panel_doing(s, x), meter=PlanMeter(label="Tired", value=x.fatigue), detail=self._girl_detail(s, x))
+                 for x in sorted(s.in_house(), key=lambda x: (x.id != s.active, x.name))]
+        if items:
+            out.append(Roster(title="The house", items=items))
+        deck, cards = self.content.girls_deck(), self.content.girl_cards()
+        slip = [cards[c] for c in s.harbour.hand if c in cards]
+        if slip:
+            lease = bool(s.flags.get("first_pick"))
+            can = lease or s.harbour.taken_week != h.week or not h.week
+            room = len(s.in_house()) < h.rooms
+            dl = lambda k: dk.dial(s, k)  # noqa: E731
+            boat = []
+            for c in slip:
+                price = hb.price_of(c, s, dl)
+                why = "" if (can and room and (lease or price <= h.money)) else (
+                    "One contract a week." if not can else f"The house's {h.rooms} rooms are full." if not room else f"The house has {h.money} gold.")
+                boat.append(PlanCard(id=str(c["id"]), title=str(c["name"]), meta=f"{c.get('age')} · {hb.tag_meaning(deck, str(c.get('origin') or ''))} · "
+                                     + ("paid with the lease" if lease else f"{price} gold"),
+                                     art=Art(key=str(c["id"]), hint={"nose": "red"}), quote=str(c.get("voice") or ""), text=str(c.get("bio") or "").strip(),
+                                     tags=[PlanTag(text=t, tone="want") for t in c.get("traits") or []],
+                                     bars=[PlanBar(label=self.skill_name(k), value=int(v)) for k, v in (c.get("seed") or {}).items()],
+                                     note=f"Otherwise bound for: {c.get('bound_for')}." if c.get("bound_for") else "",
+                                     action=PlanAction(label="Take her" + ("" if lease else f" · {price} gold"), command="take", args={"girl": str(c["id"])}, enabled=not why, why=why)))
+            out.append(Cards(group="The boat", title="The clerk's slip", sub="Contracts at the Harbourmaster's shed. One a week, and a room for her.", cards=boat))
+        offered = [x for x in dk.hand(s) if x.status == "live"]
+        if offered:
+            hooks = self.hooks_content()
+            girls = s.in_house()
+            book = []
+            for x in offered:
+                hk = hooks.get(x.hook) or {}
+                q = s.person(str(hk.get("client") or ""))
+                wants = list(q.client.wants) if q is not None and q.client else []
+                full = self._day_full(s, x)
+                book.append(PlanCard(id=x.id, title=q.name if q is not None else x.title, meta=x.title + " · " + self._board_line(s, x, hooks).rstrip(" ·"),
+                                     art=Art(key=q.id if q is not None else x.hook), text=dk.fill(str(hk.get("standing") or ""), p.name, x.when),
+                                     tags=[PlanTag(text=f"wants {self.skill_name(k)}", tone="want") for k in wants],
+                                     locked="No girl of the house is free that day." if full else "",
+                                     pick=PlanPick(label="Who goes", param="girl", options=[PlanPickOption(id=g.id, label=g.name + "".join(
+                                         f", {self.skill_name(k)} {g.skills.get(k, 0)}" for k in wants)) for g in girls]) if girls and not full else None,
+                                     action=PlanAction(label="Book it", command="book", args={"booking": x.id}, enabled=bool(girls) and not full,
+                                                       why="" if girls else "Nobody in the house to send.")))
+            out.append(Cards(group="Bookings", title="This week's offers", sub="Book any the girls can play; what is not booked by Sunday night is gone.", cards=book))
+        stats = BarsSection(title="Your standing", rows=[BarRow(label=STAT_NAMES[k], value=p.points.get(k, 20), colour="#7aa2f7",
+                                                                 note=f"{p.stats.get(k, 0):+d} on a check · sessions at {SELF_WHERE[k][0]}") for k in STATS])
+        cost = int(dk.dial(s, "self_cost"))
+        sessions = ActionsSection(title=f"Better yourself ({cost} gold a session, the rest of this part of the day)",
+                                  items=[PlanAction(label=STAT_NAMES[k], command="better", args={"stat": k}, enabled=h.money >= cost,
+                                                    why="" if h.money >= cost else f"The house has {h.money} gold.") for k in STATS])
+        out.append(Profile(group="You", detail=Detail(title=p.name, sub=f"Renown: {h.renown_word}", tabs=[DetailTab(id="standing", label="Standing", sections=[stats, sessions])])))
+        kept = len(s.in_house())
+        rooms = RowsSection(title="The house", rows=[KVRow(label="Rooms", value=f"{kept} kept of {h.rooms}"), KVRow(label="The hand", value=f"{h.hand_size} cards")]
+                            + [KVRow(label="Made", value=str(u.get("name") or u["id"])) for u in s.scenario.upgrades if u.get("id") in h.upgrades])
+        build = ItemsSection(title="Improve it", items=[DetailItem(name=str(u.get("name") or u["id"]), lines=[str(u.get("text") or "").strip()],
+                                                                   action=PlanAction(label=f"Make it · {int(u.get('cost') or 0)} gold", command="upgrade", args={"upgrade": u["id"]},
+                                                                                     enabled=int(u.get("cost") or 0) <= h.money,
+                                                                                     why="" if int(u.get("cost") or 0) <= h.money else f"The house has {h.money} gold."))
+                                                        for u in self._upgrades_open(s)])
+        money = RowsSection(title="Money", rows=[KVRow(label="In the cashbox", value=f"{h.money} gold"), KVRow(label="The keep", value=f"{self._keep(s)} gold a week")]
+                            + ([KVRow(label="Owed the lender", value=f"{h.loan_owed} gold, {min(h.loan_weekly, h.loan_owed)} due Sunday")] if h.loan == "taken" else []))
+        week = TextSection(title="This week so far", text=" · ".join(ln.lstrip("* ") for ln in h.week_lines[-8:]) or "Nothing yet.")
+        out.append(Profile(group="House", detail=Detail(title=s.scenario.house_name or s.scenario.name or "The house", sub=f"Week {h.week}",
+                                                        tabs=[DetailTab(id="rooms", label="Rooms", sections=[rooms, build]),
+                                                              DetailTab(id="money", label="Money", sections=[money, week])])))
+        return out
+
     def ui(self, state: ClownState) -> UISchema:
         s, h, p = state, state.house, state.player
         g = s.active_girl if s.active_girl is not None and s.active_girl.in_house() else None
@@ -3967,6 +4086,7 @@ class ClownGame(GameBase):
             due = min(h.loan_weekly, h.loan_owed)
             strip.append(Chip(label="Debt", value=f"{h.loan_owed} gold, {due} due Sunday", tone="bad" if h.money < due + self._keep(s) else "warn"))
         panels: list[Any] = [StatusStrip(chips=strip)]
+        v2 = sw.on("screen_v2")            # D221C: the screen of 11-18; off, the panels are as before
         if sw.on("day_strip"):             # the owner, 11-14: "the UI should maybe make the time blocks more clear"
             blocks, names, now = list(self.clock.blocks), list(self.clock.block_names), s.clock.minute
             cur = part_of_day(now)
@@ -3984,7 +4104,7 @@ class ClownGame(GameBase):
             panels.append(StatusStrip(chips=day))
             panels.append(StatusStrip(chips=[Chip(label=f"Costs the {cur}", value="a trip out, a session, long work"),
                                              Chip(label="Costs no time", value="talk, questions, the desk")]))
-        if g is not None:
+        if g is not None and not v2:
             w = g.words()
             panels.append(Meter(label=f"{g.name}: fatigue", value=g.fatigue, tier=g.fatigue_word, tone=self.FATIGUE_TONES.get(g.fatigue_word, "warn"), thresholds=[30, 60, 80]))
             panels.append(MeterGroup(title=f"{g.name} and you", meters=[
@@ -4000,17 +4120,20 @@ class ClownGame(GameBase):
         plan_rows.append([TableCell(text="Show"), TableCell(text="; ".join(f"{x.title} ({WEEKDAYS[weekday(x.at_abs // DAY)][:3]} {hhmm(x.at_abs % DAY)})" for x in shows) or "none booked",
                                                             tone="ok" if shows else "neutral")])
         panels.append(Table(title=f"This week (week {h.week})" + (" · plan carried over" if s.plan.carried else ""), columns=["", ""], rows=plan_rows))
+        if v2:
+            panels.extend(self._screen_panels(s))
         kept = len(s.in_house())
         house_rows = [[TableCell(text="Rooms"), TableCell(text=f"{kept} kept of {h.rooms}", tone="warn" if kept >= h.rooms else "neutral")],
                       [TableCell(text="The hand"), TableCell(text=f"{h.hand_size} cards")]]
         house_rows += [[TableCell(text="Made"), TableCell(text=str(u.get("name") or u["id"]), tone="ok")] for u in s.scenario.upgrades if u.get("id") in h.upgrades]
-        panels.append(Table(title="The house", columns=["", ""], rows=house_rows))
+        if not v2:
+            panels.append(Table(title="The house", columns=["", ""], rows=house_rows))
         panels.append(Commands(title=None, items=[c for c in self.commands(s) if c.id != "debug"]))
         if h.week_lines:
             panels.append(LogPanel(title="This week so far", lines=[ln.lstrip("* ") for ln in h.week_lines][-10:]))
         if h.report_numbers:
             panels.append(LogPanel(title=f"Last week (week {h.week - 1})", lines=h.report_numbers))
-        for x in sorted(s.in_house(), key=lambda x: (x.id != s.active, x.graduated, x.name)):
+        for x in ([] if v2 else sorted(s.in_house(), key=lambda x: (x.id != s.active, x.graduated, x.name))):
             tiles = []
             for grp, ids in s.scenario.skills.items():
                 for k, nm in ids.items():
@@ -4053,7 +4176,7 @@ class ClownGame(GameBase):
                      value=(f"{x.age}; " + (f"at {x.location}" if x.location != AWAY_PLACE else f"about the town: {x.before.rstrip('.')}" if x.before else "about the town") + ". "
                             + ("Talk to her to take her on." if free > 0 else f"No room: the house's {h.rooms} rooms are full; make up a room first.")))
                 for x in waiting]))
-        if g is not None:
+        if g is not None and not v2:
             her = [Chip(label="Now", value=self._panel_doing(s, g)), Chip(label="Mood", value=g.mood or ""), Chip(label="Condition", value=g.condition or "")]
             her += [Chip(label="", value=c.name, tone="warn") for c in g.conditions]
             her += [Chip(label="Known", value=sec.what, tone="info") for sec in g.secrets if sec.known]
@@ -4074,16 +4197,18 @@ class ClownGame(GameBase):
                 cards.append(EntityCard(id=x.id, title=x.name, subtitle=f"{x.age}, asking to be taken on",
                                         badges=[Chip(label="", value="available: talk to her to take her on", tone="info")],
                                         notes=x.facts[-4:]))
-        panels.append(EntityCards(title="The girls", cards=cards))
+        if not v2:
+            panels.append(EntityCards(title="The girls", cards=cards))
         rows_all = self.quest_rows(s)
         heard = sum(1 for x in dk.hand(s) if x.status == "live")
         coming = sum(1 for x in dk.hand(s) if x.status == "dealt")
-        panels.append(QuestPanel(title=f"This week's offers ({heard} open to Sunday night" + (f", {coming} still to call" if coming else "") + ")",
+        if not v2:
+            panels.append(QuestPanel(title=f"This week's offers ({heard} open to Sunday night" + (f", {coming} still to call" if coming else "") + ")",
                                  rows=[r for r in rows_all if r.standing in ("in hand", "heard of", "taken up")], place="main"))   # round 7: word by note is an offer too
         panels.append(QuestPanel(title="Booked", rows=sorted((r for r in rows_all if r.standing == "booked"), key=lambda r: r.line), place="main"))
         panels.append(QuestPanel(title="Played and trouble", rows=[r for r in rows_all if r.standing not in ("in hand", "heard of", "taken up", "booked")]))
         deck, cards = self.content.girls_deck(), self.content.girl_cards()
-        if deck:
+        if deck and not v2:
             nxt = next((w for w in range(h.week, h.week + 4) if hb.ship_sunday(w)), h.week)
             rows = []
             for c in s.harbour.hand:
