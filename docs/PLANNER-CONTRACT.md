@@ -5,7 +5,7 @@ Written 2026-11-18, before either side is wired to a game, so the two can be bui
 are every game's: nothing here names a game's content. A change to a shape is made here first, in the same commit as the
 code on both sides.
 
-State: version 1. **The client's panels and the engine's models are built** (`web/src/components/ChartPanel.tsx`,
+State: version 1 (reviewed 11-19; B423 open). **The client's panels and the engine's models are built** (`web/src/components/ChartPanel.tsx`,
 `CardsPanel.tsx`, `DetailView.tsx`, `portraitArt.ts`; `server/engine/game.py`), with a demo page on a made-up sample
 (`web/plan-demo.html`, `web/fixtures/plan_sample.json`). No game sends them yet.
 
@@ -122,6 +122,9 @@ Profile = { type: "profile", detail: Detail }
 
 ## 5. Not in version 1
 
+- **A quiet route for paints (B423).** Section 2.2's one command a stroke is right for the client, wrong for the engine as
+  it stands: an engine command writes two transcript rows and a snapshot. Before a game sends a `chart`, plan edits get a
+  route that writes neither, or the chart sends once when the player is done. Open.
 - **The skip menu** (C146, C174): how far to skip, the player's own plan for the parts it runs through (a second `chart`
   limited to those cells), and how the skip reads the days. It waits for the clock's rebuild (the hidden game's block A),
   which decides what a part is.

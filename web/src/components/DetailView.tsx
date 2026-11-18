@@ -4,6 +4,7 @@
  * place (in a pop-out). Sections are drawn as sent; actions and choices send the game's own commands and close the window.
  */
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Detail, DetailSection, PlanAction, ProfileWidget, RosterWidget } from "../api";
 import { Portrait } from "./portraitArt";
 import "./planner.css";
@@ -34,7 +35,7 @@ export function RosterPanel({ widget, onCommand, busy }: { widget: RosterWidget;
           </button>
         ))}
       </div>
-      {item && (
+      {item && createPortal(
         <div className="overlay" onClick={() => setOpen(null)}>
           <div className="overlay-sheet detail-sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={item.detail.title}>
             <div className="overlay-head">
@@ -46,7 +47,8 @@ export function RosterPanel({ widget, onCommand, busy }: { widget: RosterWidget;
               <DetailView detail={item.detail} onCommand={(c, a) => { setOpen(null); onCommand?.(c, a); }} busy={busy} />
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </section>
   );

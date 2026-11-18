@@ -34,7 +34,9 @@ export function CardsPanel({ widget, onCommand, busy }: { widget: CardsWidget; o
 }
 
 function Card({ c, folded, onFold, onCommand, busy }: { c: PlanCard; folded: boolean; onFold: () => void; onCommand?: OnCommand; busy?: boolean }) {
-  const [choice, setChoice] = useState<string>(() => c.pick?.options.find((o) => !o.disabled)?.id ?? "");
+  const [picked, setChoice] = useState<string>("");
+  const open = c.pick?.options.filter((o) => !o.disabled) ?? [];
+  const choice = open.some((o) => o.id === picked) ? picked : open[0]?.id ?? "";   // a stale pick falls back to the first one still open
   const cls = ["plan-card", folded ? "folded" : "", c.locked ? "locked" : "", c.done ? "done" : ""].filter(Boolean).join(" ");
   return (
     <article className={cls}>

@@ -3320,9 +3320,7 @@ class ClownGame(GameBase):
         deck, cards = self.content.girls_deck(), self.content.girl_cards()
         slip = [cards[c] for c in s.harbour.hand if c in cards]
         if slip:
-            lease = bool(s.flags.get("first_pick"))     # the lease's one contract: any on the slip, no money
-            can = lease or s.harbour.taken_week != s.house.week or not s.harbour.taken_week
-            room = len(in_house) < s.house.rooms
+            lease, can, room = self._take_terms(s)
             dl = lambda k: dk.dial(s, k)  # noqa: E731
             afford = [c for c in slip if lease or hb.price_of(c, s, dl) <= s.house.money]
             out.append(CommandSpec(id="take", label="Take" + ("" if can else " (one a week)") + ("" if room else " (the rooms are full)"), mode="narrated",
@@ -3956,6 +3954,14 @@ class ClownGame(GameBase):
     AXIS_COLOURS = {"love": "#e07aa8", "respect": "#7aa2f7", "fear": "#f7768e"}
     GROUP_COLOURS = ("#e08a4f", "#b58cf0", "#4fc1b0", "#e07aa8")
 
+    @staticmethod
+    def _take_terms(s: ClownState) -> tuple[bool, bool, bool]:
+        """Taking a contract off the slip, the one home of its terms (the Take lever and the boat's cards read it): whether the
+        lease pays (the first pupil: any on the slip, no money), whether one may be taken this week (one a week), whether there is a room."""
+        lease = bool(s.flags.get("first_pick"))
+        can = lease or s.harbour.taken_week != s.house.week or not s.harbour.taken_week
+        return lease, can, len(s.in_house()) < s.house.rooms
+
     def _girl_detail(self, s: ClownState, x: Girl) -> Detail:
         """A girl's own window (C176): her skills by group, her feelings towards the proprietor, her gear, her week."""
         wd = x.words()
@@ -4010,9 +4016,7 @@ class ClownGame(GameBase):
         deck, cards = self.content.girls_deck(), self.content.girl_cards()
         slip = [cards[c] for c in s.harbour.hand if c in cards]
         if slip:
-            lease = bool(s.flags.get("first_pick"))
-            can = lease or s.harbour.taken_week != h.week or not h.week
-            room = len(s.in_house()) < h.rooms
+            lease, can, room = self._take_terms(s)
             dl = lambda k: dk.dial(s, k)  # noqa: E731
             boat = []
             for c in slip:

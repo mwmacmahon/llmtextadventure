@@ -67,9 +67,11 @@ export function ChartPanel({ widget, onCommand, busy }: { widget: ChartWidget; o
     return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up); };
   });
   const fill = (idx: number[]) => {
-    stroke.current = { before: {}, after: {} };
-    idx.forEach((i) => { if (paintable(i) && allowed(pick, i) && local[i] !== pick) { stroke.current!.before[String(i)] = local[i]; stroke.current!.after[String(i)] = pick; } });
-    setLocal((l) => { const n = l.slice(); Object.keys(stroke.current!.after).forEach((k) => (n[Number(k)] = pick)); return n; });
+    const before: Cells = {}, after: Cells = {};   // held here: the state updater below runs after the stroke is cleared
+    idx.forEach((i) => { if (paintable(i) && allowed(pick, i) && local[i] !== pick) { before[String(i)] = local[i]; after[String(i)] = pick; } });
+    if (!Object.keys(after).length) return;
+    setLocal((l) => { const n = l.slice(); Object.keys(after).forEach((k) => (n[Number(k)] = pick)); return n; });
+    stroke.current = { before, after };
     endStroke();
   };
   const doUndo = () => {

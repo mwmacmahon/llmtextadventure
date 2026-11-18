@@ -2441,6 +2441,7 @@ def test_the_new_screen_is_off_by_default_and_whole_when_on(game: ClownGame, mon
     # every action a panel offers is one of the game's own commands, so a click is a lever the engine already checks
     known = {"take", "book", "equip", "switch", "better", "upgrade"}
     acts = []
+    specs = {c.id: c for c in game.commands(st)}
     for p in ui.panels:
         d = p.model_dump(mode="json")
         stack = [d]
@@ -2449,6 +2450,13 @@ def test_the_new_screen_is_off_by_default_and_whole_when_on(game: ClownGame, mon
             if isinstance(x, dict):
                 if "command" in x and "args" in x and "label" in x:
                     acts.append(x["command"])
+                    if x.get("enabled", True):   # an offered action is a lever on offer now, and names only its parameters
+                        spec = specs.get(x["command"])
+                        assert spec is not None and spec.enabled, x
+                        assert set(x["args"]) <= {q.name for q in spec.params}, x
+                        for q in spec.params:   # and a value it gives is one of that parameter's options
+                            if q.name in x["args"] and q.options:
+                                assert x["args"][q.name] in {o.id for o in q.options}, x
                 stack.extend(x.values())
             elif isinstance(x, list):
                 stack.extend(x)
