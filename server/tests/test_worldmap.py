@@ -127,3 +127,15 @@ def test_the_panel_goes_through_the_ui_schema_unchanged():
     assert isinstance(ui.panels[0], MapPanel)
     assert out["panels"][0] == {**widget, "pinned": False}
     assert out["prefill"] == "Continue to the mill (10 minutes)" and UISchema().model_dump()["prefill"] is None
+
+
+def test_a_place_name_is_matched_loosely_against_the_known_places():
+    """FN156 (the owner, 11-18): a misspelling is the place; a shared word with one place is that place; several are the
+    candidates; an unknown place never matches."""
+    w = {"places": {"mill": {"name": "The Magpierumble Mill"}, "mill2": {"name": "The Oakfizzle Mill"},
+                    "bog": {"name": "The Tinfudge Bog"}, "fort": {"name": "The Nailmound Fort"}},
+         "known": {"places": {"mill": {}, "mill2": {}, "bog": {}}}}
+    assert wm.place_named(w, "the Magpierumbel mill") == "mill"
+    assert wm.place_named(w, "Tinfudge marsh bog") == "bog"
+    assert set(wm.place_candidates(w, "the old mill")) == {"mill", "mill2"} and wm.place_named(w, "the old mill") is None
+    assert wm.place_named(w, "Nailmound Fort") is None                      # not known to the player

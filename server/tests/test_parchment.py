@@ -126,8 +126,7 @@ def test_the_models_get_the_maps_block_in_the_places_lines_stead(engine: Engine)
     game, st = _fresh(engine)
     lines = game._places_line(st).split("\n")
     assert lines[0].startswith("Where: the tavern, at The village") and lines[-1].startswith("Directions: north,")
-    assert any(ln.startswith("Near: The old mill, a short walk") for ln in lines)
-    assert "minutes" not in game._places_line(st)                     # walk words only (R13), never minutes
+    assert any(ln.startswith("Near: The old mill, about") and "on foot" in ln for ln in lines)   # FN155: time on foot (R13 overruled)
     assert "Where: the tavern, at The village" in game.render_bulletin(st, "") and "Directions:" not in game.render_bulletin(st, "")
     ref = game._ref_places_line(st)
     assert ref.startswith("Where:") and "A move or a location value is one of the Places, or one of the Here line's." in ref

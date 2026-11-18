@@ -641,7 +641,42 @@ def place_named(world: dict, name: str) -> str | None:
         return exact[0]
     words = [pid for pid in known if f" {want} " in f" {_plain(world['places'][pid]['name'])} "
              or f" {_plain(world['places'][pid]['name'])} " in f" {want} "]
-    return words[0] if len(words) == 1 else None
+    if len(words) == 1:
+        return words[0]
+    if words:
+        return None
+    loose = place_candidates(world, name)
+    return loose[0] if len(loose) == 1 else None
+
+
+_SMALL = {"of", "the", "a", "an", "to", "at", "in", "on", "by", "old", "new", "little", "big", "great"}
+
+
+def place_candidates(world: dict, name: str) -> list[str]:
+    """FN156 (the owner, 11-18: "can engine try to fuzzy match on locations and make sure candidates are in the list?"): the
+    known places a name may mean when it matches none exactly: a misspelling ("Magpierumbel Mill"), or a word shared ("the
+    old mill" and the Magpierumble Mill). Best first; only places the player knows."""
+    import difflib
+    want = _plain(name)
+    if not want:
+        return []
+    wtoks = [t for t in want.split() if t not in _SMALL]
+    known = [pid for pid in world["known"]["places"] if pid in world["places"] and not world["places"][pid].get("removed")]
+    scored = []
+    for pid in known:
+        full = _plain(world["places"][pid]["name"])
+        toks = [t for t in full.split() if t not in _SMALL]
+        whole = difflib.SequenceMatcher(None, want, full).ratio()
+        # each word typed against its best word of the name, averaged: "Magpierumbel mill" is the Magpierumble Mill (0.96),
+        # not the Oakfizzle Mill (0.65), though both are mills
+        per = (sum(max((difflib.SequenceMatcher(None, a, b).ratio() for b in toks), default=0.0) for a in wtoks) / len(wtoks)) if wtoks else 0.0
+        score = max(whole, per)
+        if score >= 0.7:                                  # "smithy" is not "city" (0.6)
+            scored.append((score, pid))
+    scored.sort(key=lambda x: -x[0])
+    if scored and len(scored) > 1 and scored[0][0] >= 0.85 and scored[0][0] - scored[1][0] >= 0.1:
+        return [scored[0][1]]                             # one clearly best (a near-exact spelling beats a shared word)
+    return [pid for _, pid in scored]
 
 
 def line_named(world: dict, name: str) -> str | None:
@@ -849,8 +884,12 @@ PLACES_SHOWN = 16      # R18: the reading sees at most sixteen places at a time;
 
 
 def walk_word(minutes: int) -> str:
-    """R13's walk words: the models get these, never minutes."""
-    return "a short walk" if minutes <= 30 else "an hour or so" if minutes <= 90 else "half a day" if minutes <= 360 else "a day or more"
+    """How far, as time on foot (FN155, the owner, 11-18: "maybe hour estimate 'on foot'"; R13's bare words, "a short walk",
+    "an hour or so", were overruled): rounded as span_words rounds, "a few minutes" under a quarter hour."""
+    if minutes < 13:
+        return "a few minutes on foot"
+    span = span_words(minutes)
+    return f"{span} on foot" if span.startswith("most") else f"about {span} on foot"
 
 
 def compass(a, b) -> str:

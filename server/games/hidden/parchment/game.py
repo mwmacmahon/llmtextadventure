@@ -282,6 +282,10 @@ class ParchmentGame(FantasyGame):
                 continue
             if d.lower() in [x.lower() for x in wm.DIRECTIONS] or wm.line_named(s.world, d):
                 continue                                  # a direction, a road or the river is wandering (FN37), not a place
+            maybe = wm.place_candidates(s.world, d)       # FN156: several known places it may mean: they are the question's choices
+            if len(maybe) > 1:
+                names = [s.world["places"][pid]["name"] for pid in maybe[:4]]
+                return f"Which place do you mean: {', '.join(names[:-1])} or {names[-1]}? You have not set off yet."
             return self.NOT_KNOWN.format(name=d)
         return None
 
@@ -318,7 +322,8 @@ class ParchmentGame(FantasyGame):
         from engine.roles import destination
         for i in getattr(adj, "intents", None) or []:
             d = destination(i).strip()
-            pid = (wm.place_named(s.world, d) or wm.place_named(s.world, self._spot_parent(s, d))) if d else None   # a spot: its place
+            parent = self._spot_parent(s, d) if d else ""                 # a spot by its exact name first, before any loose match
+            pid = (wm.place_named(s.world, parent) if parent else wm.place_named(s.world, d)) if d else None
             if pid is not None and pid != wm.place_named(s.world, self.where(s)):
                 return pid
         return None
