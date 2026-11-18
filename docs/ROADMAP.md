@@ -664,7 +664,14 @@ endless ground, camps, wandering, invented places and ground changes held until 
   from big buttons. Worn magic things (rings, cloaks, boots, gloves, circlets, amulets) and +N weapons. Distances as time on
   foot; a misspelled or partial place name is matched to the known places, several offered as choices. Not yet seen
   rendered in a browser.
-- **Next:** the Parchment simulator (FN152, designed in `notes/PARCHMENT_SIM.md`); Fable's review alongside.
+- **Fable's review (D334): done 11-18.** Fourteen faults found by two cold readers, all fixed with tests; loose place
+  matching rebuilt so it only ever asks; the record is `notes/REVIEW-2026-11-18-fable.md`.
+- **The simulator (FN152; D335): built 11-18** (`games/hidden/parchment/tools/sim.py`, the clown's pattern: the engine alone,
+  a strategy in the player's seat, a grid of trials). Its first runs sized road trouble to the party (a lone level-1
+  fighter on the roads: 49 per cent alive after ten days, now 83) and showed the level-1 progression gap (FN163: one safe
+  job, then nothing; nobody reaches level 2).
+- **Next:** the owner's call on FN163 (a second rung of jobs, a board that refills sized to the party); then the engine's
+  questions with buttons (FN39), fetch and find jobs, roads and rivers by name.
 - **Names (FN108 to FN111): built 11-17**, short since the owner's round (FN133). Rolled from large word lists per game,
   kept in the save; the lists checked against the game's own terms.
 - **Places the story makes (FN50 to FN55): designed.** Told of a place at all puts it on the map; a secret whereabouts

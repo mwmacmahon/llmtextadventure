@@ -517,3 +517,25 @@ def test_the_reviews_journey_and_job_faults(engine: Engine):
     adj = A(); adj.intents = [i]
     q = game.ask_first(st, adj, "")
     assert q and q.startswith("Do you mean the stone bridge")
+
+
+def test_the_simulator_plays_a_game_on_the_engine_alone(engine: Engine):
+    """FN152 (the owner, 11-18: "simulator mode like with the clown game"): a trial is a whole game by a strategy with no model:
+    the same seed gives the same row; the careful fighter does the first job and lives; road trouble is sized to the party
+    (the generator's band), never any creature at home on that ground."""
+    from games.hidden.parchment.tools import sim
+    a = sim.trial(sim.Strategy(), 3, 5)
+    b = sim.trial(sim.Strategy(), 3, 5)
+    assert {k: v for k, v in a.items()} == {k: v for k, v in b.items()}
+    assert a["fights"] >= 1 and a["jobs_done"] >= 0 and a["days"] <= 3
+    game, st = _fresh(engine)
+    assert game.TROUBLE_BAND == {"quiet": "easy", "written": "easy", "wild": "normal"}
+    import random
+    st.world["player"]["tile"] = [3, 0]
+    st.player.location = game.where(st)
+    told = game._trouble(st, random.Random(1))
+    made = [q for q in st.people if q.attitude == -3 and q.location == st.player.location and q.combat is not None]
+    assert told and made
+    from games.fantasy import combat as cb
+    xp = sum(int(cb.bestiary().entries.get(q.combat.block, {}).get("xp") or 0) for q in made)
+    assert xp <= 200, (told, xp)                                    # an easy fight for one level-1 fighter, not a troll (1800)

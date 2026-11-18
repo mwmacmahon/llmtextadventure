@@ -498,7 +498,9 @@ class ParchmentGame(FantasyGame):
             # bridge a journey crossed). Whoever lives at a place passed is there, and nobody walks past the hostile
             met = []
             pid_here = self._pid_here(s)
-            if not leg["arrived"] and pid_here and pid_here != j["to"]:
+            # ... at a crossing only (the simulator, 11-18: with every place passed, a walk that skirted the barrow or the mines
+            # on the way elsewhere met their dead and their kobolds; a bridge cannot be gone round, a barrow can)
+            if not leg["arrived"] and pid_here and pid_here != j["to"] and leg["stop"][0] == "crossing":
                 met = jb.arrive(self, self.scenario(s.city.id), s, pid_here)
                 if met or self._hostile_residents(s, pid_here):
                     event = event or "who lives here"
@@ -529,7 +531,7 @@ class ParchmentGame(FantasyGame):
         elif event == "trouble":
             spawned = self._trouble(s, rng)
             if spawned:
-                line += f" {spawned[:1].upper() + spawned[1:]} is there, close by. Show it, and stop while {n} can still choose."
+                line += f" There, close by: {spawned}. Show what is there, and stop while {n} can still choose."
         w.directives.insert(0, line)
         if met:
             w.directives.insert(1, " ".join(met) + " They are there as the player comes up.")
@@ -577,27 +579,32 @@ class ParchmentGame(FantasyGame):
             pool = self.SIGHTS if kind == "sight" else ["something small rustling", "something small glinting"]
         return str(rng.choice(pool)).strip().rstrip(".").replace("the traveller", s.player.name)
 
+    # the simulator's first finding (11-18, FN152): trouble was any one creature at home on that ground, whatever the party (a
+    # troll, a bear, a berserker for a level-1 player: a lone fighter walking the written roads ten days lived 49 per cent of
+    # the time). The family's generator sizes it now: winnable nine times in ten on quiet and written roads, seven on wild
+    TROUBLE_BAND = {"quiet": "easy", "written": "easy", "wild": "normal"}
+
     def _trouble(self, s: FantasyState, rng: Any) -> str:
-        """FN34's trouble: the encounter generator's located draw for the ground here, sized to the party, filed as hostile
-        and in sight (they attack on sight, B397, so the fight opens when the player acts). Returns what the narrator is told."""
+        """FN34's trouble: the encounter generator's fight for this party on the ground here (its band by the road dial), filed
+        as hostile and in sight (they attack on sight, B397, so the fight opens when the player acts). Returns what the
+        narrator is told ("two wolves", "a robber")."""
         from games.fantasy import encounter as en
         x, y = s.world["player"]["tile"]
-        rid = wm.region_at(s.world, x, y)
         on_road = any(tuple(t) == (x, y) for ln in s.world["lines"].values() if ln["kind"] != "river" for t in ln["tiles"])
         region = "roads" if on_road else {"~": "water", "b": "water"}.get(wm.ground_at(s.world, x, y) or "", "wilds")
-        pool = en.located_pool(region)
-        if not pool:
+        if not en.located_pool(region):
             return ""
-        eid = rng.choices([e for e, _ in pool], weights=[wt for _, wt in pool])[0]
-        made = en.spawn(s, [(eid, 1)], "standard")
+        s.city.regions[s.player.location] = region       # the generator reads the place's kind of ground from here
+        e = en.encounter(self, s, en.Want(band=self.TROUBLE_BAND.get(self.roads(s), "easy"), place=s.player.location, n=20,
+                                          seed=f"{s.world['seed']}:{x},{y}:{s.clock.day}:{s.clock.minute}:{rng.random():.6f}"))
+        if not e.bodies:
+            return ""
+        made = en.spawn(s, e.bodies, e.variant)
         s.people.extend(made or [])
         for q in made or []:
             q.location = s.player.location
             q.attitude = -3
-        from games.fantasy import combat as cb
-        x = cb.bestiary().entries.get(eid, {})
-        called = str(x.get("called") or x.get("name") or eid).strip()
-        return called if called.lower().startswith(("a ", "an ")) else (("an " if called[:1].lower() in "aeiou" else "a ") + called.lower())
+        return en.called_plural(e.bodies)
 
     def _pid_here(self, s: FantasyState) -> str | None:
         """The id of the point place on the player's tile, or None."""
