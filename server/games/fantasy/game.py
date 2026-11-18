@@ -4365,9 +4365,10 @@ class FantasyGame(GameBase):
         sheet += [Chip(label="From your sheet", value=n) for n in p.sheet_notes]
         pockets = [Chip(label=it.name + (f" ×{it.count}" if it.count != 1 else ""), value=it.note or "") for it in s.inventory if it.id not in COINS]
         panels: list[Any] = [
-            StatusStrip(chips=[Chip(label="Time", value=s.clock.render()), Chip(label="Place", value=p.location or "unknown"), *now,
-                               Chip(label="Level", value=str(p.level)),
-                               Chip(label="Gold", value=str(gold) + (f" ({cps} coppers)" if (cps := next((it.count for it in s.inventory if it.id == COPPERS), 0)) else ""))]),
+            # the owner, 11-18 (a screenshot): the place last, since a long place name takes a line of its own
+            StatusStrip(chips=[Chip(label="Time", value=s.clock.render()), *now, Chip(label="Level", value=str(p.level)),
+                               Chip(label="Gold", value=str(gold) + (f" ({cps} coppers)" if (cps := next((it.count for it in s.inventory if it.id == COPPERS), 0)) else "")),
+                               Chip(label="Place", value=p.location or "unknown")]),
             Meter(label="Hit points", value=p.hp, min=0, max=p.hp_max, tier=p.hp_tier, text=f"{p.hp} / {p.hp_max}",
                   tone=self.HP_TONES.get(p.hp_tier, "warn"), thresholds=[0.5 * p.hp_max, 0.75 * p.hp_max],
                   chips=[Chip(label=x.weight, value=x.words, tone=self.WOUND_TONES.get(x.weight)) for x in wounds]),

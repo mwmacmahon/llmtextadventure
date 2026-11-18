@@ -282,3 +282,39 @@ def test_the_side_keeps_the_strip_and_the_rest_pops_out(engine):
     groups = {getattr(w, "group", "") for w in panels if getattr(w, "place", "") == "popout"}
     assert "commands" in side and "status_strip" in side and "map" not in side and "paper_doll" not in side
     assert {"Map", "Equipment", "Pockets", "Character", "Quests"} <= groups
+
+
+
+def test_the_side_chips_are_only_whats_to_hand(engine):
+    """The owner, 11-18 (a screenshot): the place last in the strip; the side's chips only what fits now; the class's
+    abilities and Use their own pop-outs; equip and unequip the doll's, the journal the Timeline's."""
+    from games.fantasy import items as itm
+    game, st = _fresh(engine)                                   # a barbarian: Rage, and a potion to use
+    itm.add(game, st, "potion_of_healing", known=True)
+    panels = game.ui(st).panels
+    strip = next(w for w in panels if getattr(w, "type", "") == "status_strip")
+    assert strip.chips[-1].label == "Place"
+    xp = next(w for w in panels if getattr(w, "type", "") == "meter" and w.label == "XP")
+    assert xp.place == "popout" and xp.group == "Character"
+    side = next(w for w in panels if getattr(w, "type", "") == "commands" and w.place == "side")
+    ids = {c.id for c in side.items}
+    assert not ids & {"equip", "unequip", "journal", "use_item", "rage"} and "read_board" in ids
+    pops = {(getattr(w, "group", ""), c.id) for w in panels if getattr(w, "type", "") == "commands" and w.place == "popout" for c in w.items}
+    assert ("Use", "rage") in pops and ("Use", "use_item") in pops
+    use = [w for w in panels if getattr(w, "group", "") == "Use"]
+    assert [w.title for w in use] == ["Abilities", "Things"]                # class skills on top, then things
+
+
+def test_everyone_starts_dressed(engine):
+    """The owner, 11-18: "everyone should start with clothing / armor already equipped just like weapons": a fighter's mail is
+    worn and the clothes stay in the pack; a barbarian wears clothes in the body slot and keeps unarmoured CON; cloak and boots on."""
+    from games.fantasy import gear
+    game = engine.games["parchment"]
+    for klass in ("Fighter", "Barbarian"):
+        st = game.load_state(engine.store.load_state(engine.create_instance("parchment", {**SHEET, "klass": klass, "map_seed": 7, "written_names": True})))
+        on = gear.worn(st)
+        assert on["cloak"].name == "a travelling cloak" and on["feet"].name == "boots" and "weapon" in on
+        if klass == "Fighter":
+            assert gear.body_of(on["body"]) is not None
+        else:
+            assert on["body"].name == "travelling clothes" and "CON" in gear.armour_class(st)[1]

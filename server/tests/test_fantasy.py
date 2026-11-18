@@ -144,7 +144,7 @@ def test_the_panels_show_what_the_character_knows(game: FantasyGame):
     group = next(x for x in ui.panels if isinstance(x, MeterGroup))
     assert [(m.label, m.tier, m.text) for m in group.meters] == [("Renown", "quiet", None), ("Heat", "nobody", None)]
     strip = next(x for x in ui.panels if getattr(x, "type", "") == "status_strip")
-    assert [c.label for c in strip.chips] == ["Time", "Place", "Level", "Gold"]
+    assert [c.label for c in strip.chips] == ["Time", "Level", "Gold", "Place"]   # FN158: the place last
     level_up = next(c for c in game.commands(st) if c.id == "level_up")
     assert not level_up.enabled
     st.player.xp = 300

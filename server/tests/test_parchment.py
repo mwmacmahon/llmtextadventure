@@ -430,8 +430,8 @@ def test_names_are_short_mostly(engine: Engine):
 def test_the_map_is_near_the_top(engine: Engine):
     """FN132 (the owner, 11-17: "buried at the bottom of a long scroll"): the map comes right after the commands."""
     game, st = _fresh(engine)
-    types = [getattr(w, "type", "") for w in game.ui(st).panels]
-    assert types.index("map") == types.index("commands") + 1
+    m = next(w for w in game.ui(st).panels if getattr(w, "type", "") == "map")
+    assert m.place == "popout" and m.group == "Map"                     # FN154 superseded the side's order: its own big button
 
 
 def test_the_crew_in_the_tavern_one_comes_along_at_a_time_and_follows(engine: Engine):

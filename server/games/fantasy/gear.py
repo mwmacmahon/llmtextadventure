@@ -59,8 +59,8 @@ RINGS = 2
 
 def slot_of(it: Item) -> str:
     """'body', 'shield', 'weapon', a worn thing's slot (head ... ring), or '' (nothing to wear or hold)."""
-    if getattr(it, "slot", "") in WORN_SLOTS and it.count != 0:
-        return it.slot
+    if getattr(it, "slot", "") in (*WORN_SLOTS, "body") and it.count != 0:
+        return it.slot                                    # clothes are "body" with no armour (the owner, 11-18: everyone starts dressed)
     if body_of(it) is not None:
         return "body"
     if is_shield(it):
@@ -143,13 +143,14 @@ def armour_class(s: FantasyState) -> tuple[int, str]:
     w = worn(s)
     p = s.player
     dex = p.stats.get("dex", 0)
-    body = body_of(w["body"])[0] if "body" in w else 0
+    armour = body_of(w["body"]) if "body" in w else None   # clothes in the body slot are no armour
+    body = armour[0] if armour else 0
     shield = SHIELD_AC if "shield" in w else 0
     magic = [(it.wear or {}).get("name") or it.name for k, it in w.items() if k not in ("body", "shield", "weapon") and (it.wear or {}).get("ac")]
     extra = sum(int((it.wear or {}).get("ac") or 0) for k, it in w.items() if k not in ("body", "shield", "weapon"))
     # the Barbarian's Unarmored Defense (round 17, 5d85334fc803: AC 11 with no armour, three drowned hit six of seven): with no
     # body armour worn, CON adds to it; the class file's effect `unarmored_con`
-    con = p.stats.get("con", 0) if "body" not in w and p.effect("unarmored_con") else 0
+    con = p.stats.get("con", 0) if armour is None and p.effect("unarmored_con") else 0
     how = (f"10 + DEX {dex:+d}" + (f" + CON {con:+d} (unarmoured)" if con else "") + (f" + {w['body'].name} {body}" if body else "")
            + (f" + shield {shield}" if shield else "") + (f" + {', '.join(magic)} {extra}" if extra else ""))
     return 10 + dex + con + body + shield + extra, how
@@ -158,7 +159,7 @@ def armour_class(s: FantasyState) -> tuple[int, str]:
 def armour_steps(s: FantasyState) -> int:
     """Steps of worn armour, for the water (D225): leather 1, mail 2, plate 3, a shield 1."""
     w = worn(s)
-    return (body_of(w["body"])[1] if "body" in w else 0) + (SHIELD_STEPS if "shield" in w else 0)
+    return ((body_of(w["body"]) or (0, 0))[1] if "body" in w else 0) + (SHIELD_STEPS if "shield" in w else 0)
 
 
 def options(s: FantasyState, on: bool) -> list[tuple[str, str]]:

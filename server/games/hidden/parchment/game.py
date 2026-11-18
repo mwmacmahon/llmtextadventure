@@ -107,7 +107,23 @@ class ParchmentGame(FantasyGame):
             if start.get("start_spot"):                      # FN131 (the owner, 11-17: "choice paralysis is our enemy"): at the tavern's door
                 state.player.location = str(start["start_spot"])
             jb.setup(sc, state)                              # FN62, FN63: the board
+            self._dress(state)
         return title, state
+
+    CLOTHES = [("body", "travelling clothes", "plain wool and linen, patched at the knees"), ("cloak", "a travelling cloak", "heavy wool, a hood"),
+               ("feet", "boots", "worn leather, good for the road")]
+
+    def _dress(self, s: FantasyState) -> None:
+        """The owner, 11-18: "everyone should start with clothing / armor already equipped just like weapons": the kit's armour,
+        shield and weapon worn (gear.settle), and plain clothes, a cloak and boots on; clothes take the body slot only when no
+        armour is worn."""
+        from games.fantasy import gear
+        from games.fantasy.state import Item
+        gear.settle(s)
+        on = gear.worn(s)
+        for slot, name, note in self.CLOTHES:
+            iid = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+            s.inventory.append(Item(id=iid, name=name, note=note, slot=slot, equipped=slot not in on))
 
     def name_lists(self) -> dict:
         """The scenario's name lists (`names.yml` beside the scenarios), checked; {} when there are none."""
@@ -844,12 +860,41 @@ class ParchmentGame(FantasyGame):
             at = next((i + 1 for i, w in enumerate(rest) if getattr(w, "type", "") == "commands"), min(3, len(rest)))
             out.panels = rest[:at] + [panel] + rest[at:]
         out.panels = [self._doll(state) if isinstance(w, ListPanel) and w.title == "Equipped" else w for w in out.panels]
-        return self._popouts(out)
+        return self._popouts(self._split_commands(state, out))
 
     # FN154 (the owner, 11-18: "making more menus pop out will make sidebar much more readable"): the side keeps the strip, the
     # meters and the command chips; the rest open from big buttons under the input box, by group
     POPOUT = {"Character": "Character", "In your words": "Character", "Abilities": "Character", "Counts": "Character",
               "Equipment": "Equipment", "Pockets": "Pockets", "People": "People", "Quests": "Quests"}
+
+    # the owner, 11-18: "The 'panel' tab seems mostly like leftover stuff, plus some stuff like abilities/usable items that
+    # should probably be their own menu": the command chips split three ways; equip and unequip are the doll's, the journal the
+    # Timeline's (still typed, no chips)
+    NO_CHIP = {"equip", "unequip", "journal", "notebook"}
+
+    def _split_commands(self, s: FantasyState, out: UISchema) -> UISchema:
+        from engine.game import Commands
+        from games.fantasy import features as ft
+        mine = set(ft.specs(self, s.player))
+        abil = lambda c: c.id in mine or (c.id.startswith("end_") and c.id[4:] in mine) or c.id in ("second_wind", "rage", "lay_on_hands")  # noqa: E731
+        panels = []
+        for w in out.panels:
+            if getattr(w, "type", "") != "commands":
+                panels.append(w)
+                continue
+            items = [c for c in w.items if c.id not in self.NO_CHIP]
+            here = [c for c in items if not abil(c) and c.id != "use_item"]
+            panels.append(Commands(title=None, items=here))
+            # the owner, 11-18: "Probably combine abilities and items for Use. Class skills (and spells once we get to them) on
+            # top, then usable items"
+            ab = [c for c in items if abil(c)]
+            if ab:
+                panels.append(Commands(title="Abilities", items=ab, place="popout", group="Use"))
+            use = [c for c in items if c.id == "use_item"]
+            if use:
+                panels.append(Commands(title="Things", items=use, place="popout", group="Use"))
+        out.panels = panels
+        return out
 
     def _popouts(self, out: UISchema) -> UISchema:
         for w in out.panels:
@@ -857,6 +902,8 @@ class ParchmentGame(FantasyGame):
             title = getattr(w, "title", None) or ""
             if t == "map":
                 w.place, w.group = "popout", "Map"
+            elif t == "meter" and getattr(w, "label", "") == "XP":
+                w.place, w.group = "popout", "Character"        # the owner, 11-18: "xp bar should be in character menu"
             elif title in self.POPOUT and t != "commands":
                 w.place, w.group = "popout", self.POPOUT[title]
         return out
