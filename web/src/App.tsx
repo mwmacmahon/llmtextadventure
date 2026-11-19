@@ -114,7 +114,7 @@ function Game({ id }: { id: string }) {
   }, [view, streaming]);
 
   /** Drive one SSE stream (typed turn or clicked command) through the stage indicator. */
-  async function run(gen: AsyncGenerator<TurnEvent>, pendingText: string) {
+  async function run(gen: AsyncGenerator<TurnEvent>, pendingText: string, typed = false) {
     setErr(null);
     setPending(pendingText);
     setStreaming("");
@@ -170,7 +170,12 @@ function Game({ id }: { id: string }) {
         }
       }
     } catch (e) {
-      setErr(String(e));
+      // FN189 (the owner, 11-19: "TypeError: Load failed"): the connection dropped mid-turn (the server restarted, the network
+      // blinked). A turn cut off is not saved, so what was typed goes back in the box
+      if (e instanceof TypeError) {
+        setErr("Connection lost. That turn was not saved; send it again.");
+        if (typed && pendingText.trim()) setInput((cur) => cur || pendingText);
+      } else setErr(String(e));
     } finally {
       setStreaming(null);
       setStage(null);
@@ -183,7 +188,7 @@ function Game({ id }: { id: string }) {
     if (!view || streaming !== null || !text.trim()) return;
     if (asking || text.trim().startsWith("?") || /^\/ask\b/i.test(text.trim())) return askGM(text);   // FN136: /ask too
     setInput("");
-    return run(streamTurn(id, text), text);
+    return run(streamTurn(id, text), text, true);
   }
 
   // B105 (c): Ask mode, a question to the game master out of the story: no clock, no events, no referee

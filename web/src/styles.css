@@ -70,7 +70,15 @@ footer textarea { flex: 1; resize: vertical; }
 .panels { display: flex; flex-direction: column; gap: 12px; }
 .panel { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
 .panel h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
-.strip { display: flex; flex-wrap: wrap; gap: 8px; }
+/* FN190 (the owner, 11-19: "looks really shabby compared to all the newer UI stuff"): the status strip as a row of stats */
+.strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.stat { display: flex; flex-direction: column; gap: 1px; padding: 7px 10px; min-width: 0; border-right: 1px solid var(--border); }
+.stat:last-child { border-right: none; }
+.stat-wide { grid-column: 1 / -1; border-right: none; border-top: 1px solid var(--border); }
+.stat-label { font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.stat-value { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; display: inline-flex; gap: 5px; align-items: center; overflow-wrap: anywhere; }
+.stat-value .item-icon { width: 14px; height: 14px; }
+.stat-ok .stat-value { color: var(--ok); } .stat-warn .stat-value { color: var(--warn); } .stat-bad .stat-value { color: var(--bad); } .stat-info .stat-value { color: var(--info); }
 .chip { background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px; font-size: 13px; display: inline-flex; gap: 6px; }
 .chip-label { color: var(--muted); }
 .meter { position: relative; height: 10px; background: #0b0d11; border-radius: 5px; overflow: hidden; }

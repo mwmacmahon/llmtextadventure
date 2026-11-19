@@ -115,6 +115,10 @@ class ParchmentGame(FantasyGame):
             jb.setup(sc, state, self)                        # FN62, FN63: the board (FN182: and who goes along for a job)
             jb.refill(self, sc, state, "start")              # FN165: one job sized to the player beside the written ones
             self._dress(state)
+            from games.fantasy import items as itm           # FN191 (the owner, 11-19): everyone starts with two healing potions
+            if "potion_of_healing" in itm.catalogue(self):
+                for _ in range(2):
+                    itm.add(self, state, "potion_of_healing", known=True)
         return title, state
 
     # FN165 (the owner, 11-19: "drawing attention to the notices board in the bar at player start ... flat out telling the

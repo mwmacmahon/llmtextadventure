@@ -341,10 +341,37 @@ def undo(iid: str, body: UndoInput | None = None):
     return engine.instance_view(iid)
 
 
+SSE_KEEP = 8.0     # seconds of silence before a keep-alive comment goes down a turn's stream
+
+
 def _sse(gen_events):
+    """A turn's events as a stream. While the engine is silent (a model call that sends nothing for a while) a comment line
+    goes out every SSE_KEEP seconds, so no browser or proxy takes the quiet for a dead connection (the owner's round of 11-19:
+    "TypeError: Load failed", the stream dropped from the browser's side mid-turn). The client ignores comments."""
+    import asyncio
+
     async def gen():
-        async for ev in gen_events:
-            yield f"event: {ev['event']}\ndata: {json.dumps(ev['data'])}\n\n"
+        it = gen_events.__aiter__()
+        nxt = asyncio.ensure_future(it.__anext__())
+        try:
+            while True:
+                done, _ = await asyncio.wait({nxt}, timeout=SSE_KEEP)
+                if not done:
+                    yield ": keep\n\n"
+                    continue
+                try:
+                    ev = nxt.result()
+                except StopAsyncIteration:
+                    break
+                yield f"event: {ev['event']}\ndata: {json.dumps(ev['data'])}\n\n"
+                nxt = asyncio.ensure_future(it.__anext__())
+        finally:
+            if not nxt.done():                           # the client went away mid-turn: the engine's own clean-up runs
+                nxt.cancel()
+                try:
+                    await nxt
+                except (asyncio.CancelledError, StopAsyncIteration, Exception):  # noqa: BLE001
+                    pass
 
     return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 

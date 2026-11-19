@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { MapPanel } from "./MapPanel";
 import { Hotbar, ItemsPanel, ShopPanel } from "./ItemsPanel";
+import { ItemIcon } from "./ItemIcon";
 import { PaperDoll } from "./PaperDoll";
 import { ChartPanel } from "./ChartPanel";
 import { CardsPanel } from "./CardsPanel";
@@ -71,7 +72,10 @@ function Panel({ w, onChoice, onCommand, onPick, onOpen, busy, ended }: { w: Wid
       return (
         <div className="strip">
           {w.chips.map((c, i) => (
-            <ChipView key={`${c.label}-${i}`} c={c} />
+            <span key={`${c.label}-${i}`} className={`stat${c.tone ? ` stat-${c.tone}` : ""}${String(c.value).length > 14 ? " stat-wide" : ""}`}>
+              {c.label && <span className="stat-label">{c.label}</span>}
+              <span className="stat-value">{c.label === "Gold" && <ItemIcon kind="gold" />}{c.value}</span>
+            </span>
           ))}
         </div>
       );

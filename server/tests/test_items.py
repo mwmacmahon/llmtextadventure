@@ -34,7 +34,11 @@ def engine(tmp_path: Path) -> Engine:
 
 def _fresh(engine: Engine):
     game = engine.games["parchment"]
-    return game, game.load_state(engine.store.load_state(engine.create_instance("parchment", {**SHEET, "map_seed": 7, "written_names": True})))
+    st = game.load_state(engine.store.load_state(engine.create_instance("parchment", {**SHEET, "map_seed": 7, "written_names": True})))
+    # FN191: everyone starts with two healing potions; these tests were written for a pack with none
+    assert sum(x.count for x in st.inventory if x.ref == "potion_of_healing") == 2
+    st.inventory = [x for x in st.inventory if x.ref != "potion_of_healing"]
+    return game, st
 
 
 def _fight(game, st):
