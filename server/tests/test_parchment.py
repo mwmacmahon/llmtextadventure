@@ -704,3 +704,17 @@ def test_loot_is_a_kind_the_store_buys_in_one_go(engine: Engine):
     s2, res = game.run_command(st, "sell_loot", {})
     assert res.ok and s2.item("gold").count == have + total and not any(jb.is_loot(i) for i in s2.inventory)
     assert not any(c.id == "sell_loot" for c in game.commands(s2))
+
+
+def test_more_people_than_shopkeepers_and_some_out_of_the_village(engine: Engine):
+    """FN179 (the owner, 11-19: "5 villagers is a little slim ... not all have to live in the village proper either")."""
+    game, st = _fresh(engine)
+    folk = [q for q in st.people if q.combat is None]
+    if len(folk) <= 5:
+        pytest.skip("the scenario on this machine has only the five")
+    assert len(folk) >= 12 and not any(str(q.location).startswith("at:") for q in folk)
+    spots = {f.name for f in st.found_places}
+    names = {p["name"] for p in st.world["places"].values()}
+    assert all(q.location in spots or q.location in names for q in folk)
+    assert any(q.location in names and q.location != "The village" for q in folk)        # someone lives out of the village
+    assert all(st.person(j["giver"]) is not None for j in st.flags["jobs"] if j.get("giver"))

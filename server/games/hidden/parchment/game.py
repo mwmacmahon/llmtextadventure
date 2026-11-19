@@ -72,6 +72,7 @@ class ParchmentGame(FantasyGame):
                 start = rn.roll_start(start, lists, seed)        # (written_names: the stand-ins, for tests and the debug room)
             state.world = wm.new_world(start, seed, str(sc.get("id") or ""))
             state.player.location = self.where(state)
+            home_name = state.player.location
             state.city.city_name = state.player.location          # the village's rolled name is the "city" the fantasy's lines name
             people: dict[str, str] = {}
             if lists.get("given") and not setup.get("written_names"):
@@ -81,6 +82,10 @@ class ParchmentGame(FantasyGame):
                     if q.name == "rolled":
                         q.name = rn.person_name(prng, lists, set(people.values()))
                         people[q.id] = q.name
+            for q in state.people:                           # FN179: a person out at a place on the map, by its rolled name
+                if str(q.location).startswith("at:"):
+                    pl = state.world["places"].get(str(q.location)[3:])
+                    q.location = pl["name"] if pl else home_name
             # FN149: the crew at their table in the tavern, each with a rolled name
             if sc.get("crew"):
                 import random
