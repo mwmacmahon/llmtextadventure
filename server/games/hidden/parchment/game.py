@@ -1513,7 +1513,10 @@ class ParchmentGame(FantasyGame):
         for c in items:
             if abil(c) and not c.params:
                 n = next((k.value for k in s.player.counts if k.name.lower() == c.label.lower() or k.name.lower().replace(" ", "_") == c.id), None)
-                slots.append(HotSlot(id=c.id, icon="skill", label=c.label, count=n, command=c.id, enabled=c.enabled))
+                label = re.sub(r"\s*\(\d+\)$", "", c.label)      # the count is the slot's own
+                m = re.search(r"\((\d+)\)$", c.label)
+                slots.append(HotSlot(id=c.id, icon="skill", label=label, count=n if n is not None else int(m.group(1)) if m else None,
+                                     command=c.id, enabled=c.enabled))
         foes = [q.id for q in s.people if q.id in (s.player.fighting or []) and q.status == "alive"]
         order = {"potion": 0, "throw": 1, "scroll": 2, "wand": 3, "curio": 4}
         for it in sorted(itm.usable(self, s), key=lambda x: order.get(itm.icon_of(self, x), 9)):
@@ -1534,7 +1537,8 @@ class ParchmentGame(FantasyGame):
         along = {q.id for q in [co.companion(s), *co.helpers_along(s)] if q is not None}
         people = [q for q in s.people if q.status == "alive" and (q.location or "").lower() == here and not q.hidden_from_player
                   and q.id not in along]
-        rows = [IconRow(id=q.id, icon="person", name=q.name if (q.met or q.combat is not None) else (q.called or q.role or "someone"),
+        # by name once met; a creature by what it is; a stranger by their trade
+        rows = [IconRow(id=q.id, icon="person", name=q.name if (q.met or q.attitude <= -2 or q.id not in self._homes(s)) else (q.role or q.called or "someone"),
                         note=("hostile" if q.attitude <= -2 else q.role if q.met else ""), tag="foe" if q.id in (s.player.fighting or []) else "")
                 for q in people]
         things = [IconRow(id=t.id, icon=itm.icon_of(self, t), name=t.name, count=t.count) for t in s.things
