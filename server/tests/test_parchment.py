@@ -718,3 +718,129 @@ def test_more_people_than_shopkeepers_and_some_out_of_the_village(engine: Engine
     assert all(q.location in spots or q.location in names for q in folk)
     assert any(q.location in names and q.location != "The village" for q in folk)        # someone lives out of the village
     assert all(st.person(j["giver"]) is not None for j in st.flags["jobs"] if j.get("giver"))
+
+
+def test_running_is_nudged_in_secret(engine: Engine):
+    """FN181 (the owner, 11-19: "Death is death. Maybe make running away easier - secretly nudge the rolls a little"): the slip
+    is rolled twice and the better kept (shown as one roll), and one blow at most follows a slip that fails."""
+    from games.fantasy import combat as cb
+    from games.fantasy import encounter as en
+    game, st = _fresh(engine)
+    assert game.FLEE_NUDGE == 1
+
+    def run(nudge: int) -> tuple[int, int]:
+        clean = most = 0
+        for k in range(120):
+            s = st.model_copy(deep=True)
+            s.player.name = f"Runner {k}"
+            with cb.using(game.bestiary):
+                foes = en.spawn(s, [("wolf", 3)], "standard")
+            for q in foes:
+                q.attitude, q.location = -3, s.player.location
+            s.people.extend(foes)
+            s.player.fighting = [q.id for q in foes]
+            s.player.hp = s.player.hp_max = 500
+            game.FLEE_NUDGE = nudge
+            try:
+                s2, res = game.run_command(s, "flee", {})
+            finally:
+                del game.FLEE_NUDGE
+            assert res.ok and not s2.player.fighting
+            clean += "Away clean" in res.text
+            most += 500 - s2.player.hp
+        return clean, most
+    plain, blows_plain = run(0)
+    nudged, blows_nudged = run(1)
+    assert nudged > plain and blows_nudged < blows_plain
+
+
+def test_someone_goes_along_for_a_job_and_home_after(engine: Engine):
+    """FN182 (the owner, 11-19: "Quest companions should be built out ... Quest companions don't count and stack")."""
+    import random
+    from engine.game import TurnInfo
+    from games.hidden.parchment import company as co
+    from games.hidden.parchment import jobs as jb
+    game, st = _fresh(engine)
+    sc = game.scenario(st.city.id)
+    with_help = [j for j in st.flags["jobs"] if j.get("helper")]
+    if not with_help:
+        pytest.skip("no helpers written on this machine")
+    s1, res = game.run_command(st, "read_board", {})
+    assert "offers to come along" in res.directive
+    crew = co.crew(s1)
+    s1, res = game.run_command(s1, "ask_along", {"who": crew[0].id})             # the permanent one, and helpers beside
+    took = []
+    for j in [j for j in s1.flags["jobs"] if j.get("helper")][:2]:
+        hq = s1.person(j["helper"])
+        assert hq.location == j["helper_at"] and not hq.fights_beside
+        s1.player.location = j["helper_at"]
+        cmd = next(c for c in game.commands(s1) if c.id == "take_helper")
+        assert any(o.id == j["id"] for o in cmd.params[0].options)
+        before = co.danger(sc, s1, j["at"])
+        s1, res = game.run_command(s1, "take_helper", {"job": j["id"]})
+        assert res.ok and s1.person(j["helper"]).fights_beside and j["helper"] in s1.player.with_them
+        took.append(j["id"])
+        assert before or not co.danger(sc, s1, j["at"])                         # one more never makes a place more dangerous
+    assert s1.flags["companion"] == crew[0].id and len(co.helpers_along(s1)) == len(took)
+    assert "Along for one job" in game.render_bulletin(s1, "x")
+    s1.player.location = "The farms"
+    co.keep_with(s1)
+    assert all(q.location == "The farms" for q in co.helpers_along(s1))
+    j = next(j for j in s1.flags["jobs"] if j["id"] == took[0])
+    j["status"] = "done"
+    s1.player.location = "The village"
+    s2 = game.after_turn(s1, TurnInfo(turn=4, elapsed_minutes=1, rng=random.Random(0)))
+    gone = j["helper"]
+    j2 = next(x for x in s2.flags["jobs"] if x["id"] == j["id"])
+    assert s2.person(gone) is None and j2["helper"] == "" and gone not in s2.player.with_them      # home, and out of the story
+    assert any("heads home" in n for n in s2.player.shown_notes) and len(co.helpers_along(s2)) == len(took) - 1
+    # one taken and the job never gone to: a day and a night, then home to wait again; a fallen one is not looted
+    if len(took) > 1:
+        other = next(x for x in s2.flags["jobs"] if x["id"] == took[1])
+        s2.clock.day += 2
+        s3 = game.after_turn(s2, TurnInfo(turn=5, elapsed_minutes=1, rng=random.Random(0)))
+        o3 = next(x for x in s3.flags["jobs"] if x["id"] == took[1])
+        assert not o3["helper_along"] and s3.person(o3["helper"]).location == o3["helper_at"]
+        assert any("has waited long enough" in n for n in s3.player.shown_notes)
+        gold = s3.item("gold").count
+        s3.person(o3["helper"]).status = "dead"
+        s4 = game.after_turn(s3, TurnInfo(turn=6, elapsed_minutes=1, rng=random.Random(0)))
+        assert s4.item("gold").count == gold and not any(n.startswith("Loot") for n in s4.player.shown_notes)
+    # FN183 with the cold read: the people the board names can be gone to, and someone beside the player is no move
+    assert game._person_named(s2, crew[1].called) is not None or game._person_named(s2, crew[1].name) is not None
+    s2.person("smith").location = "by the hearth"
+    s2.found_places = s2.found_places                                             # (a corner of the room is no found place)
+    s2.player.with_them.append("smith")
+    i = type("I", (), {"goes_to": "the smith", "transition": ""})()
+    assert game._dest(s2, i) == s2.player.location
+
+
+def test_going_to_a_person_goes_where_they_are(engine: Engine):
+    """FN183 (the owner, 11-19: "you can travel to a npc the same way you travel to a building ... If they are not there you
+    warp to their 'normal' location ... and are told they seemingly aren't around right now")."""
+    import random
+    game, st = _fresh(engine)
+    if not st.flags.get("homes"):
+        pytest.skip("no people on this machine")
+
+    def turn(s, goes_to):
+        i = type("I", (), {"goes_to": goes_to, "transition": "", "action": "go", "targets": [], "check": None})()
+        adj = type("A", (), {"intents": [i], "time_minutes": 2, "kind": "action"})()
+        assert game.ask_first(s, adj, "") is None                                 # never "you do not know where the smith is"
+        return game.world_turn(s, adj, "x", random.Random(1), 3, 2)
+    smith = st.person("smith")
+    s1, w = turn(st.model_copy(deep=True), "the smith")
+    assert s1.player.location == "the smithy" and "location" in w.skip and any(r.get("kind") == "to_person" and r["there"] for r in w.rows)
+    assert any("has walked to the smithy and is there now" in d for d in w.directives)
+    # somewhere the map does not hold: their usual place, and told
+    s0 = st.model_copy(deep=True)
+    s0.person("smith").location = "a cellar somewhere"
+    s2, w = turn(s0, "the blacksmith")
+    assert s2.player.location == "the smithy" and any("seemingly isn't around right now" in m for m in w.mechanics)
+    # from another place on the map: a walk to the village, into the spot
+    s0 = st.model_copy(deep=True)
+    mill = next(k for k, p in s0.world["places"].items() if p["name"] == "The old mill")
+    s0.world["player"]["tile"] = list(s0.world["places"][mill]["tile"])
+    s0.player.location = "The old mill"
+    assert game._journey_dest(s0, type("A", (), {"intents": [type("I", (), {"goes_to": "the smith", "transition": ""})()]})()) == s0.world["home"]
+    assert s0.flags["dest_spot"] == "the smithy"

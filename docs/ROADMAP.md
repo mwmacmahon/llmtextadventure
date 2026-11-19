@@ -678,9 +678,12 @@ endless ground, camps, wandering, invented places and ground changes held until 
   (it was level 1 and 14 gold), and 55 to 62 per cent alive, since a game is now eleven fights.
 - **Mocked up, waiting for the owner's word (FN171 to FN173, FN176):** pockets sorted by category with an icon for each
   type, a shop window with Buy, Sell and Sell all loot, and the map's card of who and what is at a place.
-- **Open with the owner:** what a lost fight is in this game (FN178), now that there are many.
-- **Next:** those screens on his word; the engine's questions with buttons (FN39), fetch and find jobs, quest companions,
-  roads and rivers by name.
+- **Death is death; the rest of 11-19 (D337): built.** Running is nudged in secret (the slip rolled twice, one blow at
+  most after a failed one). A job may come with someone who goes along for it and home after, any number at once beside
+  the one permanent companion. Naming one of the village's people as where you go takes you to them, or to their usual
+  place with a line that they are not around. Fourteen people now, some out of the village (FN179).
+- **Next:** those screens on his word, the shop with a basket (FN180); the engine's questions with buttons (FN39), fetch
+  and find jobs, roads and rivers by name.
 - **Names (FN108 to FN111): built 11-17**, short since the owner's round (FN133). Rolled from large word lists per game,
   kept in the save; the lists checked against the game's own terms.
 - **Places the story makes (FN50 to FN55): designed.** Told of a place at all puts it on the map; a secret whereabouts

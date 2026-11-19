@@ -57,15 +57,101 @@ def companion(s: FantasyState):
 
 
 def keep_with(s: FantasyState) -> None:
-    """The companion is where the player is, in the company and fighting beside them (before the prose and after the rows)."""
-    q = companion(s)
-    if q is None:
-        return
-    q.location = s.player.location
-    q.fights_beside = True
-    q.attitude = max(q.attitude, 2)
-    if q.id not in s.player.with_them:
-        s.player.with_them.append(q.id)
+    """The companion, and whoever is along for a job, are where the player is, in the company and fighting beside them
+    (before the prose and after the rows)."""
+    for q in [companion(s), *helpers_along(s)]:
+        if q is None:
+            continue
+        q.location = s.player.location
+        q.fights_beside = True
+        q.attitude = max(q.attitude, 2)
+        if q.id not in s.player.with_them:
+            s.player.with_them.append(q.id)
+
+
+# ---- company for a job (FN182; the owner, 11-19: "Quest companions should be built out, it is what makes a lot of quest fights
+# survivable and interesting"; "Quest companions don't count and stack"). A job may come with someone who goes along for that
+# job only: they wait where the job's giver is, come when the player says so there, fight beside the player, and go home when
+# the job is done and the player is back in the village. Any number at once; never the one permanent companion's place.
+
+def make_helper(game: Any, s: FantasyState, j: dict, spec: dict, rng: Any) -> Any:
+    """The job's helper as a person, waiting where its giver is (the tavern with no giver). Returns them, or None."""
+    from engine import names as rn
+    entry = str(spec.get("entry") or "")
+    if entry not in cb.bestiary().entries:
+        return None
+    giver = s.person(j["giver"]) if j.get("giver") else None
+    # where the giver is usually found (the cold read, 11-19: never wherever the story has them standing on the day of posting)
+    spot = str(spec.get("at") or (giver is not None and (s.flags.get("homes") or {}).get(giver.id)) or "the tavern")
+    lists = game.name_lists() if hasattr(game, "name_lists") else {}
+    taken = {q.name for q in s.people if q.name} | ({s.player.name} if s.player.name else set())
+    name = rn.person_name(rng, lists, taken) if lists.get("given") else ""
+    made = en.spawn(s, [(entry, 1)], "standard", where=spot, ids=[f"helper_{j['id']}"], names=[name])
+    for q in made:
+        q.attitude, q.met, q.heard_of = 1, False, False
+        q.role = str(spec.get("role") or q.role)
+        q.called = str(spec.get("called") or q.called)
+        q.description = str(spec.get("description") or "")
+        q.wants = str(spec.get("wants") or "This job done and to be home after.")
+        q.facts.append(f"Will go along for one job and no more: {j['title']}.")
+    s.people.extend(made)
+    if not made:
+        return None
+    j["helper"], j["helper_at"], j["helper_along"] = made[0].id, spot, False
+    return made[0]
+
+
+def _helper_jobs(s: FantasyState) -> list[tuple[dict, Any]]:
+    return [(j, q) for j in s.flags.get("jobs") or [] if j.get("helper") and (q := s.person(j["helper"])) is not None and q.status == "alive"]
+
+
+def helpers_along(s: FantasyState) -> list:
+    return [q for j, q in _helper_jobs(s) if j.get("helper_along")]
+
+
+def helpers_here(s: FantasyState) -> list[tuple[dict, Any]]:
+    """Who can be taken along now: a job the player knows of and has not done, its helper waiting in this very spot."""
+    if s.player.fighting or s.player.fate:
+        return []
+    here = (s.player.location or "").lower()
+    return [(j, q) for j, q in _helper_jobs(s) if not j.get("helper_along") and j["status"] == "open" and j.get("known", True)
+            and (q.location or "").lower() == here]
+
+
+def take_helper(s: FantasyState, jid: str):
+    j, q = next(((j, q) for j, q in helpers_here(s) if j["id"] == jid), (None, None))
+    if j is None:
+        return None
+    j["helper_along"], j["helper_day"] = True, s.clock.day
+    q.met = True
+    keep_with(s)
+    return q
+
+
+def send_home(s: FantasyState) -> list[str]:
+    """Back in the village with the job no longer open: its helper goes home. Returns the § lines."""
+    out = []
+    if not s.world or s.player.fighting or s.world["player"]["tile"] != s.world["places"][s.world["home"]]["tile"]:
+        return out
+    for j in s.flags.get("jobs") or []:                  # one who fell: no longer along
+        q = s.person(j["helper"]) if j.get("helper") else None
+        if j.get("helper_along") and (q is None or q.status != "alive"):
+            j["helper_along"] = False
+            s.player.with_them = [x for x in s.player.with_them if q is None or x != q.id]
+    for j, q in _helper_jobs(s):
+        done = j["status"] != "open"
+        # the cold read: a helper taken and the job never gone to was kept for ever; a day and a night is as long as they wait
+        waited = j.get("helper_along") and s.clock.day > int(j.get("helper_day") or s.clock.day) + 1
+        if j.get("helper_along") and (done or waited):
+            j["helper_along"] = False
+            q.fights_beside, q.location = False, str(j.get("helper_at") or "the tavern")
+            s.player.with_them = [x for x in s.player.with_them if x != q.id]
+            out.append(f"{q.name} heads home: the job is done." if done else
+                       f"{q.name} has waited long enough and heads back to {q.location}. Ask again there when you mean to go.")
+        if done and not j.get("helper_along"):           # their job over, they are out of the story (no crowd of old helpers)
+            s.people = [x for x in s.people if x.id != q.id]
+            j["helper"] = ""
+    return out
 
 
 def can_ask(s: FantasyState) -> list:
@@ -87,12 +173,12 @@ def call_over(s: FantasyState) -> str:
             f"{who}. Show the wave and one line of greeting from {here[0].name}, and stop. No one joins {n} yet and no job is agreed.")
 
 
-def danger(sc: dict, s: FantasyState, pid: str) -> bool:
+def danger(sc: dict, s: FantasyState, pid: str, extra: int = 0) -> bool:
     """A place beyond the party: its residents' XP over a deadly fight's for the player's level, the companion counting as one more."""
     rows = (sc.get("residents") or {}).get(pid) or []      # a posted job's are sized to the party when posted: never here
     xp = sum(int(cb.bestiary().entries.get(str(r["entry"]), {}).get("xp") or 0) * int(r.get("count") or 1) for r in rows)
     lvl = max(1, int(s.player.level or 1))
-    party = 1 + (1 if companion(s) is not None else 0)
+    party = 1 + (1 if companion(s) is not None else 0) + len(helpers_along(s)) + extra     # FN182: whoever is along for a job counts
     return xp > DEADLY.get(lvl, 100 * lvl * lvl) * party
 
 

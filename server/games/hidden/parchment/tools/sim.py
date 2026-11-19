@@ -47,6 +47,7 @@ class Strategy:
     stock: int = 2                 # healing potions to keep
     heal_at: float = 0.6           # pay the shrine's healing under this share when back in the village
     roads: str = "written"         # the road dial
+    helpers: int = 1               # 1: take along whoever offers to come for the job (FN182)
     explore: int = 0               # 1: a day with no job is a walk to the farthest known place nobody lives at, and back
 
 
@@ -245,6 +246,7 @@ def village(game: Any, st: Any, strat: Strategy, log: dict) -> Any:
             jb.pay(st)
     p.location = "the tavern"
     jb.pay(st)
+    co.send_home(st)
     if jb.board_unread(st):
         st, _ = _cmd(game, st, "read_board")
     if strat.companion != "none" and co.companion(st) is None:
@@ -344,7 +346,8 @@ def pick_job(game: Any, st: Any, strat: Strategy) -> dict | None:
     for j in st.flags.get("jobs") or []:
         if j["status"] != "open" or j["form"] not in ("clear", "kill") or not jb.known(st, j) or j["at"] not in st.world["places"]:
             continue
-        if strat.heed and co.danger(sc, st, j["at"]):
+        hq = st.person(j["helper"]) if j.get("helper") else None
+        if strat.heed and co.danger(sc, st, j["at"], extra=1 if strat.helpers and hq is not None and hq.status == "alive" and not j.get("helper_along") else 0):
             continue
         rows = jb.rows_at(sc, st, j["at"])              # a posted job's own too (the cold read: they all counted as 0)
         xp = sum(int(cb.bestiary().entries.get(str(r["entry"]), {}).get("xp") or 0) * int(r.get("count") or 1) for r in rows)
@@ -399,6 +402,10 @@ def trial(strat: Strategy, days: int, seed: int) -> dict[str, Any]:
                 st = village(game, st, strat, log)
             else:
                 from .. import company as co
+                if strat.helpers and job.get("helper") and not job.get("helper_along"):      # FN182: fetched where they wait
+                    st.player.location = str(job.get("helper_at") or "the tavern")
+                    st, res = _cmd(game, st, "take_helper", {"job": job["id"]})
+                    log["helpers"] = log.get("helpers", 0) + (1 if res.ok else 0)
                 if co.danger(game.scenario(st.city.id), st, job["at"]):
                     log["ignored_foreboding"] += 1
                 st, out = travel(game, st, job["at"], rng, strat, log, turn)

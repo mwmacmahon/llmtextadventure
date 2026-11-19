@@ -111,7 +111,8 @@ class ParchmentGame(FantasyGame):
                 state.found_places.append(FoundPlace(name=str(spot), within=home))
             if start.get("start_spot"):                      # FN131 (the owner, 11-17: "choice paralysis is our enemy"): at the tavern's door
                 state.player.location = str(start["start_spot"])
-            jb.setup(sc, state)                              # FN62, FN63: the board
+            state.flags["homes"] = {q.id: q.location for q in state.people if q.combat is None}     # FN183: where each is usually found
+            jb.setup(sc, state, self)                        # FN62, FN63: the board (FN182: and who goes along for a job)
             jb.refill(self, sc, state, "start")              # FN165: one job sized to the player beside the written ones
             self._dress(state)
         return title, state
@@ -193,7 +194,7 @@ class ParchmentGame(FantasyGame):
             return s
         s = self._settle_place(s, info)
         co.keep_with(s)                                  # FN149: the companion follows
-        for line in jb.update(self, s) + jb.refill(self, self.scenario(s.city.id), s, "day"):
+        for line in jb.update(self, s) + co.send_home(s) + jb.refill(self, self.scenario(s.city.id), s, "day"):
             s.player.shown_notes.append(line)
         return s
 
@@ -306,6 +307,10 @@ class ParchmentGame(FantasyGame):
             n = state.player.name                        # worded after a cold read (11-19)
             lines.append(f"Company: {q.name} travels with {n}. {n} has room for one lasting companion only: if {n} asks anyone else "
                          "to join for good, that person declines in their own words and does not come.")
+        for hj, hq in [(j, x) for j in state.flags.get("jobs") or [] for x in co.helpers_along(state) if j.get("helper") == x.id]:
+            # FN182: along for one job (worded after a cold read, 11-19: the model is not to decide the job is done)
+            lines.append(f"Along for one job ({hj['title']}): {hq.name}, {hq.role}, is with {state.player.name}, and stays until the "
+                         "engine says the job is done.")
         return text + ("\n" + "\n".join(lines + ([sale] if sale else [])) if lines or sale else "")
 
     def _for_sale(self, s: FantasyState) -> str:
@@ -334,7 +339,7 @@ class ParchmentGame(FantasyGame):
             return None
         here = self.where(s)
         for i in getattr(adj, "intents", None) or []:
-            d = destination(i).strip()
+            d = self._dest(s, i)                          # FN183: a person of the village is where they are
             if not d or d.lower() in (here.lower(), (s.player.location or "").lower()) or wm.place_named(s.world, d):
                 continue
             if any(f.name.lower() == d.lower() for f in s.found_places) or self._same_spot(s, d, here):
@@ -378,11 +383,79 @@ class ParchmentGame(FantasyGame):
             return "at " + self.where(s)
         return ("in " + self.where(s)) if wm.region_at(s.world, x, y) else ("in open country, " + wm.GROUND_WORDS.get(wm.ground_at(s.world, x, y) or "", "").strip())
 
-    def _journey_dest(self, s: FantasyState, adj: Any) -> str | None:
-        """The known place the reading sends the player to this turn, when it is a journey (longer than a turn's walk)."""
+    # ---- going to a person (FN183) ----------------------------------------------------------------------------------------
+    # The owner, 11-19: "For static npcs (ones not leaving town + surroundings) you can travel to a npc the same way you travel
+    # to a building etc. it's a freebie that you go to wherever they are. If they are not there you warp to their 'normal'
+    # location (shop, house; etc) and are told they seemingly aren't around right now." Leans on the reading putting the
+    # person in `goes_to` ("I go and see the smith"); each use is a `to_person` row in the ledger.
+    def _homes(self, s: FantasyState) -> dict:
+        """Where each person who can be gone to is usually found: the village's people, the crew at their table, and whoever
+        waits to go along for a job (the cold read, 11-19: the board sends the player to exactly them)."""
+        out = dict(s.flags.get("homes") or {})
+        if out:
+            out.update({q.id: "the tavern" for q in co.crew(s)})
+            out.update({j["helper"]: str(j.get("helper_at") or "the tavern") for j in s.flags.get("jobs") or [] if j.get("helper")})
+        return out
+
+    def _person_named(self, s: FantasyState, d: str):
+        strip = lambda x: re.sub(r"^(the|a|an) ", "", (x or "").strip().lower())     # noqa: E731
+        k = strip(d)
+        if not k:
+            return None
+        for q in s.people:
+            if q.id in self._homes(s) and q.status == "alive" and k in {strip(q.name), strip(q.name).split(" ")[0], strip(q.called),
+                                                                         *[strip(a) for a in (q.aliases or [])]}:
+                return q
+        return None
+
+    def _is_place(self, s: FantasyState, name: str) -> bool:
+        return bool(name) and (any(f.name.lower() == name.lower() for f in s.found_places) or wm.place_named(s.world, name) is not None)
+
+    def _dest(self, s: FantasyState, intent: Any, mark: bool = False) -> str:
+        """Where an intent takes the player: the reading's destination, or, when that names one of the village's people and
+        no place, where they are (their usual place when they are nowhere the map holds)."""
         from engine.roles import destination
+        d = destination(intent).strip()
+        if not d or not s.world or self._is_place(s, d):
+            return d
+        q = self._person_named(s, d)
+        if q is None:
+            return d
+        # the cold read (11-19): someone with the player, or filed in a corner of the room the player stands in ("by the
+        # hearth"), is here: no move, and never "isn't around"
+        if q.id in s.player.with_them or self._same_spot(s, q.location, s.player.location):
+            return s.player.location or d
+        there = self._is_place(s, q.location)
+        loc = q.location if there else str(self._homes(s).get(q.id) or "")
+        if not self._is_place(s, loc):
+            return d
+        if mark:
+            s.flags["to_person"] = {"id": q.id, "there": there, "loc": loc}
+        return loc
+
+    def _to_person(self, s: FantasyState, w: Any, pid: str | None) -> None:
+        """The turn's move was to a person: inside the place the player stands in, the engine puts them in that spot now (no
+        walk to roll); the narrator and the player are told when the person is not there."""
+        tp = s.flags.pop("to_person", None)
+        q = s.person(tp["id"]) if tp else None
+        if q is None:
+            return
+        w.rows.append({"kind": "to_person", "who": q.id, "there": bool(tp["there"]), "to": tp["loc"]})
+        n, loc = s.player.name, str(tp["loc"])
+        if pid is None and loc.lower() != (s.player.location or "").lower() and \
+                (self._spot_parent(s, loc).lower() == self.where(s).lower() or loc.lower() == self.where(s).lower()):
+            s.player.location = loc
+            w.skip.append("location")
+            w.directives.insert(0, f"{n} has walked to {wm._lower_the(loc)} and is there now." + (f" {q.name} is here." if tp["there"] else ""))
+        if not tp["there"]:
+            w.mechanics.append(f"{q.name} seemingly isn't around right now.")
+            w.directives.append(f"{q.name} is not at {wm._lower_the(loc)} and is not found this turn. Show the place without {q.name}; "
+                                f"no one says where {q.name} is.")
+
+    def _journey_dest(self, s: FantasyState, adj: Any, mark: bool = False) -> str | None:
+        """The known place the reading sends the player to this turn, when it is a journey (longer than a turn's walk)."""
         for i in getattr(adj, "intents", None) or []:
-            d = destination(i).strip()
+            d = self._dest(s, i, mark=mark)
             parent = self._spot_parent(s, d) if d else ""                 # a spot by its exact name first, before any loose match
             pid = (wm.place_named(s.world, parent) if parent else wm.place_named(s.world, d)) if d else None
             if parent and pid is not None:
@@ -396,6 +469,7 @@ class ParchmentGame(FantasyGame):
         starts a journey and walks its first leg; a held journey's leg is walked by the Continue command. The narrator is
         told where this leg ends, and what happened there if the stop's roll says so (FN34)."""
         co.keep_with(state)                              # FN149: the companion is here before the prose
+        state.flags.pop("to_person", None)
         s, w = super().world_turn(state, adj, player_text, rng, turn, offset)
         if s.world and not s.player.fighting:
             # the gate-2 round (11-17): paid 30 for a 15 job, the engine after the prose and the referee from the farmer's coins.
@@ -414,7 +488,9 @@ class ParchmentGame(FantasyGame):
                            "journey": (s.world["player"].get("journey") or {}).get("to")})     # FN35: the dial in the ledger each turn
         if not s.world or s.player.fighting or s.player.fate or s.player.peril is not None:
             return s, w
-        pid = self._journey_dest(s, adj)
+        s.flags.pop("to_person", None)                   # the cold read: never one left from a turn that ended early
+        pid = self._journey_dest(s, adj, mark=True)
+        self._to_person(s, w, pid)                       # FN183
         way = self._direction(adj) if pid is None else ""
         if way:
             # FN37 (the gate-1 round, 11-17: "I head north along the road" moved nothing): a direction leads to the next known
@@ -876,6 +952,8 @@ class ParchmentGame(FantasyGame):
                                 directive=f"The sale is done: {p.name} sells {name} for {price * n} gold, paid over; the price stands.{news} A line or two.",
                                 minutes=2, referee_skip=["gold", "inventory"])
 
+    FLEE_NUDGE = 1           # FN181: running is rolled twice, the better kept, and one blow at most follows a slip that fails
+
     ONE_COMPANION = "You may only have one permanent companion at a time. Part ways with {name} first."
 
     def _company_commands(self, s: FantasyState) -> list:
@@ -899,6 +977,14 @@ class ParchmentGame(FantasyGame):
                                    # "ask the archer" finds her
                                    params=[Param(name="who", label="Who", must_name=True,
                                                  options=[Option(id=q.id, label=f"{re.sub(r'^(a|an) ', 'the ', q.role)} ({q.name})") for q in can])]))
+        waiting = co.helpers_here(s)                     # FN182: who would go along for a job, where they wait
+        if waiting:
+            out.append(CommandSpec(id="take_helper", label="Take along for a job", mode="narrated",
+                                   hint="The player accepts or asks a listed person to come along for their one job (\"come on then, "
+                                        "Tuck\", \"bring the huntsman\"). Setting out for the job alone is not this. Match by name or "
+                                        "trade; by the job only when the player asks for company.",
+                                   params=[Param(name="job", label="Who", must_name=True,
+                                                 options=[Option(id=j["id"], label=f"{hq.name}, {hq.role} ({j['title']})") for j, hq in waiting])]))
         q = co.companion(s)
         if q is not None and not s.player.fighting:
             out.append(CommandSpec(id="part_ways", label=f"Part ways with {q.name}", mode="narrated",
@@ -909,6 +995,17 @@ class ParchmentGame(FantasyGame):
         from engine.game import CommandResult
         s = state.model_copy(deep=True)
         n = s.player.name
+        if command_id == "take_helper":
+            jid = str(args.get("job") or "") or (co.helpers_here(s)[0][0]["id"] if len(co.helpers_here(s)) == 1 else "")
+            job = next((j for j, _ in co.helpers_here(s) if j["id"] == jid), None)
+            hq = co.take_helper(s, jid)
+            if hq is None:
+                return state, CommandResult(ok=False, label="Take along", text="Nobody here is waiting to go along for a job of yours.")
+            return s, CommandResult(label="Take along", text=f"{hq.name} comes along for the job: {job['title']}.",
+                                    player_line=f"I ask {hq.name} to come along for the job.", summary=f"{n} takes {hq.name} along for a job.",
+                                    entities=[hq.id],
+                                    directive=(f"{hq.name}, {hq.role}, joins {n} for one job ({job['title']}). Write a line or two of "
+                                               f"{hq.name} getting ready and falling in beside {n}. They do not set out yet."), minutes=2)
         if command_id == "ask_along" and co.companion(s) is not None:
             return state, CommandResult(ok=False, label="Invite along", text=self.ONE_COMPANION.format(name=co.companion(s).name))
         if command_id == "ask_along":
@@ -1067,7 +1164,7 @@ class ParchmentGame(FantasyGame):
             return self._read_board(state)
         if command_id in ("buy", "sell", "sell_loot", "service"):
             return self._trade(state, command_id, args)
-        if command_id in ("ask_along", "part_ways"):
+        if command_id in ("ask_along", "part_ways", "take_helper"):
             return self._company_run(state, command_id, args)
         if command_id in ("go_round", "go_near"):
             return self._round_run(state, command_id, args)

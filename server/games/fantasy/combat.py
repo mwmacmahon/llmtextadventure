@@ -1224,6 +1224,13 @@ def run_fight_command(game: Any, state: FantasyState, command_id: str, clean: bo
         dex = int(p.stats.get("dex", 0))
         dc = min(16, 12 + 2 * max(0, reach - 1))
         die = rng.randint(1, 20)
+        # FN181 (the owner, 11-19: "Death is death. Maybe make running away easier - secretly nudge the rolls a little so you're
+        # more likely to survive running away"): a game that sets FLEE_NUDGE rolls the slip twice and keeps the better, shown
+        # as one roll, and lets at most that many blows follow a slip that fails (the simulator: a game is many fights now)
+        nudge = int(getattr(game, "FLEE_NUDGE", 0) or 0)
+        if nudge:
+            die = max(die, rng.randint(1, 20))
+        blows = 0
         if clean:                                       # FN144: a thing that gets the player away (a smoke bomb): no roll
             lines.append("Away clean, no roll.")
         else:
@@ -1232,6 +1239,9 @@ def run_fight_command(game: Any, state: FantasyState, command_id: str, clean: bo
                          + (f" ({reach} in reach)" if reach > 1 else "") + (". Away clean." if clean else ". Not clean: they get their blows."))
         for q in ([] if clean else living_enemies(game, s)):
             for body in bodies(q)[:2]:                  # B321: at most two of a band reach the one running (the lever's hint says so)
+                if nudge and blows >= nudge:
+                    break
+                blows += 1
                 b = ensure_block(q)
                 a = next((x for x in b.actions if x.get("kind") in ("strike", "drain")), {"kind": "strike"})
                 r = resolve(game, s, {"key": f"flee:{q.id}:{body}", "side": "enemy", "who": q.id, "body": body, "action": {**a, "kind": "strike"},

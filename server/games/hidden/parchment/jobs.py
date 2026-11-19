@@ -53,8 +53,9 @@ def see(s: FantasyState, j: dict) -> str:
     return f"{q.name} at {q.location}" if q is not None else f"{j['who']} in the village"
 
 
-def setup(sc: dict, s: FantasyState) -> None:
+def setup(sc: dict, s: FantasyState, game: Any = None) -> None:
     """At a new game: the board, with the places' rolled names."""
+    import random
     names = {pid: p["name"] for pid, p in (s.world or {}).get("places", {}).items()}
     jobs = []
     for n, j in enumerate(sc.get("jobs") or []):
@@ -74,6 +75,12 @@ def setup(sc: dict, s: FantasyState) -> None:
                      "giver": str(j.get("giver") or ""), "known": False})
     s.flags["jobs"] = jobs
     s.flags["residents"] = {}
+    if game is not None:                                 # FN182: who goes along for a job, waiting where its giver is
+        from . import company as co
+        specs = [j.get("helper") for j in sc.get("jobs") or [] if str(j.get("form") or "") in ("clear", "kill", "bounty")]
+        for j, spec in zip(jobs, specs):
+            if isinstance(spec, dict):
+                co.make_helper(game, s, j, spec, random.Random(f"{(s.world or {}).get('seed', 0)}:helper:{j['id']}"))
     sync_threads(s)
 
 
@@ -122,6 +129,7 @@ def live(sc: dict, s: FantasyState, pid: str) -> bool:
 POST_NEAR, POST_FAR = 4, 12      # tiles from home: one to three kilometres
 OPEN_WANTED = 2
 POST_BAND = "easy"
+HELPER_CHANCE = 0.5      # FN182: of the papers whose kind has a helper written
 NEW_NOTICES = "New notices are on the board in the tavern."
 
 
@@ -187,8 +195,19 @@ def post(game: Any, sc: dict, s: FantasyState) -> dict | None:
     # job a day was survived three times in ten with the archer; a paper is an "easy" fight (nine in ten), always
     band = POST_BAND
     s.city.regions[name] = "wilds"                      # the generator reads the place's kind of ground from here
+    # FN182: half the papers that can, come with someone for the job; the fight is then sized with them counted
+    from . import company as co
+    stub = {"id": f"job_{len(s.flags.get('jobs') or []) + 1}", "title": str(t.get("title") or "Clear {place}").replace("{place}", wm._lower_the(name)),
+            "giver": str(t.get("giver") or "")}
+    helper = co.make_helper(game, s, stub, t["helper"], rng) if isinstance(t.get("helper"), dict) and rng.random() < HELPER_CHANCE else None
+    if helper is not None:
+        helper.fights_beside = True
     e = en.encounter(game, s, en.Want(band=band, pinned=[(entry, None)], place=name, n=20, seed=f"{s.world['seed']}:post:{n}"))
+    if helper is not None:
+        helper.fights_beside = False
     if not e.bodies:
+        if helper is not None:
+            s.people = [q for q in s.people if q is not helper]
         return None
     pid = f"post_{n}"
     s.flags.setdefault("posted", {})[pid] = [{"entry": b, "count": c, "variant": e.variant} for b, c in e.bodies]
@@ -200,6 +219,8 @@ def post(game: Any, sc: dict, s: FantasyState) -> dict | None:
          "who": str(t.get("who") or "the reeve"), "line": str(t.get("line") or "").replace("{way}", way).replace("{place}", wm._lower_the(name)),
          "title": str(t.get("title") or "Clear {place}").replace("{place}", wm._lower_the(name)), "status": "open", "killed": 0,
          "paid": 0, "giver": str(t.get("giver") or ""), "known": False, "day": s.clock.day, "place": {"kind": str(t.get("kind") or "camp"), "name": name, "tile": list(tile)}}
+    if helper is not None:
+        j.update({k: stub[k] for k in ("helper", "helper_at", "helper_along")})
     jobs.append(j)
     s.flags["posted_last"] = entry
     return j
@@ -242,10 +263,14 @@ def update(game: Any, s: FantasyState) -> list[str]:
         return []
     out: list[str] = []
     seen = set(s.flags.get("dead_seen") or [])
+    friends = set(s.flags.get("crew") or []) | {j["helper"] for j in jobs if j.get("helper")}
     for q in s.people:
         # the review (11-18): any status but alive counted as a kill (a goblin driven off, status gone, paid its bounty and
         # left an ear): a kill is the dead
-        if q.status == "dead" and q.id not in seen and q.combat is not None:
+        if q.status == "dead" and q.id not in seen and q.combat is not None and q.id in friends:
+            seen.add(q.id)                                # the cold read (11-19): a fallen companion or helper is not looted
+            s.flags["looted"] = [*(s.flags.get("looted") or []), q.id]
+        elif q.status == "dead" and q.id not in seen and q.combat is not None:
             seen.add(q.id)
             for j in jobs:
                 if j["form"] == "bounty" and q.combat.block == j["entry"]:
@@ -398,7 +423,11 @@ def read_board(s: FantasyState) -> list[str]:
     for j in s.flags.get("jobs") or []:
         if j["status"] == "open":
             # worded after a cold read (11-19): the pay read as a distance when it followed "south-west of the village"
-            out.append(f"{j['title']}: {j['line']}" + (f". Pays {j['pay']} gold" if j["pay"] else "") + f". Posted for {j['who']}; see {see(s, j)}")
+            hq = s.person(j["helper"]) if j.get("helper") else None
+            # worded after a cold read (11-19): who pays and who would come along are two people, each said whole
+            pays = f"{payer(s, j).name} at {payer(s, j).location} pays it" if payer(s, j) is not None else f"{j['who']} pays it in the village"
+            out.append(f"{j['title']}: {j['line']}" + (f". Pays {j['pay']} gold; {pays}" if j["pay"] else f". {pays[:1].upper() + pays[1:]}")
+                       + (f". {hq.name}, {hq.role}, at {j.get('helper_at')}, offers to come along" if hq is not None and hq.status == "alive" else ""))
         j["known"] = True
     sync_threads(s)
     return out
