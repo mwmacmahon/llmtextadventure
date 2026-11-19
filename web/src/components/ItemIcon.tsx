@@ -1,0 +1,30 @@
+/**
+ * The item-type icons (FN171, the owner, 11-19: "a library of little icons for item types ... generic item is a bag icon ...
+ * weapons get sword icon, treasure gets a icon like jewels"). Each is a few rectangles on a 16-pixel grid in one colour, so
+ * it sits with the pixel headings. A type with no picture draws the bag. To add one: a colour and its rectangles [x, y, w, h].
+ */
+const IC: Record<string, [string, number[][]]> = {
+  bag: ["#c9a26b", [[6, 1, 4, 1], [5, 2, 1, 2], [10, 2, 1, 2], [4, 4, 8, 1], [3, 5, 10, 8], [4, 13, 8, 1]]],
+  weapon: ["#c8d3e6", [[12, 1, 3, 1], [13, 2, 2, 2], [11, 2, 2, 2], [9, 4, 2, 2], [7, 6, 2, 2], [5, 8, 2, 2], [3, 9, 1, 1], [4, 10, 2, 2], [6, 11, 1, 1], [2, 12, 2, 2], [1, 14, 1, 1]]],
+  armour: ["#8fb0e8", [[3, 2, 10, 1], [2, 3, 12, 5], [3, 8, 10, 2], [4, 10, 8, 2], [5, 12, 6, 1], [7, 13, 2, 1]]],
+  worn: ["#e3c067", [[6, 2, 4, 2], [7, 4, 2, 2], [5, 6, 6, 1], [4, 7, 2, 5], [10, 7, 2, 5], [5, 12, 6, 1]]],
+  potion: ["#f7768e", [[6, 1, 4, 1], [7, 2, 2, 3], [5, 5, 6, 1], [4, 6, 8, 6], [5, 12, 6, 1]]],
+  throw: ["#e0af68", [[9, 1, 1, 2], [10, 3, 1, 1], [7, 4, 3, 1], [5, 5, 7, 1], [4, 6, 9, 6], [5, 12, 7, 1]]],
+  scroll: ["#e8dcc0", [[3, 2, 10, 2], [4, 4, 8, 1], [4, 5, 2, 7], [10, 5, 2, 7], [4, 11, 8, 1], [3, 12, 10, 2], [7, 6, 2, 1], [7, 8, 2, 1]]],
+  wand: ["#b79cf0", [[12, 1, 1, 3], [11, 2, 3, 1], [10, 5, 2, 2], [8, 7, 2, 2], [6, 9, 2, 2], [4, 11, 2, 2], [2, 13, 2, 2]]],
+  curio: ["#7dcfff", [[7, 1, 2, 3], [6, 4, 4, 2], [1, 6, 14, 2], [4, 8, 8, 2], [4, 10, 3, 2], [9, 10, 3, 2], [3, 12, 2, 2], [11, 12, 2, 2]]],
+  loot: ["#7bd88f", [[5, 2, 6, 1], [4, 3, 8, 1], [3, 4, 10, 2], [4, 6, 8, 2], [5, 8, 6, 2], [6, 10, 4, 2], [7, 12, 2, 2]]],
+  gold: ["#e3c067", [[5, 2, 6, 1], [3, 3, 10, 1], [2, 4, 12, 8], [3, 12, 10, 1], [5, 13, 6, 1]]],
+  person: ["#e6e6e6", [[6, 1, 4, 4], [5, 6, 6, 1], [4, 7, 8, 5], [5, 12, 2, 3], [9, 12, 2, 3]]],
+  shop: ["#e0af68", [[2, 2, 12, 2], [1, 4, 14, 2], [3, 6, 3, 8], [10, 6, 3, 8], [6, 6, 4, 3]]],
+  job: ["#e3c067", [[3, 1, 10, 1], [3, 2, 1, 12], [12, 2, 1, 12], [3, 14, 10, 1], [5, 4, 6, 1], [5, 6, 6, 1], [5, 8, 4, 1]]],
+};
+
+export function ItemIcon({ kind }: { kind: string }) {
+  const [colour, rects] = IC[kind] ?? IC.bag;
+  return (
+    <svg className="item-icon" viewBox="0 0 16 16" shapeRendering="crispEdges" aria-hidden="true">
+      {rects.map((r, i) => <rect key={i} x={r[0]} y={r[1]} width={r[2]} height={r[3]} fill={colour} />)}
+    </svg>
+  );
+}

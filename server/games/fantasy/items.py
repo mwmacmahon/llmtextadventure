@@ -344,6 +344,30 @@ def shop_lines(game: Any, stock: dict[str, int]) -> list[tuple[str, str, int]]:
     return [(ref, cat[ref]["name"], int(price)) for ref, price in stock.items() if ref in cat]
 
 
+ICON_OF = {"potion": "potion", "throwable": "throw", "scroll": "scroll", "wand": "wand", "curio": "curio", "charm": "curio",
+           "worn": "worn", "arms": "weapon"}
+
+
+def icon_of(game: Any, it: Item) -> str:
+    """FN171: the thing's type, for its icon and its place in the sorted pockets: gold, loot, potion, throw, scroll, wand,
+    curio, worn, weapon, armour, or bag (anything else)."""
+    from . import gear
+    if it.id == "gold":
+        return "gold"
+    if it.kind == "loot":
+        return "loot"
+    e = entry_of(game, it) or {}
+    if it.power or str(e.get("kind") or "") in ("curio", "charm"):
+        return "curio"
+    if str(e.get("kind") or "") in ICON_OF:
+        return ICON_OF[str(e["kind"])]
+    # by the name alone (a pack whose note lists a hammer is no weapon); clothes are worn, not armour
+    slot = gear.slot_of(Item(id=it.id, name=it.name, count=it.count, slot=it.slot))
+    if slot == "body" and gear.body_of(it) is None:
+        return "worn"
+    return "weapon" if slot == "weapon" else "armour" if slot in ("body", "shield") else "worn" if slot else "bag"
+
+
 def value_of(game: Any, it: Item) -> int:
     e = entry_of(game, it)
     return int(e.get("value") or 0) if e else 0

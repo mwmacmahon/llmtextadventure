@@ -844,3 +844,55 @@ def test_going_to_a_person_goes_where_they_are(engine: Engine):
     s0.player.location = "The old mill"
     assert game._journey_dest(s0, type("A", (), {"intents": [type("I", (), {"goes_to": "the smith", "transition": ""})()]})()) == s0.world["home"]
     assert s0.flags["dest_spot"] == "the smithy"
+
+
+def test_the_pockets_are_sorted_the_shop_has_a_basket_and_the_map_says_who_is_where(engine: Engine):
+    """FN171, FN172, FN176, FN180, FN184 (the owner, 11-19: "Inventory needs sorting ... icons for item types"; "shops could
+    also have a basic UI"; "yes to shop basket"; "a map UI for listing NPCs / shops / etc")."""
+    from games.fantasy import items as itm
+    from games.fantasy.state import Item
+    from games.hidden.parchment import company as co
+    game, st = _fresh(engine)
+    st.inventory += [Item(id="wolf_pelts", name="wolf pelt", count=3, kind="loot", worth=4), Item(id="odd_pack", name="dungeoneer's pack", note="a hammer")]
+    if itm.catalogue(game):
+        itm.add(game, st, "potion_of_healing", known=True)
+    st.item("gold").count = 30
+    st, _ = game.run_command(st, "read_board", {})
+    st, _ = game.run_command(st, "ask_along", {"who": co.crew(st)[0].id})
+    st.person("smith").met = True
+    st.player.location = "the general store"
+    ui = game.ui(st)
+    pockets = next(w for w in ui.panels if w.type == "items")
+    assert pockets.place == "popout" and pockets.group == "Pockets" and pockets.purse == 30
+    titles = [g.title for g in pockets.groups]
+    assert titles[0] == "Equipped" and titles[-1] == "Loot" and titles == sorted(titles, key=["Equipped", *dict.fromkeys(t for _, t in game.POCKETS)].index)
+    loot = pockets.groups[-1]
+    assert loot.note == "12 gold" and loot.rows[0].icon == "loot" and loot.rows[0].price == 12
+    assert next(r for g in pockets.groups for r in g.rows if r.id == "odd_pack").icon == "bag"         # a hammer in the note is no weapon
+    assert not any(r.id == "gold" for g in pockets.groups for r in g.rows)
+    shop = next(w for w in ui.panels if w.type == "shop")
+    assert shop.place == "popout" and shop.group == "Shop" and shop.gold == 30 and shop.command == "deal"
+    assert any(r.tag == "loot" and r.id == "wolf_pelts" and r.price == 12 for r in shop.sells)
+    chips = [c.id for w in ui.panels if w.type == "commands" for c in w.items]
+    assert not {"deal", "buy", "sell", "sell_loot"} & set(chips) and any(c.id == "deal" for c in game.commands(st))
+    assert any(w.type == "list" and w.title == "Company" and w.place == "side" and "companion" in w.items[0].value for w in ui.panels)
+    m = next(w for w in ui.panels if w.type == "map")
+    home = next(p for p in m.places if p["id"] == st.world["home"])
+    assert any(r["icon"] == "shop" and r["title"] == "The general store" and "buys loot" in r["sub"] for r in home["who"])
+    assert any(r["title"] == "The smithy" and st.person("smith").name in r["sub"] for r in home["who"])
+    farms = next(p for p in [*m.places, *m.regions] if p["id"] == "farms")
+    assert any(r["icon"] == "job" and "see " in r["sub"] for r in farms["who"])
+    # the basket: all or nothing, one turn
+    if shop.stock:
+        dear = max(shop.stock, key=lambda r: r.price)
+        s2, res = game.run_command(st, "deal", {"buy": f"{dear.id}*9"})
+        assert not res.ok and s2.item("gold").count == 30
+        cheap = min(shop.stock, key=lambda r: r.price)
+        s2, res = game.run_command(st, "deal", {"buy": f"{cheap.id}*2", "sell": "wolf_pelts"})
+        assert res.ok and s2.item("gold").count == 30 + 12 - 2 * cheap.price and s2.item("wolf_pelts") is None
+        assert res.text.startswith("Bought: 2 ") and "Sold: 3 wolf pelt (12 gold)." in res.text and "gold" in res.referee_skip
+    s3, res = game.run_command(st, "deal", {"loot": "1"})
+    assert res.ok and s3.item("wolf_pelts") is None and s3.item("gold").count == 42
+    assert not game.run_command(st, "deal", {})[1].ok and not game.run_command(st, "deal", {"sell": "longsword_x"})[1].ok
+    st.player.location = "the green"
+    assert not any(w.type == "shop" for w in game.ui(st).panels)

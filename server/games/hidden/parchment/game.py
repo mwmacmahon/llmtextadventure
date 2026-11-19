@@ -864,6 +864,8 @@ class ParchmentGame(FantasyGame):
         if services:
             out.append(CommandSpec(id="service", label="Pay for", mode="narrated", hint="Pay for something this place does: a room, a round, healing, a blessing.",
                                    params=[Param(name="what", label="What", options=[Option(id=k, label=f"{lb}, {pr} gold") for k, lb, pr in services])]))
+        if stock or gear or (sh.get("buys") and self._sellable(s)):
+            out.append(CommandSpec(id="deal", label="Shop", mode="narrated", typed=False, hint="The shop window's basket, sent whole."))
         sell = self._sellable(s) if sh.get("buys") else []
         loot = [(it, pr) for it, pr in sell if jb.is_loot(it)]
         if loot:                                         # FN170 (the owner, 11-19: "tell shopkeep you want to sell your loot to auto sell")
@@ -1162,6 +1164,8 @@ class ParchmentGame(FantasyGame):
     def run_command(self, state: FantasyState, command_id: str, args: dict[str, Any]):
         if command_id == "read_board":
             return self._read_board(state)
+        if command_id == "deal":
+            return self._deal(state, args)
         if command_id in ("buy", "sell", "sell_loot", "service"):
             return self._trade(state, command_id, args)
         if command_id in ("ask_along", "part_ways", "take_helper"):
@@ -1228,6 +1232,7 @@ class ParchmentGame(FantasyGame):
                 data["spots"] = [{"name": n, "here": n.lower() == at} for n in [self.where(state), *spots]]
                 if not any(x["here"] for x in data["spots"]):
                     data["spots"][0]["here"] = True
+            self._place_cards(state, data)
             if j:
                 data["journey"] = {"to": j["to"], "label": self.CONTINUE.format(label=j["label"]),
                                    "path": j["path"], "stops": [j["path"][st[0]] for st in j["stops"]]}
@@ -1237,8 +1242,185 @@ class ParchmentGame(FantasyGame):
             # the commands, before the sheet
             at = next((i + 1 for i, w in enumerate(rest) if getattr(w, "type", "") == "commands"), min(3, len(rest)))
             out.panels = rest[:at] + [panel] + rest[at:]
-        out.panels = [self._doll(state) if isinstance(w, ListPanel) and w.title == "Equipped" else w for w in out.panels]
+        out.panels = [self._doll(state) if isinstance(w, ListPanel) and w.title == "Equipped" else
+                      self._pockets(state) if isinstance(w, ListPanel) and w.title == "Pockets" else w for w in out.panels]
+        company = self._company_panel(state)             # FN184: who is along, on the side
+        if company is not None:
+            at = next((i + 1 for i, w in enumerate(out.panels) if getattr(w, "type", "") == "commands"), len(out.panels))
+            out.panels.insert(at, company)
+        shop = self._shop_panel(state)                   # FN172: the shop's window, from a big button while standing in one
+        if shop is not None:
+            out.panels.append(shop)
         return self._popouts(self._split_commands(state, out))
+
+    # ---- the sorted pockets, the shop's window, the map's cards, the company (FN171, FN172, FN176, FN184) ---------------------
+    POCKETS = [("weapon", "Weapons"), ("armour", "Armour"), ("worn", "Worn"), ("potion", "Potions"), ("throw", "Throwables"),
+               ("scroll", "Scrolls and wands"), ("wand", "Scrolls and wands"), ("curio", "Curios"), ("bag", "Gear"), ("loot", "Loot")]
+
+    def _pockets(self, s: FantasyState):
+        from engine.game import IconRow, ItemGroup, ItemsPanel
+        from games.fantasy import items as itm
+        prices = {it.id: pr for it, pr in self._sellable(s)}
+        groups: dict[str, list] = {"Equipped": []}
+        for _, title in self.POCKETS:
+            groups.setdefault(title, [])
+        for it in s.inventory:
+            if it.id == "gold" or it.count == 0:
+                continue
+            icon = itm.icon_of(self, it)
+            row = IconRow(id=it.id, icon=icon, name=it.name, note=(it.note or "")[:80], count=it.count, tag="on" if it.equipped else "",
+                          price=prices[it.id] * it.count if icon == "loot" and it.id in prices else None)
+            groups["Equipped" if it.equipped else dict(self.POCKETS).get(icon, "Gear")].append(row)
+        loot = sum(r.price or 0 for r in groups["Loot"])
+        out = [ItemGroup(title=t, rows=rows, note=f"{loot} gold" if t == "Loot" and loot else "") for t, rows in groups.items() if rows]
+        gold = s.item("gold")
+        return ItemsPanel(title="Pockets", purse=gold.count if gold is not None else 0, groups=out,
+                          tabs=[("All", "bag", []), ("Arms", "weapon", ["Equipped", "Weapons", "Armour", "Worn"]),
+                                ("Use", "potion", ["Potions", "Throwables", "Scrolls and wands"]), ("Curios", "curio", ["Curios"]),
+                                ("Loot", "loot", ["Loot"])])
+
+    def _sell_count(self, it: Any) -> int:
+        """How many go at one sale: a stack of plain things whole; a thing with a use one at a time."""
+        return it.count if it.charges is None and it.ref == "" else 1
+
+    def _shop_panel(self, s: FantasyState):
+        from engine.game import IconRow, ShopPanel
+        from games.fantasy import items as itm
+        from games.fantasy.state import Item
+        sh = self._shop(s)
+        if sh is None:
+            return None
+        cat = itm.catalogue(self)
+        stock = [IconRow(id=ref, icon=itm.ICON_OF.get(str(cat[ref].get("kind") or ""), "bag"), name=name, price=pr)
+                 for ref, name, pr in itm.shop_lines(self, {str(k): int(v) for k, v in (sh.get("stock") or {}).items()})]
+        stock += [IconRow(id=f"gear:{k}", icon=itm.icon_of(self, Item(id="x", name=str(k))), name=str(k), price=int(v))
+                  for k, v in (sh.get("gear") or {}).items()]
+        sells = [IconRow(id=it.id, icon=itm.icon_of(self, it), name=it.name, count=self._sell_count(it), price=pr * self._sell_count(it),
+                         tag="loot" if jb.is_loot(it) else "") for it, pr in (self._sellable(s) if sh.get("buys") else [])]
+        if not stock and not sells:
+            return None
+        here = (s.player.location or "").lower()
+        keeper = next((q for q in s.people if q.status == "alive" and q.combat is None and (q.location or "").lower() == here), None)
+        gold = s.item("gold")
+        return ShopPanel(title=(s.player.location or "Shop")[:1].upper() + (s.player.location or "Shop")[1:], group="Shop", place="popout",
+                         keeper=f"{keeper.name}, {keeper.called.lower()}" if keeper is not None else "",
+                         gold=gold.count if gold is not None else 0, stock=stock, sells=sells)
+
+    def _deal(self, state: FantasyState, args: dict[str, Any]):
+        """FN180 (the owner, 11-19: "yes to shop basket"): the shop window's basket as one turn: everything sold, then
+        everything bought, or nothing at all when the gold does not reach."""
+        from engine.game import CommandResult
+        from games.fantasy import items as itm
+        from games.fantasy.state import Item
+        s = state.model_copy(deep=True)
+        p, sh = s.player, self._shop(s)
+        if sh is None:
+            return state, CommandResult(ok=False, label="Shop", text="There is no shop here.")
+        sellable = {it.id: (it, pr) for it, pr in (self._sellable(s) if sh.get("buys") else [])}
+        ids = [x for x in str(args.get("sell") or "").split(",") if x]
+        if str(args.get("loot") or "") in ("1", "true", "True"):
+            ids += [i for i, (it, _) in sellable.items() if jb.is_loot(it)]
+        ids = list(dict.fromkeys(ids))
+        if any(i not in sellable for i in ids):
+            return state, CommandResult(ok=False, label="Shop", text="They do not buy that here.")
+        buys: list[tuple[str, int, int]] = []             # (id, how many, price each)
+        for part in [x for x in str(args.get("buy") or "").split(",") if x]:
+            ref, _, n = part.rpartition("*") if "*" in part else (part, "", "1")
+            n = max(1, min(20, int(n) if str(n).isdigit() else 1))
+            price = int((sh.get("gear") or {}).get(ref[5:], 0)) if ref.startswith("gear:") else \
+                int((sh.get("stock") or {}).get(ref, 0)) if ref in itm.catalogue(self) else 0
+            if not price:
+                return state, CommandResult(ok=False, label="Shop", text="Not sold here.")
+            buys.append((ref, n, price))
+        if not ids and not buys:
+            return state, CommandResult(ok=False, label="Shop", text="Nothing picked.")
+        gold = s.item("gold")
+        have = gold.count if gold is not None else 0
+        income = sum(pr * self._sell_count(it) for it, pr in (sellable[i] for i in ids))
+        cost = sum(n * pr for _, n, pr in buys)
+        if have + income < cost:
+            return state, CommandResult(ok=False, label="Shop", text=f"That costs {cost} gold; {p.name} has {have + income}.")
+        sold, news = [], ""
+        for i in ids:
+            it, pr = sellable[i]
+            n = self._sell_count(it)
+            e = itm.entry_of(self, it)
+            if e and not it.known:
+                news += f" The keeper names {it.name}: {itm._a(e['name'])}."
+            sold.append(it.render() if n > 1 else itm._a(it.name))
+            it.count -= n
+            if it.count <= 0:
+                s.inventory = [x for x in s.inventory if x is not it]
+        if gold is None:
+            gold = Item(id="gold", name="gold", count=0)
+            s.inventory.append(gold)
+        gold.count += income - cost
+        bought = []
+        for ref, n, _ in buys:
+            for _k in range(n):
+                if ref.startswith("gear:"):
+                    name = ref[5:]
+                    iid = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+                    s.inventory.append(Item(id=iid if s.item(iid) is None else f"{iid}_{len(s.inventory)}", name=name, note="new from the smith"))
+                else:
+                    name = itm.add(self, s, ref, known=True).name
+            bought.append(f"{n} {name}" if n > 1 else itm._a(name))
+        parts = ([f"Bought: {', '.join(bought)} ({cost} gold)."] if bought else []) + ([f"Sold: {', '.join(sold)} ({income} gold)."] if sold else [])
+        line = " ".join(parts) + f" {gold.count} gold now.{news}"
+        said = " and ".join(([f"buys {', '.join(bought)} for {cost} gold"] if bought else []) + ([f"sells {', '.join(sold)} for {income} gold"] if sold else []))
+        return s, CommandResult(label="Shop", text=line, player_line="I " + said.replace("buys ", "buy ").replace("sells ", "sell ") + ".",
+                                summary=f"{p.name} {said}.",
+                                directive=f"The trade is done: {p.name} {said}; the prices stand and the goods have changed hands.{news} A line or two.",
+                                minutes=3 + len(buys) + len(ids) // 3, referee_skip=["gold", "inventory"])
+
+    def _company_panel(self, s: FantasyState):
+        """Who is along: the one companion and whoever came for a job, with their hit points."""
+        from engine.game import Chip
+        rows = []
+        for q, why in [(co.companion(s), "companion"), *[(x, "") for x in co.helpers_along(s)]]:
+            if q is None:
+                continue
+            job = next((j["title"] for j in s.flags.get("jobs") or [] if j.get("helper") == q.id), "")
+            hp = f"HP {q.combat.hp}/{q.combat.hp_max}" if q.combat is not None and getattr(q.combat, "hp_max", None) else ""
+            rows.append(Chip(label=q.name, value=" · ".join(x for x in [q.role, hp, why or f"for: {job}"] if x)))
+        return ListPanel(title="Company", items=rows, layout="stack") if rows else None
+
+    def _place_cards(self, s: FantasyState, data: dict) -> None:
+        """FN176 (the owner, 11-19: "a map UI for listing NPCs / shops / etc in an area"): each known place's card gets who and
+        what the player knows is there: people met, shops, jobs that point there, pay waiting."""
+        sc = self.scenario(s.city.id)
+        shops = {str(k).lower(): v for k, v in (sc.get("shops") or {}).items()}
+        jobs = [j for j in s.flags.get("jobs") or [] if jb.known(s, j)]
+        home = s.world["home"]
+
+        def folk(loc: str) -> list:
+            return [q for q in s.people if q.status == "alive" and (q.location or "").lower() == loc.lower()
+                    and (q.met or q.id in s.player.with_them)]
+        for pl in [*data.get("places", []), *data.get("regions", [])]:
+            pid, rows = pl["id"], []
+            if pid == home:
+                for spot in self._spots(s):
+                    sh = shops.get(spot.lower()) or {}
+                    does = ", ".join(x for x in ["buys loot" if sh.get("buys") else "", "sells" if sh.get("stock") or sh.get("gear") else "",
+                                                 *[str(v.get("label") or k).lower() for k, v in (sh.get("services") or {}).items() if isinstance(v, dict)]] if x)
+                    who = ", ".join(q.name for q in folk(spot))
+                    if sh or who:
+                        rows.append({"icon": "shop" if sh else "person", "title": spot[:1].upper() + spot[1:], "sub": " · ".join(x for x in [who, does] if x)})
+                for j in jobs:
+                    q = jb.payer(s, j)
+                    if j["status"] == "done" and q is not None:
+                        rows.append({"icon": "job", "title": "Pay waiting", "sub": f"{q.name}, {j['pay']} gold: {j['title']}"})
+            else:
+                for q in folk(pl.get("name") or ""):
+                    rows.append({"icon": "person", "title": q.name, "sub": q.role + (" · hostile" if q.attitude <= -2 else "")})
+                for j in jobs:
+                    if j.get("at") == pid and j["status"] in ("open", "done"):
+                        rows.append({"icon": "job", "title": j["title"], "sub": (f"{j['pay']} gold · " if j["pay"] else "") + f"see {jb.see(s, j)}"
+                                     + (" · done" if j["status"] == "done" else "")})
+                        pl["job"] = j["title"]
+                if pid in (s.flags.get("avoid") or []):
+                    rows.append({"icon": "bag", "title": "You go round it", "sub": ""})
+            pl["who"] = rows
 
     # FN154 (the owner, 11-18: "making more menus pop out will make sidebar much more readable"): the side keeps the strip, the
     # meters and the command chips; the rest open from big buttons under the input box, by group
@@ -1248,7 +1430,7 @@ class ParchmentGame(FantasyGame):
     # the owner, 11-18: "The 'panel' tab seems mostly like leftover stuff, plus some stuff like abilities/usable items that
     # should probably be their own menu": the command chips split three ways; equip and unequip are the doll's, the journal the
     # Timeline's (still typed, no chips)
-    NO_CHIP = {"equip", "unequip", "journal", "notebook"}
+    NO_CHIP = {"equip", "unequip", "journal", "notebook", "deal", "buy", "sell", "sell_loot"}     # the shop's are its window's (FN172)
 
     def _split_commands(self, s: FantasyState, out: UISchema) -> UISchema:
         from engine.game import Commands

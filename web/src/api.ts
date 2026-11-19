@@ -29,6 +29,7 @@ export type Placed = { place?: "side" | "main" | "popout"; group?: string; pinne
 export type MapPlace = {
   id: string; name: string; kind: string; x: number; y: number; state: "heard" | "been"; told: string[];
   way: string | null; job: string | null; here: boolean; changed: string | null; go: string;
+  who?: { icon: string; title: string; sub: string }[];     // FN176: who and what the player knows is there
 };
 export type MapWidget = {
   type: "map"; title?: string | null; v: number; palette: string; tile_m: number; player: { x: number; y: number };
@@ -39,6 +40,10 @@ export type MapWidget = {
   journey: { to: string | null; label: string; path: [number, number][]; stops: [number, number][] } | null;
   unplaced: string[]; spots: { name: string; here: boolean }[];
 };
+// FN171, FN172: things with a type icon; the sorted pockets; a shop's window with a basket
+export type IconRow = { id: string; icon: string; name: string; note: string; count: number; price: number | null; tag: string };
+export type ItemsWidget = { type: "items"; title: string; purse: number | null; groups: { title: string; note: string; rows: IconRow[] }[]; tabs: [string, string, string[]][] };
+export type ShopWidget = { type: "shop"; title: string; keeper: string; gold: number; stock: IconRow[]; sells: IconRow[]; command: string };
 // FN153: the paper doll's slots, each with what is in it and what the pockets hold for it
 export type DollThing = { id: string; name: string; gives?: string | null; can_remove?: boolean };
 export type DollSlot = { id: string; label: string; item: DollThing | null; options: DollThing[] };
@@ -81,6 +86,8 @@ export type ProfileWidget = { type: "profile"; detail: Detail };
 export type Widget = Placed & (
   | MapWidget
   | PaperDollWidget
+  | ItemsWidget
+  | ShopWidget
   | ChartWidget
   | CardsWidget
   | RosterWidget

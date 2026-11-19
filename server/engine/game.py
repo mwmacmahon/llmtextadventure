@@ -256,6 +256,52 @@ class DollSlot(BaseModel):
     options: list[DollThing] = Field(default_factory=list)
 
 
+class IconRow(BaseModel):
+    """One thing in a list with an icon (FN171, FN172): `icon` is a type the web has a small picture for (bag, weapon, armour,
+    worn, potion, throw, scroll, wand, curio, loot, gold, person, shop, job; anything else draws the bag)."""
+    id: str = ""
+    icon: str = "bag"
+    name: str
+    note: str = ""
+    count: int = 1
+    price: int | None = None
+    tag: str = ""                              # a short mark after the name ("on", "loot")
+
+
+class ItemGroup(BaseModel):
+    title: str
+    note: str = ""
+    rows: list[IconRow] = Field(default_factory=list)
+
+
+class ItemsPanel(BaseModel):
+    """What is carried, by category, each with its type's icon (FN171; the owner, 11-19: "Inventory needs sorting for sure
+    ... a library of little icons for item types"). Read only; `tabs` are filters, each a title and the group titles it shows."""
+    type: Literal["items"] = "items"
+    place: Literal["side", "main", "popout"] = "side"
+    group: str = ""
+    title: str = "Pockets"
+    purse: int | None = None
+    groups: list[ItemGroup] = Field(default_factory=list)
+    tabs: list[tuple[str, str, list[str]]] = Field(default_factory=list)      # (title, icon, group titles)
+
+
+class ShopPanel(BaseModel):
+    """A shop's window (FN172, FN180; the owner, 11-19: "shops could also have a basic UI so it's not text listing a thousand
+    things"; "yes to shop basket"): what it sells and what it would buy of the player's things. The client keeps a basket and
+    sends it whole as one command (`command`), args `buy` ("id*n,id*n"), `sell` ("id,id") and `loot` ("1": every row tagged
+    loot). Nothing changes until then."""
+    type: Literal["shop"] = "shop"
+    place: Literal["side", "main", "popout"] = "side"
+    group: str = ""
+    title: str
+    keeper: str = ""
+    gold: int = 0
+    stock: list[IconRow] = Field(default_factory=list)
+    sells: list[IconRow] = Field(default_factory=list)
+    command: str = "deal"
+
+
 class PaperDoll(BaseModel):
     """FN153 (the owner, 11-18: "a better equipment menu with equipment slots on a paper doll"): the worn slots round a figure;
     the client sends the game's own equip and unequip commands."""
@@ -522,7 +568,7 @@ class Profile(BaseModel):
     detail: Detail
 
 
-Widget = StatusStrip | Meter | MeterGroup | Table | EntityCards | ListPanel | LogPanel | Choices | Commands | QuestPanel | MapPanel | PaperDoll | Chart | Cards | Roster | Profile
+Widget = StatusStrip | Meter | MeterGroup | Table | EntityCards | ListPanel | LogPanel | Choices | Commands | QuestPanel | MapPanel | PaperDoll | ItemsPanel | ShopPanel | Chart | Cards | Roster | Profile
 
 
 class UISchema(BaseModel):

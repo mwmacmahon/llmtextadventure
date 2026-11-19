@@ -1,3 +1,4 @@
+import { ItemIcon } from "./ItemIcon";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MapPlace, MapWidget } from "../api";
 import { GROUNDS, ICONS, ICON_PAL, JOB_MARK, PLAYER, type Tex } from "./mapArt";
@@ -398,14 +399,20 @@ export function MapPanel({ widget, onPick, big = false }: { widget: MapWidget; o
   };
 
   const cardView = card && (
-    <div className="map-card" style={card.at ? { left: Math.min(card.at.x + 12, size.w - 190), top: Math.min(card.at.y + 12, size.h - 90) } : { left: 6, right: 6, bottom: 6 }} role="status">
+    <div className="map-card" style={card.at ? { left: Math.min(card.at.x + 12, size.w - 190), top: Math.max(4, Math.min(card.at.y + 12, size.h - 90 - 34 * (card.c.kind === "place" ? card.c.place.who?.length ?? 0 : 0))) } : { left: 6, right: 6, bottom: 6 }} role="status">
       {card.c.kind === "place" ? (
         <>
           <div className="map-card-name">{card.c.place.name}</div>
           <div className="muted small">{card.c.place.state === "been" ? "been there" : "heard of"}</div>
           {card.c.place.told.map((t, i) => <div key={i} className="small">{t}</div>)}
           {card.c.place.way && <div className="small">{card.c.place.way}</div>}
-          {card.c.place.job && <div className="small map-card-job">Job: {card.c.place.job}</div>}
+          {!card.c.place.who?.length && card.c.place.job && <div className="small map-card-job">Job: {card.c.place.job}</div>}
+          {card.c.place.who?.map((r, i) => (
+            <div key={i} className="map-card-who small">
+              <ItemIcon kind={r.icon} />
+              <span>{r.title}{r.sub && <small>{r.sub}</small>}</span>
+            </div>
+          ))}
           {card.c.place.changed && <div className="small muted">{card.c.place.changed}</div>}
           {!card.at && <div className="muted small">Tap again to go there</div>}
         </>

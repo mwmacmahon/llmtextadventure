@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { MapPanel } from "./MapPanel";
+import { ItemsPanel, ShopPanel } from "./ItemsPanel";
 import { PaperDoll } from "./PaperDoll";
 import { ChartPanel } from "./ChartPanel";
 import { CardsPanel } from "./CardsPanel";
@@ -40,6 +41,10 @@ function Panel({ w, onChoice, onCommand, onPick, busy, ended }: { w: Widget; onC
       return <MapPanel widget={w} onPick={(t) => onPick?.(t)} />;
     case "paper_doll":
       return <PaperDoll widget={w} onCommand={onCommand} busy={busy || ended} />;
+    case "items":
+      return <ItemsPanel widget={w} />;
+    case "shop":
+      return <ShopPanel widget={w} onCommand={onCommand} busy={busy || ended} />;
     case "chart":   // docs/PLANNER-CONTRACT.md
       return <ChartPanel widget={w} onCommand={onCommand} busy={busy || ended} />;
     case "cards":

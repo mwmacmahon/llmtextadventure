@@ -676,13 +676,14 @@ endless ground, camps, wandering, invented places and ground changes held until 
   journey that passes near a place something lives at can meet its kind, and can be told to go round; one permanent
   companion, who turns back far from any road. The simulator after it: level 2 to 3 and 230 to 350 gold in ten days
   (it was level 1 and 14 gold), and 55 to 62 per cent alive, since a game is now eleven fights.
-- **Mocked up, waiting for the owner's word (FN171 to FN173, FN176):** pockets sorted by category with an icon for each
-  type, a shop window with Buy, Sell and Sell all loot, and the map's card of who and what is at a place.
+- **The three screens (D338): built 11-19** on the owner's go-ahead: pockets sorted by category with an icon for each
+  type; a shop window with a basket (Buy, Sell, Sell all loot; one turn for the whole basket); the map's cards list who
+  and what is at a place; a Company list on the side. Rendered and looked at on sample data; not yet seen in a played game.
 - **Death is death; the rest of 11-19 (D337): built.** Running is nudged in secret (the slip rolled twice, one blow at
   most after a failed one). A job may come with someone who goes along for it and home after, any number at once beside
   the one permanent companion. Naming one of the village's people as where you go takes you to them, or to their usual
   place with a line that they are not around. Fourteen people now, some out of the village (FN179).
-- **Next:** those screens on his word, the shop with a basket (FN180); the engine's questions with buttons (FN39), fetch
+- **Next:** a played round on Gemma when the box is free; the engine's questions with buttons (FN39), fetch
   and find jobs, roads and rivers by name.
 - **Names (FN108 to FN111): built 11-17**, short since the owner's round (FN133). Rolled from large word lists per game,
   kept in the save; the lists checked against the game's own terms.
