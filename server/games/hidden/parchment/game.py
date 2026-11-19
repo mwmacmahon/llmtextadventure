@@ -107,8 +107,20 @@ class ParchmentGame(FantasyGame):
             if start.get("start_spot"):                      # FN131 (the owner, 11-17: "choice paralysis is our enemy"): at the tavern's door
                 state.player.location = str(start["start_spot"])
             jb.setup(sc, state)                              # FN62, FN63: the board
+            jb.refill(self, sc, state, "start")              # FN165: one job sized to the player beside the written ones
             self._dress(state)
         return title, state
+
+    # FN165 (the owner, 11-19: "drawing attention to the notices board in the bar at player start ... flat out telling the
+    # player"): said outright under the opening, the engine's words and not the scene's
+    BOARD_LINE = ("(The board by the bar is where the village posts its paid work. New notices go up as the days pass and "
+                  "when you gain a level; each names someone in the village to see for the pay. The general store buys just "
+                  "about anything you bring back.)")
+
+    def opening(self, state: FantasyState) -> str | None:
+        text = super().opening(state)
+        sc = self.scenario(state.city.id)
+        return f"{text}\n\n{self.BOARD_LINE}" if text and sc.get("jobs") and sc.get("postings") else text
 
     CLOTHES = [("body", "travelling clothes", "plain wool and linen, patched at the knees"), ("cloak", "a travelling cloak", "heavy wool, a hood"),
                ("feet", "boots", "worn leather, good for the road")]
@@ -176,7 +188,7 @@ class ParchmentGame(FantasyGame):
             return s
         s = self._settle_place(s, info)
         co.keep_with(s)                                  # FN149: the companion follows
-        for line in jb.update(self, s):
+        for line in jb.update(self, s) + jb.refill(self, self.scenario(s.city.id), s, "day"):
             s.player.shown_notes.append(line)
         return s
 
@@ -284,6 +296,11 @@ class ParchmentGame(FantasyGame):
         text = super().render_bulletin(state, player_text, engine)
         lines = [ln for ln in self._map_lines(state) if ln.startswith(("Where:", "Near:", "Roads and rivers:"))]
         sale = self._for_sale(state)                     # the review (11-18): a seller asked a price has the engine's to say
+        q = co.companion(state)                          # FN166: one permanent companion at a time, and the narrator knows it
+        if q is not None:
+            n = state.player.name                        # worded after a cold read (11-19)
+            lines.append(f"Company: {q.name} travels with {n}. {n} has room for one lasting companion only: if {n} asks anyone else "
+                         "to join for good, that person declines in their own words and does not come.")
         return text + ("\n" + "\n".join(lines + ([sale] if sale else [])) if lines or sale else "")
 
     def _for_sale(self, s: FantasyState) -> str:
@@ -409,12 +426,14 @@ class ParchmentGame(FantasyGame):
                                            f"Tell the walk and the place {s.player.name} stops.")
                     w.mechanics.append(f"Journey: {way} from {start}, {walked['minutes']} minutes.")
                     self._charge(s, w, max(0, walked["minutes"] - int(getattr(adj, "time_minutes", 0) or 0)))
+                co.keep_with(s)                          # the cold read (11-19): a wander returned before the companion's tether
+                self._beaten_path(s, w)
                 return s, w
         if pid is not None:
             fb = co.foreboding(self.scenario(s.city.id), s, pid, False)     # FN148: setting out for a place beyond the party
             if fb:
                 w.mechanics.append(fb)
-            plan = wm.plan_journey(s.world, pid, self._night(s))
+            plan = self._plan(s, pid, w)
             if plan is not None:
                 s.world["player"]["journey"] = plan
                 self._leg(s, w, rng, turn, adj)
@@ -430,7 +449,86 @@ class ParchmentGame(FantasyGame):
                     self._arrive(s, w, pid)
                     s.world["player"]["journey"] = None    # the review: arrived by a short walk, any held journey is over
         co.keep_with(s)                                  # the review: the companion is where the walk ended, for the prose
+        self._beaten_path(s, w)
         return s, w
+
+    # ---- near a place, and round it (FN164) ----------------------------------------------------------------------------------
+    # The owner, 11-19: "I think fighting themed enemies to the location you pass near makes sense, if players don't want that
+    # they can specify a route around it". A journey that comes within NEAR tiles of a place something lives at stops there
+    # (a stop of kind "near"), and its trouble, when the roll says trouble, is that place's kind, sized to the party by the
+    # family's generator (never the place's own residents: those are the job's, and the simulator's walkers who met them died).
+    # The player is told what the way passes near when they set out, and the Go round command keeps later ways off it.
+    NEAR = 2                 # tiles: half a kilometre
+    NEAR_CHANCE = 30         # per cent that a "near" stop is trouble, scaled by the road dial
+
+    def _lairs(self, s: FantasyState, path: list, to: str) -> list[str]:
+        """The places a path passes near that something lives at: never the journey's end, the home, or a crossing (whoever
+        lives at a crossing is met on it)."""
+        sc = self.scenario(s.city.id)
+        return [pid for pid in wm.passes_near(s.world, path, self.NEAR, skip=(to, s.world["home"]))
+                if s.world["places"][pid]["kind"] not in wm.CROSSINGS and jb.live(sc, s, pid)]
+
+    def _avoid(self, s: FantasyState, to: str = "") -> set:
+        out: set = set()
+        for pid in s.flags.get("avoid") or []:
+            p = s.world["places"].get(pid)
+            if p and p.get("shape") == "point" and pid != to:      # a journey to the place itself goes there
+                out |= wm.tiles_round(tuple(p["tile"]), self.NEAR)
+        return out
+
+    def _plan(self, s: FantasyState, pid: str, w: Any = None) -> dict | None:
+        """A journey planned round the places the player keeps clear of, with a stop where it passes near a place something
+        lives at; the player is told which (a § line)."""
+        plan = wm.plan_journey(s.world, pid, self._night(s), self._avoid(s, pid))
+        if plan is None:
+            return None
+        path = [tuple(t) for t in plan["path"]]
+        near = self._lairs(s, path, pid)
+        taken = {st[0] for st in plan["stops"]}
+        stopped = []
+        for lair in near:
+            lt = s.world["places"][lair]["tile"]
+            i = min(range(len(path)), key=lambda k: max(abs(path[k][0] - lt[0]), abs(path[k][1] - lt[1])))
+            if 0 < i < len(path) - 1 and i not in taken:
+                plan["stops"].append([i, "near", lair])
+                taken.add(i)
+                stopped.append(lair)
+        plan["stops"].sort(key=lambda st: st[0])
+        if stopped and w is not None:                    # only where there is a stop for it (the cold read)
+            names = [wm._lower_the(s.world["places"][x]["name"]) for x in stopped]
+            w.mechanics.append(f"The way passes near {' and '.join(names)}.")
+        return plan
+
+    def _beaten_path(self, s: FantasyState, w: Any) -> None:
+        """FN166 (the owner, 11-19: "If you wander too far off the beaten path they leave the party"): far from every road,
+        lane and known place, and in no known wood or bog, the companion says they are uneasy (FAR_WARN tiles), then turns
+        back for the tavern (FAR_LEAVE). A journey to a known place is never off the path."""
+        q = co.companion(s)
+        if q is None or not s.world or s.player.fighting or s.player.fate:
+            return
+        x, y = s.world["player"]["tile"]
+        j = s.world["player"].get("journey")
+        on_way = bool(j) and [x, y] in [list(t) for t in j["path"]]
+        known_region = wm.region_at(s.world, x, y) in s.world["known"]["places"]
+        d = 0 if on_way or known_region else wm.off_the_path(s.world)
+        n = s.player.name
+        if d > self.FAR_LEAVE and s.flags.get("far_warned"):      # never without the warning first (one wander is eight tiles)
+            s.flags.pop("companion", None)
+            s.flags.pop("far_warned", None)
+            q.fights_beside, q.location = False, "the tavern"
+            s.player.with_them = [i for i in s.player.with_them if i != q.id]
+            w.mechanics.append(f"{q.name} will go no farther from the roads, and turns back for the tavern.")
+            w.directives.append(f"{q.name} will go no farther into the wild: {q.name} says so briefly, turns back toward the tavern and "
+                                f"is gone from the scene. {n} is alone now; do not move {n}.")
+        elif d > self.FAR_WARN and not s.flags.get("far_warned"):
+            s.flags["far_warned"] = True
+            w.mechanics.append(f"{q.name} is uneasy this far from any road. Much farther and they will turn back.")
+            w.directives.append(f"{q.name} is uneasy this far from roads and places they know, and says so once, briefly, in their own "
+                                f"words. {q.name} keeps walking with {n}.")
+        elif d <= self.FAR_WARN:
+            s.flags.pop("far_warned", None)
+
+    FAR_WARN, FAR_LEAVE = 6, 10      # tiles: a kilometre and a half, two and a half
 
     def walk_minutes(self, state: FantasyState, adj: Any) -> int | None:
         """FN141 (the owner's round, 11-17, T14: "head back to the village" charged the reading's hour for a four-minute leg):
@@ -494,6 +592,11 @@ class ParchmentGame(FantasyGame):
                 return 0
             total += leg["minutes"]
             event = None if leg["arrived"] else wm.leg_event(rng, leg["stop"][0], self.roads(s), night)
+            lair = ""
+            if not leg["arrived"] and leg["stop"][0] == "near":      # FN164: near a place something lives at, its kind
+                lair = str(leg["stop"][1]) if jb.live(self.scenario(s.city.id), s, str(leg["stop"][1])) else ""
+                roll = rng.random() * 100 < self.NEAR_CHANCE * wm.ROADS.get(self.roads(s), wm.ROADS["written"])[0]
+                event = "trouble" if lair and (roll or event == "trouble") else None
             # the review (11-18): a place on the way had no residents unless it was the journey's end (the troll was not at the
             # bridge a journey crossed). Whoever lives at a place passed is there, and nobody walks past the hostile
             met = []
@@ -519,6 +622,10 @@ class ParchmentGame(FantasyGame):
         elif leg["stop"][0] == "midpoint":
             line = (f"This turn {n} walks from {frm} and stops half way; {dest} is still {wm.walk_word(leg['left'])} on, and {n} does not reach it "
                     f"this turn. Tell the walk and the place {n} stops.")
+        elif leg["stop"][0] == "near":
+            line = (f"This turn {n} walks from {frm} and stops within sight of {lo(s.world['places'][leg['stop'][1]]['name'])}, not inside "
+                    f"it. Where {n} is going, {dest}, is still {wm.walk_word(leg['left'])} away, and {n} does not reach it this turn. Tell "
+                    f"the walk and where {n} stops.")
         else:
             line = (f"This turn {n} walks from {frm} and stops at {lo(leg['stop'][1])}; {dest} is still {wm.walk_word(leg['left'])} on, and {n} "
                     f"does not reach it this turn. Tell the walk and the place {n} stops.")
@@ -529,15 +636,16 @@ class ParchmentGame(FantasyGame):
             line += (f" There, {self._happening(s, rng, 'small', night)}. Tell the walk, then that; do not say what it is and do not have {n} "
                      "touch it; stop.")
         elif event == "trouble":
-            spawned = self._trouble(s, rng)
+            spawned = self._trouble(s, rng, lair)
             if spawned:
-                line += f" There, close by: {spawned}. Show what is there, and stop while {n} can still choose."
+                line += f" There, close by: {spawned}. Show them, and end before anyone acts: no attack yet, {n} chooses next."
         w.directives.insert(0, line)
         if met:
             w.directives.insert(1, " ".join(met) + " They are there as the player comes up.")
         if leg["arrived"]:
             self._arrive(s, w, arrived_at)
-        w.mechanics.append(f"Journey: {start} to {leg['stop'][1] if not leg['arrived'] else j['label']}, {total} minutes"
+        stop_name = s.world["places"][leg["stop"][1]]["name"] if not leg["arrived"] and leg["stop"][0] == "near" else ""
+        w.mechanics.append(f"Journey: {start} to {(('near ' + lo(stop_name)) if stop_name else leg['stop'][1]) if not leg['arrived'] else j['label']}, {total} minutes"
                            + (f"; {event}" if event else "") + ".")
         mins = int(getattr(adj, "time_minutes", 0) or 0) if adj is not None else 0
         if charge:
@@ -584,10 +692,11 @@ class ParchmentGame(FantasyGame):
     # the time). The family's generator sizes it now: winnable nine times in ten on quiet and written roads, seven on wild
     TROUBLE_BAND = {"quiet": "easy", "written": "easy", "wild": "normal"}
 
-    def _trouble(self, s: FantasyState, rng: Any) -> str:
+    def _trouble(self, s: FantasyState, rng: Any, lair: str = "") -> str:
         """FN34's trouble: the encounter generator's fight for this party on the ground here (its band by the road dial), filed
         as hostile and in sight (they attack on sight, B397, so the fight opens when the player acts). Returns what the
         narrator is told ("two wolves", "a robber")."""
+        from games.fantasy import combat as cb
         from games.fantasy import encounter as en
         x, y = s.world["player"]["tile"]
         on_road = any(tuple(t) == (x, y) for ln in s.world["lines"].values() if ln["kind"] != "river" for t in ln["tiles"])
@@ -595,7 +704,16 @@ class ParchmentGame(FantasyGame):
         if not en.located_pool(region):
             return ""
         s.city.regions[s.player.location] = region       # the generator reads the place's kind of ground from here
-        e = en.encounter(self, s, en.Want(band=self.TROUBLE_BAND.get(self.roads(s), "easy"), place=s.player.location, n=20,
+        # FN164: near a place something lives at, its own kind (the least of them, and only one a party of this size could
+        # meet: no ghost from the mill for a level-1 player), in the generator's numbers; else whatever the ground has
+        band = self.TROUBLE_BAND.get(self.roads(s), "easy")
+        pinned = []
+        if lair:
+            rows = jb.rows_at(self.scenario(s.city.id), s, lair)
+            least = min((str(r["entry"]) for r in rows), key=jb._xp, default="")
+            if least and jb._xp(least) <= en.threshold("hard", s.player.level, 1 + len(cb.party(s))):
+                pinned = [(least, None)]
+        e = en.encounter(self, s, en.Want(band=band, pinned=pinned, place=s.player.location, n=20,
                                           seed=f"{s.world['seed']}:{x},{y}:{s.clock.day}:{s.clock.minute}:{rng.random():.6f}"))
         if not e.bodies:
             return ""
@@ -604,7 +722,7 @@ class ParchmentGame(FantasyGame):
         for q in made or []:
             q.location = s.player.location
             q.attitude = -3
-        return en.called_plural(e.bodies)
+        return en.called_plural(e.bodies) + (f", come out of {wm._lower_the(s.world['places'][lair]['name'])}" if pinned else "")
 
     def _pid_here(self, s: FantasyState) -> str | None:
         """The id of the point place on the player's tile, or None."""
@@ -628,8 +746,7 @@ class ParchmentGame(FantasyGame):
             s.world["player"]["tile"] == s.world["places"][s.world["home"]]["tile"] and jb.board_unread(s)
 
     # ---- the shops (FN144; the scenario's `shops:`, spot -> {item id: price}) ------------------------------------------------
-    TROPHY_PRICE = {"rat tail": 1, "wolf pelt": 4, "dire wolf pelt": 10, "goblin ear": 2, "goblin chief's ear": 10, "kobold tooth": 1,
-                    "spider fang": 4, "frog leg": 1, "troll's toenail": 20, "boar tusk": 3, "bear claw": 6, "bat wing": 1, "crocodile tooth": 5}
+    TROPHY_PRICE = jb.TROPHY_PRICE
 
     def _shop(self, s: FantasyState) -> dict | None:
         """The shop the player stands in, when not fighting: {stock: {id: price}, buys: bool}."""
@@ -643,7 +760,7 @@ class ParchmentGame(FantasyGame):
         from games.fantasy import items as itm
         out = []
         for it in s.inventory:
-            price = itm.value_of(self, it) // 2 or self.TROPHY_PRICE.get(it.name.lower(), 0)
+            price = itm.value_of(self, it) // 2 or int(it.worth or 0) or self.TROPHY_PRICE.get(it.name.lower(), 0)
             if price and not it.equipped:
                 out.append((it, price))
         return out
@@ -667,6 +784,11 @@ class ParchmentGame(FantasyGame):
             out.append(CommandSpec(id="service", label="Pay for", mode="narrated", hint="Pay for something this place does: a room, a round, healing, a blessing.",
                                    params=[Param(name="what", label="What", options=[Option(id=k, label=f"{lb}, {pr} gold") for k, lb, pr in services])]))
         sell = self._sellable(s) if sh.get("buys") else []
+        loot = [(it, pr) for it, pr in sell if jb.is_loot(it)]
+        if loot:                                         # FN170 (the owner, 11-19: "tell shopkeep you want to sell your loot to auto sell")
+            out.append(CommandSpec(id="sell_loot", label=f"Sell all loot ({sum(pr * it.count for it, pr in loot)} gold)", mode="narrated",
+                                   hint="Sell everything the player carries that is only loot (trophies, trinkets taken from the "
+                                        "fallen) to this shop at once (\"sell my loot\", \"sell the lot\"). Never potions, arms or magic things."))
         if sell:
             out.append(CommandSpec(id="sell", label="Sell", mode="narrated", hint="Sell a thing to this shop: trophies, potions, curios.",
                                    params=[Param(name="item", label="Thing", options=[Option(id=it.id, label=f"{it.render()}, {pr} gold each") for it, pr in sell])]))
@@ -712,6 +834,22 @@ class ParchmentGame(FantasyGame):
             return s, CommandResult(label="Buy", text=line, player_line=f"I buy {itm._a(it.name)}.", summary=f"{p.name} buys {itm._a(it.name)}.",
                                     directive=f"The sale is done: {p.name} pays {price} gold and is handed {itm._a(it.name)}. The price and the deal stand. A line or two.",
                                     minutes=2, referee_skip=["gold", "inventory"])
+        if command_id == "sell_loot":
+            loot = [(x, pr) for x, pr in self._sellable(s) if jb.is_loot(x)] if sh.get("buys") else []
+            if not loot:
+                return state, CommandResult(ok=False, label="Sell all loot", text="Nothing here to sell as loot, or they do not buy here.")
+            total = sum(pr * x.count for x, pr in loot)
+            what = ", ".join(x.render() for x, _ in loot)
+            s.inventory = [x for x in s.inventory if all(x is not y for y, _ in loot)]
+            if gold is None:
+                from games.fantasy.state import Item
+                gold = Item(id="gold", name="gold", count=0)
+                s.inventory.append(gold)
+            gold.count += total
+            return s, CommandResult(label="Sell all loot", text=f"Sold: {what}, {total} gold in all ({gold.count} now).",
+                                    player_line="I sell all my loot.", summary=f"{p.name} sells their loot.",
+                                    directive=f"The sale is done: {p.name} sells {what} for {total} gold in all, paid over; the price stands. A line or two.",
+                                    minutes=3, referee_skip=["gold", "inventory"])
         it = next((x for x, _ in self._sellable(s) if x.id == str(args.get("item") or "")), None)
         if it is None or not sh.get("buys"):
             return state, CommandResult(ok=False, label="Sell", text="They do not buy that here.")
@@ -733,15 +871,23 @@ class ParchmentGame(FantasyGame):
                                 directive=f"The sale is done: {p.name} sells {name} for {price * n} gold, paid over; the price stands.{news} A line or two.",
                                 minutes=2, referee_skip=["gold", "inventory"])
 
+    ONE_COMPANION = "You may only have one permanent companion at a time. Part ways with {name} first."
+
     def _company_commands(self, s: FantasyState) -> list:
         """FN149: ask one of the crew along (one at a time); part ways with the one along."""
         from engine.game import CommandSpec, Option, Param
         out = []
         can = co.can_ask(s)
+        along = co.companion(s)
+        if along is not None and not s.player.fighting and not s.player.fate:
+            # FN166: with one along the command stays for the reading to pick (never a chip), so the asking is answered by the
+            # engine's line and not agreed to in the prose
+            can = [x for x in co.crew(s) if x.id != along.id and x.location.lower() == (s.player.location or "").lower()]
         if can:
             out.append(CommandSpec(id="ask_along", label="Invite along", mode="narrated",
                                    hint="Invite one of the tavern's new adventurers to travel and fight with the player (hire, recruit, "
-                                        "\"come with me\", \"join me\"); match by name or trade. Not for asking them questions or chatting. "
+                                        "\"travel with me\", \"join me\") for good; match by name or trade. Not for asking them questions, "
+                                        "chatting, or a short walk together. "
                                         "One at a time: if several are named, take the first.",
                                    # the crew smoke (11-18): the reading picked the command with no one named and it was refused;
                                    # must_name fills it from the reading's own ids or a name in its words, the trade first so
@@ -758,6 +904,8 @@ class ParchmentGame(FantasyGame):
         from engine.game import CommandResult
         s = state.model_copy(deep=True)
         n = s.player.name
+        if command_id == "ask_along" and co.companion(s) is not None:
+            return state, CommandResult(ok=False, label="Invite along", text=self.ONE_COMPANION.format(name=co.companion(s).name))
         if command_id == "ask_along":
             q = next((x for x in co.can_ask(s) if x.id == str(args.get("who") or "")), None)
             if q is None:
@@ -838,12 +986,69 @@ class ParchmentGame(FantasyGame):
             from engine.game import CommandSpec
             out.append(CommandSpec(id="read_board", label="Read the board", mode="narrated",
                                    hint="Read the papers pinned to the board near the bar in the tavern: the village's jobs."))
+        out += self._round_commands(state)
         j = self._journey_open(state)
         if j:
             from engine.game import CommandSpec
             out.append(CommandSpec(id="continue_journey", label=self.CONTINUE.format(label=j["label"]), mode="narrated", typed=False,
                                    hint="Walk the next leg of the journey."))
         return out
+
+    def _round_commands(self, s: FantasyState) -> list:
+        """FN164: keep the player's ways clear of a place (offered for the places the held journey still passes near, and any
+        place something lives at that the player knows), and stop keeping clear."""
+        from engine.game import CommandSpec, Option, Param
+        if not s.world or s.player.fighting or s.player.fate:
+            return []
+        sc = self.scenario(s.city.id)
+        avoided = [x for x in s.flags.get("avoid") or [] if x in s.world["places"]]
+        j = self._journey_open(s)                        # the cold read: never a journey the player has left
+        ahead = self._lairs(s, [tuple(t) for t in j["path"]], j["to"]) if j else []
+        known = [pid for pid, p in s.world["places"].items() if p.get("shape") == "point" and pid in s.world["known"]["places"]
+                 and pid != s.world["home"] and p["kind"] not in wm.CROSSINGS and jb.live(sc, s, pid) and not (j and pid == j["to"])]
+        opts = [x for x in dict.fromkeys(ahead + known) if x not in avoided]
+        out = []
+        if opts:
+            out.append(CommandSpec(id="go_round", label="Go round a place", mode="engine",
+                                   hint="A standing rule: from now on the player's journeys keep well clear of a named dangerous place "
+                                        "(\"avoiding the barrow\", \"give the fort a wide berth\", \"a way round the mines\"). Not for "
+                                        "walking to it, circling it to look, or sneaking past once.",
+                                   params=[Param(name="place", label="Which place", must_name=True,
+                                                 options=[Option(id=x, label=s.world["places"][x]["name"]) for x in opts])]))
+        if avoided:
+            out.append(CommandSpec(id="go_near", label="Stop going round places", mode="engine",
+                                   hint="The player cancels going round places: journeys may pass near dangerous places again (\"stop "
+                                        "avoiding the barrow\", \"never mind the detour\"). Not for a single trip."))
+        return out
+
+    def _round_run(self, state: FantasyState, command_id: str, args: dict[str, Any]):
+        from engine.game import CommandResult
+        s = state.model_copy(deep=True)
+        if command_id == "go_near":
+            s.flags["avoid"] = []
+            j = self._journey_open(s)
+            if j:
+                s.world["player"]["journey"] = self._plan(s, j["to"])
+            return s, CommandResult(label="Stop going round places", text="Your journeys take the quickest way again.")
+        pid = str(args.get("place") or "")
+        p = s.world["places"].get(pid)
+        if not p or p.get("shape") != "point":
+            return state, CommandResult(ok=False, label="Go round a place", text="Which place? Name one you know of.")
+        lo = wm._lower_the
+        s.flags["avoid"] = [*(s.flags.get("avoid") or []), pid]
+        text = f"From now on your journeys go round {lo(p['name'])}, where there is a way round."
+        j = self._journey_open(s)
+        if j and j["to"] != pid:                                            # the journey under way, planned again from here
+            was = wm.walk_minutes(s.world, [tuple(t) for t in j["path"]][[list(t) for t in j["path"]].index(list(s.world["player"]["tile"])):]) \
+                if list(s.world["player"]["tile"]) in [list(t) for t in j["path"]] else 0
+            plan = self._plan(s, j["to"])
+            if plan is not None and pid in wm.passes_near(s.world, [tuple(t) for t in plan["path"]], self.NEAR):
+                text = f"There is no way round {lo(p['name'])} to {lo(j['label'])} from here; other journeys will go round it."
+            elif plan is not None:
+                more = wm.walk_minutes(s.world, [tuple(t) for t in plan["path"]]) - was
+                text = f"Your way to {lo(j['label'])} goes round {lo(p['name'])} now" + (f", about {more} minutes longer." if more > 0 and was else ".")
+            s.world["player"]["journey"] = plan
+        return s, CommandResult(label="Go round a place", text=text)
 
     def typed_command(self, state: FantasyState, text: str) -> tuple[str, dict[str, Any]] | None:
         """The pre-filled 'Continue to ...' taken as it stands is the Continue command (MAP_DESIGN 6.5: no reading needed)."""
@@ -855,10 +1060,19 @@ class ParchmentGame(FantasyGame):
     def run_command(self, state: FantasyState, command_id: str, args: dict[str, Any]):
         if command_id == "read_board":
             return self._read_board(state)
-        if command_id in ("buy", "sell", "service"):
+        if command_id in ("buy", "sell", "sell_loot", "service"):
             return self._trade(state, command_id, args)
         if command_id in ("ask_along", "part_ways"):
             return self._company_run(state, command_id, args)
+        if command_id in ("go_round", "go_near"):
+            return self._round_run(state, command_id, args)
+        if command_id == "level_up":                     # FN165: a level brings a new paper to the board, said outright
+            s2, res = super().run_command(state, command_id, args)
+            if res.ok:
+                new = jb.refill(self, self.scenario(s2.city.id), s2, "level")
+                if new:
+                    res.text = f"{res.text} {new[0]}".strip()
+            return s2, res
         if command_id != "continue_journey":
             return super().run_command(state, command_id, args)
         from engine.game import CommandResult
@@ -888,7 +1102,7 @@ class ParchmentGame(FantasyGame):
             return state, CommandResult(ok=False, label="Read the board", text="There is no board here with anything new on it.")
         papers = jb.read_board(s)
         n = s.player.name
-        say = ("; ".join(papers) + ".") if papers else "nothing still wanted."
+        say = (" ".join(f"({i}) {p}." for i, p in enumerate(papers, 1))) if papers else "nothing still wanted."
         called = co.call_over(s)                         # FN149: the first read, one of the crew calls the player over
         return s, CommandResult(label="Read the board", player_line="I read the papers on the board.",
                                 summary=f"{n} reads the papers pinned to the board by the bar.",
@@ -944,7 +1158,10 @@ class ParchmentGame(FantasyGame):
             if getattr(w, "type", "") != "commands":
                 panels.append(w)
                 continue
-            items = [c for c in w.items if c.id not in self.NO_CHIP]
+            # FN164, FN166: Go round is a chip only while a journey is held; Invite along is none with one already along
+            hide = set(self.NO_CHIP) | ({"ask_along"} if co.companion(s) is not None else set()) \
+                | (set() if (s.world or {}).get("player", {}).get("journey") else {"go_round"})
+            items = [c for c in w.items if c.id not in hide]
             here = [c for c in items if not abil(c) and c.id != "use_item"]
             panels.append(Commands(title=None, items=here))
             # the owner, 11-18: "Probably combine abilities and items for Use. Class skills (and spells once we get to them) on

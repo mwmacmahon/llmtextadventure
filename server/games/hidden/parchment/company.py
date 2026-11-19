@@ -89,7 +89,7 @@ def call_over(s: FantasyState) -> str:
 
 def danger(sc: dict, s: FantasyState, pid: str) -> bool:
     """A place beyond the party: its residents' XP over a deadly fight's for the player's level, the companion counting as one more."""
-    rows = (sc.get("residents") or {}).get(pid) or []
+    rows = (sc.get("residents") or {}).get(pid) or []      # a posted job's are sized to the party when posted: never here
     xp = sum(int(cb.bestiary().entries.get(str(r["entry"]), {}).get("xp") or 0) * int(r.get("count") or 1) for r in rows)
     lvl = max(1, int(s.player.level or 1))
     party = 1 + (1 if companion(s) is not None else 0)

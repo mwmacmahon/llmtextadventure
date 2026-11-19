@@ -29,6 +29,30 @@ TROPHIES = {"giant_rat": "rat tail", "rat_swarm": "rat tail", "wolf": "wolf pelt
             "swarm_of_bats": "bat wing", "crocodile": "crocodile tooth"}
 
 
+# FN170: what a shop that buys gives for a trophy (the general store, the smithy)
+TROPHY_PRICE = {"rat tail": 1, "wolf pelt": 4, "dire wolf pelt": 10, "goblin ear": 2, "goblin chief's ear": 10, "kobold tooth": 1,
+                "spider fang": 4, "frog leg": 1, "troll's toenail": 20, "boar tusk": 3, "bear claw": 6, "bat wing": 1, "crocodile tooth": 5}
+LOOT_CHANCE = 0.35       # FN168: besides its coin, a person or one of the dead has a thing worth selling this often
+STORE_BUYS = "The general store in the village buys loot like this."
+
+
+def is_loot(it: Item) -> bool:
+    return it.kind == "loot" or it.name.lower() in TROPHY_PRICE
+
+
+def payer(s: FantasyState, j: dict):
+    """FN175 (the owner, 11-19: "rewards don't just manifest out of thin air, they should still point to a quest giver which
+    player should talk to in person"): the person of the village who pays for this job, or None (an old save's, a dead giver's)."""
+    q = s.person(j["giver"]) if j.get("giver") else None
+    return q if q is not None and q.status == "alive" else None
+
+
+def see(s: FantasyState, j: dict) -> str:
+    """Whom to see about a job, as a clause: "Hobb Underhill at the smithy"; "the reeve in the village" with no one to name."""
+    q = payer(s, j)
+    return f"{q.name} at {q.location}" if q is not None else f"{j['who']} in the village"
+
+
 def setup(sc: dict, s: FantasyState) -> None:
     """At a new game: the board, with the places' rolled names."""
     names = {pid: p["name"] for pid, p in (s.world or {}).get("places", {}).items()}
@@ -58,7 +82,7 @@ def arrive(game: Any, sc: dict, s: FantasyState, pid: str) -> list[str]:
     spawned = s.flags.setdefault("residents", {})
     if pid in spawned or not s.world:
         return []
-    rows = (sc.get("residents") or {}).get(pid) or []
+    rows = rows_at(sc, s, pid)
     made_all = []
     where = s.world["places"][pid]["name"]
     for r in rows:
@@ -75,6 +99,130 @@ def arrive(game: Any, sc: dict, s: FantasyState, pid: str) -> list[str]:
     for r in rows:
         counts[str(r["entry"])] = counts.get(str(r["entry"]), 0) + int(r.get("count") or 1)
     return [f"Living at {where}: {en.called_plural(list(counts.items()))}."]
+
+
+def rows_at(sc: dict, s: FantasyState, pid: str) -> list[dict]:
+    """Who lives at a place: the scenario's residents, or a posted job's (FN165), as rows of entry, count, variant."""
+    return list((sc.get("residents") or {}).get(pid) or []) or list((s.flags.get("posted") or {}).get(pid) or [])
+
+
+def live(sc: dict, s: FantasyState, pid: str) -> bool:
+    """Something still lives at the place: it has residents, and they are not all out and dead."""
+    if not rows_at(sc, s, pid):
+        return False
+    out = (s.flags.get("residents") or {}).get(pid)
+    return out is None or not _dead(s, out)
+
+
+# ---- the board refills (FN165; the owner, 11-19: "we want the town to keep bringing you back ... flat out telling the player
+# when they level up or time passes etc that new quests are on the notice board"). The simulator's finding (D335): after the
+# first job a careful level-1 character had none without foreboding. A posted job is a small place put on the map (a den, a
+# camp) with a fight the family's generator sizes to the party as it is on the day of posting; the scenario's `postings:`
+# are its kinds. One is up from the start; a morning with fewer than two jobs the party can take posts another; so does a level.
+POST_NEAR, POST_FAR = 4, 12      # tiles from home: one to three kilometres
+OPEN_WANTED = 2
+POST_BAND = "easy"
+NEW_NOTICES = "New notices are on the board in the tavern."
+
+
+def _xp(entry: str) -> int:
+    from games.fantasy import combat as cb
+    return int(cb.bestiary().entries.get(entry, {}).get("xp") or 0)
+
+
+def _post_tile(s: FantasyState, rng: Any, grounds: str) -> tuple | None:
+    w = s.world
+    hx, hy = w["places"][w["home"]]["tile"]
+    taken = [tuple(p["tile"]) for p in w["places"].values() if p.get("shape") == "point"]
+    taken += [tuple(j["place"]["tile"]) for j in s.flags.get("jobs") or [] if j.get("place")]
+    roads = {tuple(t) for ln in w["lines"].values() for t in ln["tiles"]}
+    cands = []
+    for x in range(hx - POST_FAR, hx + POST_FAR + 1):
+        for y in range(hy - POST_FAR, hy + POST_FAR + 1):
+            d = max(abs(x - hx), abs(y - hy))
+            if d < POST_NEAR or (x, y) in roads or (wm.ground_at(w, x, y) or "?") not in grounds:
+                continue
+            if any(max(abs(x - tx), abs(y - ty)) < wm.SPACING for tx, ty in taken):
+                continue
+            cands.append((x, y))
+    rng.shuffle(cands)
+    for t in cands[:12]:
+        path = wm.find_path(w, (hx, hy), t)
+        if path and wm.walk_minutes(w, path) <= 150:
+            return t
+    return None
+
+
+def post(game: Any, sc: dict, s: FantasyState) -> dict | None:
+    """One new paper on the board, or None (no postings written, no room on the map)."""
+    import random
+    from engine import names as rn
+    from games.fantasy import combat as cb
+    temps = [t for t in sc.get("postings") or [] if str(t.get("entry") or "") in cb.bestiary().entries]
+    if not temps or not s.world:
+        return None
+    n = int(s.flags.get("posted_n") or 0) + 1
+    s.flags["posted_n"] = n
+    rng = random.Random(f"{s.world['seed']}:post:{n}")
+    level, members = max(1, int(s.player.level or 1)), 1 + len(cb.party(s))
+    budget = en.threshold("normal", level, members)
+    # one of its kind is never beyond the party, and a crowd of them is still a fight worth the paper
+    fit = [t for t in temps if budget / 8 <= _xp(str(t["entry"])) <= budget] or [t for t in temps if _xp(str(t["entry"])) <= budget] \
+        or [min(temps, key=lambda t: _xp(str(t["entry"])))]
+    fresh = [t for t in fit if str(t["entry"]) != s.flags.get("posted_last")] or fit
+    t = rng.choice(fresh)
+    entry = str(t["entry"])
+    tile = _post_tile(s, rng, str(t.get("ground") or "mfwh"))
+    if tile is None:
+        return None
+    lists = game.name_lists() if hasattr(game, "name_lists") else {}
+    taken = {p["name"] for p in s.world["places"].values()}
+    name = ""
+    for _ in range(20):
+        core = rn.compound(rng, lists) if lists.get("heads") else f"Number {n}"
+        name = f"The {core} {str(t.get('word') or 'Den')}"
+        if name not in taken:
+            break
+    # the simulator, 11-19: with "normal" fights (won seven times in ten) for half the papers past level 1, a ten-day game of a
+    # job a day was survived three times in ten with the archer; a paper is an "easy" fight (nine in ten), always
+    band = POST_BAND
+    s.city.regions[name] = "wilds"                      # the generator reads the place's kind of ground from here
+    e = en.encounter(game, s, en.Want(band=band, pinned=[(entry, None)], place=name, n=20, seed=f"{s.world['seed']}:post:{n}"))
+    if not e.bodies:
+        return None
+    pid = f"post_{n}"
+    s.flags.setdefault("posted", {})[pid] = [{"entry": b, "count": c, "variant": e.variant} for b, c in e.bodies]
+    xp = sum(_xp(b) * c for b, c in e.bodies)
+    home = s.world["places"][s.world["home"]]["tile"]
+    way = wm.compass(tuple(home), tile)
+    jobs = s.flags.setdefault("jobs", [])
+    j = {"id": f"job_{len(jobs) + 1}", "form": "clear", "at": pid, "entry": "", "pay": max(10, 5 * round(xp * 0.3 / 5)), "each": 0,
+         "who": str(t.get("who") or "the reeve"), "line": str(t.get("line") or "").replace("{way}", way).replace("{place}", wm._lower_the(name)),
+         "title": str(t.get("title") or "Clear {place}").replace("{place}", wm._lower_the(name)), "status": "open", "killed": 0,
+         "paid": 0, "giver": str(t.get("giver") or ""), "known": False, "day": s.clock.day, "place": {"kind": str(t.get("kind") or "camp"), "name": name, "tile": list(tile)}}
+    jobs.append(j)
+    s.flags["posted_last"] = entry
+    return j
+
+
+def refill(game: Any, sc: dict, s: FantasyState, why: str) -> list[str]:
+    """New papers when they are due: `why` is start (one, said in the opening), day (a new morning with fewer than OPEN_WANTED
+    jobs the party can take) or level (one more). Returns the § line when anything went up."""
+    from . import company as co
+    if not sc.get("postings") or not s.world:
+        return []
+    can = [j for j in s.flags.get("jobs") or [] if j["status"] == "open" and j["form"] in ("clear", "kill") and not co.danger(sc, s, j["at"])]
+    want = 0
+    if why == "day":
+        if int(s.flags.get("board_day") or 1) >= s.clock.day:
+            return []
+        s.flags["board_day"] = s.clock.day
+        want = max(0, OPEN_WANTED - len(can))
+    elif why in ("start", "level"):
+        want = 1 if len(can) < OPEN_WANTED + 2 else 0
+    made = [j for j in (post(game, sc, s) for _ in range(want)) if j]
+    sync_threads(s)
+    return [NEW_NOTICES] if made and why != "start" else []
 
 
 def _dead(s: FantasyState, ids: list[str]) -> bool:
@@ -112,12 +260,12 @@ def update(game: Any, s: FantasyState) -> list[str]:
             continue
         if j["form"] == "clear" and _dead(s, residents.get(j["at"], [])):
             j["status"] = "done"
-            out += [f"Job done: {j['title']}. {j['who'][:1].upper() + j['who'][1:]} will pay in the village."] if known(s, j) else []
+            out += [f"Job done: {j['title']}. See {see(s, j)} for the pay."] if known(s, j) else []
             out += cache(game, s, j)
         elif j["form"] == "kill" and _killed(s, [x for x in residents.get(j["at"], []) if (q := s.person(x)) is not None
                                                 and q.combat is not None and q.combat.block == j["entry"]]):
             j["status"] = "done"
-            out += [f"Job done: {j['title']}. {j['who'][:1].upper() + j['who'][1:]} will pay in the village."] if known(s, j) else []
+            out += [f"Job done: {j['title']}. See {see(s, j)} for the pay."] if known(s, j) else []
             out += cache(game, s, j)
     sync_threads(s)
     return out
@@ -129,7 +277,9 @@ def _loot(s: FantasyState, fallen: list, game: Any = None) -> list[str]:
     import random
     from games.fantasy import combat as cb
     looted = list(s.flags.get("looted") or [])
+    pieces = list((game.scenario(s.city.id).get("loot") or []) if game is not None else [])
     got: dict[str, int] = {}
+    worth: dict[str, int] = dict(TROPHY_PRICE)
     coin = 0
     found: list[str] = []                               # FN144: a thing with a use, now and then, found on them (by its look)
     for q in fallen:
@@ -144,6 +294,13 @@ def _loot(s: FantasyState, fallen: list, game: Any = None) -> list[str]:
         else:
             xp = int(q.combat.xp or 10)
             coin += max(1, xp // 25 + rng.randint(0, 3))
+            # FN168, FN170 (the owner, 11-19: "every monster should drop either money or something sellable ... a 'loot' category
+            # of items that are clearly there mostly to sell"): now and then a thing to sell as well, dearer from the stronger
+            fits = [x for x in pieces if int(x.get("price") or 1) <= max(3, xp // 8)]
+            if fits and rng.random() < LOOT_CHANCE:
+                x = rng.choice(fits)
+                worth[str(x["name"])] = int(x.get("price") or 1)
+                got[str(x["name"])] = got.get(str(x["name"]), 0) + 1
         if entry in TROPHIES and kind in ("humanoid", "person"):
             got[TROPHIES[entry]] = got.get(TROPHIES[entry], 0) + 1
         if game is not None:
@@ -167,11 +324,15 @@ def _loot(s: FantasyState, fallen: list, game: Any = None) -> list[str]:
         iid = name.replace("'", "").replace(" ", "_") + "s"
         it = s.item(iid)
         if it is None:                                    # the name singular; the count shows how many ("1 wolf pelts", the third run)
-            s.inventory.append(Item(id=iid, name=name, count=n, note="a trophy; someone in the village pays for these"))
+            s.inventory.append(Item(id=iid, name=name, count=n, note="loot; the general store buys it", kind="loot",
+                                    worth=worth.get(name, 1)))
         else:
             it.count += n
+    if got and not s.flags.get("store_told"):           # FN169: said outright, the first time there is something to sell
+        s.flags["store_told"] = True
+        out.append(STORE_BUYS)
     if coin or got or found:
-        out.append("Loot: " + ", ".join(([f"{coin} gold"] if coin else []) + [f"{n} {k}{'s' if n > 1 else ''}" for k, n in got.items()] + found) + ".")
+        out.insert(0, "Loot: " + ", ".join(([f"{coin} gold"] if coin else []) + [f"{n} {k}{'s' if n > 1 else ''}" for k, n in got.items()] + found) + ".")
     return out
 
 
@@ -182,7 +343,9 @@ def cache(game: Any, s: FantasyState, j: dict) -> list[str]:
     if not itm.catalogue(game):
         return []
     rng = random.Random(f"{(s.world or {}).get('seed', 0)}:cache:{j['id']}")
-    odd = itm.loot_curio(game, s, rng, "cache")                   # FN147: rarely, among their things, a curio
+    # FN147: rarely, among their things, a curio; rarer still at a posted job's place (the simulator, 11-19: with a job a day a
+    # game found one and a half curios in ten days; the owner, 11-17: "very rare")
+    odd = itm.loot_curio(game, s, rng, "posting" if j.get("place") else "cache")
     ref = itm.roll(game, rng, "uncommon" if j["pay"] >= 40 else "common")
     got = ([itm.add(game, s, ref).name] if ref else []) + ([odd.name] if odd is not None else [])
     return [f"Found where they kept their things: {', '.join(got)}."] if got else []
@@ -197,8 +360,12 @@ def pay(s: FantasyState) -> list[str]:
     at_home = s.world["player"]["tile"] == s.world["places"][s.world["home"]]["tile"] and not s.player.fighting
     if at_home:
         gold = s.item("gold")
+        here = (s.player.location or "").lower()
         for j in jobs:
             if not known(s, j):                           # FN137: a job not heard of is not paid until it is
+                continue
+            q = payer(s, j)                               # FN175: paid by its giver, in person, where they are
+            if q is not None and (q.location or "").lower() != here:
                 continue
             owed = j["pay"] if j["status"] == "done" else 0
             owed += max(0, j["killed"] - j["paid"]) * j["each"] if j["form"] == "bounty" else 0
@@ -210,7 +377,7 @@ def pay(s: FantasyState) -> list[str]:
                 j["paid"] = j["killed"] if j["form"] == "bounty" else j["paid"]
                 if j["status"] == "done":
                     j["status"] = "paid"
-                out.append(f"Paid: {owed} gold for {j['title'].lower() if j['form'] != 'bounty' else j['title']}.")
+                out.append(f"Paid{' by ' + q.name if q is not None else ''}: {owed} gold for {j['title'][:1].lower() + j['title'][1:] if j['form'] != 'bounty' else j['title']}.")
                 s.log.append(f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}. {s.player.name} was paid {owed} gold: {j['title']}.")
     sync_threads(s)
     return out
@@ -230,7 +397,8 @@ def read_board(s: FantasyState) -> list[str]:
     out = []
     for j in s.flags.get("jobs") or []:
         if j["status"] == "open":
-            out.append(f"{j['title']}: {j['line']}" + (f", {j['pay']} gold" if j["pay"] else "") + f", posted by {j['who']}")
+            # worded after a cold read (11-19): the pay read as a distance when it followed "south-west of the village"
+            out.append(f"{j['title']}: {j['line']}" + (f". Pays {j['pay']} gold" if j["pay"] else "") + f". Posted for {j['who']}; see {see(s, j)}")
         j["known"] = True
     sync_threads(s)
     return out
@@ -249,8 +417,10 @@ def sync_threads(s: FantasyState) -> None:
         if not known(s, j):
             continue
         j["known"] = True
+        if j.get("place") and s.world and j["at"] not in s.world["places"]:      # FN165: a posted job's place is on the map once known
+            wm.add_place(s.world, j["at"], j["place"]["kind"], j["place"]["name"], j["place"]["tile"])
         status = "resolved" if j["status"] == "paid" else "open"
-        about = j["line"] + (f" ({j['pay']} gold)" if j["pay"] else "") + (" Done; to be paid back in the village." if j["status"] == "done" else "")
+        about = j["line"] + (f" ({j['pay']} gold)" if j["pay"] else "") + (f" Done; see {see(s, j)} for the pay." if j["status"] == "done" else "")
         if j["form"] == "bounty" and j["killed"]:
             about += f" {j['killed']} so far."
         # the gate-2 rerun: a job stayed "offered" after the player took the paper and went; a job is under way once its place

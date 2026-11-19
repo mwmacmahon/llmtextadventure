@@ -670,8 +670,17 @@ endless ground, camps, wandering, invented places and ground changes held until 
   a strategy in the player's seat, a grid of trials). Its first runs sized road trouble to the party (a lone level-1
   fighter on the roads: 49 per cent alive after ten days, now 83) and showed the level-1 progression gap (FN163: one safe
   job, then nothing; nobody reaches level 2).
-- **Next:** the owner's call on FN163 (a second rung of jobs, a board that refills sized to the party); then the engine's
-  questions with buttons (FN39), fetch and find jobs, roads and rivers by name.
+- **The town brings you back (D336): built 11-19**, on the owner's answers to FN163. The board refills with jobs sized to
+  the party (a small rolled place on the map each; a new morning or a level posts more, and the player is told); every job
+  is paid by its giver in person; every creature leaves coin or loot, and a shop that buys takes all loot at one word; a
+  journey that passes near a place something lives at can meet its kind, and can be told to go round; one permanent
+  companion, who turns back far from any road. The simulator after it: level 2 to 3 and 230 to 350 gold in ten days
+  (it was level 1 and 14 gold), and 55 to 62 per cent alive, since a game is now eleven fights.
+- **Mocked up, waiting for the owner's word (FN171 to FN173, FN176):** pockets sorted by category with an icon for each
+  type, a shop window with Buy, Sell and Sell all loot, and the map's card of who and what is at a place.
+- **Open with the owner:** what a lost fight is in this game (FN178), now that there are many.
+- **Next:** those screens on his word; the engine's questions with buttons (FN39), fetch and find jobs, quest companions,
+  roads and rivers by name.
 - **Names (FN108 to FN111): built 11-17**, short since the owner's round (FN133). Rolled from large word lists per game,
   kept in the save; the lists checked against the game's own terms.
 - **Places the story makes (FN50 to FN55): designed.** Told of a place at all puts it on the map; a secret whereabouts

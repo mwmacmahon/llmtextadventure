@@ -73,6 +73,8 @@ class Item(BaseModel):
     power: dict | None = None       # FN147: a made curio's power (the side call's): told, covers, price, true name, max uses
     slot: str = ""                  # FN153: a worn thing's slot (head, neck, cloak, hands, feet, ring), from the catalogue
     wear: dict | None = None        # FN153: what it gives while worn (ac, stat and mod, a power) and its true name
+    kind: str = ""                  # FN170: "loot" for a thing that is there to be sold (a trophy, a ring off a robber)
+    worth: int = 0                  # FN170: what a shop that buys gives for one
 
     def render(self) -> str:
         if self.id == "gold":

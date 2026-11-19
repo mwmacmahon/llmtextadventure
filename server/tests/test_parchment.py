@@ -272,7 +272,7 @@ def test_residents_are_there_on_arrival_and_the_board_pays_in_the_village(engine
     from games.fantasy.world import WorldTurn
     game, st = _fresh(engine)
     jobs = st.flags["jobs"]
-    assert [j["form"] for j in jobs] == ["clear", "clear", "kill", "bounty"]
+    assert [j["form"] for j in jobs if not j.get("place")] == ["clear", "clear", "kill", "bounty"]      # and one posted (FN165)
     assert not any(t.id.startswith("job_") for t in st.threads)              # FN137: nothing known before the board is read
     assert any(c.id == "read_board" for c in game.commands(st))
     st, res = game.run_command(st, "read_board", {})
@@ -292,9 +292,14 @@ def test_residents_are_there_on_arrival_and_the_board_pays_in_the_village(engine
     st = game.after_turn(st, TurnInfo(turn=3, elapsed_minutes=1, rng=random.Random(0)))
     assert st.flags["jobs"][0]["status"] == "done" and st.item("gold").count == 15     # paid before a prose, never after one
     w = WorldTurn()
-    game._arrive(st, w, st.world["home"])                                            # back in the village: paid, told, gold skipped
+    st.player.location = "The village"
+    game._arrive(st, w, st.world["home"])                                            # back in the village: not yet (FN175)
+    assert st.flags["jobs"][0]["status"] == "done" and st.item("gold").count == 15
+    assert "Done; see" in next(t for t in st.threads if t.id == "job_1").about
+    st.player.location = st.person("innkeeper").location                             # with its giver, in person: paid, told, gold skipped
+    game._pay_now(st, w)
     assert st.flags["jobs"][0]["status"] == "paid" and st.item("gold").count == 15 + 15
-    assert "gold" in w.skip and any(d.startswith("Settled before this telling: Paid: 15 gold") for d in w.directives)
+    assert "gold" in w.skip and any(d.startswith("Settled before this telling: Paid by ") and "15 gold" in d for d in w.directives)
     assert next(t for t in st.threads if t.id == "job_1").status == "resolved"
 
 
@@ -449,7 +454,7 @@ def test_the_crew_in_the_tavern_one_comes_along_at_a_time_and_follows(engine: En
     assert len(ask.params[0].options) == 3
     s2, res = game.run_command(s1, "ask_along", {"who": crew[1].id})
     assert res.ok and s2.flags["companion"] == crew[1].id and crew[1].id in s2.player.with_them
-    assert not any(c.id == "ask_along" for c in game.commands(s2))                         # one at a time
+    assert not game.run_command(s2, "ask_along", {"who": crew[0].id})[1].ok               # one at a time (FN166: the engine's line)
     assert any(c.id == "part_ways" for c in game.commands(s2))
     q = s2.person(crew[1].id)
     assert q.fights_beside and q.attitude >= 2
@@ -539,3 +544,163 @@ def test_the_simulator_plays_a_game_on_the_engine_alone(engine: Engine):
     from games.fantasy import combat as cb
     xp = sum(int(cb.bestiary().entries.get(q.combat.block, {}).get("xp") or 0) for q in made)
     assert xp <= 200, (told, xp)                                    # an easy fight for one level-1 fighter, not a troll (1800)
+
+
+def test_the_board_refills_with_jobs_sized_to_the_party_and_says_so(engine: Engine):
+    """FN165 (the owner, 11-19: "we want the town to keep bringing you back ... flat out telling the player when they level up
+    or time passes etc that new quests are on the notice board"): one posted job from the start, a small place on the map once
+    the board is read, its fight the generator's for this party; a new morning with too few jobs the party can take posts
+    more and says so; so does a level."""
+    import random
+    from engine.game import TurnInfo
+    from games.hidden.parchment import company as co
+    from games.hidden.parchment import jobs as jb
+    game, st = _fresh(engine)
+    sc = game.scenario(st.city.id)
+    if not sc.get("postings"):
+        pytest.skip("no postings written on this machine")
+    posted = [j for j in st.flags["jobs"] if j.get("place")]
+    assert len(posted) == 1 and not posted[0]["known"] and posted[0]["at"] not in st.world["places"]
+    j = posted[0]
+    assert j["pay"] >= 10 and st.flags["posted"][j["at"]] and not co.danger(sc, st, j["at"])
+    s1, res = game.run_command(st, "read_board", {})
+    assert j["title"] in res.directive and j["at"] in s1.world["places"] and wm.place_named(s1.world, j["place"]["name"]) == j["at"]
+    assert wm.plan_journey(s1.world, j["at"]) is not None or wm.find_path(s1.world, (0, 0), tuple(j["place"]["tile"]))
+    # its own residents are there on arrival, and killing them is the job
+    s1.world["player"]["tile"] = list(j["place"]["tile"])
+    lines = jb.arrive(game, sc, s1, j["at"])
+    assert lines and s1.flags["residents"][j["at"]]
+    for x in s1.flags["residents"][j["at"]]:
+        s1.person(x).status = "dead"
+    assert any(ln.startswith("Job done") for ln in jb.update(game, s1))
+    # a new morning: the rats and the posted one are open and safe, so nothing new; with them done, two more and the line
+    s2 = st.model_copy(deep=True)
+    s2.clock.day = 2
+    assert jb.refill(game, sc, s2, "day") == [] and jb.refill(game, sc, s2, "day") == []
+    for k in s2.flags["jobs"]:
+        if not co.danger(sc, s2, k["at"]) and k["form"] != "bounty":
+            k["status"] = "paid"
+    s2.clock.day = 3
+    s3 = game.after_turn(s2, TurnInfo(turn=5, elapsed_minutes=1, rng=random.Random(0)))
+    assert jb.NEW_NOTICES in s3.player.shown_notes
+    assert len([k for k in s3.flags["jobs"] if k.get("place") and k["status"] == "open"]) == jb.OPEN_WANTED
+    assert any(c.id == "read_board" for c in game.commands(s3))
+    # a level: one more, said in the level's own line
+    s3.player.xp = 10 ** 6
+    lv = next(c for c in game.commands(s3) if c.id == "level_up")
+    lvl, gain, feats, points, cards, pick = game._level_up_plan(s3.player)
+    s4, res = game.run_command(s3, "level_up", {"stats": ",".join(["str"] * points) if points else "",
+                                                 "cards": ",".join(k for k, _ in list(cards)[:pick]) if pick else ""})
+    assert res.ok and jb.NEW_NOTICES in res.text and len(s4.flags["jobs"]) == len(s3.flags["jobs"]) + 1
+
+
+def test_a_way_near_a_place_meets_its_kind_and_can_go_round(engine: Engine):
+    """FN164 (the owner, 11-19: "fighting themed enemies to the location you pass near makes sense, if players don't want that
+    they can specify a route around it"): a journey that passes near a place something lives at has a stop there and says so;
+    its trouble is that place's kind in the generator's numbers, never its own residents; Go round keeps later ways clear."""
+    import random
+    from games.fantasy.world import WorldTurn
+    game, st = _fresh(engine)
+    w0 = st.world
+    # a place put by the way to the fort, with skeletons in it
+    fort = next(k for k, p in w0["places"].items() if p["name"] == "The goblin fort")
+    path = wm.find_path(w0, (0, 0), tuple(w0["places"][fort]["tile"]))
+    mid = path[len(path) // 2]
+    side = next(t for t in [(mid[0] + 2, mid[1]), (mid[0] - 2, mid[1]), (mid[0], mid[1] + 2)] if wm.ground_at(w0, *t) and t not in path)
+    wm.add_place(w0, "post_9", "ruin", "The Old Ruin", side)
+    st.flags.setdefault("posted", {})["post_9"] = [{"entry": "skeleton", "count": 3, "variant": "standard"}]
+    w = WorldTurn()
+    plan = game._plan(st, fort, w)
+    assert any(s[1] == "near" and s[2] == "post_9" for s in plan["stops"]) and "The way passes near the Old Ruin." in w.mechanics
+    assert any(c.id == "go_round" for c in game.commands(st))
+    # the trouble by it is skeletons, sized, and nobody of the ruin's own is out
+    st.world["player"]["journey"] = plan
+    game.NEAR_CHANCE = 1000
+    try:
+        w = WorldTurn()
+        game._leg(st, w, random.Random(1), 1, None)
+    finally:
+        del game.NEAR_CHANCE
+    assert "within sight of the Old Ruin" in w.directives[0] and "come out of the Old Ruin" in w.directives[0]
+    foes = [q for q in st.people if q.status == "alive" and q.attitude <= -3 and q.combat is not None]
+    assert foes and all(q.combat.block == "skeleton" for q in foes) and "post_9" not in (st.flags.get("residents") or {})
+    # round it: the held journey is planned again clear of it, and a new one too
+    game2, st2 = _fresh(engine)
+    wm.add_place(st2.world, "post_9", "ruin", "The Old Ruin", side)
+    st2.flags.setdefault("posted", {})["post_9"] = [{"entry": "skeleton", "count": 3, "variant": "standard"}]
+    st2.world["player"]["journey"] = game._plan(st2, fort)
+    s3, res = game.run_command(st2, "go_round", {"place": "post_9"})
+    assert res.ok and "goes round the Old Ruin" in res.text and s3.flags["avoid"] == ["post_9"]
+    assert "post_9" not in wm.passes_near(s3.world, [tuple(t) for t in s3.world["player"]["journey"]["path"]], game.NEAR)
+    assert not any(s[1] == "near" for s in game._plan(s3, fort)["stops"])
+    s4, res = game.run_command(s3, "go_near", {})
+    assert res.ok and s4.flags["avoid"] == [] and any(s[1] == "near" for s in game._plan(s4, fort)["stops"])
+
+
+def test_one_permanent_companion_and_they_turn_back_far_off_the_path(engine: Engine):
+    """FN166 (the owner, 11-19: "a 'you may only have one permanent companion at a time' system message ... If you wander too
+    far off the beaten path they leave the party")."""
+    from games.fantasy.world import WorldTurn
+    from games.hidden.parchment import company as co
+    game, st = _fresh(engine)
+    crew = co.crew(st)
+    s1, res = game.run_command(st, "ask_along", {"who": crew[0].id})
+    assert res.ok
+    ask = next(c for c in game.commands(s1) if c.id == "ask_along")               # still the reading's to pick, the other two
+    assert [o.id for o in ask.params[0].options] == [crew[1].id, crew[2].id]
+    s2, res = game.run_command(s1, "ask_along", {"who": crew[1].id})
+    assert not res.ok and res.text == f"You may only have one permanent companion at a time. Part ways with {crew[0].name} first."
+    assert s2.flags["companion"] == crew[0].id
+    assert "room for one lasting companion only" in game.render_bulletin(s1, "x")
+    chips = [c.id for wdg in game.ui(s1).panels if getattr(wdg, "type", "") == "commands" for c in wdg.items]
+    assert "ask_along" not in chips and "go_round" not in chips
+    # off the path: uneasy once, then gone back to the tavern
+    far = next((x, y) for x in range(4, 40) for y in range(4, 40) if wm.ground_at(s1.world, x, y)
+               and not wm.region_at(s1.world, x, y) and (s1.world["player"].update(tile=[x, y]) or True)
+               and game.FAR_WARN < wm.off_the_path(s1.world) <= game.FAR_LEAVE)
+    w = WorldTurn()
+    game._beaten_path(s1, w)
+    assert any("is uneasy this far from any road" in m for m in w.mechanics) and s1.flags["companion"]
+    w = WorldTurn()
+    game._beaten_path(s1, w)
+    assert not w.mechanics                                                        # said once
+    farther = next(((x, y) for x in range(4, 60) for y in range(4, 60) if wm.ground_at(s1.world, x, y)
+                    and not wm.region_at(s1.world, x, y) and (s1.world["player"].update(tile=[x, y]) or True)
+                    and wm.off_the_path(s1.world) > game.FAR_LEAVE), None)
+    if farther is None:
+        pytest.skip("no ground that far from a road on this map")
+    w = WorldTurn()
+    game._beaten_path(s1, w)
+    assert any("turns back for the tavern" in m for m in w.mechanics) and "companion" not in s1.flags
+    assert crew[0].id not in s1.player.with_them and s1.person(crew[0].id).location == "the tavern"
+
+
+def test_loot_is_a_kind_the_store_buys_in_one_go(engine: Engine):
+    """FN168 to FN170 (the owner, 11-19: "every monster should drop either money or something sellable ... a 'loot' category
+    ... you can just tell shopkeep you want to sell your loot to auto sell"; the store said outright the first time)."""
+    import random
+    from engine.game import TurnInfo
+    from games.fantasy.world import WorldTurn
+    from games.fantasy import combat as cb
+    from games.fantasy import encounter as en
+    from games.hidden.parchment import jobs as jb
+    game, st = _fresh(engine)
+    with cb.using(game.bestiary):
+        made = [q for e in game.bestiary.entries if not en._special(game.bestiary.entries[e]) for q in en.spawn(st, [(e, 1)], "standard")]
+    st.people.extend(made)
+    gold = st.item("gold").count
+    for q in made:
+        before = (st.item("gold").count, sum(i.count for i in st.inventory if jb.is_loot(i)))
+        q.status = "dead"
+        lines = jb._loot(st, [q], game)
+        assert (st.item("gold").count, sum(i.count for i in st.inventory if jb.is_loot(i))) > before, q.combat.block
+    assert st.flags["store_told"] and all(i.worth >= 1 for i in st.inventory if i.kind == "loot")
+    assert "The general store buys just about anything" in game.opening(st)
+    st.player.location = "the general store"
+    cmd = next(c for c in game.commands(st) if c.id == "sell_loot")
+    total = sum(i.worth * i.count for i in st.inventory if jb.is_loot(i))
+    assert f"({total} gold)" in cmd.label
+    have = st.item("gold").count
+    s2, res = game.run_command(st, "sell_loot", {})
+    assert res.ok and s2.item("gold").count == have + total and not any(jb.is_loot(i) for i in s2.inventory)
+    assert not any(c.id == "sell_loot" for c in game.commands(s2))

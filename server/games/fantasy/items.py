@@ -389,7 +389,7 @@ CURIO_EXAMPLES = [
 # loot table item, just one that prompts narrator to make it up". The story's own odd thing is a curio rarely; the loot's
 # rolls make most of them (a strong foe's drop, a cleared place's cache), object and power both made by the side call
 CURIO_CHANCE = 0.05          # the story's own odd thing, pocketed (the rogue's eye adds a fifth of its points)
-LOOT_CURIO = {"drop": 0.08, "cache": 0.15}
+LOOT_CURIO = {"drop": 0.03, "cache": 0.15, "posting": 0.04}     # 11-19: drop was 0.08 when a game had two fights, not ten
 ODD = "an odd thing"         # a loot curio's name until its object is made (the same turn, at the turn's end)
 
 

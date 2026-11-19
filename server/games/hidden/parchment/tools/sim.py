@@ -198,9 +198,9 @@ def travel(game: Any, st: Any, pid: str, rng: random.Random, strat: Strategy, lo
         if wm.goal_tile(st.world, pid) == tuple(st.world["player"]["tile"]):
             break
         night = game._night(st)
-        plan = wm.plan_journey(st.world, pid, night)
         turn[0] += 1
         w = WorldTurn()
+        plan = game._plan(st, pid, w)
         if plan is not None:
             st.world["player"]["journey"] = plan
             mins = game._leg(st, w, rng, turn[0], None, charge=False)
@@ -239,8 +239,12 @@ def village(game: Any, st: Any, strat: Strategy, log: dict) -> Any:
     from .. import company as co
     from .. import jobs as jb
     p = st.player
-    jb.pay(st)
+    for q in [x for x in st.people if x.status == "alive" and x.location]:      # FN175: each job's pay from its giver, in person
+        if any(j.get("giver") == q.id for j in st.flags.get("jobs") or []):
+            p.location = q.location
+            jb.pay(st)
     p.location = "the tavern"
+    jb.pay(st)
     if jb.board_unread(st):
         st, _ = _cmd(game, st, "read_board")
     if strat.companion != "none" and co.companion(st) is None:
@@ -249,6 +253,9 @@ def village(game: Any, st: Any, strat: Strategy, log: dict) -> Any:
             st, _ = _cmd(game, st, "ask_along", {"who": who.id})
     # sell: trophies and anything with a use the strategy does not keep
     st.player.location = "the general store"
+    g0 = st.item("gold").count if st.item("gold") else 0
+    st, _ = _cmd(game, st, "sell_loot")                  # FN170, FN174: the loot in one go
+    log["sold"] += (st.item("gold").count if st.item("gold") else 0) - g0
     for it, price in list(game._sellable(st)):
         e = itm.entry_of(game, it) or {}
         keep = (e.get("use") or {}).get("kind") in ("heal", "strike", "escape") or e.get("kind") in ("worn", "arms") or it.power
@@ -321,6 +328,9 @@ def village(game: Any, st: Any, strat: Strategy, log: dict) -> Any:
         if not res.ok:
             break
         st = s2
+    jb.refill(game, game.scenario(st.city.id), st, "day")       # FN165: the morning's papers, read before setting out
+    if jb.board_unread(st):
+        st, _ = _cmd(game, st, "read_board")
     return st
 
 
@@ -336,7 +346,7 @@ def pick_job(game: Any, st: Any, strat: Strategy) -> dict | None:
             continue
         if strat.heed and co.danger(sc, st, j["at"]):
             continue
-        rows = (sc.get("residents") or {}).get(j["at"]) or []
+        rows = jb.rows_at(sc, st, j["at"])              # a posted job's own too (the cold read: they all counted as 0)
         xp = sum(int(cb.bestiary().entries.get(str(r["entry"]), {}).get("xp") or 0) * int(r.get("count") or 1) for r in rows)
         goal = wm.goal_tile(st.world, j["at"])
         path = wm.find_path(st.world, tuple(st.world["player"]["tile"]), goal) if goal else None
@@ -467,6 +477,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "idle_days": round(sum(r["idle_days"] for r in rows) / n, 2), "stalled": round(sum(r["stalled"] for r in rows) / n, 2),
             "ignored_foreboding": round(sum(r["ignored_foreboding"] for r in rows) / n, 2),
             "deaths": dict(sorted(by.items(), key=lambda kv: -kv[1])[:6]),
+            "died_on_the_road": round(sum(1 for r in dead if r["died_to"] in ("the road", "?") or "open country" in r["died_at"]) / n, 3),
             "found_per_game": {k: round(v / n, 2) for k, v in sorted(found.items(), key=lambda kv: -kv[1])[:10]},
             "spent_per_game": {k: round(v / n, 1) for k, v in spent.items()}}
 
@@ -515,7 +526,7 @@ def main() -> None:
             f"Defaults: {asdict(base)}", "", table(results, base, a.days), ""]
     for s, r in results:
         varied = {f.name: getattr(s, f.name) for f in fields(Strategy) if getattr(s, f.name) != getattr(base, f.name)}
-        text += [f"## {varied or 'defaults'}", "", f"- deaths: {r['deaths']}", f"- found a game: {r['found_per_game']}",
+        text += [f"## {varied or 'defaults'}", "", f"- deaths: {r['deaths']}; died on the road (share of all games): {r.get('died_on_the_road')}", f"- found a game: {r['found_per_game']}",
                  f"- spent a game: {r['spent_per_game']}", f"- legs {r['legs']}, stops with something {r['stops']}, curios {r['curios']}, "
                  f"stalled fights {r['stalled']}, foreboding ignored {r['ignored_foreboding']}", ""]
     text.append(f"_{time.monotonic() - t0:.0f} s_")

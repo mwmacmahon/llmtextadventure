@@ -539,16 +539,18 @@ def known_crossings(world: dict) -> set:
             if p["kind"] in CROSSINGS and not p.get("removed") and pid in world["known"]["places"]}
 
 
-def find_path(world: dict, a, b) -> list | None:
+def find_path(world: dict, a, b, avoid: set | None = None) -> list | None:
     """The quickest walk from a to b over rolled ground, by the roads where they help, crossing water only at a bridge
-    or ford the player knows of (a hidden ford is never used). None when there is no such walk."""
+    or ford the player knows of (a hidden ford is never used). None when there is no such walk. `avoid`: tiles the walk
+    keeps off (FN164: the way round a place), but for its two ends."""
     a, b = tuple(a), tuple(b)
+    avoid = {tuple(t) for t in (avoid or ())} - {a, b}
     on_line = _line_tiles(world)
     crossings = known_crossings(world)
 
     def passable(t) -> bool:
         g = ground_at(world, *t)
-        return g is not None and (WALK[g] < 900 or t in crossings)
+        return g is not None and (WALK[g] < 900 or t in crossings) and t not in avoid
 
     def cost(t) -> float:
         line = on_line.get(t)
@@ -735,6 +737,42 @@ def walk_to(world: dict, pid: str, turn: int = 0, night: bool = False) -> dict |
     return {"path": [list(t) for t in path], "minutes": walk_minutes(world, path, night) if len(path) > 1 else 0}
 
 
+def tiles_round(tile, radius: int) -> set:
+    """Every tile within `radius` of a tile (a square: a diagonal step is a step)."""
+    x, y = tile
+    return {(x + dx, y + dy) for dx in range(-radius, radius + 1) for dy in range(-radius, radius + 1)}
+
+
+def passes_near(world: dict, path: list, radius: int, skip: tuple = ()) -> list[str]:
+    """FN164: the known point places a path comes within `radius` tiles of, in the order met; never those in `skip`."""
+    out = []
+    for t in path:
+        for pid, p in world["places"].items():
+            if pid in skip or pid in out or p.get("shape") != "point" or p.get("removed") or pid not in world["known"]["places"]:
+                continue
+            if max(abs(p["tile"][0] - t[0]), abs(p["tile"][1] - t[1])) <= radius:
+                out.append(pid)
+    return out
+
+
+def add_place(world: dict, pid: str, kind: str, name: str, tile, turn: int = 0) -> dict:
+    """FN165: a point place put on the map after the start (a den or a camp a posted job names), known to the player as heard of."""
+    p = {"id": pid, "name": name, "aliases": [], "kind": kind, "shape": "point", "tile": [int(tile[0]), int(tile[1])], "within": None,
+         "written": False, "landmark": 0, "whereabouts": "known", "tier": 1, "made_turn": turn}
+    world["places"][pid] = p
+    world["known"]["places"].setdefault(pid, {"state": "heard", "heard_turn": turn, "been_turn": None, "told": []})
+    return p
+
+
+def off_the_path(world: dict) -> int:
+    """FN166: how many tiles the player stands from the nearest road or lane tile, or known point place (0 on one)."""
+    x, y = world["player"]["tile"]
+    marks = [tuple(t) for ln in world["lines"].values() if ln["kind"] != "river" for t in ln["tiles"]]
+    marks += [tuple(p["tile"]) for pid, p in world["places"].items() if p.get("shape") == "point" and not p.get("removed")
+              and pid in world["known"]["places"]]
+    return min((max(abs(mx - x), abs(my - y)) for mx, my in marks), default=0)
+
+
 # ---- journeys in legs (FN33, FN34; MAP_DESIGN 6.5 draft 5) -----------------------------------------------------------
 
 LEG_ABOVE = 15           # a walk longer than this many minutes is a journey in legs; a shorter one is one turn
@@ -778,7 +816,7 @@ def _stops(world: dict, path: list) -> list[tuple[int, str, str]]:
     return sorted(best)
 
 
-def plan_journey(world: dict, pid: str, night: bool = False) -> dict | None:
+def plan_journey(world: dict, pid: str, night: bool = False, avoid: set | None = None) -> dict | None:
     """A journey to a known place: the path, its stops (index, kind, what) and the minutes; None when there is no way or the
     walk is short enough for one turn (walk_to then does it)."""
     # the review (11-18): a region was never a journey, so "I go to the bog" (2.7 km) was one turn with no stops, and a
@@ -788,7 +826,8 @@ def plan_journey(world: dict, pid: str, night: bool = False) -> dict | None:
     goal = goal_tile(world, pid)
     if goal is None or goal == here:
         return None
-    path = find_path(world, here, goal)
+    path = find_path(world, here, goal, avoid) if avoid else None
+    path = path or find_path(world, here, goal)            # no way round: the plain way (the game says so)
     if path is None or len(path) < 2:
         return None
     if walk_minutes(world, path, night) <= LEG_ABOVE:

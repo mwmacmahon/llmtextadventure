@@ -997,7 +997,8 @@ list is the word guard `lever-phrases` (§8); the street texture gap is the game
 
 - **Set in:** the game's catalogue (`items.yml` beside its scenarios; Parchment's first, 30 things) and these dials in code:
   curios are very rare (the owner, 11-17): the story's own pocketed odd thing 5 per cent (`CURIO_CHANCE`), a cleared
-  place's cache 15 and a drop from a foe of 50 XP or more 8 (`LOOT_CURIO`), the rogue's eye adding a fifth of its points; a kill drops a thing: a strong
+  place's cache 15, a posted job's place 4, and a drop from a foe of 50 XP or more 3 (`LOOT_CURIO`; the drop was 8 until
+  11-19, when the refilling board made a game eleven fights and the simulator counted a curio and a half a game), the rogue's eye adding a fifth of its points; a kill drops a thing: a strong
   foe (XP 100 or more) half the time, uncommon; a person 20 per cent, common (`items.drop`); a cleared job's place leaves one
   (uncommon for a job paying 40 or more); a road stop's small find is a real thing lying there 60 per cent (Parchment `_lay_find`).
   Prices are the scenario's `shops:`; selling is half the catalogue value, trophies by `TROPHY_PRICE`.
@@ -1008,6 +1009,23 @@ list is the word guard `lever-phrases` (§8); the street texture gap is the game
   interesting. Potions are always good too." The ghost bell (the narrator's invention, nothing behind it) began it.
 - **Measured:** tests only (six). Not played yet.
 - **Helped / did not:** not known yet.
+
+### The refilling board, loot, near a place, the companion's tether (Parchment, D336, 11-19)
+
+- **Set in:** `games/hidden/parchment/jobs.py` and `game.py`, and the scenario's `postings:` and `loot:` lists.
+  `POST_BAND` "easy" (a posted job's fight, sized by the family's generator to the party on the day of posting);
+  `OPEN_WANTED` 2 (a morning with fewer jobs the party can take posts more); `POST_NEAR`, `POST_FAR` 4 and 12 tiles from
+  home; pay a third of the fight's XP, 10 at least. `LOOT_CHANCE` 0.35 (a person or one of the dead has a thing to sell
+  besides coin). `NEAR` 2 tiles and `NEAR_CHANCE` 30 per cent, scaled by the road dial (a journey's stop near a place
+  something lives at is trouble of that place's kind). `FAR_WARN`, `FAR_LEAVE` 6 and 10 tiles from any road, lane or known
+  place (the companion is uneasy, then turns back).
+- **Levels:** the board refills when the scenario has `postings:` (none: the written jobs only); the rest are the numbers above.
+- **Why it exists:** the simulator's gap (D335: one safe job, nobody past level 1) and the owner's answers of 11-19.
+- **Measured:** the simulator, 100 ten-day games, fighter, written roads: alone 55 per cent alive, level 2, 230 gold; with
+  the archer 62 per cent, level 3, 347 gold; seven jobs and eleven fights a game. With "normal" papers half the time:
+  43 and 29 per cent alive (not kept). Before the board refilled: 83 and 95 per cent, level 1, 14 to 19 gold.
+- **Helped / did not:** the gap is closed in the simulator; not played yet. Many fights make death likely over ten days
+  (FN178, open with the owner).
 
 ### Foreboding and the shops' prices (Parchment, FN148, FN151)
 
