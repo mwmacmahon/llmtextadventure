@@ -16,15 +16,24 @@ log = logging.getLogger("ta.registry")
 HIDDEN_DIR = Path(__file__).resolve().parent.parent / "games" / "hidden"
 
 
+# Packages under games/hidden/ that a player's server loads too (the owner, 11-19: "We officially need this game to start
+# showing up on Lily's server too, even if it's not fully ready yet"). Named one by one: nothing else under that folder is
+# ever imported with dev mode off.
+PLAYERS = ("parchment",)
+
+
 def load_games(content_root: Path, hidden: bool = True) -> dict[str, Game]:
-    """The games; `hidden=False` (a server with dev mode off, B232) never imports anything under games/hidden/."""
+    """The games; `hidden=False` (a server with dev mode off, B232) imports nothing under games/hidden/ but the packages named
+    in PLAYERS."""
     from games.fantasy.game import FantasyGame
     from games.noir.game import NoirGame
     from games.station.game import StationGame
 
     games: list[Game] = [StationGame(content_root / "station"), NoirGame(content_root / "noir"), FantasyGame(content_root / "fantasy")]
-    if hidden and HIDDEN_DIR.is_dir():
-        for pkg in sorted(p for p in HIDDEN_DIR.iterdir() if (p / "game.py").exists()):
+    if HIDDEN_DIR.is_dir():
+        for pkg in sorted(p for p in HIDDEN_DIR.iterdir() if (p / "game.py").exists() and (hidden or p.name in PLAYERS)):
+            if not hidden and not (content_root / pkg.name).is_dir():
+                continue                                 # a player's server with no content for it: not listed
             try:
                 mod = importlib.import_module(f"games.hidden.{pkg.name}.game")
                 games.append(mod.make_game(content_root))

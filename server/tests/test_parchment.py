@@ -30,13 +30,15 @@ def engine(tmp_path: Path) -> Engine:
     return eng
 
 
-def test_parchment_is_hidden_and_never_on_a_players_server():
+def test_parchment_is_on_a_players_server_and_nothing_else_hidden_is():
+    """FN186 (the owner, 11-19: "We officially need this game to start showing up on Lily's server too")."""
     cfg = load_config()
     root = cfg.resolve(cfg.server.content_root)
     if not (root / "parchment" / "scenarios").is_dir():
         pytest.skip("no Parchment content on this machine")
-    assert "parchment" in load_games(root) and load_games(root)["parchment"].hidden
-    assert "parchment" not in load_games(root, hidden=False)        # a player's server (dev mode off) never imports it
+    assert "parchment" in load_games(root) and not load_games(root)["parchment"].hidden
+    players = load_games(root, hidden=False)                        # a player's server (dev mode off)
+    assert set(players) == {"station", "noir", "fantasy", "parchment"} and not any(g.hidden for g in players.values())
 
 
 def test_a_new_game_has_a_map_and_the_player_is_at_home(engine: Engine):

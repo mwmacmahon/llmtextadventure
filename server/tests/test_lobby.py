@@ -228,7 +228,8 @@ def test_no_shipped_game_is_hidden_and_hidden_ones_live_only_in_the_gitignored_f
     for g in load_games(cfg.resolve(cfg.server.content_root)).values():
         # the clown (the owner, 11-14): listed without the dev switch wherever the hidden folder is loaded at all; its variant
         # with the owner's mod always on (clown_after_dark) keeps the switch
-        assert g.hidden == (type(g).__module__.startswith("games.hidden.") and g.name != "clown"), g.name
+        # Parchment (FN186, the owner 11-19): listed everywhere, a player's server too
+        assert g.hidden == (type(g).__module__.startswith("games.hidden.") and g.name not in ("clown", "parchment")), g.name
     lines = (Path(__file__).resolve().parents[2] / ".gitignore").read_text().splitlines()
     # Parchment (D316) is in the repo too while it is built, and hidden like the rest of the folder
     assert "server/games/hidden/*" in lines and "!server/games/hidden/clown/" in lines and "!server/games/hidden/parchment/" in lines
@@ -376,10 +377,13 @@ def test_dev_mode_off_at_the_server(client, engine: Engine, monkeypatch):
     assert listed.status_code == 200 and not any(g["hidden"] for g in listed.json())
     assert client.get("/api/settings").json()["dev_mode"] is False
     imported: list[str] = []
-    monkeypatch.setattr(reg.importlib, "import_module", lambda name, *a: imported.append(name))
+    real = reg.importlib.import_module
+    monkeypatch.setattr(reg.importlib, "import_module", lambda name, *a: (imported.append(name), real(name, *a))[1])
     cfg = load_config()
     out = reg.load_games(cfg.resolve(cfg.server.content_root), hidden=False)
-    assert imported == [] and not any(getattr(g, "hidden", False) for g in out.values())
+    # FN186 (the owner, 11-19): the packages named in PLAYERS and nothing else from the hidden folder
+    assert set(imported) <= {f"games.hidden.{n}.game" for n in reg.PLAYERS} and not any(getattr(g, "hidden", False) for g in out.values())
+    assert "clown" not in out and not any(n.startswith("clown") for n in out)
 
 
 def test_a_derived_games_content_root_is_another_games():

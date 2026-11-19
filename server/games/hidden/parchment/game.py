@@ -35,7 +35,7 @@ class ParchmentGame(FantasyGame):
     title = "Parchment"
     description = ("A village in the woods and the old familiar places round it, on a map you walk. A d20, a sheet, hit points. "
                    "Dev mode only while it is built.")
-    hidden = True
+    hidden = False           # FN186 (the owner, 11-19): listed on every server, a player's too (engine/registry.py PLAYERS)
 
     # the setting's ties (FN100's class attributes), Parchment's own
     DEFAULT_SCENARIO = "rustic_ramblings"
