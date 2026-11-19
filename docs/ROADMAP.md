@@ -683,6 +683,9 @@ endless ground, camps, wandering, invented places and ground changes held until 
   most after a failed one). A job may come with someone who goes along for it and home after, any number at once beside
   the one permanent companion. Naming one of the village's people as where you go takes you to them, or to their usual
   place with a line that they are not around. Fourteen people now, some out of the village (FN179).
+- **On Lilith's server since 11-19 (D339)**, on the owner's word: Parchment is listed on a player's server; :8016 moved
+  to bcf5f82. Nine turns on Sonnet first: the board, going to a person, a posted job, the fight, pay in person and the
+  shop's basket all worked; one fault found and fixed.
 - **Next:** a played round on Gemma when the box is free; the engine's questions with buttons (FN39), fetch
   and find jobs, roads and rivers by name.
 - **Names (FN108 to FN111): built 11-17**, short since the owner's round (FN133). Rolled from large word lists per game,
