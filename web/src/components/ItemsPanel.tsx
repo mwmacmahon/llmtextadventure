@@ -37,7 +37,8 @@ export function Hotbar({ widget, onCommand, onOpen, busy }: { widget: HotbarWidg
       <Head title={widget.title} opens={widget.opens} onOpen={onOpen} />
       <div className="hotbar">
         {widget.slots.map((s) => (
-          <button key={s.id} type="button" className="hot-slot" disabled={busy || !s.enabled} title={s.label} onClick={() => onCommand?.(s.command, s.args)}>
+          <button key={s.id} type="button" className="hot-slot" disabled={busy || !s.enabled} title={s.label}
+            onClick={(e) => { e.currentTarget.blur(); onCommand?.(s.command, s.args); }}>
             <ItemIcon kind={s.icon} />
             <span className="hot-label">{s.label}</span>
             {s.count != null && <span className="hot-count">{s.count}</span>}

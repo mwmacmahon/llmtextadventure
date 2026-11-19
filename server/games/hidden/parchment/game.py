@@ -197,12 +197,39 @@ class ParchmentGame(FantasyGame):
         if not w or s.player.fate:
             return s
         s = self._settle_place(s, info)
+        self._nobody_tags_along(s)
         for line in co.adopt(s):                         # a companion the story agreed to is the companion
             s.player.shown_notes.append(line)
         co.keep_with(s)                                  # FN149: the companion follows
         for line in jb.update(self, s) + co.send_home(s) + jb.refill(self, self.scenario(s.city.id), s, "day"):
             s.player.shown_notes.append(line)
         return s
+
+    def _mark_turn_start(self, s: FantasyState) -> None:
+        """Where the player stands and who of the village and the crew stands there, before the turn moves anyone (after_turn
+        is handed the state as the referee's rows left it, so the turn's start is kept here)."""
+        here = (s.player.location or "").lower()
+        s.flags["turn_start"] = {"where": s.player.location or "",
+                                 "there": [q.id for q in s.people if q.id in self._homes(s) and (q.location or "").lower() == here]}
+
+    def _nobody_tags_along(self, s: FantasyState) -> None:
+        """The rounds of 11-19 (Gemma: "I go and see the reeve", the innkeeper told walking along and filed at the reeve's
+        house; the UI round: the innkeeper and a sellsword filed in the general store after the player walked there): when the
+        player has moved, one of the village's people or the crew who was where the player was and is now filed where the
+        player is, and is not travelling with them, is back where they were. Counted (`tagged_along`)."""
+        start = s.flags.pop("turn_start", None) or {}
+        was, now = str(start.get("where") or "").lower(), (s.player.location or "").lower()
+        if not was or was == now:
+            return
+        along = {q.id for q in [co.companion(s), *co.helpers_along(s)] if q is not None}
+        for qid in start.get("there") or []:
+            q = s.person(qid)
+            if q is None or q.id in along or q.status != "alive" or q.id in (s.player.fighting or []):
+                continue
+            if (q.location or "").lower() == now:
+                q.location = str(start["where"])
+                s.player.with_them = [x for x in s.player.with_them if x != q.id]
+                s.flags["tagged_along"] = int(s.flags.get("tagged_along") or 0) + 1
 
     def _settle_place(self, s: FantasyState, info: Any) -> FantasyState:
         """The tile and the place's name after a turn (R-G3), the walk a turn's move asks for, R1 on a leg's turn."""
@@ -484,6 +511,7 @@ class ParchmentGame(FantasyGame):
         told where this leg ends, and what happened there if the stop's roll says so (FN34)."""
         co.keep_with(state)                              # FN149: the companion is here before the prose
         state.flags.pop("to_person", None)
+        self._mark_turn_start(state)
         s, w = super().world_turn(state, adj, player_text, rng, turn, offset)
         if s.world and not s.player.fighting:
             # the gate-2 round (11-17): paid 30 for a 15 job, the engine after the prose and the referee from the farmer's coins.
@@ -931,7 +959,7 @@ class ParchmentGame(FantasyGame):
             line = f"Bought: {name}, {price} gold ({gold.count} left). Equip it from the sheet."
             return s, CommandResult(label="Buy", text=line, player_line=f"I buy {itm._a(name)}.", summary=f"{p.name} buys {itm._a(name)}.",
                                     directive=f"The sale is done: {p.name} pays {price} gold and is handed {itm._a(name)}. The price and the deal stand. A line or two.",
-                                    minutes=5, referee_skip=["gold", "inventory"])
+                                    minutes=5, referee_skip=self._trade_skip([iid, name]))
         if command_id == "buy":
             ref = str(args.get("item") or "")
             price = int((sh.get("stock") or {}).get(ref, 0))
@@ -944,7 +972,7 @@ class ParchmentGame(FantasyGame):
             line = f"Bought: {it.name}, {price} gold ({gold.count} left)."
             return s, CommandResult(label="Buy", text=line, player_line=f"I buy {itm._a(it.name)}.", summary=f"{p.name} buys {itm._a(it.name)}.",
                                     directive=f"The sale is done: {p.name} pays {price} gold and is handed {itm._a(it.name)}. The price and the deal stand. A line or two.",
-                                    minutes=2, referee_skip=["gold", "inventory"])
+                                    minutes=2, referee_skip=self._trade_skip([it.id, it.name, ref]))
         if command_id == "sell_loot":
             loot = [(x, pr) for x, pr in self._sellable(s) if jb.is_loot(x)] if sh.get("buys") else []
             if not loot:
@@ -960,7 +988,7 @@ class ParchmentGame(FantasyGame):
             return s, CommandResult(label="Sell all loot", text=f"Sold: {what}, {total} gold in all ({gold.count} now).",
                                     player_line="I sell all my loot.", summary=f"{p.name} sells their loot.",
                                     directive=f"The sale is done: {p.name} sells {what} for {total} gold in all, paid over; the price stands. A line or two.",
-                                    minutes=3, referee_skip=["gold", "inventory"])
+                                    minutes=3, referee_skip=self._trade_skip([w for x, _ in loot for w in (x.id, x.name)]))
         it = next((x for x, _ in self._sellable(s) if x.id == str(args.get("item") or "")), None)
         if it is None or not sh.get("buys"):
             return state, CommandResult(ok=False, label="Sell", text="They do not buy that here.")
@@ -980,7 +1008,7 @@ class ParchmentGame(FantasyGame):
         line = f"Sold: {name}, {price * n} gold.{news}"
         return s, CommandResult(label="Sell", text=line, player_line=f"I sell {name}.", summary=f"{p.name} sells {name}.",
                                 directive=f"The sale is done: {p.name} sells {name} for {price * n} gold, paid over; the price stands.{news} A line or two.",
-                                minutes=2, referee_skip=["gold", "inventory"])
+                                minutes=2, referee_skip=self._trade_skip([it.id, it.name]))
 
     FLEE_NUDGE = 1           # FN181: running is rolled twice, the better kept, and one blow at most follows a slip that fails
 
@@ -1006,7 +1034,7 @@ class ParchmentGame(FantasyGame):
                                    # must_name fills it from the reading's own ids or a name in its words, the trade first so
                                    # "ask the archer" finds her
                                    params=[Param(name="who", label="Who", must_name=True,
-                                                 options=[Option(id=q.id, label=f"{re.sub(r'^(a|an) ', 'the ', q.role)} ({q.name})") for q in can])]))
+                                                 options=[Option(id=q.id, label=re.sub(r'^(a|an) ', 'the ', q.role) + (f" ({q.name})" if q.met else "")) for q in can])]))
         waiting = co.helpers_here(s)                     # FN182: who would go along for a job, where they wait
         if waiting:
             out.append(CommandSpec(id="take_helper", label="Bring helper", mode="narrated",
@@ -1296,16 +1324,34 @@ class ParchmentGame(FantasyGame):
             if it.id == "gold" or it.count == 0:
                 continue
             icon = itm.icon_of(self, it)
-            row = IconRow(id=it.id, icon=icon, name=it.name, note=(it.note or "")[:80], count=it.count, tag="on" if it.equipped else "",
+            row = IconRow(id=it.id, icon=icon, name=it.name, note=self._short(it.note or ""), count=it.count, tag="on" if it.equipped else "",
                           price=prices[it.id] * it.count if icon == "loot" and it.id in prices else None)
             groups["Equipped" if it.equipped else dict(self.POCKETS).get(icon, "Gear")].append(row)
         loot = sum(r.price or 0 for r in groups["Loot"])
         out = [ItemGroup(title=t, rows=rows, note=f"{loot} gold" if t == "Loot" and loot else "") for t, rows in groups.items() if rows]
         gold = s.item("gold")
         return ItemsPanel(title="Pockets", purse=gold.count if gold is not None else 0, groups=out,
-                          tabs=[("All", "bag", []), ("Arms", "weapon", ["Equipped", "Weapons", "Armour", "Worn"]),
+                          tabs=[("All", "bag", []), ("Equipment", "weapon", ["Equipped", "Weapons", "Armour", "Worn"]),
                                 ("Use", "potion", ["Potions", "Throwables", "Scrolls and wands"]), ("Curios", "curio", ["Curios"]),
-                                ("Loot", "loot", ["Loot"])])
+                                ("Gear", "bag", ["Gear"]), ("Loot", "loot", ["Loot"])])
+
+    @staticmethod
+    def _short(text: str, limit: int = 80) -> str:
+        """A note cut at a word, with an ellipsis, when it is long."""
+        text = " ".join(text.split())
+        return text if len(text) <= limit else text[:limit].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+
+    def _trade_skip(self, things: list[str]) -> list[str]:
+        """What the referee leaves alone after a trade: the gold, and every thing that changed hands by its id and its name
+        (the UI round of 11-19: one potion bought was two in the pack; the engine added it and then the referee's row did.
+        The pipeline's skip matches a row's target or field, so "inventory" alone skipped nothing)."""
+        out = ["gold", "inventory"]
+        for x in things:
+            x = str(x or "").strip().lower()
+            if x:
+                bare = re.sub(r"^(a|an|the) ", "", x)
+                out += [x, bare, x.replace(" ", "_"), f"a {bare}", f"an {bare}", f"the {bare}", f"{bare}s"]
+        return list(dict.fromkeys(out))
 
     def _sell_count(self, it: Any) -> int:
         """How many go at one sale: a stack of plain things whole; a thing with a use one at a time."""
@@ -1330,10 +1376,11 @@ class ParchmentGame(FantasyGame):
         if not stock and not sells and not services:
             return None
         here = (s.player.location or "").lower()
-        keeper = next((q for q in s.people if q.status == "alive" and q.combat is None and (q.location or "").lower() == here), None)
+        homes = s.flags.get("homes") or {}                # the UI round of 11-19: the innkeeper, told tagging along, was the store's keeper
+        keeper = next((q for q in s.people if q.status == "alive" and str(homes.get(q.id) or "").lower() == here and (q.location or "").lower() == here), None)
         gold = s.item("gold")
         return ShopPanel(title=(s.player.location or "Shop")[:1].upper() + (s.player.location or "Shop")[1:], group="Shop", place="popout",
-                         keeper=f"{keeper.name}, {keeper.called.lower()}" if keeper is not None else "",
+                         keeper=(f"{keeper.name}, {keeper.called.lower()}" if keeper.met else keeper.called) if keeper is not None else "",
                          gold=gold.count if gold is not None else 0, stock=stock, sells=sells, services=services)
 
     def _deal(self, state: FantasyState, args: dict[str, Any]):
@@ -1371,8 +1418,10 @@ class ParchmentGame(FantasyGame):
         if have + income < cost:
             return state, CommandResult(ok=False, label="Shop", text=f"That costs {cost} gold; {p.name} has {have + income}.")
         sold, news = [], ""
+        touched: list[str] = []
         for i in ids:
             it, pr = sellable[i]
+            touched += [it.id, it.name]
             n = self._sell_count(it)
             e = itm.entry_of(self, it)
             if e and not it.known:
@@ -1393,7 +1442,10 @@ class ParchmentGame(FantasyGame):
                     iid = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
                     s.inventory.append(Item(id=iid if s.item(iid) is None else f"{iid}_{len(s.inventory)}", name=name, note="new from the smith"))
                 else:
-                    name = itm.add(self, s, ref, known=True).name
+                    got = itm.add(self, s, ref, known=True)
+                    name = got.name
+                    touched += [got.id, ref]
+            touched.append(name)
             bought.append(f"{n} {name}" if n > 1 else itm._a(name))
         parts = ([f"Bought: {', '.join(bought)} ({cost} gold)."] if bought else []) + ([f"Sold: {', '.join(sold)} ({income} gold)."] if sold else [])
         line = " ".join(parts) + f" {gold.count} gold now.{news}"
@@ -1401,7 +1453,7 @@ class ParchmentGame(FantasyGame):
         return s, CommandResult(label="Shop", text=line, player_line="I " + said.replace("buys ", "buy ").replace("sells ", "sell ") + ".",
                                 summary=f"{p.name} {said}.",
                                 directive=f"The trade is done: {p.name} {said}; the prices stand and the goods have changed hands.{news} A line or two.",
-                                minutes=3 + len(buys) + len(ids) // 3, referee_skip=["gold", "inventory"])
+                                minutes=3 + len(buys) + len(ids) // 3, referee_skip=self._trade_skip(touched))
 
     def _company_panel(self, s: FantasyState):
         """Who is along: the one companion and whoever came for a job, with their hit points."""
@@ -1513,8 +1565,8 @@ class ParchmentGame(FantasyGame):
         for c in items:
             if abil(c) and not c.params:
                 n = next((k.value for k in s.player.counts if k.name.lower() == c.label.lower() or k.name.lower().replace(" ", "_") == c.id), None)
-                label = re.sub(r"\s*\(\d+\)$", "", c.label)      # the count is the slot's own
-                m = re.search(r"\((\d+)\)$", c.label)
+                label = re.sub(r"\s*\(\d+( left)?\)$", "", c.label)      # the count is the slot's own
+                m = re.search(r"\((\d+)( left)?\)$", c.label)
                 slots.append(HotSlot(id=c.id, icon="skill", label=label, count=n if n is not None else int(m.group(1)) if m else None,
                                      command=c.id, enabled=c.enabled))
         foes = [q.id for q in s.people if q.id in (s.player.fighting or []) and q.status == "alive"]

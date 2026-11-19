@@ -192,6 +192,7 @@ export function GamePage({ name }: { name: string }) {
           {starting ? <>Starting<span className="dots" aria-hidden="true" /></> : "Start"}
         </button>
         {starting ? <span className="muted starting-note">Setting up the world and your character; this can take a few seconds.</span> : null}
+        {!starting && missing.length > 0 ? <span className="muted starting-note">Still needed: {missing.map((f) => f.label).join(", ")}</span> : null}
       </div>
     </section>
   );

@@ -71,10 +71,9 @@ footer textarea { flex: 1; resize: vertical; }
 .panel { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
 .panel h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 /* FN190 (the owner, 11-19: "looks really shabby compared to all the newer UI stuff"): the status strip as a row of stats */
-.strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-.stat { display: flex; flex-direction: column; gap: 1px; padding: 7px 10px; min-width: 0; border-right: 1px solid var(--border); }
-.stat:last-child { border-right: none; }
-.stat-wide { grid-column: 1 / -1; border-right: none; border-top: 1px solid var(--border); }
+.strip { display: flex; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.stat { display: flex; flex-direction: column; gap: 1px; padding: 7px 10px; min-width: 0; flex: 1 1 64px; box-shadow: 1px 0 0 var(--border); }
+.stat-wide { flex: 1 1 100%; box-shadow: 0 -1px 0 var(--border); }
 .stat-label { font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .stat-value { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; display: inline-flex; gap: 5px; align-items: center; overflow-wrap: anywhere; }
 .stat-value .item-icon { width: 14px; height: 14px; }
@@ -494,6 +493,11 @@ dl.score dd { margin: 0; font-family: var(--pixel-font); font-size: 15px; }
 .widget-open:hover { color: var(--accent); }
 .hotbar { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
 .hot-slot { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 7px; align-items: center; text-align: left; padding: 6px 8px; }
-.hot-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.hot-label { min-width: 0; font-size: 13px; line-height: 1.25; overflow-wrap: anywhere; }
 .hot-count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .item-tag.bad { color: var(--bad); border-color: #f7768e55; }
+
+/* the UI round of 11-19: things to press are at least 32 px high; a village building in the map's list is a button */
+.item-tab, .shop-step, .hot-slot { min-height: 32px; }
+.map-spot { background: none; border: none; padding: 5px 0; color: inherit; font: inherit; cursor: pointer; text-align: left; }
+.map-spot:hover { color: var(--accent); }

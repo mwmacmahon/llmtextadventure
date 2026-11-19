@@ -115,6 +115,7 @@ function Game({ id }: { id: string }) {
 
   /** Drive one SSE stream (typed turn or clicked command) through the stage indicator. */
   async function run(gen: AsyncGenerator<TurnEvent>, pendingText: string, typed = false) {
+    if (window.innerWidth < 720) setPanelsOpen(false);     // on a phone the story gets the screen while a turn is told
     setErr(null);
     setPending(pendingText);
     setStreaming("");
@@ -233,7 +234,10 @@ function Game({ id }: { id: string }) {
   const mapWidget = (view?.ui.panels.find((w) => w.type === "map") ?? null) as (MapWidget & { type: "map" }) | null;
   // FN154: the pop-out groups, in the order the game lists their panels (the map has its own button and sheet)
   // FN188: a command of the Map menu is in the map's own sheet, never a second Map button
-  const popGroups = !view ? [] : [...new Set(view.ui.panels.filter((w) => w.place === "popout" && w.type !== "map" && w.group !== "Map").map((w) => w.group || "More"))];
+  // the UI round of 11-19: the buttons changed places from turn to turn (the panels' own order): a fixed order, the rest after
+  const POP_ORDER = ["Character", "People", "Quests", "Use", "Equipment", "Pockets", "Shop"];
+  const popGroups = !view ? [] : [...new Set(view.ui.panels.filter((w) => w.place === "popout" && w.type !== "map" && w.group !== "Map").map((w) => w.group || "More"))]
+    .sort((a, b) => (POP_ORDER.indexOf(a) + 1 || 99) - (POP_ORDER.indexOf(b) + 1 || 99));
   useEffect(() => {
     if (!popGroup) return;
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setPopGroup(null); };
@@ -491,7 +495,7 @@ function Game({ id }: { id: string }) {
           <div className="overlay-sheet map-sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Map">
             <div className="overlay-head">
               <strong>Map</strong>
-              <span className="muted small">tap a place to see it; tap again to go there</span>
+              <span className="muted small">pick a place to go there</span>
               <span className="spacer" />
               <button onClick={() => setMapOpen(false)}>close</button>
             </div>

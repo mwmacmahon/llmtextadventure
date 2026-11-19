@@ -447,7 +447,11 @@ export function MapPanel({ widget, onPick, big = false }: { widget: MapWidget; o
       )}
       {widget.spots.length > 0 && (
         <ul className="map-spots small">
-          {widget.spots.map((p, i) => <li key={i} className={p.here ? "here" : "muted"}>{p.here ? "▸ " : ""}{p.name}</li>)}
+          {widget.spots.map((p, i) => (
+            <li key={i} className={p.here ? "here" : "muted"}>
+              {p.here ? <>▸ {p.name}</> : <button type="button" className="map-spot" onClick={() => onPick?.(`I go to ${p.name}.`)}>{p.name}</button>}
+            </li>
+          ))}
         </ul>
       )}
     </section>

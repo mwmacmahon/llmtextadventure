@@ -8,7 +8,8 @@
 //   browser.mjs text [selector]                    the visible text of the page (or of one element), trimmed to 6000 chars
 //   browser.mjs buttons                            every visible button, link, select and input: its text, kind and state
 //   browser.mjs click "<text>" [--nth N] [--in selector]    click the visible control whose text contains this (exact wins)
-//   browser.mjs clickxy <x> <y>                    click at a point (the map)
+//   browser.mjs clickxy <x> <y>                    click at a point with the mouse (the map)
+//   browser.mjs tap <x> <y>                        a finger's tap at a point (the map treats a tap and a click differently)
 //   browser.mjs select "<label or current text>" "<option text>"   choose in a <select>
 //   browser.mjs fill "<selector or placeholder/label text>" "<text>"   put text in an input or textarea (replaces it)
 //   browser.mjs press <Enter|Escape|Tab>
@@ -18,6 +19,8 @@
 //   browser.mjs errors                             console errors and failed requests seen since `goto` (kept in the page)
 //   browser.mjs stop
 //
+// --phone is a 500-pixel window: headless Chrome goes no narrower (a tester of 11-19 held a DevTools session open with
+// Emulation.setDeviceMetricsOverride to get 390; that override lasts only while one connection stays open).
 // Port: --port or TA_BROWSER_PORT (default 9333), so several testers can each have a browser.
 import { spawn } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -126,6 +129,12 @@ async function main() {
       for (const type of ["mousePressed", "mouseReleased"]) await c.send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1 });
       await sleep(350);
       console.log(`clicked at ${x}, ${y}`);
+    } else if (cmd === "tap") {
+      const [x, y] = argv.map(Number);
+      await c.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+      await c.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await sleep(350);
+      console.log(`tapped at ${x}, ${y}`);
     } else if (cmd === "select") {
       const out = await c.js(`(() => { const h = ${PAGE}; const want = ${JSON.stringify(argv[0])}.toLowerCase(), opt = ${JSON.stringify(argv[1])}.toLowerCase();
         const sels = [...document.querySelectorAll("select")].filter(h.vis);
@@ -172,7 +181,7 @@ async function main() {
       const e = await c.js("(window.__ta && window.__ta.errors) || []");
       console.log(e.length ? e.join("\n") : "none");
     } else {
-      throw new Error("commands: start goto text buttons click clickxy select fill press wait shot eval errors stop");
+      throw new Error("commands: start goto text buttons click clickxy tap select fill press wait shot eval errors stop");
     }
   } finally {
     c.close();

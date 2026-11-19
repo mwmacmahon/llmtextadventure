@@ -957,3 +957,43 @@ def test_the_side_is_widgets_and_every_command_is_in_its_menu(engine: Engine):
     assert shop.title == "The tavern" and {r.id for r in shop.services} == {"room", "round"} and not shop.stock
     s2, res = game.run_command(st, shop.service_command, {"what": "round"})
     assert res.ok
+
+
+def test_what_the_browser_testers_found(engine: Engine):
+    """The UI round of 11-19 (three testers through the web client): a thing bought was in the pack twice (the referee's row on
+    top of the engine's); a healing potion was drunk at full hit points by one tap; the innkeeper was filed in the general
+    store after the player walked there, and was its keeper in the shop window; strangers were named in a menu."""
+    import random
+    from engine.game import TurnInfo
+    from games.fantasy import items as itm
+    from games.hidden.parchment import company as co
+    game, st = _fresh(engine)
+    if not itm.catalogue(game):
+        pytest.skip("no catalogue on this machine")
+    st.item("gold").count = 40
+    st.player.location = "the general store"
+    s1, res = game.run_command(st, "deal", {"buy": "acid_vial*1"})
+    name = itm.catalogue(game)["acid_vial"]["name"].lower()
+    assert res.ok and {"gold", "acid_vial", name, f"a {name}", f"the {name}"} <= set(res.referee_skip)
+    # full hit points: a known healing potion is not drunk; hurt, it is
+    s2, res = game.run_command(st, "use_item", {"item": "potion_of_healing"})
+    assert not res.ok and "not hurt" in res.text and s2.item("potion_of_healing").count == 2
+    st.player.hp -= 3
+    s2, res = game.run_command(st, "use_item", {"item": "potion_of_healing"})
+    assert res.ok and s2.item("potion_of_healing").count == 1
+    # nobody tags along: the player walked from the tavern to the store, the rows filed the innkeeper and a sellsword there
+    game, st = _fresh(engine)
+    before = st.model_copy(deep=True)
+    game._mark_turn_start(st)                                                  # the world turn's first act
+    st.player.location = "the general store"
+    crew = co.crew(st)
+    st.person("innkeeper").location = crew[0].location = "the general store"
+    st.player.with_them += ["innkeeper", crew[0].id]
+    st = game.after_turn(st, TurnInfo(turn=2, elapsed_minutes=1, rng=random.Random(0)))
+    crew = co.crew(st)
+    assert st.person("innkeeper").location == "the tavern" and crew[0].location == "the tavern" and "innkeeper" not in st.player.with_them
+    assert st.flags["tagged_along"] == 2
+    shop = game._shop_panel(st)
+    assert shop.keeper == st.person("storekeeper").called                      # by trade until met, and the store's own keeper
+    ask = [c for c in game.commands(before) if c.id == "ask_along"][0]
+    assert all("(" not in o.label for o in ask.params[0].options)              # strangers by trade

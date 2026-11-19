@@ -132,6 +132,9 @@ def use(game: Any, state: FantasyState, args: dict) -> tuple[FantasyState, Any]:
         s.combat = CombatState(round=0)
     if kind == "strike" and not fighting:
         return state, CommandResult(ok=False, label="Use", text=f"{e['name']}: something for a fight; there is none now.")
+    # the UI round of 11-19: one tap on the hot bar drank a healing potion at full hit points ("no hurt to heal; spent")
+    if kind == "heal" and it.known and p.hp >= p.hp_max and not (p.peril is not None and p.peril.kind == "bleeding"):
+        return state, CommandResult(ok=False, label="Use", text=f"{e['name']}: not hurt, so not drunk.")
     was = it.name
     news = "" if it.known else f" It was {_a(e['name'])}."
     it.known = True

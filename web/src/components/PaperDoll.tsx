@@ -42,7 +42,7 @@ export function PaperDoll({ widget, onCommand, busy }: { widget: PaperDollWidget
             <div className="doll-pick-row">
               <span>{slot.item.name}{slot.item.gives ? <span className="muted small"> — {slot.item.gives}</span> : null}</span>
               {slot.item.can_remove && (
-                <button disabled={busy} onClick={() => { onCommand?.("unequip", { item: slot.item!.id }); setOpen(null); }}>Take off</button>
+                <button disabled={busy} onClick={() => { onCommand?.("unequip", { item: slot.item!.id }); setOpen(null); }}>{slot.id === "main_hand" || slot.id === "off_hand" ? "Put away" : "Take off"}</button>
               )}
             </div>
           ) : <div className="muted small">Nothing here.</div>}
@@ -52,7 +52,7 @@ export function PaperDoll({ widget, onCommand, busy }: { widget: PaperDollWidget
               {slot.options.map((o) => (
                 <div key={o.id} className="doll-pick-row">
                   <span>{o.name}{o.gives ? <span className="muted small"> — {o.gives}</span> : null}</span>
-                  <button disabled={busy} onClick={() => { onCommand?.("equip", { item: o.id }); setOpen(null); }}>Wear</button>
+                  <button disabled={busy} onClick={() => { onCommand?.("equip", { item: o.id }); setOpen(null); }}>{slot.id === "main_hand" || slot.id === "off_hand" ? "Hold" : "Wear"}</button>
                 </div>
               ))}
             </>
