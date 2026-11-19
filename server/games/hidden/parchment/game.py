@@ -435,6 +435,13 @@ class ParchmentGame(FantasyGame):
             s.flags["to_person"] = {"id": q.id, "there": there, "loc": loc}
         return loc
 
+    def _who_comes(self, s: FantasyState) -> str:
+        """The Gemma round of 11-19 (T2: "I go and see the reeve" from the tavern; the innkeeper and a sellsword were told
+        walking along and the referee moved them): who goes with the player from spot to spot, said outright."""
+        along = [q.name for q in [co.companion(s), *co.helpers_along(s)] if q is not None]
+        return (f" {' and '.join(along)} {'comes' if len(along) == 1 else 'come'} too; everyone else stays where they were."
+                if along else f" {s.player.name} goes alone; everyone else stays where they were.")
+
     def _to_person(self, s: FantasyState, w: Any, pid: str | None) -> None:
         """The turn's move was to a person: inside the place the player stands in, the engine puts them in that spot now (no
         walk to roll); the narrator and the player are told when the person is not there."""
@@ -448,7 +455,8 @@ class ParchmentGame(FantasyGame):
                 (self._spot_parent(s, loc).lower() == self.where(s).lower() or loc.lower() == self.where(s).lower()):
             s.player.location = loc
             w.skip.append("location")
-            w.directives.insert(0, f"{n} has walked to {wm._lower_the(loc)} and is there now." + (f" {q.name} is here." if tp["there"] else ""))
+            w.directives.insert(0, f"{n} has walked to {wm._lower_the(loc)} and is there now." + (f" {q.name} is here." if tp["there"] else "")
+                                + self._who_comes(s))
         if not tp["there"]:
             w.mechanics.append(f"{q.name} seemingly isn't around right now.")
             w.directives.append(f"{q.name} is not at {wm._lower_the(loc)} and is not found this turn. Show the place without {q.name}; "
@@ -504,7 +512,7 @@ class ParchmentGame(FantasyGame):
                     s.player.location = spot
                     w.skip.append("location")
                     w.directives.insert(0, f"{s.player.name} goes to {wm._lower_the(spot)} and is there at the end of this turn; "
-                                           f"{s.player.name} does not leave {wm._lower_the(self.where(s))} this turn.")
+                                           f"{s.player.name} does not leave {wm._lower_the(self.where(s))} this turn." + self._who_comes(s))
                     w.rows.append({"kind": "to_spot", "to": spot})
                     break
         way = self._direction(adj) if pid is None else ""
