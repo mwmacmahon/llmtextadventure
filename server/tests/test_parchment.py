@@ -121,7 +121,15 @@ def test_no_watch_heat_or_renown_in_parchment(engine: Engine):
 
 def _fresh(engine: Engine):
     game = engine.games["parchment"]
-    return game, game.load_state(engine.store.load_state(engine.create_instance("parchment", {**SHEET, "map_seed": 7, "written_names": True})))
+    return game, _all_up(game.load_state(engine.store.load_state(engine.create_instance("parchment", {**SHEET, "map_seed": 7, "written_names": True}))))
+
+
+def _all_up(st):
+    """FN193 holds the big written jobs back until their level; the tests written before it want every paper on the board."""
+    for j in st.flags["jobs"]:
+        if j["status"] == "held":
+            j["status"] = "open"
+    return st
 
 
 def test_the_models_get_the_maps_block_in_the_places_lines_stead(engine: Engine):
@@ -379,6 +387,7 @@ def test_a_job_is_known_from_its_giver_too_and_not_paid_unknown(engine: Engine):
     import random
     from engine.game import TurnInfo
     game, st = _fresh(engine)
+    _all_up(st)
     troll = next(j for j in st.flags["jobs"] if j["form"] == "kill")
     assert troll["giver"] == "reeve" and not any(t.id == troll["id"] for t in st.threads)
     st.person("reeve").met = True
@@ -492,6 +501,7 @@ def test_the_reviews_journey_and_job_faults(engine: Engine):
     from games.fantasy.world import WorldTurn
     from games.hidden.parchment import jobs as jb
     game, st = _fresh(engine)
+    _all_up(st)
     fort = next(k for k, p in st.world["places"].items() if p["name"] == "The goblin fort")
     plan = wm.plan_journey(st.world, fort)
     assert plan is not None
@@ -764,6 +774,7 @@ def test_someone_goes_along_for_a_job_and_home_after(engine: Engine):
     from games.hidden.parchment import company as co
     from games.hidden.parchment import jobs as jb
     game, st = _fresh(engine)
+    _all_up(st)
     sc = game.scenario(st.city.id)
     with_help = [j for j in st.flags["jobs"] if j.get("helper")]
     if not with_help:
@@ -1028,3 +1039,32 @@ def test_a_job_is_paid_once_wherever_the_giver_was_dragged(engine: Engine):
     w = WorldTurn()
     game._arrive(st, w, st.world["home"])
     assert st.player.location == "the tavern" and job["status"] == "paid" and "gold" in w.skip
+
+
+def test_the_opening_board_is_for_a_level_one_character(engine: Engine):
+    """FN193 (the owner, 11-19: "No quests on the board at the beginning should have a target that gives 3 levels of experience";
+    a tester cleared the mill's ghost, 1100 XP, at level 1). Every job on the board at a new game is a fight that is no more
+    than deadly for the player, a companion and its helper, and worth no more than half a level; the rest go up at their level."""
+    from games.fantasy import sheet as sh
+    from games.hidden.parchment import company as co
+    from games.hidden.parchment import jobs as jb
+    for seed in (3, 7, 11):
+        game = engine.games["parchment"]
+        st = game.load_state(engine.store.load_state(engine.create_instance("parchment", {**SHEET, "map_seed": seed, "written_names": True})))
+        sc = game.scenario(st.city.id)
+        up = [j for j in st.flags["jobs"] if j["status"] == "open"]
+        assert up, "an empty board"
+        for j in up:
+            rows = jb.rows_at(sc, st, j["at"]) if j["form"] != "bounty" else []
+            xp = sum(jb._xp(str(r["entry"])) * int(r.get("count") or 1) for r in rows)
+            assert xp <= sh.xp_for(1) / 2, (j["title"], xp)
+            assert xp <= co.DEADLY[1] * (2 + (1 if j.get("helper") else 0)), (j["title"], xp)
+        held = [j for j in st.flags["jobs"] if j["status"] == "held"]
+        assert all(j["min_level"] > 1 for j in held) and not any(jb.known(st, j) for j in held)
+        st, res = game.run_command(st, "read_board", {})
+        assert not any(j["title"] in res.directive for j in held) and not any(c.id == "read_board" for c in game.commands(st))
+        if held:                                           # at its level a held job goes up, and the player is told
+            st.player.level = min(j["min_level"] for j in held)
+            assert jb.refill(game, sc, st, "level") == [jb.NEW_NOTICES]
+            ids = {j["id"] for j in held}
+            assert any(j["status"] == "open" for j in st.flags["jobs"] if j["id"] in ids) and any(c.id == "read_board" for c in game.commands(st))

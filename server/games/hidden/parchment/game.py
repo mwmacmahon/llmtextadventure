@@ -848,7 +848,7 @@ class ParchmentGame(FantasyGame):
         s.city.regions[s.player.location] = region       # the generator reads the place's kind of ground from here
         # FN164: near a place something lives at, its own kind (the least of them, and only one a party of this size could
         # meet: no ghost from the mill for a level-1 player), in the generator's numbers; else whatever the ground has
-        band = self.TROUBLE_BAND.get(self.roads(s), "easy")
+        band = jb.band_for(s, self.TROUBLE_BAND.get(self.roads(s), "easy"))      # FN193: a step easier at level 1
         pinned = []
         if lair:
             rows = jb.rows_at(self.scenario(s.city.id), s, lair)

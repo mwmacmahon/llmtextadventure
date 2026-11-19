@@ -1020,6 +1020,9 @@ list is the word guard `lever-phrases` (§8); the street texture gap is the game
   something lives at is trouble of that place's kind). `FAR_WARN`, `FAR_LEAVE` 6 and 10 tiles from any road, lane or known
   place (the companion is uneasy, then turns back).
 - **Levels:** the board refills when the scenario has `postings:` (none: the written jobs only); the rest are the numbers above.
+  Since D343: `jobs.FIRST_LEVEL` (at level 1 an engine-sized fight is one band easier: easy to trivial) and
+  `jobs.min_level` (a written job's level: no more than deadly for three, no more than half a level of XP; held until then).
+  Measured: 85 per cent alive after ten days with the archer (it was 60 to 71), 59 alone (49 to 62).
   Since D337: `FLEE_NUDGE` 1 (a game's dial read by the family's Flee: the slip rolled twice, the better kept, and at most
   that many blows after a failed slip; 0 is the family's plain rule) and `HELPER_CHANCE` 0.5 (of the postings whose kind
   has a helper written, how many come with one; the fight is then sized with them counted).

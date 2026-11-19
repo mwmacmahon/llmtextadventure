@@ -78,6 +78,10 @@ def setup(sc: dict, s: FantasyState, game: Any = None) -> None:
                      "pay": int(j.get("pay") or 0), "each": int(j.get("each") or 0), "who": str(j.get("who") or ""),
                      "line": str(j.get("line") or ""), "title": title, "status": "open", "killed": 0, "paid": 0,
                      "giver": str(j.get("giver") or ""), "known": False})
+    for j, spec in zip(jobs, [x for x in sc.get("jobs") or [] if str(x.get("form") or "") in ("clear", "kill", "bounty")]):
+        j["min_level"] = max(int(spec.get("min_level") or 1), min_level(sc, j, isinstance(spec.get("helper"), dict)))
+        if j["min_level"] > max(1, int(s.player.level or 1)):
+            j["status"] = "held"                          # FN193: not on the board until the player is of a level for it
     s.flags["jobs"] = jobs
     s.flags["residents"] = {}
     if game is not None:                                 # FN182: who goes along for a job, waiting where its giver is
@@ -87,6 +91,27 @@ def setup(sc: dict, s: FantasyState, game: Any = None) -> None:
             if isinstance(spec, dict):
                 co.make_helper(game, s, j, spec, random.Random(f"{(s.world or {}).get('seed', 0)}:helper:{j['id']}"))
     sync_threads(s)
+
+
+def min_level(sc: dict, j: dict, helper: bool = False) -> int:
+    """FN193 (the owner, 11-19: "No quests on the board at the beginning should have a target that gives 3 levels of
+    experience"; a tester had cleared the mill's ghost, 1100 XP, at level 1 for a 25 gold job): the level a written job goes
+    up on the board at. Its fight (who lives at its place; for a bounty, the largest lot of that kind anywhere) must be no
+    more than deadly for the player, one companion and the job's helper, and worth no more than half of that level's XP."""
+    from games.fantasy import sheet as sh
+    from . import company as co
+    res = sc.get("residents") or {}
+    if j["form"] == "bounty":
+        lots = [rows for rows in res.values() if any(str(r["entry"]) == j["entry"] for r in rows)]
+        rows = max(lots, key=lambda rows: sum(_xp(str(r["entry"])) * int(r.get("count") or 1) for r in rows), default=[])
+    else:
+        rows = res.get(j["at"]) or []
+    xp = sum(_xp(str(r["entry"])) * int(r.get("count") or 1) for r in rows)
+    for lvl in range(1, 11):
+        span = sh.xp_for(lvl) - (sh.xp_for(lvl - 1) if lvl > 1 else 0)
+        if xp <= co.DEADLY.get(lvl, 100 * lvl * lvl) * (2 + (1 if helper else 0)) and xp <= span / 2:
+            return lvl
+    return 10
 
 
 def arrive(game: Any, sc: dict, s: FantasyState, pid: str) -> list[str]:
@@ -134,6 +159,14 @@ def live(sc: dict, s: FantasyState, pid: str) -> bool:
 POST_NEAR, POST_FAR = 4, 12      # tiles from home: one to three kilometres
 OPEN_WANTED = 2
 POST_BAND = "easy"
+# FN193 (the simulator, 11-19): at level 1 every fight the engine sizes is a step easier (an "easy" fight is won nine times in
+# ten, and a first day of two or three of them killed a third of new characters; "trivial" is ninety-nine in a hundred)
+FIRST_LEVEL = {"easy": "trivial", "normal": "easy", "hard": "normal"}
+
+
+def band_for(s: FantasyState, band: str) -> str:
+    return FIRST_LEVEL.get(band, band) if int(s.player.level or 1) <= 1 else band
+
 HELPER_CHANCE = 0.5      # FN182: of the papers whose kind has a helper written
 NEW_NOTICES = "New notices are on the board in the tavern."
 
@@ -198,7 +231,7 @@ def post(game: Any, sc: dict, s: FantasyState) -> dict | None:
             break
     # the simulator, 11-19: with "normal" fights (won seven times in ten) for half the papers past level 1, a ten-day game of a
     # job a day was survived three times in ten with the archer; a paper is an "easy" fight (nine in ten), always
-    band = POST_BAND
+    band = band_for(s, POST_BAND)
     s.city.regions[name] = "wilds"                      # the generator reads the place's kind of ground from here
     # FN182: half the papers that can, come with someone for the job; the fight is then sized with them counted
     from . import company as co
@@ -237,18 +270,25 @@ def refill(game: Any, sc: dict, s: FantasyState, why: str) -> list[str]:
     from . import company as co
     if not sc.get("postings") or not s.world:
         return []
+    released = []
+    if why != "start":                                   # FN193: a written job goes up when the player is of a level for it
+        for j in s.flags.get("jobs") or []:
+            if j["status"] == "held" and int(j.get("min_level") or 1) <= max(1, int(s.player.level or 1)):
+                j["status"], j["known"] = "open", False
+                released.append(j)
     can = [j for j in s.flags.get("jobs") or [] if j["status"] == "open" and j["form"] in ("clear", "kill") and not co.danger(sc, s, j["at"])]
     want = 0
     if why == "day":
         if int(s.flags.get("board_day") or 1) >= s.clock.day:
-            return []
+            sync_threads(s)
+            return [NEW_NOTICES] if released else []
         s.flags["board_day"] = s.clock.day
         want = max(0, OPEN_WANTED - len(can))
     elif why in ("start", "level"):
         want = 1 if len(can) < OPEN_WANTED + 2 else 0
     made = [j for j in (post(game, sc, s) for _ in range(want)) if j]
     sync_threads(s)
-    return [NEW_NOTICES] if made and why != "start" else []
+    return [NEW_NOTICES] if (made or released) and why != "start" else []
 
 
 def _dead(s: FantasyState, ids: list[str]) -> bool:
@@ -417,6 +457,12 @@ def pay(s: FantasyState) -> list[str]:
 
 
 def known(s: FantasyState, j: dict) -> bool:
+    if j.get("status") == "held":                         # FN193: not posted yet, whoever its giver is
+        return False
+    return _known(s, j)
+
+
+def _known(s: FantasyState, j: dict) -> bool:
     """FN137 (the owner's round, 11-17: "I started with a bunch of quests despite meeting no NPCs"): a job is the player's to
     see once the board has been read (the Read the board command) or its giver met. A save from before has no `known`: known."""
     if j.get("known", True):
@@ -442,7 +488,7 @@ def read_board(s: FantasyState) -> list[str]:
 
 
 def board_unread(s: FantasyState) -> bool:
-    return any(not known(s, j) for j in s.flags.get("jobs") or [])
+    return any(not known(s, j) for j in s.flags.get("jobs") or [] if j["status"] != "held")
 
 
 def sync_threads(s: FantasyState) -> None:
