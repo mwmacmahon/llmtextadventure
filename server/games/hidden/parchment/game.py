@@ -1321,14 +1321,16 @@ class ParchmentGame(FantasyGame):
                   for k, v in (sh.get("gear") or {}).items()]
         sells = [IconRow(id=it.id, icon=itm.icon_of(self, it), name=it.name, count=self._sell_count(it), price=pr * self._sell_count(it),
                          tag="loot" if jb.is_loot(it) else "") for it, pr in (self._sellable(s) if sh.get("buys") else [])]
-        if not stock and not sells:
+        services = [IconRow(id=str(k), icon="shop", name=str(v.get("label") or k), price=int(v.get("price") or 0))
+                    for k, v in (sh.get("services") or {}).items() if isinstance(v, dict)]
+        if not stock and not sells and not services:
             return None
         here = (s.player.location or "").lower()
         keeper = next((q for q in s.people if q.status == "alive" and q.combat is None and (q.location or "").lower() == here), None)
         gold = s.item("gold")
         return ShopPanel(title=(s.player.location or "Shop")[:1].upper() + (s.player.location or "Shop")[1:], group="Shop", place="popout",
                          keeper=f"{keeper.name}, {keeper.called.lower()}" if keeper is not None else "",
-                         gold=gold.count if gold is not None else 0, stock=stock, sells=sells)
+                         gold=gold.count if gold is not None else 0, stock=stock, sells=sells, services=services)
 
     def _deal(self, state: FantasyState, args: dict[str, Any]):
         """FN180 (the owner, 11-19: "yes to shop basket"): the shop window's basket as one turn: everything sold, then
@@ -1456,6 +1458,13 @@ class ParchmentGame(FantasyGame):
     # Timeline's (still typed, no chips)
     NO_CHIP = {"equip", "unequip", "journal", "notebook", "deal", "buy", "sell", "sell_loot"}     # the shop's are its window's (FN172)
 
+    # FN188 (the owner, 11-19: "this stray menu still makes zero sense to me ... These things here right now should all be part
+    # of the various menus probably, and maybe in the sidebar we have the widget version of each"): no box of commands on the
+    # side. Each command is in the menu it belongs to; the side has a hot bar, who and what is here, and the company.
+    MENU_OF = {"rest": "Character", "level_up": "Character", "reread_sheet": "Character", "ask_along": "People", "take_helper": "People",
+               "part_ways": "People", "read_board": "Quests", "take_job": "Quests", "go_round": "Map", "go_near": "Map"}
+    ON_SIDE = {"continue_journey"}
+
     def _split_commands(self, s: FantasyState, out: UISchema) -> UISchema:
         from engine.game import Commands
         from games.fantasy import features as ft
@@ -1466,12 +1475,20 @@ class ParchmentGame(FantasyGame):
             if getattr(w, "type", "") != "commands":
                 panels.append(w)
                 continue
-            # FN164, FN166: Go round is a chip only while a journey is held; Invite along is none with one already along
-            hide = set(self.NO_CHIP) | ({"ask_along"} if co.companion(s) is not None else set()) \
-                | (set() if (s.world or {}).get("player", {}).get("journey") else {"go_round"})
+            hide = set(self.NO_CHIP) | {"service"} | ({"ask_along"} if co.companion(s) is not None else set())
             items = [c for c in w.items if c.id not in hide]
-            here = [c for c in items if not abil(c) and c.id != "use_item"]
-            panels.append(Commands(title=None, items=here))
+            panels.append(self._hotbar(s, items, abil))
+            side = [c for c in items if c.id in self.ON_SIDE]
+            if side:
+                panels.append(Commands(title=None, items=side))
+            panels.append(self._here(s))
+            by_menu: dict[str, list] = {}
+            for c in items:
+                if abil(c) or c.id == "use_item" or c.id in self.ON_SIDE:
+                    continue
+                by_menu.setdefault(self.MENU_OF.get(c.id, "More"), []).append(c)
+            for menu, cs in by_menu.items():
+                panels.append(Commands(title=None, items=cs, place="popout", group=menu))
             # the owner, 11-18: "Probably combine abilities and items for Use. Class skills (and spells once we get to them) on
             # top, then usable items"
             ab = [c for c in items if abil(c)]
@@ -1480,8 +1497,46 @@ class ParchmentGame(FantasyGame):
             use = [c for c in items if c.id == "use_item"]
             if use:
                 panels.append(Commands(title="Things", items=use, place="popout", group="Use"))
-        out.panels = panels
+        out.panels = [w for w in panels if w is not None]
         return out
+
+    def _hotbar(self, s: FantasyState, items: list, abil: Any):
+        """The side's hot bar: the class's abilities that take no choice, the things with a use (potions first), and the board
+        when it has something unread. One tap each."""
+        from engine.game import HotSlot, Hotbar
+        from games.fantasy import items as itm
+        slots = []
+        for c in items:
+            if abil(c) and not c.params:
+                n = next((k.value for k in s.player.counts if k.name.lower() == c.label.lower() or k.name.lower().replace(" ", "_") == c.id), None)
+                slots.append(HotSlot(id=c.id, icon="skill", label=c.label, count=n, command=c.id, enabled=c.enabled))
+        foes = [q.id for q in s.people if q.id in (s.player.fighting or []) and q.status == "alive"]
+        order = {"potion": 0, "throw": 1, "scroll": 2, "wand": 3, "curio": 4}
+        for it in sorted(itm.usable(self, s), key=lambda x: order.get(itm.icon_of(self, x), 9)):
+            icon = itm.icon_of(self, it)
+            if icon == "throw" and not foes:
+                continue                                  # a thing to throw is on the bar in a fight
+            slots.append(HotSlot(id=f"use:{it.id}", icon=icon, label=it.name, count=it.charges if it.charges is not None else it.count,
+                                 command="use_item", args={"item": it.id, **({"at": foes[0]} if foes else {})}))
+        if any(c.id == "read_board" for c in items):
+            slots.append(HotSlot(id="read_board", icon="job", label="Read the board", command="read_board"))
+        return Hotbar(title="Actions", slots=slots[:10], opens="Use") if slots else None
+
+    def _here(self, s: FantasyState):
+        """Who and what is in the room, on the side."""
+        from engine.game import IconRow, ItemGroup, ItemsPanel
+        from games.fantasy import items as itm
+        here = (s.player.location or "").lower()
+        along = {q.id for q in [co.companion(s), *co.helpers_along(s)] if q is not None}
+        people = [q for q in s.people if q.status == "alive" and (q.location or "").lower() == here and not q.hidden_from_player
+                  and q.id not in along]
+        rows = [IconRow(id=q.id, icon="person", name=q.name if (q.met or q.combat is not None) else (q.called or q.role or "someone"),
+                        note=("hostile" if q.attitude <= -2 else q.role if q.met else ""), tag="foe" if q.id in (s.player.fighting or []) else "")
+                for q in people]
+        things = [IconRow(id=t.id, icon=itm.icon_of(self, t), name=t.name, count=t.count) for t in s.things
+                  if (t.place or "").lower() == here and not t.held_by]
+        groups = [g for g in [ItemGroup(title="People", rows=rows), ItemGroup(title="Things", rows=things)] if g.rows]
+        return ItemsPanel(title="Here", groups=groups, opens="People") if groups else None
 
     def _popouts(self, out: UISchema) -> UISchema:
         for w in out.panels:

@@ -655,7 +655,8 @@ def test_one_permanent_companion_and_they_turn_back_far_off_the_path(engine: Eng
     assert s2.flags["companion"] == crew[0].id
     assert "room for one lasting companion only" in game.render_bulletin(s1, "x")
     chips = [c.id for wdg in game.ui(s1).panels if getattr(wdg, "type", "") == "commands" for c in wdg.items]
-    assert "ask_along" not in chips and "go_round" not in chips
+    side = [c.id for wdg in game.ui(s1).panels if getattr(wdg, "type", "") == "commands" and wdg.place == "side" for c in wdg.items]
+    assert "ask_along" not in chips and side == []                               # FN188: no box of commands on the side
     # off the path: uneasy once, then gone back to the tavern
     far = next((x, y) for x in range(4, 40) for y in range(4, 40) if wm.ground_at(s1.world, x, y)
                and not wm.region_at(s1.world, x, y) and (s1.world["player"].update(tile=[x, y]) or True)
@@ -864,7 +865,7 @@ def test_the_pockets_are_sorted_the_shop_has_a_basket_and_the_map_says_who_is_wh
     st.person("smith").met = True
     st.player.location = "the general store"
     ui = game.ui(st)
-    pockets = next(w for w in ui.panels if w.type == "items")
+    pockets = next(w for w in ui.panels if w.type == "items" and w.title == "Pockets")
     assert pockets.place == "popout" and pockets.group == "Pockets" and pockets.purse == 30
     titles = [g.title for g in pockets.groups]
     assert titles[0] == "Equipped" and titles[-1] == "Loot" and titles == sorted(titles, key=["Equipped", *dict.fromkeys(t for _, t in game.POCKETS)].index)
@@ -924,3 +925,35 @@ def test_a_companion_the_story_agreed_to_is_the_companion_and_a_spot_named_is_go
     s3 = game.after_turn(s2, TurnInfo(turn=4, elapsed_minutes=1, rng=random.Random(0)))
     assert s3.flags["companion"] == crew[2].id and not s3.person(other.id).fights_beside
     assert any("only have one permanent companion" in n for n in s3.player.shown_notes)
+
+
+def test_the_side_is_widgets_and_every_command_is_in_its_menu(engine: Engine):
+    """FN188 (the owner, 11-19: "this stray menu still makes zero sense to me ... should all be part of the various menus ...
+    in the sidebar we have the widget version of each ... a hot bar of actions/items ... the list of people and objects present
+    in the room")."""
+    from games.fantasy import items as itm
+    from games.fantasy.state import Item
+    game, st = _fresh(engine)
+    if itm.catalogue(game):
+        itm.add(game, st, "potion_of_healing", known=True)
+        itm.add(game, st, "alchemists_fire", known=True)
+    st.things.append(Item(id="old_boot", name="an old boot", place="the tavern"))
+    ui = game.ui(st)
+    cmds = [w for w in ui.panels if w.type == "commands"]
+    assert not any(w.place == "side" for w in cmds)
+    where = {c.id: w.group for w in cmds for c in w.items}
+    assert where["rest"] == "Character" and where["level_up"] == "Character" and where.get("reread_sheet", "Character") == "Character"
+    assert where["ask_along"] == "People" and where["read_board"] == "Quests" and "service" not in where
+    bar = next(w for w in ui.panels if w.type == "hotbar")
+    assert bar.place == "side" and bar.opens == "Use" and any(s.command == "read_board" for s in bar.slots)
+    if itm.catalogue(game):
+        assert any(s.command == "use_item" and s.args == {"item": "potion_of_healing"} and s.icon == "potion" for s in bar.slots)
+        assert not any(s.icon == "throw" for s in bar.slots)                      # a thing to throw only in a fight
+    here = next(w for w in ui.panels if w.type == "items" and w.title == "Here")
+    assert here.place == "side" and here.opens == "People"
+    assert [g.title for g in here.groups] == ["People", "Things"] and here.groups[1].rows[0].name == "an old boot"
+    assert all(r.icon == "person" for r in here.groups[0].rows) and len(here.groups[0].rows) >= 4          # the innkeeper, the crew
+    shop = next(w for w in ui.panels if w.type == "shop")                         # the tavern: its services, one tap each
+    assert shop.title == "The tavern" and {r.id for r in shop.services} == {"room", "round"} and not shop.stock
+    s2, res = game.run_command(st, shop.service_command, {"what": "round"})
+    assert res.ok

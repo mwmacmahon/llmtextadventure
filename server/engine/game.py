@@ -284,6 +284,28 @@ class ItemsPanel(BaseModel):
     purse: int | None = None
     groups: list[ItemGroup] = Field(default_factory=list)
     tabs: list[tuple[str, str, list[str]]] = Field(default_factory=list)      # (title, icon, group titles)
+    opens: str = ""                            # FN188: on the side, a pop-out group its heading opens (a widget of that menu)
+
+
+class HotSlot(BaseModel):
+    id: str
+    icon: str = "skill"
+    label: str
+    count: int | None = None                   # how many are left (a potion's, an ability's uses); None: not counted
+    command: str
+    args: dict[str, Any] = Field(default_factory=dict)
+    enabled: bool = True
+
+
+class Hotbar(BaseModel):
+    """One-tap actions on the side (FN188; the owner, 11-19: "a hot bar of actions/items (maybe for now character skills +
+    potions + ???)"): each slot sends its command with its args as it stands."""
+    type: Literal["hotbar"] = "hotbar"
+    place: Literal["side", "main", "popout"] = "side"
+    group: str = ""
+    title: str = ""
+    slots: list[HotSlot] = Field(default_factory=list)
+    opens: str = ""
 
 
 class ShopPanel(BaseModel):
@@ -299,7 +321,9 @@ class ShopPanel(BaseModel):
     gold: int = 0
     stock: list[IconRow] = Field(default_factory=list)
     sells: list[IconRow] = Field(default_factory=list)
+    services: list[IconRow] = Field(default_factory=list)      # FN188: what the place does for pay, each one tap and one turn
     command: str = "deal"
+    service_command: str = "service"
 
 
 class PaperDoll(BaseModel):
@@ -568,7 +592,7 @@ class Profile(BaseModel):
     detail: Detail
 
 
-Widget = StatusStrip | Meter | MeterGroup | Table | EntityCards | ListPanel | LogPanel | Choices | Commands | QuestPanel | MapPanel | PaperDoll | ItemsPanel | ShopPanel | Chart | Cards | Roster | Profile
+Widget = StatusStrip | Meter | MeterGroup | Table | EntityCards | ListPanel | LogPanel | Choices | Commands | QuestPanel | MapPanel | PaperDoll | ItemsPanel | ShopPanel | Hotbar | Chart | Cards | Roster | Profile
 
 
 class UISchema(BaseModel):

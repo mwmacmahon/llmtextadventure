@@ -280,7 +280,8 @@ def test_the_side_keeps_the_strip_and_the_rest_pops_out(engine):
     panels = game.ui(st).panels
     side = [getattr(w, "type", "") for w in panels if getattr(w, "place", "side") == "side"]
     groups = {getattr(w, "group", "") for w in panels if getattr(w, "place", "") == "popout"}
-    assert "commands" in side and "status_strip" in side and "map" not in side and "paper_doll" not in side
+    # FN188 (the owner, 11-19): no box of commands on the side; a hot bar and who is here
+    assert "commands" not in side and "hotbar" in side and "status_strip" in side and "map" not in side and "paper_doll" not in side
     assert {"Map", "Equipment", "Pockets", "Character", "Quests"} <= groups
 
 
@@ -296,9 +297,9 @@ def test_the_side_chips_are_only_whats_to_hand(engine):
     assert strip.chips[-1].label == "Place"
     xp = next(w for w in panels if getattr(w, "type", "") == "meter" and w.label == "XP")
     assert xp.place == "popout" and xp.group == "Character"
-    side = next(w for w in panels if getattr(w, "type", "") == "commands" and w.place == "side")
-    ids = {c.id for c in side.items}
-    assert not ids & {"equip", "unequip", "journal", "use_item", "rage"} and "read_board" in ids
+    assert not any(getattr(w, "type", "") == "commands" and w.place == "side" for w in panels)       # FN188
+    bar = next(w for w in panels if getattr(w, "type", "") == "hotbar")
+    assert {s.command for s in bar.slots} >= {"rage", "use_item", "read_board"}
     pops = {(getattr(w, "group", ""), c.id) for w in panels if getattr(w, "type", "") == "commands" and w.place == "popout" for c in w.items}
     assert ("Use", "rage") in pops and ("Use", "use_item") in pops
     use = [w for w in panels if getattr(w, "group", "") == "Use"]

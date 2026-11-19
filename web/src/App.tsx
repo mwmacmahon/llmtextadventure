@@ -227,7 +227,8 @@ function Game({ id }: { id: string }) {
   const hasTimeline = !!view && view.ui.panels.some((w) => w.type === "log" && w.timeline);
   const mapWidget = (view?.ui.panels.find((w) => w.type === "map") ?? null) as (MapWidget & { type: "map" }) | null;
   // FN154: the pop-out groups, in the order the game lists their panels (the map has its own button and sheet)
-  const popGroups = !view ? [] : [...new Set(view.ui.panels.filter((w) => w.place === "popout" && w.type !== "map").map((w) => w.group || "More"))];
+  // FN188: a command of the Map menu is in the map's own sheet, never a second Map button
+  const popGroups = !view ? [] : [...new Set(view.ui.panels.filter((w) => w.place === "popout" && w.type !== "map" && w.group !== "Map").map((w) => w.group || "More"))];
   useEffect(() => {
     if (!popGroup) return;
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setPopGroup(null); };
@@ -397,7 +398,7 @@ function Game({ id }: { id: string }) {
         </div>
         <aside className={`side${panelsOpen ? "" : " side-closed"}`}>
           <div className="side-full">
-            <Panels panels={view.ui.panels} place="side" onChoice={(cmd) => send(cmd)} onCommand={sendCommand} onPick={setInput} busy={streaming !== null} ended={!!view.ending} />
+            <Panels panels={view.ui.panels} place="side" onChoice={(cmd) => send(cmd)} onCommand={sendCommand} onPick={setInput} onOpen={setPopGroup} busy={streaming !== null} ended={!!view.ending} />
           </div>
           {/* B282: at phone width with the panels closed, the game's first two (the status strip and its key meter) stay in view */}
           <div className="side-compact">
@@ -491,6 +492,8 @@ function Game({ id }: { id: string }) {
             </div>
             <div className="overlay-body">
               <MapPanel widget={mapWidget} big onPick={(t) => { setInput(t); setMapOpen(false); requestAnimationFrame(() => boxRef.current?.select()); }} />
+              <Panels panels={view.ui.panels.filter((w) => w.place === "popout" && w.group === "Map" && w.type !== "map")}
+                onCommand={(c, a) => { setMapOpen(false); sendCommand(c, a); }} busy={streaming !== null} ended={!!view.ending} />
             </div>
           </div>
         </div>

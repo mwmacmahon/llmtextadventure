@@ -26,6 +26,14 @@ const shop: Widget = {
   sells: [row("k", "loot", "sample pelt", { count: 3, price: 12, tag: "loot" }), row("l", "loot", "sample ring", { price: 8, tag: "loot" }), row("d", "potion", "sample potion", { price: 6 })],
 };
 const company: Widget = { type: "list", title: "Company", layout: "stack", items: [{ label: "Sample Friend", value: "a sellsword · HP 11/11 · companion" }, { label: "Sample Helper", value: "a huntsman · HP 16/16 · for: Wolves at the den" }] };
+const hotbar: Widget = { type: "hotbar", title: "Actions", opens: "Use", slots: [
+  { id: "a", icon: "skill", label: "Second Wind", count: 1, command: "second_wind", args: {}, enabled: true },
+  { id: "b", icon: "potion", label: "sample potion", count: 2, command: "use_item", args: { item: "d" }, enabled: true },
+  { id: "c", icon: "scroll", label: "sample scroll", count: 1, command: "use_item", args: { item: "f" }, enabled: true },
+  { id: "e", icon: "job", label: "Read the board", count: null, command: "read_board", args: {}, enabled: true }] };
+const here: Widget = { type: "items", title: "Here", purse: null, tabs: [], opens: "People", groups: [
+  { title: "People", note: "", rows: [row("p1", "person", "Sample Keeper", { note: "Keeper of the tavern" }), row("p2", "person", "a sellsword"), row("p3", "person", "Sample wolf", { note: "hostile", tag: "foe" })] },
+  { title: "Things", note: "", rows: [row("t1", "bag", "an old boot")] }] };
 const sheet = { background: "var(--panel)", border: "1px solid var(--border)", borderRadius: 10, padding: 12, width: 420 } as const;
 
 createRoot(document.getElementById("root")!).render(
@@ -33,6 +41,7 @@ createRoot(document.getElementById("root")!).render(
     <div style={sheet}><Panels panels={[items]} /></div>
     <div style={sheet}><Panels panels={[shop]} onCommand={(c, a) => { document.title = `${c} ${JSON.stringify(a)}`; }} /></div>
     <div style={sheet}><Panels panels={[{ ...shop, stock: [] } as Widget]} /></div>
-    <div style={{ ...sheet, width: 300 }}><Panels panels={[company]} /></div>
+    <div style={{ ...sheet, width: 300 }}><Panels panels={[hotbar, here, company]} onOpen={(g) => { document.title = g; }} /></div>
+    <div style={sheet}><Panels panels={[{ ...shop, stock: [], sells: [], title: "The sample tavern", services: [row("room", "shop", "A room for the night", { price: 2 }), row("round", "shop", "A round for the house", { price: 5 })] } as Widget]} /></div>
   </div>,
 );

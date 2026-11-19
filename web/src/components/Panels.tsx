@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { MapPanel } from "./MapPanel";
-import { ItemsPanel, ShopPanel } from "./ItemsPanel";
+import { Hotbar, ItemsPanel, ShopPanel } from "./ItemsPanel";
 import { PaperDoll } from "./PaperDoll";
 import { ChartPanel } from "./ChartPanel";
 import { CardsPanel } from "./CardsPanel";
@@ -11,7 +11,7 @@ type OnCommand = (command: string, args: Record<string, unknown>) => void;
 
 // B50 (D167): after the ending only the console commands (mode "engine": no story, no clock) still run, so a Journal can be read.
 // readOnly (the save card in the lobby, B75): the state as the player sees it, with nothing to run (no commands, no choices).
-export function Panels({ panels, onChoice, onCommand, onPick, busy, ended, readOnly, place }: { panels: Widget[]; onChoice?: OnCommand; onCommand?: OnCommand; onPick?: (text: string) => void; busy?: boolean; ended?: boolean; readOnly?: boolean; place?: "side" | "main" }) {
+export function Panels({ panels, onChoice, onCommand, onPick, onOpen, busy, ended, readOnly, place }: { panels: Widget[]; onChoice?: OnCommand; onCommand?: OnCommand; onPick?: (text: string) => void; onOpen?: (group: string) => void; busy?: boolean; ended?: boolean; readOnly?: boolean; place?: "side" | "main" }) {
   // `place` picks the column's panels (a widget with no place is the side's); the pinned ones come first, in a block that
   // stays at the top of the column while the rest scrolls (the clown's girl in training).
   // B261: the game's timeline (its log) is never in a column: the Timeline overlay shows it, by day
@@ -24,25 +24,27 @@ export function Panels({ panels, onChoice, onCommand, onPick, busy, ended, readO
       {pinned.length > 0 && (
         <div className="pinned">
           {pinned.map((w, i) => (
-            <Panel key={`p${i}`} w={w} onChoice={onChoice} onCommand={onCommand} onPick={onPick} busy={busy} ended={ended} />
+            <Panel key={`p${i}`} w={w} onChoice={onChoice} onCommand={onCommand} onPick={onPick} onOpen={onOpen} busy={busy} ended={ended} />
           ))}
         </div>
       )}
       {rest.map((w, i) => (
-        <Panel key={i} w={w} onChoice={onChoice} onCommand={onCommand} onPick={onPick} busy={busy} ended={ended} />
+        <Panel key={i} w={w} onChoice={onChoice} onCommand={onCommand} onPick={onPick} onOpen={onOpen} busy={busy} ended={ended} />
       ))}
     </div>
   );
 }
 
-function Panel({ w, onChoice, onCommand, onPick, busy, ended }: { w: Widget; onChoice?: OnCommand; onCommand?: OnCommand; onPick?: (text: string) => void; busy?: boolean; ended?: boolean }) {
+function Panel({ w, onChoice, onCommand, onPick, onOpen, busy, ended }: { w: Widget; onChoice?: OnCommand; onCommand?: OnCommand; onPick?: (text: string) => void; onOpen?: (group: string) => void; busy?: boolean; ended?: boolean }) {
   switch (w.type) {
     case "map":
       return <MapPanel widget={w} onPick={(t) => onPick?.(t)} />;
     case "paper_doll":
       return <PaperDoll widget={w} onCommand={onCommand} busy={busy || ended} />;
     case "items":
-      return <ItemsPanel widget={w} />;
+      return <ItemsPanel widget={w} onOpen={onOpen} />;
+    case "hotbar":
+      return <Hotbar widget={w} onCommand={onCommand} onOpen={onOpen} busy={busy || ended} />;
     case "shop":
       return <ShopPanel widget={w} onCommand={onCommand} busy={busy || ended} />;
     case "chart":   // docs/PLANNER-CONTRACT.md
