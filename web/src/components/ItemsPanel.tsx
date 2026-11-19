@@ -38,7 +38,7 @@ export function Hotbar({ widget, onCommand, onOpen, busy }: { widget: HotbarWidg
       <div className="hotbar">
         {widget.slots.map((s) => (
           <button key={s.id} type="button" className="hot-slot" disabled={busy || !s.enabled} title={s.label}
-            onClick={(e) => { e.currentTarget.blur(); onCommand?.(s.command, s.args); }}>
+            onClick={(e) => { e.currentTarget.blur(); if (s.opens) onOpen?.(s.opens); else onCommand?.(s.command, s.args); }}>
             <ItemIcon kind={s.icon} />
             <span className="hot-label">{s.label}</span>
             {s.count != null && <span className="hot-count">{s.count}</span>}
@@ -154,7 +154,7 @@ function SellRow({ r, on, toggle }: { r: IconRow; on: boolean; toggle: () => voi
   return (
     <Row r={r} right={
       <span className="shop-pick">
-        <span className="item-price">{r.price} g</span>
+        <span className="item-price">{r.price != null ? `${r.price} g` : "?"}</span>
         <button type="button" className={`shop-step${on ? " on" : ""}`} aria-pressed={on} aria-label={`Sell ${r.name}`} onClick={toggle}>{on ? "✓" : "+"}</button>
       </span>} />
   );

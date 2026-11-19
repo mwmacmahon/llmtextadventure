@@ -997,3 +997,34 @@ def test_what_the_browser_testers_found(engine: Engine):
     assert shop.keeper == st.person("storekeeper").called                      # by trade until met, and the store's own keeper
     ask = [c for c in game.commands(before) if c.id == "ask_along"][0]
     assert all("(" not in o.label for o in ask.params[0].options)              # strangers by trade
+
+
+def test_a_job_is_paid_once_wherever_the_giver_was_dragged(engine: Engine):
+    """The UI round of 11-19, the third tester: the giver was told walking along with the player; back at her cottage the
+    engine did not pay (she was filed elsewhere), the telling did, and the engine paid again later: 50 gold for 25."""
+    from games.fantasy.world import WorldTurn
+    from games.hidden.parchment import jobs as jb
+    game, st = _fresh(engine)
+    st, _ = game.run_command(st, "read_board", {})
+    mill = next(j for j in st.flags["jobs"] if j.get("giver") == "widow")
+    mill["status"] = "done"
+    widow = st.person("widow")
+    home = st.flags["homes"]["widow"]
+    assert jb.see(st, mill).endswith(f"at {home}")
+    widow.location = "The old mill"                                  # dragged there by the telling
+    assert jb.see(st, mill).endswith(f"at {home}")                    # still her own place on the paper and the panel
+    gold = st.item("gold").count
+    st.player.location = "the tavern"
+    assert jb.pay(st) == []                                           # not with her, not at her place
+    st.player.location = home                                         # at her cottage: paid, though she is filed elsewhere
+    assert len(jb.pay(st)) == 1 and st.item("gold").count == gold + mill["pay"] and mill["status"] == "paid"
+    assert jb.pay(st) == [] and st.item("gold").count == gold + mill["pay"]      # once
+    # a journey home to a building of the village: in it on arriving, and paid there before the prose
+    game, st = _fresh(engine)
+    st, _ = game.run_command(st, "read_board", {})
+    job = next(j for j in st.flags["jobs"] if j.get("giver") == "innkeeper")
+    job["status"] = "done"
+    st.player.location, st.flags["dest_spot"] = "The village", "the tavern"
+    w = WorldTurn()
+    game._arrive(st, w, st.world["home"])
+    assert st.player.location == "the tavern" and job["status"] == "paid" and "gold" in w.skip

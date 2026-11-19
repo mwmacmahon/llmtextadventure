@@ -122,7 +122,7 @@ def take_helper(s: FantasyState, jid: str):
     j, q = next(((j, q) for j, q in helpers_here(s) if j["id"] == jid), (None, None))
     if j is None:
         return None
-    j["helper_along"], j["helper_day"] = True, s.clock.day
+    j["helper_along"], j["helper_day"], j["started"] = True, s.clock.day, True      # the job is under way
     q.met = True
     keep_with(s)
     return q

@@ -50,7 +50,12 @@ def payer(s: FantasyState, j: dict):
 def see(s: FantasyState, j: dict) -> str:
     """Whom to see about a job, as a clause: "Hobb Underhill at the smithy"; "the reeve in the village" with no one to name."""
     q = payer(s, j)
-    return f"{q.name} at {q.location}" if q is not None else f"{j['who']} in the village"
+    # at their usual place (the UI round of 11-19: "See Wren Haverstock at The Slateknap Mill", where the telling had dragged her)
+    return f"{q.name} at {home_of(s, q)}" if q is not None else f"{j['who']} in the village"
+
+
+def home_of(s: FantasyState, q: Any) -> str:
+    return str((s.flags.get("homes") or {}).get(q.id) or q.location)
 
 
 def setup(sc: dict, s: FantasyState, game: Any = None) -> None:
@@ -389,8 +394,11 @@ def pay(s: FantasyState) -> list[str]:
         for j in jobs:
             if not known(s, j):                           # FN137: a job not heard of is not paid until it is
                 continue
-            q = payer(s, j)                               # FN175: paid by its giver, in person, where they are
-            if q is not None and (q.location or "").lower() != here:
+            q = payer(s, j)                               # FN175: paid by its giver, in person
+            # in person: in the spot the giver is in, or the giver's own place, or the giver walking with the player (the UI
+            # round of 11-19: the giver had been told along with the player, the engine did not pay at her cottage, the
+            # telling did, and the engine paid again two turns later: 50 gold for a 25 gold job)
+            if q is not None and here not in ((q.location or "").lower(), home_of(s, q).lower()) and q.id not in s.player.with_them:
                 continue
             owed = j["pay"] if j["status"] == "done" else 0
             owed += max(0, j["killed"] - j["paid"]) * j["each"] if j["form"] == "bounty" else 0
@@ -455,5 +463,7 @@ def sync_threads(s: FantasyState) -> None:
         # the gate-2 rerun: a job stayed "offered" after the player took the paper and went; a job is under way once its place
         # has been reached or one of its creatures killed (the Quests panel's step, B372)
         note = "under way" if j["status"] == "open" and (j.get("started") or j["killed"]) else ""
-        keep.append(th.Thread(id=j["id"], title=j["title"], status=status, about=about.strip(), who=j["who"], note=note))
+        q = payer(s, j)                                   # the Quests panel names who pays (the board's telling does)
+        keep.append(th.Thread(id=j["id"], title=j["title"], status=status, about=about.strip(),
+                              who=f"{q.name}, for {j['who']}" if q is not None and q.met else j["who"], note=note))
     s.threads = keep

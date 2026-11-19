@@ -495,7 +495,7 @@ function Game({ id }: { id: string }) {
           <div className="overlay-sheet map-sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Map">
             <div className="overlay-head">
               <strong>Map</strong>
-              <span className="muted small">pick a place to go there</span>
+              <span className="muted small">pick a place to see it; pick it again to go there</span>
               <span className="spacer" />
               <button onClick={() => setMapOpen(false)}>close</button>
             </div>

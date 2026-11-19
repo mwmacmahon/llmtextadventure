@@ -378,18 +378,15 @@ export function MapPanel({ widget, onPick, big = false }: { widget: MapWidget; o
     if (!g || g.moved) return;
     const [tx, ty] = tileAt(e);
     const p = d.placeAt.get(key(tx, ty));
-    if (e.pointerType === "mouse") {
-      if (p) onPick(p.go);
-      return;
-    }
-    // touch: the first tap shows the card, a second tap on the same place picks it
+    // the first click or tap shows the place's card, a second on the same place picks it (the UI round of 11-19: one mouse
+    // click went there at once, and a tester set out for a bridge by a slip)
     if (p && selected === p.id) {
       onPick(p.go);
       return;
     }
     setSelected(p ? p.id : null);
     setHoverTile([tx, ty]);
-    setCard({ c: cardFor(tx, ty), at: null });
+    setCard({ c: cardFor(tx, ty), at: e.pointerType === "mouse" ? rel(e) : null });
   };
   const leave = (e: React.PointerEvent) => {
     if (e.pointerType === "mouse" && !drag.current) {

@@ -292,9 +292,10 @@ class HotSlot(BaseModel):
     icon: str = "skill"
     label: str
     count: int | None = None                   # how many are left (a potion's, an ability's uses); None: not counted
-    command: str
+    command: str = ""
     args: dict[str, Any] = Field(default_factory=dict)
     enabled: bool = True
+    opens: str = ""                            # in a command's stead: the menu this slot opens (Level up has choices to make)
 
 
 class Hotbar(BaseModel):

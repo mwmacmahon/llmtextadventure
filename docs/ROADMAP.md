@@ -686,6 +686,9 @@ endless ground, camps, wandering, invented places and ground changes held until 
 - **The side as widgets (D341): built 11-19.** No box of commands: each command is in its menu (Character, People,
   Quests, the Shop window's Services, the map's sheet); the side has a hot bar of abilities and usable things, who and
   what is in the room, and the company. Her server follows every build since D340.
+- **Tested through a browser (D342): 11-19.** A driver for the mini's own Chrome (`server/tools/browser.mjs`) and three
+  Opus testers through the web client: a job paid twice, a thing bought twice, people filed wherever the player walked, and
+  some thirty smaller faults found and fixed. The turn stream keeps itself alive; a dropped turn says so.
 - **On Lilith's server since 11-19 (D339)**, on the owner's word: Parchment is listed on a player's server; :8016 moved
   to bcf5f82. Nine turns on Sonnet first: the board, going to a person, a posted job, the fight, pay in person and the
   shop's basket all worked; one fault found and fixed.

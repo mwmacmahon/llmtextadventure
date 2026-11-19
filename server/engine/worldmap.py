@@ -1057,6 +1057,8 @@ def panel(world: dict, title: str = "Map", jobs: dict[str, str] | None = None, p
         if runs:
             end = world["places"].get(line["ends"][1])
             leads = f"to {_lower_the(end['name'])}" if end and line["ends"][1] in known["places"] else ""
+            if leads and leads.lower() in str(line["name"]).lower():
+                leads = ""                                # "The lane to the mill, to the mill"
             lines.append({"id": lid, "name": line["name"], "kind": line["kind"], "leads": leads, "runs": runs})
     return {"type": "map", "title": title, "place": "side", "v": V, "palette": palette, "tile_m": TILE_M,
             "player": {"x": px, "y": py}, "chunks": chunks, "regions": regions, "places": places, "lines": lines,

@@ -547,6 +547,8 @@ class ParchmentGame(FantasyGame):
                                            f"{s.player.name} does not leave {wm._lower_the(self.where(s))} this turn." + self._who_comes(s))
                     w.rows.append({"kind": "to_spot", "to": spot})
                     break
+        if "location" in w.skip and not s.player.fighting:
+            self._pay_now(s, w)                          # the engine put the player with someone this turn: pay owed there is paid now
         way = self._direction(adj) if pid is None else ""
         if way:
             # FN37 (the gate-1 round, 11-17: "I head north along the road" moved nothing): a direction leads to the next known
@@ -703,6 +705,9 @@ class ParchmentGame(FantasyGame):
     def _arrive(self, s: FantasyState, w: Any, pid: str) -> None:
         """FN65: the place's residents, the first time the player comes; the narrator is told who is there. Home: the pay."""
         if pid == s.world["home"]:
+            spot = str(s.flags.get("dest_spot") or "")   # the journey was to a building of the village: in it on arriving
+            if spot and self._spot_parent(s, spot).lower() == self.where(s).lower():
+                s.player.location = spot
             self._pay_now(s, w)
         fb = co.foreboding(self.scenario(s.city.id), s, pid, True)          # FN148: arriving at a place beyond the party
         if fb:
@@ -1369,7 +1374,9 @@ class ParchmentGame(FantasyGame):
                  for ref, name, pr in itm.shop_lines(self, {str(k): int(v) for k, v in (sh.get("stock") or {}).items()})]
         stock += [IconRow(id=f"gear:{k}", icon=itm.icon_of(self, Item(id="x", name=str(k))), name=str(k), price=int(v))
                   for k, v in (sh.get("gear") or {}).items()]
-        sells = [IconRow(id=it.id, icon=itm.icon_of(self, it), name=it.name, count=self._sell_count(it), price=pr * self._sell_count(it),
+        # a thing not yet named shows no price (the UI round: 12 gold against a healing potion's 6 gave it away)
+        sells = [IconRow(id=it.id, icon=itm.icon_of(self, it), name=it.name, count=self._sell_count(it),
+                         price=pr * self._sell_count(it) if it.known else None,
                          tag="loot" if jb.is_loot(it) else "") for it, pr in (self._sellable(s) if sh.get("buys") else [])]
         services = [IconRow(id=str(k), icon="shop", name=str(v.get("label") or k), price=int(v.get("price") or 0))
                     for k, v in (sh.get("services") or {}).items() if isinstance(v, dict)]
@@ -1577,6 +1584,9 @@ class ParchmentGame(FantasyGame):
                 continue                                  # a thing to throw is on the bar in a fight
             slots.append(HotSlot(id=f"use:{it.id}", icon=icon, label=it.name, count=it.charges if it.charges is not None else it.count,
                                  command="use_item", args={"item": it.id, **({"at": foes[0]} if foes else {})}))
+        lv = next((c for c in items if c.id == "level_up" and c.enabled), None)
+        if lv is not None:                               # the UI round: 1100 XP and "ready to level up" only inside Character
+            slots.insert(0, HotSlot(id="level_up", icon="skill", label="Level up", opens="Character"))
         if any(c.id == "read_board" for c in items):
             slots.append(HotSlot(id="read_board", icon="job", label="Read the board", command="read_board"))
         return Hotbar(title="Actions", slots=slots[:10], opens="Use") if slots else None
@@ -1590,7 +1600,7 @@ class ParchmentGame(FantasyGame):
         people = [q for q in s.people if q.status == "alive" and (q.location or "").lower() == here and not q.hidden_from_player
                   and q.id not in along]
         # by name once met; a creature by what it is; a stranger by their trade
-        rows = [IconRow(id=q.id, icon="person", name=q.name if (q.met or q.attitude <= -2 or q.id not in self._homes(s)) else (q.role or q.called or "someone"),
+        rows = [IconRow(id=q.id, icon="person", name=q.name if (self.name_shown(s, q) or q.id not in self._homes(s)) else (q.role or q.called or "someone"),
                         note=("hostile" if q.attitude <= -2 else q.role if q.met else ""), tag="foe" if q.id in (s.player.fighting or []) else "")
                 for q in people]
         things = [IconRow(id=t.id, icon=itm.icon_of(self, t), name=t.name, count=t.count) for t in s.things
