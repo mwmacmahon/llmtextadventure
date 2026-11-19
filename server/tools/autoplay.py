@@ -87,7 +87,11 @@ def _state_line(game: str, ui: dict) -> str:
         bits.append("Equipped: " + "; ".join(f"{i['label']} {i['value']}" for i in worn["items"]))
     pockets = _panel(ui, "Pockets")
     if pockets:                             # round 12: the tester could not see the key, the blade or the ring it took
-        bits.append("Pockets: " + "; ".join(i["label"] for i in pockets["items"] if i.get("label")))
+        if pockets.get("type") == "items":  # FN171: the sorted pockets (groups of rows)
+            bits.append(f"Pockets ({pockets.get('purse')} gold): " + "; ".join(
+                (f"{r['count']} " if r.get("count", 1) != 1 else "") + r["name"] for g in pockets.get("groups", []) for r in g.get("rows", [])))
+        else:
+            bits.append("Pockets: " + "; ".join(i["label"] for i in pockets["items"] if i.get("label")))
     coming = _panel(ui, "Coming")
     if coming:
         bits.append("Coming: " + "; ".join(f"{i['label']}: {i['value']}" for i in coming["items"]))
