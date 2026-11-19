@@ -49,13 +49,13 @@ class ParchmentGame(FantasyGame):
                     "two. How long a walk to another place takes is the engine's, never yours to set. A short rest is an hour; sleep is "
                     "six to eight hours; waiting is however long they wait.")
 
-    ROAD_CHOICES = [("written", "As written: some trouble on the roads"), ("quiet", "Quiet roads: get where you are going"),
-                    ("wild", "Wild roads: something on every road")]
+    # FN187 (the owner, 11-19: "confusing as hell ... why not just like Travel Encounters: Normal / Rare / Frequent")
+    ROAD_CHOICES = [("written", "Normal"), ("quiet", "Rare"), ("wild", "Frequent")]
 
     def setup_options(self) -> dict[str, Any]:
         """FN35: the road dial at character creation, apart from the difficulty (the owner, 11-15)."""
         out = dict(super().setup_options())
-        out["roads"] = {"kind": "select", "label": "The roads", "options": [{"id": i, "name": n} for i, n in self.ROAD_CHOICES]}
+        out["roads"] = {"kind": "select", "label": "Travel encounters", "options": [{"id": i, "name": n} for i, n in self.ROAD_CHOICES]}
         return out
 
     def new_instance(self, setup: dict[str, Any]) -> tuple[str, FantasyState]:
@@ -886,7 +886,7 @@ class ParchmentGame(FantasyGame):
                                    params=[Param(name="item", label="Item", options=[Option(id=r, label=f"{n}, {pr} gold") for r, n, pr in stock + gear])]))
         services = [(str(k), str(v.get("label") or k), int(v.get("price") or 0)) for k, v in (sh.get("services") or {}).items() if isinstance(v, dict)]
         if services:
-            out.append(CommandSpec(id="service", label="Pay for", mode="narrated", hint="Pay for something this place does: a room, a round, healing, a blessing.",
+            out.append(CommandSpec(id="service", label="Services", mode="narrated", hint="Pay for something this place does: a room, a round, healing, a blessing.",
                                    params=[Param(name="what", label="What", options=[Option(id=k, label=f"{lb}, {pr} gold") for k, lb, pr in services])]))
         if stock or gear or (sh.get("buys") and self._sellable(s)):
             out.append(CommandSpec(id="deal", label="Shop", mode="narrated", typed=False, hint="The shop window's basket, sent whole."))
@@ -1005,7 +1005,7 @@ class ParchmentGame(FantasyGame):
                                                  options=[Option(id=q.id, label=f"{re.sub(r'^(a|an) ', 'the ', q.role)} ({q.name})") for q in can])]))
         waiting = co.helpers_here(s)                     # FN182: who would go along for a job, where they wait
         if waiting:
-            out.append(CommandSpec(id="take_helper", label="Take along for a job", mode="narrated",
+            out.append(CommandSpec(id="take_helper", label="Bring helper", mode="narrated",
                                    hint="The player accepts or asks a listed person to come along for their one job (\"come on then, "
                                         "Tuck\", \"bring the huntsman\"). Setting out for the job alone is not this. Match by name or "
                                         "trade; by the job only when the player asks for company.",
@@ -1137,14 +1137,14 @@ class ParchmentGame(FantasyGame):
         opts = [x for x in dict.fromkeys(ahead + known) if x not in avoided]
         out = []
         if opts:
-            out.append(CommandSpec(id="go_round", label="Go round a place", mode="engine",
+            out.append(CommandSpec(id="go_round", label="Avoid a place", mode="engine",
                                    hint="A standing rule: from now on the player's journeys keep well clear of a named dangerous place "
                                         "(\"avoiding the barrow\", \"give the fort a wide berth\", \"a way round the mines\"). Not for "
                                         "walking to it, circling it to look, or sneaking past once.",
                                    params=[Param(name="place", label="Which place", must_name=True,
                                                  options=[Option(id=x, label=s.world["places"][x]["name"]) for x in opts])]))
         if avoided:
-            out.append(CommandSpec(id="go_near", label="Stop going round places", mode="engine",
+            out.append(CommandSpec(id="go_near", label="Stop avoiding", mode="engine",
                                    hint="The player cancels going round places: journeys may pass near dangerous places again (\"stop "
                                         "avoiding the barrow\", \"never mind the detour\"). Not for a single trip."))
         return out
