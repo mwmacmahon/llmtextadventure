@@ -898,3 +898,29 @@ def test_the_pockets_are_sorted_the_shop_has_a_basket_and_the_map_says_who_is_wh
     assert not game.run_command(st, "deal", {})[1].ok and not game.run_command(st, "deal", {"sell": "longsword_x"})[1].ok
     st.player.location = "the green"
     assert not any(w.type == "shop" for w in game.ui(st).panels)
+
+
+def test_a_companion_the_story_agreed_to_is_the_companion_and_a_spot_named_is_gone_to(engine: Engine):
+    """The Sonnet round of 11-19, turn 3: "I ask the archer to come along with me, then we set out for the Dig" from the smithy.
+    The reading's destination was the tavern, the telling had her agree and both walk out; the engine had moved nobody and had
+    no companion."""
+    import random
+    from engine.game import TurnInfo
+    from games.hidden.parchment import company as co
+    game, st = _fresh(engine)
+    st.player.location = "the smithy"
+    i = type("I", (), {"goes_to": "The tavern", "transition": "", "action": "go", "targets": [], "check": None})()
+    adj = type("A", (), {"intents": [i], "time_minutes": 2, "kind": "action"})()
+    s1, w = game.world_turn(st, adj, "x", random.Random(1), 3, 2)
+    assert s1.player.location == "the tavern" and "location" in w.skip and any(r.get("kind") == "to_spot" for r in w.rows)
+    assert "does not leave the village this turn" in w.directives[0]
+    crew = co.crew(s1)
+    crew[2].fights_beside = True                                          # the referee's row from the telling
+    s1.player.with_them.append(crew[2].id)
+    s2 = game.after_turn(s1, TurnInfo(turn=3, elapsed_minutes=1, rng=random.Random(0)))
+    assert s2.flags["companion"] == crew[2].id and any("comes along" in n for n in s2.player.shown_notes)
+    other = co.crew(s2)[0]
+    other.fights_beside = True
+    s3 = game.after_turn(s2, TurnInfo(turn=4, elapsed_minutes=1, rng=random.Random(0)))
+    assert s3.flags["companion"] == crew[2].id and not s3.person(other.id).fights_beside
+    assert any("only have one permanent companion" in n for n in s3.player.shown_notes)

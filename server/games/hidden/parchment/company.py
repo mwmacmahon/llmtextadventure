@@ -154,6 +154,25 @@ def send_home(s: FantasyState) -> list[str]:
     return out
 
 
+def adopt(s: FantasyState) -> list[str]:
+    """The Sonnet round of 11-19 (T3: "I ask the archer to come along, then we set out", told as agreed; the referee marked her
+    as fighting beside the player, and the engine had no companion): one of the crew the story has agree to fight beside the
+    player is the companion, when there is none; with one already along, the mark is taken back and the player told."""
+    out = []
+    for q in crew(s):
+        if not q.fights_beside or q.id == s.flags.get("companion"):
+            continue
+        if companion(s) is None:
+            s.flags["companion"] = q.id
+            q.met = True
+            out.append(f"{q.name} comes along.")
+        else:
+            q.fights_beside = False
+            s.player.with_them = [x for x in s.player.with_them if x != q.id]
+            out.append(f"You may only have one permanent companion at a time. Part ways with {companion(s).name} first.")
+    return out
+
+
 def can_ask(s: FantasyState) -> list:
     """Who of the crew can be asked along now: here, alive, and none of them already along (one at a time)."""
     if companion(s) is not None or s.player.fighting or s.player.fate:

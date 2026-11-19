@@ -193,6 +193,8 @@ class ParchmentGame(FantasyGame):
         if not w or s.player.fate:
             return s
         s = self._settle_place(s, info)
+        for line in co.adopt(s):                         # a companion the story agreed to is the companion
+            s.player.shown_notes.append(line)
         co.keep_with(s)                                  # FN149: the companion follows
         for line in jb.update(self, s) + co.send_home(s) + jb.refill(self, self.scenario(s.city.id), s, "day"):
             s.player.shown_notes.append(line)
@@ -491,6 +493,20 @@ class ParchmentGame(FantasyGame):
         s.flags.pop("to_person", None)                   # the cold read: never one left from a turn that ended early
         pid = self._journey_dest(s, adj, mark=True)
         self._to_person(s, w, pid)                       # FN183
+        if pid is None and "location" not in w.skip:
+            # the Sonnet round of 11-19 (T3: the reading's goes_to was "The tavern" from the smithy; the telling ran on down the
+            # road, the referee's move there was refused as a journey, and the player stayed in the smithy): a move to another
+            # spot of the place the player stands in is the engine's, made before the prose, the narrator told
+            for i in getattr(adj, "intents", None) or []:
+                d = self._dest(s, i)
+                spot = next((f.name for f in s.found_places if f.name.lower() == d.lower()), "") if d else ""
+                if spot and spot.lower() != (s.player.location or "").lower() and self._spot_parent(s, spot).lower() == self.where(s).lower():
+                    s.player.location = spot
+                    w.skip.append("location")
+                    w.directives.insert(0, f"{s.player.name} goes to {wm._lower_the(spot)} and is there at the end of this turn; "
+                                           f"{s.player.name} does not leave {wm._lower_the(self.where(s))} this turn.")
+                    w.rows.append({"kind": "to_spot", "to": spot})
+                    break
         way = self._direction(adj) if pid is None else ""
         if way:
             # FN37 (the gate-1 round, 11-17: "I head north along the road" moved nothing): a direction leads to the next known
