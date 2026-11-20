@@ -12,6 +12,21 @@ A class file's feature may carry `feature: {kind: ..., ...}`:
 - buff:   a timed condition (Bless, Shield of Faith) or a flag held for the scene (Rage, the smoke's hiding), lifted by the
           clock or the scene's end.
 
+Spells (FN200, 11-20; the magic record's "the Cleric and the Wizard later add spell data, not engine kinds" held for healing
+and blessing; three kinds were wanting):
+
+- bolt:   a spell that harms, in a fight only: its `dice` at one foe or `all`; `attack: true` (the caster's spell attack
+          against AC), or `save: dex` (half on a save, or nothing with `negates: true`), or neither (it cannot miss: Magic
+          Missile). It is the round's act, rolled in the round's order by the path a thrown flask takes (items.resolve_strike).
+- quell:  a spell that takes foes out of a fight without harm: `pool: 5d8` hit points of them, the weakest first (Sleep), or
+          one foe on a failed `save` (Charm Person, Command). They are out of the fight with a `condition`; struck, they are
+          back in it.
+- cast:   a spell with no numbers (Light, Mage Hand, Guidance): the narrator is told what it does (`told`) and plays it.
+
+A spell spends a slot (the `spell_slots` count) unless `cantrip: true`. The caster's numbers: spell attack is proficiency and
+the class's `casting_stat`; the save DC is 8 and that. One pool of slots, no spell levels (the owner's "best judgements",
+11-20: the simplest thing that plays).
+
 Each feature is a chip (games/fantasy/game.py commands) and a words door (its `words`, which the assistant routes typed
 input to: "I lay hands on Tam").
 """
@@ -65,6 +80,20 @@ def chips(game: Any, s: FantasyState) -> list[CommandSpec]:
                                    words=list(f.get("end_words") or [])))
             continue
         params = []
+        if kind in SPELLS:
+            foes = spell_foes(game, s)
+            if kind in ("bolt", "quell") and foes and not (f.get("all") or f.get("pool")):
+                params = [Param(name="at", label="At", options=[Option(id=q.id, label=q.name) for q in foes], default=foes[0].id)]
+            has = bool(f.get("cantrip")) or _slots(p) > 0
+            out.append(CommandSpec(id=fid, label=f["name"], mode="narrated", params=params,
+                                   enabled=has and (kind == "cast" or bool(foes)),
+                                   # worded after a cold read (11-20): the cost first and once; what it is not
+                                   hint=("A cantrip (no slot): " if f.get("cantrip") else "A spell (one slot): ")
+                                        + _plain(str(f.get("hint") or f.get("text") or f["name"])) + "."
+                                        + (" Only at a foe, in a fight." if kind != "cast" else "")
+                                        + (f" {f['not']}" if f.get("not") else ""),
+                                   words=list(f.get("words") or [f"cast {f['name'].lower()}", f["name"].lower()])))
+            continue
         if kind == "heal" and f.get("target", "touch") == "touch":
             who = [Option(id="self", label=p.name)] + [Option(id=q.id, label=q.name) for q in _people_here(game, s) if q.status in ("alive", "down")]
             params = [Param(name="on", label="On", options=who, default="self")]     # B306: no one named is the player
@@ -77,7 +106,8 @@ def chips(game: Any, s: FantasyState) -> list[CommandSpec]:
         instant = kind == "rider" or bool(f.get("instant"))
         out.append(CommandSpec(id=fid, label=f"{f['name']}{left}", mode="engine" if instant else "narrated", params=params, free=instant,
                                enabled=c is None or c.value > 0 or (kind == "rider" and _slots(p) > 0 and f.get("slots")),
-                               hint=f.get("hint") or f.get("text") or f["name"], words=list(f.get("words") or [])))
+                               hint=(f.get("hint") or f.get("text") or f["name"]) + (f" {f['not']}" if f.get("not") else ""),
+                               words=list(f.get("words") or [])))
     return out
 
 
@@ -86,10 +116,79 @@ def _slots(p: Any) -> int:
     return c.value if c is not None else 0
 
 
+def _dice(dice: str, p: Any) -> str:
+    """A dice string with a stat's name in it made plain ("1d8+wis" for a +2 Wisdom: "1d8+2")."""
+    d = dice or "0"
+    for stat in ("cha", "wis", "int", "str", "dex", "con"):
+        d = d.replace(stat, str(p.stats.get(stat, 0)))
+    return d.replace("+-", "-").replace("+0", "")
+
+
 def _roll(dice: str, p: Any, rng: Any) -> int:
     from engine.mechanics import roll_dice
-    d = (dice or "0").replace("cha", str(p.stats.get("cha", 0))).replace("wis", str(p.stats.get("wis", 0))).replace("+-", "-")
-    return roll_dice(rng, d)[0]
+    return roll_dice(rng, _dice(dice, p) or "0")[0]
+
+
+SPELLS = ("bolt", "quell", "cast")
+
+
+def _plain(text: str) -> str:
+    """A feature's text as a hint's clause: no leading "a cantrip:", no trailing "(a slot)" or full stop."""
+    import re
+    return re.sub(r"\s*\(a slot\)\s*$", "", re.sub(r"^a cantrip:\s*", "", text.strip(), flags=re.I)).rstrip(".")
+
+
+def spell_foes(game: Any, s: FantasyState) -> list:
+    """Whom a fight's spell can be cast at: the foes of the fight; with no fight yet, the hostile in sight here (the Gemma
+    round of 11-20: "I cast Sleep on the goblins" as the opening act was refused, "there is none now", with the foe a pace
+    away; a spell opens a fight as a blow does)."""
+    from .combat import living_enemies
+    p = s.player
+    if p.fighting:
+        return living_enemies(game, s)
+    here = set(game.people_here(s))
+    # the hostile (-3, who attack on sight, B397), never the merely wary: a spell opens a fight only with those already in it
+    return [q for q in s.people if q.id in here and q.status == "alive" and q.attitude <= -3
+            and not q.hidden_from_player and q.id not in p.with_them]
+
+
+QUELL_MINUTES = {"asleep": 10, "held": 5, "charmed": 60}
+
+
+def wake(s: FantasyState) -> None:
+    """A spell's hold on a foe runs out by the clock (the cold read, 11-20: nothing but the player's own blow lifted it, and a
+    goblin slept for days): the mark comes off, and one charmed is as hostile as before."""
+    held = s.flags.get("quelled") or {}
+    now = s.clock.day * DAY + s.clock.minute
+    for qid, rec in list(held.items()):
+        q = s.person(qid)
+        if q is None or q.status != "alive" or "(spell)" not in (q.condition or ""):
+            held.pop(qid, None)
+        elif now >= int(rec.get("until") or 0):
+            import re
+            q.condition = re.sub(r"\b\w+ \(spell\)[,;]?\s*", "", q.condition).strip(" ,;")
+            if rec.get("attitude") is not None:
+                q.attitude = int(rec["attitude"])
+            held.pop(qid, None)
+
+
+def cast_numbers(game: Any, p: Any) -> tuple[int, int]:
+    """(spell attack bonus, save DC) for this caster: proficiency and the class's casting stat; 8 and that."""
+    from .combat import proficiency
+    cd = game.class_of(p)
+    mod = int(p.stats.get((getattr(cd, "casting_stat", "") or "int"), 0))
+    return proficiency(p.level) + mod, 8 + proficiency(p.level) + mod
+
+
+def _spend(p: Any, f: dict) -> bool:
+    """A slot spent for a spell that needs one; False when none is left."""
+    if f.get("cantrip"):
+        return True
+    slot = p.count(f.get("slot", "spell_slots"))
+    if slot is None or slot.value <= 0:
+        return False
+    slot.value -= 1
+    return True
 
 
 def run(game: Any, state: FantasyState, fid: str, args: dict) -> tuple[FantasyState, CommandResult] | None:
@@ -156,6 +255,8 @@ def run(game: Any, state: FantasyState, fid: str, args: dict) -> tuple[FantasySt
                                 summary=f"{p.name} uses {name} on {who}.",
                                 directive=f"{p.name} uses {name} on {who}: {f.get('directive') or 'the hurt eases'} ({said}). A line or two, then stop where they would act.",
                                 minutes=int(f.get("minutes", 1)), referee_skip=["hp", fid], entities=[q.id] if q else [])
+    if kind in SPELLS:
+        return _cast(game, state, s, f, fid, args or {}, rng)
     if kind == "rider":
         if (c is None or c.value <= 0) and not (f.get("slots") and _slots(p) > 0):
             return state, CommandResult(ok=False, label=name, text="Nothing left to call on; a long rest brings it back.")
@@ -225,3 +326,111 @@ def run(game: Any, state: FantasyState, fid: str, args: dict) -> tuple[FantasySt
                                 directive=f.get("directive") or f"{p.name} uses {name}. Show it in a line or two, and play whatever else the player asked for this turn.",
                                 minutes=int(f.get("cast_minutes", 0)), referee_skip=[fid])
     return None
+
+
+def _cast(game: Any, state: FantasyState, s: FantasyState, f: dict, fid: str, args: dict, rng: Any) -> tuple[FantasyState, CommandResult]:
+    """A spell cast (kinds bolt, quell, cast): refused with nothing spent when it cannot be; else the slot goes and the engine
+    does its part before the prose."""
+    from engine.mechanics import save_roll
+    from .combat import ensure_block, size_band
+    from .state import CombatState
+    p, name, kind = s.player, f["name"], f["kind"]
+    foes = spell_foes(game, s)
+    if kind != "cast" and not foes:
+        return state, CommandResult(ok=False, label=name, text=f"{name}: nobody hostile here to cast it at.")
+    if not _spend(p, f):
+        return state, CommandResult(ok=False, label=name, text=f"{name}: no spell slot left; a long rest brings them back.")
+    target = next((q for q in foes if q.id == str(args.get("at") or "")), None) or (foes[0] if foes else None)
+    if kind == "quell" and target is not None and not f.get("pool") and ensure_block(target).kind == "undead" and f.get("living_only", True):
+        return state, CommandResult(ok=False, label=name, text=f"{name}: {target.name} is beyond such a spell; not cast.")
+    opened = ""
+    if kind != "cast" and not p.fighting:               # the spell is the fight's first act
+        p.fighting = [q.id for q in foes]
+        for q in foes:
+            ensure_block(q)
+            size_band(q)
+        s.combat = CombatState(round=0, since_turn=int(p.notes_turn or 0) + 1, target=target.id)
+        opened = f" Combat begins: {', '.join(q.name for q in foes)}."
+    left = "" if f.get("cantrip") else f" ({_slots(p)} slot{'s' if _slots(p) != 1 else ''} left)"
+    skip = ["spell_slots", fid]
+    told = str(f.get("told") or "")
+    atk, dc = cast_numbers(game, p)
+    if kind == "cast":
+        line = f"{name}: cast{left}."
+        p.turn_notes.append(line)
+        return s, CommandResult(label=name, text=line, player_line=f.get("player_line") or f"I cast {name}.", summary=f"{p.name} casts {name}.",
+                                directive=f"{p.name} casts {name}: {told or 'it does what the spell does'}. A line or two, no numbers. If the "
+                                          "player's words asked for more this turn, tell that too; then stop.",
+                                minutes=int(f.get("minutes", 1)), referee_skip=skip)
+    if kind == "bolt":
+        if s.combat is None:
+            s.combat = CombatState(round=0)
+        dice = _dice(str(f.get("dice5") if p.level >= 5 and f.get("dice5") else f.get("dice") or "1d6"), p)
+        entry = {"ref": fid, "name": name, "target": target.id if target is not None else "", "dice": dice}
+        if f.get("all"):
+            entry["all"] = True
+        if f.get("attack"):
+            entry["attack"] = atk
+        elif f.get("save"):
+            entry.update(save=str(f["save"]), dc=dc, **({"negates": True} if f.get("negates") else {}))
+        if f.get("undead"):
+            entry["undead"] = f["undead"]
+        s.combat.item_strike = entry
+        at = "" if f.get("all") or target is None else f" at {target.name}"
+        line = f"{name}{at}: cast{left}.{opened}"
+        return s, CommandResult(label=name, text=line, player_line=f"I cast {name}{at}.", summary=f"{p.name} casts {name}{at}.",
+                                directive=f"{p.name} casts {name}{at}: {told or 'the spell goes off'}. What it does is in this round's dice: "
+                                          "tell that result in words, add no other harm, and kill nothing the dice did not.",
+                                minutes=1, referee_skip=skip)
+    # quell: out of the fight without harm
+    hit: list = []
+    notes: list[str] = []
+    cond = str(f.get("condition") or "quelled")
+    if f.get("pool"):
+        pool = _roll(str(f["pool"]), p, rng)
+        notes.append(f"{pool} hit points' worth of foes")
+        for q in sorted(foes, key=lambda q: sum(max(0, h) for h in (ensure_block(q).hps or [ensure_block(q).hp or 0]))):
+            b = ensure_block(q)
+            hp = sum(max(0, h) for h in (b.hps if b.count > 1 and b.hps else [b.hp or 0]))
+            if b.kind == "undead" and f.get("living_only", True):
+                notes.append(f"{q.name}: untouched")
+                continue
+            if hp <= pool:
+                pool -= hp
+                hit.append(q)
+    elif target is not None:
+        b = ensure_block(target)
+        stat = str(f.get("save") or "wis")
+        # one save for each of a band: the word takes them all or none (one of five charmed is no state the engine keeps)
+        rolls = [save_roll(rng, b.saves.get(stat, 0), dc) for _ in range(max(1, int(b.count or 1)))]
+        held_all = not any(sv.holds for sv in rolls)
+        notes.append(f"{target.name}: {stat.upper()} save {', '.join(str(sv.total) for sv in rolls)} against {dc}, {'fails' if held_all else 'holds'}")
+        if held_all:
+            hit.append(target)
+    now = s.clock.day * DAY + s.clock.minute
+    for q in hit:
+        word = cond.split(" ")[0]
+        q.condition = ", ".join(x for x in [q.condition, f"{word} (spell)"] if x)       # the engine's own mark (combat.plan_round)
+        s.flags.setdefault("quelled", {})[q.id] = {"until": now + int(f.get("minutes") or QUELL_MINUTES.get(word, 10)),
+                                                    "attitude": q.attitude if f.get("attitude") is not None else None}
+        if f.get("attitude") is not None:
+            q.attitude = max(q.attitude, int(f["attitude"]))
+        if q.id in p.fighting:
+            p.fighting.remove(q.id)
+    if not p.fighting and s.combat is not None:
+        won = int(round(s.combat.weight_won))            # the cold read: the foes downed before the spell ended it still pay
+        if won:
+            p.xp += won
+            notes.append(f"the fight is over: {won} XP")
+        s.combat = None
+    names = ", ".join(q.name for q in hit)
+    line = f"{name}: " + "; ".join(notes) + (f". {names}: {cond}" if hit else ". Nobody is taken") + "." + (f" {left.strip(' ()').capitalize()}." if left else "") + opened
+    p.turn_notes.append(line)
+    aimed = target.name if target is not None and not f.get("pool") else "the foes"
+    out_of_it = (f"{names} {'is' if len(hit) == 1 else 'are'} {cond}, alive, and {'stops' if len(hit) == 1 else 'stop'} fighting, nothing more "
+                 "(already settled: do not change it). Nobody wakes or is struck in this telling. "
+                 + ("" if not p.fighting else "The other foes are still hostile; tell no blows from them here. ")) if hit \
+        else f"It does not take: {aimed} {'is' if aimed != 'the foes' else 'are'} unchanged and still hostile. "
+    return s, CommandResult(label=name, text=line, player_line=f"I cast {name}.", summary=f"{p.name} casts {name}.",
+                            directive=f"{p.name} casts {name}: {told or 'the spell goes out'}. {out_of_it}A line or two; stop before {p.name}'s next act.",
+                            minutes=1, referee_skip=skip, entities=[q.id for q in hit])

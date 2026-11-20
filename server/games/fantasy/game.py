@@ -512,6 +512,11 @@ class FantasyGame(GameBase):
                 if q.attitude == -2 and q.combat is not None and q.id not in script:
                     q.attitude = -3
             st.flags["b397"] = 1
+        cd = self.class_of(st.player)                    # FN200: a save from before its class was written out catches up
+        from .items import replaced_features
+        if cd is not None and cl.catch_up(cd, st.player.abilities, st.player.counts, max(1, int(st.player.level or 1)), set(replaced_features(self))):
+            st.player.spells = [x for x in st.player.spells if x in (cd.spells or [])]
+            st.player.cantrips = [x for x in st.player.cantrips if x in (cd.cantrips or [])]
         return st
 
     @staticmethod
@@ -1663,10 +1668,14 @@ class FantasyGame(GameBase):
         """B418 (11-17): in a fight, the player's own act this turn lands before the enemies' round (the round's order is the player
         first, D240): a heal, Rage, Second Wind, a buff, turning the dead. Out of a fight a lever keeps its place after the prose."""
         p = state.player
-        if not p.fighting:
-            return False
         from . import features as ft
-        own = {fid for fid, f in ft.specs(self, p).items() if f.get("kind") in ("heal", "buff", "turn")}
+        if not p.fighting:
+            # the Gemma round of 11-20 (T3): "I cast Sleep on the rats" with the rats hostile and in sight. The fight opened on
+            # sight, the round was rolled, the spell landed after it and ended the fight, and the bite was counted twice (the
+            # round's and the referee's row, no longer skipped with no fight on). A spell cast at foes in sight is the first act
+            f = ft.specs(self, p).get(command_id) or {}
+            return f.get("kind") in ("bolt", "quell") and bool(ft.spell_foes(self, state))
+        own = {fid for fid, f in ft.specs(self, p).items() if f.get("kind") in ("heal", "buff", "turn", *ft.SPELLS)}
         return command_id in self.FIRST_LEVERS or command_id in own or command_id == "use_item"     # FN144: a thing used acts first
 
     def turn_limits(self, state: FantasyState, adj: Any = None) -> dict:
@@ -3229,6 +3238,8 @@ class FantasyGame(GameBase):
         p.shown_notes, p.turn_notes, p.notes_turn = list(p.turn_notes), [], info.turn
         self._seeds_shown(s, info.prose)                                 # B243: the cards follow the telling
         p.carry_lines = []
+        from . import features as _ft
+        _ft.wake(s)                                                      # FN200: a spell's hold on a foe runs out by the clock
         calls = list(info.calls) + pre                                    # the narrator's calls and the round rolled before the prose
         p.shown_notes += [self.unnamed(s, n) for n in wo.land(self, s, calls, info.turn)]     # the world's calls and the backstop (B206)
         from . import combat as cb                                         # part fifteen §3: the round on everyone's hit points
@@ -3308,6 +3319,8 @@ class FantasyGame(GameBase):
         if p.location != p.scene_place or rested or now - p.scene_start >= SCENE_MINUTES:
             if p.location != p.scene_place and p.hidden_from_others and not (p.effect("auto_hide") and HIDE.search(info.player_text or "")):
                 p.hidden_from_others = False            # round 16: hidden at the Barrow, still hidden at Thornhollow and the landing
+            if "surging" in p.flags_on:                 # a surge not used is gone with the scene (the cold read, 11-20)
+                p.flags_on.remove("surging")
             if "raging" in p.flags_on:
                 p.flags_on.remove("raging")
                 s.log.append(f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}. {p.name}'s rage burns out.")

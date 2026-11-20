@@ -92,6 +92,49 @@ def _strike(game: Any, st: Any) -> Any:
                  and it.charges is None), None)
 
 
+def _avg(dice: str) -> float:
+    import re
+    m = re.fullmatch(r"(\d+)d(\d+)([+-]\d+)?", dice.replace(" ", ""))
+    return (int(m.group(1)) * (int(m.group(2)) + 1) / 2 + int(m.group(3) or 0)) if m else 3.0
+
+
+def _spell(game: Any, st: Any) -> tuple[str, dict] | None:
+    """What a caster does this round, or None (no spell worth it: the weapon). A plain policy: heal under half with a healing
+    spell; with a slot, the spell that harms the most foes hardest; with none, the cantrip that harms."""
+    from games.fantasy import combat as cb
+    from games.fantasy import features as ft
+    p = st.player
+    specs = ft.specs(game, p)
+    slots = p.count("spell_slots")
+    have = slots is not None and slots.value > 0
+    foes = cb.living_enemies(game, st)
+    if not foes:
+        return None
+    if have and p.hp * 2 < p.hp_max:
+        heal = next((fid for fid, f in specs.items() if f.get("kind") == "heal" and f.get("dice")), None)
+        if heal:
+            return heal, {"on": "self"}
+    best, score = None, 0.0
+    for fid, f in specs.items():
+        if f.get("kind") != "bolt" or (not f.get("cantrip") and not have):
+            continue
+        dice = ft._dice(str(f.get("dice5") if p.level >= 5 and f.get("dice5") else f.get("dice") or "1d6"), p)
+        n = min(len(foes), 4) if f.get("all") else 1
+        worth = _avg(dice) * n * (0.65 if f.get("attack") or f.get("negates") else 0.8 if f.get("save") else 1.0)
+        if f.get("cantrip"):
+            worth -= 0.01                                # a slot's spell first when it is no worse
+        elif worth < 8 and len(foes) == 1 and sum(max(0, h) for h in (cb.ensure_block(foes[0]).hps or [cb.ensure_block(foes[0]).hp or 0])) <= 6:
+            continue                                     # no slot on a foe a cantrip will finish
+        if worth > score:
+            best, score = fid, worth
+    weapon = cb.player_block(st) if hasattr(cb, "player_block") else None
+    if best is None:
+        return None
+    if specs[best].get("cantrip") and weapon is not None and _avg(str(weapon.get("damage") or "1d4")) * 0.65 >= score:
+        return None                                      # the weapon is the better blow (a cleric's mace against Sacred Flame)
+    return best, ({} if specs[best].get("all") else {"at": foes[0].id})
+
+
 def fight(game: Any, st: Any, rng: random.Random, strat: Strategy, log: dict, rounds_cap: int = 30) -> tuple[Any, str]:
     """One fight with everyone hostile here, as a player would play it by the strategy. Returns (state, won|fled|dead|stalled)."""
     from engine.roles import AssistantReadingCombat, IntentCombat
@@ -113,10 +156,20 @@ def fight(game: Any, st: Any, rng: random.Random, strat: Strategy, log: dict, ro
         p.flags_on.append("raging")
     log["fights"] += 1
     for rnd in range(1, rounds_cap + 1):
+        co.mend(st, rng)                                 # FN199: the healer of the company, before the round
         p = st.player
         if not cb.living_enemies(game, st) or p.hp <= 0 or st.combat is None:
             break
         acted = False                                   # an item or a feature this round, in place of the blow
+        from games.fantasy import features as ft        # FN200: what costs no turn is used when it helps (a surge, a beast's shape)
+        for fid, f in ft.specs(game, st.player).items():
+            c = st.player.count(f["count"]) if f.get("count") else None
+            if not f.get("instant") or c is None or c.value <= 0 or fid == "rage":
+                continue
+            if (f.get("flag") == "surging" and "surging" not in st.player.flags_on) or \
+                    (f.get("kind") == "heal" and fid != "second_wind" and st.player.hp * 2 < st.player.hp_max):
+                st, _ = _cmd(game, st, fid, {})
+        p = st.player
         pot = _healing(game, st)
         if p.hp < p.hp_max * strat.potion_at and pot is not None:
             st, res = _cmd(game, st, "use_item", {"item": pot.id})
@@ -131,6 +184,11 @@ def fight(game: Any, st: Any, rng: random.Random, strat: Strategy, log: dict, ro
             p.count("second_wind").value -= 1
             p.hp = min(p.hp_max, p.hp + 5 + p.level)
             acted = True
+        elif _spell(game, st) is not None:              # FN200: a caster casts: a wound closed, else the best spell for the foes
+            fid, args = _spell(game, st)
+            st, res = _cmd(game, st, fid, args)
+            acted = res.ok
+            log["spells"] = log.get("spells", 0) + int(res.ok)
         elif rnd == 1 and strat.throw and _strike(game, st) is not None:
             st, res = _cmd(game, st, "use_item", {"item": _strike(game, st).id, "at": cb.living_enemies(game, st)[0].id})
             acted = res.ok

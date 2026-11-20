@@ -794,6 +794,7 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
         if not going and not any(r.get("kind") == "contact_broken" for r in w.rows):     # nor one the player just got clear of
             for q in s.people:
                 if (q.attitude <= -3 and q.status == "alive" and q.met and not q.hidden_from_player and q.id not in p.fighting
+                        and "(spell)" not in (q.condition or "")       # FN200: asleep or held by a spell opens no fight
                         and q.id not in p.with_them and not still_left_behind(s, q.id) and q.location and game._same_spot(s, q.location, p.location)):
                     p.fighting.append(q.id)
                     w.rows.append({"kind": "joined", "who": q.id, "by": "hostile, in sight", "attitude": q.attitude})

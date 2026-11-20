@@ -1035,6 +1035,22 @@ list is the word guard `lever-phrases` (§8); the street texture gap is the game
 - **Helped / did not:** the gap is closed in the simulator; not played yet. Many fights make death likely over ten days
   (FN178, open with the owner).
 
+### Spells as features, and the classes (the fantasy family, D347, 11-20)
+
+- **Set in:** the class files (`notes/content/fantasy/classes/*.yml`: each feature's `feature:` block) and
+  `games/fantasy/features.py` (kinds heal, buff, rider, turn, bolt, quell, cast). `spell_slots` is the one pool (2 at
+  level 1 for most casters, 6 at level 5; the Sorcerer one more; the Warlock 1 to 3, back on a short rest).
+  `QUELL_MINUTES` (asleep 10, held 5, charmed 60). In Parchment: `company.HEALS_A_DAY` 2 and `MEND_UNDER` 0.4 (the
+  healer of the company), and a resident marked `sized: true` in the scenario is sized by the generator on arrival.
+- **Levels:** a class is `status: full` (playable, levels 1 to 5) or `stub` (level 1, labelled under construction); all
+  twelve are full since D347.
+- **Why it exists:** the owner, 11-20: "the last big things on the agenda: spells and other classes".
+- **Measured:** the simulator, ten days, 60 to 80 games a row: alone, from the Druid's 70 per cent alive to the
+  Sorcerer's 100; with the sellsword, 88 to 100. Before the opening jobs were sized, a lone Cleric lived 16 per cent of
+  the time (the farm's two written rats).
+- **Helped / did not:** a Wizard played three short rounds on Gemma (spells read from typed words and told well; three
+  faults found and fixed). No other caster played on a model yet.
+
 ### Foreboding and the shops' prices (Parchment, FN148, FN151)
 
 - **Set in:** `games/hidden/parchment/company.py` (`DEADLY`, the SRD's deadly XP per level; a companion counts as one more)

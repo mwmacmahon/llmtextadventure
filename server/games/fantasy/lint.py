@@ -691,7 +691,9 @@ def _level_rule(game: Any, city: dict) -> str | None:
 
 
 def _sleep_rule(game: Any, city: dict) -> str | None:
-    return None if any("Sleep" in c.spells for c in game.classes().values()) else "Sleep is not a spell"
+    # FN200: a spell is a name in a class's `spells`, or (since the casters were written out) a feature of that name
+    named = any("Sleep" in c.spells or any(f.name == "Sleep" for fs in c.levels.values() for f in fs) for c in game.classes().values())
+    return None if named else "Sleep is not a spell"
 
 
 def _beat_rule(game: Any, city: dict) -> str | None:

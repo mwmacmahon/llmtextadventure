@@ -93,7 +93,7 @@ def test_a_lethal_hazard_kills_outright_with_its_cause_on_the_stone(game, monkey
 
 
 def test_the_backstop_rolls_a_hostile_the_prose_left_out_and_the_next_turn_opens_on_it(game):
-    st = new(game)
+    st = new(game, klass="Rogue", race="Human")           # FN200: the Fighter's Defence style may bring a scrape to nothing
     foe(st, moves=[{"kind": "strike", "bonus": 30, "damage": "scrape", "harm": "fists"}])
     calls = game.backstop(st, {"hp": 0, "acted": []}, Dice(15, 0), 2)
     assert len(calls) == 1 and calls[0]["backstop"] and calls[0]["result"]["harm"] in (1, 2)

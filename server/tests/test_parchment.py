@@ -293,10 +293,12 @@ def test_residents_are_there_on_arrival_and_the_board_pays_in_the_village(engine
     w = WorldTurn()
     game._arrive(st, w, farms)
     rats = [q for q in st.people if q.combat is not None and q.combat.block == "giant_rat"]
-    assert len(rats) == 2 and all(q.location == "The farms" and q.attitude == -3 for q in rats)
-    assert any("Living at The farms: two giant rats" in d for d in w.directives)
+    # FN200: the written two, or fewer when the generator sizes them for a level-1 character alone
+    assert 1 <= len(rats) <= 2 and all(q.location == "The farms" and q.attitude == -3 for q in rats)
+    n_rats = len(rats)
+    assert any("Living at The farms: " in d and "giant rat" in d for d in w.directives)
     game._arrive(st, w, farms)
-    assert len([q for q in st.people if q.combat is not None and q.combat.block == "giant_rat"]) == 2   # only the first time
+    assert len([q for q in st.people if q.combat is not None and q.combat.block == "giant_rat"]) == n_rats   # only the first time
     for q in rats:
         q.status = "dead"
     st = game.after_turn(st, TurnInfo(turn=3, elapsed_minutes=1, rng=random.Random(0)))
@@ -1142,3 +1144,18 @@ def test_the_three_of_the_crew_are_worth_about_the_same(engine: Engine):
     assert s2.player.hp > 4 and any("tends your wounds" in n for n in s2.player.shown_notes)
     s3 = game.after_turn(s2, TurnInfo(turn=6, elapsed_minutes=1, rng=random.Random(2)))
     assert s3.player.hp == s2.player.hp                                   # once a fight, not every turn
+    # FN199 (the owner, 11-20: "Healing you if you are about to die mid fight would be more useful ... limited uses"): so many
+    # a day; in a fight when badly hurt, before the round; none left, none given; a new day brings them back
+    assert co.heals_left(s3) == co.HEALS_A_DAY - 1
+    s3.player.fighting = ["someone"]
+    s3.player.hp = s3.player.hp_max                                       # hale: nothing spent
+    assert co.mend(s3, random.Random(1)) == [] and co.heals_left(s3) == co.HEALS_A_DAY - 1
+    s3.player.hp = 2
+    line = co.mend(s3, random.Random(1))
+    assert line and "mends you" in line[0] and s3.player.hp > 2 and co.heals_left(s3) == co.HEALS_A_DAY - 2 == 0
+    s3.player.hp = 1
+    assert co.mend(s3, random.Random(1)) == [] and s3.player.hp == 1      # spent for today
+    s3.clock.day += 1
+    assert co.heals_left(s3) == co.HEALS_A_DAY
+    s3.player.fighting = []
+    assert "healings left" in next(w for w in game.ui(s3).panels if getattr(w, "title", "") == "Company").items[0].value

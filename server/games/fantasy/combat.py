@@ -570,8 +570,17 @@ def plan_round(game: Any, s: FantasyState, adj: Any, player_text: str, turn: int
         if ally.strip() and target.strip():
             c.orders[ally.strip().lower()] = target.strip().lower()
     struck = set(plan[0]["targets"]) if plan and plan[0].get("side") == "player" else set()
+    if plan and plan[0].get("side") == "item":           # a thrown thing or a spell strikes too (FN200)
+        struck = {q.id for q in foes} if plan[0].get("all") else {str(plan[0].get("target") or (foes[0].id if foes else ""))}
     for q in foes:
         b = ensure_block(q)
+        if "(spell)" in (q.condition or ""):
+            # FN200: a foe a spell has put out of the fight does nothing until struck; the blow breaks the spell. The engine's
+            # own mark, "asleep (spell)": never a word the referee's prose may hold ("half asleep at his post")
+            if q.id not in struck:
+                continue
+            q.condition = re.sub(r"\b\w+ \(spell\)[,;]?\s*", "", q.condition).strip(" ,;")
+            (s.flags.get("quelled") or {}).pop(q.id, None)
         if "turned" in (q.condition or ""):
             # B419 (11-17, battle2): turned dead act no more ("their actions do not fire, they keep away"); struck by the player,
             # the turning on that one breaks, as the SRD has it, and it fights again
@@ -904,6 +913,11 @@ def resolve_attack(game: Any, s: FantasyState, entry: dict, rng: Any, offset: in
         if not _spend_ammo(s, how, pb["weapon"], notes):
             return {"text": f"{p.name} has nothing left to shoot. Play it, and go on.", "mechanic": "; ".join(notes), "data": {"verb": "ATTACK", "who": "player", "key": entry["key"], "hits": []}}
         rolls = 2 if p.level >= 5 and len(targets) < 2 and (p.klass or "").lower() in ("paladin", "fighter", "ranger", "barbarian", "monk") else 1   # Extra Attack
+        if "surging" in p.flags_on and len(targets) < 2 and how not in ("ranged", "thrown"):
+            # FN200: the Fighter's Action Surge, the Monk's Flurry: one more blow at one foe in this exchange, then spent (kept
+            # for the next exchange when this one is a sweep or a shot, which have their own count)
+            p.flags_on.remove("surging")
+            rolls += 1
         if p.has_condition("blessed"):
             bonus += 1
         if "raging" in p.flags_on and pb["stat"] == "str" and how in ("melee", "finesse"):

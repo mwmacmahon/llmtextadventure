@@ -268,6 +268,10 @@ def resolve_strike(game: Any, s: FantasyState, entry: dict, rng: Any, tally: dic
                 how = f"d20 {res.roll} + {int(entry['attack'])} = {res.total} against AC {b.ac or 10}, a hit; "
             elif entry.get("save"):
                 sv = save_roll(rng, b.saves.get(str(entry["save"]), 0), int(entry.get("dc") or 12))
+                if sv.holds and entry.get("negates"):       # a spell a save avoids altogether (Sacred Flame)
+                    parts.append(f"{who}: avoided")
+                    lines.append(f"{entry['name']} at {who}: {str(entry['save']).upper()} save held, no harm.")
+                    continue
                 if sv.holds:
                     n //= 2
                 how = f"{str(entry['save']).upper()} save {'held, half' if sv.holds else 'failed'}; "

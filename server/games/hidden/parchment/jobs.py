@@ -123,7 +123,19 @@ def arrive(game: Any, sc: dict, s: FantasyState, pid: str) -> list[str]:
     made_all = []
     where = s.world["places"][pid]["name"]
     for r in rows:
-        made = en.spawn(s, [(str(r["entry"]), int(r.get("count") or 1))], str(r.get("variant") or "standard"), where=where)
+        bodies, variant = [(str(r["entry"]), int(r.get("count") or 1))], str(r.get("variant") or "standard")
+        if r.get("sized") and game is not None:
+            # FN200 (the class simulation, 11-20): the farm's two rats, written as two, killed a lone level-1 cleric five times
+            # in six and a fighter once in sixty. A written resident marked `sized` is its kind in the generator's numbers for
+            # whoever comes (at most the written count), as a posted job's are
+            from . import company as co
+            s.city.regions[where] = "wilds"
+            e = en.encounter(game, s, en.Want(band=band_for(s, "easy"), pinned=[(str(r["entry"]), None)], place=where, n=20,
+                                              seed=f"{(s.world or {}).get('seed', 0)}:sized:{pid}", ease=co.ease(s)))
+            if e.bodies:
+                bodies = [(b, min(c, int(r.get("count") or c))) for b, c in e.bodies]
+                variant = e.variant
+        made = en.spawn(s, bodies, variant, where=where)
         for q in made:
             q.attitude = int(r.get("attitude", -3))
             q.facts.append(f"Lives at {where}.")
@@ -133,8 +145,9 @@ def arrive(game: Any, sc: dict, s: FantasyState, pid: str) -> list[str]:
     if not made_all:
         return []
     counts: dict[str, int] = {}
-    for r in rows:
-        counts[str(r["entry"])] = counts.get(str(r["entry"]), 0) + int(r.get("count") or 1)
+    for q in made_all:                                   # as they are, not as written (a sized lot may be fewer)
+        b = q.combat
+        counts[b.block] = counts.get(b.block, 0) + int(getattr(b, "count", 1) or 1)
     return [f"Living at {where}: {en.called_plural(list(counts.items()))}."]
 
 

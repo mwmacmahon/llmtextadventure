@@ -519,7 +519,14 @@ class ParchmentGame(FantasyGame):
         co.keep_with(state)                              # FN149: the companion is here before the prose
         state.flags.pop("to_person", None)
         self._mark_turn_start(state)
+        mended = co.mend(state, rng)                     # FN199: the healer mends the badly hurt before the round is rolled
         s, w = super().world_turn(state, adj, player_text, rng, turn, offset)
+        if mended:
+            w.mechanics = mended + list(w.mechanics)
+            w.skip.append("hp")
+            hq = co.companion(s)
+            w.directives.append(f"{hq.name if hq is not None else 'The healer'} has just healed {s.player.name} a little, mid-fight (already "
+                                "counted: no numbers, not a full recovery). Show it in one clause, in their own manner; they do nothing else.")
         if s.world and not s.player.fighting:
             # the gate-2 round (11-17): paid 30 for a 15 job, the engine after the prose and the referee from the farmer's coins.
             # The pay is settled before the prose now, the narrator told, and the referee's gold rows this turn not counted
@@ -864,8 +871,8 @@ class ParchmentGame(FantasyGame):
                 pinned = [(least, None)]
         e = en.encounter(self, s, en.Want(band=band, pinned=pinned, place=s.player.location, n=20, ease=co.ease(s),
                                           seed=f"{s.world['seed']}:{x},{y}:{s.clock.day}:{s.clock.minute}:{rng.random():.6f}"))
-        if not e.bodies:
-            return ""
+        if not e.bodies or all(b == "commoner" for b, _ in e.bodies):
+            return ""                                    # the Gemma round of 11-20: a townsman with firewood as the road's trouble, cut down
         made = en.spawn(s, e.bodies, e.variant)
         s.people.extend(made or [])
         for q in made or []:
@@ -1479,7 +1486,8 @@ class ParchmentGame(FantasyGame):
             job = next((j["title"] for j in s.flags.get("jobs") or [] if j.get("helper") == q.id), "")
             hp = f"HP {q.combat.hp}/{q.combat.hp_max}" if q.combat is not None and getattr(q.combat, "hp_max", None) else ""
             lvl = int(((s.flags.get("crew_base") or {}).get(q.id) or {}).get("level", 0))
-            rows.append(Chip(label=q.name, value=" · ".join(x for x in [q.role, f"level {lvl}" if lvl > 1 else "", hp, why or f"for: {job}"] if x)))
+            heals = f"{co.heals_left(s)} healings left" if why and q.id in (s.flags.get("crew_heals") or {}) else ""
+            rows.append(Chip(label=q.name, value=" · ".join(x for x in [q.role, f"level {lvl}" if lvl > 1 else "", hp, heals, why or f"for: {job}"] if x)))
         return ListPanel(title="Company", items=rows, layout="stack") if rows else None
 
     def _place_cards(self, s: FantasyState, data: dict) -> None:
@@ -1562,9 +1570,18 @@ class ParchmentGame(FantasyGame):
                 panels.append(Commands(title=None, items=cs, place="popout", group=menu))
             # the owner, 11-18: "Probably combine abilities and items for Use. Class skills (and spells once we get to them) on
             # top, then usable items"
-            ab = [c for c in items if abil(c)]
+            # a spell: the spell kinds, and a healing or a blessing that costs a slot; never a rider (Divine Smite is a skill
+            # that may draw on the slots: the cold read, 11-20)
+            spells = {fid for fid, f in ft.specs(self, s.player).items()
+                      if f.get("kind") in ft.SPELLS or (f.get("kind") in ("heal", "buff") and (f.get("slot") or f.get("slots") or f.get("cantrip")))}
+            ab = [c for c in items if abil(c) and c.id not in spells]
             if ab:
                 panels.append(Commands(title="Abilities", items=ab, place="popout", group="Use"))
+            sp = [c for c in items if c.id in spells]
+            if sp:                                       # FN200: spells under the class's skills, over the things
+                left = s.player.count("spell_slots")
+                panels.append(Commands(title="Spells" + (f" · {left.value} of {left.max} slots" if left is not None else ""), items=sp,
+                                       place="popout", group="Use"))
             use = [c for c in items if c.id == "use_item"]
             if use:
                 panels.append(Commands(title="Things", items=use, place="popout", group="Use"))
@@ -1572,13 +1589,31 @@ class ParchmentGame(FantasyGame):
         return out
 
     def _hotbar(self, s: FantasyState, items: list, abil: Any):
+        from games.fantasy import features as ft
         """The side's hot bar: the class's abilities that take no choice, the things with a use (potions first), and the board
         when it has something unread. One tap each."""
         from engine.game import HotSlot, Hotbar
         from games.fantasy import items as itm
         slots = []
+        spells = {fid for fid, f in ft.specs(self, s.player).items() if f.get("kind") in ft.SPELLS}
+        slots_left = s.player.count("spell_slots")
         for c in items:
+            if c.id in spells:
+                # FN200: a spell on the bar when it can be cast now (a fight's spells in a fight), one tap at the first foe; a
+                # spell shows the slots left, a cantrip nothing
+                f = ft.specs(self, s.player)[c.id]
+                if c.enabled and all(p.name == "at" for p in c.params):
+                    slots.append(HotSlot(id=c.id, icon="wand" if f.get("kind") != "cast" else "scroll", label=c.label,
+                                         count=None if f.get("cantrip") or slots_left is None else slots_left.value,
+                                         command=c.id, args={p.name: p.default or p.options[0].id for p in c.params}))
+                continue
             if abil(c) and not c.params:
+                f = ft.specs(self, s.player).get(c.id) or {}
+                if f.get("kind") in ("heal", "buff") and (f.get("slot") or f.get("slots")) and s.player.count(c.id) is None:
+                    # a blessing or a healing on the slots shows the slots left, as the bolts beside it do
+                    slots.append(HotSlot(id=c.id, icon="scroll", label=c.label, count=slots_left.value if slots_left is not None else None,
+                                         command=c.id, enabled=c.enabled, free=c.free))
+                    continue
                 n = next((k.value for k in s.player.counts if k.name.lower() == c.label.lower() or k.name.lower().replace(" ", "_") == c.id), None)
                 label = re.sub(r"\s*\(\d+( left)?\)$", "", c.label)      # the count is the slot's own
                 m = re.search(r"\((\d+)( left)?\)$", c.label)

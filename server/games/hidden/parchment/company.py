@@ -230,18 +230,53 @@ def level_crew(s: FantasyState) -> list[str]:
     return out
 
 
-def tend(s: FantasyState, rng: Any) -> list[str]:
-    """FN198: a companion who heals (the hedge priest) tends the player's wounds when a fight is over: their dice and one
-    more for each of the player's levels past the first. Returns the § line."""
+# FN199 (the owner, 11-20: "Healing you if you are about to die mid fight would be more useful than post battle (but that's fine
+# too). Probably need to give him limited uses like player with spells / skills"): the healer of the company has so many
+# healings a day (HEALS_A_DAY and one more every second level). In a fight one is spent when the player is at or under
+# MEND_UNDER of their hit points, before the round is rolled; when a fight is over, one for the wounds left, if any is left.
+HEALS_A_DAY = 2
+MEND_UNDER = 0.4
+
+
+def heals_left(s: FantasyState) -> int:
+    """The healer's healings left today (a new day brings them back); 0 with no healer along."""
     q = companion(s)
-    dice = (s.flags.get("crew_heals") or {}).get(q.id) if q is not None else None
-    p = s.player
-    if not dice or p.fighting or p.fate or p.hp >= p.hp_max or p.hp <= 0:
-        return []
+    if q is None or q.id not in (s.flags.get("crew_heals") or {}):
+        return 0
+    pool = s.flags.setdefault("crew_heal_uses", {})
+    if int(pool.get("day") or 0) != s.clock.day:
+        pool["day"], pool["left"] = s.clock.day, HEALS_A_DAY + max(0, int(s.player.level or 1) - 1) // 2
+    return int(pool.get("left") or 0)
+
+
+def _heal(s: FantasyState, rng: Any) -> int:
     from engine.mechanics import roll_dice
-    n = min(p.hp_max - p.hp, roll_dice(rng, dice)[0] + max(0, int(p.level or 1) - 1))
+    q, p = companion(s), s.player
+    n = min(p.hp_max - p.hp, roll_dice(rng, (s.flags.get("crew_heals") or {})[q.id])[0] + max(0, int(p.level or 1) - 1))
     p.hp += n
-    return [f"{q.name} tends your wounds: {n} hit point{'s' if n != 1 else ''} back."]
+    s.flags["crew_heal_uses"]["left"] = heals_left(s) - 1
+    return n
+
+
+def mend(s: FantasyState, rng: Any) -> list[str]:
+    """In a fight: the healer mends the player who is badly hurt, before the round. Returns the § line."""
+    p = s.player
+    if not p.fighting or p.fate or p.hp <= 0 or p.hp > p.hp_max * MEND_UNDER or heals_left(s) <= 0:
+        return []
+    n = _heal(s, rng)
+    left = heals_left(s)
+    return [f"{companion(s).name} mends you in the thick of it: {n} hit point{'s' if n != 1 else ''} back ({left} healing{'s' if left != 1 else ''} left today)."]
+
+
+def tend(s: FantasyState, rng: Any) -> list[str]:
+    """FN198: the healer tends the player's wounds when a fight is over: their dice and one more for each of the player's
+    levels past the first, while a healing is left today. Returns the § line."""
+    p = s.player
+    if p.fighting or p.fate or p.hp >= p.hp_max or p.hp <= 0 or heals_left(s) <= 0:
+        return []
+    n = _heal(s, rng)
+    left = heals_left(s)
+    return [f"{companion(s).name} tends your wounds: {n} hit point{'s' if n != 1 else ''} back ({left} healing{'s' if left != 1 else ''} left today)."]
 
 
 def can_ask(s: FantasyState) -> list:

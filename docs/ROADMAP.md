@@ -699,6 +699,10 @@ endless ground, camps, wandering, invented places and ground changes held until 
   companion along: ten days, archer 96 per cent alive, alone 59.
 - **The three companions rebalanced (D346): 11-20.** Their own numbers in the scenario; the priest mends the player
   after a fight. Ten days alive: sellsword 92 per cent, archer 90, priest 86 (it was 87, 96, 74).
+- **Spells and all twelve classes (D347): built 11-20 overnight**, on the owner's "make best judgements". Spells are
+  class features (harm, quell, utility, on top of healing and blessing); one pool of slots; every class written to level
+  5 and none "under construction". A Wizard played on Gemma; every class through the simulator (70 to 100 per cent alive
+  alone over ten days, 88 to 100 with the sellsword). The decisions are in `notes/SPELLS_DESIGN.md` for the owner.
 - **On Lilith's server since 11-19 (D339)**, on the owner's word: Parchment is listed on a player's server; :8016 moved
   to bcf5f82. Nine turns on Sonnet first: the board, going to a person, a posted job, the fight, pay in person and the
   shop's basket all worked; one fault found and fixed.

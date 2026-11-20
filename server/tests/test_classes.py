@@ -31,8 +31,12 @@ def level_to(game: FantasyGame, st, lv: int, stats=("str", "str"), cards=""):
 def test_twelve_classes_three_full_and_nine_under_construction(game: FantasyGame):
     cs = game.classes()
     assert list(cs) == list(cl.ORDER)
-    assert [c.name for c in cs.values() if c.status == "full"] == ["Barbarian", "Paladin", "Rogue"]     # part fifteen §11: the Paladin
-    assert cs["Paladin"].label == "Paladin" and cs["Rogue"].label == "Rogue" and cs["Cleric"].label == "Cleric (under construction)"
+    full = [c.name for c in cs.values() if c.status == "full"]
+    assert {"Barbarian", "Paladin", "Rogue"} <= set(full)                # part fifteen §11: the Paladin
+    # FN200 (11-20): the other nine written out to level 5; a class still a stub says so and has level 1 only
+    assert cs["Paladin"].label == "Paladin" and cs["Rogue"].label == "Rogue"
+    assert all(c.label == (c.name if c.status == "full" else f"{c.name} (under construction)") for c in cs.values())
+    assert all({1, 2, 3, 4, 5} <= set(c.levels) for c in cs.values() if c.status == "full")
     assert all(set(c.levels) == {1} for c in cs.values() if c.status == "stub")
     names = {a.name for c in cs.values() for f in c.levels.get(1, []) for a in cl.abilities_of(f)}
     assert not names & {"Strong arm", "Backstab"}                    # §7c: the SRD's features and nothing homebrewed beside them
@@ -194,7 +198,8 @@ def test_a_stub_class_starts_and_plays(game: FantasyGame):
     s = level_to(game, s, 2)
     assert s.player.level == 2
     wiz = new(game, klass="Wizard", race="Elf")
-    assert wiz.player.spells and wiz.player.count("spell_slots").value == 2
+    assert wiz.player.count("spell_slots").value == 2
+    assert wiz.player.spells or any(c.id == "magic_missile" for c in game.commands(wiz))      # FN200: bare names, or spells as commands
 
 
 def test_sneak_attack_finesse_and_rage_reach_the_player(game):

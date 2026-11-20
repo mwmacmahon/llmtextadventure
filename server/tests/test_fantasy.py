@@ -99,7 +99,9 @@ def test_the_sheet_is_five_fields_with_one_hint(game: FantasyGame):
     assert shown == ["name", "klass", "race", "gender", "about"]
     assert [f[k].kind for k in shown] == ["text", "select", "select", "text", "textarea"]
     assert [k for k, x in f.items() if x.required] == ["name", "klass", "race"]
-    assert [o.name for o in f["klass"].options][:4] == ["Barbarian", "Paladin", "Rogue", "Bard (under construction)"] and len(f["klass"].options) == 12
+    names = [o.name for o in f["klass"].options]
+    assert len(names) == 12 and {"Barbarian", "Paladin", "Rogue"} <= set(names)
+    assert all(n.endswith("(under construction)") == (game.classes()[n.split(" (")[0]].status != "full") for n in names)      # FN200
     assert f["kit_barbarian_1"].show_if == {"klass": "Barbarian"} and f["expertise_rogue"].kind == "checks" and f["expertise_rogue"].pick == 2
     assert [k for k, x in f.items() if x.hint] == ["about"]
     assert [o.id for o in f["race"].options][-1] == "Dragonborn" and len(f["race"].options) == 9
@@ -115,7 +117,8 @@ def test_new_instance_builds_the_player_from_the_tables(game: FantasyGame):
     assert st.item("gold").count == 15 and st.item("longsword") and st.item("shield") and st.item("travelling_pack")
     assert st.clock.day == 1 and st.clock.minute == 1080 and p.location == "The Drowned Lantern"
     mage = new(game, klass="Wizard", race="Elf")
-    assert mage.player.spells == ["Magic Missile", "Sleep", "Charm Person"] and mage.player.cantrips == ["Fire Bolt", "Light", "Mage Hand"]
+    # FN200: the Wizard's spells are commands now (features); a stub's are bare names
+    assert mage.player.spells == ["Magic Missile", "Sleep", "Charm Person"] or {"magic_missile", "sleep", "charm_person", "fire_bolt"} <= {c.id for c in game.commands(mage)}
     assert mage.player.count("spell_slots").value == 2 and mage.player.hp == 7
     assert new(game, race="Dragonborn").player.count("breath").value == 1
 

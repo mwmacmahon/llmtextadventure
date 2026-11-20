@@ -162,6 +162,7 @@ def grant(abilities: list[Ability], counts: list[Count], f: Feature, cid: str = 
             c = next((c for c in counts if c.id == (f.count.id or f.id)), None)
             if c is not None:
                 c.value, c.max = c.value + max(0, f.count.max - c.max), f.count.max
+                c.refill = f.count.refill or c.refill      # the cold read (11-20): an upgrade's new refill was dropped
         return [f"{name}: {f.text}"] if f.text else [name]
     if f.points:
         return []
@@ -171,6 +172,33 @@ def grant(abilities: list[Ability], counts: list[Count], f: Feature, cid: str = 
         if not any(c.id == cid_ for c in counts):
             counts.append(Count(id=cid_, name=f.name, value=f.count.max, max=f.count.max, refill=f.count.refill))
     return [f"{f.name}: {f.text}" if f.text else f.name]
+
+
+def catch_up(cd: Any, abilities: list[Ability], counts: list[Count], level: int, skip: set[str] | None = None) -> bool:
+    """FN200 (the cold read, 11-20): a save made when its class had less written (a stub, level 1 only) holds none of the
+    features the file now gives at the levels it has passed, and a feature with no count on the sheet was used without limit.
+    Replay the file's levels up to the save's own: whatever the sheet lacks is granted, an upgrade applied; what it has is
+    left as it is. True when anything changed."""
+    changed = False
+    for lv in range(1, level + 1):
+        for f in cd.features_at(lv):
+            if f.points or f.id in (skip or ()):         # a feature the game's catalogue makes a thing (the rogue's smoke) is not the sheet's
+                continue
+            have = any(a.id == f.id for a in abilities)
+            cid = (f.count.id or f.id) if f.count else ""
+            if f.upgrade:
+                c = next((c for c in counts if c.id == cid), None) if cid else None
+                if have and cid and c is not None and c.max < f.count.max:
+                    c.value, c.max, c.refill = c.value + (f.count.max - c.max), f.count.max, f.count.refill or c.refill
+                    changed = True
+                continue
+            if not have:
+                abilities.extend(abilities_of(f, cd.name))
+                changed = True
+            if cid and not any(c.id == cid for c in counts):
+                counts.append(Count(id=cid, name=f.name, value=f.count.max, max=f.count.max, refill=f.count.refill))
+                changed = True
+    return changed
 
 
 def expertise_abilities(skills: list[str]) -> list[Ability]:
