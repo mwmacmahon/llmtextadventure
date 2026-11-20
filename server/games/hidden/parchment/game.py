@@ -199,6 +199,12 @@ class ParchmentGame(FantasyGame):
         s = self._settle_place(s, info)
         self._nobody_tags_along(s)
         co.level_crew(s)                                 # FN195: a save from before the crew levelled catches up
+        fought = bool(s.flags.pop("was_fighting", False))  # FN198: a fight just over, the healer of the company tends the player
+        if s.player.fighting:
+            s.flags["was_fighting"] = True
+        elif fought:
+            for line in co.tend(s, info.rng):
+                s.player.shown_notes.append(line)
         for line in co.adopt(s):                         # a companion the story agreed to is the companion
             s.player.shown_notes.append(line)
         co.keep_with(s)                                  # FN149: the companion follows

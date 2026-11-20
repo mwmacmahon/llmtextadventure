@@ -1114,3 +1114,31 @@ def test_the_fight_bar_free_actions_and_a_crew_that_levels(engine: Engine):
         assert b.hp_max == round(hp0 * 2.2) and b.attack == at0 + 1 and b.hp == b.hp_max and b.damage != dm0
     assert "level 3" in next(w for w in game.ui(st).panels if getattr(w, "title", "") == "Company").items[0].value
     assert co._bump("1d8+2", 1) == "1d8+3" and co._bump("1d6", 2) == "1d6+2" and co._bump("odd", 1) == "odd"
+
+
+def test_the_three_of_the_crew_are_worth_about_the_same(engine: Engine):
+    """FN198 (the owner, 11-20: "Rebalance companions"; the simulator had the archer at 96 per cent alive over ten days and the
+    priest at 74): each has their own numbers from the scenario, no one more than half again another's blow, and the priest
+    tends the player's wounds when a fight is over."""
+    import random
+    from engine.game import TurnInfo
+    from engine.mechanics import roll_dice
+    from games.fantasy import combat as cb
+    from games.hidden.parchment import company as co
+    game, st = _fresh(engine)
+    sc = game.scenario(st.city.id)
+    if not any(c.get("damage") for c in sc.get("crew") or []):
+        pytest.skip("the crew is unwritten on this machine")
+    crew = co.crew(st)
+    avg = lambda d: sum(roll_dice(random.Random(k), d)[0] for k in range(400)) / 400      # noqa: E731
+    blows = [avg(cb.ensure_block(q).damage) for q in crew]
+    assert max(blows) <= 1.75 * min(blows), blows
+    assert all(cb.ensure_block(q).hp == cb.ensure_block(q).hp_max >= 10 for q in crew)
+    priest = next(q for q in crew if q.id in (st.flags.get("crew_heals") or {}))
+    st, _ = game.run_command(st, "ask_along", {"who": priest.id})
+    st.player.hp = 4
+    st.flags["was_fighting"] = True                                       # the turn before had a fight in it
+    s2 = game.after_turn(st, TurnInfo(turn=5, elapsed_minutes=1, rng=random.Random(2)))
+    assert s2.player.hp > 4 and any("tends your wounds" in n for n in s2.player.shown_notes)
+    s3 = game.after_turn(s2, TurnInfo(turn=6, elapsed_minutes=1, rng=random.Random(2)))
+    assert s3.player.hp == s2.player.hp                                   # once a fight, not every turn

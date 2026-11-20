@@ -172,6 +172,8 @@ def _after(game: Any, st: Any, log: dict) -> Any:
     from games.fantasy import items as itm
     from .. import jobs as jb
     before = {it.id: it.count for it in st.inventory}
+    from .. import company as co
+    co.tend(st, random.Random(f"tend:{st.clock.day}:{st.clock.minute}:{st.player.hp}"))      # FN198: the healer of the company
     for line in jb.update(game, st):
         if line.startswith("Job done"):
             log["jobs_done"] += 1

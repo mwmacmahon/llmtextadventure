@@ -39,6 +39,16 @@ def make_crew(sc: dict, s: FantasyState, names: list[str]) -> None:
             q.description = str(c.get("description") or "")
             q.wants = str(c.get("wants") or "Work, coin and someone to watch their back.")
             q.facts.append("New in the area, like the player; at a table in the tavern with the others of the crew.")
+            # FN198 (the owner, 11-20: "Rebalance companions"): the crew's own numbers, written in the scenario (the bestiary's
+            # guard, acolyte and scout were 4.5, 2.5 and 11 damage a blow: the archer was worth three of the priest)
+            b = cb.ensure_block(q)
+            for key in ("ac", "attack", "damage"):
+                if c.get(key) is not None:
+                    setattr(b, key, c[key] if key == "damage" else int(c[key]))
+            if c.get("hp") is not None:
+                b.hp = b.hp_max = int(c["hp"])
+            if c.get("heals"):
+                s.flags.setdefault("crew_heals", {})[q.id] = str(c["heals"])
             ids.append(q.id)
         s.people.extend(made)
     s.flags["crew"] = ids
@@ -218,6 +228,20 @@ def level_crew(s: FantasyState) -> list[str]:
         if q.id == s.flags.get("companion"):
             out.append(f"{q.name} is level {lvl} too: {b.hp_max} hit points.")
     return out
+
+
+def tend(s: FantasyState, rng: Any) -> list[str]:
+    """FN198: a companion who heals (the hedge priest) tends the player's wounds when a fight is over: their dice and one
+    more for each of the player's levels past the first. Returns the § line."""
+    q = companion(s)
+    dice = (s.flags.get("crew_heals") or {}).get(q.id) if q is not None else None
+    p = s.player
+    if not dice or p.fighting or p.fate or p.hp >= p.hp_max or p.hp <= 0:
+        return []
+    from engine.mechanics import roll_dice
+    n = min(p.hp_max - p.hp, roll_dice(rng, dice)[0] + max(0, int(p.level or 1) - 1))
+    p.hp += n
+    return [f"{q.name} tends your wounds: {n} hit point{'s' if n != 1 else ''} back."]
 
 
 def can_ask(s: FantasyState) -> list:

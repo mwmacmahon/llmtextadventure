@@ -697,6 +697,8 @@ endless ground, camps, wandering, invented places and ground changes held until 
   characters with company live, four in ten alone; levelling the crew does not change that (fights are sized to the party).
 - **A companion makes fights a little easier (D345): 11-20.** Sized for six points better odds with the permanent
   companion along: ten days, archer 96 per cent alive, alone 59.
+- **The three companions rebalanced (D346): 11-20.** Their own numbers in the scenario; the priest mends the player
+  after a fight. Ten days alive: sellsword 92 per cent, archer 90, priest 86 (it was 87, 96, 74).
 - **On Lilith's server since 11-19 (D339)**, on the owner's word: Parchment is listed on a player's server; :8016 moved
   to bcf5f82. Nine turns on Sonnet first: the board, going to a person, a posted job, the fight, pay in person and the
   shop's basket all worked; one fault found and fixed.
