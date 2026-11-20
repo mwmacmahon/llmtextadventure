@@ -78,7 +78,12 @@ function Game({ id }: { id: string }) {
   // again when a turn ends, where there is a keyboard (a fine pointer; a phone's keyboard would cover the telling)
   const idle = streaming === null;
   useEffect(() => {
-    if (idle && window.matchMedia?.("(pointer: fine)").matches && !document.querySelector(".sheet, .modal, dialog[open]")) boxRef.current?.focus();
+    if (!idle || !window.matchMedia?.("(pointer: fine)").matches) return;
+    const t = setTimeout(() => {                 // after the box is enabled again and drawn
+      const at = document.activeElement?.tagName;
+      if (at !== "INPUT" && at !== "TEXTAREA" && at !== "SELECT") boxRef.current?.focus();
+    }, 60);
+    return () => clearTimeout(t);
   }, [idle, view === null]);
   const [stage, setStage] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
