@@ -14,7 +14,7 @@ export type CommandPanel = {
   title: string; lines: Chip[]; points: number; per_stat: number; stats: { id: string; label: string }[];
   cards: Chip[]; pick: number; confirm: string;
 };
-export type CommandSpec = { id: string; label: string; mode: "engine" | "narrated"; params: Param[]; hint: string; enabled?: boolean; free?: boolean; panel?: CommandPanel | null };
+export type CommandSpec = { id: string; label: string; mode: "engine" | "narrated"; params: Param[]; hint: string; about?: string; enabled?: boolean; free?: boolean; panel?: CommandPanel | null };
 export type MeterWidget = {
   type: "meter"; label: string; value: number; min: number; max: number; tier?: string | null; thresholds: number[];
   text?: string | null; tone?: Tone | null; chips?: Chip[];

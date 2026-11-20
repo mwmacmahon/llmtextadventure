@@ -187,6 +187,7 @@ class CommandSpec(BaseModel):
     words: list[str] = Field(default_factory=list)   # typed use: the input must contain one of these (a word start) for the adjudicator's pick to count
     decides: bool = False           # B289: a typed pick settles the attempt itself (Flee, Yield): the reading's checks go
     enabled: bool = True            # the panel shows it greyed when False (Level up before the XP is there); the engine still refuses
+    about: str = ""                 # what it does, in the player's words (a menu may show it under the command); the hint is the reading's
     free: bool = False              # FN196: in a fight it takes no turn (the engine's at once: Rage, Second Wind, a weapon drawn); the menus say so
     quiet: bool = False             # B423: an engine command that only edits a plan: no turn of its own, no transcript rows, no new snapshot; the
                                     # latest turn's saved state is replaced in place (a paint on a chart). Undo goes past it with the turn it sits on

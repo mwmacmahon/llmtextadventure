@@ -97,6 +97,7 @@ def chips(game: Any, s: FantasyState) -> list[CommandSpec]:
                 params = [Param(name="at", label="At", options=[Option(id=q.id, label=q.name) for q in foes], default=foes[0].id)]
             has = bool(f.get("cantrip")) or _slots(p) > 0
             out.append(CommandSpec(id=fid, label=f["name"] + (" · cantrip" if f.get("cantrip") else ""), mode="narrated", params=params,
+                                   about=str(f.get("text") or ""),
                                    enabled=has and (kind == "cast" or bool(foes)),
                                    # worded after a cold read (11-20): the cost first and once; what it is not
                                    hint=("A cantrip (no slot): " if f.get("cantrip") else "A spell (one slot): ")
@@ -117,6 +118,7 @@ def chips(game: Any, s: FantasyState) -> list[CommandSpec]:
         instant = kind == "rider" or bool(f.get("instant"))
         on_slots = bool(f.get("slot") or f.get("slots")) and kind in ("heal", "buff")       # a healing or a blessing that costs a slot
         out.append(CommandSpec(id=fid, label=f"{f['name']}{left}", mode="engine" if instant else "narrated", params=params, free=instant,
+                               about=str(f.get("text") or ""),
                                enabled=((c is None and not on_slots) or (c is not None and c.value > 0) or (on_slots and _slots(p) > 0)
                                         or bool(kind == "rider" and _slots(p) > 0 and f.get("slots"))),
                                hint=(f.get("hint") or f.get("text") or f["name"]) + (f" {f['not']}" if f.get("not") else ""),
