@@ -325,3 +325,63 @@ def test_what_the_browser_tester_found_with_a_cleric(game):
     entry = cb.plan_round(game, s, None, "", 1, random.Random(0))[0]
     out = cb.resolve(game, s, entry, random.Random(0), 2, {"hp": 0})
     assert "DEX save" in out["mechanic"] and " against " in out["mechanic"]
+
+
+def test_hex_is_a_curse_on_one_foe_and_a_charm_takes_one_of_a_band(game):
+    """FN202 (the owner, 11-20: "Why not have hex just be a buff/debuff that does the damage? Single target stuff hitting every
+    single enemy etc seems totally wrong")."""
+    from engine.roles import AssistantReadingCombat, IntentCombat
+    st = new(game, klass="Warlock", race="Human")
+    if game.class_of(st.player).status != "full":
+        pytest.skip("the Warlock is a stub on this machine")
+    foe = _foes(game, st, "bandit")[0]
+    foe.combat.hp = foe.combat.hp_max = 500
+    hexc = next(c for c in game.commands(st) if c.id == "hex")
+    assert hexc.free and hexc.mode == "engine" and hexc.enabled            # a breath, not the turn
+    s, res = game.run_command(st, "hex", {"at": foe.id})
+    assert res.ok and s.player.count("spell_slots").value == 0 and "hexed (curse)" in s.person(foe.id).condition
+    assert not (s.combat and s.combat.item_strike)                         # it is not the round's act
+    assert not next(c for c in game.commands(s) if c.id == "hex").enabled  # one curse on them, and no slot
+    # every hit on them carries the curse's die: a blade's, and a spell's
+    adj = AssistantReadingCombat(kind="action", summary="x", time_minutes=1, risk="high",
+                                 intents=[IntentCombat(action="attack", targets=[foe.id], attack_at=[foe.id])])
+    hits = 0
+    for k in range(40):
+        plan = cb.plan_round(game, s.model_copy(deep=True), adj, "", 1, random.Random(k))
+        out = cb.resolve(game, s, next(e for e in plan if e.get("side") == "player"), random.Random(k), 2, {"hp": 0})
+        if out["data"]["hits"]:
+            hits += 1
+            assert "(Hex)" in out["text"]
+    assert hits
+    s2, _ = game.run_command(s, "eldritch_blast", {"at": foe.id})
+    entry = cb.plan_round(game, s2, None, "", 1, random.Random(0))[0]
+    plain = [cb.resolve(game, st, {**entry}, random.Random(k), 2, {"hp": 0})["data"]["hits"] for k in range(60)]
+    hexed = [cb.resolve(game, s2, {**entry}, random.Random(k), 2, {"hp": 0})["data"]["hits"] for k in range(60)]
+    assert sum(h[0]["dmg"] for h in hexed if h) > sum(h[0]["dmg"] for h in plain if h)
+    s.clock.minute += 61
+    ft.wake(s)
+    assert foe.id not in (s.flags.get("cursed") or {}) and "(curse)" not in (s.person(foe.id).condition or "")
+    # a band of five and one charm: one of them, never all
+    took = 0
+    for k in range(30):
+        w = new(game, klass="Wizard", race="Elf", name=f"Mage {k}")
+        band = en.spawn(w, [("bandit", 1)], "standard")
+        q = band[0]
+        w.people.extend(band)
+        q.location, q.attitude = w.player.location, -3
+        cb.size_band(q)
+        b = cb.ensure_block(q)                                             # a band: five of them as one record
+        b.count, b.hps = 5, [b.hp or 8] * 5
+        w.player.fighting = [q.id]
+        w.combat = CombatState(target=q.id)
+        n0 = cb.ensure_block(q).count
+        s3, res = game.run_command(w, "charm_person", {"at": q.id})
+        assert res.ok
+        charmed = [x for x in s3.people if "charmed (spell)" in (x.condition or "")]
+        if charmed:
+            took += 1
+            assert len(charmed) == 1 and cb.ensure_block(charmed[0]).count == 1 and charmed[0].id != q.id
+            assert cb.ensure_block(s3.person(q.id)).count == n0 - 1 and q.id in s3.player.fighting and charmed[0].id not in s3.player.fighting
+        else:
+            assert cb.ensure_block(s3.person(q.id)).count == n0
+    assert took

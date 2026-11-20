@@ -166,9 +166,18 @@ def fight(game: Any, st: Any, rng: random.Random, strat: Strategy, log: dict, ro
             c = st.player.count(f["count"]) if f.get("count") else None
             if not f.get("instant") or c is None or c.value <= 0 or fid == "rage":
                 continue
+            if f.get("kind") == "curse":
+                continue
             if (f.get("flag") == "surging" and "surging" not in st.player.flags_on) or \
                     (f.get("kind") == "heal" and fid != "second_wind" and st.player.hp * 2 < st.player.hp_max):
                 st, _ = _cmd(game, st, fid, {})
+        for fid, f in ft.specs(game, st.player).items():     # FN202: a curse on a foe worth it (it costs no turn)
+            foes_now = cb.living_enemies(game, st)
+            slots = st.player.count("spell_slots")
+            if f.get("kind") == "curse" and foes_now and slots is not None and slots.value > 0 \
+                    and foes_now[0].id not in (st.flags.get("cursed") or {}) \
+                    and sum(max(0, h) for h in (cb.ensure_block(foes_now[0]).hps or [cb.ensure_block(foes_now[0]).hp or 0])) >= 9:
+                st, _ = _cmd(game, st, fid, {"at": foes_now[0].id})
         p = st.player
         pot = _healing(game, st)
         if p.hp < p.hp_max * strat.potion_at and pot is not None:

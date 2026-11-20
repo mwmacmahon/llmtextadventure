@@ -488,6 +488,37 @@ def bodies(q: Person) -> list[int]:
     return [0] if (b.hp or 0) > 0 and q.status == "alive" else []
 
 
+def split_body(s: FantasyState, q: Person, body: int = -1) -> Person:
+    """FN202 (the owner, 11-20: a single-target spell "hitting every single enemy ... seems totally wrong"): one of a band as a
+    person of their own, so a charm or a hold can take that one and leave the rest. The band is one fewer. A single person
+    is returned as they are. `body` -1: the weakest living one."""
+    b = ensure_block(q)
+    live = bodies(q)
+    if b.count <= 1 or len(live) <= 1:
+        return q
+    i = body if body in live else min(live, key=lambda k: b.hps[k])
+    one = q.model_copy(deep=True)
+    n = 2
+    while s.person(f"{q.id}_{n}") is not None:
+        n += 1
+    one.id = f"{q.id}_{n}"
+    one.name = name_of(q, i).replace("(", "").replace(")", "")
+    ob = one.combat
+    ob.count, ob.hp, ob.hps = 1, b.hps[i], []
+    b.hps.pop(i)
+    b.count = len(b.hps)
+    if b.count == 1:
+        b.hp, b.hps = b.hps[0], []
+    s.people.append(one)
+    return one
+
+
+def cursed_dice(s: FantasyState, pid: str) -> list[tuple[str, str]]:
+    """FN202: the curse a foe is under (Hex): its name and the dice every hit of the player's on that foe adds."""
+    rec = (s.flags.get("cursed") or {}).get(pid)
+    return [(str(rec.get("name") or "curse"), str(rec.get("dice") or "1d6"))] if rec else []
+
+
 def hp_now(q: Person, body: int, tally: dict) -> int:
     b = ensure_block(q)
     base = (b.hps[body] if b.count > 1 and body < len(b.hps) else b.hp) or 0
@@ -961,6 +992,7 @@ def resolve_attack(game: Any, s: FantasyState, entry: dict, rng: Any, offset: in
                     rider_spent.append((fid, "count" if c is not None and c.value > 0 else "slot"))
                 elif not any(f["name"] in n for n in notes):
                     notes.append(f"no {f['name']} left: the blow without it")
+            extra += cursed_dice(s, t.id)                          # FN202: a hexed foe takes the curse's dice on every hit
             why = _sneak_case(game, s, t)
             if why:
                 extra.append((f"Sneak Attack, {why}", "2d6" if p.level >= 3 else "1d6"))

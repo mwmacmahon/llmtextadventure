@@ -21,6 +21,8 @@ and blessing; three kinds were wanting):
 - quell:  a spell that takes foes out of a fight without harm: `pool: 5d8` hit points of them, the weakest first (Sleep), or
           one foe on a failed `save` (Charm Person, Command). They are out of the fight with a `condition`; struck, they are
           back in it.
+- curse:  a mark on one foe that costs no turn (Hex): every hit of the player's on that foe, by blade or by spell, adds its
+          `dice`, until the foe falls or the clock runs out.
 - cast:   a spell with no numbers (Light, Mage Hand, Guidance): the narrator is told what it does (`told`) and plays it.
 
 A spell spends a slot (the `spell_slots` count) unless `cantrip: true`. The caster's numbers: spell attack is proficiency and
@@ -93,10 +95,13 @@ def chips(game: Any, s: FantasyState) -> list[CommandSpec]:
             if kind == "quell" and f.get("living_only", True):       # the dead are beyond a charm: never offered as its target
                 from .combat import ensure_block
                 foes = [q for q in foes if ensure_block(q).kind != "undead"]
-            if kind in ("bolt", "quell") and foes and not (f.get("all") or f.get("pool")):
+            if kind == "curse":                                       # one curse on one foe at a time
+                foes = [q for q in foes if q.id not in (s.flags.get("cursed") or {})]
+            if kind in ("bolt", "quell", "curse") and foes and not (f.get("all") or f.get("pool")):
                 params = [Param(name="at", label="At", options=[Option(id=q.id, label=q.name) for q in foes], default=foes[0].id)]
             has = bool(f.get("cantrip")) or _slots(p) > 0
-            out.append(CommandSpec(id=fid, label=f["name"] + (" · cantrip" if f.get("cantrip") else ""), mode="narrated", params=params,
+            out.append(CommandSpec(id=fid, label=f["name"] + (" · cantrip" if f.get("cantrip") else ""),
+                                   mode="engine" if kind == "curse" else "narrated", free=kind == "curse", params=params,
                                    about=str(f.get("text") or ""),
                                    enabled=has and (kind == "cast" or bool(foes)),
                                    # worded after a cold read (11-20): the cost first and once; what it is not
@@ -144,7 +149,7 @@ def _roll(dice: str, p: Any, rng: Any) -> int:
     return roll_dice(rng, _dice(dice, p) or "0")[0]
 
 
-SPELLS = ("bolt", "quell", "cast")
+SPELLS = ("bolt", "quell", "cast", "curse")
 
 
 def _plain(text: str) -> str:
@@ -175,6 +180,14 @@ def wake(s: FantasyState) -> None:
     goblin slept for days): the mark comes off, and one charmed is as hostile as before."""
     held = s.flags.get("quelled") or {}
     now = s.clock.day * DAY + s.clock.minute
+    cursed = s.flags.get("cursed") or {}
+    for qid, rec in list(cursed.items()):                # FN202: a curse ends with its foe or its hour
+        q = s.person(qid)
+        if q is None or q.status != "alive" or now >= int(rec.get("until") or 0):
+            cursed.pop(qid, None)
+            if q is not None:
+                import re as _re
+                q.condition = _re.sub(r"\b\w+ \(curse\)[,;]?\s*", "", q.condition or "").strip(" ,;")
     for qid, rec in list(held.items()):
         q = s.person(qid)
         if q is None or q.status != "alive" or "(spell)" not in (q.condition or ""):
@@ -368,6 +381,17 @@ def _cast(game: Any, state: FantasyState, s: FantasyState, f: dict, fid: str, ar
     target = next((q for q in foes if q.id == str(args.get("at") or "")), None) or (foes[0] if foes else None)
     if kind == "quell" and target is not None and not f.get("pool") and ensure_block(target).kind == "undead" and f.get("living_only", True):
         return state, CommandResult(ok=False, label=name, text=f"{name}: {target.name} is beyond such a spell; not cast.")
+    if kind == "curse":
+        if target is None or target.id in (s.flags.get("cursed") or {}):
+            return state, CommandResult(ok=False, label=name, text=f"{name}: already on them.")
+        now = s.clock.day * DAY + s.clock.minute
+        s.flags.setdefault("cursed", {})[target.id] = {"name": name, "dice": str(f.get("dice") or "1d6"), "until": now + int(f.get("minutes") or 60)}
+        target.condition = ", ".join(x for x in [target.condition, f"{str(f.get('condition') or 'cursed')} (curse)"] if x)
+        n_left = _slots(p)
+        line = (f"{name} on {target.name}: every hit of yours on them does {f.get('dice') or '1d6'} more "
+                f"({n_left} slot{'s' if n_left != 1 else ''} left).")
+        p.turn_notes.append(line)
+        return s, CommandResult(label=name, text=line, log_line=None)
     opened = ""
     if kind != "cast" and not p.fighting:               # the spell is the fight's first act
         p.fighting = [q.id for q in foes]
@@ -425,12 +449,17 @@ def _cast(game: Any, state: FantasyState, s: FantasyState, f: dict, fid: str, ar
     elif target is not None:
         b = ensure_block(target)
         stat = str(f.get("save") or "wis")
-        # one save for each of a band: the word takes them all or none (one of five charmed is no state the engine keeps)
-        rolls = [save_roll(rng, b.saves.get(stat, 0), dc) for _ in range(max(1, int(b.count or 1)))]
-        held_all = not any(sv.holds for sv in rolls)
-        notes.append(f"{target.name}: {stat.upper()} save {', '.join(str(sv.total) for sv in rolls)} against {dc}, {'fails' if held_all else 'holds'}")
-        if held_all:
-            hit.append(target)
+        # FN202 (the owner, 11-20): one target is one of them. Of a band, the spell takes one member (the weakest) and that one
+        # saves; the rest of the band is untouched
+        from .combat import split_body
+        sv = save_roll(rng, b.saves.get(stat, 0), dc)
+        one_of = f"one of {target.name}" if int(b.count or 1) > 1 else target.name
+        notes.append(f"{one_of}: {stat.upper()} save {sv.total} against {dc}, {'holds' if sv.holds else 'fails'}")
+        if not sv.holds:
+            one = split_body(s, target)
+            if one.id != target.id and target.id in p.fighting and one.id not in p.fighting:
+                p.fighting.append(one.id)                # (taken out again just below)
+            hit.append(one)
     now = s.clock.day * DAY + s.clock.minute
     for q in hit:
         word = cond.split(" ")[0]

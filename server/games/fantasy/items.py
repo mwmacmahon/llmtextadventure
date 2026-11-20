@@ -258,6 +258,9 @@ def resolve_strike(game: Any, s: FantasyState, entry: dict, rng: Any, tally: dic
             n = roll_dice(rng, str(entry.get("dice") or "1d6"))[0]
             if entry.get("undead") == "double" and is_undead:
                 n *= 2
+            from .combat import cursed_dice
+            for _, d in cursed_dice(s, q.id):               # FN202: a hexed foe takes the curse's dice from a spell's hit too
+                n += roll_dice(rng, d)[0]
             how = ""
             if entry.get("attack") is not None:
                 res = attack_roll(rng, int(entry["attack"]), b.ac or 10)
