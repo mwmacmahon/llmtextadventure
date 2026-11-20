@@ -1675,7 +1675,9 @@ class FantasyGame(GameBase):
             # sight, the round was rolled, the spell landed after it and ended the fight, and the bite was counted twice (the
             # round's and the referee's row, no longer skipped with no fight on). A spell cast at foes in sight is the first act
             f = ft.specs(self, p).get(command_id) or {}
-            return f.get("kind") in ("bolt", "quell") and bool(ft.spell_foes(self, state))
+            # ... and so is anything the engine does at once (a Flurry typed as the fight opened landed after the exchange it
+            # was for: the Gemma round of 11-20)
+            return (f.get("kind") in ("bolt", "quell") or bool(f.get("instant"))) and bool(ft.spell_foes(self, state))
         own = {fid for fid, f in ft.specs(self, p).items() if f.get("kind") in ("heal", "buff", "turn", *ft.SPELLS)}
         return command_id in self.FIRST_LEVERS or command_id in own or command_id == "use_item"     # FN144: a thing used acts first
 

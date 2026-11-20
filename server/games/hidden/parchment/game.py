@@ -115,6 +115,8 @@ class ParchmentGame(FantasyGame):
             jb.setup(sc, state, self)                        # FN62, FN63: the board (FN182: and who goes along for a job)
             jb.refill(self, sc, state, "start")              # FN165: one job sized to the player beside the written ones
             self._dress(state)
+            state.player.hp_max += self.START_HP
+            state.player.hp = state.player.hp_max
             from games.fantasy import items as itm           # FN191 (the owner, 11-19): everyone starts with two healing potions
             if "potion_of_healing" in itm.catalogue(self):
                 for _ in range(2):
@@ -208,16 +210,21 @@ class ParchmentGame(FantasyGame):
         for line in co.adopt(s):                         # a companion the story agreed to is the companion
             s.player.shown_notes.append(line)
         co.keep_with(s)                                  # FN149: the companion follows
-        for line in jb.update(self, s) + co.send_home(s) + jb.refill(self, self.scenario(s.city.id), s, "day"):
+        # the Gemma round of 11-20: the player came to the baker by the turn's own telling (the spot settled after the prose),
+        # the narrator had the baker pay, and the engine's pay waited for the next turn. Pay owed where the player now stands
+        # is settled here; coin the referee already wrote this turn is that pay, not a second one
+        gained = sum(int(b) - int(a) for a, b in re.findall(r"gold[^:]*: (\d+) -> (\d+)", " ".join(getattr(info, "applied", None) or [])) if int(b) > int(a))
+        paid = jb.pay(s, credit=gained, game=self) if not s.player.fighting else []
+        sc_now = self.scenario(s.city.id)
+        for line in paid + jb.update(self, s) + co.send_home(s) + jb.refill(self, sc_now, s, "day") + jb.refill(self, sc_now, s, "empty"):
             s.player.shown_notes.append(line)
         return s
 
     def _mark_turn_start(self, s: FantasyState) -> None:
         """Where the player stands and who of the village and the crew stands there, before the turn moves anyone (after_turn
         is handed the state as the referee's rows left it, so the turn's start is kept here)."""
-        here = (s.player.location or "").lower()
-        s.flags["turn_start"] = {"where": s.player.location or "",
-                                 "there": [q.id for q in s.people if q.id in self._homes(s) and (q.location or "").lower() == here]}
+        homes = self._homes(s)
+        s.flags["turn_start"] = {"where": s.player.location or "", "at": {q.id: q.location for q in s.people if q.id in homes}}
 
     def _nobody_tags_along(self, s: FantasyState) -> None:
         """The rounds of 11-19 (Gemma: "I go and see the reeve", the innkeeper told walking along and filed at the reeve's
@@ -229,12 +236,15 @@ class ParchmentGame(FantasyGame):
         if not was or was == now:
             return
         along = {q.id for q in [co.companion(s), *co.helpers_along(s)] if q is not None}
-        for qid in start.get("there") or []:
+        # the Gemma rounds of 11-20: "this happens every time I travel": the smith, from his smithy, filed at the barrow the
+        # player walked to from the tavern. Anyone of the village or the crew whose place this turn became the player's new
+        # place, and who does not travel with them, is back where they were
+        for qid, was_at in (start.get("at") or {}).items():
             q = s.person(qid)
             if q is None or q.id in along or q.status != "alive" or q.id in (s.player.fighting or []):
                 continue
-            if (q.location or "").lower() == now:
-                q.location = str(start["where"])
+            if (q.location or "").lower() == now and (was_at or "").lower() != now:
+                q.location = str(was_at)
                 s.player.with_them = [x for x in s.player.with_them if x != q.id]
                 s.flags["tagged_along"] = int(s.flags.get("tagged_along") or 0) + 1
 
@@ -342,6 +352,16 @@ class ParchmentGame(FantasyGame):
         text = super().render_bulletin(state, player_text, engine)
         lines = [ln for ln in self._map_lines(state) if ln.startswith(("Where:", "Near:", "Roads and rivers:"))]
         sale = self._for_sale(state)                     # the review (11-18): a seller asked a price has the engine's to say
+        if state.world and state.world["player"]["tile"] == state.world["places"][state.world["home"]]["tile"] and not jb.board_unread(state):
+            # the Gemma round of 11-20: with nothing new on the board the narrator told three papers that were not there
+            up = [j["title"] for j in state.flags.get("jobs") or [] if j["status"] == "open" and jb.known(state, j)]
+            lines.append("The board by the bar: " + (("only what the player has read (" + "; ".join(up) + ")") if up else "nothing on it now")
+                         + ". No other paper is on it; tell of none.")
+        here_now = (state.player.location or "").lower()
+        for j in state.flags.get("jobs") or []:          # the Gemma rounds: a job "paid" in the telling that the engine had not closed
+            giver = jb.payer(state, j)
+            if j["status"] == "open" and jb.known(state, j) and j["form"] != "bounty" and giver is not None and (giver.location or "").lower() == here_now:
+                lines.append(f"Job not done: {j['title']} is not finished (the engine keeps this). {giver.name} pays nothing for it yet and says so if asked.")
         q = co.companion(state)                          # FN166: one permanent companion at a time, and the narrator knows it
         if q is not None:
             n = state.player.name                        # worded after a cold read (11-19)
@@ -646,6 +666,12 @@ class ParchmentGame(FantasyGame):
                 plan["stops"].append([i, "near", lair])
                 taken.add(i)
                 stopped.append(lair)
+        # the Gemma round of 11-20 (a Warlock at the goblin fort): arriving opened the fight with five foes who all acted first.
+        # A place beyond the party is come to in two steps: the walk stops within sight of it, unseen, and the player goes in
+        # or turns back
+        last = len(path) - 2
+        if last > 0 and co.danger(self.scenario(s.city.id), s, pid) and pid not in (s.flags.get("residents") or {}):
+            plan["stops"] = [st for st in plan["stops"] if st[0] != last] + [[last, "threshold", pid]]
         plan["stops"].sort(key=lambda st: st[0])
         if stopped and w is not None:                    # only where there is a stop for it (the cold read)
             names = [wm._lower_the(s.world["places"][x]["name"]) for x in stopped]
@@ -710,7 +736,7 @@ class ParchmentGame(FantasyGame):
     def _pay_now(self, s: FantasyState, w: Any) -> None:
         """The board's pay, settled before the prose when the player is in the village (the gate-2 round: paid twice when the
         engine paid after the prose and the referee wrote the farmer's coins); the referee's gold rows this turn not counted."""
-        paid = jb.pay(s)
+        paid = jb.pay(s, game=self)
         if paid:
             w.directives.append("Settled before this telling: " + " ".join(paid) + " Show it if the scene has room; the sums are the engine's.")
             w.mechanics += paid
@@ -749,6 +775,8 @@ class ParchmentGame(FantasyGame):
             total += leg["minutes"]
             event = None if leg["arrived"] else wm.leg_event(rng, leg["stop"][0], self.roads(s), night)
             lair = ""
+            if not leg["arrived"] and leg["stop"][0] == "threshold":
+                event = "in sight of it"
             if not leg["arrived"] and leg["stop"][0] == "near":      # FN164: near a place something lives at, its kind
                 lair = str(leg["stop"][1]) if jb.live(self.scenario(s.city.id), s, str(leg["stop"][1])) else ""
                 roll = rng.random() * 100 < self.NEAR_CHANCE * wm.ROADS.get(self.roads(s), wm.ROADS["written"])[0]
@@ -778,6 +806,10 @@ class ParchmentGame(FantasyGame):
         elif leg["stop"][0] == "midpoint":
             line = (f"This turn {n} walks from {frm} and stops half way; {dest} is still {wm.walk_word(leg['left'])} on, and {n} does not reach it "
                     f"this turn. Tell the walk and the place {n} stops.")
+        elif leg["stop"][0] == "threshold":
+            line = (f"This turn {n} walks from {frm} and stops within sight of {dest}, a little way off and not yet seen by anyone there. "
+                    f"Tell the walk, and what can be made out of {dest} from here: its look, and signs of who holds it. {n} does not go "
+                    f"in this turn and nobody comes out: {n} can still go on or turn back.")
         elif leg["stop"][0] == "near":
             line = (f"This turn {n} walks from {frm} and stops within sight of {lo(s.world['places'][leg['stop'][1]]['name'])}, not inside "
                     f"it. Where {n} is going, {dest}, is still {wm.walk_word(leg['left'])} away, and {n} does not reach it this turn. Tell "
@@ -800,7 +832,7 @@ class ParchmentGame(FantasyGame):
             w.directives.insert(1, " ".join(met) + " They are there as the player comes up.")
         if leg["arrived"]:
             self._arrive(s, w, arrived_at)
-        stop_name = s.world["places"][leg["stop"][1]]["name"] if not leg["arrived"] and leg["stop"][0] == "near" else ""
+        stop_name = s.world["places"][leg["stop"][1]]["name"] if not leg["arrived"] and leg["stop"][0] in ("near", "threshold") else ""
         w.mechanics.append(f"Journey: {start} to {(('near ' + lo(stop_name)) if stop_name else leg['stop'][1]) if not leg['arrived'] else j['label']}, {total} minutes"
                            + (f"; {event}" if event else "") + ".")
         mins = int(getattr(adj, "time_minutes", 0) or 0) if adj is not None else 0
@@ -1029,6 +1061,9 @@ class ParchmentGame(FantasyGame):
                                 directive=f"The sale is done: {p.name} sells {name} for {price * n} gold, paid over; the price stands.{news} A line or two.",
                                 minutes=2, referee_skip=self._trade_skip([it.id, it.name]))
 
+    ONE_BLOW_MERCY = True    # D350: never dead from half hit points or more in one blow, once a fight (combat._player_take)
+    START_HP = 5             # D350: hit points every new character has beyond their class's (9 was one wolf bite)
+    JOB_XP = 3               # D350: XP a paid job gives, for each gold piece of its pay
     FLEE_NUDGE = 1           # FN181: running is rolled twice, the better kept, and one blow at most follows a slip that fails
 
     ONE_COMPANION = "You may only have one permanent companion at a time. Part ways with {name} first."
@@ -1264,6 +1299,7 @@ class ParchmentGame(FantasyGame):
         if not j:
             return state, CommandResult(ok=False, label="Continue", text="There is no journey to go on with here.")
         w = WorldTurn()
+        self._mark_turn_start(s)
         rng = random.Random(f"{s.world['seed']}:{s.clock.day}:{s.clock.minute}:leg")
         label = j["label"]
         minutes = self._leg(s, w, rng, 0, charge=False)
@@ -1473,7 +1509,8 @@ class ParchmentGame(FantasyGame):
         said = " and ".join(([f"buys {', '.join(bought)} for {cost} gold"] if bought else []) + ([f"sells {', '.join(sold)} for {income} gold"] if sold else []))
         return s, CommandResult(label="Shop", text=line, player_line="I " + said.replace("buys ", "buy ").replace("sells ", "sell ") + ".",
                                 summary=f"{p.name} {said}.",
-                                directive=f"The trade is done: {p.name} {said}; the prices stand and the goods have changed hands.{news} A line or two.",
+                                directive=f"The trade is done: {p.name} {said}; the prices stand and the goods have changed hands.{news} Nothing else "
+                                          "changes hands and nothing is thrown in. A line or two.",
                                 minutes=3 + len(buys) + len(ids) // 3, referee_skip=self._trade_skip(touched))
 
     def _company_panel(self, s: FantasyState):
@@ -1629,6 +1666,7 @@ class ParchmentGame(FantasyGame):
             from games.fantasy import gear
             held = gear.worn(s).get("weapon")
             how = f" with my {held.name}" if held is not None else ""
+            slots.append(HotSlot(id="attack:flee", icon="bag", label="Flee", command="flee"))      # with the Attack buttons' setting
             for fid in foes[:3]:
                 q = s.person(fid)
                 slots.insert(0 + sum(1 for x in slots if x.id.startswith("attack:")),

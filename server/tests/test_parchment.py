@@ -1093,7 +1093,8 @@ def test_the_fight_bar_free_actions_and_a_crew_that_levels(engine: Engine):
     st.combat = CombatState(round=0)
     ui = game.ui(st)
     bar = next(w for w in ui.panels if w.type == "hotbar")
-    attacks = [s for s in bar.slots if s.id.startswith("attack:")]
+    assert any(s.id == "attack:flee" and s.command == "flee" for s in bar.slots)       # D350: Flee with the Attack buttons
+    attacks = [s for s in bar.slots if s.id.startswith("attack:") and s.say]
     assert len(attacks) == 2 and attacks[0].say.startswith("I attack ") and attacks[0].say.endswith(".") and not attacks[0].command
     fight = next(w for w in ui.panels if w.type == "meter_group")
     assert all(m.tone == "ok" for m in fight.meters)                              # full bars are green, not a gradient
@@ -1159,3 +1160,64 @@ def test_the_three_of_the_crew_are_worth_about_the_same(engine: Engine):
     assert co.heals_left(s3) == co.HEALS_A_DAY
     s3.player.fighting = []
     assert "healings left" in next(w for w in game.ui(s3).panels if getattr(w, "title", "") == "Company").items[0].value
+
+
+def test_what_the_gemma_players_found(engine: Engine):
+    """D350, the played rounds of 11-20 (a Warlock, a Bard, a Monk: six of seven characters dead at level 1, most to one blow
+    from full hit points): five more hit points to start; a blow that would kill from half or more leaves 1, once a fight;
+    a place beyond the party is come to in two steps; a Monk's fists are a d6; a paid job gives XP; pay the telling already
+    handed over is not paid twice; nobody of the village is filed where the player walked."""
+    import random
+    from engine.game import TurnInfo
+    from games.fantasy import combat as cb
+    from games.fantasy.world import WorldTurn
+    from games.hidden.parchment import jobs as jb
+    game, st = _fresh(engine)
+    p = st.player
+    assert p.hp == p.hp_max and game.START_HP == 5 and game.ONE_BLOW_MERCY
+    # mercy: from full, a killing blow leaves 1, once; from under half it kills
+    from games.fantasy.state import CombatState
+    st.combat = CombatState(round=0, since_turn=3)
+    st.player.fighting = ["x"]
+    tally: dict = {"hp": 0}
+    n, notes, kills = cb._player_take(game, st, 99, tally)
+    assert n < p.hp and not kills and any("should have killed" in x for x in notes)
+    n2, _, kills2 = cb._player_take(game, st, 99, {"hp": 0})
+    assert kills2                                                        # once a fight
+    st.flags.pop("mercy")
+    st.player.hp = max(1, p.hp_max // 2 - 1)
+    assert cb._player_take(game, st, 99, {"hp": 0})[2]                   # hurt already: death is death
+    # a place beyond the party: the walk stops within sight of it
+    game, st = _fresh(engine)
+    fort = next(k for k, pl in st.world["places"].items() if pl["name"] == "The goblin fort")
+    plan = game._plan(st, fort)
+    assert plan["stops"][-1][1] == "threshold" and plan["stops"][-1][0] == len(plan["path"]) - 2
+    st.world["player"]["journey"] = plan
+    w = WorldTurn()
+    for _ in range(6):
+        w = WorldTurn()
+        game._leg(st, w, random.Random(5), 1, None)
+        if st.world["player"]["tile"] == plan["path"][-2] or st.world["player"]["journey"] is None:
+            break
+    assert st.world["player"]["tile"] == plan["path"][-2] and "not yet seen" in w.directives[0] and fort not in (st.flags.get("residents") or {})
+    # a paid job is worth XP; coin the telling already gave is the pay
+    game, st = _fresh(engine)
+    st, _ = game.run_command(st, "read_board", {})
+    job = st.flags["jobs"][0]
+    job["status"] = "done"
+    st.player.location = st.person(job["giver"]).location
+    gold, xp = st.item("gold").count, st.player.xp
+    out = jb.pay(st, credit=job["pay"], game=game)
+    assert out and "XP" in out[0] and st.item("gold").count == gold and st.player.xp == xp + job["pay"] * game.JOB_XP and job["status"] == "paid"
+    # the smith, from his smithy, filed where the player walked to from the tavern: back in the smithy
+    game, st = _fresh(engine)
+    game._mark_turn_start(st)
+    st.player.location = "the general store"
+    st.person("smith").location = "the general store"
+    st = game.after_turn(st, TurnInfo(turn=2, elapsed_minutes=1, rng=random.Random(0)))
+    assert st.person("smith").location == "the smithy"
+    # a Monk's kick
+    iid = engine.create_instance("parchment", {**SHEET, "klass": "Monk", "map_seed": 7, "written_names": True})
+    monk = game.load_state(engine.store.load_state(iid))
+    if monk.player.effect("martial_arts"):
+        assert cb.player_weapon(monk, "a flurry of kicks")[:2] == ("fist", "1d6") and cb.player_block(monk, "kick")["damage"].startswith("1d6+")

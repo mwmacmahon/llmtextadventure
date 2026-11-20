@@ -312,9 +312,9 @@ def village(game: Any, st: Any, strat: Strategy, log: dict) -> Any:
     for q in [x for x in st.people if x.status == "alive" and x.location]:      # FN175: each job's pay from its giver, in person
         if any(j.get("giver") == q.id for j in st.flags.get("jobs") or []):
             p.location = q.location
-            jb.pay(st)
+            jb.pay(st, game=game)
     p.location = "the tavern"
-    jb.pay(st)
+    jb.pay(st, game=game)
     co.send_home(st)
     if jb.board_unread(st):
         st, _ = _cmd(game, st, "read_board")

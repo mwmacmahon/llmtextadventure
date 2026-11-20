@@ -706,6 +706,11 @@ endless ground, camps, wandering, invented places and ground changes held until 
 - **Spells at level up, with a choice (D348): 11-20.** The level-up screen marks new spells; five casters choose one of
   two at level 3. Two browser testers played a Cleric and a Warlock on Gemma; a dozen faults fixed. Twenty simulated
   days: all twelve classes reach level 4.
+- **Hex as a curse, one target one foe (D349): 11-20.**
+- **Level 1 survivable on a model (D350): 11-20.** Three player subagents on Gemma (Warlock, Bard, Monk) lost six of
+  seven characters at level 1, most to one blow. Now: a killing blow from half hit points or more leaves 1, once a
+  fight; five more hit points to start; a paid job gives XP; a walk stops short of a place beyond the party; Flee is on
+  the hot bar. The dials are the builder's and wait on the owner's word.
 - **On Lilith's server since 11-19 (D339)**, on the owner's word: Parchment is listed on a player's server; :8016 moved
   to bcf5f82. Nine turns on Sonnet first: the board, going to a person, a posted job, the fight, pay in person and the
   shop's basket all worked; one fault found and fixed.

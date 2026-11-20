@@ -1042,6 +1042,8 @@ list is the word guard `lever-phrases` (§8); the street texture gap is the game
   level 1 for most casters, 6 at level 5; the Sorcerer one more; the Warlock 1 to 3, back on a short rest).
   `QUELL_MINUTES` (asleep 10, held 5, charmed 60). In Parchment: `company.HEALS_A_DAY` 2 and `MEND_UNDER` 0.4 (the
   healer of the company), and a resident marked `sized: true` in the scenario is sized by the generator on arrival.
+  Since D350 (Parchment on, the family default off): `ONE_BLOW_MERCY` (a killing blow from half hit points or more
+  leaves 1, once a fight), `START_HP` 5, `JOB_XP` 3 (XP a gold piece of a job's pay).
 - **Levels:** a class is `status: full` (playable, levels 1 to 5) or `stub` (level 1, labelled under construction); all
   twelve are full since D347.
 - **Why it exists:** the owner, 11-20: "the last big things on the agenda: spells and other classes".
@@ -1050,6 +1052,8 @@ list is the word guard `lever-phrases` (§8); the street texture gap is the game
   the time (the farm's two written rats).
 - **Helped / did not:** a Wizard played three short rounds on Gemma (spells read from typed words and told well; three
   faults found and fixed). No other caster played on a model yet.
+  11-20, three player subagents on Gemma (Warlock, Bard, Monk): six of seven dead at level 1, where the simulator
+  said 70 to 100 per cent alive. The simulator never walks in blind; D350's dials answer the played rounds.
 
 ### Foreboding and the shops' prices (Parchment, FN148, FN151)
 

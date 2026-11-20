@@ -111,6 +111,8 @@ def play(a: argparse.Namespace) -> int:
         lines += [f"[command {'ok' if cmd.get('ok') else 'REFUSED'}] {cmd.get('label') or ''}: {cmd.get('text') or ''}".rstrip(), ""]
         if not cmd.get("ok"):
             out.append(f"[REFUSED] {cmd.get('label') or ''}: {cmd.get('text') or ''}".rstrip())   # round 2: a refused Book printed nothing
+        elif cmd.get("text"):
+            out.append(f"[COMMAND] {cmd.get('label') or ''}: {cmd.get('text')}")                   # 11-20: a deal's or a pay's line was never seen
     ui_line = ""
     if done:
         d = done["data"]
@@ -121,7 +123,7 @@ def play(a: argparse.Namespace) -> int:
         meter = next((p for p in (d.get("ui") or {}).get("panels", []) if p.get("type") == "meter"), None)
         side["rows"].append([str(n), m.get("kind") or "", str(m.get("elapsed")), str(meter["value"]) if meter else "",
                              str(len(m.get("applied") or [])), str(len(m.get("rejected") or [])), str(len(m.get("rulings") or [])), str(d.get("seconds"))])
-        out += [f"[TURN {n}]", prose, "", "[WHAT YOU SEE]", ui_line]
+        out += [f"[TURN {n}]", prose, "", "[ENGINE]", *_mechanics_lines(m), "", "[WHAT YOU SEE]", ui_line]
         if d.get("ending"):
             lines += [f"**ENDING: {d['ending']}**", ""]
             out.append(f"[ENDING] {d['ending']}")

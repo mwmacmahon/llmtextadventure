@@ -266,6 +266,13 @@ def proficiency(level: int) -> int:
     return 2 if level < 5 else 3 if level < 9 else 4
 
 
+def _fist(s: FantasyState) -> tuple[str, str]:
+    """A blow with no weapon: 1 and Strength for most; for one trained to it (the class effect `martial_arts`, the Monk) a d6
+    and the better of Strength and Dexterity (the Gemma round of 11-20: a Monk's nine kicks and palm strikes did 2 each)."""
+    p = getattr(s, "player", None)
+    return ("1d6", "finesse") if p is not None and p.effect("martial_arts") else FIST
+
+
 def weapons_carried(s: FantasyState) -> list[tuple[str, str, str]]:
     """(weapon name, dice, how) for every weapon in the pockets, best first; a fist when there is none."""
     from . import gear
@@ -275,7 +282,7 @@ def weapons_carried(s: FantasyState) -> list[tuple[str, str, str]]:
         if hit:
             out.append((hit, *WEAPONS[hit]))
     out.sort(key=lambda w: -dice_avg(w[1]))
-    return out or [("fist", *FIST)]
+    return out or [("fist", *_fist(s))]
 
 
 def weapon_bonus(s: FantasyState, weapon: str) -> int:
@@ -313,7 +320,7 @@ def player_weapon(s: FantasyState, named: str = "") -> tuple[str, str, str]:
     ws = weapons_carried(s)
     k = (named or "").lower()
     if k and UNARMED.search(k) and not any(w[0] in k for w in ws):
-        return ("fist", *FIST)
+        return ("fist", *_fist(s))
     from . import gear
     if k:
         hit = next((w for w in ws if w[0] in k or k in w[0]), None)
@@ -749,6 +756,15 @@ def _player_take(game: Any, s: FantasyState, n: int, tally: dict) -> tuple[int, 
         if m != n:
             n, notes = m, notes + ["Shield of Faith: a step lighter"]
     left = p.hp - int(tally.get("hp", 0))
+    # A game's dial ONE_BLOW_MERCY (the Gemma rounds of 11-20: six of seven level-1 characters died in a day, most to one blow
+    # from full hit points, a natural 20 or a wolf's ordinary bite against 9): a blow that would kill a character who stands
+    # at half their hit points or more leaves them at 1, once a fight. Death is still death; it is never the first thing told
+    key = f"{s.combat.since_turn}:{len(p.fighting)}" if s.combat is not None else ""
+    if getattr(game, "ONE_BLOW_MERCY", False) and n >= left and left * 2 >= p.hp_max and left > 1 and s.flags.get("mercy") != key and not tally.get("mercy"):
+        tally["mercy"] = True
+        s.flags["mercy"] = key
+        n = left - 1
+        notes.append("a blow that should have killed: left standing at 1")
     return n, notes, n >= left
 
 

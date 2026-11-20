@@ -299,6 +299,12 @@ def refill(game: Any, sc: dict, s: FantasyState, why: str) -> list[str]:
         want = max(0, OPEN_WANTED - len(can))
     elif why in ("start", "level"):
         want = 1 if len(can) < OPEN_WANTED + 2 else 0
+    elif why == "empty":
+        # the Gemma round of 11-20: both of the day's jobs done by noon and nothing on the board until morning; a board with
+        # nothing the party can take gets a paper at once (once the player is back in the village and the last is paid)
+        at_home = s.world["player"]["tile"] == s.world["places"][s.world["home"]]["tile"]
+        owed = any(j["status"] == "done" for j in s.flags.get("jobs") or [])
+        want = 1 if not can and at_home and not owed and not s.player.fighting else 0
     made = [j for j in (post(game, sc, s) for _ in range(want)) if j]
     sync_threads(s)
     return [NEW_NOTICES] if (made or released) and why != "start" else []
@@ -434,7 +440,7 @@ def cache(game: Any, s: FantasyState, j: dict) -> list[str]:
     return [f"Found where they kept their things: {', '.join(got)}."] if got else []
 
 
-def pay(s: FantasyState) -> list[str]:
+def pay(s: FantasyState, credit: int = 0, game: Any = None) -> list[str]:
     """Done jobs and bounties owed, paid when the player is on the village's tile and not fighting. Returns the § lines."""
     jobs = s.flags.get("jobs") or []
     out: list[str] = []
@@ -459,11 +465,16 @@ def pay(s: FantasyState) -> list[str]:
                 gold = Item(id="gold", name="gold", count=0)
                 s.inventory.append(gold)
             if owed:
-                gold.count += owed
+                if credit >= owed:                        # the telling already handed this over and the referee wrote it: no second pay
+                    credit -= owed
+                else:
+                    gold.count += owed
                 j["paid"] = j["killed"] if j["form"] == "bounty" else j["paid"]
                 if j["status"] == "done":
                     j["status"] = "paid"
-                out.append(f"Paid{' by ' + q.name if q is not None else ''}: {owed} gold ({j['title']}).")
+                xp = owed * int(getattr(game, "JOB_XP", 0) or 0) if game is not None and j["form"] != "bounty" else 0
+                s.player.xp += xp                         # D350: a job done is worth something on the sheet (the Gemma rounds: 100 XP after four fights)
+                out.append(f"Paid{' by ' + q.name if q is not None else ''}: {owed} gold" + (f", {xp} XP" if xp else "") + f" ({j['title']}).")
                 s.log.append(f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}. {s.player.name} was paid {owed} gold: {j['title']}.")
     sync_threads(s)
     return out

@@ -95,6 +95,9 @@ def chips(game: Any, s: FantasyState) -> list[CommandSpec]:
             if kind == "quell" and f.get("living_only", True):       # the dead are beyond a charm: never offered as its target
                 from .combat import ensure_block
                 foes = [q for q in foes if ensure_block(q).kind != "undead"]
+            if f.get("persons"):                                     # a spell of words works on those who have them (never a rat)
+                from .combat import ensure_block, is_person
+                foes = [q for q in foes if is_person(ensure_block(q).kind)]
             if kind == "curse":                                       # one curse on one foe at a time
                 foes = [q for q in foes if q.id not in (s.flags.get("cursed") or {})]
             if kind in ("bolt", "quell", "curse") and foes and not (f.get("all") or f.get("pool")):
@@ -381,6 +384,10 @@ def _cast(game: Any, state: FantasyState, s: FantasyState, f: dict, fid: str, ar
     target = next((q for q in foes if q.id == str(args.get("at") or "")), None) or (foes[0] if foes else None)
     if kind == "quell" and target is not None and not f.get("pool") and ensure_block(target).kind == "undead" and f.get("living_only", True):
         return state, CommandResult(ok=False, label=name, text=f"{name}: {target.name} is beyond such a spell; not cast.")
+    if f.get("persons") and target is not None:
+        from .combat import is_person
+        if not is_person(ensure_block(target).kind):
+            return state, CommandResult(ok=False, label=name, text=f"{name}: {target.name} has no mind for words; not cast.")
     if kind == "curse":
         if target is None or target.id in (s.flags.get("cursed") or {}):
             return state, CommandResult(ok=False, label=name, text=f"{name}: already on them.")
@@ -425,7 +432,7 @@ def _cast(game: Any, state: FantasyState, s: FantasyState, f: dict, fid: str, ar
             entry["undead"] = f["undead"]
         s.combat.item_strike = entry
         at = "" if f.get("all") or target is None else f" at {target.name}"
-        line = f"{name}{at}: cast{left}."
+        line = f"{name}{at}: cast{left}." if left else ""       # a cantrip's dice line says it all (no second line)
         return s, CommandResult(label=name, text=line, player_line=f"I cast {name}{at}.", summary=f"{p.name} casts {name}{at}.",
                                 directive=f"{p.name} casts {name}{at}: {told or 'the spell goes off'}. What it does is in this round's dice: "
                                           "tell that result in words, add no other harm, and kill nothing the dice did not.",

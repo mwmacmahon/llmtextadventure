@@ -259,8 +259,10 @@ def resolve_strike(game: Any, s: FantasyState, entry: dict, rng: Any, tally: dic
             if entry.get("undead") == "double" and is_undead:
                 n *= 2
             from .combat import cursed_dice
-            for _, d in cursed_dice(s, q.id):               # FN202: a hexed foe takes the curse's dice from a spell's hit too
+            curse = ""
+            for label, d in cursed_dice(s, q.id):           # FN202: a hexed foe takes the curse's dice from a spell's hit too
                 n += roll_dice(rng, d)[0]
+                curse = f" ({label})"                       # shown, as a blade's is (the Gemma round: "6 damage" told nothing)
             how = ""
             if entry.get("attack") is not None:
                 res = attack_roll(rng, int(entry["attack"]), b.ac or 10)
@@ -284,8 +286,8 @@ def resolve_strike(game: Any, s: FantasyState, entry: dict, rng: Any, tally: dic
             hits.append(hit)
             left = before - n
             word = fallen_word(q, False) if left <= 0 else hp_word(left, b.hp_max or 1)
-            parts.append(f"{who}: {n} damage, {word}")
-            lines.append(f"{entry['name']} at {who}: {how}{n} damage; {who} is {word}.")
+            parts.append(f"{who}: {n} damage{curse}, {word}")
+            lines.append(f"{entry['name']} at {who}: {how}{n} damage{curse}; {who} is {word}.")
     text = (f"{entry['name']}: " + "; ".join(parts) + ". Play it landing where it lands, and go on.") if parts else f"{entry['name']}: nobody to hit."
     return {"text": text, "mechanic": " ".join(lines), "data": {"verb": "ATTACK", "who": "player", "hits": hits, "item": entry.get("ref")}}
 
