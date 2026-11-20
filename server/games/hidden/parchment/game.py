@@ -198,6 +198,7 @@ class ParchmentGame(FantasyGame):
             return s
         s = self._settle_place(s, info)
         self._nobody_tags_along(s)
+        co.level_crew(s)                                 # FN195: a save from before the crew levelled catches up
         for line in co.adopt(s):                         # a companion the story agreed to is the companion
             s.player.shown_notes.append(line)
         co.keep_with(s)                                  # FN149: the companion follows
@@ -1236,9 +1237,9 @@ class ParchmentGame(FantasyGame):
         if command_id == "level_up":                     # FN165: a level brings a new paper to the board, said outright
             s2, res = super().run_command(state, command_id, args)
             if res.ok:
+                grew = co.level_crew(s2)                 # FN195: the crew keeps pace
                 new = jb.refill(self, self.scenario(s2.city.id), s2, "level")
-                if new:
-                    res.text = f"{res.text} {new[0]}".strip()
+                res.text = " ".join(x for x in [res.text, *grew, *(new[:1])] if x).strip()
             return s2, res
         if command_id != "continue_journey":
             return super().run_command(state, command_id, args)
@@ -1471,7 +1472,8 @@ class ParchmentGame(FantasyGame):
                 continue
             job = next((j["title"] for j in s.flags.get("jobs") or [] if j.get("helper") == q.id), "")
             hp = f"HP {q.combat.hp}/{q.combat.hp_max}" if q.combat is not None and getattr(q.combat, "hp_max", None) else ""
-            rows.append(Chip(label=q.name, value=" · ".join(x for x in [q.role, hp, why or f"for: {job}"] if x)))
+            lvl = int(((s.flags.get("crew_base") or {}).get(q.id) or {}).get("level", 0))
+            rows.append(Chip(label=q.name, value=" · ".join(x for x in [q.role, f"level {lvl}" if lvl > 1 else "", hp, why or f"for: {job}"] if x)))
         return ListPanel(title="Company", items=rows, layout="stack") if rows else None
 
     def _place_cards(self, s: FantasyState, data: dict) -> None:
@@ -1575,8 +1577,19 @@ class ParchmentGame(FantasyGame):
                 label = re.sub(r"\s*\(\d+( left)?\)$", "", c.label)      # the count is the slot's own
                 m = re.search(r"\((\d+)( left)?\)$", c.label)
                 slots.append(HotSlot(id=c.id, icon="skill", label=label, count=n if n is not None else int(m.group(1)) if m else None,
-                                     command=c.id, enabled=c.enabled))
+                                     command=c.id, enabled=c.enabled, free=c.free))
         foes = [q.id for q in s.people if q.id in (s.player.fighting or []) and q.status == "alive"]
+        if foes:
+            # FN194 (the owner, 11-19: "Try an attack button but make it toggle able in settings"): in a fight, one slot a foe
+            # (three at most) that sends a plain attack as the player's own words; the client hides ids "attack:*" when the
+            # setting is off. The words go through the reading like any typed turn
+            from games.fantasy import gear
+            held = gear.worn(s).get("weapon")
+            how = f" with my {held.name}" if held is not None else ""
+            for fid in foes[:3]:
+                q = s.person(fid)
+                slots.insert(0 + sum(1 for x in slots if x.id.startswith("attack:")),
+                             HotSlot(id=f"attack:{fid}", icon="weapon", label=f"Attack {self.unnamed(s, q.name)}", say=f"I attack {self.unnamed(s, q.name)}{how}."))
         order = {"potion": 0, "throw": 1, "scroll": 2, "wand": 3, "curio": 4}
         for it in sorted(itm.usable(self, s), key=lambda x: order.get(itm.icon_of(self, x), 9)):
             icon = itm.icon_of(self, it)

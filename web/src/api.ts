@@ -14,7 +14,7 @@ export type CommandPanel = {
   title: string; lines: Chip[]; points: number; per_stat: number; stats: { id: string; label: string }[];
   cards: Chip[]; pick: number; confirm: string;
 };
-export type CommandSpec = { id: string; label: string; mode: "engine" | "narrated"; params: Param[]; hint: string; enabled?: boolean; panel?: CommandPanel | null };
+export type CommandSpec = { id: string; label: string; mode: "engine" | "narrated"; params: Param[]; hint: string; enabled?: boolean; free?: boolean; panel?: CommandPanel | null };
 export type MeterWidget = {
   type: "meter"; label: string; value: number; min: number; max: number; tier?: string | null; thresholds: number[];
   text?: string | null; tone?: Tone | null; chips?: Chip[];
@@ -45,7 +45,7 @@ export type IconRow = { id: string; icon: string; name: string; note: string; co
 export type ItemsWidget = { type: "items"; title: string; purse: number | null; groups: { title: string; note: string; rows: IconRow[] }[]; tabs: [string, string, string[]][]; opens?: string };
 export type ShopWidget = { type: "shop"; title: string; keeper: string; gold: number; stock: IconRow[]; sells: IconRow[]; services?: IconRow[]; command: string; service_command?: string };
 // FN188: one-tap actions on the side
-export type HotSlot = { id: string; icon: string; label: string; count: number | null; command: string; args: Record<string, unknown>; enabled: boolean; opens?: string };
+export type HotSlot = { id: string; icon: string; label: string; count: number | null; command: string; args: Record<string, unknown>; enabled: boolean; free?: boolean; say?: string; opens?: string };
 export type HotbarWidget = { type: "hotbar"; title: string; slots: HotSlot[]; opens?: string };
 // FN153: the paper doll's slots, each with what is in it and what the pockets hold for it
 export type DollThing = { id: string; name: string; gives?: string | null; can_remove?: boolean };

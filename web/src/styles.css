@@ -501,3 +501,6 @@ dl.score dd { margin: 0; font-family: var(--pixel-font); font-size: 15px; }
 .item-tab, .shop-step, .hot-slot { min-height: 32px; }
 .map-spot { background: none; border: none; padding: 5px 0; color: inherit; font: inherit; cursor: pointer; text-align: left; }
 .map-spot:hover { color: var(--accent); }
+
+/* FN196: an action that takes no turn in a fight says so */
+.free-tag { margin-left: 6px; font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ok); border: 1px solid #7bd88f55; border-radius: 999px; padding: 0 6px; vertical-align: 1px; }

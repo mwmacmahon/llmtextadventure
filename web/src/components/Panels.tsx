@@ -45,7 +45,7 @@ function Panel({ w, onChoice, onCommand, onPick, onOpen, busy, ended }: { w: Wid
     case "items":
       return <ItemsPanel widget={w} onOpen={onOpen} />;
     case "hotbar":
-      return <Hotbar widget={w} onCommand={onCommand} onOpen={onOpen} busy={busy || ended} />;
+      return <Hotbar widget={w} onCommand={onCommand} onOpen={onOpen} onSay={(t) => onChoice?.(t, {})} busy={busy || ended} />;
     case "shop":
       return <ShopPanel widget={w} onCommand={onCommand} busy={busy || ended} />;
     case "chart":   // docs/PLANNER-CONTRACT.md
@@ -429,7 +429,7 @@ function SelectCommand({ spec, onRun, busy }: { spec: CommandSpec; onRun?: OnCom
   return (
     <div className={`command-row${enabled ? "" : " command-off"}`} title={spec.hint + (spec.mode === "narrated" ? " (played in the story)" : "")}>
       <button className="command-btn" disabled={busy || !ready || !enabled} onClick={() => onRun?.(spec.id, args)}>
-        {spec.label}
+        {spec.label}{spec.free && <span className="free-tag">free</span>}
       </button>
       {enabled &&
         spec.params.map((p) => (

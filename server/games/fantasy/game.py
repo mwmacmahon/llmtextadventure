@@ -3880,11 +3880,11 @@ class FantasyGame(GameBase):
         # the owner, 11-10 late: "Really need an equipped panel somewhere in ui and ability to equip unequip"
         put_on, take_off = gear.options(state, True), gear.options(state, False)
         if put_on:
-            out.append(CommandSpec(id="equip", label="Equip", mode="engine", hint="Put on armour or a shield, or take a weapon in hand (one of each).",
+            out.append(CommandSpec(id="equip", label="Equip", mode="engine", free=True, hint="Put on armour or a shield, or take a weapon in hand (one of each).",
                                    params=[Param(name="item", label="Item", options=[Option(id=i, label=n) for i, n in put_on])],
                                    words=["put on", "don", "strap on", "wield", "take up", "arm myself with", "buckle on"]))
         if take_off:
-            out.append(CommandSpec(id="unequip", label="Unequip", mode="engine", hint="Take off armour or a shield, or put a weapon away.",
+            out.append(CommandSpec(id="unequip", label="Unequip", mode="engine", free=True, hint="Take off armour or a shield, or put a weapon away.",
                                    params=[Param(name="item", label="Item", options=[Option(id=i, label=n) for i, n in take_off])],
                                    words=["take off", "doff", "shed", "strip off", "unbuckle", "sheathe", "put away"]))
         out.append(CommandSpec(id="journal", label="Journal", mode="engine", typed=False, hint="Read the journal, the quests and the people."))

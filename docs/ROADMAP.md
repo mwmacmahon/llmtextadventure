@@ -692,6 +692,9 @@ endless ground, camps, wandering, invented places and ground changes held until 
 - **The opening board is for level 1 (D343): 11-19.** A written job goes up at the level its fight is for; the mill's
   ghost is a shadow at level 2, the troll at level 4; level-1 fights a step easier. Simulator: 85 per cent alive after ten
   days with the archer, 59 alone.
+- **Fights and company (D344): 11-19.** The fight panel's bars and labels fixed; an Attack button on trial (a setting
+  turns it off); free actions tagged in the menus; the crew levels with the player. Simulator, twenty days: about half of
+  characters with company live, four in ten alone; levelling the crew does not change that (fights are sized to the party).
 - **On Lilith's server since 11-19 (D339)**, on the owner's word: Parchment is listed on a player's server; :8016 moved
   to bcf5f82. Nine turns on Sonnet first: the board, going to a person, a posted job, the fight, pay in person and the
   shop's basket all worked; one fault found and fixed.

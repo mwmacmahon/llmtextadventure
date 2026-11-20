@@ -75,7 +75,7 @@ def chips(game: Any, s: FantasyState) -> list[CommandSpec]:
         # round 15 (b8e96b0c3c1f T14): Rage clicked took the turn and the troll's second blow killed the barbarian before he
         # swung; a feature the class file marks `instant` (Rage, a bonus action) is the engine's at once, like a rider
         instant = kind == "rider" or bool(f.get("instant"))
-        out.append(CommandSpec(id=fid, label=f"{f['name']}{left}", mode="engine" if instant else "narrated", params=params,
+        out.append(CommandSpec(id=fid, label=f"{f['name']}{left}", mode="engine" if instant else "narrated", params=params, free=instant,
                                enabled=c is None or c.value > 0 or (kind == "rider" and _slots(p) > 0 and f.get("slots")),
                                hint=f.get("hint") or f.get("text") or f["name"], words=list(f.get("words") or [])))
     return out

@@ -1172,6 +1172,20 @@ def _ailments_of(q: Person) -> list[str]:
     return [a for a in AILMENTS if a in words]
 
 
+def _hp_tone(hp: int, hp_max: int) -> str:
+    """A bar's colour by how much is left (the UI round of 11-19: a full bar was drawn green to red and read as damaged)."""
+    return "bad" if hp * 2 < hp_max else "warn" if hp * 4 < hp_max * 3 else "ok"
+
+
+def _last_word(q: Person, move: str) -> str:
+    if move in ("", "hit", "strike", "blow"):
+        return ""
+    for a in ensure_block(q).actions:
+        if str(a.get("kind") or "") == move and (a.get("name") or a.get("harm")):
+            return str(a.get("name") or a["harm"])
+    return {"song": "a cry", "grab": "a grab", "hold": "a hold", "breath": "breath", "drain": "a draining touch"}.get(move, move)
+
+
 def fight_panel(game: Any, s: FantasyState) -> list:
     """The Fight panel while in a fight (the record §8): the round; everyone with a meter and the number (the player, allies,
     enemies alike); beside each, their combat ailments and buffs and their last action in a word; Flee and Yield."""
@@ -1180,19 +1194,22 @@ def fight_panel(game: Any, s: FantasyState) -> list:
         return []
     p, c = s.player, s.combat
     meters = [Meter(label=p.name, value=p.hp, min=0, max=max(1, p.hp_max), text=f"{p.hp} / {p.hp_max}", tier=hp_word(p.hp, p.hp_max),
-                    tone="bad" if p.hp * 2 < p.hp_max else None, chips=[Chip(label="", value=a) for a in _ailments_of_player(s)])]
+                    tone=_hp_tone(p.hp, p.hp_max), chips=[Chip(label="", value=a) for a in _ailments_of_player(s)])]
     for q in party(s) + [x for x in (s.person(i) for i in p.fighting) if x is not None]:
         b = ensure_block(q)
         hps = list(b.hps) if b.count > 1 and b.hps else [b.hp or 0]
         for n, h in enumerate(hps):
             label = game.unnamed(s, name_of(q, n) if b.count > 1 else q.name)   # B286
             chips = [Chip(label="", value=a) for a in _ailments_of(q)]
-            if c.last.get(q.id):
-                chips.append(Chip(label="last", value=c.last[q.id]))
+            # FN194 (the UI round of 11-19: "last song" beside a ghost): the last thing they did by its own name where it has
+            # one, and nothing for a plain blow
+            did = _last_word(q, str(c.last.get(q.id) or ""))
+            if did:
+                chips.append(Chip(label="", value=did))
             if q.id in p.with_them and q.id not in p.fighting:    # B282: someone the rows put in the company but fighting the player is no ally
                 chips.insert(0, Chip(label="", value="ally", tone="ok"))
             meters.append(Meter(label=label, value=max(0, h), min=0, max=max(1, b.hp_max or 1), text=f"{max(0, h)} / {b.hp_max}",
-                                tier=hp_word(h, b.hp_max or 1, fallen_word(q)), tone="bad" if h * 2 < (b.hp_max or 1) else None, chips=chips))
+                                tier=hp_word(h, b.hp_max or 1, fallen_word(q)), tone=_hp_tone(h, b.hp_max or 1), chips=chips))
     title = f"Fight, round {c.round + 1}"
     return [MeterGroup(title=title, meters=meters, place="main", pinned=True)]     # B287: flee and yield are typed, no buttons
 

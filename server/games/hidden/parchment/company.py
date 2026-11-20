@@ -173,6 +173,45 @@ def adopt(s: FantasyState) -> list[str]:
     return out
 
 
+# ---- the crew levels with the player (FN195; the owner, 11-19: "companions need scaling too ... have them level with you. For
+# permanent companions I mean"). Each of the crew is as written at level 1; at the player's level L their hit points are the
+# written ones and six tenths more for each level past the first, their attack one better every second level, their damage one
+# better every second level from the second. All three keep pace whether along or not, so whoever is asked later is no weaker.
+CREW_HP = 0.6
+
+
+def _bump(dice: str, n: int) -> str:
+    import re as _re
+    if n <= 0:
+        return dice
+    m = _re.fullmatch(r"\s*(\d+d\d+)\s*([+-]\s*\d+)?\s*", dice or "")
+    if not m:
+        return dice
+    plus = int((m.group(2) or "0").replace(" ", "")) + n
+    return f"{m.group(1)}{'+' if plus >= 0 else '-'}{abs(plus)}" if plus else m.group(1)
+
+
+def level_crew(s: FantasyState) -> list[str]:
+    """Bring the crew to the player's level. Returns a § line for the one who is along, when they grew."""
+    lvl = max(1, int(s.player.level or 1))
+    base = s.flags.setdefault("crew_base", {})
+    out = []
+    for q in crew(s):
+        b = cb.ensure_block(q)
+        was = base.setdefault(q.id, {"hp_max": int(b.hp_max or b.hp or 1), "attack": int(b.attack or 2), "damage": str(b.damage or "1d6"), "level": 1})
+        if int(was.get("level", 1)) >= lvl:
+            continue
+        old_max = int(b.hp_max or 1)
+        b.hp_max = round(was["hp_max"] * (1 + CREW_HP * (lvl - 1)))
+        b.hp = min(b.hp_max, int(b.hp if b.hp is not None else old_max) + (b.hp_max - old_max))
+        b.attack = int(was["attack"]) + (lvl - 1) // 2
+        b.damage = _bump(str(was["damage"]), lvl // 2)
+        was["level"] = lvl
+        if q.id == s.flags.get("companion"):
+            out.append(f"{q.name} is level {lvl} too: {b.hp_max} hit points.")
+    return out
+
+
 def can_ask(s: FantasyState) -> list:
     """Who of the crew can be asked along now: here, alive, and none of them already along (one at a time)."""
     if companion(s) is not None or s.player.fighting or s.player.fate:

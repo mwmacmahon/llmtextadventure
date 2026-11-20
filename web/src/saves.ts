@@ -26,6 +26,8 @@ export function endingShort(e: string): string {
 
 // "Hide undone turns" (Settings): kept in this browser. Undone turns show struck through in the log unless it is on.
 const HIDE_UNDONE = "ta.hideUndone";
+// FN194: the Attack buttons on the hot bar in a fight (on by default; kept in this browser)
+const NO_ATTACK = "ta.noAttackButtons";
 
 // Phone width: the panels under the story open or closed (closed by default; kept in this browser).
 const PANELS_OPEN = "ta.phonePanelsOpen";
@@ -42,6 +44,21 @@ export const prefs = {
     try {
       if (on) localStorage.setItem(PANELS_OPEN, "1");
       else localStorage.removeItem(PANELS_OPEN);
+    } catch {
+      /* storage blocked: the choice lasts this page only */
+    }
+  },
+  attackButtons(): boolean {
+    try {
+      return localStorage.getItem(NO_ATTACK) !== "1";
+    } catch {
+      return true;
+    }
+  },
+  setAttackButtons(on: boolean) {
+    try {
+      if (on) localStorage.removeItem(NO_ATTACK);
+      else localStorage.setItem(NO_ATTACK, "1");
     } catch {
       /* storage blocked: the choice lasts this page only */
     }

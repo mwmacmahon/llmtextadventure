@@ -1068,3 +1068,49 @@ def test_the_opening_board_is_for_a_level_one_character(engine: Engine):
             assert jb.refill(game, sc, st, "level") == [jb.NEW_NOTICES]
             ids = {j["id"] for j in held}
             assert any(j["status"] == "open" for j in st.flags["jobs"] if j["id"] in ids) and any(c.id == "read_board" for c in game.commands(st))
+
+
+def test_the_fight_bar_free_actions_and_a_crew_that_levels(engine: Engine):
+    """FN194 to FN196 (the owner, 11-19: "Try an attack button but make it toggle able"; "some things are free actions ...
+    Those need to be labeled in menu"; "companions need scaling too ... have them level with you. For permanent companions")."""
+    from games.fantasy import combat as cb
+    from games.fantasy import encounter as en
+    from games.hidden.parchment import company as co
+    game, st = _fresh(engine)                       # a barbarian: Rage is the engine's at once
+    cmds = {c.id: c for c in game.commands(st)}
+    assert cmds["rage"].free and cmds["equip"].free and not cmds["rest"].free
+    bar = next(w for w in game.ui(st).panels if w.type == "hotbar")
+    assert next(s for s in bar.slots if s.command == "rage").free and not any(s.id.startswith("attack:") for s in bar.slots)
+    with cb.using(game.bestiary):
+        foes = en.spawn(st, [("wolf", 2)], "standard")
+    for q in foes:
+        q.attitude, q.location = -3, st.player.location
+    st.people.extend(foes)
+    st.player.fighting = [q.id for q in foes]
+    from games.fantasy.state import CombatState
+    st.combat = CombatState(round=0)
+    ui = game.ui(st)
+    bar = next(w for w in ui.panels if w.type == "hotbar")
+    attacks = [s for s in bar.slots if s.id.startswith("attack:")]
+    assert len(attacks) == 2 and attacks[0].say.startswith("I attack ") and attacks[0].say.endswith(".") and not attacks[0].command
+    fight = next(w for w in ui.panels if w.type == "meter_group")
+    assert all(m.tone == "ok" for m in fight.meters)                              # full bars are green, not a gradient
+    assert not any(c.label == "last" for m in fight.meters for c in (m.chips or []))
+    # the crew keeps pace with the player
+    game, st = _fresh(engine)
+    crew = co.crew(st)
+    st, _ = game.run_command(st, "ask_along", {"who": crew[2].id})
+    before = {q.id: (cb.ensure_block(q).hp_max, cb.ensure_block(q).attack, cb.ensure_block(q).damage) for q in co.crew(st)}
+    st.player.xp = 10 ** 6
+    for _ in range(2):                                                            # to level 3
+        lvl, gain, feats, points, cards, pick = game._level_up_plan(st.player)
+        st, res = game.run_command(st, "level_up", {"stats": ",".join(["str"] * points) if points else "",
+                                                     "cards": ",".join(k for k, _ in list(cards)[:pick]) if pick else ""})
+        assert res.ok
+    assert st.player.level == 3 and "is level 3 too" in res.text
+    for q in co.crew(st):
+        b = cb.ensure_block(q)
+        hp0, at0, dm0 = before[q.id]
+        assert b.hp_max == round(hp0 * 2.2) and b.attack == at0 + 1 and b.hp == b.hp_max and b.damage != dm0
+    assert "level 3" in next(w for w in game.ui(st).panels if getattr(w, "title", "") == "Company").items[0].value
+    assert co._bump("1d8+2", 1) == "1d8+3" and co._bump("1d6", 2) == "1d6+2" and co._bump("odd", 1) == "odd"

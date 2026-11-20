@@ -78,6 +78,7 @@ export function SettingsPage({ iid }: { iid: string | null }) {
       </section>
 
       <StoryLog />
+      <FightButtons />
 
       {s.dev_mode !== false && <DevMode needsPin={s.dev_pin} />}
 
@@ -140,6 +141,20 @@ function ThisGame({ iid, difficulties }: { iid: string; difficulties: Settings["
       </label>
       {err && <div className="error small">{err}</div>}
       <a className="link" href={`#/g/${iid}`}>← Back to the game</a>
+    </section>
+  );
+}
+
+/** FN194: Attack buttons on the hot bar in a fight. Kept in this browser. */
+function FightButtons() {
+  const [on, setOn] = useState(prefs.attackButtons());
+  return (
+    <section className="settings">
+      <h2>Fights</h2>
+      <label className="settings-row">
+        <input type="checkbox" checked={on} onChange={(e) => { prefs.setAttackButtons(e.target.checked); setOn(e.target.checked); }} />
+        <span>Attack buttons</span>
+      </label>
     </section>
   );
 }

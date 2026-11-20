@@ -6,6 +6,7 @@
 import { useState } from "react";
 import type { HotbarWidget, IconRow, ItemsWidget, ShopWidget } from "../api";
 import { ItemIcon } from "./ItemIcon";
+import { prefs } from "../saves";
 
 type OnCommand = (command: string, args: Record<string, unknown>) => void;
 
@@ -31,16 +32,18 @@ function Head({ title, opens, onOpen }: { title: string; opens?: string; onOpen?
     : <h3>{title}</h3>;
 }
 
-export function Hotbar({ widget, onCommand, onOpen, busy }: { widget: HotbarWidget; onCommand?: OnCommand; onOpen?: (group: string) => void; busy?: boolean }) {
+export function Hotbar({ widget, onCommand, onOpen, onSay, busy }: { widget: HotbarWidget; onCommand?: OnCommand; onOpen?: (group: string) => void; onSay?: (text: string) => void; busy?: boolean }) {
+  const slots = prefs.attackButtons() ? widget.slots : widget.slots.filter((s) => !s.id.startsWith("attack:"));
+  if (!slots.length) return null;
   return (
     <section className="panel hotbar-panel">
       <Head title={widget.title} opens={widget.opens} onOpen={onOpen} />
       <div className="hotbar">
-        {widget.slots.map((s) => (
+        {slots.map((s) => (
           <button key={s.id} type="button" className="hot-slot" disabled={busy || !s.enabled} title={s.label}
-            onClick={(e) => { e.currentTarget.blur(); if (s.opens) onOpen?.(s.opens); else onCommand?.(s.command, s.args); }}>
+            onClick={(e) => { e.currentTarget.blur(); if (s.say) onSay?.(s.say); else if (s.opens) onOpen?.(s.opens); else onCommand?.(s.command, s.args); }}>
             <ItemIcon kind={s.icon} />
-            <span className="hot-label">{s.label}</span>
+            <span className="hot-label">{s.label}{s.free && <span className="free-tag">free</span>}</span>
             {s.count != null && <span className="hot-count">{s.count}</span>}
           </button>
         ))}
