@@ -553,6 +553,9 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "idle_days": round(sum(r["idle_days"] for r in rows) / n, 2), "stalled": round(sum(r["stalled"] for r in rows) / n, 2),
             "ignored_foreboding": round(sum(r["ignored_foreboding"] for r in rows) / n, 2),
             "deaths": dict(sorted(by.items(), key=lambda kv: -kv[1])[:6]),
+            "spells": round(sum(r.get("spells", 0) for r in rows) / n, 1) if n else 0,
+            "helpers": round(sum(r.get("helpers", 0) for r in rows) / n, 1) if n else 0,
+            "levels": {str(k): sum(1 for r in rows if r["level"] == k) for k in sorted({r["level"] for r in rows})},
             "died_on_the_road": round(sum(1 for r in dead if r["died_to"] in ("the road", "?") or "open country" in r["died_at"]) / n, 3),
             "found_per_game": {k: round(v / n, 2) for k, v in sorted(found.items(), key=lambda kv: -kv[1])[:10]},
             "spent_per_game": {k: round(v / n, 1) for k, v in spent.items()}}
@@ -602,7 +605,8 @@ def main() -> None:
             f"Defaults: {asdict(base)}", "", table(results, base, a.days), ""]
     for s, r in results:
         varied = {f.name: getattr(s, f.name) for f in fields(Strategy) if getattr(s, f.name) != getattr(base, f.name)}
-        text += [f"## {varied or 'defaults'}", "", f"- deaths: {r['deaths']}; died on the road (share of all games): {r.get('died_on_the_road')}", f"- found a game: {r['found_per_game']}",
+        text += [f"## {varied or 'defaults'}", "", f"- deaths: {r['deaths']}; died on the road (share of all games): {r.get('died_on_the_road')}",
+                 f"- level at the end (games): {r.get('levels')}; spells cast a game {r.get('spells')}; helpers taken a game {r.get('helpers')}", f"- found a game: {r['found_per_game']}",
                  f"- spent a game: {r['spent_per_game']}", f"- legs {r['legs']}, stops with something {r['stops']}, curios {r['curios']}, "
                  f"stalled fights {r['stalled']}, foreboding ignored {r['ignored_foreboding']}", ""]
     text.append(f"_{time.monotonic() - t0:.0f} s_")

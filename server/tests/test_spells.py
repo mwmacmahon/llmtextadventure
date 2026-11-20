@@ -184,7 +184,8 @@ def test_a_sleeper_does_nothing_until_struck_and_a_spell_at_foes_in_sight_goes_f
     assert "asleep" not in (s.person(rats[0].id).condition or "") and "asleep" in (s.person(rats[1].id).condition or "")
 
 
-@pytest.mark.parametrize("klass", ["Sorcerer", "Warlock", "Bard", "Druid", "Ranger", "Monk", "Wizard", "Cleric", "Fighter"])
+@pytest.mark.parametrize("klass", ["Sorcerer", "Warlock", "Bard", "Druid", "Ranger", "Monk", "Wizard", "Cleric", "Fighter",
+                                   "Barbarian", "Paladin", "Rogue"])
 def test_every_class_written_out_starts_levels_to_five_and_every_feature_runs(game, klass):
     """FN200: each class's file loads, levels 1 to 5 without a refusal, and every command it gives either works or says why
     not, in a fight and out of one (no crash on any feature block)."""
@@ -385,3 +386,55 @@ def test_hex_is_a_curse_on_one_foe_and_a_charm_takes_one_of_a_band(game):
         else:
             assert cb.ensure_block(s3.person(q.id)).count == n0
     assert took
+
+
+ALL_CLASSES = ["Fighter", "Barbarian", "Paladin", "Rogue", "Ranger", "Monk", "Wizard", "Sorcerer", "Warlock", "Cleric", "Druid", "Bard"]
+
+
+@pytest.mark.parametrize("klass", ALL_CLASSES)
+def test_every_class_plays_three_simulated_days_in_parchment(klass):
+    """The owner, 11-20: "So much content something is gonna break. Gotta try out lots of classes for one." Each class through
+    the Parchment simulator for three days, alone and with a companion: jobs, fights with its own spells and free abilities,
+    loot, pay, shopping, a rest, a level. Nothing may raise, and the sheet stays sane."""
+    from engine.config import load_config
+    cfg = load_config()
+    if not (cfg.resolve(cfg.server.content_root) / "parchment" / "scenarios").is_dir():
+        pytest.skip("no Parchment content on this machine")
+    from games.hidden.parchment.tools import sim
+    for companion, seed in (("none", 11), ("priest", 12)):
+        row = sim.trial(sim.Strategy(klass=klass, companion=companion), 3, seed)
+        assert row["fights"] >= 1 and row["level"] >= 1 and row["gold"] >= 0, (klass, companion, row)
+        assert row["days"] == 3 or row["died_day"], (klass, companion)
+
+
+@pytest.mark.parametrize("klass", ALL_CLASSES)
+def test_every_class_shows_its_screens_in_parchment(engine, klass):
+    """Each class's new game in Parchment: the panels build, at level 1 and at level 3, in a fight and out of one, and what
+    the hot bar and the Use sheet offer is something the game will run."""
+    from games.fantasy import sheet as sh
+    game = engine.games.get("parchment")
+    if game is None:
+        pytest.skip("no Parchment on this machine")
+    iid = engine.create_instance("parchment", {"name": f"Test {klass}", "klass": klass, "race": "Human", "map_seed": 7, "written_names": True})
+    st = game.load_state(engine.store.load_state(iid))
+    for lvl in (1, 3):
+        while st.player.level < lvl:
+            st.player.xp = sh.xp_for(st.player.level)
+            _, _, _, points, cards, pick = game._level_up_plan(st.player)
+            stat = game.class_of(st.player).casting_stat or "str"
+            st, res = game.run_command(st, "level_up", {"stats": ",".join([stat] * points) if points else "",
+                                                         "cards": ",".join(k for k, _ in cards[:pick]) if pick else ""})
+            assert res.ok, (klass, res.text)
+        for fight in (False, True):
+            s = st.model_copy(deep=True)
+            if fight:
+                _foes(game, s, "bandit", 2)
+            ui = game.ui(s)
+            ids = {c.id for c in game.commands(s)}
+            bar = next((w for w in ui.panels if w.type == "hotbar"), None)
+            for slot in (bar.slots if bar else []):
+                assert slot.say or slot.opens or slot.command in ids, (klass, lvl, fight, slot.id)
+                if slot.command and slot.command != "read_board":
+                    s2, res = game.run_command(s, slot.command, dict(slot.args))
+                    assert res.ok or res.text, (klass, slot.id)
+            assert any(w.type == "items" and w.title == "Pockets" for w in ui.panels) and any(w.type == "paper_doll" for w in ui.panels)
