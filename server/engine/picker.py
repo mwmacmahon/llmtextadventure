@@ -256,14 +256,15 @@ async def card(engine: "Engine", name: str) -> dict[str, Any]:
 # ---- the switch ---------------------------------------------------------------------------------------------------
 
 def switch_options(cfg: Config) -> list[dict[str, Any]]:
-    """FN218: the profiles a player's server offers in its bar, from TA_SWITCH ("sonnet=Sonnet,gemma4-31b=Local (Gemma)"):
+    """FN218: the profiles a player's server offers in its bar, from TA_SWITCH ("sonnet=Sonnet,gemma4-31b=Local_(Gemma)"; an underscore is a space):
     name, the label shown, and which is playing now."""
     import os
     out = []
     for part in os.environ.get("TA_SWITCH", "").split(","):
         name, _, label = part.partition("=")
         if name.strip():
-            out.append({"name": name.strip(), "label": (label or name).strip(), "active": name.strip() == cfg.profile_name})
+            out.append({"name": name.strip(), "label": (label or name).strip().replace("_", " "),     # a service's settings hold no spaces
+                        "active": name.strip() == cfg.profile_name})
     return out
 
 

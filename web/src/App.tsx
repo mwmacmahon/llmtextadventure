@@ -79,7 +79,7 @@ function Game({ id }: { id: string }) {
   const idle = streaming === null;
   useEffect(() => {
     if (idle && window.matchMedia?.("(pointer: fine)").matches && !document.querySelector(".sheet, .modal, dialog[open]")) boxRef.current?.focus();
-  }, [idle]);
+  }, [idle, view === null]);
   const [stage, setStage] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
