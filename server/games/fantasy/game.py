@@ -514,7 +514,8 @@ class FantasyGame(GameBase):
             st.flags["b397"] = 1
         cd = self.class_of(st.player)                    # FN200: a save from before its class was written out catches up
         from .items import replaced_features
-        if cd is not None and cl.catch_up(cd, st.player.abilities, st.player.counts, max(1, int(st.player.level or 1)), set(replaced_features(self))):
+        if cd is not None and cl.catch_up(cd, st.player.abilities, st.player.counts, max(1, int(st.player.level or 1)), set(replaced_features(self)),
+                                          st.player.picked):
             st.player.spells = [x for x in st.player.spells if x in (cd.spells or [])]
             st.player.cantrips = [x for x in st.player.cantrips if x in (cd.cantrips or [])]
         return st
@@ -3916,11 +3917,23 @@ class FantasyGame(GameBase):
             if f.choice and f.choice.get("from") == "skills":
                 pick += int(f.choice.get("pick", 2))
                 cards += [(k, f"{v[0]}: {v[1].upper()} +2 more") for k, v in cl.SKILLS.items() if k not in p.expertise]
-        return lv, gain, [f for f in feats if not f.points], points, cards, pick
+        # FN201 (the owner, 11-20: "level up screens that show new spell(s) (and let user make choice if applicable)"): features
+        # of this level that share an `option` group are a choice of one
+        for group in dict.fromkeys(f.option for f in feats if f.option):
+            pick += 1
+            cards += [(f"opt:{f.id}", f"{f.name}: {f.text}") for f in feats if f.option == group]
+        return lv, gain, [f for f in feats if not f.points and not f.option], points, cards, pick
 
     def _level_panel(self, p: Player) -> CommandPanel:
         lv, gain, feats, points, cards, pick = self._level_up_plan(p)
-        lines = [Chip(label=(f.name or next((a.name for a in p.abilities if a.id == f.id), f.id)) + (" (stronger)" if f.upgrade else ""), value=f.text)
+        def kind(f: cl.Feature) -> str:                 # FN201: a new spell is named as one
+            spec = f.feature or {}
+            if f.upgrade:
+                return " (stronger)"
+            if spec.get("cantrip"):
+                return " (new cantrip)"
+            return " (new spell)" if spec.get("kind") in ("bolt", "quell", "cast") or spec.get("slot") or spec.get("slots") else ""
+        lines = [Chip(label=(f.name or next((a.name for a in p.abilities if a.id == f.id), f.id)) + kind(f), value=f.text)
                  for f in feats if not f.choice]
         lines.append(Chip(label="Hit points", value=f"+{gain} (to {p.hp_max + gain})"))
         if points:
@@ -3951,6 +3964,9 @@ class FantasyGame(GameBase):
                              f"coming.")
                 from engine.pipeline import to_morning     # round 16 (6343bc8911d1 T5): eight hours from 18:32 woke the player at 02:32
                 night = to_morning(s.clock.minute)         # the prose said dawn; in the evening or the night the sleep runs to morning
+                if night is None:
+                    # the UI round of 11-20: a long rest at 13:27 ran eight hours to 21:27 and was told as waking at first light
+                    directive = directive.replace("means to sleep the night", "means to sleep eight hours through the day, and wakes in the evening of the same day")
                 return s, CommandResult(label="Rest", player_line="I settle in and sleep the night.", summary=f"{p.name} sleeps the night.",
                                         directive=directive, minutes=night if night is not None else LONG_REST)
             directive = (f"{p.name} rests for an hour: a quiet corner, a drink, a wound looked at. Play the hour in a line or two; nothing happens "
@@ -3971,10 +3987,16 @@ class FantasyGame(GameBase):
             if pick and (len(set(chosen)) != pick or any(c not in {k for k, _ in cards} for c in chosen)):
                 return state, CommandResult(ok=False, label="Level up", text=f"Pick {pick}: " + ", ".join(t for _, t in cards) + ".")
             cd = self.class_of(p)
+            options = [f for f in (cd.features_at(lv) if cd else []) if f.option]
+            took = [f for f in options if f"opt:{f.id}" in chosen]
+            if len({f.option for f in took}) != len({f.option for f in options}) or len(took) != len({f.option for f in options}):
+                return state, CommandResult(ok=False, label="Level up", text="Pick one of each choice: " + ", ".join(f.name for f in options) + ".")
+            chosen = [c for c in chosen if not c.startswith("opt:")]
             p.level = lv
             got: list[str] = []
-            for f in feats:
+            for f in [*feats, *took]:
                 got += cl.grant(p.abilities, p.counts, f, cd.name if cd else p.klass)
+            p.picked += [f.id for f in took]
             for r in raises:                                       # +1 to a score; two points make a modifier step (§7b)
                 p.score_bonus[r] = p.score_bonus.get(r, 0) + 1
                 if p.score_bonus[r] >= 2:

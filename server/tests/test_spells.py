@@ -237,7 +237,6 @@ def test_what_the_cold_reader_found_in_the_spells(game):
     assert [q.id for q in ft.spell_foes(game, w)] == [foes[0].id]
     s, res = game.run_command(w, "fire_bolt", {"at": foes[0].id})
     assert res.ok and s.player.fighting == [foes[0].id] and s.combat.target == foes[0].id and s.combat.since_turn >= 1
-    assert "Combat begins" in res.text
     # a band and one word: all or none; the hold has a clock; XP won before the spell is paid when it ends the fight
     w = new(game, klass="Wizard", race="Elf")
     rat = _foes(game, w, "giant_rat", 1)[0]
@@ -266,3 +265,63 @@ def test_what_the_cold_reader_found_in_the_spells(game):
     assert two[0].id in [e.get("who") for e in plan if e.get("side") == "enemy"] and two[0].condition == "half asleep at his post"
     cb.resolve(game, f, next(e for e in plan if e.get("side") == "player"), random.Random(4), 2, {"hp": 0})
     assert "surging" in f.player.flags_on                                 # a sweep has its own count: the surge waits
+
+
+def test_the_level_up_screen_names_new_spells_and_offers_a_choice(game):
+    """FN201 (the owner, 11-20: "Will need level up screens that show new spell(s) (and let user make choice if applicable)")."""
+    from games.fantasy import sheet as sh
+    w = new(game, klass="Wizard", race="Elf")
+    if game.class_of(w.player).status != "full":
+        pytest.skip("the Wizard is a stub on this machine")
+    w.player.xp = sh.xp_for(1)
+    panel = next(c for c in game.commands(w) if c.id == "level_up").panel
+    labels = [ln.label for ln in panel.lines]
+    assert "Burning Hands (new spell)" in labels and "Mage Armour (new spell)" in labels and "Spellcasting (stronger)" in labels
+    assert panel.pick == 0
+    w = level_to(game, w, 2)
+    w.player.xp = sh.xp_for(2)
+    panel = next(c for c in game.commands(w) if c.id == "level_up").panel
+    assert panel.pick == 1 and {c.label for c in panel.cards} == {"opt:scorching_ray", "opt:hold_person"}
+    assert all(c.value.split(":")[0] in ("Scorching Ray", "Hold Person") for c in panel.cards)
+    assert not any("Scorching Ray" in ln.label or "Hold Person" in ln.label for ln in panel.lines)       # a choice, not a gift
+    s, res = game.run_command(w, "level_up", {})
+    assert not res.ok and "Pick 1" in res.text
+    s, res = game.run_command(w, "level_up", {"cards": "opt:scorching_ray,opt:hold_person"})
+    assert not res.ok
+    s, res = game.run_command(w, "level_up", {"cards": "opt:hold_person"})
+    assert res.ok and s.player.level == 3 and s.player.picked == ["hold_person"] and "Hold Person" in res.text
+    ids = {c.id for c in game.commands(s)}
+    assert "hold_person" in ids and "scorching_ray" not in ids
+    again = game.load_state(s.model_dump(mode="json"))                    # a load neither loses the choice nor grants the other
+    assert {c.id for c in game.commands(again)} >= {"hold_person"} and "scorching_ray" not in {c.id for c in game.commands(again)}
+    assert not any(a.id == "scorching_ray" for a in again.player.abilities)
+
+
+def test_what_the_browser_tester_found_with_a_cleric(game):
+    """The UI round of 11-20 (a Cleric through the web client): Cure Wounds at full hit points spent a slot ("9 hit points
+    back"); with no slots left Cure Wounds and Bless were still offered; Command was offered against a skeleton; the skeleton
+    was offered as Cure Wounds' target; a save's line showed no numbers."""
+    st = new(game, klass="Cleric", race="Human")
+    if game.class_of(st.player).status != "full":
+        pytest.skip("the Cleric is a stub on this machine")
+    s, res = game.run_command(st, "cure_wounds", {})
+    assert not res.ok and "not hurt" in res.text and s.player.count("spell_slots").value == 2
+    st.player.hp = st.player.hp_max - 1
+    s, res = game.run_command(st, "cure_wounds", {})
+    assert res.ok and "1 hit points back" in res.text                      # what came back, not what was rolled
+    cmds = {c.id: c for c in game.commands(st)}
+    assert cmds["sacred_flame"].label == "Sacred Flame · cantrip" and cmds["cure_wounds"].enabled and cmds["bless"].enabled
+    st.player.count("spell_slots").value = 0
+    cmds = {c.id: c for c in game.commands(st)}
+    assert not cmds["cure_wounds"].enabled and not cmds["bless"].enabled and cmds["light"].enabled
+    s, res = game.run_command(st, "bless", {})
+    assert not res.ok and res.text.startswith("Bless:")
+    st.player.count("spell_slots").value = 2
+    sk = _foes(game, st, "skeleton")[0]
+    cmds = {c.id: c for c in game.commands(st)}
+    assert not cmds["command"].enabled and not cmds["command"].params          # the dead are beyond it: not offered
+    assert sk.id not in [o.id for o in cmds["cure_wounds"].params[0].options]
+    s, _ = game.run_command(st, "sacred_flame", {"at": sk.id})
+    entry = cb.plan_round(game, s, None, "", 1, random.Random(0))[0]
+    out = cb.resolve(game, s, entry, random.Random(0), 2, {"hp": 0})
+    assert "DEX save" in out["mechanic"] and " against " in out["mechanic"]

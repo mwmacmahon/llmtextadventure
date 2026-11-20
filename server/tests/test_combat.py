@@ -1024,6 +1024,7 @@ def test_round_13_abilities_show_their_line_smite_arms_at_once_and_the_hidden_ar
     st = new(game, klass="Paladin")
     spec = {c.id: c for c in game.commands(st)}
     assert spec["divine_smite"].mode == "engine"
+    st.player.hp -= 3                                 # hurt: a healing on the unhurt is refused since 11-20
     s2, r = game.run_command(st, "lay_on_hands", {"on": "self"})
     assert r.ok and r.shown and "hit point" in r.shown
     hidden = next(q for q in st.people if q.id == "the_shadow")

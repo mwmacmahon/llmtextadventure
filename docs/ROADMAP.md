@@ -703,6 +703,9 @@ endless ground, camps, wandering, invented places and ground changes held until 
   class features (harm, quell, utility, on top of healing and blessing); one pool of slots; every class written to level
   5 and none "under construction". A Wizard played on Gemma; every class through the simulator (70 to 100 per cent alive
   alone over ten days, 88 to 100 with the sellsword). The decisions are in `notes/SPELLS_DESIGN.md` for the owner.
+- **Spells at level up, with a choice (D348): 11-20.** The level-up screen marks new spells; five casters choose one of
+  two at level 3. Two browser testers played a Cleric and a Warlock on Gemma; a dozen faults fixed. Twenty simulated
+  days: all twelve classes reach level 4.
 - **On Lilith's server since 11-19 (D339)**, on the owner's word: Parchment is listed on a player's server; :8016 moved
   to bcf5f82. Nine turns on Sonnet first: the board, going to a person, a posted job, the fight, pay in person and the
   shop's basket all worked; one fault found and fixed.

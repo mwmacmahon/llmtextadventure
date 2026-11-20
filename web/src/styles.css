@@ -504,3 +504,7 @@ dl.score dd { margin: 0; font-family: var(--pixel-font); font-size: 15px; }
 
 /* FN196: an action that takes no turn in a fight says so */
 .free-tag { margin-left: 6px; font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ok); border: 1px solid #7bd88f55; border-radius: 999px; padding: 0 6px; vertical-align: 1px; }
+
+/* the Use sheet: what each skill and spell does, under it (the UI round of 11-20) */
+.command-described { margin-bottom: 8px; }
+.command-hint { margin: 2px 0 0 2px; max-width: 60ch; }

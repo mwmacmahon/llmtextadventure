@@ -151,9 +151,10 @@ def armour_class(s: FantasyState) -> tuple[int, str]:
     # the Barbarian's Unarmored Defense (round 17, 5d85334fc803: AC 11 with no armour, three drowned hit six of seven): with no
     # body armour worn, CON adds to it; the class file's effect `unarmored_con`
     con = p.stats.get("con", 0) if armour is None and p.effect("unarmored_con") else 0
+    stat = "CON"
     if armour is None and p.effect("unarmored_wis"):     # FN200: the Monk's Unarmoured Defence, Wisdom in armour's stead
-        con = max(con, p.stats.get("wis", 0))
-    how = (f"10 + DEX {dex:+d}" + (f" + CON {con:+d} (unarmoured)" if con else "") + (f" + {w['body'].name} {body}" if body else "")
+        con, stat = p.stats.get("wis", 0), "WIS"
+    how = (f"10 + DEX {dex:+d}" + (f" + {stat} {con:+d} (unarmoured)" if con else "") + (f" + {w['body'].name} {body}" if body else "")
            + (f" + shield {shield}" if shield else "") + (f" + {', '.join(magic)} {extra}" if extra else ""))
     return 10 + dex + con + body + shield + extra, how
 

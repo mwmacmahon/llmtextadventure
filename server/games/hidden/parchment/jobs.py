@@ -463,7 +463,7 @@ def pay(s: FantasyState) -> list[str]:
                 j["paid"] = j["killed"] if j["form"] == "bounty" else j["paid"]
                 if j["status"] == "done":
                     j["status"] = "paid"
-                out.append(f"Paid{' by ' + q.name if q is not None else ''}: {owed} gold for {j['title'][:1].lower() + j['title'][1:] if j['form'] != 'bounty' else j['title']}.")
+                out.append(f"Paid{' by ' + q.name if q is not None else ''}: {owed} gold ({j['title']}).")
                 s.log.append(f"Day {s.clock.day} {s.clock.minute // 60:02d}:{s.clock.minute % 60:02d}. {s.player.name} was paid {owed} gold: {j['title']}.")
     sync_threads(s)
     return out
@@ -521,7 +521,7 @@ def sync_threads(s: FantasyState) -> None:
             about += f" {j['killed']} so far."
         # the gate-2 rerun: a job stayed "offered" after the player took the paper and went; a job is under way once its place
         # has been reached or one of its creatures killed (the Quests panel's step, B372)
-        note = "under way" if j["status"] == "open" and (j.get("started") or j["killed"]) else ""
+        note = "under way" if j["status"] == "open" and (j.get("started") or j["killed"]) else "done: collect the pay" if j["status"] == "done" else ""
         q = payer(s, j)                                   # the Quests panel names who pays (the board's telling does)
         keep.append(th.Thread(id=j["id"], title=j["title"], status=status, about=about.strip(),
                               who=f"{q.name}, for {j['who']}" if q is not None and q.met else j["who"], note=note))

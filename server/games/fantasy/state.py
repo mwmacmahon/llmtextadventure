@@ -263,6 +263,7 @@ class Player(BaseModel):
     # the classes (B92, D175)
     kit: list[str] = Field(default_factory=list)            # the kit picked at creation, in words
     expertise: list[str] = Field(default_factory=list)      # the Rogue's two skills
+    picked: list[str] = Field(default_factory=list)         # FN201: features chosen at a level up from a class file's `option` group
     score_bonus: dict[str, int] = Field(default_factory=dict)   # an odd score point from a stat raise (+1 to a score is half a modifier)
     hidden_from_others: bool = False                        # the player's hidden flag: set by a hide, cleared by an attack, a loud act, talk
     flags_on: list[str] = Field(default_factory=list)       # a feature's flag while it holds (raging): ends with the scene

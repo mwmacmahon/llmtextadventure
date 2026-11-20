@@ -23,6 +23,9 @@ def level_to(game: FantasyGame, st, lv: int, stats=("str", "str"), cards=""):
     for _ in range(lv - st.player.level):
         st.player.xp = sh.xp_for(st.player.level)
         args = {"stats": ",".join(stats), "cards": cards} if st.player.level + 1 in sh.ASI_LEVELS else {}
+        _, _, _, _, offered, pick = game._level_up_plan(st.player)      # FN201: a level with a choice (a spell of two): the first
+        if pick and not args.get("cards"):
+            args["cards"] = cards or ",".join(k for k, _ in offered[:pick])
         st, res = game.run_command(st, "level_up", args)
         assert res.ok, res.text
     return st

@@ -54,6 +54,8 @@ def specs(game: Any, p: Any) -> dict[str, dict]:
     for lv in range(1, p.level + 1):
         for f in cd.features_at(lv):
             spec = getattr(f, "feature", None)
+            if getattr(f, "option", "") and f.id not in (getattr(p, "picked", None) or []):
+                continue                                 # FN201: one of a level's choices, and not the one chosen
             if spec and f.id not in gone:
                 prev = out.get(f.id, {})
                 out[f.id] = {**prev, **spec, "id": f.id, "name": f.name or prev.get("name", f.id), "text": f.text or prev.get("text", ""),
@@ -65,6 +67,12 @@ def _people_here(game: Any, s: FantasyState) -> list:
     # round 13 (9c6ac4cbe0ae T15): 'the_shadow', a person the player has never seen, was offered as a Lay on Hands target
     return [q for q in s.people if not q.hidden_from_player
             and (q.id in game.people_here(s) or (q.id in s.player.with_them and q.status in ("alive", "down")))]
+
+
+def _to_heal(game: Any, s: FantasyState) -> list:
+    """Whom a healing touch may be laid on: the people here who are no foe (the UI round of 11-20: the skeleton being fought
+    was offered as Cure Wounds' target)."""
+    return [q for q in _people_here(game, s) if q.status in ("alive", "down") and q.id not in s.player.fighting and q.attitude > -2]
 
 
 def chips(game: Any, s: FantasyState) -> list[CommandSpec]:
@@ -82,10 +90,13 @@ def chips(game: Any, s: FantasyState) -> list[CommandSpec]:
         params = []
         if kind in SPELLS:
             foes = spell_foes(game, s)
+            if kind == "quell" and f.get("living_only", True):       # the dead are beyond a charm: never offered as its target
+                from .combat import ensure_block
+                foes = [q for q in foes if ensure_block(q).kind != "undead"]
             if kind in ("bolt", "quell") and foes and not (f.get("all") or f.get("pool")):
                 params = [Param(name="at", label="At", options=[Option(id=q.id, label=q.name) for q in foes], default=foes[0].id)]
             has = bool(f.get("cantrip")) or _slots(p) > 0
-            out.append(CommandSpec(id=fid, label=f["name"], mode="narrated", params=params,
+            out.append(CommandSpec(id=fid, label=f["name"] + (" · cantrip" if f.get("cantrip") else ""), mode="narrated", params=params,
                                    enabled=has and (kind == "cast" or bool(foes)),
                                    # worded after a cold read (11-20): the cost first and once; what it is not
                                    hint=("A cantrip (no slot): " if f.get("cantrip") else "A spell (one slot): ")
@@ -95,7 +106,7 @@ def chips(game: Any, s: FantasyState) -> list[CommandSpec]:
                                    words=list(f.get("words") or [f"cast {f['name'].lower()}", f["name"].lower()])))
             continue
         if kind == "heal" and f.get("target", "touch") == "touch":
-            who = [Option(id="self", label=p.name)] + [Option(id=q.id, label=q.name) for q in _people_here(game, s) if q.status in ("alive", "down")]
+            who = [Option(id="self", label=p.name)] + [Option(id=q.id, label=game.unnamed(s, q.name)) for q in _to_heal(game, s)]
             params = [Param(name="on", label="On", options=who, default="self")]     # B306: no one named is the player
         if kind == "rider" and f.get("armed_flag") and f["armed_flag"] in p.flags_on:
             continue
@@ -104,8 +115,10 @@ def chips(game: Any, s: FantasyState) -> list[CommandSpec]:
         # round 15 (b8e96b0c3c1f T14): Rage clicked took the turn and the troll's second blow killed the barbarian before he
         # swung; a feature the class file marks `instant` (Rage, a bonus action) is the engine's at once, like a rider
         instant = kind == "rider" or bool(f.get("instant"))
+        on_slots = bool(f.get("slot") or f.get("slots")) and kind in ("heal", "buff")       # a healing or a blessing that costs a slot
         out.append(CommandSpec(id=fid, label=f"{f['name']}{left}", mode="engine" if instant else "narrated", params=params, free=instant,
-                               enabled=c is None or c.value > 0 or (kind == "rider" and _slots(p) > 0 and f.get("slots")),
+                               enabled=((c is None and not on_slots) or (c is not None and c.value > 0) or (on_slots and _slots(p) > 0)
+                                        or bool(kind == "rider" and _slots(p) > 0 and f.get("slots"))),
                                hint=(f.get("hint") or f.get("text") or f["name"]) + (f" {f['not']}" if f.get("not") else ""),
                                words=list(f.get("words") or [])))
     return out
@@ -180,6 +193,12 @@ def cast_numbers(game: Any, p: Any) -> tuple[int, int]:
     return proficiency(p.level) + mod, 8 + proficiency(p.level) + mod
 
 
+def _no_slot(p: Any, name: str) -> str:
+    slot = p.count("spell_slots")
+    rest = "a short rest" if slot is not None and slot.refill == "short" else "a long rest"      # the Warlock's come back on a short one
+    return f"{name}: no spell slot left; {rest} brings them back."
+
+
 def _spend(p: Any, f: dict) -> bool:
     """A slot spent for a spell that needs one; False when none is left."""
     if f.get("cantrip"):
@@ -217,10 +236,13 @@ def run(game: Any, state: FantasyState, fid: str, args: dict) -> tuple[FantasySt
         target = str((args or {}).get("on") or "self").lower()
         q = None if target in ("self", "", p.name.lower()) else (s.person(target) or game._same_person(s, target))
         missing = (p.hp_max - p.hp) if q is None else max(0, ((q.combat.hp_max or 1) - (q.combat.hp or 0)) if q.combat else 4)
+        if missing <= 0 and (q is None or q.status != "down"):
+            # the UI round of 11-20: Cure Wounds at 9 of 9 spent a slot and said "9 hit points back"
+            return state, CommandResult(ok=False, label=name, text=f"{name}: {p.name if q is None else q.name} is not hurt; not used.")
         if f.get("dice"):                                         # Cure Wounds: dice, a slot
             slot = p.count(f.get("slot", "spell_slots"))
             if slot is None or slot.value <= 0:
-                return state, CommandResult(ok=False, label=name, text="No slot left; a long rest brings them back.")
+                return state, CommandResult(ok=False, label=name, text=_no_slot(p, name))
             slot.value -= 1
             amount = _roll(f["dice"], p, rng)
         elif f.get("pool"):                                       # Lay on Hands: any amount from the pool
@@ -235,6 +257,7 @@ def run(game: Any, state: FantasyState, fid: str, args: dict) -> tuple[FantasySt
             if c is not None:
                 c.value -= 1
             amount = int(f.get("amount", 5)) + (p.level if f.get("plus_level") else 0)
+        amount = min(amount, max(missing, 0)) if missing > 0 else amount      # said as what came back, not what was rolled
         if q is None:
             p.hp = min(p.hp_max, p.hp + amount)
             if p.peril is not None and p.peril.kind == "bleeding":   # healing binds a wound (the owner, 11-10 night)
@@ -305,7 +328,7 @@ def run(game: Any, state: FantasyState, fid: str, args: dict) -> tuple[FantasySt
                                 minutes=0, referee_skip=[fid])
     if kind == "buff":
         if (c is not None and c.value <= 0 and not (f.get("slots") and _slots(p) > 0)) or (c is None and f.get("slots") and _slots(p) <= 0):
-            return state, CommandResult(ok=False, label=name, text="Spent; a long rest brings it back.")
+            return state, CommandResult(ok=False, label=name, text=f"{name}: spent; a rest brings it back.")
         if c is not None and c.value > 0:
             c.value -= 1
         elif f.get("slots"):
@@ -339,7 +362,7 @@ def _cast(game: Any, state: FantasyState, s: FantasyState, f: dict, fid: str, ar
     if kind != "cast" and not foes:
         return state, CommandResult(ok=False, label=name, text=f"{name}: nobody hostile here to cast it at.")
     if not _spend(p, f):
-        return state, CommandResult(ok=False, label=name, text=f"{name}: no spell slot left; a long rest brings them back.")
+        return state, CommandResult(ok=False, label=name, text=_no_slot(p, name))
     target = next((q for q in foes if q.id == str(args.get("at") or "")), None) or (foes[0] if foes else None)
     if kind == "quell" and target is not None and not f.get("pool") and ensure_block(target).kind == "undead" and f.get("living_only", True):
         return state, CommandResult(ok=False, label=name, text=f"{name}: {target.name} is beyond such a spell; not cast.")
@@ -350,17 +373,16 @@ def _cast(game: Any, state: FantasyState, s: FantasyState, f: dict, fid: str, ar
             ensure_block(q)
             size_band(q)
         s.combat = CombatState(round=0, since_turn=int(p.notes_turn or 0) + 1, target=target.id)
-        opened = f" Combat begins: {', '.join(q.name for q in foes)}."
     left = "" if f.get("cantrip") else f" ({_slots(p)} slot{'s' if _slots(p) != 1 else ''} left)"
     skip = ["spell_slots", fid]
     told = str(f.get("told") or "")
     atk, dc = cast_numbers(game, p)
     if kind == "cast":
         line = f"{name}: cast{left}."
-        p.turn_notes.append(line)
         return s, CommandResult(label=name, text=line, player_line=f.get("player_line") or f"I cast {name}.", summary=f"{p.name} casts {name}.",
-                                directive=f"{p.name} casts {name}: {told or 'it does what the spell does'}. A line or two, no numbers. If the "
-                                          "player's words asked for more this turn, tell that too; then stop.",
+                                directive=f"{p.name} casts {name}: {told or 'it does what the spell does'}. A line or two, no numbers. The spell "
+                                          "brings no new person or creature into the scene. If the player's words asked for more this turn, tell "
+                                          "that too; then stop.",
                                 minutes=int(f.get("minutes", 1)), referee_skip=skip)
     if kind == "bolt":
         if s.combat is None:
@@ -377,7 +399,7 @@ def _cast(game: Any, state: FantasyState, s: FantasyState, f: dict, fid: str, ar
             entry["undead"] = f["undead"]
         s.combat.item_strike = entry
         at = "" if f.get("all") or target is None else f" at {target.name}"
-        line = f"{name}{at}: cast{left}.{opened}"
+        line = f"{name}{at}: cast{left}."
         return s, CommandResult(label=name, text=line, player_line=f"I cast {name}{at}.", summary=f"{p.name} casts {name}{at}.",
                                 directive=f"{p.name} casts {name}{at}: {told or 'the spell goes off'}. What it does is in this round's dice: "
                                           "tell that result in words, add no other harm, and kill nothing the dice did not.",
@@ -424,8 +446,7 @@ def _cast(game: Any, state: FantasyState, s: FantasyState, f: dict, fid: str, ar
             notes.append(f"the fight is over: {won} XP")
         s.combat = None
     names = ", ".join(q.name for q in hit)
-    line = f"{name}: " + "; ".join(notes) + (f". {names}: {cond}" if hit else ". Nobody is taken") + "." + (f" {left.strip(' ()').capitalize()}." if left else "") + opened
-    p.turn_notes.append(line)
+    line = f"{name}: " + "; ".join(notes) + (f". {names}: {cond}" if hit else ". Nobody is taken") + "." + (f" {left.strip(' ()').capitalize()}." if left else "")
     aimed = target.name if target is not None and not f.get("pool") else "the foes"
     out_of_it = (f"{names} {'is' if len(hit) == 1 else 'are'} {cond}, alive, and {'stops' if len(hit) == 1 else 'stop'} fighting, nothing more "
                  "(already settled: do not change it). Nobody wakes or is struck in this telling. "

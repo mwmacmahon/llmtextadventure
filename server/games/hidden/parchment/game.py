@@ -1053,7 +1053,7 @@ class ParchmentGame(FantasyGame):
                                    # must_name fills it from the reading's own ids or a name in its words, the trade first so
                                    # "ask the archer" finds her
                                    params=[Param(name="who", label="Who", must_name=True,
-                                                 options=[Option(id=q.id, label=re.sub(r'^(a|an) ', 'the ', q.role) + (f" ({q.name})" if q.met else "")) for q in can])]))
+                                                 options=[Option(id=q.id, label=re.sub(r'^(a|an) ', 'the ', q.role) + (f" ({q.name})" if self.name_shown(s, q) else "")) for q in can])]))
         waiting = co.helpers_here(s)                     # FN182: who would go along for a job, where they wait
         if waiting:
             out.append(CommandSpec(id="take_helper", label="Bring helper", mode="narrated",
@@ -1576,12 +1576,12 @@ class ParchmentGame(FantasyGame):
                       if f.get("kind") in ft.SPELLS or (f.get("kind") in ("heal", "buff") and (f.get("slot") or f.get("slots") or f.get("cantrip")))}
             ab = [c for c in items if abil(c) and c.id not in spells]
             if ab:
-                panels.append(Commands(title="Abilities", items=ab, place="popout", group="Use"))
+                panels.append(Commands(title="Abilities", items=ab, place="popout", group="Use", describe=True))
             sp = [c for c in items if c.id in spells]
             if sp:                                       # FN200: spells under the class's skills, over the things
                 left = s.player.count("spell_slots")
                 panels.append(Commands(title="Spells" + (f" · {left.value} of {left.max} slots" if left is not None else ""), items=sp,
-                                       place="popout", group="Use"))
+                                       place="popout", group="Use", describe=True))
             use = [c for c in items if c.id == "use_item"]
             if use:
                 panels.append(Commands(title="Things", items=use, place="popout", group="Use"))
@@ -1602,17 +1602,19 @@ class ParchmentGame(FantasyGame):
                 # FN200: a spell on the bar when it can be cast now (a fight's spells in a fight), one tap at the first foe; a
                 # spell shows the slots left, a cantrip nothing
                 f = ft.specs(self, s.player)[c.id]
-                if c.enabled and all(p.name == "at" for p in c.params):
-                    slots.append(HotSlot(id=c.id, icon="wand" if f.get("kind") != "cast" else "scroll", label=c.label,
-                                         count=None if f.get("cantrip") or slots_left is None else slots_left.value,
+                if c.enabled and all(p.name == "at" for p in c.params) and not (s.player.fighting and f.get("kind") == "cast"):
+                    # no count on a spell's slot: the slots are one pool, shown in the bar's heading (the UI round of 11-20:
+                    # "Hex 1, Charm Person 1" read as one use each)
+                    slots.append(HotSlot(id=c.id, icon="wand" if f.get("kind") != "cast" else "scroll", label=c.label.replace(" · cantrip", ""),
+                                         count=None,
                                          command=c.id, args={p.name: p.default or p.options[0].id for p in c.params}))
                 continue
             if abil(c) and not c.params:
                 f = ft.specs(self, s.player).get(c.id) or {}
                 if f.get("kind") in ("heal", "buff") and (f.get("slot") or f.get("slots")) and s.player.count(c.id) is None:
                     # a blessing or a healing on the slots shows the slots left, as the bolts beside it do
-                    slots.append(HotSlot(id=c.id, icon="scroll", label=c.label, count=slots_left.value if slots_left is not None else None,
-                                         command=c.id, enabled=c.enabled, free=c.free))
+                    if c.enabled:
+                        slots.append(HotSlot(id=c.id, icon="scroll", label=c.label, count=None, command=c.id, enabled=True, free=c.free))
                     continue
                 n = next((k.value for k in s.player.counts if k.name.lower() == c.label.lower() or k.name.lower().replace(" ", "_") == c.id), None)
                 label = re.sub(r"\s*\(\d+( left)?\)$", "", c.label)      # the count is the slot's own
@@ -1643,7 +1645,8 @@ class ParchmentGame(FantasyGame):
             slots.insert(0, HotSlot(id="level_up", icon="skill", label="Level up", opens="Character"))
         if any(c.id == "read_board" for c in items):
             slots.append(HotSlot(id="read_board", icon="job", label="Read the board", command="read_board"))
-        return Hotbar(title="Actions", slots=slots[:10], opens="Use") if slots else None
+        title = "Actions" + (f" · {slots_left.value} of {slots_left.max} slots" if slots_left is not None else "")
+        return Hotbar(title=title, slots=slots[:10], opens="Use") if slots else None
 
     def _here(self, s: FantasyState):
         """Who and what is in the room, on the side."""
@@ -1654,8 +1657,9 @@ class ParchmentGame(FantasyGame):
         people = [q for q in s.people if q.status == "alive" and (q.location or "").lower() == here and not q.hidden_from_player
                   and q.id not in along]
         # by name once met; a creature by what it is; a stranger by their trade
-        rows = [IconRow(id=q.id, icon="person", name=q.name if (self.name_shown(s, q) or q.id not in self._homes(s)) else (q.role or q.called or "someone"),
-                        note=("hostile" if q.attitude <= -2 else q.role if q.met else ""), tag="foe" if q.id in (s.player.fighting or []) else "")
+        named = lambda q: self.name_shown(s, q) or q.id not in self._homes(s)      # noqa: E731
+        rows = [IconRow(id=q.id, icon="person", name=q.name if named(q) else (q.role or q.called or "someone"),
+                        note=("hostile" if q.attitude <= -2 else q.role if named(q) and q.met else ""), tag="foe" if q.id in (s.player.fighting or []) else "")
                 for q in people]
         things = [IconRow(id=t.id, icon=itm.icon_of(self, t), name=t.name, count=t.count) for t in s.things
                   if (t.place or "").lower() == here and not t.held_by]

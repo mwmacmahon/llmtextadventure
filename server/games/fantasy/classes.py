@@ -59,6 +59,7 @@ class Feature(BaseModel):
     effects: list[str] = Field(default_factory=list)
     choice: dict[str, Any] | None = None      # {pick: 2, from: skills}
     points: int = 0                           # the stat raise: score points to spend (2: +2 to one, or +1 to two)
+    option: str = ""                          # FN201: one of a group at this level; the player picks one of the group at level up
     feature: dict[str, Any] | None = None     # part fifteen §10: the grammar (heal | rider | turn | buff), games/fantasy/features.py
 
 
@@ -174,7 +175,8 @@ def grant(abilities: list[Ability], counts: list[Count], f: Feature, cid: str = 
     return [f"{f.name}: {f.text}" if f.text else f.name]
 
 
-def catch_up(cd: Any, abilities: list[Ability], counts: list[Count], level: int, skip: set[str] | None = None) -> bool:
+def catch_up(cd: Any, abilities: list[Ability], counts: list[Count], level: int, skip: set[str] | None = None,
+             picked: list[str] | None = None) -> bool:
     """FN200 (the cold read, 11-20): a save made when its class had less written (a stub, level 1 only) holds none of the
     features the file now gives at the levels it has passed, and a feature with no count on the sheet was used without limit.
     Replay the file's levels up to the save's own: whatever the sheet lacks is granted, an upgrade applied; what it has is
@@ -183,6 +185,8 @@ def catch_up(cd: Any, abilities: list[Ability], counts: list[Count], level: int,
     for lv in range(1, level + 1):
         for f in cd.features_at(lv):
             if f.points or f.id in (skip or ()):         # a feature the game's catalogue makes a thing (the rogue's smoke) is not the sheet's
+                continue
+            if f.option and f.id not in (picked or ()):  # FN201: one of a choice, and not the one chosen (or none chosen yet)
                 continue
             have = any(a.id == f.id for a in abilities)
             cid = (f.count.id or f.id) if f.count else ""

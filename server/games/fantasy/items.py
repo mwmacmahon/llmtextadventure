@@ -270,11 +270,11 @@ def resolve_strike(game: Any, s: FantasyState, entry: dict, rng: Any, tally: dic
                 sv = save_roll(rng, b.saves.get(str(entry["save"]), 0), int(entry.get("dc") or 12))
                 if sv.holds and entry.get("negates"):       # a spell a save avoids altogether (Sacred Flame)
                     parts.append(f"{who}: avoided")
-                    lines.append(f"{entry['name']} at {who}: {str(entry['save']).upper()} save held, no harm.")
+                    lines.append(f"{entry['name']} at {who}: {str(entry['save']).upper()} save {sv.total} against {int(entry.get('dc') or 12)}, held; no harm.")
                     continue
                 if sv.holds:
                     n //= 2
-                how = f"{str(entry['save']).upper()} save {'held, half' if sv.holds else 'failed'}; "
+                how = f"{str(entry['save']).upper()} save {sv.total} against {int(entry.get('dc') or 12)}, {'held, half' if sv.holds else 'failed'}; "
             before = hp_now(q, body, tally)
             tally.setdefault("hits", []).append({"pid": q.id, "body": body, "dmg": n, "spare": False})
             hit = {"pid": q.id, "body": body, "dmg": n, "spare": False}

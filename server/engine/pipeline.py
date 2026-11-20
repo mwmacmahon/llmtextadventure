@@ -2064,7 +2064,7 @@ class Engine:
         if lever.committed is not None:                    # B418: committed before the round; the outcome stands
             return state, lever.committed
         if lever.blocked:
-            return state, {"id": lever.id, "status": "blocked", "text": f"{lever.label}: {lever.preview.text.strip()}"}
+            return state, {"id": lever.id, "status": "blocked", "text": _labelled(lever.label, lever.preview.text)}
         veto = next((v for v in vetoes if v.split(":", 1)[0].strip().lower() == lever.id.lower()), None)
         if veto is not None:
             reason = veto.split(":", 1)[1].strip() if ":" in veto else "the prose shows it was not completed"
@@ -2076,7 +2076,7 @@ class Engine:
         if not res.ok:
             ledger("command", {"id": lever.id, "args": lever.args, "mode": lever.mode, "typed": True, "ok": False, "text": res.text})
             log.info("command.typed.blocked " + logs.kv(iid=iid, turn=turn, id=lever.id, why=res.text, at="commit"))
-            return state, {"id": lever.id, "status": "blocked", "text": f"{lever.label}: {res.text.strip()}"}
+            return state, {"id": lever.id, "status": "blocked", "text": _labelled(lever.label, res.text)}
         if res.log_line:
             doc = new_state.model_dump(mode="json")
             sp.append(doc, getattr(game, "log_path", "log"), f"{_clock_text(game, doc)}{unstamped(res.log_line)}")
@@ -3339,6 +3339,12 @@ WAIT_FOR = re.compile(r"\b(?:wait|watch|stay|sit)\w*\b.*?\bfor\s+(?!a\s+(?:while
 MORNING_MINUTE = 7 * 60
 NIGHT_MINUTE = 19 * 60
 SLEEP_MOST = 16 * 60          # a night's sleep may run past the turn's cap to morning (dusk to seven is twelve hours and more)
+
+
+def _labelled(label: str, text: str) -> str:
+    """A refused lever's line with its name once (the UI round of 11-20: "Hex: Hex: no spell slot left")."""
+    text = (text or "").strip()
+    return text if text.lower().startswith(f"{label.lower()}:") else f"{label}: {text}"
 
 
 def to_morning(now_minute: int, minutes_per_day: int = 1440) -> int | None:

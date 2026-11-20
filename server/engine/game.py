@@ -219,6 +219,7 @@ class Commands(BaseModel):
     pinned: bool = False                       # stays at the top of its column while the rest scrolls (the girl in training)
     title: str | None = None
     items: list[CommandSpec]
+    describe: bool = False                     # the client shows each command's hint under it (the Use sheet's spells and skills)
 
 
 class MapPanel(BaseModel):

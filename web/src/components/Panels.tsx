@@ -63,7 +63,10 @@ function Panel({ w, onChoice, onCommand, onPick, onOpen, busy, ended }: { w: Wid
           {w.title && <h3>{w.title}</h3>}
           <div className="commands">
             {w.items.map((c) => (
-              <CommandRow key={c.id} spec={c} onRun={onCommand} busy={busy || (ended && c.mode !== "engine")} />
+              <div key={c.id} className={w.describe ? "command-described" : undefined}>
+                <CommandRow spec={c} onRun={onCommand} busy={busy || (ended && c.mode !== "engine")} />
+                {w.describe && c.hint && <div className="command-hint muted small">{c.hint}</div>}
+              </div>
             ))}
           </div>
         </section>

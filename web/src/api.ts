@@ -104,7 +104,7 @@ export type Widget = Placed & (
   | { type: "list"; title: string; items: Chip[]; layout?: "rows" | "grid" | "stack"; fold?: number; journal?: boolean }
   | { type: "log"; title: string; lines: string[]; timeline?: boolean; learned?: string[] }
   | { type: "choices"; title?: string | null; choices: Choice[] }
-  | { type: "commands"; title?: string | null; items: CommandSpec[] }
+  | { type: "commands"; title?: string | null; items: CommandSpec[]; describe?: boolean }
   | { type: "quests"; title: string; rows: QuestRow[] });
 
 export type UISchema = { phase: string; free_text: boolean; placeholder: string; prefill?: string | null; panels: Widget[] };
