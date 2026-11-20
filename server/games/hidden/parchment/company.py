@@ -302,6 +302,10 @@ def danger(sc: dict, s: FantasyState, pid: str, extra: int = 0) -> bool:
     """A place beyond the party: its residents' XP over a deadly fight's for the player's level, the companion counting as one more."""
     rows = (sc.get("residents") or {}).get(pid) or []      # a posted job's are sized to the party when posted: never here
     xp = sum(int(cb.bestiary().entries.get(str(r["entry"]), {}).get("xp") or 0) * int(r.get("count") or 1) for r in rows)
+    # the owner's round of 11-20 (a level-1 Cleric and the archer dead in two rounds to four kobolds and a swarm of bats: 150
+    # XP against a line of 200, so no warning and no stop short): many foes are worth more than their sum, by the SRD's table
+    n = sum(int(r.get("count") or 1) for r in rows)
+    xp = int(xp * (1 if n <= 1 else 1.5 if n == 2 else 2 if n <= 6 else 2.5 if n <= 10 else 3))
     lvl = max(1, int(s.player.level or 1))
     party = 1 + (1 if companion(s) is not None else 0) + len(helpers_along(s)) + extra     # FN182: whoever is along for a job counts
     return xp > DEADLY.get(lvl, 100 * lvl * lvl) * party

@@ -300,7 +300,7 @@ def test_the_side_chips_are_only_whats_to_hand(engine):
     strip = next(w for w in panels if getattr(w, "type", "") == "status_strip")
     assert strip.chips[-1].label == "Place"
     xp = next(w for w in panels if getattr(w, "type", "") == "meter" and w.label == "XP")
-    assert xp.place == "popout" and xp.group == "Character"
+    assert xp.place == "side" and xp.compact                 # FN217 (11-20): under the hit points, a thin line
     assert not any(getattr(w, "type", "") == "commands" and w.place == "side" for w in panels)       # FN188
     bar = next(w for w in panels if getattr(w, "type", "") == "hotbar")
     assert {s.command for s in bar.slots} >= {"rage", "use_item", "read_board"}

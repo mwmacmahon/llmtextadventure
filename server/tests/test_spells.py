@@ -438,3 +438,31 @@ def test_every_class_shows_its_screens_in_parchment(engine, klass):
                     s2, res = game.run_command(s, slot.command, dict(slot.args))
                     assert res.ok or res.text, (klass, slot.id)
             assert any(w.type == "items" and w.title == "Pockets" for w in ui.panels) and any(w.type == "paper_doll" for w in ui.panels)
+
+
+def test_what_the_second_gemma_wave_found_on_spells(game):
+    """The Druid and the Sorcerer of 11-20: an empty pool is named before "nobody to cast it at"; Sleep at the dead alone is
+    refused with the slot kept (typed words went past the greyed chip); a typed lever refused in a fight costs no round."""
+    st = new(game, klass="Wizard", race="Elf")
+    if game.class_of(st.player).status != "full":
+        pytest.skip("the Wizard is a stub on this machine")
+    st.player.count("spell_slots").value = 0
+    s, res = game.run_command(st, "magic_missile", {})
+    assert not res.ok and "slot" in res.text
+    st = new(game, klass="Wizard", race="Elf")
+    _foes(game, st, "skeleton", 2)
+    s, res = game.run_command(st, "sleep", {})
+    assert not res.ok and "not cast" in res.text and s.player.count("spell_slots").value == 2
+    # a typed lever refused in a fight: nobody acts (a refused button costs no turn either)
+    from engine.roles import AssistantReadingCombat, CommandPick, IntentCombat
+    st = new(game, klass="Wizard", race="Elf")
+    _foes(game, st, "wolf", 1)
+    st.player.count("spell_slots").value = 0
+    read = AssistantReadingCombat(kind="action", summary="A spell.", time_minutes=1, risk="high",
+                                  intents=[IntentCombat(action="cast magic missile", targets=[])], commands=[CommandPick(id="magic_missile")])
+    game.refused_levers = {"magic_missile"}
+    s, w = game.world_turn(st, read, "I cast Magic Missile at the wolf", random.Random(1), 6, 2)
+    assert s.combat is not None and s.combat.plan == [] and any("costs no time" in d for d in w.directives)
+    game.refused_levers = set()
+    s, w = game.world_turn(st, read, "I cast Magic Missile at the wolf", random.Random(1), 6, 2)
+    assert s.combat.plan

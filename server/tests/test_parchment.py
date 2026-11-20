@@ -1093,7 +1093,7 @@ def test_the_fight_bar_free_actions_and_a_crew_that_levels(engine: Engine):
     st.combat = CombatState(round=0)
     ui = game.ui(st)
     bar = next(w for w in ui.panels if w.type == "hotbar")
-    assert any(s.id == "attack:flee" and s.command == "flee" for s in bar.slots)       # D350: Flee with the Attack buttons
+    assert any(s.id == "flee" and s.command == "flee" for s in bar.slots)       # D350: Flee with the Attack buttons
     attacks = [s for s in bar.slots if s.id.startswith("attack:") and s.say]
     assert len(attacks) == 2 and attacks[0].say.startswith("I attack ") and attacks[0].say.endswith(".") and not attacks[0].command
     fight = next(w for w in ui.panels if w.type == "meter_group")
@@ -1221,3 +1221,74 @@ def test_what_the_gemma_players_found(engine: Engine):
     monk = game.load_state(engine.store.load_state(iid))
     if monk.player.effect("martial_arts"):
         assert cb.player_weapon(monk, "a flurry of kicks")[:2] == ("fist", "1d6") and cb.player_block(monk, "kick")["damage"].startswith("1d6+")
+
+
+def test_what_the_second_gemma_wave_found(engine: Engine):
+    """The Druid and the Sorcerer of 11-20: a journey to a building of the village keeps the building through its stops; loot
+    that left the pockets in the store by typed words is sold at the store's price, coin the telling gave counted."""
+    import random
+    from engine.game import TurnInfo
+    from games.fantasy.state import Item
+    game, st = _fresh(engine)
+    # the building survives a leg that does not end the journey
+    st.flags["dest_spot"] = "the smithy"
+    st.flags["leg_walked"] = True
+    st.world["player"]["journey"] = {"to": st.world["home"], "path": [list(st.world["player"]["tile"])], "at": 0, "stops": []}
+    st = game._settle_place(st, TurnInfo(turn=2, elapsed_minutes=1, rng=random.Random(0)))
+    assert st.flags.get("dest_spot") == "the smithy"
+    st.flags["leg_walked"] = True
+    st.world["player"]["journey"] = None
+    st.player.location = game.where(st)
+    st = game._settle_place(st, TurnInfo(turn=3, elapsed_minutes=1, rng=random.Random(0)))
+    assert "dest_spot" not in st.flags and st.player.location == "the smithy"
+    # typed sale
+    game, st = _fresh(engine)
+    st.player.location = "the general store"
+    st.inventory.append(Item(id="rat_tail", name="rat tail", count=2, kind="loot"))
+    game._mark_turn_start(st)
+    assert st.flags["turn_start"]["loot"]["rat_tail"][1:] == [2, 1]
+    st.inventory = [x for x in st.inventory if x.id != "rat_tail"]
+    gold = st.item("gold").count
+    st = game.after_turn(st, TurnInfo(turn=2, elapsed_minutes=1, rng=random.Random(0)))
+    assert st.item("gold").count == gold + 2 and any(n.startswith("Sold: 2 rat tail") for n in st.player.shown_notes)
+    # the basket's own sale is not paid twice
+    st.inventory.append(Item(id="rat_tail", name="rat tail", count=1, kind="loot"))
+    game._mark_turn_start(st)
+    st2, res = game.run_command(st, "deal", {"loot": "1"})
+    assert res.ok and not game._sold_by_words(st2)
+
+
+def test_what_the_owner_found_on_sonnet(engine: Engine):
+    """The owner's round of 11-20 (a level-1 Cleric and the archer, dead at the mines): many foes count for more than their
+    sum, so the mines warn and the walk stops short; rats are never one rat; the priest of the crew, told trailing along, is
+    said to stay; a night's sleep by day asks nothing."""
+    import random
+    from engine.game import TurnInfo
+    from engine.pipeline import until_when
+    from engine.roles import AssistantReading, CommandPick, Intent
+    from games.hidden.parchment import company as co
+    from games.hidden.parchment import jobs as jb
+    game, st = _fresh(engine)
+    sc = game.scenario(st.city.id)
+    st, _ = game.run_command(st, "ask_along", {"who": "hunter_1"})
+    from games.fantasy import combat as cb
+    with cb.using(game.bestiary):
+        assert co.companion(st) is not None and co.danger(sc, st, "mines")        # 150 XP of five foes is 300 against 200
+        plan = game._plan(st, "mines")
+    assert plan["stops"][-1][1] == "threshold"
+    # the farm's rats: two, whoever comes
+    solo = _fresh(engine)[1]                                                      # alone, the generator's lot was one rat
+    jb.arrive(game, sc, solo, "farms")
+    assert sum(int(getattr(q.combat, "count", 1) or 1) for q in solo.people if q.id.startswith("giant_rat")) >= 2
+    # the priest told trailing along: back at his table, and the player told once
+    game._mark_turn_start(st)
+    st.player.location = "the general store"
+    st.person("priest_1").location = "the general store"
+    st = game.after_turn(st, TurnInfo(turn=2, elapsed_minutes=1, rng=random.Random(0)))
+    assert st.person("priest_1").location == "the tavern" and any("not in your company" in x for x in st.player.shown_notes)
+    # "i sleep for the night" at 14:30 with Rest picked: no question
+    st.clock.minute = 14 * 60 + 30
+    read = AssistantReading(kind="action", summary="Sleeps the night in the rented room.", time_minutes=480, tempo="slow", risk="none",
+                            intents=[Intent(action="Sleep the night")], commands=[CommandPick(id="rest", args=["kind=long"])])
+    adj, asked = until_when(game, st, read, "i sleep for the night")
+    assert asked == "" and adj.kind == "action"

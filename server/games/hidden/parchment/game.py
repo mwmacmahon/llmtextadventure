@@ -199,6 +199,12 @@ class ParchmentGame(FantasyGame):
         if not w or s.player.fate:
             return s
         s = self._settle_place(s, info)
+        sold_by_words = self._sold_by_words(s)           # before the turn's start is dropped
+        for iid, n in (s.flags.pop("dealt", None) or {}).items():
+            it = s.item(iid)
+            if it is not None and it.count > int(n):
+                it.count = int(n)
+                s.flags["double_buy"] = int(s.flags.get("double_buy") or 0) + 1
         self._nobody_tags_along(s)
         co.level_crew(s)                                 # FN195: a save from before the crew levelled catches up
         fought = bool(s.flags.pop("was_fighting", False))  # FN198: a fight just over, the healer of the company tends the player
@@ -215,6 +221,20 @@ class ParchmentGame(FantasyGame):
         # is settled here; coin the referee already wrote this turn is that pay, not a second one
         gained = sum(int(b) - int(a) for a, b in re.findall(r"gold[^:]*: (\d+) -> (\d+)", " ".join(getattr(info, "applied", None) or [])) if int(b) > int(a))
         paid = jb.pay(s, credit=gained, game=self) if not s.player.fighting else []
+        if sold_by_words and not paid:
+            # the Gemma rounds of 11-20 (a rat tail and a frog leg sold by typed words left the pockets for nothing; a boar tusk
+            # went at the narrator's price): loot that left the pockets in a shop that buys, by the turn's own telling, is sold
+            # at the shop's price; coin the referee already wrote this turn is counted toward it
+            owed = sum(n * pr for _, n, pr in sold_by_words)
+            more = max(0, owed - gained)
+            gold = s.item("gold")
+            if more and gold is not None:
+                gold.count += more
+            elif more:
+                from games.fantasy.state import Item
+                s.inventory.append(Item(id="gold", name="gold", count=more))
+            s.flags["sold_by_words"] = int(s.flags.get("sold_by_words") or 0) + 1
+            paid = ["Sold: " + ", ".join(f"{n} {name}" if n > 1 else name for name, n, _ in sold_by_words) + f" for {owed} gold."]
         sc_now = self.scenario(s.city.id)
         for line in paid + jb.update(self, s) + co.send_home(s) + jb.refill(self, sc_now, s, "day") + jb.refill(self, sc_now, s, "empty"):
             s.player.shown_notes.append(line)
@@ -224,7 +244,23 @@ class ParchmentGame(FantasyGame):
         """Where the player stands and who of the village and the crew stands there, before the turn moves anyone (after_turn
         is handed the state as the referee's rows left it, so the turn's start is kept here)."""
         homes = self._homes(s)
-        s.flags["turn_start"] = {"where": s.player.location or "", "at": {q.id: q.location for q in s.people if q.id in homes}}
+        s.flags["turn_start"] = {"where": s.player.location or "", "at": {q.id: q.location for q in s.people if q.id in homes},
+                                 "loot": {it.id: [it.name, it.count, pr] for it, pr in self._sellable(s) if jb.is_loot(it)}
+                                 if (self._shop(s) or {}).get("buys") else {}}
+
+    def _sold_by_words(self, s: FantasyState) -> list[tuple[str, int, int]]:
+        """Loot the player held at the turn's start in a shop that buys, gone or fewer now with the player still there and no
+        basket run: (name, how many, the shop's price each)."""
+        start = s.flags.get("turn_start") or {}
+        if not start.get("loot") or (s.player.location or "") != start.get("where") or s.player.fighting:
+            return []
+        out = []
+        for iid, (name, n, pr) in start["loot"].items():
+            it = s.item(iid)
+            gone = int(n) - (it.count if it is not None else 0)
+            if gone > 0:
+                out.append((str(name), gone, int(pr)))
+        return out
 
     def _nobody_tags_along(self, s: FantasyState) -> None:
         """The rounds of 11-19 (Gemma: "I go and see the reeve", the innkeeper told walking along and filed at the reeve's
@@ -247,6 +283,13 @@ class ParchmentGame(FantasyGame):
                 q.location = str(was_at)
                 s.player.with_them = [x for x in s.player.with_them if x != q.id]
                 s.flags["tagged_along"] = int(s.flags.get("tagged_along") or 0) + 1
+                # the owner's round of 11-20 ("When the quest companion left it was out of nowhere"): it was the priest of
+                # the crew, never of the company, told trailing along and put back each turn without a word. Said once
+                told = s.flags.setdefault("stayed_told", [])
+                if q.id in {c.id for c in co.crew(s)} and q.id not in told:
+                    told.append(q.id)
+                    s.player.shown_notes.append(f"{q.name} is not in your company and stays at {wm._lower_the(str(was_at))}"
+                                                + (": one permanent companion at a time." if co.companion(s) is not None else "."))
 
     def _settle_place(self, s: FantasyState, info: Any) -> FantasyState:
         """The tile and the place's name after a turn (R-G3), the walk a turn's move asks for, R1 on a leg's turn."""
@@ -255,7 +298,11 @@ class ParchmentGame(FantasyGame):
             # R1: on a leg's turn the tile is the truth; a move row naming the journey's end or any place on it (the narrator
             # told the arrival early) is not applied, and counted
             here = self.where(s)
-            spot = s.flags.pop("dest_spot", "") or ""
+            # the Gemma rounds of 11-20 (two players: "I go and see the reeve" from a job's place ended on the green after the
+            # stops): the building the journey was for is kept until the journey is over, not dropped at its first leg
+            spot = str(s.flags.get("dest_spot") or "")
+            if not w["player"].get("journey"):
+                s.flags.pop("dest_spot", None)
             at = s.player.location or ""
             if at.lower() != here.lower() and self._spot_parent(s, at).lower() == here.lower():
                 pass                                      # the review (11-18): the referee put the player in a spot of the place walked to: kept
@@ -526,6 +573,8 @@ class ParchmentGame(FantasyGame):
             d = self._dest(s, i, mark=mark)
             parent = self._spot_parent(s, d) if d else ""                 # a spot by its exact name first, before any loose match
             pid = (wm.place_named(s.world, parent) if parent else wm.place_named(s.world, d)) if d else None
+            if mark and pid is not None and not parent:
+                s.flags.pop("dest_spot", None)             # a new journey to a place itself: no building left from the last one
             if parent and pid is not None:
                 s.flags["dest_spot"] = next((f.name for f in s.found_places if f.name.lower() == d.lower()), d)
             if pid is not None and pid != wm.place_named(s.world, self.where(s)):
@@ -827,7 +876,7 @@ class ParchmentGame(FantasyGame):
             spawned = self._trouble(s, rng, lair)
             if spawned:
                 line += f" There, close by: {spawned}. Show them, and end before anyone acts: no attack yet, {n} chooses next."
-        w.directives.insert(0, line)
+        w.directives.insert(0, line + self._who_comes(s))   # the owner's round of 11-20: the priest, not of the company, told trailing along all game
         if met:
             w.directives.insert(1, " ".join(met) + " They are there as the player comes up.")
         if leg["arrived"]:
@@ -1467,7 +1516,7 @@ class ParchmentGame(FantasyGame):
                 return state, CommandResult(ok=False, label="Shop", text="Not sold here.")
             buys.append((ref, n, price))
         if not ids and not buys:
-            return state, CommandResult(ok=False, label="Shop", text="Nothing picked.")
+            return state, CommandResult(ok=False, label="Shop", text="Nothing to sell." if args.get("loot") and not args.get("buy") else "Nothing picked.")
         gold = s.item("gold")
         have = gold.count if gold is not None else 0
         income = sum(pr * self._sell_count(it) for it, pr in (sellable[i] for i in ids))
@@ -1491,6 +1540,7 @@ class ParchmentGame(FantasyGame):
             gold = Item(id="gold", name="gold", count=0)
             s.inventory.append(gold)
         gold.count += income - cost
+        (s.flags.get("turn_start") or {}).pop("loot", None)   # the basket's sale is this one; nothing left for the typed-sale check
         bought = []
         for ref, n, _ in buys:
             for _k in range(n):
@@ -1504,6 +1554,9 @@ class ParchmentGame(FantasyGame):
                     touched += [got.id, ref]
             touched.append(name)
             bought.append(f"{n} {name}" if n > 1 else itm._a(name))
+        # the Fighter's round of 11-20 (one potion bought for 12 gold, two in the pack: the telling's "small glass vial" was a
+        # row the skip list could not name): what the basket bought is counted here and held to after the telling
+        s.flags["dealt"] = {it.id: it.count for it in s.inventory if it.id in touched}
         parts = ([f"Bought: {', '.join(bought)} ({cost} gold)."] if bought else []) + ([f"Sold: {', '.join(sold)} ({income} gold)."] if sold else [])
         line = " ".join(parts) + f" {gold.count} gold now.{news}"
         said = " and ".join(([f"buys {', '.join(bought)} for {cost} gold"] if bought else []) + ([f"sells {', '.join(sold)} for {income} gold"] if sold else []))
@@ -1666,7 +1719,7 @@ class ParchmentGame(FantasyGame):
             from games.fantasy import gear
             held = gear.worn(s).get("weapon")
             how = f" with my {held.name}" if held is not None else ""
-            slots.append(HotSlot(id="attack:flee", icon="bag", label="Flee", command="flee"))      # with the Attack buttons' setting
+            slots.append(HotSlot(id="flee", icon="bag", label="Flee", command="flee"))      # always there (FN216: the Attack buttons are off by default)' setting
             for fid in foes[:3]:
                 q = s.person(fid)
                 slots.insert(0 + sum(1 for x in slots if x.id.startswith("attack:")),
@@ -1711,7 +1764,7 @@ class ParchmentGame(FantasyGame):
             if t == "map":
                 w.place, w.group = "popout", "Map"
             elif t == "meter" and getattr(w, "label", "") == "XP":
-                w.place, w.group = "popout", "Character"        # the owner, 11-18: "xp bar should be in character menu"
+                w.compact = True        # FN217 (the owner, 11-20: "shouldn't be buried in character menu, also show under health bar albeit compact")
             elif title in self.POPOUT and t != "commands":
                 w.place, w.group = "popout", self.POPOUT[title]
         return out

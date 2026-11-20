@@ -216,11 +216,15 @@ class Engine:
             "guard": {**self.settings["guard"], "mode": self.guard_mode()}, "modes": GUARD_MODES, "progress": dict(self.settings["progress"]),
             "dice": dict(self.settings["dice"]),
             "guard_from": self.guard_source(), "shared_guard": self.settings["guard"]["mode"],
-            "profile": self.cfg.profile_label, "profile_guard": self.profile_guard(),
+            "profile": self.cfg.profile_label, "profile_guard": self.profile_guard(), "switch": self._switch_options(),
             "dev_pin": bool(self.cfg.server.dev_pin), "dev_mode": bool(self.cfg.server.dev_mode), "difficulties": [{"id": k, "name": v} for k, v in DIFFICULTIES.items()],
             "roles": {name: {"provider": r.provider, "model": r.model, "effort": r.effort}
                       for name, r in ((n, self.cfg.role(n)) for n in self.cfg.roles)},
         }
+
+    def _switch_options(self) -> list[dict[str, Any]]:
+        from . import picker
+        return picker.switch_options(self.cfg)
 
     def update_settings(self, patch: dict[str, Any]) -> dict[str, Any]:
         """The menu's changes. The guard mode, while the active profile names one, is this server's alone: kept in memory,
@@ -1969,6 +1973,7 @@ class Engine:
         specs = _hook(game, "commands", state, default=[])
         levers: list[PendingLever] = []
         working = state
+        game.refused_levers = set()                         # what the game's world turn may read: typed levers refused this turn
         kept: list[Any] = []
         for pick in adj.commands:
             spec = next((c for c in specs if c.id == pick.id and c.typed), None)
@@ -2026,6 +2031,7 @@ class Engine:
                 ledger("command_preview", {"id": spec.id, "args": args, "mode": spec.mode, "typed": True, "ok": False, "text": text})
                 log.info("command.typed.blocked " + logs.kv(iid=iid, turn=turn, id=spec.id, why=text))
                 levers.append(PendingLever(id=spec.id, args=args, mode=spec.mode, label=label, preview=res, blocked=True, directive=directive))
+                game.refused_levers.add(spec.id)
                 continue
             working = after                                          # the next preview sees this one done
             clause = (" The engine applies it after your prose unless the fiction shows it was not completed. You may complicate the attempt "
@@ -2107,8 +2113,10 @@ class Engine:
         if adj is not None and adj.kind in ("clarify", "impossible"):
             q = adj.clarify_question or adj.summary
             if q.startswith(UNTIL_ASK):          # (v): not a puzzle, a length; the cold read's wording (D149)
-                directives.append(f"The player did not say how long. Ask them, in a line or two in the story's voice: {q[len(UNTIL_ASK):].strip()} "
-                                  "The scene stays as it is; nothing happens and no time passes this turn.")
+                # the owner's round of 11-20 (the baker's friend, then the innkeeper through the floor, asked "until nightfall, for a
+                # few hours, or until something wakes you?"): the question is the game's, never a person's line
+                directives.append(f"The player did not say how long. Ask the player this, as the narrator, in one plain line: {q[len(UNTIL_ASK):].strip()} "
+                                  "No person of the scene asks it or speaks this turn. The scene stays as it is; nothing happens and no time passes.")
             else:
                 why = "it cannot be done" if adj.kind == "impossible" else "it is not clear what they mean"
                 directives.append(f"CLARIFY: what the player tried could not be acted on ({why}). Ask or explain in character, briefly: {q} "
@@ -3466,6 +3474,11 @@ def until_when(game: Any, state: BaseModel, adj: AssistantReading, text: str) ->
         return adj, ""
     if task == "sleep" and getattr(game, "sleep_by_command", False) and not any(c.id == "rest" for c in adj.commands):
         return adj, ""            # the fantasy: a sleep the Rest command did not pick is a move somewhere (no night, no question)
+    if task == "sleep" and getattr(game, "sleep_by_command", False):
+        # the owner's round of 11-20 ("i sleep for the night" at 14:32, the Rest command picked, and the game asked until
+        # when): the Rest command is the answer; by day it wakes in the evening by its own rule, by night at morning (below)
+        if MORNING_MINUTE - 120 <= now < NIGHT_MINUTE - 120:
+            return adj, ""
     if task == "sleep" and not (MORNING_MINUTE - 120 <= now < NIGHT_MINUTE - 120):
         # the owner (11-08 evening): going to bed in the evening or the night is the night, to morning (the next trigger still
         # wakes them); a sleep by day still asks how long

@@ -326,3 +326,21 @@ async def test_the_card_of_a_hosted_profile_shows_roles_dials_modules_and_cost(e
 def test_role_fields_named_by_a_profile_are_role_settings():
     for name in profiles.names():
         profiles.load(name).check_roles(set(RoleConfig.model_fields))
+
+
+def test_the_bars_switch_is_offered_remembered_and_restored(engine: Engine, monkeypatch):
+    import asyncio
+    """FN218 (the owner, 11-20: "an easy way to swap between Gemma and sonnet on Lilith's server, and for it to be clear
+    what's active"): TA_SWITCH names what the bar offers; the choice is kept beside the store and taken up at startup."""
+    assert engine.get_settings()["switch"] == []
+    monkeypatch.setenv("TA_SWITCH", "sonnet=Sonnet,gemma4-31b=Local (Gemma)")
+    asyncio.run(picker.switch(engine, "sonnet"))
+    sw = engine.get_settings()["switch"]
+    assert [(o["label"], o["active"]) for o in sw] == [("Sonnet", True), ("Local (Gemma)", False)]
+    assert picker._kept(engine).read_text() == "sonnet"
+    picker._kept(engine).write_text("gemma4-31b")
+    picker.restore(engine)
+    assert engine.cfg.profile_name == "gemma4-31b" and engine.get_settings()["switch"][1]["active"]
+    picker._kept(engine).write_text("a3b")                              # not one the bar offers: left alone
+    picker.restore(engine)
+    assert engine.cfg.profile_name == "gemma4-31b"

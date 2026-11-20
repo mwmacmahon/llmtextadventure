@@ -362,7 +362,7 @@ def run(game: Any, state: FantasyState, fid: str, args: dict) -> tuple[FantasySt
             p.conditions = [x for x in p.conditions if x.name != f["condition"]]
             p.conditions.append(Condition(name=f["condition"], source="engine", stat=f.get("stat", ""), mod=int(f.get("mod", 0)),
                                           duration="minutes", expires_at=now + int(f.get("minutes", 10))))
-        return s, CommandResult(label=name, text=f"{name}: on until the scene ends." if f.get("instant") else "",
+        return s, CommandResult(label=name, text=f"{name}: {f.get('line') or ('one more blow in your next exchange' if f.get('flag') == 'surging' else 'on until the scene ends')}." if f.get("instant") else "",
                                 player_line=f.get("player_line") or f"I use {name}.", summary=f.get("summary") or f"{p.name} uses {name}.",
                                 directive=f.get("directive") or f"{p.name} uses {name}. Show it in a line or two, and play whatever else the player asked for this turn.",
                                 minutes=int(f.get("cast_minutes", 0)), referee_skip=[fid])
@@ -377,10 +377,13 @@ def _cast(game: Any, state: FantasyState, s: FantasyState, f: dict, fid: str, ar
     from .state import CombatState
     p, name, kind = s.player, f["name"], f["kind"]
     foes = spell_foes(game, s)
+    if not _spend(p, f):                                  # the slot first: "nobody to cast it at" hid the empty pool (11-20)
+        return state, CommandResult(ok=False, label=name, text=_no_slot(p, name))
     if kind != "cast" and not foes:
         return state, CommandResult(ok=False, label=name, text=f"{name}: nobody hostile here to cast it at.")
-    if not _spend(p, f):
-        return state, CommandResult(ok=False, label=name, text=_no_slot(p, name))
+    if kind == "quell" and f.get("pool") and f.get("living_only", True) and all(ensure_block(q).kind == "undead" for q in foes):
+        # the Gemma round of 11-20: the chip was greyed at a skeleton and typed words cast Sleep at it for a slot
+        return state, CommandResult(ok=False, label=name, text=f"{name}: nobody here such a spell can take; not cast.")
     target = next((q for q in foes if q.id == str(args.get("at") or "")), None) or (foes[0] if foes else None)
     if kind == "quell" and target is not None and not f.get("pool") and ensure_block(target).kind == "undead" and f.get("living_only", True):
         return state, CommandResult(ok=False, label=name, text=f"{name}: {target.name} is beyond such a spell; not cast.")

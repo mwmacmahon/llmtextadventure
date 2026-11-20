@@ -69,6 +69,19 @@ def _levers_line(ui: dict) -> str:
             for c in p.get("items", []):
                 params = "; ".join(f"{x['name']}=" + "|".join(o["id"] for o in x.get("options", [])[:24]) for x in c.get("params", []))
                 out.append(f"  {c['id']}" + (" (greyed)" if c.get("enabled") is False else "") + (f": {params}" if params else ""))
+        elif p.get("type") == "hotbar":
+            if p.get("title"):
+                out.append(f"  [{p['title']}]")
+            for sl in p.get("slots", []):
+                if sl.get("command"):
+                    args = " ".join(f"{k}={v}" for k, v in (sl.get("args") or {}).items())
+                    line = f"  {sl['command']}" + (f" {args}" if args else "") + (" (free)" if sl.get("free") else "") + (" (greyed)" if not sl.get("enabled", True) else "") + f"   ({sl.get('label') or ''})"
+                    if line not in out:
+                        out.append(line)
+        elif p.get("type") == "shop":
+            sells = ", ".join(f"{r['id']} ({r.get('price')}g)" for r in p.get("sells", [])[:20])
+            stock = ", ".join(f"{r['id']} ({r.get('price')}g)" for r in p.get("stock", [])[:30])
+            out.append(f"  deal: buy=<id>*<n>,... sell=<id>,... loot=1   stock: {stock or 'none'}; they would buy: {sells or 'nothing'}")
         elif p.get("type") == "quests":
             rows = "; ".join(f"{r['title']} [{r['standing']}]" + (f" {r['line']}" if r.get("line") else "") for r in p.get("rows", [])[:8])
             out.append(f"  {p.get('title')}: {rows or 'nothing'}")
@@ -123,7 +136,8 @@ def play(a: argparse.Namespace) -> int:
         meter = next((p for p in (d.get("ui") or {}).get("panels", []) if p.get("type") == "meter"), None)
         side["rows"].append([str(n), m.get("kind") or "", str(m.get("elapsed")), str(meter["value"]) if meter else "",
                              str(len(m.get("applied") or [])), str(len(m.get("rejected") or [])), str(len(m.get("rulings") or [])), str(d.get("seconds"))])
-        out += [f"[TURN {n}]", prose, "", "[ENGINE]", *_mechanics_lines(m), "", "[WHAT YOU SEE]", ui_line]
+        out += [f"[TURN {n}]", prose, "", *([f"[SHOWN TO THE PLAYER] " + " | ".join(str(x) for x in m["seen"])] if m.get("seen") else []),
+                "[ENGINE]", *[x for x in _mechanics_lines(m) if not x.startswith("drift:")], "", "[WHAT YOU SEE]", ui_line]
         if d.get("ending"):
             lines += [f"**ENDING: {d['ending']}**", ""]
             out.append(f"[ENDING] {d['ending']}")

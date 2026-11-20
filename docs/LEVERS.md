@@ -1044,6 +1044,9 @@ list is the word guard `lever-phrases` (§8); the street texture gap is the game
   healer of the company), and a resident marked `sized: true` in the scenario is sized by the generator on arrival.
   Since D350 (Parchment on, the family default off): `ONE_BLOW_MERCY` (a killing blow from half hit points or more
   leaves 1, once a fight), `START_HP` 5, `JOB_XP` 3 (XP a gold piece of a job's pay).
+  Since D352: `company.danger` counts many foes for more than their sum (the SRD's table: x1.5 for two, x2 for three
+  to six), which is what foreboding and the stop short of a place read; a scenario's lot or posting with `min` is never
+  fewer (rats, kobolds, robbers: 2).
 - **Levels:** a class is `status: full` (playable, levels 1 to 5) or `stub` (level 1, labelled under construction); all
   twelve are full since D347.
 - **Why it exists:** the owner, 11-20: "the last big things on the agenda: spells and other classes".

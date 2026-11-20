@@ -255,6 +255,49 @@ async def card(engine: "Engine", name: str) -> dict[str, Any]:
 
 # ---- the switch ---------------------------------------------------------------------------------------------------
 
+def switch_options(cfg: Config) -> list[dict[str, Any]]:
+    """FN218: the profiles a player's server offers in its bar, from TA_SWITCH ("sonnet=Sonnet,gemma4-31b=Local (Gemma)"):
+    name, the label shown, and which is playing now."""
+    import os
+    out = []
+    for part in os.environ.get("TA_SWITCH", "").split(","):
+        name, _, label = part.partition("=")
+        if name.strip():
+            out.append({"name": name.strip(), "label": (label or name).strip(), "active": name.strip() == cfg.profile_name})
+    return out
+
+
+def _kept(engine: "Engine"):
+    from pathlib import Path
+    return Path(engine.store.path).parent / "active_profile"
+
+
+def remember(engine: "Engine", name: str) -> None:
+    """The bar's choice outlives a restart (an update restarts the server): kept beside this server's own store, and only
+    for a profile the bar offers."""
+    if any(o["name"] == name for o in switch_options(engine.cfg)):
+        try:
+            _kept(engine).write_text(name)
+        except OSError:
+            log.exception("profiles.remember failed")
+
+
+def restore(engine: "Engine") -> None:
+    """At startup: the profile the bar last chose, when it is still one the bar offers."""
+    try:
+        name = _kept(engine).read_text().strip()
+    except OSError:
+        return
+    if name != engine.cfg.profile_name and any(o["name"] == name for o in switch_options(engine.cfg)):
+        try:
+            p = profiles.load(name)
+            check_profile(p)
+            engine.cfg = config_for(p)
+            log.info("profiles.restore %s", name)
+        except Exception:
+            log.exception("profiles.restore failed")
+
+
 async def switch(engine: "Engine", name: str) -> dict[str, Any]:
     """Make `name` this server's active profile. Raises FileNotFoundError for no such profile, SwitchRefused when not now."""
     if engine.turns_streaming():
@@ -262,7 +305,16 @@ async def switch(engine: "Engine", name: str) -> dict[str, Any]:
     p = profiles.load(name)
     check_profile(p)
     cfg = config_for(p)
-    if p.local:
+    rep = None
+    if p.local and profiles.helper_url():
+        # FN218 (the owner, 11-20: "an easy way to swap between Gemma and sonnet"): the box already has this profile loaded
+        # and answering (the standing case: one model serves every server), so nothing is loaded and nothing is in the way
+        rep = await profiles.box_report(llama_url(cfg), transport=engine.box_transport)
+        if not (rep["active"] == p.name and rep["server_answers"] and (not rep["model"] or rep["model"] == p.model)):
+            rep = None
+    if p.local and rep is not None:
+        engine.loading = None
+    elif p.local:
         recent = recent_local_turn(engine.store)
         if recent:
             ago = _ago(recent["created"])
@@ -289,4 +341,5 @@ async def switch(engine: "Engine", name: str) -> dict[str, Any]:
     engine.cfg = cfg
     engine.guard_override = None                  # the menu's guard on this server was for the profile before
     log.info("profiles.switch %s -> %s base=%s local=%s", before, p.name, cfg.source, p.local)
+    remember(engine, p.name)
     return list_view(engine)

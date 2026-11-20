@@ -29,6 +29,7 @@ games = load_games(cfg.resolve(cfg.server.content_root), hidden=cfg.server.dev_m
 for _line in mods_mod.check_all(cfg.resolve(cfg.server.content_root), games):       # every mod and deck file present, used or not
     log.warning("mods.check " + _line)
 engine = Engine(cfg, store, games)
+picker.restore(engine)                            # FN218: the model the bar last chose on this server
 log.info("startup " + logs.kv(db=store.path, content=cfg.resolve(cfg.server.content_root), games=",".join(games), profile=cfg.profile_label,
                                **{f"role.{k}": f"{v.provider}:{v.model}/{v.effort}" for k, v in cfg.roles.items()}))
 

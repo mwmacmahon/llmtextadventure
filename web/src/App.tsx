@@ -74,6 +74,12 @@ function Game({ id }: { id: string }) {
   const [asking, setAsking] = useState(false);       // the Ask toggle (B105): the box's words go to the game master as a question
   const [askBusy, setAskBusy] = useState(false);
   const [streaming, setStreaming] = useState<string | null>(null);
+  // FN210 (the owner, 11-20: "On desktop at least it needs to auto select typing area each turn"): the box takes the keys
+  // again when a turn ends, where there is a keyboard (a fine pointer; a phone's keyboard would cover the telling)
+  const idle = streaming === null;
+  useEffect(() => {
+    if (idle && window.matchMedia?.("(pointer: fine)").matches && !document.querySelector(".sheet, .modal, dialog[open]")) boxRef.current?.focus();
+  }, [idle]);
   const [stage, setStage] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);

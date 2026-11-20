@@ -133,7 +133,9 @@ def arrive(game: Any, sc: dict, s: FantasyState, pid: str) -> list[str]:
             e = en.encounter(game, s, en.Want(band=band_for(s, "easy"), pinned=[(str(r["entry"]), None)], place=where, n=20,
                                               seed=f"{(s.world or {}).get('seed', 0)}:sized:{pid}", ease=co.ease(s)))
             if e.bodies:
-                bodies = [(b, min(c, int(r.get("count") or c))) for b, c in e.bodies]
+                # the owner's round of 11-20: "a single rat as the enemy for two quests ... Clearing rats means rats plural":
+                # a lot written with `min` is never fewer
+                bodies = [(b, max(min(c, int(r.get("count") or c)), int(r.get("min") or 1))) for b, c in e.bodies]
                 variant = e.variant
         made = en.spawn(s, bodies, variant, where=where)
         for q in made:
@@ -261,6 +263,7 @@ def post(game: Any, sc: dict, s: FantasyState) -> dict | None:
             s.people = [q for q in s.people if q is not helper]
         return None
     pid = f"post_{n}"
+    e.bodies = [(b, max(c, int(t.get("min") or 1)) if b == entry else c) for b, c in e.bodies]     # "rats" is never one rat
     s.flags.setdefault("posted", {})[pid] = [{"entry": b, "count": c, "variant": e.variant} for b, c in e.bodies]
     xp = sum(_xp(b) * c for b, c in e.bodies)
     home = s.world["places"][s.world["home"]]["tile"]

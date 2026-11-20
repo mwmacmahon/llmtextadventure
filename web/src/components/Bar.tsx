@@ -5,6 +5,8 @@ import { api, devMode } from "../api";
  *  talks to, so a save that lives on another server is explained. `settingsHref` opens Settings for the game in play. */
 export function Bar({ settingsHref }: { settingsHref: string }) {
   const [profile, setProfile] = useState<string | null>(null);
+  const [models, setModels] = useState<{ name: string; label: string; active: boolean }[]>([]);
+  const [switching, setSwitching] = useState(false);
   const [dev, setDev] = useState(devMode.on());
   const [err, setErr] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
@@ -25,6 +27,7 @@ export function Bar({ settingsHref }: { settingsHref: string }) {
   useEffect(() => {
     const load = () => api.settings().then((s) => {
       setProfile(s.profile);
+      setModels(s.switch ?? []);
       setLocal(Object.values(s.roles).some((r) => r.provider === "llamacpp"));
       if (s.dev_mode === false && devMode.on()) devMode.set(false);    // B232: a server with no dev mode clears this browser's switch
     }).catch(() => setProfile(null));
@@ -37,6 +40,20 @@ export function Bar({ settingsHref }: { settingsHref: string }) {
       removeEventListener("ta-dev", onDev);
     };
   }, []);
+
+  // FN218 (the owner, 11-20: "an easy way to swap between Gemma and sonnet ... and for it to be clear what's active")
+  async function useModel(name: string) {
+    setErr(null);
+    setSwitching(true);
+    try {
+      await api.switchProfile(name);
+      dispatchEvent(new Event("ta-settings"));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSwitching(false);
+    }
+  }
 
   async function importFile(f: File) {
     setErr(null);
@@ -65,8 +82,17 @@ export function Bar({ settingsHref }: { settingsHref: string }) {
       <span className="bar-where muted small" title="The server and profile this page plays on. Saves live on the server that made them.">
         {dev && <span className="dev-mark">dev</span>}
         {location.host}
-        {profile ? ` · ${profile}` : ""}
+        {models.length === 0 && profile ? ` · ${profile}` : ""}
       </span>
+      {models.length > 0 && (
+        <span className="model-switch" role="group" aria-label="Model">
+          {models.map((m) => (
+            <button key={m.name} className={m.active ? "on" : ""} disabled={switching || m.active} aria-pressed={m.active} onClick={() => useModel(m.name)}>
+              {m.label}
+            </button>
+          ))}
+        </span>
+      )}
       {stale && (
         <div className="bar-error small" role="status">
           A new version of the game is ready. <button className="link small" onClick={() => location.reload()}>Reload</button>

@@ -58,6 +58,7 @@ class Meter(BaseModel):
     text: str | None = None        # the numbers beside the label ("11 / 15"); None shows none
     tone: Tone | None = None       # a solid fill in this tone; None keeps the green-to-red gradient
     chips: list[Chip] = Field(default_factory=list)   # shown under the bar (wound chips)
+    compact: bool = False          # one thin line: the label, the bar, the numbers (the XP under the hit points, FN217)
 
 
 class MeterGroup(BaseModel):

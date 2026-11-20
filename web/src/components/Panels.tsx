@@ -83,12 +83,44 @@ function Panel({ w, onChoice, onCommand, onPick, onOpen, busy, ended }: { w: Wid
         </div>
       );
     case "meter":
+      if (w.compact) {
+        const span = w.max - w.min || 1;
+        const pct = Math.max(0, Math.min(100, ((w.value - w.min) / span) * 100));
+        return (
+          <section className="panel meter-compact" title={w.tier ?? undefined}>
+            <span className="meter-label">{w.label}</span>
+            <span className="meter meter-small fight-bar"><span className={`meter-fill${w.tone ? ` fill-${w.tone}` : ""}`} style={{ width: `${pct}%` }} /></span>
+            <span className="fight-hp">{w.text}</span>
+          </section>
+        );
+      }
       return (
         <section className="panel">
           <MeterBody w={w} />
         </section>
       );
     case "meter_group":
+      if (w.pinned && w.place === "main")
+        // FN211 (the owner, 11-20: "Health bars take up almost the whole chat area during a fight"): the fight, a line each
+        return (
+          <section className="panel fight-lines">
+            {w.title && <h3>{w.title}</h3>}
+            <div className="fight-grid">
+              {w.meters.map((m) => {
+                const span = m.max - m.min || 1;
+                const pct = Math.max(0, Math.min(100, ((m.value - m.min) / span) * 100));
+                return (
+                  <div key={m.label} className="fight-line">
+                    <span className="fight-name">{m.label}</span>
+                    <span className="meter meter-small fight-bar"><span className={`meter-fill${m.tone ? ` fill-${m.tone}` : ""}`} style={{ width: `${pct}%` }} /></span>
+                    <span className="fight-hp">{m.text}</span>
+                    {(m.chips ?? []).map((c, i) => <ChipView key={`${c.value}-${i}`} c={c} />)}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        );
       return (
         <section className="panel">
           {w.title && <h3>{w.title}</h3>}

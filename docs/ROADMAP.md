@@ -711,6 +711,14 @@ endless ground, camps, wandering, invented places and ground changes held until 
   seven characters at level 1, most to one blow. Now: a killing blow from half hit points or more leaves 1, once a
   fight; five more hit points to start; a paid job gives XP; a walk stops short of a place beyond the party; Flee is on
   the hot bar. The dials are the builder's and wait on the owner's word.
+- **The second Gemma wave (D351): 11-20.** A Druid, a Fighter and a Sorcerer, 30 turns each: nobody died, the Fighter
+  reached level 2. Fixed: a journey to a building keeps it through its stops; a typed spell refused in a fight costs no
+  round; loot sold by typed words is paid the shop's price; a thing bought is counted once. Open: FN204 to FN209.
+- **The owner's round on Sonnet (D352): 11-20.** Dead at the mines at level 1: four kobolds and a swarm of bats were
+  150 XP against a line of 200, the count of foes left out, so nothing warned. Now many foes count for more, the mines
+  warn and the walk stops short. Rats, kobolds and robbers come two at least. A night's sleep asks no question. The
+  crew's priest, told trailing along and silently put back, is said to stay. Web: the input box keeps the keys, the
+  fight is a line a fighter, the Attack buttons are off by default.
 - **On Lilith's server since 11-19 (D339)**, on the owner's word: Parchment is listed on a player's server; :8016 moved
   to bcf5f82. Nine turns on Sonnet first: the board, going to a person, a posted job, the fight, pay in person and the
   shop's basket all worked; one fault found and fixed.

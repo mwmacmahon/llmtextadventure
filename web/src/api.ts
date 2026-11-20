@@ -17,7 +17,7 @@ export type CommandPanel = {
 export type CommandSpec = { id: string; label: string; mode: "engine" | "narrated"; params: Param[]; hint: string; about?: string; enabled?: boolean; free?: boolean; panel?: CommandPanel | null };
 export type MeterWidget = {
   type: "meter"; label: string; value: number; min: number; max: number; tier?: string | null; thresholds: number[];
-  text?: string | null; tone?: Tone | null; chips?: Chip[];
+  text?: string | null; tone?: Tone | null; chips?: Chip[]; compact?: boolean;
 };
 
 // Where a panel is drawn and whether it stays put: `place` "side" (the default column) or "main" (the centre pane under the
@@ -149,6 +149,7 @@ export type Settings = {
   shared_guard: string;
   profile: string;
   profile_guard: string | null;
+  switch?: { name: string; label: string; active: boolean }[];    // FN218: the models this server's bar offers
   roles: Record<string, { provider: string; model: string; effort: string | null }>;
   dev_pin: boolean;                                  // dev mode asks for a pin on this server
   dev_mode?: boolean;                                // false: this server has no dev mode (a player's server, B232)

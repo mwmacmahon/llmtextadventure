@@ -93,6 +93,21 @@ footer textarea { flex: 1; resize: vertical; }
 .meter-head.small { gap: 6px; margin-bottom: 4px; }
 .meter-head.small .meter-label { font-size: 11px; }
 .meter-group { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.model-switch { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-left: 8px; }
+.model-switch button { border: 0; border-radius: 0; background: transparent; color: var(--muted); padding: 2px 9px; font-size: 12px; }
+.model-switch button.on { background: var(--accent, var(--ok)); color: var(--bg); font-weight: 600; opacity: 1; }
+.model-switch button:not(.on):hover { color: var(--text); }
+.panel.meter-compact { display: flex; align-items: center; gap: 8px; padding-top: 5px; padding-bottom: 5px; font-size: 12px; }
+.panel.meter-compact .meter-label { font-size: 11px; flex: none; }
+.fight-lines { padding-top: 6px; padding-bottom: 6px; }
+.fight-lines h3 { margin: 0 0 4px; font-size: 11px; }
+.fight-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 2px 16px; max-height: 22vh; overflow-y: auto; }
+.fight-line { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; line-height: 18px; }
+.fight-name { flex: 0 1 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fight-bar { flex: 1 1 40px; min-width: 40px; height: 5px; display: block; position: relative; }
+.fight-bar .meter-fill { display: block; height: 100%; }
+.fight-hp { flex: none; font-variant-numeric: tabular-nums; color: var(--muted); }
+.fight-line .chip { padding: 0 5px; font-size: 10px; line-height: 14px; flex: none; }
 .meter-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
 .chip-ok { border-color: var(--ok); } .chip-warn { border-color: var(--warn); } .chip-bad { border-color: var(--bad); } .chip-info { border-color: var(--info); }
 .chip-ok .chip-label, .badge.chip-ok { color: var(--ok); } .chip-warn .chip-label, .badge.chip-warn { color: var(--warn); }

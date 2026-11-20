@@ -917,6 +917,16 @@ def plan_fight(game: Any, s: FantasyState, adj: Any, player_text: str, rng: Any,
                                                           for q in cb.living_enemies(game, s))):
         s.combat.plan = []                                             # B289: the lever is the turn (its free blows, or the yield taken)
         return                                                         # the lever's own line says what happened (one line, not two)
+    refused = picked & set(getattr(game, "refused_levers", None) or ())
+    if refused and not cb.player_attack(adj) and not s.combat.item_strike and s.combat.free_turns < 2:
+        # the Gemma round of 11-20 (a Druid, Cure Wounds typed with no slot left: refused, and the rat's bite took 6 of 9):
+        # a button refused costs no turn, so a typed lever refused costs none either
+        s.combat.free_turns += 1
+        s.combat.plan = []
+        w.mechanics.append("Refused, and no turn spent: nobody acts.")
+        w.directives.append(f"A FIGHT, held a moment: what {p.name} tried cannot be done (the BLOCKED line says why) and costs no time. "
+                            f"Nobody strikes this turn, enemies included. A line or two, and stop where {p.name} chooses again.")
+        return
     s.combat.free_turns = 0
     s.combat.plan = cb.plan_round(game, s, adj, player_text, turn, rng)
     mine = next((e for e in s.combat.plan if e.get("side") == "player" and e.get("weapon")), None)
