@@ -240,7 +240,7 @@ def post(game: Any, sc: dict, s: FantasyState) -> dict | None:
     helper = co.make_helper(game, s, stub, t["helper"], rng) if isinstance(t.get("helper"), dict) and rng.random() < HELPER_CHANCE else None
     if helper is not None:
         helper.fights_beside = True
-    e = en.encounter(game, s, en.Want(band=band, pinned=[(entry, None)], place=name, n=20, seed=f"{s.world['seed']}:post:{n}"))
+    e = en.encounter(game, s, en.Want(band=band, pinned=[(entry, None)], place=name, n=20, seed=f"{s.world['seed']}:post:{n}", ease=co.ease(s)))
     if helper is not None:
         helper.fights_beside = False
     if not e.bodies:

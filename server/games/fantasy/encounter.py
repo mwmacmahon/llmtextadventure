@@ -421,6 +421,7 @@ class Want:
     n: int = 30                                                            # fights a cell
     seed: str = ""
     actions: list[dict] | None = None                                      # B316: the pinned content's own moves (the drowned's grab)
+    ease: int = 0                                                          # points added to the band's win target (a game's dial: Parchment with a companion along)
 
 
 @dataclass
@@ -497,7 +498,7 @@ def encounter(game: Any, s: FantasyState, want: Want) -> Encounter:
     seed = want.seed or f"{s.player.name}:{level}:{want.place or s.player.location}:{band}"
     rng = random.Random(seed)
     cands, note = shortlist(Want(band, want.pinned, want.words, want.place, want.offset, want.n), region, members, level, rng)
-    target = target_for(band, want.offset)
+    target = min(99, target_for(band, want.offset) + int(want.ease or 0))
     variants = ("veteran", "elite") if band == "boss" else ("standard", "veteran", "elite") if band == "impossible" else VARIANTS
     base = party_base(game, s)
     tried: list[tuple[list[tuple[str, int]], str, float]] = []

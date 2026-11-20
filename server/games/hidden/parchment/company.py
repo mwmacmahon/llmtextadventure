@@ -178,6 +178,14 @@ def adopt(s: FantasyState) -> list[str]:
 # written ones and six tenths more for each level past the first, their attack one better every second level, their damage one
 # better every second level from the second. All three keep pace whether along or not, so whoever is asked later is no weaker.
 CREW_HP = 0.6
+# FN197 (the owner, 11-20: "Battles should scale a little easier with a companion vs without, to avoid them feeling useless"):
+# every fight is sized to the party, so a companion met a bigger fight and changed nothing (D344). With the permanent
+# companion along, the fights the engine sizes aim this many points higher on the odds of winning.
+COMPANY_EASE = 6
+
+
+def ease(s: FantasyState) -> int:
+    return COMPANY_EASE if companion(s) is not None else 0
 
 
 def _bump(dice: str, n: int) -> str:

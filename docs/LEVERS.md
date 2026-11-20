@@ -1020,6 +1020,8 @@ list is the word guard `lever-phrases` (§8); the street texture gap is the game
   something lives at is trouble of that place's kind). `FAR_WARN`, `FAR_LEAVE` 6 and 10 tiles from any road, lane or known
   place (the companion is uneasy, then turns back).
 - **Levels:** the board refills when the scenario has `postings:` (none: the written jobs only); the rest are the numbers above.
+  Since D345: `company.COMPANY_EASE` 6 (points on the generator's win target while the permanent companion is along;
+  `encounter.Want.ease`). Measured over ten days: archer 96 per cent alive (85 without it), sellsword 87, priest 74, alone 59.
   Since D343: `jobs.FIRST_LEVEL` (at level 1 an engine-sized fight is one band easier: easy to trivial) and
   `jobs.min_level` (a written job's level: no more than deadly for three, no more than half a level of XP; held until then).
   Measured: 85 per cent alive after ten days with the archer (it was 60 to 71), 59 alone (49 to 62).

@@ -856,7 +856,7 @@ class ParchmentGame(FantasyGame):
             least = min((str(r["entry"]) for r in rows), key=jb._xp, default="")
             if least and jb._xp(least) <= en.threshold("hard", s.player.level, 1 + len(cb.party(s))):
                 pinned = [(least, None)]
-        e = en.encounter(self, s, en.Want(band=band, pinned=pinned, place=s.player.location, n=20,
+        e = en.encounter(self, s, en.Want(band=band, pinned=pinned, place=s.player.location, n=20, ease=co.ease(s),
                                           seed=f"{s.world['seed']}:{x},{y}:{s.clock.day}:{s.clock.minute}:{rng.random():.6f}"))
         if not e.bodies:
             return ""
