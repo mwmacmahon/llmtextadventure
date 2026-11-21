@@ -721,8 +721,10 @@ endless ground, camps, wandering, invented places and ground changes held until 
   fight is a line a fighter, the Attack buttons are off by default.
 - **The model switch (D353) and Gemma first on Lilith's server (D354): 11-21.** Two buttons in the bar, the active one
   lit, the choice kept across restarts; a turn on the local model with the box down offers the other.
-- **Level 12 (D354): in hand 11-21.** The XP curve steepens from level 6 and ends at 12; the classes' levels 6 to 12
-  and monsters past CR 4 are being written. Simulation, 10 days: nobody died with a companion; alone about one in eight.
+- **Level 12 (D354, D355): built 11-21.** The XP curve steepens from level 6 and ends at 12. All twelve classes are
+  written to level 12 and twenty-three monsters (CR 1/2 to 10) with fourteen papers, by four content subagents; the
+  martials' fight numbers (a third blow, Sneak Attack's dice, Rage, fists, the Paladin's every hit) in the engine.
+  Simulated to level 12; nobody has played past level 5 on a model yet.
 - **On Lilith's server since 11-19 (D339)**, on the owner's word: Parchment is listed on a player's server; :8016 moved
   to bcf5f82. Nine turns on Sonnet first: the board, going to a person, a posted job, the fight, pay in person and the
   shop's basket all worked; one fault found and fixed.

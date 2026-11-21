@@ -950,8 +950,16 @@ class ParchmentGame(FantasyGame):
             least = min((str(r["entry"]) for r in rows), key=jb._xp, default="")
             if least and jb._xp(least) <= en.threshold("hard", s.player.level, 1 + len(cb.party(s))):
                 pinned = [(least, None)]
-        e = en.encounter(self, s, en.Want(band=band, pinned=pinned, place=s.player.location, n=20, ease=co.ease(s),
-                                          seed=f"{s.world['seed']}:{x},{y}:{s.clock.day}:{s.clock.minute}:{rng.random():.6f}"))
+        # 11-21 (the monsters of levels 6 to 12 in the pool; a level-1 road already drew a berserker, 450 XP, one seed in
+        # thirty): no one body on the road is worth more than a deadly fight for this party, however the generator thins it
+        most = en.threshold("boss", s.player.level, 1 + len(cb.party(s)))
+        for _try in range(5):
+            e = en.encounter(self, s, en.Want(band=band, pinned=pinned, place=s.player.location, n=20, ease=co.ease(s),
+                                              seed=f"{s.world['seed']}:{x},{y}:{s.clock.day}:{s.clock.minute}:{rng.random():.6f}"))
+            if pinned or not e.bodies or all(jb._xp(b) <= most for b, _ in e.bodies):
+                break
+        else:
+            return ""
         if not e.bodies or all(b == "commoner" for b, _ in e.bodies):
             return ""                                    # the Gemma round of 11-20: a townsman with firewood as the road's trouble, cut down
         made = en.spawn(s, e.bodies, e.variant)

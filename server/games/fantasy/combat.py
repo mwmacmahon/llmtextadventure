@@ -270,7 +270,9 @@ def _fist(s: FantasyState) -> tuple[str, str]:
     """A blow with no weapon: 1 and Strength for most; for one trained to it (the class effect `martial_arts`, the Monk) a d6
     and the better of Strength and Dexterity (the Gemma round of 11-20: a Monk's nine kicks and palm strikes did 2 each)."""
     p = getattr(s, "player", None)
-    return ("1d6", "finesse") if p is not None and p.effect("martial_arts") else FIST
+    if p is None or not p.effect("martial_arts"):
+        return FIST
+    return ("1d8" if int(getattr(p, "level", 1) or 1) >= 11 else "1d6", "finesse")     # FN220: a d8 from level 11
 
 
 def weapons_carried(s: FantasyState) -> list[tuple[str, str, str]]:
@@ -754,7 +756,7 @@ def _player_take(game: Any, s: FantasyState, n: int, tally: dict) -> tuple[int, 
     if p.has_condition("shielded"):
         m = step_lighter(n)
         if m != n:
-            n, notes = m, notes + ["Shield of Faith: a step lighter"]
+            n, notes = m, notes + ["Shielded: a step lighter"]       # Mage Armour and Shield wear the same condition (11-21)
     left = p.hp - int(tally.get("hp", 0))
     # A game's dial ONE_BLOW_MERCY (the Gemma rounds of 11-20: six of seven level-1 characters died in a day, most to one blow
     # from full hit points, a natural 20 or a wolf's ordinary bite against 9): a blow that would kill a character who stands
@@ -960,6 +962,8 @@ def resolve_attack(game: Any, s: FantasyState, entry: dict, rng: Any, offset: in
         if not _spend_ammo(s, how, pb["weapon"], notes):
             return {"text": f"{p.name} has nothing left to shoot. Play it, and go on.", "mechanic": "; ".join(notes), "data": {"verb": "ATTACK", "who": "player", "key": entry["key"], "hits": []}}
         rolls = 2 if p.level >= 5 and len(targets) < 2 and (p.klass or "").lower() in ("paladin", "fighter", "ranger", "barbarian", "monk") else 1   # Extra Attack
+        if rolls == 2 and p.level >= 11 and (p.klass or "").lower() == "fighter":
+            rolls = 3                                    # FN220: the Fighter's third blow
         if "surging" in p.flags_on and len(targets) < 2 and how not in ("ranged", "thrown"):
             # FN200: the Fighter's Action Surge, the Monk's Flurry: one more blow at one foe in this exchange, then spent (kept
             # for the next exchange when this one is a sweep or a shot, which have their own count)
@@ -970,8 +974,9 @@ def resolve_attack(game: Any, s: FantasyState, entry: dict, rng: Any, offset: in
         if "raging" in p.flags_on and pb["stat"] == "str" and how in ("melee", "finesse"):
             # round 17 (5d85334fc803): Rage gave a check's +2 and a step off the blows taken, and nothing on the blows given; the
             # SRD's rage damage, +2 on a Strength melee blow (a thrown or shot one gets none)
-            dice = f"{dice}+2"
-            notes.append("Rage: +2 damage")
+            more = 3 if p.level >= 9 else 2             # FN220: the SRD's +3 from level 9
+            dice = f"{dice}+{more}"
+            notes.append(f"Rage: +{more} damage")
     else:
         q = s.person(entry["who"])
         if q is None or not bodies(q):
@@ -1011,7 +1016,10 @@ def resolve_attack(game: Any, s: FantasyState, entry: dict, rng: Any, offset: in
             extra += cursed_dice(s, t.id)                          # FN202: a hexed foe takes the curse's dice on every hit
             why = _sneak_case(game, s, t)
             if why:
-                extra.append((f"Sneak Attack, {why}", "2d6" if p.level >= 3 else "1d6"))
+                # FN220: the dice follow the sheet's Sneak Attack (1, 2, 4 and 6 d6 at levels 1, 3, 7 and 11); it was 2d6 from 3
+                extra.append((f"Sneak Attack, {why}", f"{ {1: 1, 2: 2, 3: 4, 4: 6}.get(p.effect('sneak_attack'), 2) }d6"))
+            if (p.klass or "").lower() == "paladin" and p.level >= 11 and how in ("melee", "finesse"):
+                extra.append(("Improved Divine Smite", "1d8"))      # FN220: every melee blow that lands, from level 11
             mine = [(fid, f) for fid, f in ft.specs(game, p).items() if f.get("kind") == "rider"]
             for r in riders:
                 if not _a_feature(game, r):
@@ -1427,7 +1435,7 @@ def preroll(game: Any, s: FantasyState, rng: Any, offset: int, taken: int = 0) -
         if r.get("mechanic"):
             lines.append(r["mechanic"])
         said = re.sub(r"\s*Play\b.*$", "", r.get("text", ""), flags=re.S)
-        said = re.sub(r"\s*\((Rage|Defence|Uncanny Dodge|Shield of Faith|Sneak Attack)[^)]*\)", "", said)   # the dice line keeps them
+        said = re.sub(r"\s*\((Rage|Defence|Uncanny Dodge|Shield of Faith|Shielded|Sneak Attack)[^)]*\)", "", said)   # the dice line keeps them
         told.append(said.rstrip(" ,.;") + ".")
         data.append(d)
     return lines, told, data, int(tally.get("hp", 0)) - taken

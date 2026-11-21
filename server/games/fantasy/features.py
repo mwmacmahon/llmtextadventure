@@ -271,7 +271,8 @@ def run(game: Any, state: FantasyState, fid: str, args: dict) -> tuple[FantasySt
             c.value -= amount
         else:                                                     # Second Wind: a fixed amount
             if c is not None and c.value <= 0:
-                return state, CommandResult(ok=False, label=name, text="Spent; a long rest brings it back.")
+                rest = "short" if getattr(c, "refill", "long") == "short" else "long"
+                return state, CommandResult(ok=False, label=name, text=f"Spent; a {rest} rest brings it back.")
             if c is not None:
                 c.value -= 1
             amount = int(f.get("amount", 5)) + (p.level if f.get("plus_level") else 0)

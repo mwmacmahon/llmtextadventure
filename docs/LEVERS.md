@@ -1047,8 +1047,11 @@ list is the word guard `lever-phrases` (§8); the street texture gap is the game
   Since D352: `company.danger` counts many foes for more than their sum (the SRD's table: x1.5 for two, x2 for three
   to six), which is what foreboding and the stop short of a place read; a scenario's lot or posting with `min` is never
   fewer (rats, kobolds, robbers: 2).
-- **Levels:** a class is `status: full` (playable, levels 1 to 5) or `stub` (level 1, labelled under construction); all
-  twelve are full since D347.
+- **Levels:** a class is `status: full` (playable) or `stub` (level 1, labelled under construction); all twelve are
+  full since D347 and written to level 12 since D355. `sheet.LEVELS` is the XP for each level (300, 900, 2000, 3500, 5500,
+  then 9000, 14000, 21000, 30500, 43000, 59000: each step larger than the last since D354; it was +2500 for ever);
+  `MAX_LEVEL` 12. Fight numbers by level in `combat.py`: a second blow at 5 (five classes), the Fighter's third at 11,
+  Sneak Attack 1/2/4/6 d6 at 1/3/7/11, Rage +2 then +3 at 9, a Monk's fists d6 then d8 at 11.
 - **Why it exists:** the owner, 11-20: "the last big things on the agenda: spells and other classes".
 - **Measured:** the simulator, ten days, 60 to 80 games a row: alone, from the Druid's 70 per cent alive to the
   Sorcerer's 100; with the sellsword, 88 to 100. Before the opening jobs were sized, a lone Cleric lived 16 per cent of

@@ -36,7 +36,10 @@ from .state import CombatBlock, CombatState, FantasyState, Person
 BANDS = ("trivial", "easy", "normal", "hard", "boss", "impossible")
 TARGET = {"trivial": 99, "easy": 90, "normal": 70, "hard": 50, "boss": 40, "impossible": 5}
 OLD_BANDS = {"easy": "trivial", "fair": "easy", "hard": "normal", "deadly": "hard"}      # §9b's words, as the record §12b reads them
-THRESHOLDS = {1: (25, 50, 75, 100), 2: (50, 100, 150, 200), 3: (75, 150, 225, 400), 4: (125, 250, 375, 500), 5: (250, 500, 750, 1100)}
+THRESHOLDS = {1: (25, 50, 75, 100), 2: (50, 100, 150, 200), 3: (75, 150, 225, 400), 4: (125, 250, 375, 500), 5: (250, 500, 750, 1100),
+              # FN220: levels 6 to 12 (the DMG's table; past it, level 5's row scaled as before)
+              6: (300, 600, 900, 1400), 7: (350, 750, 1100, 1700), 8: (450, 900, 1400, 2100), 9: (550, 1100, 1600, 2400),
+              10: (600, 1200, 1900, 2800), 11: (800, 1600, 2400, 3600), 12: (1000, 2000, 3000, 4500)}
 MULTIPLIERS = (1.0, 1.5, 2.0, 2.5, 3.0, 4.0)
 VARIANTS = ("weak", "standard", "veteran")          # the three every candidate is measured at
 # the owner, 11-10 night: "make weak much more weak ... we need more variation levels": the ladder, weakest first; a fight

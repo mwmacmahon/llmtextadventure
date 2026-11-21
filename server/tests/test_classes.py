@@ -230,3 +230,27 @@ def test_sneak_attack_finesse_and_rage_reach_the_player(game):
     barb.player.flags_on = ["raging"]
     strip = next(x for x in game.ui(barb).panels if type(x).__name__ == "StatusStrip")
     assert any(c.value == "Raging" for c in strip.chips)
+
+
+def test_levels_six_to_twelve(game):
+    """FN220 (the owner, 11-21: "expand game content to level 12, xp curve should slow down after 5-6"): every class file is
+    written to level 12; the curve's steps grow from level 6 and level 12 is the last; the martials' fight numbers follow."""
+    from games.fantasy import combat as cb
+    from games.fantasy import sheet as sh
+    steps = [sh.xp_for(lv) - sh.xp_floor(lv) for lv in range(1, 12)]
+    assert steps[5:] == sorted(steps[5:]) and steps[6] > steps[5] > steps[4] and sh.MAX_LEVEL == 12 and sh.xp_for(12) == sh.xp_for(11)
+    for k in ("Fighter", "Barbarian", "Paladin", "Rogue", "Ranger", "Monk", "Wizard", "Sorcerer", "Warlock", "Cleric", "Druid", "Bard"):
+        st = new(game, klass=k, race="Human")
+        cd = game.class_of(st.player)
+        if cd.status != "full":
+            pytest.skip("the class files are stubs on this machine")
+        assert all(cd.features_at(lv) for lv in range(6, 13)), k
+    st = new(game, klass="Monk", race="Human")
+    st.player.level = 11
+    assert cb._fist(st)[0] == "1d8"
+    st = new(game, klass="Rogue", race="Human")
+    assert not any(c.id == "level_up" and c.enabled for c in game.commands(st))
+    st.player.level, st.player.xp = 12, 10 ** 6
+    lv = next(c for c in game.commands(st) if c.id == "level_up")
+    assert not lv.enabled and "last" in lv.label
+    assert not game.run_command(st, "level_up", {})[1].ok

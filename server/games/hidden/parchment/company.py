@@ -21,7 +21,7 @@ from games.fantasy import encounter as en
 from games.fantasy.state import FantasyState
 
 # the SRD's "deadly" XP for one character of each level (the thresholds table)
-DEADLY = {1: 100, 2: 200, 3: 400, 4: 500, 5: 1100, 6: 1400, 7: 1700, 8: 2100, 9: 2400, 10: 2800}
+DEADLY = {1: 100, 2: 200, 3: 400, 4: 500, 5: 1100, 6: 1400, 7: 1700, 8: 2100, 9: 2400, 10: 2800, 11: 3600, 12: 4500}
 
 
 def make_crew(sc: dict, s: FantasyState, names: list[str]) -> None:
