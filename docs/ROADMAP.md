@@ -724,7 +724,11 @@ endless ground, camps, wandering, invented places and ground changes held until 
 - **Level 12 (D354, D355): built 11-21.** The XP curve steepens from level 6 and ends at 12. All twelve classes are
   written to level 12 and twenty-three monsters (CR 1/2 to 10) with fourteen papers, by four content subagents; the
   martials' fight numbers (a third blow, Sneak Attack's dice, Rage, fists, the Paladin's every hit) in the engine.
-  Simulated to level 12; nobody has played past level 5 on a model yet.
+  Simulated to level 12.
+- **The third Gemma wave (D356): 11-21.** A Wizard, a Rogue and a Paladin played to level 12 through every level-up
+  screen (all matched); a lone Cleric from level 1. Fixed: a blow at the dead brought a fresh foe (eight times), Hex and
+  the Paladin's d8 only on the first blow, scores past 20, a typed spell at the wrong foe, two rats still too much alone,
+  typed sales at the narrator's price, an invitation refused after the walk.
 - **On Lilith's server since 11-19 (D339)**, on the owner's word: Parchment is listed on a player's server; :8016 moved
   to bcf5f82. Nine turns on Sonnet first: the board, going to a person, a posted job, the fight, pay in person and the
   shop's basket all worked; one fault found and fixed.

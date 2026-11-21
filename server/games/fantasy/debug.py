@@ -80,6 +80,8 @@ def run(game: Any, state: FantasyState, words: str) -> tuple[FantasyState, Comma
         # 11-21: so a tester can go up through the real level-up screens to the levels a short round never reaches
         p.xp += int(m.group(1)); did = f"given {int(m.group(1))} XP ({p.xp} now)"
     elif low.startswith("clear") or low.startswith("reset"):
+        gone = set(p.fighting)                          # the Gemma round of 11-21: cleared ogres stood by, hostile, and joined the next fight
+        s.people = [q for q in s.people if not (q.id in gone and q.combat is not None and q.attitude <= -3)]
         p.peril, p.fighting, s.combat = None, [], None
         p.conditions = []                             # round 10 (T26): a twisted knee stayed after the clear
         p.hp = p.hp_max; did = "cleared: no fight, no peril, no conditions, full hit points"

@@ -228,6 +228,8 @@ class ParchmentGame(FantasyGame):
             owed = sum(n * pr for _, n, pr in sold_by_words)
             more = max(0, owed - gained)
             gold = s.item("gold")
+            if gained > owed and gold is not None:        # 11-21: a boar tusk worth 3 sold for the narrator's 15: the shop's price stands
+                gold.count = max(0, gold.count - (gained - owed))
             if more and gold is not None:
                 gold.count += more
             elif more:
@@ -245,14 +247,15 @@ class ParchmentGame(FantasyGame):
         is handed the state as the referee's rows left it, so the turn's start is kept here)."""
         homes = self._homes(s)
         s.flags["turn_start"] = {"where": s.player.location or "", "at": {q.id: q.location for q in s.people if q.id in homes},
-                                 "loot": {it.id: [it.name, it.count, pr] for it, pr in self._sellable(s) if jb.is_loot(it)}
-                                 if (self._shop(s) or {}).get("buys") else {}}
+                                 "loot": {it.id: [it.name, it.count, pr] for it, pr in self._sellable(s) if jb.is_loot(it)}}
 
     def _sold_by_words(self, s: FantasyState) -> list[tuple[str, int, int]]:
         """Loot the player held at the turn's start in a shop that buys, gone or fewer now with the player still there and no
         basket run: (name, how many, the shop's price each)."""
         start = s.flags.get("turn_start") or {}
-        if not start.get("loot") or (s.player.location or "") != start.get("where") or s.player.fighting:
+        # the Gemma round of 11-21: walked to the store and sold in one turn, so the turn began elsewhere: where the turn
+        # ENDS is what counts (a shop that buys)
+        if not start.get("loot") or s.player.fighting or not (self._shop(s) or {}).get("buys"):
             return []
         out = []
         for iid, (name, n, pr) in start["loot"].items():
@@ -539,6 +542,12 @@ class ParchmentGame(FantasyGame):
         if mark:
             s.flags["to_person"] = {"id": q.id, "there": there, "loc": loc}
         return loc
+
+    def lever_first(self, state: FantasyState, command_id: str) -> bool:
+        """The Gemma round of 11-21 ("I walk out with the sellsword beside me": the invitation previewed as taken, the walk
+        happened, and the invitation was then refused because the player was no longer in the tavern; he was told coming and
+        fought, in no company): asking someone along is done where it is asked, before the turn walks anywhere."""
+        return command_id in ("ask_along", "take_helper") or super().lever_first(state, command_id)
 
     def _who_comes(self, s: FantasyState) -> str:
         """The Gemma round of 11-19 (T2: "I go and see the reeve" from the tavern; the innkeeper and a sellsword were told

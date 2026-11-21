@@ -1292,3 +1292,26 @@ def test_what_the_owner_found_on_sonnet(engine: Engine):
                             intents=[Intent(action="Sleep the night")], commands=[CommandPick(id="rest", args=["kind=long"])])
     adj, asked = until_when(game, st, read, "i sleep for the night")
     assert asked == "" and adj.kind == "action"
+
+
+def test_what_the_third_gemma_wave_found(engine: Engine):
+    """The lone Cleric of 11-21: a sale made in the turn that walked to the store is the store's (it began in the tavern); a
+    narrator's price above the store's is brought down to it; asking someone along is done before the turn walks anywhere;
+    a lot forced past the generator's count is two rungs thinner."""
+    import random
+    from engine.game import TurnInfo
+    from games.fantasy.state import Item
+    from games.hidden.parchment import jobs as jb
+    game, st = _fresh(engine)
+    st.inventory.append(Item(id="boar_tusks", name="boar tusk", count=1, kind="loot", worth=3))
+    game._mark_turn_start(st)                                            # in the tavern
+    st.player.location = "the general store"
+    st.inventory = [x for x in st.inventory if x.id != "boar_tusks"]
+    gold = st.item("gold").count
+    st.item("gold").count += 15                                          # the narrator's price
+    info = TurnInfo(turn=2, elapsed_minutes=1, rng=random.Random(0))
+    info.applied = [f"inventory.gold.count: {gold} -> {gold + 15}"]
+    st = game.after_turn(st, info)
+    assert st.item("gold").count == gold + 3 and any(n.startswith("Sold: boar tusk for 3 gold") for n in st.player.shown_notes)
+    assert game.lever_first(st, "ask_along") and game.lever_first(st, "take_helper") and not game.lever_first(st, "read_board")
+    assert jb._thinner("standard") == "frail" and jb._thinner("weak") == "feeble" and jb._thinner("feeble") == "feeble"

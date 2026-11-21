@@ -254,3 +254,46 @@ def test_levels_six_to_twelve(game):
     lv = next(c for c in game.commands(st) if c.id == "level_up")
     assert not lv.enabled and "last" in lv.label
     assert not game.run_command(st, "level_up", {})[1].ok
+
+
+def test_no_score_past_twenty_and_a_named_target_is_the_levers(game):
+    """The Gemma round of 11-21: a Wizard's Intelligence reached 21 at level 12; "Fire Bolt at the second ogre" went to the
+    first (the pick had no argument and the lever's default stood)."""
+    from engine.game import CommandSpec, Option, Param
+    from engine.pipeline import _parse_command_args
+    st = new(game, klass="Wizard", race="Elf")
+    p = st.player
+    p.stats["int"] = 5                                   # a score of 20
+    p.level, p.xp = 3, 10 ** 5
+    s, res = game.run_command(st, "level_up", {"stats": "int,int"})
+    assert not res.ok and "20" in res.text
+    spec = CommandSpec(id="fire_bolt", label="Fire Bolt", mode="narrated",
+                       params=[Param(name="at", label="At", options=[Option(id="ogre_1", label="Ogre 1"), Option(id="ogre_2", label="Ogre 2")], default="ogre_1")])
+    assert _parse_command_args(spec, [], {"ogre_2"})[0] == {"at": "ogre_2"}
+    assert _parse_command_args(spec, [], {"ogre_1", "ogre_2"})[0] == {"at": "ogre_1"}       # two named: the default stands
+    assert _parse_command_args(spec, ["at=ogre_1"], {"ogre_2"})[0] == {"at": "ogre_1"}      # the pick's own argument wins
+
+
+def test_a_blow_at_the_dead_brings_nobody_and_a_card_is_picked_by_its_plain_id(game):
+    """The Gemma round of 11-21 (a Rogue and a Paladin to level 12): "attack Ogre 2", dead on the floor, brought a fresh ogre
+    eight times; a level's choice took only "opt:<id>"."""
+    from games.fantasy import encounter as en
+    st = new(game, klass="Fighter", race="Human")
+    made = en.spawn(st, [("wolf", 1)], "standard")
+    st.people.extend(made)
+    q = made[0]
+    q.location, q.status = st.player.location, "dead"
+    n = len(st.people)
+    got, row = game.bring_in(st, q.id, ref=q.id)
+    assert got == [] and "dead here" in row["why"] and len(st.people) == n
+    got, row = game.bring_in(st, q.name, ref=q.name)
+    assert got == [] and len(st.people) == n
+    st = new(game, klass="Wizard", race="Elf")
+    if game.class_of(st.player).status != "full":
+        pytest.skip("the Wizard is a stub on this machine")
+    st = level_to(game, st, 2)
+    st.player.xp = 10 ** 5
+    s, res = game.run_command(st, "level_up", {"cards": "Scorching Ray"})
+    assert res.ok and "scorching_ray" in s.player.picked
+    s, res = game.run_command(st, "level_up", {"cards": "hold_person"})
+    assert res.ok and "hold_person" in s.player.picked

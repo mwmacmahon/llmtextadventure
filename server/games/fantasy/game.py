@@ -1847,6 +1847,12 @@ class FantasyGame(GameBase):
         p = s.player
         made: list[Person] = []
         row: dict = {}
+        # the Gemma round of 11-21 (eight times, two characters: "attack Ogre 2", who lay dead, brought a fresh ogre; one of
+        # them killed the companion, and it was XP without end): a blow at someone dead here is at the dead; nobody comes
+        key = " ".join((ref or words or "").replace("_", " ").lower().split())
+        if key and any(q.status != "alive" and q.combat is not None and (q.seen_at or q.location or "").lower() == (p.location or "").lower()
+                       and key in (q.id.replace("_", " "), q.name.lower()) for q in s.people):
+            return [], {"kind": "encounter", "hit": False, "why": f"'{key}' is dead here; nobody new comes"}
         off = s.offer or {}
         if off.get("ids") and (off.get("place") == p.location or off.get("fresh")):
             ids, bodies = list(off["ids"]), [tuple(b) for b in off["bodies"]]
@@ -3989,7 +3995,14 @@ class FantasyGame(GameBase):
                 return state, CommandResult(ok=False, label="Level up", text=f"Pick {points} score points to spend: " + ", ".join(k.upper() for k in STATS) + ".")
             if any(raises.count(r) > 2 for r in raises):
                 return state, CommandResult(ok=False, label="Level up", text="At most +2 to one score.")
+            # the Gemma round of 11-21 (a Wizard's Intelligence at 21 by level 12): no score past 20
+            over = next((r for r in dict.fromkeys(raises) if p.score(r) + raises.count(r) > 20), None)
+            if over:
+                return state, CommandResult(ok=False, label="Level up", text=f"{over.upper()} is at {p.score(over)}; no score goes past 20. Pick another.")
             chosen = [x.strip() for x in str(args.get("cards") or "").split(",") if x.strip()]
+            # the Gemma rounds of 11-21: "dispel_magic" and "Dispel Magic" refused, only "opt:dispel_magic" taken
+            by = {k: k for k, _ in cards} | {k.split(":", 1)[-1].lower(): k for k, _ in cards} | {t_.split(":")[0].strip().lower(): k for k, t_ in cards}
+            chosen = [by.get(c, by.get(c.lower(), c)) for c in chosen]
             if pick and (len(set(chosen)) != pick or any(c not in {k for k, _ in cards} for c in chosen)):
                 return state, CommandResult(ok=False, label="Level up", text=f"Pick {pick}: " + ", ".join(t for _, t in cards) + ".")
             cd = self.class_of(p)

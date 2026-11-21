@@ -1013,19 +1013,23 @@ def resolve_attack(game: Any, s: FantasyState, entry: dict, rng: Any, offset: in
                     rider_spent.append((fid, "count" if c is not None and c.value > 0 else "slot"))
                 elif not any(f["name"] in n for n in notes):
                     notes.append(f"no {f['name']} left: the blow without it")
-            extra += cursed_dice(s, t.id)                          # FN202: a hexed foe takes the curse's dice on every hit
             why = _sneak_case(game, s, t)
             if why:
                 # FN220: the dice follow the sheet's Sneak Attack (1, 2, 4 and 6 d6 at levels 1, 3, 7 and 11); it was 2d6 from 3
                 extra.append((f"Sneak Attack, {why}", f"{ {1: 1, 2: 2, 3: 4, 4: 6}.get(p.effect('sneak_attack'), 2) }d6"))
-            if (p.klass or "").lower() == "paladin" and p.level >= 11 and how in ("melee", "finesse"):
-                extra.append(("Improved Divine Smite", "1d8"))      # FN220: every melee blow that lands, from level 11
             mine = [(fid, f) for fid, f in ft.specs(game, p).items() if f.get("kind") == "rider"]
             for r in riders:
                 if not _a_feature(game, r):
                     continue                                           # B290: 'slash at the arm' is how, not a feature claimed
                 if not any(_names_rider(r, fid, f) for fid, f in mine) and "sneak" not in r.lower() and not any(r in n for n in notes):
                     notes.append(f"{r}: not something {p.name} has; ignored")
+        if entry["side"] == "player":
+            # every blow of the player's, not only the first that lands (the Gemma round of 11-21: the second blow of an
+            # exchange carried neither): a hexed foe takes the curse's dice (FN202), and from level 11 a Paladin's melee
+            # blow its 1d8 (FN220)
+            extra += cursed_dice(s, t.id)
+            if (p.klass or "").lower() == "paladin" and p.level >= 11 and how in ("melee", "finesse"):
+                extra.append(("Improved Divine Smite", "1d8"))
         part, over = _one_blow(game, s, rng, tally, who, bonus, dice, t, body, spare=bool(entry.get("spare")), extra_dice=extra,
                                penalty=(-2 if len(targets) > 1 and k > 0 else 0))
         if part.get("hit") and extra:

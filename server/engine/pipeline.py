@@ -4075,6 +4075,12 @@ def _parse_command_args(spec: Any, raw: list[str], named: set[str] | None = None
             if not said and others:     # round 4 (11-14): "sell Dorothea", who has no contract to sell; one choice, and Ada was sold
                 return args, f"That one is not a choice here. The choices: {', '.join(o.label for o in p.options)}."
             v = said[0] if said else v
+        if not v and named:
+            # the Gemma round of 11-21 ("I cast Fire Bolt at the second ogre": the pick carried no argument and the bolt went
+            # to the lever's first foe, Ogre 1): the one option the reading itself named among its targets is the one meant
+            said = [o.id for o in p.options if o.id in named]
+            if len(said) == 1:
+                v = said[0]
         v = v or getattr(p, "default", "")
         if not v and len(p.options) == 1:   # round 32 T2 (906e3e1f1a93): "I take the job", one job on offer, and the command
             v = p.options[0].id             # was refused with "Which Job? (Rats in the Cellar)": one choice needs no asking

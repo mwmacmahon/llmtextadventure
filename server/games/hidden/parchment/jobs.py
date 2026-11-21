@@ -139,7 +139,7 @@ def arrive(game: Any, sc: dict, s: FantasyState, pid: str) -> list[str]:
                 bodies = [(b, max(min(c, int(r.get("count") or c)), int(r.get("min") or 1))) for b, c in e.bodies]
                 # FN219 (the owner, 11-21; the simulation's lone Cleric died to the two rats five times in fifteen): more
                 # than the generator answered are the weak kind
-                variant = "weak" if sum(c for _, c in bodies) > sized_n and e.variant == "standard" else e.variant
+                variant = _thinner(e.variant) if sum(c for _, c in bodies) > sized_n else e.variant
         made = en.spawn(s, bodies, variant, where=where)
         for q in made:
             q.attitude = int(r.get("attitude", -3))
@@ -187,6 +187,14 @@ def band_for(s: FantasyState, band: str) -> str:
 
 HELPER_CHANCE = 0.5      # FN182: of the papers whose kind has a helper written
 NEW_NOTICES = "New notices are on the board in the tavern."
+
+
+def _thinner(variant: str) -> str:
+    """FN219, after the Gemma round of 11-21 (a lone level-1 Cleric dead to two "weak" rats, which bite as hard as any): a
+    lot forced past the generator's count is two rungs down its ladder (standard to frail: half the hit points, attack -2,
+    lighter blows), never under feeble."""
+    i = en.LADDER.index(variant) if variant in en.LADDER else en.LADDER.index("standard")
+    return en.LADDER[max(1, i - 2)]
 
 
 def _xp(entry: str) -> int:
@@ -268,8 +276,8 @@ def post(game: Any, sc: dict, s: FantasyState) -> dict | None:
     pid = f"post_{n}"
     was_n = sum(c for _, c in e.bodies)
     e.bodies = [(b, max(c, int(t.get("min") or 1)) if b == entry else c) for b, c in e.bodies]     # "rats" is never one rat
-    if sum(c for _, c in e.bodies) > was_n and e.variant == "standard":
-        e.variant = "weak"                               # FN219: more than the generator answered are the weak kind
+    if sum(c for _, c in e.bodies) > was_n:
+        e.variant = _thinner(e.variant)                  # FN219: more than the generator answered are a thinner kind
     s.flags.setdefault("posted", {})[pid] = [{"entry": b, "count": c, "variant": e.variant} for b, c in e.bodies]
     xp = sum(_xp(b) * c for b, c in e.bodies)
     home = s.world["places"][s.world["home"]]["tile"]
