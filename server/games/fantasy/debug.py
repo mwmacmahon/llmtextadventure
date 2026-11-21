@@ -1,7 +1,7 @@
 """The test hook (the owner, 11-10 night: "a debug room in the game for these Gemma/sonnet runs ... they can shout out
 whatever they want to happen / spawn"): a turn opening `DEBUG:` on a dev server is the engine's. One verb a turn: spawn
 <words> [minion|feeble|frail|weak|standard|veteran|elite], set me on fire, drown me, make me bleed, freeze me, push me off,
-grab me, hurt N, heal [N], clear, room (the Glass Cellar, where nobody is but the player and what the test brings in).
+grab me, hurt N, heal [N], xp N, clear, room (the Glass Cellar, where nobody is but the player and what the test brings in).
 Never on a player's server (TA_DEV_MODE=off, B232). Moved out of game.py by the debt review (11-10 night)."""
 from __future__ import annotations
 
@@ -76,6 +76,9 @@ def run(game: Any, state: FantasyState, words: str) -> tuple[FantasyState, Comma
         p.hp = max(1, p.hp - int(m.group(1))); did = f"hurt to {p.hp}/{p.hp_max}"
     elif (m := re.match(r"heal(?:\s+(\d+))?", low)):
         p.hp = min(p.hp_max, p.hp + int(m.group(1))) if m.group(1) else p.hp_max; did = f"healed to {p.hp}/{p.hp_max}"
+    elif (m := re.match(r"xp\s+(\d+)", low)):
+        # 11-21: so a tester can go up through the real level-up screens to the levels a short round never reaches
+        p.xp += int(m.group(1)); did = f"given {int(m.group(1))} XP ({p.xp} now)"
     elif low.startswith("clear") or low.startswith("reset"):
         p.peril, p.fighting, s.combat = None, [], None
         p.conditions = []                             # round 10 (T26): a twisted knee stayed after the clear
@@ -88,7 +91,7 @@ def run(game: Any, state: FantasyState, words: str) -> tuple[FantasyState, Comma
         did = f"moved to {ROOM}, a bare room of glass walls, nobody else here"
     else:
         return state, CommandResult(ok=False, label="Debug", text="DEBUG: say one of: spawn <what> [minion..elite], place <what> [angry] (here, in no fight), set me on fire, "
-                                    "drown me, make me bleed, freeze me, push me off, grab me, hurt N, heal [N], clear, room.")
+                                    "drown me, make me bleed, freeze me, push me off, grab me, hurt N, heal [N], xp N, clear, room.")
     s.flags["debug_quiet"] = True                    # round 8: no call acts on the DEBUG turn (after_turn clears it)
     if p.peril is not None and did and not did.startswith(("spawned", "placed", "grappled", "hurt", "healed", "cleared", "moved")):
         p.shown_notes.append("WARNING: " + wo.PERILS.get(p.peril.kind, {}).get("warn", p.peril.kind))
