@@ -118,7 +118,7 @@ def _spell(game: Any, st: Any) -> tuple[str, dict] | None:
     for fid, f in specs.items():
         if f.get("kind") != "bolt" or (not f.get("cantrip") and not have):
             continue
-        dice = ft._dice(str(f.get("dice5") if p.level >= 5 and f.get("dice5") else f.get("dice") or "1d6"), p)
+        dice = ft._dice(str(f.get("dice11") if p.level >= 11 and f.get("dice11") else f.get("dice5") if p.level >= 5 and f.get("dice5") else f.get("dice") or "1d6"), p)
         n = min(len(foes), 4) if f.get("all") else 1
         worth = _avg(dice) * n * (0.65 if f.get("attack") or f.get("negates") else 0.8 if f.get("save") else 1.0)
         if f.get("cantrip"):

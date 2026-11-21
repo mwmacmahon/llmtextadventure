@@ -222,6 +222,30 @@ class Engine:
                       for name, r in ((n, self.cfg.role(n)) for n in self.cfg.roles)},
         }
 
+    BOX_TRIES = (0, 2, 4)                              # seconds before each try: three, about six seconds in all
+
+    async def _box_down(self) -> dict[str, Any] | None:
+        """FN221 (the owner, 11-21: "if Gemma down after a few retries when a query is tried then prompt for a switch"): on a
+        server whose bar offers models, a turn on the local one first asks the box whether llama-server answers, three tries;
+        when it does not, the turn is not started and the error names the models to switch to. None when all is well."""
+        from . import picker, profiles
+        opts = self._switch_options()
+        prof = self.cfg.profile
+        if not opts or prof is None or not prof.local or not profiles.helper_url():
+            return None
+        for wait in self.BOX_TRIES:
+            if wait:
+                await asyncio.sleep(wait)
+            try:
+                rep = await profiles.box_report(picker.llama_url(self.cfg), transport=self.box_transport)
+            except Exception:  # noqa: BLE001
+                rep = {"server_answers": False}
+            if rep.get("server_answers"):
+                return None
+        here = next((o["label"] for o in opts if o["active"]), "The local model")
+        log.warning("box.down " + logs.kv(profile=self.cfg.profile_label, tries=len(self.BOX_TRIES)))
+        return {"message": f"{here} is not answering.", "step": "model_down", "switch": [o for o in opts if not o["active"]]}
+
     def _switch_options(self) -> list[dict[str, Any]]:
         from . import picker
         return picker.switch_options(self.cfg)
@@ -929,6 +953,10 @@ class Engine:
         console = command is not None and any(c.id == command[0] and c.mode == "engine" for c in _hook(game, "commands", state, default=[]))
         if over and not console:                      # B50 (D167): a console command (no story, no clock) still runs after the end
             yield {"event": "error", "data": {"message": f"The story is over: {over} Undo or branch from an earlier turn to keep playing.", "step": "ended"}}
+            return
+        down = await self._box_down()
+        if down:                                      # FN221: nothing played, nothing kept; the page offers the other model
+            yield {"event": "error", "data": down}
             return
         ledger = lambda kind, payload: self.store.append_ledger(iid, turn, kind, payload)  # noqa: E731
         if any(r.turn == turn for r in self.store.transcript(iid)):

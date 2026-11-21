@@ -88,6 +88,7 @@ function Game({ id }: { id: string }) {
   const [stage, setStage] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [offer, setOffer] = useState<{ name: string; label: string }[]>([]);
   const [debug, setDebug] = useState(false);
   const [telling, setTelling] = useState<string | null>(null);   // B406: the last telling, open for editing by hand (dev mode)
   const [hideUndone, setHideUndone] = useState(prefs.hideUndone());
@@ -128,6 +129,7 @@ function Game({ id }: { id: string }) {
   async function run(gen: AsyncGenerator<TurnEvent>, pendingText: string, typed = false) {
     if (window.innerWidth < 720) setPanelsOpen(false);     // on a phone the story gets the screen while a turn is told
     setErr(null);
+    setOffer([]);
     setPending(pendingText);
     setStreaming("");
     setStage("the assistant reads the move…");
@@ -179,6 +181,8 @@ function Game({ id }: { id: string }) {
           if (ev.data.note) setErr(ev.data.note);
         } else if (ev.event === "error") {
           setErr(ev.data.message);
+          setOffer(ev.data.switch ?? []);             // FN221: the local model is down; the other one is a press away
+          if (ev.data.switch?.length && typed && pendingText.trim()) setInput((cur) => cur || pendingText);
         }
       }
     } catch (e) {
@@ -408,7 +412,25 @@ function Game({ id }: { id: string }) {
               </div>
             </div>
           )}
-          {err && <div className="error">{err}</div>}
+          {err && (
+            <div className="error">
+              {err}
+              {offer.map((o) => (
+                <button key={o.name} className="link" style={{ marginLeft: 8 }} onClick={async () => {
+                  try {
+                    await api.switchProfile(o.name);
+                    dispatchEvent(new Event("ta-settings"));
+                    setOffer([]);
+                    setErr(`Now on ${o.label}. Send again.`);
+                  } catch (e) {
+                    setErr(e instanceof Error ? e.message : String(e));
+                  }
+                }}>
+                  Switch to {o.label}
+                </button>
+              ))}
+            </div>
+          )}
         </section>
         {view.ui.panels.some((w) => w.place === "main") && (
           <section className="main-panels">

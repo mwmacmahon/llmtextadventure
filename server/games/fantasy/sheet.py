@@ -29,15 +29,16 @@ RACE_ABILITIES: dict[str, list[Ability]] = {
 }
 RACE_COUNTS: dict[str, list[Count]] = {"Dragonborn": [Count(id="breath", name="Breath", value=1, max=1, refill="long")]}
 
-# Progression (FANTASY_DESIGN §Progression): levels at 300, 900, 2000, 3500, 5500 XP, then +2500 each
-LEVELS = [300, 900, 2000, 3500, 5500]
+# Progression (FANTASY_DESIGN §Progression): levels at 300, 900, 2000, 3500, 5500 XP; from level 6 each level asks more than
+# the last (FN220, the owner 11-21: "xp curve should slow down after 5-6 or so": it was +2500 a level for ever, and thirty
+# simulated days reached level 14), to level 12, the last
+LEVELS = [300, 900, 2000, 3500, 5500, 9000, 14000, 21000, 30500, 43000, 59000]
+MAX_LEVEL = len(LEVELS) + 1
 
 
 def xp_for(level: int) -> int:
     """The XP the next level needs, from `level`."""
-    if level - 1 < len(LEVELS):
-        return LEVELS[level - 1]
-    return LEVELS[-1] + 2500 * (level - len(LEVELS))
+    return LEVELS[min(level, len(LEVELS)) - 1]            # at the last level: the last line (no level past it)
 
 
 def xp_floor(level: int) -> int:

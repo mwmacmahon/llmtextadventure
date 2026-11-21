@@ -344,3 +344,25 @@ def test_the_bars_switch_is_offered_remembered_and_restored(engine: Engine, monk
     picker._kept(engine).write_text("a3b")                              # not one the bar offers: left alone
     picker.restore(engine)
     assert engine.cfg.profile_name == "gemma4-31b"
+
+
+def test_the_box_down_offers_the_other_model_and_a_default_is_taken_up(engine: Engine, monkeypatch):
+    """FN221 (the owner, 11-21): Gemma first where TA_SWITCH_DEFAULT says so; a turn on the local model with the box not
+    answering after three tries is not started, and its error carries the models to switch to."""
+    import asyncio
+    monkeypatch.setenv("TA_SWITCH", "sonnet=Sonnet,gemma4-31b=Local_(Gemma)")
+    monkeypatch.setenv("TA_SWITCH_DEFAULT", "gemma4-31b")
+    monkeypatch.setenv("TA_LLAMA_URL", "http://box:8280")
+    picker.restore(engine)
+    assert engine.cfg.profile_name == "gemma4-31b"
+    engine.BOX_TRIES = (0, 0, 0)
+    box = Box()
+    engine.box_transport = httpx.MockTransport(box)
+    assert asyncio.run(engine._box_down()) is None
+    def dead(request):
+        raise httpx.ConnectError("refused")
+    engine.box_transport = httpx.MockTransport(dead)
+    down = asyncio.run(engine._box_down())
+    assert down["step"] == "model_down" and down["message"] == "Local (Gemma) is not answering." and [o["name"] for o in down["switch"]] == ["sonnet"]
+    asyncio.run(picker.switch(engine, "sonnet"))
+    assert asyncio.run(engine._box_down()) is None                      # the hosted model asks the box nothing

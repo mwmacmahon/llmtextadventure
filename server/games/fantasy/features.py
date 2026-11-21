@@ -423,7 +423,9 @@ def _cast(game: Any, state: FantasyState, s: FantasyState, f: dict, fid: str, ar
     if kind == "bolt":
         if s.combat is None:
             s.combat = CombatState(round=0)
-        dice = _dice(str(f.get("dice5") if p.level >= 5 and f.get("dice5") else f.get("dice") or "1d6"), p)
+        # FN220: a cantrip's dice grow at levels 5 and 11 (`dice5`, `dice11`)
+        dice = _dice(str(f.get("dice11") if p.level >= 11 and f.get("dice11") else f.get("dice5") if p.level >= 5 and f.get("dice5")
+                         else f.get("dice") or "1d6"), p)
         entry = {"ref": fid, "name": name, "target": target.id if target is not None else "", "dice": dice}
         if f.get("all"):
             entry["all"] = True

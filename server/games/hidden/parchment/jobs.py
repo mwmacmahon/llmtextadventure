@@ -135,8 +135,11 @@ def arrive(game: Any, sc: dict, s: FantasyState, pid: str) -> list[str]:
             if e.bodies:
                 # the owner's round of 11-20: "a single rat as the enemy for two quests ... Clearing rats means rats plural":
                 # a lot written with `min` is never fewer
+                sized_n = sum(min(c, int(r.get("count") or c)) for _, c in e.bodies)
                 bodies = [(b, max(min(c, int(r.get("count") or c)), int(r.get("min") or 1))) for b, c in e.bodies]
-                variant = e.variant
+                # FN219 (the owner, 11-21; the simulation's lone Cleric died to the two rats five times in fifteen): more
+                # than the generator answered are the weak kind
+                variant = "weak" if sum(c for _, c in bodies) > sized_n and e.variant == "standard" else e.variant
         made = en.spawn(s, bodies, variant, where=where)
         for q in made:
             q.attitude = int(r.get("attitude", -3))
@@ -263,7 +266,10 @@ def post(game: Any, sc: dict, s: FantasyState) -> dict | None:
             s.people = [q for q in s.people if q is not helper]
         return None
     pid = f"post_{n}"
+    was_n = sum(c for _, c in e.bodies)
     e.bodies = [(b, max(c, int(t.get("min") or 1)) if b == entry else c) for b, c in e.bodies]     # "rats" is never one rat
+    if sum(c for _, c in e.bodies) > was_n and e.variant == "standard":
+        e.variant = "weak"                               # FN219: more than the generator answered are the weak kind
     s.flags.setdefault("posted", {})[pid] = [{"entry": b, "count": c, "variant": e.variant} for b, c in e.bodies]
     xp = sum(_xp(b) * c for b, c in e.bodies)
     home = s.world["places"][s.world["home"]]["tile"]

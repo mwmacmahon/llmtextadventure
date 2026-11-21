@@ -285,10 +285,14 @@ def remember(engine: "Engine", name: str) -> None:
 
 def restore(engine: "Engine") -> None:
     """At startup: the profile the bar last chose, when it is still one the bar offers."""
+    import os
     try:
         name = _kept(engine).read_text().strip()
     except OSError:
-        return
+        # FN221 (the owner, 11-21: Gemma first on Lilith's server "for now"): with nothing chosen yet, TA_SWITCH_DEFAULT
+        name = os.environ.get("TA_SWITCH_DEFAULT", "").strip()
+        if not name:
+            return
     if name != engine.cfg.profile_name and any(o["name"] == name for o in switch_options(engine.cfg)):
         try:
             p = profiles.load(name)

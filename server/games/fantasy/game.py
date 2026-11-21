@@ -3844,8 +3844,10 @@ class FantasyGame(GameBase):
                                 "in the way. Not when the player names a place farther off to sleep: that is a move there, not a rest.",
                            words=["rest", "sleep", "catch my breath", "lie down", "turn in", "bed down", "nap"])]
         nxt = sh.xp_for(p.level)
-        out.append(CommandSpec(id="level_up", label="Level up" + ("" if p.xp >= nxt else f" (at {nxt} XP)"), mode="engine", enabled=p.xp >= nxt,
-                               panel=self._level_panel(p) if p.xp >= nxt else None, typed=False,
+        top = p.level >= sh.MAX_LEVEL                       # FN220: level 12 is the last
+        out.append(CommandSpec(id="level_up", label="Level up" + (" (the last level reached)" if top else "" if p.xp >= nxt else f" (at {nxt} XP)"),
+                               mode="engine", enabled=p.xp >= nxt and not top,
+                               panel=self._level_panel(p) if p.xp >= nxt and not top else None, typed=False,
                                hint="Open the level-up screen when the XP is there: what is new, the hit points, a stat raise at levels 4, 8 and 12.",
                                words=["level up", "level-up"]))
         from . import features as ft                                       # part fifteen §10: the class file's features as chips
@@ -3977,6 +3979,8 @@ class FantasyGame(GameBase):
                                     directive=directive, minutes=SHORT_REST)
         if command_id == "level_up":
             nxt = sh.xp_for(p.level)
+            if p.level >= sh.MAX_LEVEL:
+                return state, CommandResult(ok=False, label="Level up", text=f"Level {p.level} is the last.")
             if p.xp < nxt:
                 return state, CommandResult(ok=False, label="Level up", text=f"Not yet: {p.xp} of {nxt} XP.")
             lv, gain, feats, points, cards, pick = self._level_up_plan(p)
@@ -4414,7 +4418,7 @@ class FantasyGame(GameBase):
                   tone=self.HP_TONES.get(p.hp_tier, "warn"), thresholds=[0.5 * p.hp_max, 0.75 * p.hp_max],
                   chips=[Chip(label=x.weight, value=x.words, tone=self.WOUND_TONES.get(x.weight)) for x in wounds]),
             Meter(label="XP", value=p.xp, min=floor, max=nxt, text=f"{p.xp} / {nxt}", tone="info",
-                  tier="ready to level up" if p.xp >= nxt else f"to level {p.level + 1}"),
+                  tier="the last level" if p.level >= sh.MAX_LEVEL else "ready to level up" if p.xp >= nxt else f"to level {p.level + 1}"),
             *([MeterGroup(meters=[Meter(label="Renown", value=p.renown, tier=p.renown_word, tone="info", thresholds=[25, 50, 75]),
                                  Meter(label="Heat", value=p.heat, tier=p.heat_word, tone=self.HEAT_TONES.get(p.heat_word, "warn"), thresholds=[20, 50, 80])])]
               if self.LAW_AND_RENOWN else []),

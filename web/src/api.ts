@@ -380,7 +380,7 @@ export type TurnEvent =
   | { event: "mechanic"; data: { turn: number; text: string; data: Record<string, any> } }
   | { event: "referee"; data: { delta: Record<string, any> | null; report?: { applied: string[]; rejected: unknown[] }; error?: string } }
   | { event: "done"; data: { turn: number; text: string; note?: string | null; model: string; usage: Record<string, number>; seconds: number; mechanics: Mechanics; ending?: string | null; ui: UISchema } }
-  | { event: "error"; data: { message: string; step?: string } };
+  | { event: "error"; data: { message: string; step?: string; switch?: { name: string; label: string }[] } };
 
 /** POST a typed turn and stream server-sent events back. */
 export function streamTurn(id: string, text: string, signal?: AbortSignal): AsyncGenerator<TurnEvent> {
