@@ -151,6 +151,10 @@ def grant(abilities: list[Ability], counts: list[Count], f: Feature, cid: str = 
             idx = len(abilities)
             new = abilities_of(Feature(**{**f.model_dump(), "name": name, "flag": held.while_flag or f.flag}), cid)
             new[0].count = held.count
+            if not f.effects:
+                # the Gemma round of 11-21: Rage's blows a step lighter stopped at level 5, whose upgrade writes new traits
+                # and no effects; what the engine applies is kept unless the upgrade names its own
+                new[0].effect = held.effect
             abilities[idx:idx] = new
         else:
             held.text = f.text or held.text

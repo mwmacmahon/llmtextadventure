@@ -729,6 +729,10 @@ endless ground, camps, wandering, invented places and ground changes held until 
   screen (all matched); a lone Cleric from level 1. Fixed: a blow at the dead brought a fresh foe (eight times), Hex and
   the Paladin's d8 only on the first blow, scores past 20, a typed spell at the wrong foe, two rats still too much alone,
   typed sales at the narrator's price, an invitation refused after the walk.
+- **The fourth Gemma wave (D357): 11-21.** A Ranger, a Barbarian, a Druid and a Bard to level 12; typed casting 26 of
+  26. Fixed: a blow at the dead still brought another (the real rule found), Rage's step lost at level 5, typed free
+  abilities costing a round, a rest beside spell-held foes, the companion not mended by a rest. Open for the owner: big
+  monsters' folded attacks (a hill giant's 31 to 76 a hit).
 - **On Lilith's server since 11-19 (D339)**, on the owner's word: Parchment is listed on a player's server; :8016 moved
   to bcf5f82. Nine turns on Sonnet first: the board, going to a person, a posted job, the fight, pay in person and the
   shop's basket all worked; one fault found and fixed.

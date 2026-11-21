@@ -206,6 +206,15 @@ class ParchmentGame(FantasyGame):
                 it.count = int(n)
                 s.flags["double_buy"] = int(s.flags.get("double_buy") or 0) + 1
         self._nobody_tags_along(s)
+        mate = co.companion(s)
+        if any(lv.get("id") == "rest" and lv.get("status") not in ("not_completed", "blocked") for lv in info.levers) and s.player.hp >= s.player.hp_max:
+            # the Gemma round of 11-21: the companion stayed "hurt" through two nights. A rest that left the player whole
+            # (a long one) mends whoever is along
+            for q in [mate, *co.helpers_along(s)]:
+                if q is not None and q.status == "alive" and q.combat is not None and q.combat.hp_max:
+                    q.combat.hp = q.combat.hp_max
+                    if q.condition and not any(x in q.condition for x in ("(spell)", "(curse)")):
+                        q.condition = ""
         co.level_crew(s)                                 # FN195: a save from before the crew levelled catches up
         fought = bool(s.flags.pop("was_fighting", False))  # FN198: a fight just over, the healer of the company tends the player
         if s.player.fighting:

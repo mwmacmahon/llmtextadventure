@@ -297,3 +297,31 @@ def test_a_blow_at_the_dead_brings_nobody_and_a_card_is_picked_by_its_plain_id(g
     assert res.ok and "scorching_ray" in s.player.picked
     s, res = game.run_command(st, "level_up", {"cards": "hold_person"})
     assert res.ok and "hold_person" in s.player.picked
+
+
+def test_rage_keeps_its_step_past_level_five_and_a_blow_at_the_dead_by_id_brings_nobody(game):
+    """The Gemma round of 11-21 (a Barbarian and a Ranger to level 12): Rage's "blows land a step lighter" stopped at level
+    5 (the upgrade wrote new traits and the effect was dropped); "I attack Orc 1", dead, brought "another like Orc 1" six
+    times of six (world.py's B311 rule, which the day's first fix in bring_in never met)."""
+    import random
+    from engine.roles import AssistantReadingCombat, IntentCombat
+    from games.fantasy import encounter as en
+    st = new(game, klass="Barbarian", race="Human")
+    if game.class_of(st.player).status != "full":
+        pytest.skip("the Barbarian is a stub on this machine")
+    st = level_to(game, st, 6, stats=("str", "con"))
+    assert st.player.effect("damage_taken_step")
+    made = en.spawn(st, [("wolf", 2)], "standard")
+    st.people.extend(made)
+    for q in made:
+        q.location = q.seen_at = st.player.location
+    dead, live = made[0], made[1]
+    dead.status = "dead"
+    st.player.fighting = [live.id]
+    from games.fantasy.state import CombatState
+    st.combat = CombatState(target=live.id)
+    read = AssistantReadingCombat(kind="action", summary="A blow.", time_minutes=1, risk="high",
+                                  intents=[IntentCombat(action=f"attack {dead.name}", targets=[dead.id], attack_at=[dead.id])])
+    n = len(st.people)
+    s, w = game.world_turn(st, read, f"I attack {dead.name}", random.Random(3), 4, 2)
+    assert len(s.people) == n and any(r.get("kind") == "at_the_dead" for r in w.rows)

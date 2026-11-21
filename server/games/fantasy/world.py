@@ -750,6 +750,13 @@ def _after_peril(game: Any, s: FantasyState, adj: Any, player_text: str, rng: An
                 # B311 (Gemma, 11-10, e933e85fb6c2 T3-T5, T9, T12): blows at 'sailor_2' matched the fallen Sailor 1, blows at the
                 # knife-man went to robber_1, dead a turn before: nothing rolled while the prose knocked them out. A blow the
                 # reading aims at someone already dead, or at a fallen one only by likeness, is at another like them
+                if s.person(e) is not None:
+                    # the Gemma rounds of 11-21 (fourteen times over four characters: "I attack Orc 1", dead on the floor, and
+                    # a fresh orc came with its own blows and XP; one killed a companion): the reading's id is the dead one's
+                    # own, so the blow is at the dead and nobody comes (combat sends it to someone standing, when anyone is).
+                    # Another like them still comes for a name the reading made that only resembles one fallen (B311)
+                    w.rows.append({"kind": "at_the_dead", "who": e, "why": "the blow named someone dead here; nobody new"})
+                    continue
                 from .encounter import spawn
                 like = re.sub(r"\s+\d+$", "", q.name or "") or "Stranger"
                 made = spawn(s, [((q.combat.block if q.combat else "") or "commoner", 1)], "standard", names=[like])
@@ -917,6 +924,17 @@ def plan_fight(game: Any, s: FantasyState, adj: Any, player_text: str, rng: Any,
                                                           for q in cb.living_enemies(game, s))):
         s.combat.plan = []                                             # B289: the lever is the turn (its free blows, or the yield taken)
         return                                                         # the lever's own line says what happened (one line, not two)
+    # the Gemma round of 11-21 (Healing Word typed three times of three, Bardic Inspiration once: the button costs no turn
+    # and the typed words ran a whole round): a lever marked free, picked from typed words with no blow beside it, is the
+    # button's own no-turn
+    free_ids = {c.id for c in game.commands(s) if getattr(c, "free", False)}
+    if picked and picked <= free_ids and not cb.player_attack(adj) and not s.combat.item_strike and s.combat.free_turns < 2:
+        s.combat.free_turns += 1
+        s.combat.plan = []
+        w.mechanics.append("No turn spent: nobody acts.")
+        w.directives.append(f"A FIGHT, held a moment: what {p.name} does takes no time (its own line says what it did). Nobody strikes "
+                            f"this turn, enemies included. A line or two, and stop where {p.name} chooses next.")
+        return
     refused = picked & set(getattr(game, "refused_levers", None) or ())
     if refused and not cb.player_attack(adj) and not s.combat.item_strike and s.combat.free_turns < 2:
         # the Gemma round of 11-20 (a Druid, Cure Wounds typed with no slot left: refused, and the rat's bite took 6 of 9):

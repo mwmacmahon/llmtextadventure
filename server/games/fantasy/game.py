@@ -1678,7 +1678,7 @@ class FantasyGame(GameBase):
             # ... and so is anything the engine does at once (a Flurry typed as the fight opened landed after the exchange it
             # was for: the Gemma round of 11-20)
             return (f.get("kind") in ("bolt", "quell") or bool(f.get("instant"))) and bool(ft.spell_foes(self, state))
-        own = {fid for fid, f in ft.specs(self, p).items() if f.get("kind") in ("heal", "buff", "turn", *ft.SPELLS)}
+        own = {fid for fid, f in ft.specs(self, p).items() if f.get("kind") in ("heal", "buff", "turn", "rider", *ft.SPELLS)}     # a rider armed by typed words is armed before the blows (11-21)
         return command_id in self.FIRST_LEVERS or command_id in own or command_id == "use_item"     # FN144: a thing used acts first
 
     def turn_limits(self, state: FantasyState, adj: Any = None) -> dict:
@@ -3963,6 +3963,14 @@ class FantasyGame(GameBase):
                 return state, CommandResult(ok=False, label="Rest", text="Not while something is fighting you: get clear first.")
             kind = (args.get("kind") or "short").lower()
             p.resting = kind
+            # the Gemma round of 11-21 (five times: a long rest beside orcs left held, charmed or asleep by a spell; the spell
+            # ran out in the night, "Combat begins", and the rest went on through it): whoever a spell took out of the last
+            # fight is gone by the time anyone lies down
+            for qid in list((s.flags.get("quelled") or {})):
+                q = s.person(qid)
+                if q is not None and q.status == "alive" and q.id not in p.fighting:
+                    q.status, q.location, q.condition = "gone", "", ""
+                (s.flags.get("quelled") or {}).pop(qid, None)
             if kind == "long":
                 # The owner (11-08 evening): no penalties to resting. A night's sleep anywhere is a full rest, and the player is
                 # never shown a list of the city's places to sleep. Here or close by with nothing in the way; a place farther off is a

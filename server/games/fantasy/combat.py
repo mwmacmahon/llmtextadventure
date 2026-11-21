@@ -753,6 +753,7 @@ def _player_take(game: Any, s: FantasyState, n: int, tally: dict) -> tuple[int, 
         m = step_lighter(n)
         if m != n:
             n, notes = m, notes + ["Uncanny Dodge: a step lighter"]
+            p.dodge_scene = p.scene_start               # once a scene, as its text says (the Gemma round of 11-21: it fired round after round)
     if p.has_condition("shielded"):
         m = step_lighter(n)
         if m != n:
@@ -787,7 +788,8 @@ def resolve(game: Any, s: FantasyState, entry: dict, rng: Any, offset: int, tall
     b = ensure_block(q)
     a = entry["action"]
     kind = a.get("kind", "strike")
-    whose = f"{name_of(q, entry.get('body', 0))}'s {shown_harm(q, a.get('harm') or '') or ('blow' if kind == 'strike' else kind)}"
+    # "Wraith's a touch like grave-cold" (11-21): the move's own article goes after a possessive
+    whose = f"{name_of(q, entry.get('body', 0))}'s {re.sub(r'^(?:a|an|the)\s+', '', shown_harm(q, a.get('harm') or '')) or ('blow' if kind == 'strike' else kind)}"
     data: dict[str, Any] = {"verb": "ENEMY", "who": q.id, "move": kind, "label": whose, "join": q.id, "key": entry["key"]}
     tally.setdefault("acted", []).append(q.id)
     tgt_ally = s.person(entry["target"]) if entry["target"] != "player" else None
